@@ -26,6 +26,7 @@ import 'package:segno_engine/segno_engine.dart'
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_key_value_store.dart';
+import '../helpers/test_mix_settings.dart';
 
 /// The control-sequence fuzzer: the REAL native engine (device-free pump) +
 /// the real LooperRepository, LooperBloc, ControlOverlayCubit, ControlIntents
@@ -720,7 +721,7 @@ class _Harness {
       ),
     );
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    bloc = LooperBloc(repository: repo);
+    bloc = LooperBloc(repository: repo, mixSettings: testMixSettings(repo));
     sim = FakePedalLink();
     pedalRepo = PedalRepository(sim);
     sim.hello();

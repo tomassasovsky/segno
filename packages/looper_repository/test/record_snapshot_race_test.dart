@@ -35,7 +35,7 @@ void main() {
   late PumpedNativeEngine engine;
   late LooperRepository repo;
 
-  setUp(() {
+  setUp(() async {
     engine = PumpedNativeEngine();
     repo = LooperRepository(engine: engine)
       ..startEngine(
@@ -46,6 +46,11 @@ void main() {
           maxLoopFrames: 48000,
         ),
       );
+    // Startup mix must be confirmed before a take can be admitted. Keep this
+    // outside the monitor-edit -> Record race window exercised below.
+    expect(repo.record(), EngineResult.notReady);
+    engine.pump(frames: 0);
+    expect(await repo.settleMixSettings(), EngineResult.ok);
   });
 
   tearDown(() async {
@@ -61,8 +66,8 @@ void main() {
       // engine self-snapshot lost the race on. The repo computes the snapshot
       // from its synchronous cache and pushes it; nothing reads ring-deferred
       // engine state.
-      repo
-        ..setMonitorEffects(
+      expect(
+        repo.setMonitorEffects(
           input: 0,
           effects: [
             BuiltInEffect(
@@ -71,8 +76,10 @@ void main() {
             ),
             BuiltInEffect(type: TrackEffectType.reverb),
           ],
-        )
-        ..record();
+        ),
+        EngineResult.ok,
+      );
+      expect(repo.record(), EngineResult.ok);
 
       // A single drain lands both the monitor push and the lane push.
       engine.pump(frames: 0);
@@ -105,7 +112,7 @@ void main() {
 
       // Record over a dry monitor: the snapshot copies nothing, so the staged
       // lane chain must survive (never a count=0 clobber).
-      repo.record();
+      expect(repo.record(), EngineResult.ok);
       engine.pump(frames: 0);
 
       expect(engine.laneFxFingerprint(channel: 0, lane: 0), staged);

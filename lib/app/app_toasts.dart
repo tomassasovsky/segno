@@ -22,6 +22,7 @@ abstract final class AppToastId {
   static const recoveryRefused = 'app_recoveryRefused_toast';
   static const undoClearAll = 'app_undoClearAll_snackbar';
   static const undoClearAllAction = 'app_undoClearAll_snackbar_action';
+  static const mixSettings = 'app_mixSettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};
@@ -66,6 +67,7 @@ ToastificationItem showAppToast({
   ToastificationType type = ToastificationType.info,
   List<Widget> actions = const [],
   Duration? autoCloseDuration,
+  bool dismissible = true,
 }) {
   dismissAppToast(id);
   final item = toastification.showCustom(
@@ -134,14 +136,15 @@ ToastificationItem showAppToast({
                   child: action,
                 ),
               ),
-              IconButton(
-                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                onPressed: () {
-                  dismissAppToast(id);
-                  toastification.dismiss(holder);
-                },
-                icon: const Icon(Icons.close_rounded, size: 20),
-              ),
+              if (dismissible)
+                IconButton(
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                  onPressed: () {
+                    dismissAppToast(id);
+                    toastification.dismiss(holder);
+                  },
+                  icon: const Icon(Icons.close_rounded, size: 20),
+                ),
             ],
           ),
         ),

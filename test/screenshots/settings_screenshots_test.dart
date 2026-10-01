@@ -249,6 +249,7 @@ void main() {
               ),
               BlocProvider<MonitorCubit>.value(
                 value: MonitorCubit(
+                  mixSettings: testMixSettings(repository),
                   repository: repository,
                   settings: settings,
                 ),

@@ -119,6 +119,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(MonitorMode.off);
+    registerFallbackValue(MixSettingsSnapshot());
     registerFallbackValue(const LooperMuteToggled(0));
     registerFallbackValue(const <TrackEffect>[]);
   });
@@ -138,6 +139,29 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     when(() => repository.state).thenReturn(_rig);
     when(repository.allMonitors).thenReturn(const {});
+    var currentMix = MixSettingsSnapshot();
+    MixSettingsSnapshot? pendingMix;
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.mixSettingsSettled).thenReturn(true);
+    when(() => repository.mixSettingsSnapshot).thenAnswer((_) => currentMix);
+    when(
+      () => repository.validateMixSettings(any()),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.applyMixSettings(any())).thenAnswer((call) {
+      pendingMix = call.positionalArguments.first as MixSettingsSnapshot;
+      return EngineResult.ok;
+    });
+    when(() => repository.settleMixSettings()).thenAnswer((_) async {
+      if (pendingMix case final accepted?) {
+        currentMix = accepted;
+        pendingMix = null;
+      }
+      return EngineResult.ok;
+    });
+    when(() => repository.monitorVolume(any())).thenAnswer(
+      (call) =>
+          currentMix.monitorLevels[call.positionalArguments.first as int] ?? 1,
+    );
     // The add dialog reads the scan catalog for its shelf and its count. One
     // plugin that loaded and one file that did not — the failed entry keeps
     // an EMPTY id, so it must not be counted or offered.
@@ -266,7 +290,11 @@ void main() {
     );
     tracks = TracksCubit(settings: settings);
     inputs = InputsCubit(settings: settings, repository: repository);
-    monitor = MonitorCubit(repository: repository, settings: settings);
+    monitor = MonitorCubit(
+      mixSettings: testMixSettings(repository),
+      repository: repository,
+      settings: settings,
+    );
     tray = SettingsTrayCubit(settings: settings)..showSignalTab(stage);
     addTearDown(() => unawaited(tracks.close()));
     addTearDown(() => unawaited(inputs.close()));
@@ -595,12 +623,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(monitor.state.forInput(0).volume, lessThan(1.0));
-      verify(
-        () => repository.setMonitorVolume(
-          input: 0,
-          volume: any(named: 'volume'),
-        ),
-      ).called(greaterThan(0));
+      verify(() => repository.applyMixSettings(any())).called(greaterThan(0));
     });
 
     testWidgets('a double tap on the level fader snaps it back to unity', (

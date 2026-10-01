@@ -31,7 +31,7 @@ void main() {
   late Directory tempDir;
   Timer? pumpDriver;
 
-  setUp(() {
+  setUp(() async {
     engine = PumpedNativeEngine();
     looper = LooperRepository(engine: engine)
       ..startEngine(
@@ -42,6 +42,9 @@ void main() {
           maxLoopFrames: 48000,
         ),
       );
+    expect(looper.record(), EngineResult.notReady);
+    engine.pump(frames: 0);
+    expect(await looper.settleMixSettings(), EngineResult.ok);
     session = SessionRepository(engine: engine);
     tempDir = Directory.systemTemp.createTempSync('segno_fx_session');
     // The pump engine only advances (and drains ring commands) when pumped;
@@ -66,25 +69,28 @@ void main() {
   test('a session with lane + monitor chains round-trips, engine and cache '
       'agree after load', () async {
     // Record a 256-frame take on track 0.
-    looper.record();
+    expect(looper.record(), EngineResult.ok);
     engine.pump(frames: 256, input: 0.5);
-    looper.record(); // finalize -> playing
+    expect(looper.record(), EngineResult.ok); // finalize -> playing
     engine.pump(frames: 0);
 
     // Stage a lane chain + mix, and a monitor chain.
+    looper.setLaneEffects(
+      channel: 0,
+      lane: 0,
+      effects: [
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          params: const [0.3, 0.4, 0.5, 0],
+        ),
+        BuiltInEffect(type: TrackEffectType.reverb),
+      ],
+    );
+    expect(
+      looper.setLaneVolume(0.6, channel: 0, lane: 0),
+      EngineResult.ok,
+    );
     looper
-      ..setLaneEffects(
-        channel: 0,
-        lane: 0,
-        effects: [
-          BuiltInEffect(
-            type: TrackEffectType.delay,
-            params: const [0.3, 0.4, 0.5, 0],
-          ),
-          BuiltInEffect(type: TrackEffectType.reverb),
-        ],
-      )
-      ..setLaneVolume(0.6, channel: 0, lane: 0)
       ..setLaneMute(muted: true, channel: 0, lane: 0)
       ..setMonitorEffects(
         input: 0,
@@ -96,6 +102,8 @@ void main() {
       ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
       ..setMonitorOutput(input: 1, mask: 0x1);
     engine.pump(frames: 0);
+    // Match SessionCubit's save boundary: only confirmed mix is persisted.
+    expect(await looper.settleMixSettings(), EngineResult.ok);
 
     final dir = '${tempDir.path}/take';
     final saved = await session.save(

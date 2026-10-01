@@ -2,6 +2,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -39,6 +40,8 @@ class SessionCubit extends Cubit<SessionState> {
     required SessionRepository repository,
     required LooperRepository looper,
     required PerformanceRepository performance,
+    required MixSettingsCoordinator mixSettings,
+    required MixSettingsPersistence mixPersistence,
     required Future<String> Function() exportDirectory,
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
@@ -46,6 +49,8 @@ class SessionCubit extends Cubit<SessionState> {
   }) : _repository = repository,
        _looper = looper,
        _performance = performance,
+       _mixSettings = mixSettings,
+       _mixPersistence = mixPersistence,
        _exportDirectory = exportDirectory,
        _currentPedalBindings = currentPedalBindings,
        _onPedalBindings = onPedalBindings,
@@ -67,6 +72,8 @@ class SessionCubit extends Cubit<SessionState> {
   final SessionRepository _repository;
   final LooperRepository _looper;
   final PerformanceRepository _performance;
+  final MixSettingsCoordinator _mixSettings;
+  final MixSettingsPersistence _mixPersistence;
   final Future<String> Function() _exportDirectory;
   final String Function() _currentPedalBindings;
   final void Function(String encoded) _onPedalBindings;
@@ -100,18 +107,30 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Saves the live rig as a NEW named session and makes it current. Rejects a
   /// duplicate slug with [SessionError.nameCollision] and writes nothing.
-  Future<void> saveAs(String name) => _run(() async {
-    final slug = _slugOf(name);
-    if ((await _repository.listSessions()).any((s) => s.name == slug)) {
-      throw SessionNameCollision(slug: slug);
-    }
-    await _saveCurrentRig(await _repository.bundlePath(name));
-    return _ActionResult(
-      SessionOutcome.saved,
-      currentName: slug,
-      sessions: await _repository.listSessions(),
+  Future<void> saveAs(String name) {
+    final revision = _looper.sessionRevision;
+    final generation = _looper.mixGeneration;
+    final device = _looper.state.status.deviceName;
+    return _run(
+      () => _mixSettings.runExclusive(() async {
+        final slug = _slugOf(name);
+        if ((await _repository.listSessions()).any((s) => s.name == slug)) {
+          throw SessionNameCollision(slug: slug);
+        }
+        await _saveCurrentRig(
+          await _repository.bundlePath(name),
+          revision,
+          generation,
+          device,
+        );
+        return _ActionResult(
+          SessionOutcome.saved,
+          currentName: slug,
+          sessions: await _repository.listSessions(),
+        );
+      }),
     );
-  });
+  }
 
   /// Writes the live rig back to the open session with no prompt. With no open
   /// session, signals the UI to open Save-As ([SessionOutcome.saveAsRequested])
@@ -127,31 +146,64 @@ class SessionCubit extends Cubit<SessionState> {
       );
       return Future<void>.value();
     }
-    return _run(() async {
-      await _saveCurrentRig(await _repository.bundlePath(name));
-      // Re-list, like every other mutation: the sessions dialog stays open by
-      // design, and its date column reads the catalog — without this a
-      // just-saved session goes on saying "yesterday".
-      return _ActionResult(
-        SessionOutcome.saved,
-        sessions: await _repository.listSessions(),
-      );
-    });
+    final revision = _looper.sessionRevision;
+    final generation = _looper.mixGeneration;
+    final device = _looper.state.status.deviceName;
+    return _run(
+      () => _mixSettings.runExclusive(() async {
+        await _saveCurrentRig(
+          await _repository.bundlePath(name),
+          revision,
+          generation,
+          device,
+        );
+        // Re-list, like every other mutation: the sessions dialog stays open by
+        // design, and its date column reads the catalog — without this a
+        // just-saved session goes on saying "yesterday".
+        return _ActionResult(
+          SessionOutcome.saved,
+          sessions: await _repository.listSessions(),
+        );
+      }),
+    );
   }
 
-  Future<void> _saveCurrentRig(String directory) async {
+  Future<void> _saveCurrentRig(
+    String directory,
+    int revision,
+    int generation,
+    String device,
+  ) async {
+    bool stillOwned() =>
+        !isClosed &&
+        revision == _looper.sessionRevision &&
+        generation == _looper.mixGeneration &&
+        device == _looper.state.status.deviceName;
+    if (!stillOwned()) {
+      throw StateError('session changed before save');
+    }
     if (!_looper.lengthSettingsSettled) {
-      final revision = _looper.sessionRevision;
       final result = await _looper.settleLengthSettings();
-      if (!result.isOk || revision != _looper.sessionRevision || isClosed) {
+      if (!result.isOk || !stillOwned()) {
         throw StateError('length settings did not settle before session save');
       }
+    }
+    if (!_looper.mixSettingsSettled) {
+      final result = await _looper.settleMixSettings();
+      if (!result.isOk || !stillOwned()) {
+        throw StateError('mix settings did not settle before session save');
+      }
+    }
+    final mixOutcome = await _mixSettings.flush();
+    if (!mixOutcome.isOk || !stillOwned()) {
+      throw StateError('mix edit did not settle before session save');
     }
     await _repository.save(
       directory,
       chains: chainsFromLooper(_looper),
       settings: settingsFromLooper(_looper),
       pedalBindings: _currentPedalBindings(),
+      captureStillValid: stillOwned,
     );
   }
 
@@ -164,31 +216,91 @@ class SessionCubit extends Cubit<SessionState> {
   /// manual disarm does; `PerformanceRecorderCubit` observes the repository's
   /// status stream, so it reflects this disarm too even though it was never
   /// the one to call it.
-  Future<void> loadNamed(String name) => _run(() async {
-    await _performance.disarmAndFinalize();
-    final bundle = await _repository.read(await _repository.bundlePath(name));
-    // The remap is control-surface configuration, not part of the rig the
-    // engine applies — so it leaves through its own seam rather than
-    // `SessionRig`. The seam is SPLIT across the apply, because its two halves
-    // want opposite sides of it.
-    //
-    // Release first: a held momentary's captured state has to be written back
-    // onto the OUTGOING rig. Run after the apply it would instead stamp the
-    // old session's values onto the chains the new one just installed,
-    // bringing a freshly loaded session up bypassed.
-    _releaseHeldBindings();
-    await _looper.applySession(rigFromBundle(bundle));
-    // Commit last: only once the rig actually landed. `applySession` can
-    // throw, and `_run` catches everything — committing before it would leave
-    // the pedal dispatching a failed session's bindings against the rig that
-    // is still loaded, a mapping the user never activated.
-    _onPedalBindings(bundle.session.pedalBindings);
-    return _ActionResult(
-      SessionOutcome.loaded,
-      currentName: _slugOf(name),
-      sessions: await _repository.listSessions(),
-    );
-  });
+  Future<void> loadNamed(String name) => _run(
+    () => _mixSettings.runExclusive(() async {
+      await _performance.disarmAndFinalize();
+      final bundle = await _repository.read(await _repository.bundlePath(name));
+      final rig = rigFromBundle(bundle);
+      final candidate = MixSettingsSnapshot.fromRig(rig);
+      if (!candidate.isValid) throw StateError('session mix is invalid');
+      final generation = _looper.mixGeneration;
+      final device = _looper.state.status.deviceName;
+      if (device.isEmpty && candidate.inputSetup != const InputSetup.empty()) {
+        throw StateError('audio device is required for this input setup');
+      }
+      final checkpoint = await _mixPersistence.read(device);
+      if (generation != _looper.mixGeneration ||
+          device != _looper.state.status.deviceName) {
+        throw StateError('audio device changed before session load');
+      }
+      try {
+        await _mixPersistence.write(device, candidate);
+      } on Object {
+        final rollback = await _mixSettings.rollbackExclusive(
+          device: device,
+          checkpoint: checkpoint,
+        );
+        if (rollback.status == MixSettingsStatus.recoveryRequired) {
+          throw MixSettingsRecoveryException(rollback);
+        }
+        rethrow;
+      }
+      if (generation != _looper.mixGeneration ||
+          device != _looper.state.status.deviceName) {
+        final rollback = await _mixSettings.rollbackExclusive(
+          device: device,
+          checkpoint: checkpoint,
+        );
+        if (rollback.status == MixSettingsStatus.recoveryRequired) {
+          throw MixSettingsRecoveryException(rollback);
+        }
+        throw StateError('audio device changed before session load');
+      }
+      // The remap is control-surface configuration outside the rig the engine
+      // applies, so it leaves through its own seam rather than
+      // `SessionRig`. Its two halves belong on opposite sides of the apply.
+      //
+      // Release first: a held momentary's captured state has to be written back
+      // onto the OUTGOING rig. Run after the apply it would instead stamp the
+      // old session's values onto the chains the new one just installed,
+      // bringing a freshly loaded session up bypassed.
+      try {
+        _releaseHeldBindings();
+      } on Object {
+        final rollback = await _mixSettings.rollbackExclusive(
+          device: device,
+          checkpoint: checkpoint,
+        );
+        if (rollback.status == MixSettingsStatus.recoveryRequired) {
+          throw MixSettingsRecoveryException(rollback);
+        }
+        rethrow;
+      }
+      try {
+        await _looper.applySession(rig);
+      } on Object {
+        _looper.stopEngine();
+        final rollback = await _mixSettings.rollbackExclusive(
+          device: device,
+          checkpoint: checkpoint,
+        );
+        if (rollback.status == MixSettingsStatus.recoveryRequired) {
+          throw MixSettingsRecoveryException(rollback);
+        }
+        rethrow;
+      }
+      // Commit last: only once the rig actually landed. `applySession` can
+      // throw, and `_run` catches everything — committing before it would leave
+      // the pedal dispatching a failed session's bindings against the rig that
+      // is still loaded, a mapping the user never activated.
+      _onPedalBindings(bundle.session.pedalBindings);
+      return _ActionResult(
+        SessionOutcome.loaded,
+        currentName: _slugOf(name),
+        sessions: await _repository.listSessions(),
+      );
+    }),
+  );
 
   /// Renames session [from] to [to]. If [from] is the open session, the current
   /// pointer follows the rename. A slug collision surfaces as

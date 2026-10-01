@@ -4,6 +4,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 class _InMemoryStore implements KeyValueStore {
   final Map<String, Object> values = {};
+  String? failNextKey;
 
   @override
   Future<int?> getInt(String key) async => values[key] as int?;
@@ -15,7 +16,13 @@ class _InMemoryStore implements KeyValueStore {
   Future<String?> getString(String key) async => values[key] as String?;
 
   @override
-  Future<void> setString(String key, String value) async => values[key] = value;
+  Future<void> setString(String key, String value) async {
+    if (failNextKey == key) {
+      failNextKey = null;
+      throw StateError('storage write failed');
+    }
+    values[key] = value;
+  }
 
   @override
   Future<bool?> getBool(String key) async => values[key] as bool?;
@@ -31,7 +38,13 @@ class _InMemoryStore implements KeyValueStore {
   Future<void> setDouble(String key, double value) async => values[key] = value;
 
   @override
-  Future<void> remove(String key) async => values.remove(key);
+  Future<void> remove(String key) async {
+    if (failNextKey == key) {
+      failNextKey = null;
+      throw StateError('storage write failed');
+    }
+    values.remove(key);
+  }
 
   @override
   Future<void> clear() async => values.clear();
@@ -349,7 +362,10 @@ void main() {
       expect(await repository.loadLaneCount(0), 1);
       expect(await repository.loadLaneInput(0, 0), isNull);
       expect(await repository.loadLaneOutput(0, 0), isNull);
-      expect(await repository.loadLaneVolume(0, 0), isNull);
+      expect(
+        (await repository.loadMixSettings('test')).laneLevels[(0, 0)],
+        isNull,
+      );
       expect(await repository.loadLaneMute(0, 0), isNull);
     });
 
@@ -362,11 +378,22 @@ void main() {
     test('round-trips per-lane input / output / volume / mute', () async {
       await repository.saveLaneInput(1, 0, 2);
       await repository.saveLaneOutput(1, 0, 0x5);
-      await repository.saveLaneVolume(1, 0, 0.6);
+      await repository.replaceMixSettings(
+        device: 'test',
+        mix: (
+          trackPans: {},
+          laneLevels: {(1, 0): 0.6},
+          monitorLevels: {},
+          inputSetup: (trimDb: {}, pan: {}, pairs: {}),
+        ),
+      );
       await repository.saveLaneMute(1, 0, muted: true);
       expect(await repository.loadLaneInput(1, 0), 2);
       expect(await repository.loadLaneOutput(1, 0), 0x5);
-      expect(await repository.loadLaneVolume(1, 0), closeTo(0.6, 1e-6));
+      expect(
+        (await repository.loadMixSettings('test')).laneLevels[(1, 0)],
+        closeTo(0.6, 1e-6),
+      );
       expect(await repository.loadLaneMute(1, 0), isTrue);
       // A different lane is independent.
       expect(await repository.loadLaneInput(1, 1), isNull);
@@ -983,6 +1010,109 @@ void main() {
         expect(await repository.loadTrackLengthPreset(1), 16);
         await repository.saveTrackLengthPreset(0, null);
         expect(await repository.loadTrackLengthPreset(0), isNull);
+      },
+    );
+  });
+
+  group('canonical mix settings', () {
+    const scarlett = 'Scarlett';
+    const builtIn = 'Built-in';
+
+    StoredMixSettings mix({
+      Map<int, double> pans = const {},
+      Map<(int, int), double> levels = const {},
+      Map<int, double> monitors = const {},
+      StoredInputSetup input = const (trimDb: {}, pan: {}, pairs: {}),
+    }) => (
+      trackPans: pans,
+      laneLevels: levels,
+      monitorLevels: monitors,
+      inputSetup: input,
+    );
+
+    test(
+      'one value preserves the complete mix and another device setup',
+      () async {
+        await repository.replaceMixSettings(
+          device: builtIn,
+          mix: mix(input: (trimDb: {0: -3}, pan: {}, pairs: {})),
+        );
+        await repository.replaceMixSettings(
+          device: scarlett,
+          mix: mix(
+            pans: {0: -0.5},
+            levels: {(0, 1): 0.4},
+            monitors: {2: 0.7},
+            input: (trimDb: {1: -6}, pan: {1: 0.25}, pairs: {0: 0}),
+          ),
+        );
+        expect(
+          store.values.keys.where((key) => key == 'mix_settings'),
+          hasLength(1),
+        );
+        expect(store.values.containsKey('mixer_settings'), isFalse);
+        expect(store.values.containsKey('monitor_vol.2'), isFalse);
+        expect(store.values.containsKey('input_setup.Scarlett'), isFalse);
+        final loaded = await repository.loadMixSettings(scarlett);
+        expect(loaded.trackPans, {0: -0.5});
+        expect(loaded.laneLevels, {(0, 1): 0.4});
+        expect(loaded.monitorLevels, {2: 0.7});
+        expect(loaded.inputSetup.trimDb, {1: -6});
+        expect(loaded.inputSetup.pan, {1: 0.25});
+        expect(loaded.inputSetup.pairs, {0: 0});
+        expect((await repository.loadMixSettings(builtIn)).inputSetup.trimDb, {
+          0: -3,
+        });
+      },
+    );
+
+    test(
+      'failed full write and exact checkpoint restore keep prior mix',
+      () async {
+        await repository.replaceMixSettings(
+          device: scarlett,
+          mix: mix(
+            pans: {0: .5},
+            levels: {(0, 0): .25},
+            monitors: {1: .6},
+            input: (trimDb: {0: -6}, pan: {1: -.5}, pairs: {2: 0}),
+          ),
+        );
+        final checkpoint = await repository.readMixSettingsCheckpoint();
+        store.failNextKey = 'mix_settings';
+        await expectLater(
+          repository.replaceMixSettings(device: scarlett, mix: mix()),
+          throwsStateError,
+        );
+        expect(await repository.readMixSettingsCheckpoint(), checkpoint);
+        await repository.replaceMixSettings(device: scarlett, mix: mix());
+        await repository.restoreMixSettingsCheckpoint(checkpoint);
+        expect(await repository.readMixSettingsCheckpoint(), checkpoint);
+        expect((await repository.loadMixSettings(scarlett)).inputSetup.pairs, {
+          2: 0,
+        });
+      },
+    );
+
+    test(
+      'whole candidate validation refuses nonfinite and odd pairs',
+      () async {
+        final checkpoint = await repository.readMixSettingsCheckpoint();
+        await expectLater(
+          repository.replaceMixSettings(
+            device: scarlett,
+            mix: mix(pans: {0: double.nan}),
+          ),
+          throwsArgumentError,
+        );
+        await expectLater(
+          repository.replaceMixSettings(
+            device: scarlett,
+            mix: mix(input: (trimDb: {}, pan: {}, pairs: {1: 0})),
+          ),
+          throwsArgumentError,
+        );
+        expect(await repository.readMixSettingsCheckpoint(), checkpoint);
       },
     );
   });

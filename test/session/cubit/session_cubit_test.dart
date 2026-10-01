@@ -6,8 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
+
+import '../../helpers/fake_key_value_store.dart';
 
 class _MockSessionRepository extends Mock implements SessionRepository {}
 
@@ -15,6 +20,28 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockPerformanceRepository extends Mock
     implements PerformanceRepository {}
+
+class _WriteThenThrowPersistence implements MixSettingsPersistence {
+  String? durable = 'previous mix';
+  bool refuseRestore = false;
+  int restores = 0;
+
+  @override
+  Future<String?> read(String device) async => durable;
+
+  @override
+  Future<void> write(String device, MixSettingsSnapshot candidate) async {
+    durable = 'incoming mix';
+    throw StateError('write reported failure after reaching disk');
+  }
+
+  @override
+  Future<void> restore(String device, String? checkpoint) async {
+    restores++;
+    if (refuseRestore) throw StateError('restore failed');
+    durable = checkpoint;
+  }
+}
 
 const _session = Session(
   sampleRate: 48000,
@@ -27,6 +54,8 @@ void main() {
   late SessionRepository repository;
   late LooperRepository looper;
   late PerformanceRepository performance;
+  late MixSettingsCoordinator mixSettings;
+  late MixSettingsPersistence mixPersistence;
 
   setUpAll(() {
     registerFallbackValue(const SessionRig());
@@ -38,6 +67,14 @@ void main() {
     repository = _MockSessionRepository();
     looper = _MockLooperRepository();
     performance = _MockPerformanceRepository();
+    mixPersistence = SettingsMixPersistence(
+      SettingsRepository(store: FakeKeyValueStore()),
+    );
+    mixSettings = MixSettingsCoordinator(
+      repository: looper,
+      persistence: mixPersistence,
+      device: () => looper.state.status.deviceName,
+    );
     // Default chain getters so the save path's _captureChains() has something
     // to read; individual tests override as needed.
     when(looper.allLaneChains).thenReturn(const {});
@@ -46,7 +83,10 @@ void main() {
     when(looper.allMonitors).thenReturn(const {});
     when(() => looper.sessionTransport).thenReturn(const TransportState());
     when(() => looper.lengthSettingsSettled).thenReturn(true);
+    when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.sessionRevision).thenReturn(0);
+    when(() => looper.mixGeneration).thenReturn(0);
+    when(looper.stopEngine).thenReturn(EngineResult.ok);
     when(() => looper.defaultRecordTiming).thenReturn(RecordTiming.immediately);
     when(() => looper.defaultOverdubDecay).thenReturn(0);
     when(() => looper.defaultOneShot).thenReturn(false);
@@ -54,6 +94,7 @@ void main() {
     when(() => looper.trackOverdubDecayOverrides).thenReturn(const {});
     when(() => looper.trackOneShotOverrides).thenReturn(const {});
     when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
+    when(() => looper.state).thenReturn(const LooperState());
     // loadNamed's auto-disarm-before-load orchestration; a no-op success by
     // default since nothing is armed in these tests.
     when(
@@ -65,6 +106,8 @@ void main() {
     repository: repository,
     looper: looper,
     performance: performance,
+    mixSettings: mixSettings,
+    mixPersistence: mixPersistence,
     exportDirectory: () async => '/tmp/x',
   );
 
@@ -87,6 +130,8 @@ void main() {
             chains: any(named: 'chains'),
             settings: any(named: 'settings'),
             pedalBindings: any(named: 'pedalBindings'),
+
+            captureStillValid: any(named: 'captureStillValid'),
           ),
         ).thenAnswer((_) async => _session);
         final cubit = build();
@@ -99,6 +144,8 @@ void main() {
             chains: any(named: 'chains'),
             settings: any(named: 'settings'),
             pedalBindings: any(named: 'pedalBindings'),
+
+            captureStillValid: any(named: 'captureStillValid'),
           ),
         );
         when(
@@ -118,6 +165,8 @@ void main() {
                       chains: any(named: 'chains'),
                       settings: captureAny(named: 'settings'),
                       pedalBindings: any(named: 'pedalBindings'),
+
+                      captureStillValid: any(named: 'captureStillValid'),
                     ),
                   ).captured.single
                   as SessionSettings;
@@ -129,6 +178,8 @@ void main() {
               chains: any(named: 'chains'),
               settings: any(named: 'settings'),
               pedalBindings: any(named: 'pedalBindings'),
+
+              captureStillValid: any(named: 'captureStillValid'),
             ),
           );
         }
@@ -163,10 +214,82 @@ void main() {
           chains: any(named: 'chains'),
           settings: any(named: 'settings'),
           pedalBindings: any(named: 'pedalBindings'),
+
+          captureStillValid: any(named: 'captureStillValid'),
         ),
       );
     },
   );
+
+  test(
+    'session save waits for confirmed mix and refuses a replaced rig',
+    () async {
+      final settled = Completer<EngineResult>();
+      when(() => looper.mixSettingsSettled).thenReturn(false);
+      when(() => looper.settleMixSettings()).thenAnswer((_) => settled.future);
+      when(repository.listSessions).thenAnswer((_) async => []);
+      when(
+        () => repository.bundlePath('mix'),
+      ).thenAnswer((_) async => '/tmp/mix');
+      final cubit = build();
+      addTearDown(cubit.close);
+
+      final save = cubit.saveAs('mix');
+      await Future<void>.delayed(Duration.zero);
+      verify(() => looper.settleMixSettings()).called(1);
+      verifyNever(
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+          pedalBindings: any(named: 'pedalBindings'),
+
+          captureStillValid: any(named: 'captureStillValid'),
+        ),
+      );
+      when(() => looper.sessionRevision).thenReturn(1);
+      settled.complete(EngineResult.ok);
+      await save;
+      expect(cubit.state.status, SessionStatus.failure);
+      verifyNever(
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+          pedalBindings: any(named: 'pedalBindings'),
+
+          captureStillValid: any(named: 'captureStillValid'),
+        ),
+      );
+    },
+  );
+
+  test('Save As keeps the invocation rig through catalog lookup', () async {
+    final catalog = Completer<List<SessionSummary>>();
+    when(repository.listSessions).thenAnswer((_) => catalog.future);
+    when(
+      () => repository.bundlePath('new'),
+    ).thenAnswer((_) async => '/tmp/new');
+    final cubit = build();
+    addTearDown(cubit.close);
+
+    final save = cubit.saveAs('new');
+    await Future<void>.delayed(Duration.zero);
+    when(() => looper.sessionRevision).thenReturn(1);
+    catalog.complete([]);
+    await save;
+    expect(cubit.state.status, SessionStatus.failure);
+    verifyNever(
+      () => repository.save(
+        any(),
+        chains: any(named: 'chains'),
+        settings: any(named: 'settings'),
+        pedalBindings: any(named: 'pedalBindings'),
+
+        captureStillValid: any(named: 'captureStillValid'),
+      ),
+    );
+  });
 
   group('SessionCubit exports', () {
     blocTest<SessionCubit, SessionState>(
@@ -248,18 +371,24 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
-      'loadNamed classifies an unsupported (newer) version',
+      'loadNamed rejects an older version without replacing the open rig',
       setUp: () => stubRead(
-        const SessionUnsupportedVersion(version: 2, supported: 1),
+        const SessionUnsupportedVersion(version: 7, supported: 8),
       ),
       build: build,
+      seed: () => const SessionState(currentSessionName: 'Current'),
       act: (cubit) => cubit.loadNamed('X'),
       expect: () => [
-        const SessionState(status: SessionStatus.working),
+        const SessionState(
+          status: SessionStatus.working,
+          currentSessionName: 'Current',
+        ),
         isA<SessionState>()
             .having((s) => s.status, 'status', SessionStatus.failure)
-            .having((s) => s.error, 'error', SessionError.unsupportedVersion),
+            .having((s) => s.error, 'error', SessionError.unsupportedVersion)
+            .having((s) => s.currentSessionName, 'current', 'Current'),
       ],
+      verify: (_) => verifyNever(() => looper.applySession(any())),
     );
 
     blocTest<SessionCubit, SessionState>(
@@ -295,6 +424,8 @@ void main() {
           any(),
           chains: any(named: 'chains'),
           settings: any(named: 'settings'),
+
+          captureStillValid: any(named: 'captureStillValid'),
         ),
       ).thenAnswer((_) async => _session);
     }
@@ -324,6 +455,8 @@ void main() {
                   '/root/New',
                   chains: any(named: 'chains'),
                   settings: captureAny(named: 'settings'),
+
+                  captureStillValid: any(named: 'captureStillValid'),
                 ),
               ).captured.single
               as SessionSettings;
@@ -346,6 +479,8 @@ void main() {
                   '/root/New',
                   chains: any(named: 'chains'),
                   settings: captureAny(named: 'settings'),
+
+                  captureStillValid: any(named: 'captureStillValid'),
                 ),
               ).captured.single
               as SessionSettings;
@@ -354,6 +489,104 @@ void main() {
       expect(second.trackRecordTimingOverrides, isEmpty);
       expect(second.trackOverdubDecayOverrides, isEmpty);
     });
+
+    test(
+      'session load waits until an in-flight save has captured its rig',
+      () async {
+        final saveEntered = Completer<void>();
+        final finishSave = Completer<Session>();
+        final order = <String>[];
+        when(repository.listSessions).thenAnswer((_) async => []);
+        when(
+          () => repository.bundlePath('A'),
+        ).thenAnswer((_) async => '/root/A');
+        when(
+          () => repository.bundlePath('B'),
+        ).thenAnswer((_) async => '/root/B');
+        when(
+          () => repository.save(
+            '/root/A',
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        ).thenAnswer((_) {
+          order.add('save A');
+          saveEntered.complete();
+          return finishSave.future;
+        });
+        when(() => repository.read('/root/B')).thenAnswer(
+          (_) async =>
+              (session: _session, laneStems: <(int, int), List<Float32List>>{}),
+        );
+        when(() => looper.applySession(any())).thenAnswer((_) async {
+          order.add('apply B');
+        });
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        final save = cubit.saveAs('A');
+        await saveEntered.future;
+        final load = cubit.loadNamed('B');
+        await Future<void>.delayed(Duration.zero);
+        expect(order, ['save A']);
+        verifyNever(() => looper.applySession(any()));
+
+        finishSave.complete(_session);
+        await save;
+        await load;
+        expect(order, ['save A', 'apply B']);
+        expect(cubit.state.currentSessionName, 'B');
+      },
+    );
+
+    for (final refuseRestore in [false, true]) {
+      test(
+        'session write-then-throw restores or requires recovery '
+        'refuseRestore=$refuseRestore',
+        () async {
+          final failing = _WriteThenThrowPersistence()
+            ..refuseRestore = refuseRestore;
+          mixPersistence = failing;
+          mixSettings = MixSettingsCoordinator(
+            repository: looper,
+            persistence: failing,
+            device: () => looper.state.status.deviceName,
+          );
+          when(
+            () => repository.bundlePath('B'),
+          ).thenAnswer((_) async => '/root/B');
+          when(() => repository.read('/root/B')).thenAnswer(
+            (_) async => (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          );
+          final cubit = build();
+          addTearDown(cubit.close);
+          addTearDown(mixSettings.close);
+
+          await cubit.loadNamed('B');
+
+          expect(cubit.state.status, SessionStatus.failure);
+          expect(cubit.state.currentSessionName, isNull);
+          verifyNever(() => looper.applySession(any()));
+          expect(failing.restores, 1);
+          if (refuseRestore) {
+            expect(failing.durable, 'incoming mix');
+            expect(
+              cubit.state.errorMessage,
+              contains('Mix settings recovery required'),
+            );
+            failing.refuseRestore = false;
+            expect((await mixSettings.recover()).isOk, isTrue);
+          }
+          expect(failing.durable, 'previous mix');
+        },
+      );
+    }
 
     blocTest<SessionCubit, SessionState>(
       'saveAs writes a new named session, sets it current, and refreshes',
@@ -377,6 +610,8 @@ void main() {
           '/root/New',
           chains: any(named: 'chains'),
           settings: any(named: 'settings'),
+
+          captureStillValid: any(named: 'captureStillValid'),
         ),
       ).called(1),
     );
@@ -401,6 +636,8 @@ void main() {
           any(),
           chains: any(named: 'chains'),
           settings: any(named: 'settings'),
+
+          captureStillValid: any(named: 'captureStillValid'),
         ),
       ),
     );
@@ -425,6 +662,8 @@ void main() {
           '/root/Open',
           chains: any(named: 'chains'),
           settings: any(named: 'settings'),
+
+          captureStillValid: any(named: 'captureStillValid'),
         ),
       ).called(1),
     );
@@ -444,6 +683,8 @@ void main() {
           any(),
           chains: any(named: 'chains'),
           settings: any(named: 'settings'),
+
+          captureStillValid: any(named: 'captureStillValid'),
         ),
       ),
     );
@@ -629,6 +870,8 @@ void main() {
           any(),
           chains: any(named: 'chains'),
           settings: any(named: 'settings'),
+
+          captureStillValid: any(named: 'captureStillValid'),
         ),
       ),
     );
@@ -655,6 +898,8 @@ void main() {
             any(),
             chains: any(named: 'chains'),
             settings: any(named: 'settings'),
+
+            captureStillValid: any(named: 'captureStillValid'),
           ),
         ).thenAnswer((_) async => _session);
         // A write-back re-lists so an open Sessions dialog's date column
@@ -798,6 +1043,8 @@ void main() {
           repository: repository,
           looper: looper,
           performance: performance,
+          mixSettings: mixSettings,
+          mixPersistence: mixPersistence,
           exportDirectory: () async => '/tmp/x',
           onPedalBindings: (_) => order.add('onPedalBindings'),
           releaseHeldBindings: () => order.add('releaseHeldBindings'),
@@ -843,6 +1090,8 @@ void main() {
           repository: repository,
           looper: looper,
           performance: performance,
+          mixSettings: mixSettings,
+          mixPersistence: mixPersistence,
           exportDirectory: () async => '/tmp/x',
           onPedalBindings: (_) => committed = true,
         );
@@ -852,6 +1101,7 @@ void main() {
 
         expect(cubit.state.status, SessionStatus.failure);
         expect(committed, isFalse);
+        verify(looper.stopEngine).called(1);
       },
     );
 
@@ -864,6 +1114,8 @@ void main() {
           chains: any(named: 'chains'),
           settings: any(named: 'settings'),
           pedalBindings: any(named: 'pedalBindings'),
+
+          captureStillValid: any(named: 'captureStillValid'),
         ),
       ).thenAnswer((_) async => _session);
 
@@ -871,6 +1123,8 @@ void main() {
         repository: repository,
         looper: looper,
         performance: performance,
+        mixSettings: mixSettings,
+        mixPersistence: mixPersistence,
         exportDirectory: () async => '/tmp/x',
         currentPedalBindings: () => 'the-remap-in-force',
       );
@@ -884,6 +1138,8 @@ void main() {
           chains: any(named: 'chains'),
           settings: any(named: 'settings'),
           pedalBindings: 'the-remap-in-force',
+
+          captureStillValid: any(named: 'captureStillValid'),
         ),
       ).called(1);
     });

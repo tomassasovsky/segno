@@ -109,7 +109,11 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     when(repository.masterChainEnvelope).thenReturn(const FxChainEnvelope());
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    monitor = MonitorCubit(repository: repository, settings: settings);
+    monitor = MonitorCubit(
+      mixSettings: testMixSettings(repository),
+      repository: repository,
+      settings: settings,
+    );
     quantize = RecordTimingCubit(repository: repository, settings: settings);
     recordOptions = RecordOptionsCubit(
       repository: repository,
