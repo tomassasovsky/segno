@@ -441,10 +441,10 @@ void main() {
       ).canonicalString();
       await control.setGlobalBindings(
         PedalBindingSet([
-          const PedalBinding(
-            key: PedalBindingKey(button: PedalButton.track1, bank: 0),
-            target: '',
-          ).copyWith(target: gone),
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+            target: gone,
+          ),
         ]),
       );
       await tester.pumpAndSettle();

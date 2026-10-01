@@ -407,9 +407,9 @@ class SettingsRepository {
   static const String _pedalLongPressMsKey = 'pedal.long_press_ms';
 
   /// Loads the pedal long-press threshold in milliseconds (Undo long-press =
-  /// redo). Defaults to `500` when unset.
+  /// redo). Defaults to the accepted `800` ms baseline when unset.
   Future<int> loadPedalLongPressMs() async =>
-      await _store.getInt(_pedalLongPressMsKey) ?? 500;
+      await _store.getInt(_pedalLongPressMsKey) ?? 800;
 
   /// Saves the pedal long-press threshold in milliseconds.
   Future<void> savePedalLongPressMs(int ms) =>
