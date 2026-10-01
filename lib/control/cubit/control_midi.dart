@@ -360,6 +360,15 @@ extension MidiControlEditing on ControlCubit {
     if (readings.isEmpty) return;
     final revision = _midiIngressRevision;
     final session = _looper.sessionRevision;
+    final origins = {
+      for (final event in readings)
+        event: _mixOrigins([
+          for (final mapping in state.midiMappings.mappings)
+            if (mapping.source.sameAs(event.source))
+              for (final control in mapping.controls)
+                ?ControlValueTarget.tryParse(control.key),
+        ]),
+    };
     unawaited(
       _queueMidi(() async {
         if (revision != _midiIngressRevision ||
@@ -369,6 +378,7 @@ extension MidiControlEditing on ControlCubit {
           return;
         }
         for (final event in readings) {
+          if (!_mixOriginsCurrent(origins[event]!)) continue;
           await _applyMidiProposals(_midiEngine.prepare(event));
         }
       }),
@@ -456,6 +466,7 @@ extension MidiControlEditing on ControlCubit {
     final target = ControlValueTarget.tryParse(key);
     // Master uses the hardware encoder's established 1/64 normalized step.
     if (target is MasterGainTarget) return ControlCubit._encoderStep;
+    if (target is MixValueTarget) return target.relativeStep;
     if (target is FxParamTarget) {
       final divisions = _midiParamDivisions(target);
       if (divisions != null && divisions > 0) return 1 / divisions;
@@ -466,6 +477,10 @@ extension MidiControlEditing on ControlCubit {
   Future<void> _applyMidiProposals(List<MidiProposal> proposals) async {
     final session = _looper.sessionRevision;
     for (final proposal in proposals) {
+      final origins = _mixOrigins([
+        for (final operation in proposal.operations)
+          ?ControlValueTarget.tryParse(operation.key),
+      ]);
       if (session != _looper.sessionRevision || isClosed) return;
       Object? pending;
       final appliedOwners = <FxAddress>{};
@@ -628,6 +643,7 @@ extension MidiControlEditing on ControlCubit {
                     order: ++_activationOrder,
                   );
                 case final ControlValueTarget target:
+                  if (target is MixValueTarget) _retireMixBaseline(target);
                   (_parameterHolders[target] ??= {})[holder] = (
                     value: values[target]!,
                     order: ++_activationOrder,
@@ -638,7 +654,10 @@ extension MidiControlEditing on ControlCubit {
           _syncMidiDurableFx();
         }
 
-        bool cancelled() => session != _looper.sessionRevision || isClosed;
+        bool cancelled() =>
+            session != _looper.sessionRevision ||
+            !_mixOriginsCurrent(origins) ||
+            isClosed;
         if (cancelled()) return;
         final fx = <FxParamTarget, double>{
           for (final e in values.entries)
@@ -679,6 +698,42 @@ extension MidiControlEditing on ControlCubit {
           _fxPersistence.finishPending(pending);
           pending = null;
         }
+        final mixValues = <MixValueTarget, double>{};
+        final mixReleased = <MixValueTarget, double>{};
+        final mixIndices = <int>{};
+        for (final entry in rows.entries) {
+          final target = entry.value.target;
+          if (accepted.contains(entry.key) || target is! MixValueTarget) {
+            continue;
+          }
+          final value = values[target];
+          if (value == null) continue;
+          final op = proposal.operations.firstWhere(
+            (op) => op.controlIndex == entry.key,
+          );
+          final rowKey = (proposal.mappingId, proposal.generation, entry.key);
+          // Only cleanup inherits a surviving hold. A new non-held intent
+          // becomes durable itself once its write is confirmed.
+          final released = op is MidiParameterWrite && op.held == true
+              ? _midiReleasedFor(proposal, op.controlIndex)
+              : entry.value.ending
+              ? _survivingMidiReleased(
+                  target,
+                  excluding: _midiHolderKeys[rowKey],
+                )
+              : null;
+          mixValues[target] = value;
+          if (released != null) mixReleased[target] = released;
+          mixIndices.add(entry.key);
+        }
+        if (mixValues.isNotEmpty) {
+          final result = await _mixSettings.setControllerValues(
+            mixValues,
+            releasedValues: mixReleased,
+          );
+          if (cancelled()) return;
+          if (result.isOk) accepted.addAll(mixIndices);
+        }
         for (final entry in rows.entries) {
           if (accepted.contains(entry.key) || entry.value.value == null) {
             continue;
@@ -687,28 +742,8 @@ extension MidiControlEditing on ControlCubit {
           final value = values[target];
           if (value == null) continue;
           switch (target) {
-            case TrackVolumeTarget(:final channel):
-              final op = proposal.operations.firstWhere(
-                (op) => op.controlIndex == entry.key,
-              );
-              final rowKey = (
-                proposal.mappingId,
-                proposal.generation,
-                entry.key,
-              );
-              final released = op is MidiParameterWrite && op.held == true
-                  ? _midiReleasedFor(proposal, op.controlIndex)
-                  : _survivingMidiReleased(
-                      target,
-                      excluding: _midiHolderKeys[rowKey],
-                    );
-              final result = await _mixSettings.setMidiTrackVolume(
-                value,
-                channel: channel,
-                releasedValue: released,
-              );
-              if (cancelled()) return;
-              if (result.isOk) accepted.add(entry.key);
+            case MixValueTarget():
+              break;
             case MasterGainTarget():
               if (_looper.setMasterGain(value).isOk) {
                 _masterGain = value;
@@ -798,6 +833,9 @@ extension MidiControlEditing on ControlCubit {
         order = entry.value.order;
       }
     }
+    if (winner is MappingTrigger && target is MixValueTarget) {
+      return _externalMixReleased[_externalInput(winner)]?[target];
+    }
     return _midiReleasedValues[winner];
   }
 
@@ -839,6 +877,46 @@ extension MidiControlEditing on ControlCubit {
     _syncMidiDurableFx();
   }
 
-  void _onOrdinaryTrackLevel(int channel, double value) =>
-      _onOrdinaryFxWrite(TrackVolumeTarget(channel), value);
+  Map<MixValueTarget, int> _mixOrigins(Iterable<ControlValueTarget> targets) =>
+      _mixSettings.controllerOrigins(targets.whereType<MixValueTarget>());
+
+  bool _mixOriginsCurrent(Map<MixValueTarget, int> origins) =>
+      _mixSettings.controllerOriginsCurrent(origins);
+
+  void _retireMixBaseline(MixValueTarget target) {
+    _parameterHolders[target]?.removeWhere(
+      (key, _) =>
+          key is (Symbol, Object) &&
+          (key.$1 == #ordinary || key.$1 == #retained),
+    );
+  }
+
+  void _invalidateMixTargets(Set<MixValueTarget> targets) {
+    _midiEngine.invalidateTargets({
+      for (final target in targets) target.canonicalString(),
+    });
+    for (final entry in _midiTargets.entries.toList()) {
+      if (targets.contains(entry.value)) {
+        _dropMidiHolder(entry.key, entry.value, _midiHolderKeys[entry.key]);
+      }
+    }
+    targets.forEach(_parameterHolders.remove);
+    for (final input in PedalCtrlInput.values) {
+      (_externalInvalidatedMix[input] ??= {}).addAll(targets);
+      _externalMixReleased[input]?.removeWhere(
+        (target, _) => targets.contains(target),
+      );
+      _externalNumericReleases[input]?.removeWhere(
+        (target, _) => targets.contains(target),
+      );
+    }
+    _expressionRaw.clear();
+    _resetMidiDecoders();
+  }
+
+  void _onOrdinaryMixValues(Map<MixValueTarget, double> values) {
+    for (final entry in values.entries) {
+      _onOrdinaryFxWrite(entry.key, entry.value);
+    }
+  }
 }

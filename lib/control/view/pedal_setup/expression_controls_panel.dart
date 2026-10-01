@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_expression.dart';
+import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -186,7 +187,11 @@ class ExpressionControlsPanel extends StatelessWidget {
               ? l10n.expressionUnavailable
               : at == null
               ? l10n.expressionNoReading
-              : _percent(row.mapping.valueAt(at)),
+              : controlValueReadout(
+                  l10n,
+                  row.mapping.target,
+                  row.mapping.valueAt(at),
+                ),
           onTap: () => onSelect(row.mapping.target),
         );
       },
@@ -276,7 +281,7 @@ class ExpressionControlsPanel extends StatelessWidget {
                 ),
                 const Spacer(),
                 AppText(
-                  _percent(value),
+                  controlValueReadout(l10n, row.mapping.target, value),
                   key: Key(
                     'expression_endpoint_${isHeel ? 'heel' : 'toe'}_value',
                   ),
@@ -295,16 +300,21 @@ class ExpressionControlsPanel extends StatelessWidget {
             value: value,
             width: 625,
             semanticLabel: '${row.control} $name',
+            semanticValueBuilder: (normalized) => controlValueReadout(
+              l10n,
+              row.mapping.target,
+              normalized,
+            ),
             // A control the rig no longer has cannot be auditioned, so its
             // endpoints are shown and not movable: the row is there to be
             // repointed or removed, not tuned.
             enabled: row.available,
             onChanged: (next) => onEndpoint(isHeel: isHeel, value: next),
+            onEditCancel: (opening) =>
+                onEndpoint(isHeel: isHeel, value: opening),
           ),
         ],
       ),
     );
   }
-
-  static String _percent(double value) => '${(value * 100).round()}%';
 }

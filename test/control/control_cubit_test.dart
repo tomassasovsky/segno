@@ -182,6 +182,8 @@ void main() {
       looper = _MockLooperRepository();
       when(() => looper.sessionRevision).thenReturn(0);
       when(() => looper.mixGeneration).thenReturn(0);
+      when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
+      when(() => looper.laneCount(any())).thenReturn(1);
       when(() => looper.mixSettingsSettled).thenReturn(true);
       when(() => looper.fxRecipesSettled).thenReturn(true);
       when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());

@@ -69,6 +69,9 @@ void main() {
   setUp(() {
     looper = _MockLooperRepository();
     when(() => looper.sessionRevision).thenReturn(0);
+    when(() => looper.mixGeneration).thenReturn(0);
+    when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => looper.laneCount(any())).thenReturn(1);
     looperStates = StreamController<LooperState>.broadcast();
     store = _ControlledStore();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);

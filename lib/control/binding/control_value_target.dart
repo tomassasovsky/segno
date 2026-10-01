@@ -2,9 +2,10 @@ import 'dart:convert';
 
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/control/binding/mix_value_scale.dart';
 
-/// What a CONTINUOUS binding sweeps: one FX parameter, one track's volume, or
-/// the master gain (part 7).
+/// What a continuous binding sweeps: an FX parameter, Mixer control, or
+/// master gain.
 ///
 /// The discrete counterpart is part 6b's `FxBindingTarget` — a stomp flips an
 /// `enabled` flag, so the two shapes address different things and stay separate
@@ -22,10 +23,9 @@ import 'package:looper_repository/looper_repository.dart';
 ///
 /// ## One normalized domain
 ///
-/// Every value here is `0..1` in the target's own units — built-in FX params
-/// are already normalized, track volume is a `0..1` fader, master gain is
-/// `0..1`. That is what lets one LO/HI pair, one knob, and one smoothing ramp
-/// serve all three without the binding needing to know what it drives.
+/// Every binding endpoint is normalized `0..1`. Mixer targets convert that
+/// position to their actual units at the target boundary, so one stored range
+/// and one pickup rule can serve a gain fader, pan, and output level.
 sealed class ControlValueTarget extends Equatable {
   /// Const base constructor for the sealed subtypes.
   const ControlValueTarget();
@@ -35,6 +35,13 @@ sealed class ControlValueTarget extends Equatable {
     FxParamTarget(:final address, :final slotId, :final param) =>
       address.isStructurallyValid && slotId.isNotEmpty && param >= 0,
     TrackVolumeTarget(:final channel) => channel >= 0,
+    LaneVolumeTarget(:final channel, :final lane) => channel >= 0 && lane >= 0,
+    MonitorVolumeTarget(:final input) => input >= 0,
+    TrackPanTarget(:final channel) => channel >= 0,
+    InputPanTarget(:final input) => input >= 0,
+    PairBalanceTarget(:final input) => input >= 0 && input.isEven,
+    OutputLevelTarget(:final bus) => bus >= 0,
+    OutputBalanceTarget(:final bus) => bus >= 0,
     MasterGainTarget() => true,
   };
 
@@ -53,13 +60,24 @@ sealed class ControlValueTarget extends Equatable {
     }
     if (raw is! Map<String, dynamic>) return null;
     final ctl = raw['ctl'];
-    if (ctl != null) {
+    if (raw.containsKey('ctl')) {
+      if (ctl == 'masterGain') {
+        return raw.length == 1 ? const MasterGainTarget() : null;
+      }
       final index = raw['index'];
+      final lane = raw['lane'];
+      if (index is! int || index < 0) return null;
+      final indexed = raw.length == 2;
       return switch (ctl) {
-        'trackVolume' when index is int && index >= 0 => TrackVolumeTarget(
-          index,
-        ),
-        'masterGain' => const MasterGainTarget(),
+        'trackVolume' when indexed => TrackVolumeTarget(index),
+        'laneVolume' when raw.length == 3 && lane is int && lane >= 0 =>
+          LaneVolumeTarget(index, lane),
+        'monitorVolume' when indexed => MonitorVolumeTarget(index),
+        'trackPan' when indexed => TrackPanTarget(index),
+        'inputPan' when indexed => InputPanTarget(index),
+        'pairBalance' when indexed && index.isEven => PairBalanceTarget(index),
+        'outputLevel' when indexed => OutputLevelTarget(index),
+        'outputBalance' when indexed => OutputBalanceTarget(index),
         _ => null,
       };
     }
@@ -115,7 +133,7 @@ final class FxParamTarget extends ControlValueTarget {
 }
 
 /// One track's volume fader.
-final class TrackVolumeTarget extends ControlValueTarget {
+final class TrackVolumeTarget extends MixValueTarget {
   /// Creates a track-volume target on [channel].
   const TrackVolumeTarget(this.channel);
 
@@ -128,6 +146,162 @@ final class TrackVolumeTarget extends ControlValueTarget {
 
   @override
   List<Object?> get props => [channel];
+}
+
+/// A Mixer setting with a normalized binding position and a physical domain.
+/// The rig coordinate remains stable even when the current device lacks it.
+sealed class MixValueTarget extends ControlValueTarget {
+  /// Const base constructor for Mixer target subtypes.
+  const MixValueTarget();
+
+  /// Converts a stored endpoint or live source position into Mixer units.
+  double toDomain(double normalized) {
+    final value = normalized.clamp(0.0, 1.0);
+    return switch (this) {
+      TrackVolumeTarget() ||
+      LaneVolumeTarget() ||
+      MonitorVolumeTarget() => mixerGainAt(value),
+      TrackPanTarget() ||
+      InputPanTarget() ||
+      PairBalanceTarget() ||
+      OutputBalanceTarget() => value * 2 - 1,
+      OutputLevelTarget() => value,
+    };
+  }
+
+  /// Converts the accepted Mixer value back to a normalized source position.
+  double fromDomain(double domain) => switch (this) {
+    TrackVolumeTarget() ||
+    LaneVolumeTarget() ||
+    MonitorVolumeTarget() => mixerTravelFor(domain),
+    TrackPanTarget() ||
+    InputPanTarget() ||
+    PairBalanceTarget() ||
+    OutputBalanceTarget() => ((domain + 1) / 2).clamp(0.0, 1.0),
+    OutputLevelTarget() => domain.clamp(0.0, 1.0),
+  };
+
+  /// One relative-controller detent in normalized source travel.
+  double get relativeStep => switch (this) {
+    TrackVolumeTarget() || LaneVolumeTarget() || MonitorVolumeTarget() => 0.02,
+    TrackPanTarget() => 0.025,
+    InputPanTarget() ||
+    PairBalanceTarget() ||
+    OutputLevelTarget() ||
+    OutputBalanceTarget() => 0.01,
+  };
+}
+
+/// One active lane's independent playback gain.
+final class LaneVolumeTarget extends MixValueTarget {
+  /// Creates a lane-volume target.
+  const LaneVolumeTarget(this.channel, this.lane);
+
+  /// The recorded track channel.
+  final int channel;
+
+  /// The active lane number within that track.
+  final int lane;
+
+  @override
+  String canonicalString() =>
+      jsonEncode({'ctl': 'laneVolume', 'index': channel, 'lane': lane});
+
+  @override
+  List<Object?> get props => [channel, lane];
+}
+
+/// One hardware input's live-monitor gain, separate from capture trim.
+final class MonitorVolumeTarget extends MixValueTarget {
+  /// Creates a monitor-volume target.
+  const MonitorVolumeTarget(this.input);
+
+  /// The hardware input channel.
+  final int input;
+
+  @override
+  String canonicalString() =>
+      jsonEncode({'ctl': 'monitorVolume', 'index': input});
+
+  @override
+  List<Object?> get props => [input];
+}
+
+/// One track's pan offset, without changing its recorded source images.
+final class TrackPanTarget extends MixValueTarget {
+  /// Creates a track-pan target.
+  const TrackPanTarget(this.channel);
+
+  /// The recorded track channel.
+  final int channel;
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'trackPan', 'index': channel});
+
+  @override
+  List<Object?> get props => [channel];
+}
+
+/// The stored pan of a mono hardware input.
+final class InputPanTarget extends MixValueTarget {
+  /// Creates an input-pan target.
+  const InputPanTarget(this.input);
+
+  /// The hardware input channel.
+  final int input;
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'inputPan', 'index': input});
+
+  @override
+  List<Object?> get props => [input];
+}
+
+/// Balance of an existing linked hardware-input pair, keyed by its left jack.
+final class PairBalanceTarget extends MixValueTarget {
+  /// Creates a pair-balance target.
+  const PairBalanceTarget(this.input);
+
+  /// The even, lower hardware input channel.
+  final int input;
+
+  @override
+  String canonicalString() =>
+      jsonEncode({'ctl': 'pairBalance', 'index': input});
+
+  @override
+  List<Object?> get props => [input];
+}
+
+/// The level of one output destination, retained behind mute.
+final class OutputLevelTarget extends MixValueTarget {
+  /// Creates an output-level target.
+  const OutputLevelTarget(this.bus);
+
+  /// The output bus ordinal.
+  final int bus;
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'outputLevel', 'index': bus});
+
+  @override
+  List<Object?> get props => [bus];
+}
+
+/// Stereo balance of one output destination, retained while Mono.
+final class OutputBalanceTarget extends MixValueTarget {
+  /// Creates an output-balance target.
+  const OutputBalanceTarget(this.bus);
+
+  /// The output bus ordinal.
+  final int bus;
+
+  @override
+  String canonicalString() =>
+      jsonEncode({'ctl': 'outputBalance', 'index': bus});
+
+  @override
+  List<Object?> get props => [bus];
 }
 
 /// The master output gain — the same value the pedal's encoder turns.

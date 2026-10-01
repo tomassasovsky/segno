@@ -57,6 +57,7 @@ void main() {
   late PerformanceRepository performance;
   late MixSettingsCoordinator mixSettings;
   late MixSettingsPersistence mixPersistence;
+  late StreamController<LooperState> looperStates;
 
   setUpAll(() {
     registerFallbackValue(const SessionRig());
@@ -68,13 +69,11 @@ void main() {
     repository = _MockSessionRepository();
     looper = _MockLooperRepository();
     performance = _MockPerformanceRepository();
+    looperStates = StreamController<LooperState>.broadcast();
+    when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
+    addTearDown(looperStates.close);
     mixPersistence = SettingsMixPersistence(
       SettingsRepository(store: FakeKeyValueStore()),
-    );
-    mixSettings = MixSettingsCoordinator(
-      repository: looper,
-      persistence: mixPersistence,
-      device: () => looper.state.status.deviceName,
     );
     // Default chain getters so the save path's _captureChains() has something
     // to read; individual tests override as needed.
@@ -89,6 +88,7 @@ void main() {
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
+    when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
     when(looper.stopEngine).thenReturn(EngineResult.ok);
     when(() => looper.defaultRecordTiming).thenReturn(RecordTiming.immediately);
     when(() => looper.defaultOverdubDecay).thenReturn(0);
@@ -98,6 +98,11 @@ void main() {
     when(() => looper.trackOneShotOverrides).thenReturn(const {});
     when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
     when(() => looper.state).thenReturn(const LooperState());
+    mixSettings = MixSettingsCoordinator(
+      repository: looper,
+      persistence: mixPersistence,
+      device: () => looper.state.status.deviceName,
+    );
     // loadNamed's auto-disarm-before-load orchestration; a no-op success by
     // default since nothing is armed in these tests.
     when(

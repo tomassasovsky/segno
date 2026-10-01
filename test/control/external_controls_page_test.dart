@@ -13,12 +13,14 @@ import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
+import 'package:segno/control/binding/mix_value_scale.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -45,6 +47,13 @@ void main() {
   setUp(() {
     looper = _MockLooperRepository();
     when(() => looper.sessionRevision).thenReturn(0);
+    when(() => looper.mixGeneration).thenReturn(0);
+    when(() => looper.mixSettingsSettled).thenReturn(true);
+    when(() => looper.mixSettingsSnapshot).thenReturn(
+      MixSettingsSnapshot(trackLevels: const {0: 0.4, 1: 1}),
+    );
+    when(() => looper.laneCount(any())).thenReturn(1);
+    when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     when(() => looper.state).thenReturn(
@@ -297,8 +306,8 @@ void main() {
     );
     await tap(tester, 'external_save');
     final parameter = saved().parameters.single;
-    expect(parameter.active, 0.4);
-    expect(parameter.inactive, 0.4);
+    expect(parameter.active, closeTo(mixerTravelFor(0.4), 1e-9));
+    expect(parameter.inactive, closeTo(mixerTravelFor(0.4), 1e-9));
     verifyNever(
       () => looper.setVolume(any(), channel: any(named: 'channel')),
     );
@@ -367,6 +376,46 @@ void main() {
     verifyNever(
       () => looper.setVolume(any(), channel: any(named: 'channel')),
     );
+  });
+
+  testWidgets('Escape restores an unfinished button endpoint draft', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: const TrackVolumeTarget(0),
+                active: 0.4,
+                inactive: 0.4,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    final slider = find.byKey(const Key('external_value_active'));
+    Focus.of(
+      tester.element(
+        find
+            .descendant(of: slider, matching: find.byType(GestureDetector))
+            .first,
+      ),
+    ).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(tester.widget<LoopSlider>(slider).value, closeTo(0.41, 1e-9));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(tester.widget<LoopSlider>(slider).value, closeTo(0.4, 1e-9));
+    await tap(tester, 'external_save');
+    expect(saved().parameters.single.active, closeTo(0.4, 1e-9));
   });
 
   testWidgets('removing a control drops it', (tester) async {

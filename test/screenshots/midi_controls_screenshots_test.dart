@@ -127,6 +127,9 @@ void main() {
     );
     when(() => looper.sessionRevision).thenReturn(1);
     when(() => looper.mixGeneration).thenReturn(1);
+    when(() => looper.laneCount(any())).thenReturn(1);
+    when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
     when(() => looper.fxRecipesSettled).thenReturn(true);
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.allMonitors()).thenReturn(const {});
@@ -281,6 +284,74 @@ void main() {
       );
       await tap(tester, 'midi_row_edit_m1');
       await shot(tester, 'momentary');
+    });
+    testWidgets('Mixer gain mappings use physical units', (tester) async {
+      when(() => looper.state).thenReturn(
+        LooperState(
+          tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
+          status: const EngineStatus(
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          outputBusCount: 1,
+        ),
+      );
+      await pump(
+        tester,
+        savedMapping: MidiMapping(
+          id: 'm1',
+          source: _source,
+          behavior: MidiBehavior.continuous,
+          controls: [
+            for (final target in const [
+              TrackVolumeTarget(0),
+              LaneVolumeTarget(1, 0),
+              MonitorVolumeTarget(0),
+            ])
+              MidiParameterControl(
+                key: target.canonicalString(),
+                low: 0.5,
+                high: 1,
+              ),
+          ],
+        ),
+      );
+      await tap(tester, 'midi_row_edit_m1');
+      await shot(tester, 'mixer_gains');
+    });
+    testWidgets('Mixer pan and output mappings use physical units', (
+      tester,
+    ) async {
+      when(() => looper.state).thenReturn(
+        LooperState(
+          tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
+          status: const EngineStatus(sampleRate: 48000, outputChannels: 2),
+          outputBusCount: 1,
+        ),
+      );
+      await pump(
+        tester,
+        savedMapping: MidiMapping(
+          id: 'm1',
+          source: _source,
+          behavior: MidiBehavior.continuous,
+          controls: [
+            for (final target in const [
+              TrackPanTarget(0),
+              OutputBalanceTarget(0),
+              OutputLevelTarget(0),
+            ])
+              MidiParameterControl(
+                key: target.canonicalString(),
+                low: 0.5,
+                high: 1,
+              ),
+          ],
+        ),
+      );
+      await tap(tester, 'midi_row_edit_m1');
+      await shot(tester, 'mixer_placement');
     });
     testWidgets('explicit format before learning', (tester) async {
       await pump(tester);

@@ -206,7 +206,11 @@ class SessionCubit extends Cubit<SessionState> {
     if (!stillOwned()) throw StateError('session changed before snapshot');
     await _repository.save(
       directory,
-      chains: chainsFromLooper(_looper, projection: _fxPersistence),
+      chains: chainsFromLooper(
+        _looper,
+        projection: _fxPersistence,
+        mix: _mixSettings.durableSnapshot,
+      ),
       settings: settingsFromLooper(_looper, mix: _mixSettings.durableSnapshot),
       pedalBindings: _currentPedalBindings(),
       captureStillValid: stillOwned,

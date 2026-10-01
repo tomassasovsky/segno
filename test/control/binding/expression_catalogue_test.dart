@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
@@ -22,6 +23,8 @@ void main() {
   late Map<int, List<TrackEffect>> monitorChains;
   late Map<(int, int), List<TrackEffect>> laneChains;
   late Map<int, List<TrackEffect>> trackChains;
+  late EngineStatus status;
+  late InputSetup inputs;
 
   setUpAll(() async {
     l10n = await AppLocalizations.delegate.load(const Locale('en'));
@@ -32,6 +35,8 @@ void main() {
     monitorChains = {};
     laneChains = {};
     trackChains = {};
+    status = const EngineStatus();
+    inputs = const InputSetup.empty();
     when(() => looper.allMonitors()).thenAnswer(
       (_) => {
         for (final input in monitorChains.keys)
@@ -64,11 +69,14 @@ void main() {
     when(() => looper.outputEffects(any())).thenAnswer((_) => const []);
     when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.state).thenAnswer(
-      (_) => const LooperState(
-        tracks: [Track(), Track(channel: 1)],
+      (_) => LooperState(
+        tracks: const [Track(), Track(channel: 1)],
+        status: status,
         outputBusCount: 1,
       ),
     );
+    when(() => looper.inputSetup).thenAnswer((_) => inputs);
+    when(() => looper.laneCount(any())).thenReturn(1);
   });
 
   List<ExpressionDestination> build() =>
@@ -232,18 +240,47 @@ void main() {
   });
 
   group('the catalogue', () {
-    test('offers every track fader and the master, with nothing else', () {
+    test('the Mixer-only catalogue avoids FX enumeration and keeps order', () {
+      status = const EngineStatus(inputChannels: 2, outputChannels: 2);
+      inputs = InputSetup(pairs: const {0: 0});
+      trackChains = {
+        0: [_drive('t-1')],
+      };
+
+      final mix = looper.availableMixValueTargets();
+      expect(mix, isNotEmpty);
+      verify(() => looper.state).called(1);
+      verifyNever(() => looper.allMonitors());
+      verifyNever(() => looper.allLaneChains());
+      verifyNever(() => looper.allTrackChains());
+      expect(
+        looper.availableValueTargets().whereType<MixValueTarget>().toList(),
+        mix,
+      );
+    });
+
+    test('offers track and lane controls, one output, and the master', () {
       final destinations = build();
       expect(
         destinations.map((d) => d.id),
-        ['track:0', 'track:1', 'master'],
+        [
+          'track:0',
+          'loop:0:0',
+          'track:1',
+          'loop:1:0',
+          'output:0',
+          'master',
+        ],
       );
       expect(
         destinations.last.kind,
         FxDestinationKind.output,
         reason: 'the master output is an output, not a track',
       );
-      expect(destinations.first.controls.single.label, 'Volume');
+      expect(destinations.first.controls.map((control) => control.label), [
+        'Volume',
+        'Pan',
+      ]);
     });
 
     test("a track's fader and its own effects are ONE destination", () {
@@ -256,7 +293,7 @@ void main() {
         [TrackEffectType.drive.label, 'drums'],
         reason: 'the rig reports the chain first and the fader later',
       );
-      expect(track.controls.length, TrackEffectType.drive.params.length + 1);
+      expect(track.controls.length, TrackEffectType.drive.params.length + 2);
     });
 
     test('a lane sorts straight after the track it is part of', () {
@@ -265,8 +302,75 @@ void main() {
       };
       expect(
         build().map((d) => d.id),
-        ['track:0', 'track:1', 'loop:1:0', 'master'],
+        [
+          'track:0',
+          'loop:0:0',
+          'track:1',
+          'loop:1:0',
+          'output:0',
+          'master',
+        ],
         reason: 'the rig reports every lane before any fader',
+      );
+    });
+
+    test('groups all eight Mixer controls at stable destinations', () {
+      status = const EngineStatus(inputChannels: 3, outputChannels: 2);
+      inputs = InputSetup(pairs: const {0: 0});
+
+      final destinations = build();
+      final controls = destinations.expand((place) => place.controls).toList();
+      expect(
+        controls.where((row) => row.target is TrackVolumeTarget),
+        hasLength(2),
+      );
+      expect(
+        controls.where((row) => row.target is LaneVolumeTarget),
+        hasLength(2),
+      );
+      expect(
+        controls.where((row) => row.target is MonitorVolumeTarget),
+        hasLength(3),
+      );
+      expect(
+        controls.where((row) => row.target is TrackPanTarget),
+        hasLength(2),
+      );
+      expect(
+        controls.where((row) => row.target is InputPanTarget),
+        hasLength(1),
+      );
+      expect(
+        controls.where((row) => row.target is PairBalanceTarget),
+        hasLength(1),
+      );
+      expect(
+        controls.where((row) => row.target is OutputLevelTarget),
+        hasLength(1),
+      );
+      expect(
+        controls.where((row) => row.target is OutputBalanceTarget),
+        hasLength(1),
+      );
+      expect(destinations.first.id, 'input:0');
+      expect(destinations.last.id, 'master');
+    });
+
+    test('a retained pair with an excluded right jack is not offered', () {
+      // A saved pair can outlive the device that created it. The new device
+      // may expose that right jack as loopback, so the mapping stays stored
+      // but cannot become a live selectable control.
+      status = const EngineStatus(inputChannels: 2, excludedInputMask: 2);
+      inputs = InputSetup(pairs: const {0: 0});
+
+      final offered = build().expand((destination) => destination.controls);
+      expect(
+        offered.where((control) => control.target is PairBalanceTarget),
+        isEmpty,
+      );
+      expect(
+        offered.where((control) => control.target is MonitorVolumeTarget),
+        hasLength(1),
       );
     });
 
