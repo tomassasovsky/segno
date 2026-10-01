@@ -41,6 +41,8 @@ class FakePerformanceEngine implements AudioEngine {
   double tempoBpm = 0;
 
   bool perfArmed = false;
+  bool perfArmQueues = false;
+  bool perfArmPending = false;
   String? lastPerfCaptureDir;
   EngineResult perfArmResult = EngineResult.ok;
   EngineResult perfDisarmResult = EngineResult.ok;
@@ -129,6 +131,17 @@ class FakePerformanceEngine implements AudioEngine {
     perfOverruns: perfOverruns,
     perfZeroFilledFrames: perfZeroFilledFrames,
     perfStopped: perfStopped,
+    perfFollowOutput: perfArmed
+        ? armedFollowOutput
+        : (perfFollowOutput ?? false),
+    perfCaptureBus: perfCaptureBus,
+    perfCaptureMask: perfArmed ? perfCaptureMask : 0,
+    perfOutputEnabledMask: perfOutputEnabledMask,
+    perfOutputLevel: perfOutputLevel,
+    perfOutputMuted: perfOutputMuted,
+    outputBusCount: outputLevels.length,
+    outputLevels: outputLevels,
+    outputMuted: outputMuted,
     tracks: [
       for (final t in _tracks)
         TrackSnapshot(
@@ -201,8 +214,40 @@ class FakePerformanceEngine implements AudioEngine {
     perfArmCalls++;
     lastPerfCaptureDir = captureDir;
     if (!perfArmResult.isOk) return perfArmResult;
-    perfArmed = true;
+    if ((perfCaptureBusAtArm ?? perfCaptureBus) < 0) {
+      return EngineResult.invalid;
+    }
+    if (perfArmQueues) {
+      perfArmPending = true;
+      return EngineResult.ok;
+    }
+    _acknowledgePerfArm();
     return EngineResult.ok;
+  }
+
+  /// Models the callback consuming a previously queued arm command.
+  void acknowledgePerfArm() {
+    if (!perfArmPending) return;
+    perfArmPending = false;
+    _acknowledgePerfArm();
+  }
+
+  void _acknowledgePerfArm() {
+    // The real engine settles the captured destination INSIDE the arm, from
+    // the output gate as it stands then; this models a rig whose gate moved
+    // while the caller was exporting lanes and writing the manifest.
+    if (perfCaptureBusAtArm != null) perfCaptureBus = perfCaptureBusAtArm!;
+    if (perfCaptureBus < 0) return;
+    armedFollowOutput = perfFollowOutputAtArm ?? (perfFollowOutput ?? false);
+    frozenOutputChain =
+        outputChainAtArm ?? outputChains[perfCaptureBus] ?? outputChain;
+    perfArmed = true;
+    perfCaptureMask = 0x3 << (2 * perfCaptureBus);
+    perfOutputLevel = perfCaptureBus < outputLevels.length
+        ? outputLevels[perfCaptureBus]
+        : 1;
+    perfOutputMuted =
+        perfCaptureBus < outputMuted.length && outputMuted[perfCaptureBus];
   }
 
   @override
@@ -210,6 +255,7 @@ class FakePerformanceEngine implements AudioEngine {
     perfDisarmCalls++;
     if (!perfDisarmResult.isOk) return perfDisarmResult;
     perfArmed = false;
+    perfArmPending = false;
     return EngineResult.ok;
   }
 
@@ -344,6 +390,57 @@ class FakePerformanceEngine implements AudioEngine {
   @override
   EngineResult setInputTrim({required int input, required double gain}) =>
       EngineResult.ok;
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) =>
+      EngineResult.ok;
+  @override
+  EngineResult cutSound() => EngineResult.ok;
+
+  /// The last policy passed to [setPerfFollowOutput]; reported by
+  /// [snapshot] as the policy the next arm freezes.
+  bool? perfFollowOutput;
+  bool? perfFollowOutputAtArm;
+  bool armedFollowOutput = false;
+
+  /// The output bus facts [snapshot] reports (slice 3b), and the
+  /// destination a capture would read.
+  List<double> outputLevels = const [];
+  List<bool> outputMuted = const [];
+  int perfCaptureBus = 0;
+  int perfCaptureMask = 0;
+  int perfOutputEnabledMask = 0xFFFFFFFF;
+  double perfOutputLevel = 1;
+  bool perfOutputMuted = false;
+  OutputFxSnapshot outputChain = const OutputFxSnapshot();
+  final Map<int, OutputFxSnapshot> outputChains = {};
+  OutputFxSnapshot? outputChainAtArm;
+  OutputFxSnapshot frozenOutputChain = const OutputFxSnapshot();
+
+  @override
+  OutputFxSnapshot outputFxSnapshot({required int bus}) =>
+      perfArmed && bus == perfCaptureBus
+      ? frozenOutputChain
+      : outputChains[bus] ?? outputChain;
+
+  /// When set, the destination [perfArm] settles on, replacing
+  /// [perfCaptureBus] at the arm instant.
+  int? perfCaptureBusAtArm;
+
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) {
+    perfFollowOutput = follow;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setLaneInput({
     required int channel,
@@ -520,26 +617,32 @@ class FakePerformanceEngine implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFx({
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxCount({required int count}) => EngineResult.ok;
+  EngineResult setOutputFxCount({required int bus, required int count}) =>
+      EngineResult.ok;
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxEnabled({
+  EngineResult setOutputFxEnabled({
+    required int bus,
     required int index,
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) =>
-      EngineResult.ok;
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) => EngineResult.ok;
 
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
   /// test can assert that a closed face leaves nothing running.

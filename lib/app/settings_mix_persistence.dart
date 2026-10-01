@@ -28,6 +28,14 @@ class SettingsMixPersistence implements MixSettingsPersistence {
                   pan: candidate.inputSetup.pan,
                   pairs: candidate.inputSetup.pairs,
                 ),
+          outputSetup: device.isEmpty
+              ? (
+                  level: const {},
+                  muted: const {},
+                  mono: const {},
+                  balance: const {},
+                )
+              : candidate.outputSetup.toMaps(),
         ),
       );
 

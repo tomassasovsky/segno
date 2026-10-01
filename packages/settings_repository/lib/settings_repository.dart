@@ -12,4 +12,5 @@ export 'src/settings_repository.dart'
         SettingsRepository,
         StoredAudioConfig,
         StoredInputSetup,
-        StoredMixSettings;
+        StoredMixSettings,
+        StoredOutputSetup;

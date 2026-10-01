@@ -218,15 +218,22 @@ class SessionCubit extends Cubit<SessionState> {
   /// the one to call it.
   Future<void> loadNamed(String name) => _run(
     () => _mixSettings.runExclusive(() async {
-      await _performance.disarmAndFinalize();
+      final disarmed = await _performance.disarmAndFinalize();
+      if (!disarmed.isOk) {
+        throw StateError(
+          'performance capture did not stop before session load',
+        );
+      }
       final bundle = await _repository.read(await _repository.bundlePath(name));
       final rig = rigFromBundle(bundle);
       final candidate = MixSettingsSnapshot.fromRig(rig);
       if (!candidate.isValid) throw StateError('session mix is invalid');
       final generation = _looper.mixGeneration;
       final device = _looper.state.status.deviceName;
-      if (device.isEmpty && candidate.inputSetup != const InputSetup.empty()) {
-        throw StateError('audio device is required for this input setup');
+      if (device.isEmpty &&
+          (candidate.inputSetup != const InputSetup.empty() ||
+              candidate.outputSetup != const OutputSetup())) {
+        throw StateError('audio device is required for this mix setup');
       }
       final checkpoint = await _mixPersistence.read(device);
       if (generation != _looper.mixGeneration ||

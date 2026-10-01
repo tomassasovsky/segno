@@ -71,6 +71,10 @@ enum _Control {
   pair,
   balance,
   monitor,
+  outputLevel,
+  outputMute,
+  outputMono,
+  outputBalance,
   reset,
   solo,
   clearSolo,
@@ -202,7 +206,9 @@ class MixSettingsCoordinator {
     String device,
   ) async {
     final current = _repository.mixSettingsSnapshot;
-    if (device.isEmpty && candidate.inputSetup != current.inputSetup) {
+    if (device.isEmpty &&
+        (candidate.inputSetup != current.inputSetup ||
+            candidate.outputSetup != current.outputSetup)) {
       return const MixSettingsOutcome(
         MixSettingsStatus.rejected,
         engineResult: EngineResult.notReady,
@@ -494,6 +500,74 @@ class MixSettingsCoordinator {
     );
   }
 
+  /// Changes one destination fact while retaining its other controls.
+  Future<MixSettingsOutcome> setOutputLevel({
+    required int bus,
+    required double level,
+  }) {
+    if (!_output(bus) || !level.isFinite) return _reject();
+    return _submit((_Control.outputLevel, bus, 0), (value) {
+      final current = value.outputSetup.of(bus);
+      return value.copyWith(
+        outputSetup: value.outputSetup.withBus(
+          bus,
+          current.copyWith(level: level.clamp(0.0, 1.0)),
+        ),
+      );
+    });
+  }
+
+  /// Mutes one destination, preserving its level.
+  Future<MixSettingsOutcome> setOutputMute({
+    required int bus,
+    required bool muted,
+  }) {
+    if (!_output(bus)) return _reject();
+    return _submit((_Control.outputMute, bus, 0), (value) {
+      final current = value.outputSetup.of(bus);
+      return value.copyWith(
+        outputSetup: value.outputSetup.withBus(
+          bus,
+          current.copyWith(muted: muted),
+        ),
+      );
+    });
+  }
+
+  /// Switches Stereo/Mono without discarding the stored balance.
+  Future<MixSettingsOutcome> setOutputMono({
+    required int bus,
+    required bool mono,
+  }) {
+    if (!_output(bus)) return _reject();
+    return _submit((_Control.outputMono, bus, 0), (value) {
+      final current = value.outputSetup.of(bus);
+      return value.copyWith(
+        outputSetup: value.outputSetup.withBus(
+          bus,
+          current.copyWith(mono: mono),
+        ),
+      );
+    });
+  }
+
+  /// Stores balance even when the destination is currently Mono.
+  Future<MixSettingsOutcome> setOutputBalance({
+    required int bus,
+    required double balance,
+  }) {
+    if (!_output(bus) || !balance.isFinite) return _reject();
+    return _submit((_Control.outputBalance, bus, 0), (value) {
+      final current = value.outputSetup.of(bus);
+      return value.copyWith(
+        outputSetup: value.outputSetup.withBus(
+          bus,
+          current.copyWith(balance: balance.clamp(-1.0, 1.0)),
+        ),
+      );
+    });
+  }
+
   /// Resets level and pan, retaining mute, Solo and recorded source images.
   Future<MixSettingsOutcome> resetMixer() => _submit((
     _Control.reset,
@@ -524,4 +598,5 @@ class MixSettingsCoordinator {
 
   static bool _track(int channel) => channel >= 0 && channel < 8;
   static bool _input(int input) => input >= 0 && input < kMaxChannels;
+  static bool _output(int bus) => bus >= 0 && bus < kMaxOutputBuses;
 }

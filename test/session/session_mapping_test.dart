@@ -563,10 +563,6 @@ void main() {
         (chains.trackChains.single.effects.single as le.BuiltInEffect).type,
         le.TrackEffectType.reverb,
       );
-      expect(chains.masterChainEnabled, isFalse);
-      final master = chains.masterEffects.single as le.BuiltInEffect;
-      expect(master.type, le.TrackEffectType.filter);
-      expect(master.enabled, isFalse);
     });
 
     test('reads the real master-limiter state, even for an empty rig', () {

@@ -82,6 +82,7 @@ class PerformanceRepository {
   /// which the loser's re-check cleanup would delete the winner's just-armed
   /// live capture directory out from under the engine's drain thread.
   bool _armInFlight = false;
+  Completer<void>? _armFinished;
 
   /// The number of finalize passes ([_finalize]) currently in flight; [arm]
   /// refuses while it is above zero. A count, not a flag: finalizes can
@@ -250,6 +251,15 @@ class PerformanceRepository {
     if (!_statusController.isClosed) _statusController.add(status);
   }
 
+  /// Sets the capture policy the next [arm] freezes for its take (accepted
+  /// design, Performance recording): `false` (the default) leaves the final
+  /// output volume and mute out of the take; `true` (Follow output volume)
+  /// applies the selected destination's level and mute. Mono, Balance,
+  /// hardware master gain and limiter remain outside either capture. A
+  /// running take keeps the policy it was armed with.
+  EngineResult setFollowOutput({required bool follow}) =>
+      _engine.setPerfFollowOutput(follow: follow);
+
   /// Arms performance-recording capture: resolves a new collision-free
   /// `{exportsRoot}/perf-YYYYMMDD-HHMMSS/` bundle directory, takes the
   /// arm-time settled-lane snapshot (mid-overdub lanes marked deferred, never
@@ -277,10 +287,14 @@ class PerformanceRepository {
     if (_armedDir != null || _armInFlight) return EngineResult.ok;
     if (_finalizesInFlight > 0 || !renderProgress.done) return EngineResult.ok;
     _armInFlight = true;
+    final finished = Completer<void>();
+    _armFinished = finished;
     try {
       return await _armGated(chains);
     } finally {
       _armInFlight = false;
+      _armFinished = null;
+      finished.complete();
     }
   }
 
@@ -310,6 +324,10 @@ class PerformanceRepository {
       limiterEnabled: chains.limiterEnabled,
       limiterCeiling: chains.limiterCeiling,
       latencyOffsetFrames: snapshot.recordOffsetFrames,
+      // The capture policy (slice 3b) the engine freezes for this take. The
+      // destination it captures and that destination's facts are filled in
+      // after the arm below, from the engine's own frozen choice.
+      followOutput: snapshot.perfFollowOutput,
       // The engine tempo at the arm instant, verbatim (0 = unset, matching
       // the session manifest's own sentinel). The crash-salvage fallback
       // only — the disarm snapshot re-reads it authoritatively, because
@@ -320,13 +338,7 @@ class PerformanceRepository {
       // The bus stages (FX v3, R20/R3): recorded so a replay can rebuild the
       // whole four-stage rig, bypass state included.
       trackChains: chains.trackChains,
-      masterEffects: chains.masterEffects,
-      masterChainEnabled: chains.masterChainEnabled,
     );
-    await File(
-      '$dir/$_armSnapshotFileName',
-    ).writeAsString(jsonEncode(armSnapshot.toJson()));
-
     // Re-checked here, not just at entry: the awaits above suspend this arm,
     // and a boot-salvage ([recoverCapture]) starting inside that window
     // raises [_finalizesInFlight] too late for the entry gate to see — the
@@ -351,11 +363,125 @@ class PerformanceRepository {
       return result;
     }
 
+    // perfArm queues the callback command. Claim its directory immediately:
+    // the callback may begin draining before this future observes its frozen
+    // facts, and a later I/O error must never leave that live capture hidden
+    // behind an idle repository. The native disarm contract also cancels a
+    // pending arm; a failed disarm retains ownership for retry.
     _armedDir = dir;
-    _armSnapshot = armSnapshot;
-    _armedAt = _now();
-    _setStatus(PerformanceCaptureStatus.armed);
-    return EngineResult.ok;
+    try {
+      final armWait = Stopwatch()..start();
+      var armed = _engine.snapshot();
+      while (!armed.isPerfArmed &&
+          armWait.elapsed < const Duration(seconds: 2)) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        armed = _engine.snapshot();
+      }
+      if (!armed.isPerfArmed || armed.perfCaptureMask == 0) {
+        return _cancelFailedArm(EngineResult.device);
+      }
+
+      // The captured destination and its facts, read AFTER the arm: the
+      // engine picks the destination inside le_perf_arm from the output gate
+      // as it stands then, and the lane export above ran before that. This
+      // gap also made the old `clockFrame` anchor race-stale (#262). Taking
+      // the destination from the pre-arm
+      // snapshot would let the manifest name one destination while the take
+      // captured another, and the offline render replays the level rides of
+      // whichever the manifest names.
+      final captureBus = armed.perfCaptureBus;
+      if (captureBus < 0) {
+        return _cancelFailedArm(EngineResult.device);
+      }
+      final outputChain = _engine.outputFxSnapshot(bus: captureBus);
+      if (outputChain.effects.any(
+        (effect) =>
+            effect.type != 0 &&
+            TrackEffectType.fromCode(effect.type) == TrackEffectType.none,
+      )) {
+        return _cancelFailedArm(EngineResult.invalid);
+      }
+      final finalArm = armSnapshot.withCapture(
+        followOutput: armed.perfFollowOutput,
+        captureBus: captureBus,
+        captureMask: armed.perfCaptureMask,
+        outputEnabledMask: armed.perfOutputEnabledMask,
+        outputLevel: armed.perfOutputLevel,
+        outputMuted: armed.perfOutputMuted,
+        outputEffects: [
+          for (final effect in outputChain.effects)
+            BuiltInEffect(
+              type: TrackEffectType.fromCode(effect.type),
+              params: effect.params,
+              enabled: effect.enabled,
+            ),
+        ],
+        outputChainEnabled: outputChain.chainEnabled,
+      );
+      _armSnapshot = finalArm;
+      // A pre-arm snapshot cannot truthfully name the callback-selected output
+      // or policy. Write only the settled facts, then atomically publish them;
+      // a crash or failed write leaves no misleading salvage snapshot. Keep
+      // live ownership and the in-memory snapshot if publication fails, so a
+      // later disarm can still stop and finalize this take.
+      final pending = File('$dir/$_armSnapshotFileName.pending');
+      try {
+        await pending.writeAsString(jsonEncode(finalArm.toJson()), flush: true);
+        await pending.rename('$dir/$_armSnapshotFileName');
+      } catch (_) {
+        try {
+          if (pending.existsSync()) pending.deleteSync();
+        } on FileSystemException {
+          // The volume may still be unavailable; the pending file is ignored
+          // by salvage, and the live capture remains owned above.
+        }
+        // The capture remains live and owned even though publication failed;
+        // expose it now, with no gesture guard on the stop retry.
+        _armedAt = null;
+        _setStatus(PerformanceCaptureStatus.armed);
+        rethrow;
+      }
+      _armedAt = _now();
+      _setStatus(PerformanceCaptureStatus.armed);
+      return EngineResult.ok;
+    } catch (_) {
+      // Snapshot/getter failures before the armed state is published still
+      // have a live native owner. Stop it through the same pending-safe
+      // contract; if that fails, expose ownership for a later disarm retry.
+      // Once armed was published, a failed atomic file write keeps the
+      // in-memory final snapshot and capture for disarm/finalize instead.
+      if (_armedDir == dir && _status != PerformanceCaptureStatus.armed) {
+        _cancelFailedArm(EngineResult.device);
+      } else if (_armedDir == dir) {
+        // This was an arm failure, not a second user tap. An immediate
+        // disarm must be allowed through the gesture guard to stop it.
+        _armedAt = null;
+      }
+      rethrow;
+    }
+  }
+
+  EngineResult _cancelFailedArm(EngineResult reason) {
+    EngineResult stopped;
+    try {
+      stopped = _engine.perfDisarm();
+    } catch (_) {
+      _armedAt = null;
+      _setStatus(PerformanceCaptureStatus.armed);
+      rethrow;
+    }
+    if (stopped.isOk) {
+      _armedDir = null;
+      _armSnapshot = null;
+      _armedAt = null;
+      if (_status != PerformanceCaptureStatus.idle) {
+        _setStatus(PerformanceCaptureStatus.idle);
+      }
+    } else {
+      _armedAt = null;
+      _setStatus(PerformanceCaptureStatus.armed);
+    }
+    return reason;
   }
 
   /// Disarms performance-recording capture — the **toggle-gesture** path
@@ -369,6 +495,7 @@ class PerformanceRepository {
   /// See [disarmAndFinalize] for what the disarm itself actually does;
   /// idempotent identically.
   Future<EngineResult> disarm() async {
+    await _armFinished?.future;
     final dir = _armedDir;
     if (dir == null) return EngineResult.ok;
     final armedAt = _armedAt;
@@ -403,6 +530,7 @@ class PerformanceRepository {
   /// complete, without waiting on the render; poll [renderProgress] /
   /// [renderTrackStatuses] for its outcome.
   Future<EngineResult> disarmAndFinalize() async {
+    await _armFinished?.future;
     final dir = _armedDir;
     if (dir == null) return EngineResult.ok;
     return _finalizeArmed(dir);
@@ -939,6 +1067,10 @@ class PerformanceRepository {
               lane: laneIndex,
               lengthFrames: 0,
               deferred: true,
+              volume: track.lanes[laneIndex].volume,
+              pan: track.lanes[laneIndex].pan,
+              muted: track.lanes[laneIndex].muted,
+              outputMask: track.lanes[laneIndex].outputMask,
             ),
           );
           continue;
@@ -969,6 +1101,10 @@ class PerformanceRepository {
             pcmFile: filename,
             effects: laneChain?.effects ?? const [],
             chainEnabled: laneChain?.chainEnabled ?? true,
+            volume: lane.volume,
+            pan: lane.pan,
+            muted: lane.muted,
+            outputMask: lane.outputMask,
             // Take identity (#819): lane 0 of the DISARM pass carries the
             // track's settled take id so the offline renderer can anchor this
             // disarm image by identity. Presence-keyed (written only when > 0);

@@ -140,8 +140,7 @@ bytes are that command's union, unchanged, so a reader already familiar with
 | `LE_CMD_SET_ONE_SHOT`                 | 47    | —           | No      | The setter changes no output at the moment it applies. Its audible consequence — the auto-stop at the track's own loop wrap (Free/Song, `advance_track_clock_frame`) — logs a **synthetic `LE_CMD_STOP`** (`arg_i` = channel) at the exact wrap frame (#420), so a replay stops the track where a listener heard it stop. No `LE_PLOG_RECORD_END` accompanies a wrap mid-overdub, matching a manual Stop on an OVERDUBBING track — `RECORD_END` means "left RECORDING", and the dub pass's end is logged by its `LE_PLOG_LAYER_RETIRED`. |
 | `LE_CMD_SET_TRACK_FX`                 | 49    | fx          | No      | No replay — manifest-only; stems stay per-stage dry-of-downstream (part 9), arm manifest carries track/master chains (part 3) |
 | `LE_CMD_SET_TRACK_FX_COUNT`           | 50    | fxcount     | No      | ” (same manifest-only verdict) |
-| `LE_CMD_SET_MASTER_FX`                | 51    | fx          | No      | ” |
-| `LE_CMD_SET_MASTER_FX_COUNT`          | 52    | fxcount     | No      | ” |
+| 51, 52 — *retired*                    | 51/52 | —           | —       | The Master insert family; slice 3b made the Master insert output bus 0's chain, so these were deleted and the codes left unallocated |
 | `LE_CMD_FINALIZE_TAKE`                | 56    | —           | No      | The `ARM`/`DISARM` rationale from the other side: finalize *intent*, and the transport fact it causes is what's logged — `LE_PLOG_RECORD_END` from the finalize it triggers, or `LE_PLOG_RECORD_ABORT` (unpaired, header version 3) when it cancels a count-in. A refused/no-op apply logs nothing: nothing audible happened. |
 | `LE_CMD_RESTORE_TEMPO`               | 58    | generic     | No      | Restores the tempo/grid owner; no direct change to the recorded sample stream |
 | `LE_CMD_SET_ONE_SHOT_MASK`           | 59    | generic     | No      | Sets Once for a complete track mask; the actual end logs the same synthetic Stop as single-track Once |
@@ -150,10 +149,17 @@ bytes are that command's union, unchanged, so a reader already familiar with
 | `LE_CMD_SET_LANE_PAN`                 | 62    | lanef       | Yes     | Lane pan (slice 3): the lane's recorded image plus the track's pan, as the engine holds it |
 | `LE_CMD_SET_TRACK_SOLO`               | 63    | generic     | Yes     | Track solo: an audibility gate, like mute — the offline render and the DAW export honour it |
 | `LE_CMD_SET_MONITOR_INPUT_PAN`        | 64    | lanef       | Yes     | Monitor pan (slice 3); the monitor tap is already post-pan, so the logged value is what was heard |
+| `LE_CMD_SET_OUTPUT_LEVEL`             | 67    | lanef       | Yes     | Output destination level (slice 3b). The capture tap is BEFORE it by default, so it changes nothing a default take contains; a Follow output take is captured after it, and `le_pr_render_master` replays it (filtered on the take's captured destination) so the render matches |
+| `LE_CMD_SET_OUTPUT_MUTE`              | 68    | lanef       | Yes     | Output destination mute — same rule as 67 |
+| `LE_CMD_SET_OUTPUT_MONO`              | 69    | lanef       | Yes     | Output destination Stereo/Mono. Hardware output format; excluded from the performance capture policies |
+| `LE_CMD_SET_OUTPUT_BALANCE`           | 70    | lanef       | Yes     | Output destination balance — same as 69 |
+| `LE_CMD_SET_OUTPUT_FX`                | 71    | fx          | Yes     | Captured destination output-chain entry type; replay filters on the frozen destination |
+| `LE_CMD_SET_OUTPUT_FX_COUNT`          | 72    | fxcount     | Yes     | Captured destination output-chain length |
+| `LE_CMD_CUT_SOUND`                    | 73    | —           | Yes     | Stop recorded sources and clear existing effect tails and the current click pulse. Every stopped track also logs a synthetic `LE_CMD_STOP`. Replay handles Cut itself to clear delay memory and keep sources silent until explicit Play or a new recording start; a finalizing `RECORD_END` does not restart them. Live monitoring and future click preferences remain unchanged |
 
 Atomic mix transactions (`LE_CMD_SET_MIX`, 65) are not stored as raw
 commands in this format: their bounded payload exceeds the sixteen-byte event
-payload. Successful application emits the addressed volume, pan and Solo
+payload. Successful application emits the addressed volume, pan, Solo and output-control
 primitive events at the same frame. Refused transactions emit none of them.
 The recording-image wrapper (`LE_CMD_RECORD_IMAGE`, 66) likewise uses existing
 recording transport facts and applied lane-image events rather than serializing
@@ -165,11 +171,11 @@ lane level and track pan. The volume/pan events contain their effective
 composition at application time, so replay does not apply the image twice.
 Arming freezes the source image, not the player's live fader controls.
 
-The track/master FX **param and enabled setters** (direct-atomic, no ring
-command) push nothing either — deliberately NOT mirroring the lane family's
-306/310/311 control-side events: the whole track/master chain state is
-manifest-only per the same part-9 stems decision, so `perf_render` replays
-nothing from this family.
+Track FX parameter/enabled state remains in the arm manifest. Output FX
+changes are logged separately: the selected chain is seeded at actual arm,
+then output type/count and parameter/enabled events update its reconstruction.
+Each output event is filtered by the take's frozen destination. Already captured
+master PCM is not sent through that reconstruction a second time.
 
 \* Logged under a different, semantically unified code — see below.
 
@@ -204,6 +210,9 @@ control-side-only concepts:
 | `LE_PLOG_PERF_ARMED`              | 315   | perf_arm | `{position, master_len, iteration}` — the master loop phase at the exact audio-thread frame `LE_CMD_PERF_ARM` applied (capture frame 0). `master_len` == 0 means the capture armed with no master loop (Free/Song, or from silence), and `position`/`iteration` are then both 0. Exactly one per capture, from header version 4. The offline renderer's arm-image anchor and its no-lock `RECORD_END` phase math read this instead of the race-stale `armSnapshot.clockFrame` the control thread sampled BEFORE lane capture (#262); `iteration` also resolves a multi-loop arm image's sub-cycle (#260). |
 | `LE_PLOG_TRANSPORT_HELD`          | 316   | generic | `arg_i` = the clock position the loop clock was pinned FROM. The shared transport became HELD mid-capture — nothing playing/recording/overdubbing, so `advance_transport_frame` pins the clock to position 0 (its all-idle branch). Edge-triggered: logged once when the hold begins, not every held frame. From header version 4. Lets the renderer's phase math see a clock the engine froze rather than running it forward. |
 | `LE_PLOG_SET_TRACK_OVERDUB_FEEDBACK` | 317 | generic | `arg_i` = channel, `arg_f` = that track's own overdub feedback (0..1), or a negative value meaning the track follows the global coefficient (309). One per write, from events.log version 4. Written as 317 rather than the next line's number because 315 and 316 were already taken further down the enum. |
+| `LE_PLOG_SET_OUTPUT_FX_PARAM` | 318 | fx | `fx.track` = output bus, `fx.lane` = 0, `fx.index` = `(slot << 8) | parameter`, `fx.type` = float32 value bits. Replays only the captured destination. |
+| `LE_PLOG_SET_OUTPUT_FX_ENABLED` | 319 | fx | `fx.track` = output bus, `fx.index` = slot, `fx.type` = enabled flag. |
+| `LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED` | 320 | generic | `arg_i` = output bus, `arg_f` = chain enabled flag. |
 | `LE_PLOG_RECORD_ABORT`            | 314   | generic | `arg_i` = channel. A take died having captured **nothing**: it left RECORDING void (armed and stopped on the loop top, so the track goes back to EMPTY) — or, from header version 3, a count-in was cancelled by `LE_CMD_FINALIZE_TAKE` (#405), in which case `arg_i` is the counting channel and no `RECORD_START` ever preceded it (the ABORT is unpaired). An aborted take is not a take: it produced no content and has no settled image of its own, and a reader must not treat it as a finalize. Its own code rather than a `RECORD_END` (301) because the offline renderer anchors its disarm image off `RECORD_END` (#264); an abort never bumps a track's settled take id, so from header version 4 it also could never match a `takeId` even if it were a 301 — but keeping it a distinct code is the load-bearing guarantee. Present from header version 2 on. |
 
 The replayed lane chain seeds all enable bits to 1 at arm: the arm manifest

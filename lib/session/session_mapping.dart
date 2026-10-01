@@ -98,6 +98,7 @@ SessionSettings settingsFromLooper(LooperRepository looper) {
       pan: looper.state.inputSetup.pan,
       pairs: looper.state.inputSetup.pairs,
     ),
+    outputSetup: _sessionOutputSetup(looper.state.outputSetup),
     clickMode: transport.clickMode,
     clickMask: transport.clickMask,
     clickVolume: transport.clickVolume,
@@ -109,6 +110,27 @@ SessionSettings settingsFromLooper(LooperRepository looper) {
     primaryTrack: transport.primaryTrack,
   );
 }
+
+/// The manifest form of the looper domain's [setup].
+SessionOutputSetup _sessionOutputSetup(OutputSetup setup) {
+  final maps = setup.toMaps();
+  return SessionOutputSetup(
+    level: maps.level,
+    muted: maps.muted,
+    mono: maps.mono,
+    balance: maps.balance,
+  );
+}
+
+/// The looper-domain output setup of a manifest's [setup]: one [OutputBus]
+/// per destination any of its four maps names.
+OutputSetup outputSetupFromSession(SessionOutputSetup setup) =>
+    OutputSetup.fromMaps(
+      level: setup.level,
+      muted: setup.muted,
+      mono: setup.mono,
+      balance: setup.balance,
+    );
 
 /// The Master insert as an envelope string, or the manifest's own "no chain"
 /// spelling (`''`) when the rig has no Master state at all — so a default rig
@@ -129,10 +151,6 @@ String _encodedMasterChain(LooperRepository looper) {
 /// chain-enabled flag alongside, since a bypassed chain must replay bypassed
 /// (R3).
 PerformanceChains performanceChainsFromLooper(LooperRepository looper) {
-  // One read path for the Master stage, the same accessor [chainsFromLooper]
-  // uses — two ways to read one piece of state at one boundary would be free
-  // to drift.
-  final master = looper.masterChainEnvelope();
   return PerformanceChains(
     laneChains: [
       for (final entry in looper.allLaneChains().entries)
@@ -166,8 +184,6 @@ PerformanceChains performanceChainsFromLooper(LooperRepository looper) {
           chainEnabled: entry.value.chainEnabled,
         ),
     ],
-    masterEffects: trackEffectsToEngine(master.entries),
-    masterChainEnabled: master.chainEnabled,
     limiterEnabled: looper.limiterEnabled,
     limiterCeiling: looper.limiterCeiling,
   );
@@ -236,6 +252,8 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
     pan: bundle.session.inputSetup.pan,
     pairs: bundle.session.inputSetup.pairs,
   ),
+  // The output setup (slice 3b), session-owned like the input setup.
+  outputSetup: outputSetupFromSession(bundle.session.outputSetup),
 );
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage

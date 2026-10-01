@@ -534,7 +534,8 @@ void main() {
       final repo = start()
         ..setTrackPan(0.9, channel: 1)
         ..setTrackSolo(channel: 1, solo: true)
-        ..setInputPan(input: 1, pan: 0.2);
+        ..setInputPan(input: 1, pan: 0.2)
+        ..setOutputMute(bus: 0, muted: true);
       await repo.applySession(
         SessionRig(
           baseLengthFrames: 4,
@@ -556,8 +557,16 @@ void main() {
             ),
           ],
           inputSetup: InputSetup(trimDb: const {0: -3}, pairs: const {0: 0.5}),
+          outputSetup: const OutputSetup(buses: {1: OutputBus(level: 0.5)}),
         ),
         clearPollInterval: Duration.zero,
+      );
+      // The output setup is the rig's: bus 1's level in, the old mute gone.
+      expect(engine.outputLevel[1], 0.5);
+      expect(engine.outputMuted[0], isFalse);
+      expect(
+        repo.outputSetup,
+        const OutputSetup(buses: {1: OutputBus(level: 0.5)}),
       );
       // The lane's saved image plus the restored track pan.
       expect(engine.lanePan[(0, 0)], -0.75);
@@ -628,6 +637,170 @@ void main() {
         MixTarget.fromJson({'target': 'trackPan', 'index': 2, 'extra': 1}),
         const MixTarget.trackPan(2),
       );
+    });
+  });
+
+  group('output setup (slice 3b)', () {
+    test('publishes complete destination and retains hidden controls', () {
+      final repo = start()
+        ..setOutputLevel(bus: 1, level: .5)
+        ..setOutputBalance(bus: 1, balance: -1)
+        ..setOutputMute(bus: 1, muted: true)
+        ..setOutputMono(bus: 1, mono: true);
+      expect(
+        repo.outputSetup.of(1),
+        const OutputBus(
+          level: .5,
+          balance: -1,
+          muted: true,
+          mono: true,
+        ),
+      );
+      expect(engine.outputLevel[1], .5);
+      expect(engine.outputBalance[1], -1);
+      repo
+        ..setOutputMute(bus: 1, muted: false)
+        ..setOutputMono(bus: 1, mono: false);
+      expect(repo.outputSetup.of(1), const OutputBus(level: .5, balance: -1));
+    });
+
+    test('rejects invalid destination and values without publishing', () {
+      final repo = start();
+      final before = repo.mixSettingsSnapshot;
+      engine.calls.clear();
+      expect(
+        repo.setOutputLevel(bus: kMaxOutputBuses, level: .5),
+        EngineResult.invalid,
+      );
+      expect(repo.setOutputMute(bus: -1, muted: true), EngineResult.invalid);
+      expect(repo.setOutputLevel(bus: 1, level: 2), EngineResult.invalid);
+      expect(
+        repo.setOutputBalance(bus: 1, balance: double.nan),
+        EngineResult.invalid,
+      );
+      expect(repo.mixSettingsSnapshot, before);
+      expect(engine.calls, isEmpty);
+    });
+
+    test('compound output controls remain confirmed until one ack', () async {
+      final repo = start();
+      engine
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      const next = OutputSetup(
+        buses: {
+          1: OutputBus(
+            level: .4,
+            muted: true,
+            mono: true,
+            balance: -.7,
+          ),
+        },
+      );
+      expect(repo.setOutputSetup(next), EngineResult.ok);
+      expect(repo.outputSetup, const OutputSetup());
+      expect(repo.mixSettingsSnapshot.outputSetup, const OutputSetup());
+      engine
+        ..publishMix()
+        ..commandsAreSettled = true;
+      expect(await repo.settleMixSettings(), EngineResult.ok);
+      expect(repo.outputSetup, next);
+      expect(repo.mixSettingsSnapshot.outputSetup, next);
+      engine.mixResult = EngineResult.invalid;
+      expect(repo.setOutputSetup(const OutputSetup()), EngineResult.invalid);
+      expect(repo.outputSetup, next);
+    });
+
+    test('is held while stopped and replayed on start', () {
+      final repo = LooperRepository(engine: engine, ticker: ticker.stream)
+        ..setOutputLevel(bus: 1, level: 0.5)
+        ..setOutputMute(bus: 0, muted: true);
+      addTearDown(repo.dispose);
+      expect(engine.outputLevel, isEmpty);
+      expect(repo.outputSetup.of(1).level, 0.5);
+      repo.startEngine(const EngineConfig());
+      expect(engine.outputLevel[1], 0.5);
+      expect(engine.outputMuted[0], isTrue);
+      expect(engine.outputMuted[1], isFalse);
+    });
+
+    test('setOutputSetup replaces the whole setup, resetting the '
+        'destinations only the old one named', () {
+      final repo = start()..setOutputMono(bus: 2, mono: true);
+      engine.calls.clear();
+      repo.setOutputSetup(const OutputSetup(buses: {1: OutputBus(level: 0.5)}));
+      expect(engine.outputLevel[1], 0.5);
+      expect(engine.outputMono[2], isFalse);
+      // The whole-setup path pushes every fact of both setups' destinations,
+      // so the one the new setup drops goes back to its defaults.
+      expect(engine.outputLevel[2], 1.0);
+      expect(engine.calls.where((c) => c == 'setMix'), hasLength(1));
+      expect(repo.state.outputSetup.buses.keys, {1});
+    });
+
+    test('projects the destination count and the tail revision from the '
+        'engine', () {
+      final repo = start();
+      engine.nextSnapshot = EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 2,
+        outputChannels: 3,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        outputBusCount: 2,
+        tailResetRev: 3,
+        tracks: [for (var i = 0; i < 2; i++) const TrackSnapshot.empty()],
+      );
+      ticker.add(null);
+      expect(repo.state.outputBusCount, 2);
+      expect(repo.state.tailResetRev, 3);
+    });
+  });
+
+  group('OutputSetup maps (slice 3b)', () {
+    test('round-trip through the one-map-per-fact form drops the '
+        'destinations at their defaults', () {
+      const setup = OutputSetup(
+        buses: {
+          1: OutputBus(level: 0.5, muted: true),
+          0: OutputBus(mono: true, balance: -0.25),
+        },
+      );
+      final maps = setup.toMaps();
+      expect(maps.level, {1: 0.5});
+      expect(maps.muted, {1: true});
+      expect(maps.mono, {0: true});
+      expect(maps.balance, {0: -0.25});
+      expect(
+        OutputSetup.fromMaps(
+          level: maps.level,
+          muted: maps.muted,
+          mono: maps.mono,
+          balance: maps.balance,
+        ),
+        setup,
+      );
+      expect(const OutputSetup().toMaps().level, isEmpty);
+      expect(OutputSetup.fromMaps(), const OutputSetup());
+    });
+  });
+
+  group('cut all sound (slice 3b)', () {
+    test('reaches the engine while running and is a no-op while stopped', () {
+      final stopped = LooperRepository(engine: engine, ticker: ticker.stream);
+      addTearDown(stopped.dispose);
+      expect(stopped.cutSound(), EngineResult.ok);
+      expect(engine.cutSoundCalls, 0);
+      final repo = start();
+      expect(repo.cutSound(), EngineResult.ok);
+      expect(engine.cutSoundCalls, 1);
     });
   });
 

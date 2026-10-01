@@ -14,6 +14,7 @@ import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
 import 'package:looper_repository/src/models/mix_settings_snapshot.dart';
+import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginParamInfo, pluginParamInfoFromEngine;
 import 'package:looper_repository/src/models/session_rig.dart';
@@ -334,6 +335,7 @@ class LooperRepository {
     laneLevels: _laneVolume,
     monitorLevels: _monitorVolume,
     inputSetup: _inputSetup,
+    outputSetup: _outputSetup,
     trackSolos: _trackSolo,
   );
 
@@ -358,7 +360,9 @@ class LooperRepository {
   EngineResult applyMixSettings(MixSettingsSnapshot value) {
     final valid = validateMixSettings(value);
     if (!valid.isOk) return _mixFailure(valid);
-    final next = _mixIntent()..input = value.inputSetup;
+    final next = _mixIntent()
+      ..input = value.inputSetup
+      ..output = value.outputSetup;
     next.pans
       ..clear()
       ..addAll(value.trackPans);
@@ -397,6 +401,7 @@ class LooperRepository {
     balances: _laneBalance,
     monitorLevels: _monitorVolume,
     input: _inputSetup,
+    output: _outputSetup,
   );
 
   void _acceptMix(_MixIntent value) {
@@ -424,6 +429,7 @@ class LooperRepository {
       ..clear()
       ..addAll(value.monitorLevels);
     _inputSetup = value.input;
+    _outputSetup = value.output;
     changedMonitors.forEach(_monitorChanged);
   }
 
@@ -454,6 +460,18 @@ class LooperRepository {
         trims[input] = inputTrimGainOfDb(next.input.trimDbOf(input));
       }
     }
+    final outputs = <int, OutputMix>{};
+    for (var bus = 0; bus < kMaxOutputBuses; bus++) {
+      final value = next.output.of(bus);
+      if (replay || value != old.output.of(bus)) {
+        outputs[bus] = (
+          level: value.level,
+          muted: value.muted,
+          mono: value.mono,
+          balance: value.balance,
+        );
+      }
+    }
     _mixRevision = (_mixRevision + 1) & 0xffffffff;
     if (_mixRevision == 0) _mixRevision = 1;
     return EngineMixSettings(
@@ -463,6 +481,7 @@ class LooperRepository {
       monitors: monitors,
       trims: trims,
       solos: solos,
+      outputs: outputs,
     );
   }
 
@@ -472,7 +491,9 @@ class LooperRepository {
     bool startup = false,
   }) {
     if (_pendingMix != null) return _mixFailure(EngineResult.notReady);
-    if (!next.input.isValid) return _mixFailure(EngineResult.invalid);
+    if (!next.input.isValid || !next.output.isValid) {
+      return _mixFailure(EngineResult.invalid);
+    }
     if (!_intendRunning) {
       _acceptMix(next);
       _lastMixResult = EngineResult.ok;
@@ -544,12 +565,14 @@ class LooperRepository {
   EngineResult setMixSettings({
     required Map<int, double> trackPans,
     required InputSetup inputSetup,
+    OutputSetup? outputSetup,
     Map<(int, int), double> laneLevels = const {},
     Map<int, double> monitorLevels = const {},
   }) => applyMixSettings(
     mixSettingsSnapshot.copyWith(
       trackPans: trackPans,
       inputSetup: inputSetup,
+      outputSetup: outputSetup,
       laneLevels: {..._laneVolume, ...laneLevels},
       monitorLevels: {..._monitorVolume, ...monitorLevels},
     ),
@@ -799,6 +822,10 @@ class LooperRepository {
   /// the capture trim and the monitors' pan and gain, and seeded onto a
   /// lane when it records. See [InputSetup].
   InputSetup _inputSetup = const InputSetup.empty();
+
+  /// The output setup (slice 3b): every destination off its defaults, held
+  /// while stopped and replayed on every (re)start like the mix above.
+  OutputSetup _outputSetup = const OutputSetup();
   final Map<(int, int), List<TrackEffect>> _laneEffects = {};
 
   /// Per-(channel, lane) chain-enabled flags (R15; absent => enabled). Only
@@ -1451,6 +1478,9 @@ class LooperRepository {
     masterEffects: _masterEffects,
     masterChainEnabled: _masterChainEnabled,
     inputSetup: _inputSetup,
+    outputSetup: _outputSetup,
+    outputBusCount: s.outputBusCount,
+    tailResetRev: s.tailResetRev,
     // Sized by the engine to the channels the device has.
     inputPeaks: s.inputPeaks,
     monitorPeaks: s.monitorPeaks,
@@ -1683,7 +1713,7 @@ class LooperRepository {
       );
       if (_masterEffects.isNotEmpty) _applyMasterEffects();
       if (!_masterChainEnabled) {
-        _engine.setMasterFxChainEnabled(enabled: false);
+        _engine.setOutputFxChainEnabled(bus: kMasterOutputBus, enabled: false);
       }
       // Re-apply the structural output gate. A fresh start enables every
       // output, so only the stored OFF entries need re-asserting (default-on).
@@ -2591,6 +2621,7 @@ class LooperRepository {
       balances: const {},
       monitorLevels: const {},
       input: rig.inputSetup,
+      output: rig.outputSetup.detached(),
     );
     final revision = ++_sessionRevision;
     _cancelLengthSettings();
@@ -3471,7 +3502,39 @@ class LooperRepository {
     return _requestMix(next);
   }
 
-  /// Confirmed per-input capture setup.
+  /// Confirmed output setup.
+  OutputSetup get outputSetup => _outputSetup;
+
+  /// Sets one destination level, retaining mute and balance.
+  EngineResult setOutputLevel({required int bus, required double level}) =>
+      _applyOutputBus(bus, _outputSetup.of(bus).copyWith(level: level));
+
+  /// Changes mute without losing the retained level.
+  EngineResult setOutputMute({required int bus, required bool muted}) =>
+      _applyOutputBus(bus, _outputSetup.of(bus).copyWith(muted: muted));
+
+  /// Changes Stereo/Mono without losing the retained balance.
+  EngineResult setOutputMono({required int bus, required bool mono}) =>
+      _applyOutputBus(bus, _outputSetup.of(bus).copyWith(mono: mono));
+
+  /// Changes the balance retained while Mono is enabled.
+  EngineResult setOutputBalance({required int bus, required double balance}) =>
+      _applyOutputBus(bus, _outputSetup.of(bus).copyWith(balance: balance));
+
+  /// Replaces every destination atomically through the shared mix transaction.
+  EngineResult setOutputSetup(OutputSetup setup) =>
+      applyMixSettings(mixSettingsSnapshot.copyWith(outputSetup: setup));
+
+  EngineResult _applyOutputBus(int bus, OutputBus value) {
+    if (bus < 0 || bus >= kMaxOutputBuses) return EngineResult.invalid;
+    return setOutputSetup(_outputSetup.withBus(bus, value));
+  }
+
+  /// Stops audible recorded sources and clears effect tails, keeping settings.
+  EngineResult cutSound() =>
+      _intendRunning ? _engine.cutSound() : EngineResult.ok;
+
+  /// The per-input capture setup, the repository's remembered intent.
   InputSetup get inputSetup => _inputSetup;
 
   /// Capture gain only. The UI chooses half-decibel increments.
@@ -4597,7 +4660,12 @@ class LooperRepository {
       ..[index] = fx.copyWith(params: params);
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMasterFxParam(index: index, param: param, value: value);
+    return _engine.setOutputFxParam(
+      bus: kMasterOutputBus,
+      index: index,
+      param: param,
+      value: value,
+    );
   }
 
   /// Sets hosted-plugin parameter [paramId] of Master insert entry [index]
@@ -4626,7 +4694,8 @@ class LooperRepository {
     final effects = _masterEffects;
     for (var i = 0; i < effects.length; i++) {
       final fx = effects[i];
-      _engine.setMasterFx(
+      _engine.setOutputFx(
+        bus: kMasterOutputBus,
         index: i,
         type: fx is BuiltInEffect
             ? trackEffectTypeToEngine(fx.type)
@@ -4634,15 +4703,27 @@ class LooperRepository {
       );
       if (fx is BuiltInEffect) {
         for (var p = 0; p < fx.params.length; p++) {
-          _engine.setMasterFxParam(index: i, param: p, value: fx.params[p]);
+          _engine.setOutputFxParam(
+            bus: kMasterOutputBus,
+            index: i,
+            param: p,
+            value: fx.params[p],
+          );
         }
       }
     }
-    final result = _engine.setMasterFxCount(count: effects.length);
+    final result = _engine.setOutputFxCount(
+      bus: kMasterOutputBus,
+      count: effects.length,
+    );
     // Per-slot enabled bits strictly AFTER the count push — see
     // [_applyLaneEffects] for the D-ENSEED ordering rationale.
     for (var i = 0; i < effects.length; i++) {
-      _engine.setMasterFxEnabled(index: i, enabled: effects[i].enabled);
+      _engine.setOutputFxEnabled(
+        bus: kMasterOutputBus,
+        index: i,
+        enabled: effects[i].enabled,
+      );
     }
     return result;
   }
@@ -4731,7 +4812,11 @@ class LooperRepository {
     _masterEffects = List<TrackEffect>.of(_masterEffects)
       ..[index] = _withEnabled(_masterEffects[index], enabled);
     _reproject();
-    return _engine.setMasterFxEnabled(index: index, enabled: enabled);
+    return _engine.setOutputFxEnabled(
+      bus: kMasterOutputBus,
+      index: index,
+      enabled: enabled,
+    );
   }
 
   /// Enables/disables lane [lane] of track [channel]'s WHOLE chain in one
@@ -4804,7 +4889,10 @@ class LooperRepository {
   EngineResult setMasterChainEnabled({required bool enabled}) {
     _masterChainEnabled = enabled;
     _reproject();
-    return _engine.setMasterFxChainEnabled(enabled: enabled);
+    return _engine.setOutputFxChainEnabled(
+      bus: kMasterOutputBus,
+      enabled: enabled,
+    );
   }
 
   /// Whether the Master insert chain is engaged.
@@ -5587,6 +5675,7 @@ class _MixIntent {
     required Map<(int, int), double> balances,
     required Map<int, double> monitorLevels,
     required this.input,
+    required this.output,
   }) : pans = Map.of(pans),
        solos = Map.of(solos),
        levels = Map.of(levels),
@@ -5600,6 +5689,7 @@ class _MixIntent {
   final Map<(int, int), double> balances;
   final Map<int, double> monitorLevels;
   InputSetup input;
+  OutputSetup output;
   StereoMix laneMix((int, int) key) => (
     gain: levels[key] ?? 1,
     pan: pans[key.$1] ?? 0,

@@ -113,6 +113,19 @@ typedef StoredMixSettings = ({
   Map<(int, int), double> laneLevels,
   Map<int, double> monitorLevels,
   StoredInputSetup inputSetup,
+  StoredOutputSetup outputSetup,
+});
+
+/// The output setup as this repository stores it (accepted design, Output
+/// setup): per destination (bus, one per stereo pair of outputs) its level,
+/// mute, Mono and balance, each map holding only the destinations off that
+/// fact's default (unity, unmuted, Stereo, centre). A plain record like
+/// [StoredInputSetup].
+typedef StoredOutputSetup = ({
+  Map<int, double> level,
+  Map<int, bool> muted,
+  Map<int, bool> mono,
+  Map<int, double> balance,
 });
 
 /// Stores the per-device record-offset latency calibration, the last-used audio
@@ -1168,11 +1181,28 @@ class SettingsRepository {
         pairs: values(setup['pairs']),
       );
     }
+    final outputs = <String, StoredOutputSetup>{};
+    for (final entry
+        in (json['outputSetups'] as Map<String, dynamic>? ?? const {})
+            .entries) {
+      final setup = entry.value as Map<String, dynamic>;
+      Map<int, bool> flags(Object? source) => {
+        for (final e in (source as Map<String, dynamic>? ?? const {}).entries)
+          int.parse(e.key): e.value as bool,
+      };
+      outputs[entry.key] = (
+        level: values(setup['level']),
+        muted: flags(setup['muted']),
+        mono: flags(setup['mono']),
+        balance: values(setup['balance']),
+      );
+    }
     return _SavedMixSettings(
       pans: values(json['pans']),
       levels: levels,
       monitorLevels: values(json['monitorLevels']),
       inputSetups: devices,
+      outputSetups: outputs,
     );
   }
 
@@ -1192,10 +1222,26 @@ class SettingsRepository {
         'pairs': encoded(setup.pairs),
       };
     }
+    final outputs = <String, Object>{};
+    for (final entry in saved.outputSetups.entries) {
+      final setup = entry.value;
+      if (setup.level.isEmpty &&
+          setup.muted.isEmpty &&
+          setup.mono.isEmpty &&
+          setup.balance.isEmpty)
+        continue;
+      outputs[entry.key] = {
+        'level': encoded(setup.level),
+        'muted': {for (final e in setup.muted.entries) '${e.key}': e.value},
+        'mono': {for (final e in setup.mono.entries) '${e.key}': e.value},
+        'balance': encoded(setup.balance),
+      };
+    }
     if (saved.pans.isEmpty &&
         saved.levels.isEmpty &&
         saved.monitorLevels.isEmpty &&
-        setups.isEmpty) {
+        setups.isEmpty &&
+        outputs.isEmpty) {
       return _store.remove(_mixSettingsKey);
     }
     return _store.setString(
@@ -1208,6 +1254,7 @@ class SettingsRepository {
         },
         'monitorLevels': encoded(saved.monitorLevels),
         'inputSetups': setups,
+        'outputSetups': outputs,
       }),
     );
   }
@@ -1221,6 +1268,7 @@ class SettingsRepository {
       laneLevels: saved.levels,
       monitorLevels: saved.monitorLevels,
       inputSetup: saved.inputSetups[device] ?? _emptyInputSetup(),
+      outputSetup: saved.outputSetups[device] ?? _emptyOutputSetup(),
     );
   }
 
@@ -1238,11 +1286,18 @@ class SettingsRepository {
         pan: Map<int, double>.of(mix.inputSetup.pan),
         pairs: Map<int, double>.of(mix.inputSetup.pairs),
       ),
+      outputSetup: (
+        level: Map<int, double>.of(mix.outputSetup.level),
+        muted: Map<int, bool>.of(mix.outputSetup.muted),
+        mono: Map<int, bool>.of(mix.outputSetup.mono),
+        balance: Map<int, double>.of(mix.outputSetup.balance),
+      ),
     );
     return _serialize(() async {
       _validateMixerSettings(detached.trackPans, detached.laneLevels);
       _validateMonitorLevels(detached.monitorLevels);
       _validateInputSetup(detached.inputSetup);
+      _validateOutputSetup(detached.outputSetup);
       final saved = await _readMixSettings();
       saved.pans
         ..clear()
@@ -1254,6 +1309,7 @@ class SettingsRepository {
         ..clear()
         ..addAll(detached.monitorLevels);
       saved.inputSetups[device] = detached.inputSetup;
+      saved.outputSetups[device] = detached.outputSetup;
       await _writeMixSettings(saved);
     });
   }
@@ -1315,6 +1371,26 @@ class SettingsRepository {
     }
   }
 
+  void _validateOutputSetup(StoredOutputSetup setup) {
+    bool inRange(Map<int, double> values, double min, double max) =>
+        values.entries.every(
+          (e) =>
+              e.key >= 0 &&
+              e.key < 16 &&
+              e.value.isFinite &&
+              e.value >= min &&
+              e.value <= max,
+        );
+    bool flags(Map<int, bool> values) =>
+        values.entries.every((e) => e.key >= 0 && e.key < 16 && e.value);
+    if (!inRange(setup.level, 0, 1) ||
+        !inRange(setup.balance, -1, 1) ||
+        !flags(setup.muted) ||
+        !flags(setup.mono)) {
+      throw ArgumentError('invalid output setup');
+    }
+  }
+
   String _trackNameKey(int channel) => 'track_name.$channel';
 
   /// Loads the custom display name for track [channel], or `null` if unset.
@@ -1361,6 +1437,13 @@ class SettingsRepository {
     trimDb: <int, double>{},
     pan: <int, double>{},
     pairs: <int, double>{},
+  );
+
+  StoredOutputSetup _emptyOutputSetup() => (
+    level: <int, double>{},
+    muted: <int, bool>{},
+    mono: <int, bool>{},
+    balance: <int, double>{},
   );
 
   Future<StoredInputSetup> _readInputSetup(String device) async =>
@@ -1605,13 +1688,16 @@ class _SavedMixSettings {
     Map<(int, int), double>? levels,
     Map<int, double>? monitorLevels,
     Map<String, StoredInputSetup>? inputSetups,
+    Map<String, StoredOutputSetup>? outputSetups,
   }) : pans = pans ?? {},
        levels = levels ?? {},
        monitorLevels = monitorLevels ?? {},
-       inputSetups = inputSetups ?? {};
+       inputSetups = inputSetups ?? {},
+       outputSetups = outputSetups ?? {};
 
   final Map<int, double> pans;
   final Map<(int, int), double> levels;
   final Map<int, double> monitorLevels;
   final Map<String, StoredInputSetup> inputSetups;
+  final Map<String, StoredOutputSetup> outputSetups;
 }

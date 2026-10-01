@@ -30,6 +30,10 @@ const int kMaxChannels = LE_MAX_CHANNELS;
 /// what a socket could be NAMED.
 const int kMaxMonitoredInputs = LE_MAX_MONITORED_INPUTS;
 
+/// The number of output buses the engine can address (one per stereo pair
+/// of [kMaxChannels] outputs), mirroring the native `LE_MAX_OUTPUT_BUSES`.
+const int kMaxOutputBuses = LE_MAX_OUTPUT_BUSES;
+
 /// Phase of the loopback round-trip latency harness.
 ///
 /// Mirrors the native `le_latency_state` enum.
@@ -1153,6 +1157,18 @@ class EngineSnapshot {
     this.inputPeaks = const [],
     this.monitorPeaks = const [],
     this.outputPeaks = const [],
+    this.outputBusCount = 0,
+    this.outputLevels = const [],
+    this.outputMuted = const [],
+    this.outputMono = const [],
+    this.outputBalances = const [],
+    this.tailResetRev = 0,
+    this.perfFollowOutput = false,
+    this.perfCaptureBus = -1,
+    this.perfOutputLevel = 1,
+    this.perfOutputMuted = false,
+    this.perfCaptureMask = 0,
+    this.perfOutputEnabledMask = 0,
     this.tracks = const [],
   });
 
@@ -1213,6 +1229,18 @@ class EngineSnapshot {
       inputPeaks = const [],
       monitorPeaks = const [],
       outputPeaks = const [],
+      outputBusCount = 0,
+      outputLevels = const [],
+      outputMuted = const [],
+      outputMono = const [],
+      outputBalances = const [],
+      tailResetRev = 0,
+      perfFollowOutput = false,
+      perfCaptureBus = -1,
+      perfOutputLevel = 1,
+      perfOutputMuted = false,
+      perfCaptureMask = 0,
+      perfOutputEnabledMask = 0,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -1231,6 +1259,7 @@ class EngineSnapshot {
   ) {
     final inputs = native.input_channels.clamp(0, LE_MAX_CHANNELS);
     final outputs = native.output_channels.clamp(0, LE_MAX_CHANNELS);
+    final buses = native.output_bus_count.clamp(0, LE_MAX_OUTPUT_BUSES);
     return EngineSnapshot(
       isRunning: native.running != 0,
       devicePresent: native.device_present != 0,
@@ -1287,9 +1316,169 @@ class EngineSnapshot {
       inputPeaks: [for (var i = 0; i < inputs; i++) native.input_peaks[i]],
       monitorPeaks: [for (var i = 0; i < inputs; i++) native.monitor_peaks[i]],
       outputPeaks: [for (var i = 0; i < outputs; i++) native.output_peaks[i]],
+      outputBusCount: buses,
+      outputLevels: [for (var k = 0; k < buses; k++) native.output_level[k]],
+      outputMuted: [
+        for (var k = 0; k < buses; k++) native.output_muted[k] != 0,
+      ],
+      outputMono: [for (var k = 0; k < buses; k++) native.output_mono[k] != 0],
+      outputBalances: [
+        for (var k = 0; k < buses; k++) native.output_balance[k],
+      ],
+      tailResetRev: native.tail_reset_rev,
+      perfFollowOutput: native.perf_follow_output != 0,
+      perfCaptureBus: native.perf_capture_bus,
+      perfOutputLevel: native.perf_output_level,
+      perfOutputMuted: native.perf_output_muted != 0,
+      perfCaptureMask: native.perf_capture_mask,
+      perfOutputEnabledMask: native.perf_output_enabled_mask,
       tracks: tracks,
     );
   }
+
+  /// This snapshot with the named facts replaced. Enumerated from the field
+  /// list, so a decorator (the pumped test engine, which presents a
+  /// configured-but-undriven engine as running) carries every other fact
+  /// through instead of silently dropping the ones it forgot to copy.
+  EngineSnapshot copyWith({
+    bool? isRunning,
+    bool? devicePresent,
+    int? sampleRate,
+    int? bufferFrames,
+    int? inputChannels,
+    int? outputChannels,
+    int? excludedInputMask,
+    int? inputClipMask,
+    int? inputCondMask,
+    int? framesProcessed,
+    int? xrunCount,
+    double? tunerHz,
+    double? tunerConfidence,
+    int? tunerInput,
+    double? inputRms,
+    double? inputPeak,
+    double? outputRms,
+    double? outputPeak,
+    LatencyState? latencyState,
+    double? measuredLatencyMs,
+    int? masterLengthFrames,
+    int? masterPositionFrames,
+    int? recordOffsetFrames,
+    int? fxAddedLatencyFrames,
+    double? masterGain,
+    AudioBackend? activeBackend,
+    int? outputEnabledMask,
+    bool? isPerfArmed,
+    int? perfFrames,
+    int? perfOverruns,
+    int? perfZeroFilledFrames,
+    bool? perfStopped,
+    double? tempoBpm,
+    TempoSource? tempoSource,
+    int? tsNum,
+    int? tsDen,
+    bool? syncTempo,
+    GridDivision? quantizeDiv,
+    int? loopBars,
+    int? currentBeat,
+    ClickMode? clickMode,
+    int? clickMask,
+    double? clickVolume,
+    int? countInBars,
+    bool? countingIn,
+    int? countInBeatsLeft,
+    LooperMode? looperMode,
+    int? primaryTrack,
+    bool? quantize,
+    bool? autoRecord,
+    double? overdubFeedback,
+    int? mixRevision,
+    List<double>? inputPeaks,
+    List<double>? monitorPeaks,
+    List<double>? outputPeaks,
+    int? outputBusCount,
+    List<double>? outputLevels,
+    List<bool>? outputMuted,
+    List<bool>? outputMono,
+    List<double>? outputBalances,
+    int? tailResetRev,
+    bool? perfFollowOutput,
+    int? perfCaptureBus,
+    double? perfOutputLevel,
+    bool? perfOutputMuted,
+    int? perfCaptureMask,
+    int? perfOutputEnabledMask,
+    List<TrackSnapshot>? tracks,
+  }) => EngineSnapshot(
+    isRunning: isRunning ?? this.isRunning,
+    devicePresent: devicePresent ?? this.devicePresent,
+    sampleRate: sampleRate ?? this.sampleRate,
+    bufferFrames: bufferFrames ?? this.bufferFrames,
+    inputChannels: inputChannels ?? this.inputChannels,
+    outputChannels: outputChannels ?? this.outputChannels,
+    excludedInputMask: excludedInputMask ?? this.excludedInputMask,
+    inputClipMask: inputClipMask ?? this.inputClipMask,
+    inputCondMask: inputCondMask ?? this.inputCondMask,
+    framesProcessed: framesProcessed ?? this.framesProcessed,
+    xrunCount: xrunCount ?? this.xrunCount,
+    tunerHz: tunerHz ?? this.tunerHz,
+    tunerConfidence: tunerConfidence ?? this.tunerConfidence,
+    tunerInput: tunerInput ?? this.tunerInput,
+    inputRms: inputRms ?? this.inputRms,
+    inputPeak: inputPeak ?? this.inputPeak,
+    outputRms: outputRms ?? this.outputRms,
+    outputPeak: outputPeak ?? this.outputPeak,
+    latencyState: latencyState ?? this.latencyState,
+    measuredLatencyMs: measuredLatencyMs ?? this.measuredLatencyMs,
+    masterLengthFrames: masterLengthFrames ?? this.masterLengthFrames,
+    masterPositionFrames: masterPositionFrames ?? this.masterPositionFrames,
+    recordOffsetFrames: recordOffsetFrames ?? this.recordOffsetFrames,
+    fxAddedLatencyFrames: fxAddedLatencyFrames ?? this.fxAddedLatencyFrames,
+    masterGain: masterGain ?? this.masterGain,
+    activeBackend: activeBackend ?? this.activeBackend,
+    outputEnabledMask: outputEnabledMask ?? this.outputEnabledMask,
+    isPerfArmed: isPerfArmed ?? this.isPerfArmed,
+    perfFrames: perfFrames ?? this.perfFrames,
+    perfOverruns: perfOverruns ?? this.perfOverruns,
+    perfZeroFilledFrames: perfZeroFilledFrames ?? this.perfZeroFilledFrames,
+    perfStopped: perfStopped ?? this.perfStopped,
+    tempoBpm: tempoBpm ?? this.tempoBpm,
+    tempoSource: tempoSource ?? this.tempoSource,
+    tsNum: tsNum ?? this.tsNum,
+    tsDen: tsDen ?? this.tsDen,
+    syncTempo: syncTempo ?? this.syncTempo,
+    quantizeDiv: quantizeDiv ?? this.quantizeDiv,
+    loopBars: loopBars ?? this.loopBars,
+    currentBeat: currentBeat ?? this.currentBeat,
+    clickMode: clickMode ?? this.clickMode,
+    clickMask: clickMask ?? this.clickMask,
+    clickVolume: clickVolume ?? this.clickVolume,
+    countInBars: countInBars ?? this.countInBars,
+    countingIn: countingIn ?? this.countingIn,
+    countInBeatsLeft: countInBeatsLeft ?? this.countInBeatsLeft,
+    looperMode: looperMode ?? this.looperMode,
+    primaryTrack: primaryTrack ?? this.primaryTrack,
+    quantize: quantize ?? this.quantize,
+    autoRecord: autoRecord ?? this.autoRecord,
+    overdubFeedback: overdubFeedback ?? this.overdubFeedback,
+    mixRevision: mixRevision ?? this.mixRevision,
+    inputPeaks: inputPeaks ?? this.inputPeaks,
+    monitorPeaks: monitorPeaks ?? this.monitorPeaks,
+    outputPeaks: outputPeaks ?? this.outputPeaks,
+    outputBusCount: outputBusCount ?? this.outputBusCount,
+    outputLevels: outputLevels ?? this.outputLevels,
+    outputMuted: outputMuted ?? this.outputMuted,
+    outputMono: outputMono ?? this.outputMono,
+    outputBalances: outputBalances ?? this.outputBalances,
+    tailResetRev: tailResetRev ?? this.tailResetRev,
+    perfFollowOutput: perfFollowOutput ?? this.perfFollowOutput,
+    perfCaptureBus: perfCaptureBus ?? this.perfCaptureBus,
+    perfOutputLevel: perfOutputLevel ?? this.perfOutputLevel,
+    perfOutputMuted: perfOutputMuted ?? this.perfOutputMuted,
+    perfCaptureMask: perfCaptureMask ?? this.perfCaptureMask,
+    perfOutputEnabledMask: perfOutputEnabledMask ?? this.perfOutputEnabledMask,
+    tracks: tracks ?? this.tracks,
+  );
 
   /// Whether the audio device is open and the callback is running.
   final bool isRunning;
@@ -1555,6 +1744,49 @@ class EngineSnapshot {
   /// the device has (length [outputChannels]; empty while no device is open).
   final List<double> outputPeaks;
 
+  /// The number of output buses the open device has: one per stereo pair of
+  /// [outputChannels] (an odd count leaves a single-channel last bus); `0`
+  /// while no device is open. The four bus lists below have this length.
+  final int outputBusCount;
+
+  /// Per-bus level (`0..1`), retained behind a mute.
+  final List<double> outputLevels;
+
+  /// Per-bus mute.
+  final List<bool> outputMuted;
+
+  /// Per-bus Mono (the averaged mix on both jacks, balance ignored).
+  final List<bool> outputMono;
+
+  /// Per-bus balance (`-1..1`), retained while Mono.
+  final List<double> outputBalances;
+
+  /// Advances once per Cut all sound the audio thread applied: a change here
+  /// is the only signal that every tail was cleared.
+  final int tailResetRev;
+
+  /// The capture policy of the armed performance take (`true` = Follow
+  /// output volume), or the one the next arm would freeze while disarmed.
+  final bool perfFollowOutput;
+
+  /// The output destination the armed performance take captures (the first
+  /// one with an enabled channel, frozen at arm), or the one the next arm
+  /// would capture; `-1` when no output is enabled. The offline render
+  /// replays this destination's level and mute under [perfFollowOutput].
+  final int perfCaptureBus;
+
+  /// Selected destination level at the actual arm boundary.
+  final double perfOutputLevel;
+
+  /// Selected destination mute at the actual arm boundary.
+  final bool perfOutputMuted;
+
+  /// Physical capture channels frozen at arm.
+  final int perfCaptureMask;
+
+  /// Structural output gate at the actual arm boundary.
+  final int perfOutputEnabledMask;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -1645,6 +1877,18 @@ class EngineSnapshot {
           _listEquals(inputPeaks, other.inputPeaks) &&
           _listEquals(monitorPeaks, other.monitorPeaks) &&
           _listEquals(outputPeaks, other.outputPeaks) &&
+          outputBusCount == other.outputBusCount &&
+          _listEquals(outputLevels, other.outputLevels) &&
+          _listEquals(outputMuted, other.outputMuted) &&
+          _listEquals(outputMono, other.outputMono) &&
+          _listEquals(outputBalances, other.outputBalances) &&
+          tailResetRev == other.tailResetRev &&
+          perfFollowOutput == other.perfFollowOutput &&
+          perfOutputLevel == other.perfOutputLevel &&
+          perfOutputMuted == other.perfOutputMuted &&
+          perfCaptureMask == other.perfCaptureMask &&
+          perfOutputEnabledMask == other.perfOutputEnabledMask &&
+          perfCaptureBus == other.perfCaptureBus &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -1704,6 +1948,18 @@ class EngineSnapshot {
     Object.hashAll(inputPeaks),
     Object.hashAll(monitorPeaks),
     Object.hashAll(outputPeaks),
+    outputBusCount,
+    Object.hashAll(outputLevels),
+    Object.hashAll(outputMuted),
+    Object.hashAll(outputMono),
+    Object.hashAll(outputBalances),
+    tailResetRev,
+    perfFollowOutput,
+    perfCaptureBus,
+    perfOutputLevel,
+    perfOutputMuted,
+    perfCaptureMask,
+    perfOutputEnabledMask,
     ...tracks,
   ]);
 

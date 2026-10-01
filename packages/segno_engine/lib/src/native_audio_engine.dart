@@ -14,6 +14,7 @@ import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
+import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
@@ -655,6 +656,13 @@ class NativeAudioEngine implements AudioEngine {
         native.solo_mask |= 1 << entry.key;
         if (entry.value) native.solo_values |= 1 << entry.key;
       }
+      for (final entry in settings.outputs.entries) {
+        native.output_mask |= 1 << entry.key;
+        native.output_level[entry.key] = entry.value.level;
+        native.output_balance[entry.key] = entry.value.balance;
+        if (entry.value.muted) native.output_muted |= 1 << entry.key;
+        if (entry.value.mono) native.output_mono |= 1 << entry.key;
+      }
       return EngineResult.fromCode(_bindings.le_engine_set_mix(_engine, ptr));
     } finally {
       calloc.free(ptr);
@@ -1073,45 +1081,88 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
-  // ---- Master insert chain (FX v3 part 1b) ----
+  // ---- Output bus chains (slice 3b) ----
 
   @override
-  EngineResult setMasterFx({
+  OutputFxSnapshot outputFxSnapshot({required int bus}) {
+    _checkAlive();
+    final ptr = calloc<le_output_fx_snapshot>();
+    try {
+      final result = _bindings.le_engine_get_output_fx_snapshot(
+        _engine,
+        bus,
+        ptr,
+      );
+      if (result != 0) throw StateError('Output chain unavailable: $result');
+      final value = ptr.ref;
+      return OutputFxSnapshot(
+        chainEnabled: value.chain_enabled != 0,
+        effects: [
+          for (var i = 0; i < value.count; i++)
+            OutputEffectSnapshot(
+              type: value.type[i],
+              enabled: value.enabled[i] != 0,
+              params: [
+                for (var p = 0; p < LE_FX_PARAMS; p++) value.params[i][p],
+              ],
+            ),
+        ],
+      );
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  @override
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_master_fx(_engine, index, type.code),
+      _bindings.le_engine_set_output_fx(_engine, bus, index, type.code),
     );
   }
 
   @override
-  EngineResult setMasterFxCount({required int count}) {
+  EngineResult setOutputFxCount({required int bus, required int count}) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_master_fx_count(_engine, count),
+      _bindings.le_engine_set_output_fx_count(_engine, bus, count),
     );
   }
 
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_master_fx_param(_engine, index, param, value),
+      _bindings.le_engine_set_output_fx_param(
+        _engine,
+        bus,
+        index,
+        param,
+        value,
+      ),
     );
   }
 
   @override
-  EngineResult setMasterFxEnabled({required int index, required bool enabled}) {
+  EngineResult setOutputFxEnabled({
+    required int bus,
+    required int index,
+    required bool enabled,
+  }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_master_fx_enabled(
+      _bindings.le_engine_set_output_fx_enabled(
         _engine,
+        bus,
         index,
         enabled ? 1 : 0,
       ),
@@ -1119,11 +1170,58 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) {
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_master_fx_chain_enabled(_engine, enabled ? 1 : 0),
+      _bindings.le_engine_set_output_fx_chain_enabled(
+        _engine,
+        bus,
+        enabled ? 1 : 0,
+      ),
     );
+  }
+
+  // ---- Output buses (slice 3b) ----
+
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_level(_engine, bus, level),
+    );
+  }
+
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_mute(_engine, bus, muted ? 1 : 0),
+    );
+  }
+
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_mono(_engine, bus, mono ? 1 : 0),
+    );
+  }
+
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_balance(_engine, bus, balance),
+    );
+  }
+
+  @override
+  EngineResult cutSound() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_cut_sound(_engine));
   }
 
   @override
@@ -1744,6 +1842,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setPerfFollowOutput({required bool follow}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_perf_set_follow_output(_engine, follow ? 1 : 0),
+    );
+  }
+
+  @override
   EngineResult perfDisarm() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_perf_disarm(_engine));
@@ -1939,63 +2045,10 @@ class PumpedNativeEngine extends NativeAudioEngine {
   @override
   EngineSnapshot snapshot() {
     final s = super.snapshot();
-    return EngineSnapshot(
+    return s.copyWith(
       isRunning: true,
       devicePresent: true,
       sampleRate: s.sampleRate > 0 ? s.sampleRate : _sampleRate,
-      bufferFrames: s.bufferFrames,
-      framesProcessed: s.framesProcessed,
-      xrunCount: s.xrunCount,
-      inputRms: s.inputRms,
-      inputPeak: s.inputPeak,
-      outputRms: s.outputRms,
-      outputPeak: s.outputPeak,
-      latencyState: s.latencyState,
-      measuredLatencyMs: s.measuredLatencyMs,
-      inputChannels: s.inputChannels,
-      outputChannels: s.outputChannels,
-      excludedInputMask: s.excludedInputMask,
-      outputEnabledMask: s.outputEnabledMask,
-      masterLengthFrames: s.masterLengthFrames,
-      masterPositionFrames: s.masterPositionFrames,
-      recordOffsetFrames: s.recordOffsetFrames,
-      fxAddedLatencyFrames: s.fxAddedLatencyFrames,
-      masterGain: s.masterGain,
-      activeBackend: s.activeBackend,
-      isPerfArmed: s.isPerfArmed,
-      perfFrames: s.perfFrames,
-      perfOverruns: s.perfOverruns,
-      perfZeroFilledFrames: s.perfZeroFilledFrames,
-      tempoBpm: s.tempoBpm,
-      tempoSource: s.tempoSource,
-      tsNum: s.tsNum,
-      tsDen: s.tsDen,
-      syncTempo: s.syncTempo,
-      quantizeDiv: s.quantizeDiv,
-      loopBars: s.loopBars,
-      currentBeat: s.currentBeat,
-      clickMode: s.clickMode,
-      clickMask: s.clickMask,
-      clickVolume: s.clickVolume,
-      countInBars: s.countInBars,
-      countingIn: s.countingIn,
-      countInBeatsLeft: s.countInBeatsLeft,
-      looperMode: s.looperMode,
-      inputClipMask: s.inputClipMask,
-      inputCondMask: s.inputCondMask,
-      tunerHz: s.tunerHz,
-      tunerConfidence: s.tunerConfidence,
-      tunerInput: s.tunerInput,
-      perfStopped: s.perfStopped,
-      primaryTrack: s.primaryTrack,
-      quantize: s.quantize,
-      autoRecord: s.autoRecord,
-      overdubFeedback: s.overdubFeedback,
-      mixRevision: s.mixRevision,
-      inputPeaks: s.inputPeaks,
-      monitorPeaks: s.monitorPeaks,
-      outputPeaks: s.outputPeaks,
-      tracks: s.tracks,
     );
   }
 }

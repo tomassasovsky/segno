@@ -250,11 +250,11 @@ static float* le_pr_read_layer_lane0(const char* path, int32_t frame_count,
  * wav_codec's own format (this codebase's only WAV writer besides that Dart
  * package — duplicated here so the native renderer needs no Dart round-trip
  * to produce its stems). */
-static int le_pr_write_wav_mono(const char* path, const float* samples,
-                                int32_t frame_count, int32_t sample_rate) {
+static int le_pr_write_wav(const char* path, const float* samples,
+                                int32_t frame_count, int32_t sample_rate, uint16_t channels) {
   FILE* f = fopen(path, "wb");
   if (f == NULL) return 0;
-  const uint32_t data_bytes = (uint32_t)frame_count * (uint32_t)sizeof(float);
+  const uint32_t data_bytes = (uint32_t)frame_count * channels * (uint32_t)sizeof(float);
   unsigned char header[44] = {0};
   memcpy(header + 0, "RIFF", 4);
   const uint32_t riff_size = 36 + data_bytes;
@@ -265,7 +265,6 @@ static int le_pr_write_wav_mono(const char* path, const float* samples,
   memcpy(header + 16, &fmt_size, 4);
   const uint16_t format_code = 3; /* IEEE float */
   memcpy(header + 20, &format_code, 2);
-  const uint16_t channels = 1;
   memcpy(header + 22, &channels, 2);
   const uint32_t sr = (uint32_t)sample_rate;
   memcpy(header + 24, &sr, 4);
@@ -280,11 +279,16 @@ static int le_pr_write_wav_mono(const char* path, const float* samples,
 
   int ok = fwrite(header, 1, sizeof(header), f) == sizeof(header);
   if (ok && frame_count > 0) {
-    ok = fwrite(samples, sizeof(float), (size_t)frame_count, f) ==
-        (size_t)frame_count;
+    ok = fwrite(samples, sizeof(float), (size_t)frame_count * channels, f) ==
+        (size_t)frame_count * channels;
   }
   fclose(f);
   return ok;
+}
+
+static int le_pr_write_wav_mono(const char* path, const float* samples,
+                                int32_t frames, int32_t sr) {
+  return le_pr_write_wav(path, samples, frames, sr, 1);
 }
 
 /* ---- performance.json access ---- */
@@ -306,14 +310,18 @@ typedef struct le_pr_manifest {
   const le_json_value* arm_tracks;    /* armSnapshot.tracks array, or NULL */
   const le_json_value* disarm_tracks; /* disarmSnapshot.tracks array, or NULL */
   const le_json_value* layers;        /* layers array, or NULL */
-  /* Master-bus state at arm time (armSnapshot.masterGain/limiterOn/
-   * limiterCeiling) — the wet pass's starting point before events.log's
-   * LE_CMD_SET_MASTER_GAIN / LE_PLOG_SET_LIMITER entries are replayed
-   * forward. Defaults match engine.c's own fresh-engine values (unity gain,
-   * limiter off, 0.99 ceiling) when armSnapshot is absent. */
-  float arm_master_gain;
-  int32_t arm_limiter_on;
-  float arm_limiter_ceiling;
+  /* Required capture policy: both taps follow selected output FX. Follow
+   * additionally replays that bus's level/mute; neither includes hardware
+   * Mono/Balance, global master gain, or limiter. */
+  int32_t arm_follow_output;
+  /* armSnapshot.captureBus (default 0) and its outputLevel / outputMuted at
+   * arm, the replay's starting point under followOutput. */
+  int32_t arm_capture_bus;
+  float arm_output_level;
+  int32_t arm_output_muted;
+  uint32_t capture_mask;
+  const le_json_value* arm_output;
+  uint32_t output_enabled_mask;
 } le_pr_manifest;
 
 static int le_pr_load_manifest(const char* dir, char** out_text,
@@ -349,6 +357,11 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
   out->capture_frames =
       (uint64_t)le_json_number(le_json_get(root, "capture_frames"), 0);
   const le_json_value* arm = le_json_get(root, "armSnapshot");
+  const le_json_value* policy = le_json_get(arm, "followOutput");
+  if (policy == NULL || policy->type != LE_JSON_BOOL) {
+    free(text);
+    return 0;
+  }
   /* The master phase anchor is NOT read from armSnapshot any more — the
    * PERF_ARMED fact in events.log supplies it (#262). le_pr_fill_perf_armed
    * populates perf_arm_* after the log is loaded. */
@@ -356,14 +369,48 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
   const le_json_value* disarm = le_json_get(root, "disarmSnapshot");
   out->disarm_tracks = disarm != NULL ? le_json_get(disarm, "tracks") : NULL;
   out->layers = le_json_get(root, "layers");
-  out->arm_master_gain =
-      (float)le_json_number(arm != NULL ? le_json_get(arm, "masterGain") : NULL,
-                            1.0);
-  out->arm_limiter_on = le_json_bool(
-      arm != NULL ? le_json_get(arm, "limiterOn") : NULL, 0);
-  out->arm_limiter_ceiling = (float)le_json_number(
-      arm != NULL ? le_json_get(arm, "limiterCeiling") : NULL, 0.99);
-
+  out->arm_follow_output = policy->bool_value;
+  const le_json_value* bus = le_json_get(arm, "captureBus");
+  const double bus_number = le_json_number(bus, 0);
+  if (bus != NULL && (bus->type != LE_JSON_NUMBER || !isfinite(bus_number) ||
+      bus_number < 0 || bus_number >= LE_MAX_OUTPUT_BUSES ||
+      floor(bus_number) != bus_number)) {
+    free(text);
+    return 0;
+  }
+  out->arm_capture_bus = (int32_t)bus_number;
+  const le_json_value* mask = le_json_get(arm, "captureMask");
+  const double mask_number = le_json_number(mask, 0);
+  if (mask == NULL || mask->type != LE_JSON_NUMBER || !isfinite(mask_number) ||
+      mask_number < 1 || mask_number > UINT32_MAX ||
+      floor(mask_number) != mask_number) {
+    free(text);
+    return 0;
+  }
+  out->capture_mask = (uint32_t)mask_number;
+  const uint32_t selected_pair = 3u << (2 * out->arm_capture_bus);
+  if ((out->capture_mask & ~selected_pair) != 0) {
+    free(text);
+    return 0;
+  }
+  const le_json_value* level = le_json_get(arm, "outputLevel");
+  const double level_number = le_json_number(level, 1);
+  const le_json_value* muted = le_json_get(arm, "outputMuted");
+  const le_json_value* enabled = le_json_get(arm, "outputEnabledMask");
+  const double enabled_number = le_json_number(enabled, UINT32_MAX);
+  if ((level != NULL && (level->type != LE_JSON_NUMBER ||
+        !isfinite(level_number) || level_number < 0 || level_number > 1)) ||
+      (muted != NULL && muted->type != LE_JSON_BOOL) ||
+      (enabled != NULL && (enabled->type != LE_JSON_NUMBER ||
+        !isfinite(enabled_number) || enabled_number < 0 ||
+        enabled_number > UINT32_MAX || floor(enabled_number) != enabled_number))) {
+    free(text);
+    return 0;
+  }
+  out->arm_output_level = (float)level_number;
+  out->arm_output_muted = le_json_bool(muted, 0);
+  out->output_enabled_mask = (uint32_t)enabled_number;
+  out->arm_output = arm;
   *out_text = text;
   *out_root = root;
   return 1;
@@ -973,11 +1020,13 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
                                           const le_json_value* lane) {
   le_pr_fx_chain_init_empty(c);
   if (lane == NULL) return;
+  c->chain_enabled = le_json_bool(le_json_get(lane, "chainEnabled"), 1);
   const le_json_value* effects = le_json_get(lane, "effects");
   const int n = le_json_length(effects);
   c->count = n > LE_FX_MAX ? LE_FX_MAX : n;
   for (int i = 0; i < c->count; ++i) {
     const le_json_value* entry = le_json_at(effects, i);
+    c->enabled[i] = le_json_bool(le_json_get(entry, "enabled"), 1);
     c->type[i] =
         (int32_t)le_json_number(le_json_get(entry, "type"), LE_FX_NONE);
     const le_json_value* params = le_json_get(entry, "params");
@@ -1019,7 +1068,7 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
 static float* le_pr_render_wet_track(const le_pr_manifest* m,
                                      const le_pr_log_entry* log, int log_count,
                                      int32_t channel, const float* dry,
-                                     int32_t* out_failed) {
+                                     int32_t* out_failed, float* routed) {
   *out_failed = 0;
   const le_json_value* arm_track = le_pr_find_track(m->arm_tracks, channel);
   const le_json_value* arm_lane = le_pr_find_lane0(m->arm_tracks, channel);
@@ -1028,8 +1077,13 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
   le_pr_fx_chain_init_from_lane(&chain, arm_lane);
   float volume = (float)le_json_number(
       arm_track != NULL ? le_json_get(arm_track, "volume") : NULL, 1.0);
-  int muted = le_json_bool(
-      arm_track != NULL ? le_json_get(arm_track, "muted") : NULL, 0);
+  volume = (float)le_json_number(le_json_get(arm_lane, "volume"), volume);
+  int muted = le_json_bool(le_json_get(arm_lane, "muted"),
+      le_json_bool(le_json_get(arm_track, "muted"), 0));
+  float pan = (float)le_json_number(le_json_get(arm_lane, "pan"), 0);
+  uint32_t route = (uint32_t)le_json_number(le_json_get(arm_lane, "outputMask"), 1);
+  uint32_t output_enabled = m->output_enabled_mask;
+  int cut_silenced = 0;
   /* Solo (slice 3) is an audibility gate across EVERY track: while any is
    * soloed only soloed tracks route. Seeded from the arm manifest (a track
    * absent there reads 0) and moved by the logged LE_CMD_SET_TRACK_SOLO of
@@ -1158,6 +1212,35 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
             chain.chain_enabled = cmd->lanef.value != 0.0f;
           }
           break;
+        case LE_CMD_SET_LANE_PAN:
+          if (cmd->lanef.channel == channel && cmd->lanef.lane == 0)
+            pan = cmd->lanef.value;
+          break;
+        case LE_CMD_SET_OUTPUT_MASK:
+          if (cmd->trackmask.channel == channel) route = cmd->trackmask.mask;
+          break;
+        case LE_CMD_SET_LANE_OUTPUT:
+          if (cmd->lanei.channel == channel && cmd->lanei.lane == 0) route = (uint32_t)cmd->lanei.value;
+          break;
+        case LE_CMD_SET_OUTPUT_ENABLED:
+          if (cmd->arg_i >= 0 && cmd->arg_i < 32) {
+            if (cmd->arg_f != 0) output_enabled |= 1u << cmd->arg_i;
+            else output_enabled &= ~(1u << cmd->arg_i);
+          }
+          break;
+        case LE_CMD_PLAY:
+          if (cmd->arg_i == channel) cut_silenced = 0;
+          break;
+        case LE_PLOG_RECORD_START:
+          if (cmd->arg_i == channel) cut_silenced = 0;
+          break;
+        case LE_CMD_CUT_SOUND:
+          cut_silenced = 1;
+          for (int i = 0; i < LE_FX_MAX; ++i) {
+            le_fx_entry_reset(fx, i);
+            le_fx_entry_clear_rings(fx, i, m->sample_rate);
+          }
+          break;
         case LE_CMD_SET_LANE_VOLUME:
           if (cmd->lanef.channel == channel && cmd->lanef.lane == 0) {
             volume = cmd->lanef.value;
@@ -1198,13 +1281,26 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
 
     int any_solo = 0;
     for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) any_solo |= solo[t];
-    const int audible = !muted && (!any_solo || solo[channel]);
+    const int audible = !cut_silenced && !muted && (!any_solo || solo[channel]);
     const float in = audible ? dry[f] * volume : 0.0f;
     float l = in;
     float r = in;
     fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r, chain.count,
                    chain.type, chain.params, effective);
     wet[f] = l;
+    const float far = fabsf(pan) >= 1 ? 0 : cosf(fabsf(pan) * 1.57079632679f);
+    l *= pan > 0 ? far : 1;
+    r *= pan < 0 ? far : 1;
+    const uint32_t mask = route & output_enabled;
+    int count = 0;
+    for (int c = 0; c < LE_MAX_CHANNELS; ++c) if (mask & (1u << c)) count++;
+    int index = 0;
+    for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
+      if (!(mask & (1u << c))) continue;
+      const float value = count == 1 ? 0.5f * (l + r) : index == 0 ? l : index == 1 ? r : 0.5f * (l + r);
+      if (c / 2 == m->arm_capture_bus) routed[2*f + c%2] += value;
+      index++;
+    }
   }
 
   le_fx_state_free_buffers(fx);
@@ -1227,44 +1323,78 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
  * never the live engine's `e->lim_gain`, which the audio thread may still be
  * mutating concurrently after disarm (this render has no live-engine
  * dependency, see the file header). */
-static void le_pr_render_master(const le_pr_manifest* m,
+static int le_pr_render_master(const le_pr_manifest* m,
                                 const le_pr_log_entry* log, int log_count,
                                 float* master) {
-  float gain = m->arm_master_gain;
-  int limiter_on = m->arm_limiter_on;
-  float ceiling = m->arm_limiter_ceiling;
-  float lim_gain = 1.0f;
-  const int sr = m->sample_rate > 0 ? m->sample_rate : 48000;
-  float lim_release = 1.0f / (0.05f * (float)sr);
-  if (lim_release > 1.0f) lim_release = 1.0f;
-
-  int log_index = 0;
-  for (uint64_t f = 0; f < m->capture_frames; ++f) {
-    while (log_index < log_count && log[log_index].frame <= f) {
-      const le_log_command* cmd = &log[log_index].cmd;
-      if (cmd->code == LE_CMD_SET_MASTER_GAIN) {
-        gain = cmd->arg_f;
-      } else if (cmd->code == LE_PLOG_SET_LIMITER) {
-        limiter_on = cmd->arg_i != 0;
-        ceiling = cmd->arg_f;
-      }
-      log_index++;
-    }
-
-    float s = master[f] * gain;
-    if (limiter_on) {
-      const float peak = fabsf(s);
-      float target = 1.0f;
-      if (peak > ceiling && peak > 0.0f) target = ceiling / peak;
-      if (target < lim_gain) {
-        lim_gain = target;
-      } else {
-        lim_gain += (target - lim_gain) * lim_release;
-      }
-      if (lim_gain != 1.0f) s *= lim_gain;
-    }
-    master[f] = s;
+  le_pr_fx_chain chain;
+  le_pr_fx_chain_init_empty(&chain);
+  const le_json_value* effects = le_json_get(m->arm_output, "outputEffects");
+  chain.count = le_json_length(effects);
+  if (chain.count > LE_FX_MAX) return 0;
+  chain.chain_enabled = le_json_bool(le_json_get(m->arm_output, "outputChainEnabled"), 1);
+  for (int i = 0; i < chain.count; ++i) {
+    const le_json_value* entry = le_json_at(effects, i);
+    chain.type[i] = (int32_t)le_json_number(le_json_get(entry, "type"), 0);
+    chain.enabled[i] = le_json_bool(le_json_get(entry, "enabled"), 1);
+    for (int p = 0; p < LE_FX_PARAMS; ++p)
+      chain.params[i][p] = (float)le_json_number(le_json_at(le_json_get(entry, "params"), p), 0);
   }
+  le_fx_state* fx = calloc(1, sizeof(*fx));
+  if (!fx) return 0;
+  int ok = 1;
+  for (int i = 0; i < LE_FX_MAX; ++i) {
+    le_fx_enable_seed_settled(fx, i);
+    if (chain.type[i] != LE_FX_NONE &&
+        le_fx_prepare(fx, i, chain.type[i], m->sample_rate) != LE_OK) ok = 0;
+  }
+  float level = m->arm_output_level;
+  int muted = m->arm_output_muted;
+  int at = 0;
+  for (uint64_t f = 0; f < m->capture_frames; ++f) {
+    while (at < log_count && log[at].frame <= f) {
+      const le_log_command* cmd = &log[at++].cmd;
+      if (cmd->code == LE_CMD_SET_OUTPUT_LEVEL && cmd->lanef.channel == m->arm_capture_bus)
+        level = cmd->lanef.value;
+      else if (cmd->code == LE_CMD_SET_OUTPUT_MUTE && cmd->lanef.channel == m->arm_capture_bus)
+        muted = cmd->lanef.value != 0;
+      else if (cmd->code == LE_CMD_SET_OUTPUT_FX && cmd->fx.channel == m->arm_capture_bus && cmd->fx.index >= 0 && cmd->fx.index < LE_FX_MAX) {
+        int i = cmd->fx.index;
+        if (chain.type[i] != cmd->fx.type) {
+          le_fx_defaults(cmd->fx.type, chain.params[i]);
+          chain.enabled[i] = 1;
+        }
+        chain.type[i] = cmd->fx.type;
+        le_fx_entry_reset(fx, i);
+        if (le_fx_prepare(fx, i, chain.type[i], m->sample_rate) != LE_OK) ok = 0;
+      } else if (cmd->code == LE_CMD_SET_OUTPUT_FX_COUNT && cmd->fxcount.channel == m->arm_capture_bus) {
+        int count = cmd->fxcount.count;
+        if (count < 0 || count > LE_FX_MAX) { ok = 0; continue; }
+        for (int i = chain.count; i < count; ++i) chain.enabled[i] = 1;
+        chain.count = count;
+      } else if (cmd->code == LE_PLOG_SET_OUTPUT_FX_PARAM && cmd->fx.channel == m->arm_capture_bus) {
+        int i = LE_PLOG_FX_PARAM_INDEX(cmd->fx.index), p = LE_PLOG_FX_PARAM_PARAM(cmd->fx.index);
+        if (i >= 0 && i < LE_FX_MAX && p >= 0 && p < LE_FX_PARAMS)
+          chain.params[i][p] = le_pr_bits_to_f32((uint32_t)cmd->fx.type);
+      } else if (cmd->code == LE_PLOG_SET_OUTPUT_FX_ENABLED && cmd->fx.channel == m->arm_capture_bus && cmd->fx.index >= 0 && cmd->fx.index < LE_FX_MAX)
+        chain.enabled[cmd->fx.index] = cmd->fx.type != 0;
+      else if (cmd->code == LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED && cmd->arg_i == m->arm_capture_bus)
+        chain.chain_enabled = cmd->arg_f != 0;
+      else if (cmd->code == LE_CMD_CUT_SOUND)
+        for (int i = 0; i < LE_FX_MAX; ++i) {
+            le_fx_entry_reset(fx, i);
+            le_fx_entry_clear_rings(fx, i, m->sample_rate);
+          }
+    }
+    int32_t effective[LE_FX_MAX];
+    for (int i = 0; i < LE_FX_MAX; ++i) effective[i] = chain.chain_enabled && chain.enabled[i];
+    float l = master[2*f], r = master[2*f+1];
+    fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r,
+      chain.count, chain.type, chain.params, effective);
+    const float gain = m->arm_follow_output ? (muted ? 0 : level) : 1;
+    master[2*f] = l * gain; master[2*f+1] = r * gain;
+  }
+  le_fx_state_free_buffers(fx); free(fx);
+  return ok;
 }
 
 /* ---- worker thread ---- */
@@ -1314,7 +1444,7 @@ static void le_pr_worker_main(void* arg) {
    * the write-out step below can use its presence as the gate. */
   float* master_accum =
       (loaded && channel_count > 0)
-          ? (float*)calloc((size_t)manifest.capture_frames, sizeof(float))
+          ? (float*)calloc((size_t)manifest.capture_frames * 2, sizeof(float))
           : NULL;
 
   if (loaded && channel_count > 0) {
@@ -1349,8 +1479,9 @@ static void le_pr_worker_main(void* arg) {
         }
 
         int32_t wet_failed = 0;
-        float* wet = le_pr_render_wet_track(&manifest, log, log_count, channel,
-                                            stem, &wet_failed);
+        float* routed = calloc((size_t)manifest.capture_frames * 2, sizeof(float));
+        float* wet = routed ? le_pr_render_wet_track(&manifest, log, log_count, channel,
+                                            stem, &wet_failed, routed) : NULL;
         if (wet != NULL) {
           char wet_path[LE_PR_FULL_PATH_MAX];
           snprintf(wet_path, sizeof(wet_path), "%s/track%d.wav", wet_dir, channel);
@@ -1372,13 +1503,15 @@ static void le_pr_worker_main(void* arg) {
            * reports as failed. */
           if (ok && master_accum != NULL) {
             for (uint64_t f = 0; f < manifest.capture_frames; ++f) {
-              master_accum[f] += wet[f];
+              master_accum[2*f] += routed[2*f];
+              master_accum[2*f+1] += routed[2*f+1];
             }
           }
           free(wet);
         } else {
           ok = 0;
         }
+        free(routed);
         free(stem);
       }
 
@@ -1394,12 +1527,21 @@ static void le_pr_worker_main(void* arg) {
 
     if (master_accum != NULL &&
         atomic_load_explicit(&r->running, memory_order_acquire)) {
-      le_pr_render_master(&manifest, log, log_count, master_accum);
+      const int master_ok = le_pr_render_master(&manifest, log, log_count, master_accum);
       char master_path[LE_PR_FULL_PATH_MAX];
       snprintf(master_path, sizeof(master_path), "%s/master.wav", wet_dir);
-      le_pr_write_wav_mono(master_path, master_accum,
+      const uint32_t pair_mask = (manifest.capture_mask >> (2 * manifest.arm_capture_bus)) & 3u;
+      const int channels = pair_mask == 3 ? 2 : 1;
+      if (channels == 1) {
+        const int side = pair_mask == 2 ? 1 : 0;
+        for (uint64_t f = 0; f < manifest.capture_frames; ++f)
+          master_accum[f] = master_accum[2*f+side];
+      }
+      if (master_ok) le_pr_write_wav(master_path, master_accum,
                            (int32_t)manifest.capture_frames,
-                           manifest.sample_rate);
+                           manifest.sample_rate, (uint16_t)channels);
+      else for (int i = 0; i < channel_count; ++i)
+        atomic_store_explicit(&r->results[i].succeeded, 0, memory_order_release);
     }
   }
 

@@ -539,6 +539,26 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         ),
       );
     });
+    on<LooperOutputLevelChanged>((event, _) {
+      unawaited(
+        _mixSettings.setOutputLevel(bus: event.bus, level: event.level),
+      );
+    });
+    on<LooperOutputMuteChanged>((event, _) {
+      unawaited(_mixSettings.setOutputMute(bus: event.bus, muted: event.muted));
+    });
+    on<LooperOutputMonoChanged>((event, _) {
+      unawaited(_mixSettings.setOutputMono(bus: event.bus, mono: event.mono));
+    });
+    on<LooperOutputBalanceChanged>((event, _) {
+      unawaited(
+        _mixSettings.setOutputBalance(
+          bus: event.bus,
+          balance: event.balance,
+        ),
+      );
+    });
+    on<LooperCutSoundPressed>((_, _) => _repository.cutSound());
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
@@ -810,8 +830,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     // Unconditional: there is exactly one Master envelope and it always has a
     // value, so it is overwritten rather than cleared.
     _persistMasterChain();
-    // The SessionCubit serializes the loaded mix and its one durable write
-    // through the shared coordinator before this FX-only resync event fires.
+    // SessionCubit persists the loaded mix before this FX-only resync.
   }
 
   /// Persists the Master insert chain envelope.

@@ -47,6 +47,65 @@ class _GatedReadFile implements File {
   );
 }
 
+/// Fails the selected asynchronous write while leaving the earlier contents
+/// untouched, as a full disk or revoked export volume can do after native arm.
+class _FailWriteFile implements File {
+  _FailWriteFile(this._inner);
+
+  final File _inner;
+
+  @override
+  bool existsSync() => _inner.existsSync();
+
+  @override
+  void deleteSync({bool recursive = false}) =>
+      _inner.deleteSync(recursive: recursive);
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async {
+    await _inner.writeAsString('{"truncated":', flush: true);
+    throw const FileSystemException('arm snapshot write failed');
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
+    'not reached by arm snapshot write: $invocation',
+  );
+}
+
+class _ThrowAfterArmEngine extends FakePerformanceEngine {
+  bool throwSnapshot = false;
+  bool throwOutputFx = false;
+  bool throwDisarmOnce = false;
+
+  @override
+  EngineSnapshot snapshot() {
+    if (throwSnapshot && perfArmed) throw StateError('snapshot unavailable');
+    return super.snapshot();
+  }
+
+  @override
+  OutputFxSnapshot outputFxSnapshot({required int bus}) {
+    if (throwOutputFx) throw StateError('output chain unavailable');
+    return super.outputFxSnapshot(bus: bus);
+  }
+
+  @override
+  EngineResult perfDisarm() {
+    if (throwDisarmOnce) {
+      throwDisarmOnce = false;
+      perfDisarmCalls++;
+      throw StateError('native cleanup unavailable');
+    }
+    return super.perfDisarm();
+  }
+}
+
 /// A [File] whose [readAsStringSync] throws — an `IOOverrides` hook modeling
 /// a recovered-at stamp the filesystem refuses to read, so a test can drive
 /// the prune's skip-and-continue branch deterministically. Only the members
@@ -153,6 +212,167 @@ void main() {
   });
 
   group('arm', () {
+    test('a settled snapshot write failure keeps live capture owned until '
+        'the engine confirms a stop', () async {
+      var snapshotWrites = 0;
+      final testZone = Zone.current;
+      final failed = IOOverrides.runZoned(
+        () => repo.arm(),
+        createFile: (path) {
+          final real = testZone.run(() => File(path));
+          if (path.endsWith('/arm-snapshot.json.pending') &&
+              ++snapshotWrites == 1) {
+            return _FailWriteFile(real);
+          }
+          return real;
+        },
+      );
+      await expectLater(failed, throwsA(isA<FileSystemException>()));
+      expect(snapshotWrites, 1);
+      expect(engine.perfArmed, isTrue);
+      expect(repo.armedDirectory, engine.lastPerfCaptureDir);
+      expect(Directory(repo.armedDirectory!).existsSync(), isTrue);
+      expect(
+        File('${repo.armedDirectory}/arm-snapshot.json').existsSync(),
+        isFalse,
+      );
+      expect(
+        File('${repo.armedDirectory}/arm-snapshot.json.pending').existsSync(),
+        isFalse,
+      );
+
+      engine.perfDisarmResult = EngineResult.device;
+      expect(await repo.disarm(), EngineResult.device);
+      expect(repo.armedDirectory, engine.lastPerfCaptureDir);
+      expect(engine.perfArmed, isTrue);
+      expect(await repo.arm(), EngineResult.ok);
+      expect(engine.perfArmCalls, 1);
+
+      engine.perfDisarmResult = EngineResult.ok;
+      expect(await repo.disarm(), EngineResult.ok);
+      expect(engine.perfArmed, isFalse);
+    });
+
+    test('waits for the callback to acknowledge a queued arm before reading '
+        'its selected destination', () async {
+      engine
+        ..perfArmQueues = true
+        ..perfCaptureBusAtArm = 1;
+      final arming = repo.arm();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(engine.perfArmPending, isTrue);
+      expect(repo.armedDirectory, engine.lastPerfCaptureDir);
+      expect(engine.perfArmed, isFalse);
+      engine.acknowledgePerfArm();
+
+      expect(await arming, EngineResult.ok);
+      final json =
+          jsonDecode(
+                File(
+                  '${repo.armedDirectory}/arm-snapshot.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(json['captureBus'], 1);
+      expect(json['captureMask'], 0xC);
+    });
+
+    test('a queued arm that never acknowledges is canceled and cannot '
+        'alias a later capture', () async {
+      engine.perfArmQueues = true;
+      expect(await repo.arm(), EngineResult.device);
+      final abandoned = engine.lastPerfCaptureDir!;
+      expect(engine.perfDisarmCalls, 1);
+      expect(engine.perfArmPending, isFalse);
+      expect(repo.armedDirectory, isNull);
+      expect(Directory(abandoned).existsSync(), isTrue);
+
+      engine.perfArmQueues = false;
+      expect(await repo.arm(), EngineResult.ok);
+      expect(repo.armedDirectory, isNot(abandoned));
+      expect(engine.lastPerfCaptureDir, repo.armedDirectory);
+    });
+
+    test('a post-arm snapshot exception stops capture and preserves its '
+        'directory', () async {
+      final broken = _ThrowAfterArmEngine()..throwSnapshot = true;
+      final localRepo = PerformanceRepository(
+        engine: broken,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(localRepo.dispose);
+
+      await expectLater(localRepo.arm(), throwsStateError);
+      expect(broken.perfDisarmCalls, 1);
+      expect(broken.perfArmed, isFalse);
+      expect(localRepo.armedDirectory, isNull);
+      expect(Directory(broken.lastPerfCaptureDir!).existsSync(), isTrue);
+    });
+
+    test('a post-arm output-chain exception keeps ownership when stop is '
+        'refused, then disarms without inventing an arm snapshot', () async {
+      final broken = _ThrowAfterArmEngine()
+        ..throwOutputFx = true
+        ..perfDisarmResult = EngineResult.device;
+      final localRepo = PerformanceRepository(
+        engine: broken,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(localRepo.dispose);
+
+      await expectLater(localRepo.arm(), throwsStateError);
+      final dir = broken.lastPerfCaptureDir!;
+      expect(localRepo.armedDirectory, dir);
+      expect(broken.perfArmed, isTrue);
+      expect(File('$dir/arm-snapshot.json').existsSync(), isFalse);
+      writeNativeSidecar(dir);
+
+      broken.perfDisarmResult = EngineResult.ok;
+      expect(await localRepo.disarmAndFinalize(), EngineResult.ok);
+      final manifest =
+          jsonDecode(File('$dir/performance.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(manifest.containsKey('armSnapshot'), isFalse);
+    });
+
+    test('a thrown native cleanup after post-arm getter failure retains '
+        'visible ownership for an immediate disarm retry', () async {
+      final broken = _ThrowAfterArmEngine()
+        ..throwOutputFx = true
+        ..throwDisarmOnce = true;
+      final localRepo = PerformanceRepository(
+        engine: broken,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(localRepo.dispose);
+      final statuses = <PerformanceCaptureStatus>[];
+      final sub = localRepo.captureStatus.listen(statuses.add);
+      addTearDown(sub.cancel);
+
+      await expectLater(localRepo.arm(), throwsStateError);
+      await pumpEventQueue();
+      final dir = broken.lastPerfCaptureDir!;
+      expect(statuses.last, PerformanceCaptureStatus.armed);
+      expect(localRepo.armedDirectory, dir);
+      expect(broken.perfArmed, isTrue);
+      expect(broken.perfDisarmCalls, 1);
+      expect(File('$dir/arm-snapshot.json').existsSync(), isFalse);
+      expect(await localRepo.arm(), EngineResult.ok);
+      expect(broken.perfArmCalls, 1);
+
+      writeNativeSidecar(dir);
+      expect(await localRepo.disarm(), EngineResult.ok);
+      expect(broken.perfArmed, isFalse);
+      expect(localRepo.armedDirectory, isNull);
+      final manifest =
+          jsonDecode(File('$dir/performance.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(manifest.containsKey('armSnapshot'), isFalse);
+    });
+
     test('creates the slugged bundle directory and arms the engine', () async {
       final result = await repo.arm();
       expect(result, EngineResult.ok);
@@ -163,6 +383,124 @@ void main() {
       expect(Directory(repo.armedDirectory!).existsSync(), isTrue);
       expect(engine.perfArmed, isTrue);
       expect(engine.lastPerfCaptureDir, repo.armedDirectory);
+    });
+
+    test('setFollowOutput forwards the policy to the engine, and the arm '
+        "snapshot records the take's policy and destination 0's facts "
+        '(slice 3b)', () async {
+      expect(repo.setFollowOutput(follow: true), EngineResult.ok);
+      expect(engine.perfFollowOutput, isTrue);
+      engine
+        ..outputLevels = [0.5, 1]
+        ..outputMuted = [true, false];
+
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      final armJson =
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(armJson['followOutput'], isTrue);
+      expect(armJson.containsKey('captureBus'), isFalse);
+      expect(armJson['outputLevel'], 0.5);
+      expect(armJson['outputMuted'], isTrue);
+    });
+
+    test('the arm snapshot records the destination the engine settles on '
+        'INSIDE the arm, not the one the pre-arm snapshot named', () async {
+      // The gate moves while this arm exports lanes and writes the manifest:
+      // the engine picks destination 1, so the manifest must say 1 and carry
+      // ITS facts, or the offline render replays the wrong level rides.
+      engine
+        ..perfCaptureBus = 0
+        ..perfCaptureBusAtArm = 1
+        ..outputLevels = [1, 0.25]
+        ..outputMuted = [true, false];
+
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      final armJson =
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(armJson['captureBus'], 1);
+      expect(armJson['outputLevel'], 0.25);
+      expect(armJson.containsKey('outputMuted'), isFalse);
+    });
+
+    test(
+      'the take keeps the policy settled at arm after pre-arm I/O',
+      () async {
+        engine
+          ..perfFollowOutput = false
+          ..perfFollowOutputAtArm = true;
+        expect(await repo.arm(), EngineResult.ok);
+        final manifest =
+            jsonDecode(
+                  File(
+                    '${repo.armedDirectory}/arm-snapshot.json',
+                  ).readAsStringSync(),
+                )
+                as Map<String, dynamic>;
+        expect(manifest['followOutput'], isTrue);
+        engine.perfFollowOutput = false;
+        expect(engine.snapshot().perfFollowOutput, isTrue);
+        expect(PerformanceArmSnapshot.fromJson(manifest).followOutput, isTrue);
+      },
+    );
+
+    test(
+      'the arm snapshot stores the selected output chain and mask',
+      () async {
+        engine
+          ..perfCaptureBus = 0
+          ..perfCaptureBusAtArm = 1
+          ..perfOutputEnabledMask = 0xC;
+        engine.outputChains[0] = OutputFxSnapshot(
+          effects: [
+            OutputEffectSnapshot(
+              type: TrackEffectType.reverb.code,
+              params: TrackEffectType.reverb.defaultParams,
+            ),
+          ],
+        );
+        engine.outputChains[1] = OutputFxSnapshot(
+          effects: [
+            OutputEffectSnapshot(
+              type: TrackEffectType.drive.code,
+              params: TrackEffectType.drive.defaultParams,
+            ),
+          ],
+          chainEnabled: false,
+        );
+        expect(await repo.arm(), EngineResult.ok);
+        final manifest =
+            jsonDecode(
+                  File(
+                    '${repo.armedDirectory}/arm-snapshot.json',
+                  ).readAsStringSync(),
+                )
+                as Map<String, dynamic>;
+        expect(manifest['captureBus'], 1);
+        expect(manifest['captureMask'], 0xC);
+        expect(manifest['outputEnabledMask'], 0xC);
+        expect(manifest['outputChainEnabled'], isFalse);
+        final effects = manifest['outputEffects'] as List<dynamic>;
+        expect(
+          (effects.single as Map<String, dynamic>)['type'],
+          TrackEffectType.drive.code,
+        );
+      },
+    );
+
+    test('an engine with no captured destination refuses the arm', () async {
+      engine
+        ..perfCaptureBus = -1
+        ..perfCaptureBusAtArm = -1
+        ..outputLevels = const []
+        ..outputMuted = const [];
+
+      expect(await repo.arm(), EngineResult.invalid);
+      expect(repo.armedDirectory, isNull);
+      expect(engine.perfArmed, isFalse);
     });
 
     test('writes the arm-time snapshot for every settled lane', () async {
@@ -365,6 +703,16 @@ void main() {
       () async {
         engine.seedLane(0, 0, Float32List.fromList([1, 1]));
 
+        engine.outputChain = OutputFxSnapshot(
+          effects: [
+            OutputEffectSnapshot(
+              type: TrackEffectType.filter.code,
+              params: TrackEffectType.filter.defaultParams,
+            ),
+          ],
+          chainEnabled: false,
+        );
+
         await repo.arm(
           chains: PerformanceChains(
             laneChains: [
@@ -393,8 +741,6 @@ void main() {
                 effects: [BuiltInEffect(type: TrackEffectType.drive)],
               ),
             ],
-            masterEffects: [BuiltInEffect(type: TrackEffectType.filter)],
-            masterChainEnabled: false,
           ),
         );
 
@@ -422,12 +768,12 @@ void main() {
           armSnapshot.trackChains.single.effects.single.typeCode,
           TrackEffectType.drive.code,
         );
-        // Master insert.
+        // The actual captured output destination.
         expect(
-          armSnapshot.masterEffects.single.typeCode,
+          armSnapshot.outputEffects.single.typeCode,
           TrackEffectType.filter.code,
         );
-        expect(armSnapshot.masterChainEnabled, isFalse);
+        expect(armSnapshot.outputChainEnabled, isFalse);
       },
     );
 

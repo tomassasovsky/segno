@@ -29,6 +29,7 @@ export 'package:segno_engine/segno_engine.dart'
         kMaxInputTrimDb,
         kMaxLanes,
         kMaxMonitoredInputs,
+        kMaxOutputBuses,
         kMinInputTrimDb,
         kTrackEffectMax,
         kTrackEffectParams;
@@ -64,6 +65,7 @@ export 'src/models/lane.dart';
 export 'src/models/looper_state.dart';
 export 'src/models/mix_settings_snapshot.dart';
 export 'src/models/mix_target.dart';
+export 'src/models/output_setup.dart';
 export 'src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginFormat, PluginParamInfo;
 export 'src/models/session_rig.dart';
