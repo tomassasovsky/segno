@@ -98,6 +98,20 @@ class MockAudioEngine implements AudioEngine {
   double _clickVolume = 1;
   int _countInBars = 0;
 
+  @override
+  EngineResult setTrackLengthPresets(List<int> bars) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (bars.length != LE_MAX_TRACKS ||
+        bars.any((value) => value < 0 || value > LE_LENGTH_PRESET_MAX_BARS)) {
+      return EngineResult.invalid;
+    }
+    for (var channel = 0; channel < bars.length; channel++) {
+      _tracks[channel].lengthPresetBars = bars[channel];
+    }
+    return EngineResult.ok;
+  }
+
   // ---- looper mode (LooperModeControl, B2a) ----
   //
   // Same seeded-once persistence as the tempo/click settings above. Unlike
@@ -714,6 +728,7 @@ class MockAudioEngine implements AudioEngine {
   }) {
     final result = _requireRunning();
     if (!result.isOk) return result;
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     if (bars < 0 || bars > LE_LENGTH_PRESET_MAX_BARS) {
       return EngineResult.invalid;
     }
@@ -734,6 +749,14 @@ class MockAudioEngine implements AudioEngine {
     final result = _requireRunning();
     if (!result.isOk) return result;
     // No content rules here — the mock holds no takes to measure.
+    _looperMode = mode;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setLooperModeWithPresets(LooperMode mode, List<int> bars) {
+    final result = setTrackLengthPresets(bars);
+    if (!result.isOk) return result;
     _looperMode = mode;
     return EngineResult.ok;
   }

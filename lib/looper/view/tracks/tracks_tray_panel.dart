@@ -6,7 +6,6 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/tracks_tab.dart';
-import 'package:segno/looper/view/tracks/lengths_tracks_tab.dart';
 import 'package:segno/looper/view/tracks/names_tracks_tab.dart';
 import 'package:segno/looper/view/tracks/routing_tracks_tab.dart';
 
@@ -40,12 +39,10 @@ class TracksTrayPanel extends StatelessWidget {
         onChanged: cubit.showTracksTab,
         tabs: [
           PillTab(value: TracksTab.names, label: l10n.tracksNamesTab),
-          PillTab(value: TracksTab.lengths, label: l10n.tracksLengthsTab),
           PillTab(value: TracksTab.routing, label: l10n.tracksRoutingTab),
         ],
         body: switch (tab) {
           TracksTab.names => const NamesTracksTab(),
-          TracksTab.lengths => const LengthsTracksTab(),
           TracksTab.routing => const RoutingTracksTab(),
         },
       ),

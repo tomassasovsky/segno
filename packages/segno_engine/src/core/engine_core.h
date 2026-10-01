@@ -20,6 +20,11 @@
 extern "C" {
 #endif
 
+/* Pure bounded validation shared by control producers and callback consumers.
+ * A batch rechecks the live signature before applying any future preset. */
+int32_t le_length_presets_check(le_engine* engine, const int32_t* bars,
+                               int32_t count);
+
 /* Loopback latency harness tuning. The echo returns only mildly attenuated
  * (~0.9 from a full-scale pulse on a typical interface), so we emit a quiet
  * calibration tone rather than full scale to spare the user's monitors, and

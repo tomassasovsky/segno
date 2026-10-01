@@ -146,6 +146,7 @@ class SessionRig {
     this.recordTiming = RecordTiming.immediately,
     this.overdubDecay = 0,
     this.defaultOneShot = false,
+    this.defaultLengthPresetBars = 0,
     this.defaultMultiple = 0,
     this.trackRecordTimingOverrides = const {},
     this.trackOverdubDecayOverrides = const {},
@@ -174,6 +175,9 @@ class SessionRig {
 
   /// Default playback: Once when true, Loop when false.
   final bool defaultOneShot;
+
+  /// Default length for future recordings: zero is Auto, otherwise bars.
+  final int defaultLengthPresetBars;
 
   /// Default future recording length (`0` = Auto).
   final int defaultMultiple;

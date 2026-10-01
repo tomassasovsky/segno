@@ -105,12 +105,7 @@ class SessionCubit extends Cubit<SessionState> {
     if ((await _repository.listSessions()).any((s) => s.name == slug)) {
       throw SessionNameCollision(slug: slug);
     }
-    await _repository.save(
-      await _repository.bundlePath(name),
-      chains: chainsFromLooper(_looper),
-      settings: settingsFromLooper(_looper),
-      pedalBindings: _currentPedalBindings(),
-    );
+    await _saveCurrentRig(await _repository.bundlePath(name));
     return _ActionResult(
       SessionOutcome.saved,
       currentName: slug,
@@ -133,12 +128,7 @@ class SessionCubit extends Cubit<SessionState> {
       return Future<void>.value();
     }
     return _run(() async {
-      await _repository.save(
-        await _repository.bundlePath(name),
-        chains: chainsFromLooper(_looper),
-        settings: settingsFromLooper(_looper),
-        pedalBindings: _currentPedalBindings(),
-      );
+      await _saveCurrentRig(await _repository.bundlePath(name));
       // Re-list, like every other mutation: the sessions dialog stays open by
       // design, and its date column reads the catalog — without this a
       // just-saved session goes on saying "yesterday".
@@ -147,6 +137,22 @@ class SessionCubit extends Cubit<SessionState> {
         sessions: await _repository.listSessions(),
       );
     });
+  }
+
+  Future<void> _saveCurrentRig(String directory) async {
+    if (!_looper.lengthSettingsSettled) {
+      final revision = _looper.sessionRevision;
+      final result = await _looper.settleLengthSettings();
+      if (!result.isOk || revision != _looper.sessionRevision || isClosed) {
+        throw StateError('length settings did not settle before session save');
+      }
+    }
+    await _repository.save(
+      directory,
+      chains: chainsFromLooper(_looper),
+      settings: settingsFromLooper(_looper),
+      pedalBindings: _currentPedalBindings(),
+    );
   }
 
   /// Loads named session [name] into the engine through the looper repository

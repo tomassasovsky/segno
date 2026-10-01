@@ -496,6 +496,11 @@ abstract interface class TempoControl {
   /// tempo (30 BPM) would exceed engine capacity — checked before recording
   /// starts.
   EngineResult setTrackLengthPreset({required int channel, required int bars});
+
+  /// Sets future-recording lengths for every configured track in one command.
+  /// [bars] must have exactly one value per track, each in `0..64`.
+  /// Validation or queue refusal leaves every preset unchanged.
+  EngineResult setTrackLengthPresets(List<int> bars);
 }
 
 /// The five-mode architectural looper axis (plan §Architecture 2, decision
@@ -532,6 +537,13 @@ abstract interface class LooperModeControl {
   /// [looperModeGate] reads capturing, queued or spans; stops every playing
   /// track first when it reads playing; a no-op for the current mode.
   EngineResult setLooperMode(LooperMode mode);
+
+  /// Atomically switches mode, stops playing loops when needed, and sets the
+  /// future-recording lengths for every configured track. The same mode gate
+  /// applies as [setLooperMode]. The vector follows
+  /// [TempoControl.setTrackLengthPresets].
+  /// A refusal, including callback gate rejection, changes none of these.
+  EngineResult setLooperModeWithPresets(LooperMode mode, List<int> bars);
 
   /// Crowns [channel] the primary track (Sync/Band, D18). Accepted in every
   /// looper mode and NOT gated by the D4 content lock — the crown is a

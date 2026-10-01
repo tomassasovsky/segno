@@ -1137,6 +1137,10 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
     if (arg_i > LE_COUNT_IN_MAX_BARS) arg_i = LE_COUNT_IN_MAX_BARS;
     return le_engine_set_count_in(engine, arg_i);
   }
+  if (code == LE_CMD_SET_LOOPER_MODE) {
+    return le_push_cmd(engine, (le_command){.code = code,
+                                           .presets = {.mode = arg_i}});
+  }
   if (code == LE_CMD_SET_AUTO_RECORD) {
     return le_engine_set_auto_record(engine, arg_i);
   }

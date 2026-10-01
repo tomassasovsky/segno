@@ -18,6 +18,21 @@ See the [slice ledger](plan/2026-09-09-segno-implementation-ledger.md) and
 [validation record](reviews/design-tracks-restack/validation.md). The remaining
 stack is still pending reconstruction; no appliance deployment is implied.
 
+## October 2026 Loop settings reconstruction (#1012)
+
+The Loop settings slice is reconstructed on the verified recording-timing
+stack. Default and per-track choices retain field-level inheritance, including
+explicit Auto and Loop overrides. Length and mode requests submit one bounded
+engine command and publish or save only the callback-confirmed result. Startup,
+recall, timeout and device reconnect use the same confirmed state boundary.
+Touch and keyboard focus cover edit, commit and Cancel; obsolete Loop and
+coarse timing controls are removed. See the
+[validation record](reviews/design-loop-settings-restack/README.md).
+
+Follow-tempo/pitch processing remains explicitly unavailable until its engine
+slice. Physical encoder routing remains in the controller slice; desktop focus
+checks do not establish UART or appliance behavior. No deployment is implied.
+
 ## September 2026 appliance integration
 
 The console link, CTRL jacks, and appliance delivery stack (#984, #986, #990)
@@ -64,11 +79,11 @@ install hook remain unchanged. A failed inspection stops the release build.
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
-  env (exit 69, machine-output parser vs Flutter 3.44). Hooks block bare
-  `flutter test` / `dart test`. Run via the **absolute path**, which the guard
-  doesn't match: `/Users/Tomas/development/flutter/bin/flutter test`.
-- **Scaffolding:** `flutter create` is hook-blocked in favour of the very_good
-  MCP `create` tool — but that only makes federated method-channel plugins. The
+  env (exit 69, machine-output parser vs Flutter 3.44). Use the working SDK:
+  `/Users/Tomas/development/flutter/bin/flutter test`. Codex does not install
+  the former Claude hook that blocked bare CLI test commands.
+- **Scaffolding:** prefer the Very Good CLI templates for normal packages.
+  The Very Good MCP `create` tool only makes federated method-channel plugins. The
   FFI plugin (`segno_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +
   podspec). Native engine lives **inside** the plugin at
   `packages/segno_engine/src/` (Flutter symlinks plugins at build time, so
@@ -316,6 +331,17 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 
 Phases 1–3 of the plan plus several sync refinements. See `git log` for detail.
 
+- **Accepted design, slice 2c (#1012, epic #1009):** the Loop settings
+  pages at the pen's size (hub, Loop mode cards with reasons and the stop
+  dialog, Recording, Tempo & click with the signature grid, Length &
+  quantize and Playback & overdub with the Tracks / Defaults / 1-8 selector
+  and field-level inheritance, Audio & tempo as a readout), opened from the
+  tray's Loop entry and the Settings rail; the tray's Loop tabs and Tracks
+  Lengths tab, the desktop Tempo and Mode sections and per-track rows, the
+  boolean quantize cubit and the sync switch are gone; the session manifest
+  carries per-track length and Once overrides; the click output and level
+  sit on the Audio tray's Device tab until the Mixer. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Accepted design, slice 2b (#1012, epic #1009):** timing ownership: one
   record timing setting (Immediately, Loop start, bar to 1/16) by default and
   per track (a per-track division joins the per-track gate in the engine),

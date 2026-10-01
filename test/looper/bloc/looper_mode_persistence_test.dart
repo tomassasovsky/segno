@@ -53,24 +53,39 @@ void main() {
   });
 
   test(
-    'save confirmed modes, never requests rejected by stationary reports',
+    'persist modes only after callback acknowledgement and retain refusals',
     () async {
       repository.startEngine(const EngineConfig());
       await poll();
+      engine
+        ..commandsAreSettled = false
+        ..publishModeCommands = false;
       bloc.add(const LooperModeChanged(LooperMode.free));
       await pumpEventQueue();
       expect(repository.settledLooperMode, isNull);
       expect(await settings.loadLooperMode(), LooperMode.multi.code);
 
-      engine.nextSnapshot = _stopped(LooperMode.free);
+      await poll(2);
+      expect(repository.settledLooperMode, isNull);
+      expect(await settings.loadLooperMode(), LooperMode.multi.code);
+      engine
+        ..nextSnapshot = _stopped(LooperMode.free)
+        ..commandsAreSettled = true;
       await poll();
       expect(await settings.loadLooperMode(), LooperMode.free.code);
 
+      engine.commandsAreSettled = false;
       bloc.add(const LooperModeChanged(LooperMode.band));
       await pumpEventQueue();
+      expect(repository.settledLooperMode, isNull);
       expect(await settings.loadLooperMode(), LooperMode.free.code);
-      await poll(14); // No position, meter, or visible state changes.
+      await poll(2);
+      expect(repository.settledLooperMode, isNull);
+      // The callback consumed the request but kept the already-confirmed mode.
+      engine.commandsAreSettled = true;
+      await poll();
       expect(repository.settledLooperMode, LooperMode.free);
+      expect(repository.sessionTransport.isRunning, isTrue);
       expect(bloc.state.transport.looperMode, LooperMode.free);
       expect(await settings.loadLooperMode(), LooperMode.free.code);
       repository
@@ -81,20 +96,39 @@ void main() {
   );
 
   test(
-    'offline choices persist but a rejected boot replay is reconciled',
+    'rejected startup stops without replacing the saved offline choice',
     () async {
       engine.nextSnapshot = const le.EngineSnapshot.initial();
       bloc.add(const LooperModeChanged(LooperMode.band));
       await pumpEventQueue();
       expect(await settings.loadLooperMode(), LooperMode.band.code);
-      repository.startEngine(const EngineConfig());
-      engine.nextSnapshot = _stopped(LooperMode.multi);
+      engine
+        ..nextSnapshot = _stopped(LooperMode.multi)
+        ..commandsAreSettled = false
+        ..publishModeCommands = false;
+      expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
       expect(engine.lastLooperMode, LooperMode.band);
-      await poll();
+      await poll(2);
+      expect(repository.settledLooperMode, isNull);
       expect(await settings.loadLooperMode(), LooperMode.band.code);
-      await poll(13);
-      expect(repository.settledLooperMode, LooperMode.multi);
-      expect(await settings.loadLooperMode(), LooperMode.multi.code);
+
+      final failure = repository.lengthSettingsFailures.first;
+      engine.commandsAreSettled = true;
+      expect(await repository.settleLengthSettings(), EngineResult.invalid);
+      expect(await failure, EngineResult.invalid);
+      await poll();
+      expect(repository.sessionTransport.isRunning, isFalse);
+      expect(repository.settledLooperMode, LooperMode.band);
+      expect(await settings.loadLooperMode(), LooperMode.band.code);
+
+      engine.publishModeCommands = true;
+      expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+      expect(await repository.settleLengthSettings(), EngineResult.ok);
+      await poll();
+      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(engine.lastLooperMode, LooperMode.band);
+      expect(bloc.state.transport.looperMode, LooperMode.band);
+      expect(await settings.loadLooperMode(), LooperMode.band.code);
     },
   );
 }

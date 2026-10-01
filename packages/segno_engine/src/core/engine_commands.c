@@ -2023,30 +2023,33 @@ static int32_t le_post_clock_command(le_engine* engine, int32_t code,
   return rc;
 }
 
-int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode) {
-  if (mode < LE_LOOPER_MODE_MULTI || mode > LE_LOOPER_MODE_FREE) {
-    return LE_ERR_INVALID;
-  }
+static int32_t le_post_mode_with_presets(le_engine* engine, int32_t mode,
+                                          const int32_t* bars, int32_t count) {
   const int32_t gate = le_engine_looper_mode_gate(engine, mode);
   if (gate < 0) return gate;
   if (gate == LE_MODE_GATE_CAPTURING || gate == LE_MODE_GATE_QUEUED ||
-      gate == LE_MODE_GATE_SPANS) {
-    return LE_ERR_INVALID;
-  }
-  if (mode == load_i32(&engine->a_looper_mode)) return LE_OK;
-  if (gate == LE_MODE_GATE_PLAYING) {
-    /* Stop loops and switch: the stops are posted before the mode in the
-     * same ring, so the switch lands on a stopped rig (every playhead back
-     * at the top). */
-    for (int32_t c = 0; c < engine->track_count; ++c) {
-      le_track* t = &engine->tracks[c];
-      if (le_effective_state(t) != LE_TRACK_PLAYING) continue;
-      if (le_effective_len(t) <= 0) continue;
-      const int32_t rc = le_push(engine, LE_CMD_STOP, c, 0.0f);
-      if (rc != LE_OK) return rc;
-    }
-  }
-  return le_post_clock_command(engine, LE_CMD_SET_LOOPER_MODE, mode);
+      gate == LE_MODE_GATE_SPANS) return LE_ERR_INVALID;
+  if (count == 0 && mode == load_i32(&engine->a_looper_mode)) return LE_OK;
+  uint32_t sequence = engine->clock_commands_posted + 1;
+  if (sequence == 0) sequence = 1;
+  le_command cmd = {.code = LE_CMD_SET_LOOPER_MODE,
+                    .presets = {.mode = mode, .sequence = sequence,
+                                .count = count}};
+  if (count > 0) memcpy(cmd.presets.bars, bars, (size_t)count * sizeof(*bars));
+  const int32_t result = le_push_cmd(engine, cmd);
+  if (result == LE_OK) engine->clock_commands_posted = sequence;
+  return result;
+}
+
+int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode) {
+  return le_post_mode_with_presets(engine, mode, NULL, 0);
+}
+
+int32_t le_engine_set_looper_mode_with_presets(
+    le_engine* engine, int32_t mode, const int32_t* bars, int32_t count) {
+  const int32_t result = le_length_presets_check(engine, bars, count);
+  if (result != LE_OK) return result;
+  return le_post_mode_with_presets(engine, mode, bars, count);
 }
 
 /* ---- primary track / Sync + Band (B3/B3b, D16/D18) ---- */
@@ -2206,10 +2209,7 @@ int32_t le_engine_set_default_multiple(le_engine* engine, int32_t multiple) {
 /* ---- track length presets (A6, D17; see segno_engine_api.h's section doc for
  * the full preset x click-mode matrix) ---- */
 
-int32_t le_engine_set_track_length_preset(le_engine* engine, int32_t channel,
-                                          int32_t bars) {
-  if (engine == NULL) return LE_ERR_INVALID;
-  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+static int32_t le_length_preset_check(le_engine* engine, int32_t bars) {
   if (bars < 0 || bars > LE_LENGTH_PRESET_MAX_BARS) return LE_ERR_INVALID;
   if (bars > 0) {
     /* D17 allocation guard: `bars` bars of the CURRENT time signature at the
@@ -2229,7 +2229,42 @@ int32_t le_engine_set_track_length_preset(le_engine* engine, int32_t channel,
       return LE_ERR_CAPACITY;
     }
   }
+  return LE_OK;
+}
+
+int32_t le_length_presets_check(le_engine* engine, const int32_t* bars,
+                               int32_t count) {
+  if (engine == NULL || bars == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (count != engine->track_count || count <= 0 || count > LE_MAX_TRACKS) {
+    return LE_ERR_INVALID;
+  }
+  for (int32_t c = 0; c < count; ++c) {
+    const int32_t result = le_length_preset_check(engine, bars[c]);
+    if (result != LE_OK) return result;
+  }
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_length_preset(le_engine* engine, int32_t channel,
+                                         int32_t bars) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  const int32_t result = le_length_preset_check(engine, bars);
+  if (result != LE_OK) return result;
   return le_push(engine, LE_CMD_SET_LENGTH_PRESET, channel, (float)bars);
+}
+
+int32_t le_engine_set_track_length_presets(
+    le_engine* engine, const int32_t* bars, int32_t count) {
+  const int32_t result = le_length_presets_check(engine, bars, count);
+  if (result != LE_OK) return result;
+  le_command cmd = {.code = LE_CMD_SET_LENGTH_PRESETS,
+                    .presets = {.count = count}};
+  memcpy(cmd.presets.bars, bars, (size_t)count * sizeof(*bars));
+  return le_push_cmd(engine, cmd);
 }
 
 int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled) {

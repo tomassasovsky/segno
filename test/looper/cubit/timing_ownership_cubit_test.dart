@@ -76,7 +76,10 @@ void main() {
         repository: repository,
         settings: delayed,
       );
-      final quantize = QuantizeCubit(repository: repository, settings: delayed);
+      final quantize = RecordTimingCubit(
+        repository: repository,
+        settings: delayed,
+      );
       final record = RecordOptionsCubit(
         repository: repository,
         settings: delayed,
@@ -104,7 +107,7 @@ void main() {
       );
       await poll();
       expect(playback.state, const PlaybackOptions(overdubDecay: 35));
-      expect(quantize.state, isFalse);
+      expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions(autoRecord: true));
       expect(tempo.state, const TempoSettings(bpm: 96));
 
@@ -112,7 +115,7 @@ void main() {
       await loads;
       await poll();
       expect(playback.state, const PlaybackOptions(overdubDecay: 35));
-      expect(quantize.state, isFalse);
+      expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions(autoRecord: true));
       expect(tempo.state, const TempoSettings(bpm: 96));
       expect(repository.sessionTransport.overdubDecay, 35);
@@ -131,7 +134,10 @@ void main() {
         repository: repository,
         settings: delayed,
       );
-      final quantize = QuantizeCubit(repository: repository, settings: delayed);
+      final quantize = RecordTimingCubit(
+        repository: repository,
+        settings: delayed,
+      );
       final record = RecordOptionsCubit(
         repository: repository,
         settings: delayed,
@@ -157,7 +163,7 @@ void main() {
       await poll();
 
       expect(playback.state, const PlaybackOptions());
-      expect(quantize.state, isFalse);
+      expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions());
       expect(tempo.state, const TempoSettings());
       expect(repository.sessionTransport.overdubDecay, 0);
@@ -240,25 +246,28 @@ void main() {
     verify: (cubit) => expect(cubit.state, const PlaybackOptions()),
   );
 
-  blocTest<QuantizeCubit, bool>(
+  blocTest<RecordTimingCubit, RecordTiming>(
     'offline quantize follows recalled timing and toggles from that value',
-    build: () => QuantizeCubit(repository: repository, settings: settings),
+    build: () => RecordTimingCubit(
+      repository: repository,
+      settings: settings,
+    ),
     act: (cubit) async {
       await cubit.load();
       await cubit.setEnabled(value: true);
       await poll();
-      expect(cubit.state, isTrue);
+      expect(cubit.state, RecordTiming.loopStart);
 
       await repository.applySession(const SessionRig());
       await poll();
-      expect(cubit.state, isFalse);
+      expect(cubit.state, RecordTiming.immediately);
       expect(await settings.loadQuantize(), isTrue);
       await cubit.load();
-      await cubit.toggle();
+      await cubit.setEnabled(value: true);
       await poll();
     },
     verify: (cubit) {
-      expect(cubit.state, isTrue);
+      expect(cubit.state, RecordTiming.loopStart);
       expect(repository.sessionTransport.quantize, isTrue);
     },
   );
@@ -300,11 +309,9 @@ void main() {
     act: (cubit) async {
       await cubit.load();
       await cubit.setTempo(120);
-      await cubit.setQuantizeDiv(GridDivision.bar);
       await cubit.setCountInBars(1);
       await poll();
       expect(cubit.state.bpm, 120);
-      expect(cubit.state.quantizeDiv, GridDivision.bar);
       expect(cubit.state.countInBars, 1);
 
       await repository.applySession(
@@ -329,8 +336,6 @@ void main() {
           bpm: 96,
           tsNum: 5,
           tsDen: 8,
-          syncTempo: false,
-          quantizeDiv: GridDivision.eighth,
           clickMode: ClickMode.playRec,
           clickOutputMask: 3,
           clickVolume: 0.5,

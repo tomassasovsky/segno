@@ -15,6 +15,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "segno_engine_api.h" /* LE_MAX_TRACKS: bounded preset payload */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -73,6 +75,13 @@ typedef struct le_command {
       int32_t value;
       uint32_t sequence;
     } clock;
+    struct { /* SET_LENGTH_PRESETS / SET_LOOPER_MODE. count == 0 means a
+              * mode-only command; bars are copied, never caller-owned pointers. */
+      int32_t mode;
+      uint32_t sequence;
+      int32_t count;
+      int32_t bars[LE_MAX_TRACKS];
+    } presets;
     struct { /* COMMIT_SESSION: exact recorded span and musical bar count. */
       int32_t base_frames, loop_bars;
     } session;

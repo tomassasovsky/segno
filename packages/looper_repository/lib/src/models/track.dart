@@ -52,6 +52,7 @@ class Track extends Equatable {
     this.pendingTrigger,
     this.positionFrames = 0,
     this.lengthPresetBars = 0,
+    this.lengthPresetOverride,
     this.recordTimingOverride,
     this.overdubDecayOverride,
     this.oneShot = false,
@@ -122,6 +123,9 @@ class Track extends Equatable {
   /// fixed N bars. Inert on a track that already has content; applies to the
   /// next defining recording only. See `LooperRepository.setTrackLengthPreset`.
   final int lengthPresetBars;
+
+  /// Explicit future-recording length: null inherits, zero is Custom Auto.
+  final int? lengthPresetOverride;
 
   /// This track's record timing override (accepted design, Length &
   /// quantize): `null` follows the default in full, else the timing this
@@ -292,6 +296,7 @@ class Track extends Equatable {
     pending,
     pendingTrigger,
     lengthPresetBars,
+    lengthPresetOverride,
     recordTimingOverride,
     overdubDecayOverride,
     oneShot,
@@ -333,6 +338,7 @@ class Track extends Equatable {
     pending,
     pendingTrigger,
     lengthPresetBars,
+    lengthPresetOverride,
     recordTimingOverride,
     overdubDecayOverride,
     oneShot,
