@@ -985,6 +985,7 @@ class PerformanceRepository {
           state: track.state,
           volume: track.volume,
           muted: track.muted,
+          solo: track.solo,
           multiple: track.multiple,
           lanes: lanes,
         ),

@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_client/midi_client.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/looper/looper.dart';
+import '../../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -51,7 +52,11 @@ void main() {
   });
 
   test('a fake MIDI CC 80 press drives LooperBloc record', () async {
-    final bloc = LooperBloc(repository: repository, controller: controller);
+    final bloc = LooperBloc(
+      mixSettings: testMixSettings(repository),
+      repository: repository,
+      controller: controller,
+    );
     addTearDown(bloc.close);
 
     // CC 80 (value 127) -> recordOverdub on channel 0 (default mapping).
@@ -62,7 +67,11 @@ void main() {
   });
 
   test('sub-debounce repeats of the same CC collapse to one record', () async {
-    final bloc = LooperBloc(repository: repository, controller: controller);
+    final bloc = LooperBloc(
+      mixSettings: testMixSettings(repository),
+      repository: repository,
+      controller: controller,
+    );
     addTearDown(bloc.close);
 
     // Two presses within the 30 ms debounce window — only the first acts.
@@ -75,7 +84,11 @@ void main() {
   });
 
   test('an unmapped CC is ignored (no looper action)', () async {
-    final bloc = LooperBloc(repository: repository, controller: controller);
+    final bloc = LooperBloc(
+      mixSettings: testMixSettings(repository),
+      repository: repository,
+      controller: controller,
+    );
     addTearDown(bloc.close);
 
     // CC 7 is not in the default mapping — it must fire no action.
@@ -90,7 +103,11 @@ void main() {
     'the default tapTempo mapping (CC 84) drives repository.tapTempo',
     () async {
       when(repository.tapTempo).thenReturn(EngineResult.ok);
-      final bloc = LooperBloc(repository: repository, controller: controller);
+      final bloc = LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        controller: controller,
+      );
       addTearDown(bloc.close);
 
       source.pushForTest(_cc, 84, 127);

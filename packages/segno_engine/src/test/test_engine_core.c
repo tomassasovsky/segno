@@ -65,6 +65,19 @@ static int g_failures = 0;
 
 #ifdef LE_NATIVE_TESTS
 static int g_process_after_clear_posted;
+static int g_process_record_image_staged;
+static int g_record_image_staged_state;
+static int g_record_image_staged_channel;
+void le_test_record_image_staged(le_engine* engine) {
+  if (!g_process_record_image_staged) return;
+  g_process_record_image_staged = 0;
+  float in[1280], out[1280];
+  for (int i = 0; i < 1280; ++i) in[i] = .7f;
+  le_engine_process(engine, out, in, 1280);
+  g_record_image_staged_state =
+      load_i32(&engine->tracks[g_record_image_staged_channel].a_state);
+}
+
 void le_test_after_clear_posted(le_engine* engine) {
   if (!g_process_after_clear_posted) return;
   g_process_after_clear_posted = 0;
@@ -15337,6 +15350,827 @@ static void test_lane_volume_and_mute(void) {
   le_engine_destroy(e);
 }
 
+/* ---- the mix model (accepted design, slice 3) ---- */
+
+/* Pan: a unity-centre balance law on the lane's stereo pair. Centre is
+ * bit-identical to no pan; hard left keeps the left output alone; a partial
+ * pan attenuates only the far side on a quarter-sine; a mono route receives
+ * the pair's mid, so pan there is a plain attenuation. */
+static void test_lane_pan_law(void) {
+  printf("test_lane_pan_law\n");
+  le_engine* e = make_two_lane_engine();
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK); /* stereo pair */
+  CHECK(le_engine_set_lane_mute(e, 0, 1, 1) == LE_OK);     /* lane 1 silent */
+  drain(e);
+  float out[2 * LOOP_N];
+  float zin[2 * LOOP_N] = {0};
+  record_two_lane(e, 1.0f, 0.0f);
+
+  /* Centre: both sides exactly 1.0. */
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(out[i * 2 + 0] == 1.0f);
+    CHECK(out[i * 2 + 1] == 1.0f);
+  }
+  /* Hard left. */
+  CHECK(le_engine_set_lane_pan(e, 0, 0, -1.0f) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
+  /* Half right: left falls to cos(pi/4), right stays at unity. */
+  CHECK(le_engine_set_lane_pan(e, 0, 0, 0.5f) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 0.70710678f) < 1e-5f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
+  }
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, 0, &ls);
+  CHECK(fabsf(ls.pan - 0.5f) < 1e-6f);
+  /* Out of range clamps; a bad lane is refused. */
+  CHECK(le_engine_set_lane_pan(e, 0, 0, 7.0f) == LE_OK);
+  drain(e);
+  le_engine_get_lane(e, 0, 0, &ls);
+  CHECK(fabsf(ls.pan - 1.0f) < 1e-6f);
+  CHECK(le_engine_set_lane_pan(e, 0, LE_MAX_LANES, 0.0f) == LE_ERR_INVALID);
+  /* A mono route gets the pair's mid: hard right on output 0 alone = 0.5. */
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 0.5f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
+  /* Reconfigure puts the lane back at centre. */
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  le_engine_get_lane(e, 0, 0, &ls);
+  CHECK(ls.pan == 0.0f);
+  le_engine_destroy(e);
+}
+
+/* Records LOOP_N frames of `value` from input 0 into track `ch` (lane 0 on
+ * input 0, output 0 only) and finalizes to PLAYING. */
+static void record_mono_track(le_engine* e, int32_t ch, float value) {
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = value;
+    in[i * 2 + 1] = 0.0f;
+  }
+  le_engine_set_lane_input(e, ch, 0, 0);
+  le_engine_set_lane_output(e, ch, 0, 0x1);
+  drain(e);
+  le_engine_record(e, ch);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, ch);
+  drain(e);
+}
+
+/* Solo: while any track is soloed only soloed tracks route; mute still gates
+ * on its own; clearing every solo restores the mix; monitors are unaffected. */
+static void test_track_solo_gates_routing(void) {
+  printf("test_track_solo_gates_routing\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 0.0f;
+    in[i * 2 + 1] = 4.0f; /* input 1: monitored below */
+  }
+  record_mono_track(e, 0, 1.0f);
+  record_mono_track(e, 1, 2.0f);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+
+  /* Solo track 1: track 0 stops routing, its state stays PLAYING. */
+  CHECK(le_engine_set_track_solo(e, 1, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].solo == 0);
+  CHECK(s.tracks[1].solo == 1);
+  CHECK(s.tracks[0].muted == 0); /* solo never writes the mute */
+
+  /* Solo both: the full mix again. Mute the soloed track 0: mute still gates. */
+  CHECK(le_engine_set_track_solo(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+  CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+
+  /* A monitor routes through a solo it is not part of. */
+  CHECK(le_engine_set_monitor_input(e, 1, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 1, 0x2) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 1] - 4.0f) < 1e-6f);
+
+  /* Clear the solos: the mute is as it was left. */
+  CHECK(le_engine_set_track_solo(e, 0, 0) == LE_OK);
+  CHECK(le_engine_set_track_solo(e, 1, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+  CHECK(le_engine_set_lane_mute(e, 0, 0, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+  CHECK(le_engine_set_track_solo(e, LE_MAX_TRACKS + 3, 1) == LE_ERR_INVALID);
+  le_engine_destroy(e);
+}
+
+/* Capture trim scales only what records: the monitor, the input meters and
+ * the clip detector read the untrimmed input; the setting holds while
+ * stopped, clamps, and reconfigure returns it to unity. */
+static void test_input_trim_scales_capture_only(void) {
+  printf("test_input_trim_scales_capture_only\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_set_input_trim(e, 0, 0.5f) == LE_OK); /* before configure */
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_trim[0] == 1.0f); /* configure resets to unity */
+  CHECK(le_engine_set_input_trim(e, 0, 0.5f) == LE_OK); /* stopped: holds */
+  CHECK(le_engine_set_input_trim(e, LE_MAX_CHANNELS, 1.0f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_input_trim(e, 1, 100.0f) == LE_OK); /* clamps */
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.input_trim[0] - 0.5f) < 1e-6f);
+  CHECK(fabsf(s.input_trim[1] - LE_MAX_INPUT_TRIM) < 1e-5f);
+
+  /* Monitor input 0 to output 1 at unity: hears the untrimmed 1.0. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 0x2) == LE_OK);
+  record_mono_track(e, 0, 1.0f);
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 0.5f) < 1e-6f); /* the take recorded at 0.5 */
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f); /* the monitor is untrimmed */
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.input_peaks[0] - 1.0f) < 1e-6f); /* raw, before the trim */
+  CHECK(s.input_peaks[1] == 0.0f);
+  CHECK(s.input_peaks[LE_MAX_CHANNELS - 1] == 0.0f); /* past the device */
+  CHECK(fabsf(s.monitor_peaks[0] - 1.0f) < 1e-6f);
+  CHECK(fabsf(s.output_peaks[0] - 0.5f) < 1e-6f);
+  CHECK(fabsf(s.output_peaks[1] - 1.0f) < 1e-6f);
+  le_engine_destroy(e);
+}
+
+/* Monitor pan uses the lane law; every hardware input can be monitored, not
+ * only the first eight. */
+static void test_monitor_pan_and_wide_inputs(void) {
+  printf("test_monitor_pan_and_wide_inputs\n");
+  enum { NIN = 18 };
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, NIN, 2, 1000);
+  float out[2 * LOOP_N];
+  float in[NIN * LOOP_N] = {0};
+  for (int i = 0; i < LOOP_N; ++i) in[i * NIN + (NIN - 1)] = 1.0f;
+  CHECK(le_engine_set_monitor_input(e, NIN - 1, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, NIN - 1, 0x3) == LE_OK);
+  CHECK(le_engine_set_monitor_input_pan(e, NIN - 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_pan(e, LE_MAX_MONITORED_INPUTS, 0.0f) ==
+        LE_ERR_INVALID);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
+  }
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.monitor_peaks[NIN - 1] - 1.0f) < 1e-6f);
+  CHECK(fabsf(s.input_peaks[NIN - 1] - 1.0f) < 1e-6f);
+  CHECK(s.monitor_peaks[0] == 0.0f);
+  le_engine_destroy(e);
+}
+
+/* The track's stereo peaks follow the fader and the pan; the dry `peak`
+ * does not. */
+static void test_track_stereo_peaks_follow_fader(void) {
+  printf("test_track_stereo_peaks_follow_fader\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  record_mono_track(e, 0, 1.0f);
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
+  CHECK(le_engine_set_lane_volume(e, 0, 0, 0.5f) == LE_OK);
+  CHECK(le_engine_set_lane_pan(e, 0, 0, -1.0f) == LE_OK);
+  drain(e);
+  float out[2 * LOOP_N];
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tracks[0].peak - 1.0f) < 1e-6f); /* the dry content */
+  CHECK(fabsf(s.tracks[0].peak_l - 0.5f) < 1e-6f);
+  CHECK(s.tracks[0].peak_r == 0.0f);
+  /* Muted: nothing routes, the stereo peaks read 0, the dry peak stays. */
+  CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tracks[0].peak - 1.0f) < 1e-6f);
+  CHECK(s.tracks[0].peak_l == 0.0f);
+  le_engine_destroy(e);
+}
+
+/* The Mixer meters read what reaches an output: a lane or a monitor routed
+ * only to a disabled output sends nothing and meters nothing, on the legacy
+ * per-lane route and on the summed track bus alike. */
+static void test_meters_read_only_what_routes(void) {
+  printf("test_meters_read_only_what_routes\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  record_mono_track(e, 0, 1.0f);
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x2) == LE_OK); /* output 1 only */
+  CHECK(le_engine_set_output_enabled(e, 1, 0) == LE_OK);   /* ... disabled */
+  CHECK(le_engine_set_monitor_input(e, 1, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 1, 0x2) == LE_OK);
+  drain(e);
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 0.0f;
+    in[i * 2 + 1] = 0.7f;
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tracks[0].peak - 1.0f) < 1e-6f); /* the dry content */
+  CHECK(s.tracks[0].peak_l == 0.0f);
+  CHECK(s.tracks[0].peak_r == 0.0f);
+  CHECK(s.monitor_peaks[1] == 0.0f);
+  CHECK(s.output_peaks[1] == 0.0f);
+  /* With a track chain the summed bus route meters the same way. */
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].peak_l == 0.0f);
+  CHECK(s.tracks[0].peak_r == 0.0f);
+  /* Enable the output: both meter again. */
+  CHECK(le_engine_set_output_enabled(e, 1, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].peak_r > 0.0f);
+  CHECK(fabsf(s.monitor_peaks[1] - 0.7f) < 1e-6f);
+  le_engine_destroy(e);
+}
+
+/* Dart submits pow(10, dB / 20) as a double; FFI rounds once into this float
+ * payload. Both endpoints are legal and the next Float32 above +12 dB is not. */
+static void test_mix_trim_boundaries(void) {
+  printf("test_mix_trim_boundaries\n");
+  le_engine* e = make_two_lane_engine();
+  drain(e);
+  const float minimum = (float)pow(10.0, -24.0 / 20.0);
+  const float maximum = (float)pow(10.0, 12.0 / 20.0);
+  CHECK(maximum == LE_MAX_INPUT_TRIM);
+  le_mix_settings mix = {.revision = 1, .trim_mask = 3};
+  mix.input_trim[0] = minimum;
+  mix.input_trim[1] = maximum;
+  CHECK(le_engine_set_mix(e, &mix) == LE_OK);
+  drain(e);
+  le_snapshot snapshot;
+  le_engine_get_snapshot(e, &snapshot);
+  CHECK(snapshot.mix_revision == 1);
+  CHECK(snapshot.input_trim[0] == minimum);
+  CHECK(snapshot.input_trim[1] == maximum);
+
+  mix.revision = 2;
+  mix.input_trim[1] = nextafterf(maximum, INFINITY);
+  CHECK(mix.input_trim[1] > LE_MAX_INPUT_TRIM);
+  CHECK(le_engine_set_mix(e, &mix) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &snapshot);
+  CHECK(snapshot.mix_revision == 1);
+  CHECK(snapshot.input_trim[0] == minimum);
+  CHECK(snapshot.input_trim[1] == maximum);
+  le_engine_destroy(e);
+}
+
+/* A visible edit is one queue item, even when it touches both lanes and both
+ * members of a monitor pair. Invalid/full requests change no mix or revision. */
+static void test_mix_transaction_acceptance(void) {
+  printf("test_mix_transaction_acceptance\n");
+  le_engine* e = make_two_lane_engine();
+  drain(e);
+  le_mix_settings mix = {.revision = 7, .lane_mask = 3,
+                         .monitor_mask = 3, .solo_mask = 3, .solo_values = 2};
+  mix.lane_gain[0] = .25f; mix.lane_gain[1] = .5f;
+  mix.lane_pan[0] = -1; mix.lane_pan[1] = 1;
+  mix.monitor_gain[0] = .25f; mix.monitor_gain[1] = .75f;
+  mix.monitor_pan[0] = -1; mix.monitor_pan[1] = 1;
+  for (int i = 0; i < LE_RING_CAPACITY - 2; ++i)
+    CHECK(le_engine_set_master_gain(e, 1) == LE_OK);
+  CHECK(le_engine_set_mix(e, &mix) == LE_OK); /* one slot is enough */
+  mix.lane_pan[0] = 0; /* pointer was copied */
+  le_snapshot s; le_lane_snapshot lane;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.mix_revision == 0);
+  CHECK(le_engine_commands_settled(e) == 0);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.mix_revision == 7 && le_engine_commands_settled(e));
+  le_engine_get_lane(e, 0, 0, &lane);
+  CHECK(lane.pan == -1 && lane.volume == .25f);
+  le_engine_get_lane(e, 0, 1, &lane);
+  CHECK(lane.pan == 1 && lane.volume == .5f);
+  CHECK(s.tracks[1].solo && !s.tracks[0].solo);
+  CHECK(load_f32(&e->monitors[0].a_vol_bits) == .25f);
+  CHECK(load_f32(&e->monitors[1].a_pan_bits) == 1);
+  for (int i = 0; i < LE_RING_CAPACITY - 1; ++i)
+    CHECK(le_engine_set_master_gain(e, 1) == LE_OK);
+  mix.revision = 8;
+  mix.lane_gain[0] = 1;
+  mix.lane_pan[1] = 0;
+  CHECK(le_engine_set_mix(e, &mix) != LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s); CHECK(s.mix_revision == 7);
+  le_engine_get_lane(e, 0, 1, &lane); CHECK(lane.pan == 1);
+  mix.monitor_pan[1] = NAN;
+  CHECK(le_engine_set_mix(e, &mix) == LE_ERR_INVALID);
+  CHECK(le_engine_commands_settled(e));
+  /* The callback also validates a raw batch before applying any field. */
+  CHECK(le_push_cmd(e, (le_command){.code = LE_CMD_SET_MIX, .mix = mix}) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s); CHECK(s.mix_revision == 7);
+  le_engine_get_lane(e, 0, 0, &lane); CHECK(lane.volume == .25f);
+  le_engine_destroy(e);
+}
+
+static void test_record_image_punch_in_preserves_history(void) {
+  printf("test_record_image_punch_in_preserves_history\n");
+  for (int quantized = 0; quantized <= 1; ++quantized) {
+    for (int available = 0; available <= 3; ++available) {
+      le_engine* e = le_engine_create();
+      CHECK(le_engine_configure(e, 48000, 1, 1, 4096) == LE_OK);
+      float pcm[1024], out[64];
+      for (int layer = 0; layer < 3; ++layer) {
+        const float value = layer == 0 ? .05f : layer == 1 ? .1f : .15f;
+        for (int i = 0; i < 1024; ++i) pcm[i] = value;
+        CHECK(le_engine_import_layer(e, 0, 0, layer, pcm, 1024) == LE_OK);
+      }
+      CHECK(le_engine_finalize_layers(e, 0, 1, 1) == LE_OK);
+      CHECK(le_engine_commit_session(e, 1024, 0) == LE_OK);
+      CHECK(le_engine_play(e, 0) == LE_OK);
+      CHECK(le_engine_set_quantize(e, quantized) == LE_OK);
+      drain(e);
+      process_const(e, 0, 64, out); /* away from the quantized boundary */
+      const int before_undo = e->tracks[0].undo_count;
+      const int before_redo = e->tracks[0].redo_count;
+      CHECK(before_undo == 1 && before_redo == 1);
+      for (int i = 0; i < LE_RING_CAPACITY - 1 - available; ++i)
+        CHECK(le_engine_set_master_gain(e, 1) == LE_OK);
+      le_record_image image = {.revision = 81};
+      const int rc = le_engine_record_with_image(e, 0, &image);
+      if (available < 3) {
+        CHECK(rc == LE_ERR_INVALID);
+        CHECK(e->tracks[0].undo_count == before_undo);
+        CHECK(e->tracks[0].redo_count == before_redo);
+        CHECK(e->tracks[0].outstanding_count == 0);
+        CHECK(e->armed[0] == 0);
+        drain(e);
+        CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
+        CHECK(le_engine_export_layer(e, 0, 0, 0, pcm, 1024) == 1024);
+        for (int i = 0; i < 1024; ++i) CHECK(pcm[i] == .05f);
+        CHECK(le_engine_export_layer(e, 0, 0, 2, pcm, 1024) == 1024);
+        for (int i = 0; i < 1024; ++i) CHECK(pcm[i] == .15f);
+      } else {
+        CHECK(rc == LE_OK);
+        /* Quantized capture first waits 960 frames to the loop top. Keep
+         * the 320 captured frames plus the 480-frame punch-out fade within
+         * one 1024-frame pass, so exactly one Undo must restore the take. */
+        const int wait_blocks = quantized ? (1024 - 64) / 64 : 0;
+        for (int i = 0; i < wait_blocks + 5; ++i)
+          process_const(e, .2f, 64, out);
+        CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_OVERDUBBING);
+        CHECK(le_engine_set_quantize(e, 0) == LE_OK);
+        drain(e);
+        CHECK(le_engine_record(e, 0) == LE_OK);
+        drain(e);
+        settle_layers(e);
+        CHECK(load_i32(&e->tracks[0].a_layer_in_flight) == 0);
+        CHECK(e->tracks[0].undo_count == before_undo + 1);
+        CHECK(e->tracks[0].redo_count == 0);
+        CHECK(le_engine_undo(e, 0) == LE_OK);
+        drain(e);
+        CHECK(e->tracks[0].undo_count == before_undo);
+        CHECK(e->tracks[0].redo_count == 1);
+      }
+      CHECK(le_engine_export_track(e, 0, pcm, 1024) == 1024);
+      for (int i = 0; i < 1024; ++i)
+        CHECK(pcm[i] == .1f);
+      le_engine_destroy(e);
+    }
+  }
+}
+
+static void test_record_image_fresh_capture_admits_first_shadow(void) {
+  printf("test_record_image_fresh_capture_admits_first_shadow\n");
+  for (int previous_take = 0; previous_take <= 1; ++previous_take) {
+    for (int available = 0; available <= 2; ++available) {
+      le_engine* e = le_engine_create();
+      CHECK(le_engine_configure(e, 48000, 1, 1, 4096) == LE_OK);
+      float pcm[1024];
+      for (int i = 0; i < 1024; ++i) pcm[i] = .05f;
+      CHECK(le_engine_import_track(e, 0, pcm, 1024) == LE_OK);
+      if (previous_take) {
+        for (int i = 0; i < 1024; ++i) pcm[i] = .3f;
+        CHECK(le_engine_import_track(e, 1, pcm, 1024) == LE_OK);
+      }
+      CHECK(le_engine_commit_session(e, 1024, 0) == LE_OK);
+      CHECK(le_engine_set_track_multiple(e, 1, 1) == LE_OK);
+      CHECK(le_engine_set_lane_input(e, 1, 0, 0) == LE_OK);
+      drain(e);
+      if (previous_take) {
+        CHECK(le_engine_undo(e, 1) == LE_OK);
+        drain(e);
+      }
+      CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_EMPTY);
+      CHECK(e->tracks[1].redo_count == previous_take);
+      for (int i = 0; i < LE_RING_CAPACITY - 1 - available; ++i)
+        CHECK(le_engine_set_master_gain(e, 1) == LE_OK);
+      le_record_image image = {.revision = 95};
+#ifdef LE_NATIVE_TESTS
+      g_process_record_image_staged = available == 2;
+      g_record_image_staged_state = -1;
+      g_record_image_staged_channel = 1;
+#endif
+      const int rc = le_engine_record_with_image(e, 1, &image);
+      if (available < 2) {
+        CHECK(rc == LE_ERR_INVALID);
+        CHECK(e->tracks[1].redo_count == previous_take);
+        CHECK(e->tracks[1].outstanding_count == 0);
+        drain(e);
+        CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_EMPTY);
+        CHECK(le_engine_export_track(e, 1, pcm, 1024) == 0);
+        if (previous_take) {
+          CHECK(le_engine_redo(e, 1) == LE_OK);
+          drain(e);
+          CHECK(le_engine_export_track(e, 1, pcm, 1024) == 1024);
+          for (int i = 0; i < 1024; ++i) CHECK(pcm[i] == .3f);
+        }
+      } else {
+        CHECK(rc == LE_OK);
+#ifdef LE_NATIVE_TESTS
+        /* A whole callback between staging the pair's two slots cannot see
+         * RECORD alone, or it would capture .7 and lose the first backup. */
+        CHECK(g_process_record_image_staged == 0);
+        CHECK(g_record_image_staged_state == LE_TRACK_EMPTY);
+#endif
+        CHECK(!le_engine_commands_settled(e));
+        /* No control poll between start, fixed-length finalize and the first
+         * 256 overdub samples: the initial shadow must already be available. */
+        pump_frames(e, .1f, 1024);
+        CHECK(le_engine_commands_settled(e));
+        CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_OVERDUBBING);
+        pump_frames(e, .2f, 256);
+        CHECK(le_engine_stop_track(e, 1) == LE_OK);
+        drain(e);
+        settle_layers(e);
+        CHECK(load_i32(&e->tracks[1].a_layer_in_flight) == 0);
+        CHECK(e->tracks[1].undo_count == 1);
+        CHECK(e->tracks[1].redo_count == 0);
+        CHECK(le_engine_undo(e, 1) == LE_OK);
+        drain(e);
+        CHECK(le_engine_export_track(e, 1, pcm, 1024) == 1024);
+        /* This tail is outside both the finalize seam and the 256-sample
+         * overdub plus 480-frame punch-out fade, so its base PCM is exact. */
+        for (int i = 800; i < 1024; ++i) CHECK(pcm[i] == .1f);
+        CHECK(e->tracks[1].undo_count == 0);
+        CHECK(le_engine_undo(e, 1) == LE_OK);
+        drain(e);
+        CHECK(le_engine_export_track(e, 1, pcm, 1024) == 0);
+      }
+      le_engine_destroy(e);
+    }
+  }
+}
+
+static void test_record_image_grid_clear_is_in_capture_batch(void) {
+  printf("test_record_image_grid_clear_is_in_capture_batch\n");
+  for (int cancel_pending = 0; cancel_pending <= 1; ++cancel_pending) {
+    for (int available = 0; available <= 3; ++available) {
+      le_engine* e = le_engine_create();
+      CHECK(le_engine_configure(e, 48000, 1, 1, 4096) == LE_OK);
+      CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);
+      drain(e);
+      float pcm[1024];
+      const int original_frames = cancel_pending ? 64 : 1024;
+      if (cancel_pending) {
+        CHECK(le_engine_record(e, 0) == LE_OK);
+        pump_frames(e, .3f, original_frames);
+      } else {
+        for (int i = 0; i < original_frames; ++i) pcm[i] = .3f;
+        CHECK(le_engine_import_track(e, 0, pcm, original_frames) == LE_OK);
+        CHECK(le_engine_commit_session(e, original_frames, 0) == LE_OK);
+        drain(e);
+      }
+      /* Leave CANCEL_TAKE / UNDO_TO_EMPTY unapplied. The next capture must
+       * reset the grid that command preserves or is about to establish. */
+      CHECK(le_engine_undo(e, 0) == LE_OK);
+      CHECK(le_effective_state(&e->tracks[0]) == LE_TRACK_EMPTY);
+      CHECK(e->tracks[0].cancel_pending == cancel_pending);
+      const size_t queued = atomic_load(&e->ring.tail) - atomic_load(&e->ring.head);
+      for (size_t i = queued; i < LE_RING_CAPACITY - 1 - available; ++i)
+        CHECK(le_engine_set_master_gain(e, 1) == LE_OK);
+      const int old_redo = e->tracks[0].redo_count;
+      const uint64_t posted = e->commands_posted;
+      le_record_image image = {.revision = 96};
+#ifdef LE_NATIVE_TESTS
+      g_process_record_image_staged = available == 3;
+      g_record_image_staged_state = -1;
+      g_record_image_staged_channel = 0;
+#endif
+      const int rc = le_engine_record_with_image(e, 0, &image);
+      if (available < 3) {
+        CHECK(rc == LE_ERR_INVALID);
+        CHECK(e->commands_posted == posted);
+        CHECK(e->tracks[0].redo_count == old_redo);
+        CHECK(e->tracks[0].cancel_pending == cancel_pending);
+        drain(e);
+        le_engine_drain_events(e);
+        CHECK(le_engine_redo(e, 0) == LE_OK);
+        drain(e);
+        CHECK(le_engine_export_track(e, 0, pcm, 1024) == original_frames);
+        for (int i = 0; i < original_frames; ++i) CHECK(pcm[i] == .3f);
+      } else {
+        CHECK(rc == LE_OK);
+        CHECK(e->commands_posted == posted + 3);
+#ifdef LE_NATIVE_TESTS
+        CHECK(g_process_record_image_staged == 0);
+        CHECK(g_record_image_staged_state == LE_TRACK_EMPTY);
+#endif
+        CHECK(!le_engine_commands_settled(e));
+        drain(e);
+        CHECK(le_engine_commands_settled(e));
+        CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+        CHECK(load_i32(&e->a_master_len) == 0);
+        CHECK(e->tracks[0].redo_count == 0);
+        CHECK(e->tracks[0].outstanding_count == 1);
+        CHECK(e->tracks[0].dub_slot >= 0);
+        CHECK(e->tracks[0].lanes[0].pool_cap[e->tracks[0].dub_slot] == 4096);
+        pump_frames(e, .1f, 1024);
+        CHECK(le_engine_export_track(e, 0, pcm, 1024) == 1024);
+        for (int i = 0; i < 1024; ++i) CHECK(pcm[i] == .1f);
+      }
+      le_engine_destroy(e);
+    }
+  }
+}
+
+static void test_record_image_deferred_shadow_survives_until_capture(void) {
+  printf("test_record_image_deferred_shadow_survives_until_capture\n");
+  for (int sound = 0; sound <= 1; ++sound) {
+    for (int available = 0; available <= 2; ++available) {
+      le_engine* e = le_engine_create();
+      CHECK(le_engine_configure(e, 48000, 1, 1, 4096) == LE_OK);
+      float pcm[1024];
+      for (int i = 0; i < 1024; ++i) pcm[i] = .05f;
+      CHECK(le_engine_import_track(e, 0, pcm, 1024) == LE_OK);
+      CHECK(le_engine_commit_session(e, 1024, 0) == LE_OK);
+      CHECK(le_engine_set_track_multiple(e, 1, 1) == LE_OK);
+      CHECK(le_engine_set_lane_input(e, 1, 0, 0) == LE_OK);
+      CHECK(le_engine_play(e, 0) == LE_OK);
+      CHECK(le_engine_set_quantize(e, !sound) == LE_OK);
+      CHECK(le_engine_set_auto_record(e, sound) == LE_OK);
+      drain(e);
+      if (!sound) pump_frames(e, 0, 64);
+      le_record_image image = {.revision = 97};
+      unsigned char seen[LE_POOL_SLOTS] = {0};
+      for (int cycle = 0; cycle < LE_POOL_SLOTS + 2; ++cycle) {
+        CHECK(le_engine_record_with_image(e, 1, &image) == LE_OK);
+        drain(e);
+        const int slot = e->tracks[1].pending_capture_shadow - 1;
+        CHECK(slot >= 0 && slot < LE_POOL_SLOTS);
+        if (slot >= 0 && slot < LE_POOL_SLOTS) seen[slot] = 1;
+        CHECK(load_i32(&e->tracks[1].a_pending));
+        CHECK(le_engine_cancel_arm(e, 1) == LE_OK);
+        /* Alternate an acknowledged cancel and a re-arm while DISARM is
+         * still queued. The old held slot must not be recycled too early. */
+        if (cycle % 2 == 0) {
+          drain(e);
+          CHECK(e->tracks[1].pending_capture_shadow == 0);
+        }
+      }
+      drain(e);
+      CHECK(e->tracks[1].pending_capture_shadow == 0);
+      int slots_used = 0;
+      for (int i = 0; i < LE_POOL_SLOTS; ++i) slots_used += seen[i];
+      CHECK(slots_used == 2); /* bounded alternating reuse, no pool exhaustion */
+      const int held = e->tracks[1].outstanding_count;
+      for (int i = 0; i < LE_RING_CAPACITY - 1 - available; ++i)
+        CHECK(le_engine_set_master_gain(e, 1) == LE_OK);
+      const int rc = le_engine_record_with_image(e, 1, &image);
+      if (available < 2) {
+        CHECK(rc == LE_ERR_INVALID);
+        CHECK(e->tracks[1].outstanding_count == held);
+        drain(e);
+        CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_EMPTY);
+        CHECK(!load_i32(&e->tracks[1].a_pending));
+        CHECK(e->tracks[1].pending_capture_shadow == 0);
+      } else {
+        CHECK(rc == LE_OK);
+        drain(e);
+        CHECK(e->tracks[1].pending_capture_shadow > 0);
+        if (!sound) pump_frames(e, 0, 960);
+        pump_frames(e, .1f, 1024);
+        pump_frames(e, .2f, 256);
+        CHECK(e->tracks[1].pending_capture_shadow == 0);
+        CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_OVERDUBBING);
+        const int active_shadow = e->tracks[1].dub_slot;
+        CHECK(active_shadow >= 0);
+        /* Cancellation after the trigger is spent cannot discard the
+         * adopted backup or stop a take that has already begun. */
+        CHECK(le_engine_cancel_arm(e, 1) == LE_OK);
+        drain(e);
+        CHECK(e->tracks[1].dub_slot == active_shadow);
+        CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_OVERDUBBING);
+        CHECK(le_engine_stop_track(e, 1) == LE_OK);
+        drain(e);
+        settle_layers(e);
+        CHECK(e->tracks[1].undo_count == 1);
+        CHECK(le_engine_undo(e, 1) == LE_OK);
+        drain(e);
+        CHECK(le_engine_export_track(e, 1, pcm, 1024) == 1024);
+        for (int i = 800; i < 1024; ++i) CHECK(pcm[i] == .1f);
+      }
+      CHECK(le_engine_clear(e, 1) == LE_OK);
+      drain(e);
+      CHECK(e->tracks[1].pending_capture_shadow == 0);
+      for (int i = 0; i < 1024; ++i) pcm[i] = .4f;
+      CHECK(le_engine_import_track(e, 1, pcm, 1024) == LE_OK);
+      CHECK(le_engine_commit_session(e, 1024, 0) == LE_OK);
+      drain(e);
+      CHECK(e->tracks[1].pending_capture_shadow == 0);
+      CHECK(le_engine_export_track(e, 1, pcm, 1024) == 1024);
+      for (int i = 0; i < 1024; ++i) CHECK(pcm[i] == .4f);
+      CHECK(le_engine_clear(e, 1) == LE_OK);
+      drain(e);
+      CHECK(le_engine_record_with_image(e, 1, &image) == LE_OK);
+      drain(e);
+      CHECK(e->tracks[1].pending_capture_shadow > 0);
+      CHECK(le_engine_configure(e, 48000, 1, 1, 4096) == LE_OK);
+      CHECK(e->tracks[1].pending_capture_shadow == 0);
+      le_engine_destroy(e);
+    }
+  }
+}
+
+static void test_record_image_acceptance_and_arm(void) {
+  printf("test_record_image_acceptance_and_arm\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  le_record_image image = {.revision = 9, .lane_mask = 1,
+                            .gain = {.5f}, .pan = {-1}};
+  le_lane_snapshot lane; le_snapshot s;
+  for (int i = 0; i < LE_RING_CAPACITY - 1; ++i)
+    CHECK(le_engine_set_master_gain(e, 1) == LE_OK);
+  CHECK(le_engine_record_with_image(e, 0, &image) != LE_OK);
+  drain(e);
+  le_engine_get_lane(e, 0, 0, &lane); CHECK(lane.pan == 0 && lane.volume == 1);
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK); drain(e);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK); drain(e);
+  le_engine_get_snapshot(e, &s); CHECK(s.tracks[0].pending);
+  le_engine_get_lane(e, 0, 0, &lane); CHECK(lane.pan == 0 && lane.volume == 1);
+  /* Cancelling never commits the pending image. */
+  CHECK(le_engine_record(e, 0) == LE_OK); drain(e);
+  le_engine_get_snapshot(e, &s); CHECK(s.tracks[0].image_revision == 0);
+  le_engine_get_lane(e, 0, 0, &lane); CHECK(lane.pan == 0);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK); drain(e);
+  image.pan[0] = 1; image.gain[0] = 1; /* caller edit cannot alter frozen arm */
+  CHECK(le_engine_set_monitor_input_pan(e, 0, 1) == LE_OK); drain(e);
+  float in[2 * LOOP_N], out[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) { in[2*i] = .25f; in[2*i+1] = 0; }
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].image_revision == 9);
+  le_engine_get_lane(e, 0, 0, &lane); CHECK(lane.pan == -1 && lane.volume == .5f);
+  CHECK(le_engine_record(e, 0) == LE_OK); drain(e);
+  le_engine_get_snapshot(e, &s); CHECK(s.tracks[0].image_revision == 9);
+  le_engine_destroy(e);
+}
+
+static void test_armed_image_keeps_live_faders_and_cancel_drops_context(void) {
+  printf("test_armed_image_keeps_live_faders_and_cancel_drops_context\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 2, 2, 1000) == LE_OK);
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK); drain(e);
+  le_record_image image = {.revision = 17, .lane_mask = 1,
+                            .gain = {.5f}, .pan = {-.75f}};
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK); drain(e);
+  le_mix_settings mix = {.revision = 21, .lane_mask = 1};
+  mix.lane_gain[0] = .4f; mix.lane_pan[0] = .25f;
+  CHECK(le_engine_set_mix(e, &mix) == LE_OK); drain(e);
+  le_lane_snapshot lane; le_engine_get_lane(e, 0, 0, &lane);
+  CHECK(lane.volume == .4f && lane.pan == .25f); /* image not committed */
+  float in[2 * LOOP_N], out[2 * LOOP_N];
+  for (int f = 0; f < LOOP_N; ++f) { in[2*f] = .3f; in[2*f+1] = 0; }
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_get_lane(e, 0, 0, &lane);
+  CHECK(fabsf(lane.volume - .2f) < 1e-6f && lane.pan == -.5f);
+  le_lane* ln = &e->tracks[0].lanes[0];
+  const int slot = load_i32(&ln->a_live);
+  CHECK(fabsf(ln->pool[slot][LOOP_N-1] - .3f) < 1e-6f); /* source PCM */
+  mix.revision++; mix.lane_gain[0] = .8f; mix.lane_pan[0] = .75f;
+  CHECK(le_engine_set_mix(e, &mix) == LE_OK); drain(e);
+  le_engine_get_lane(e, 0, 0, &lane);
+  CHECK(fabsf(lane.volume - .4f) < 1e-6f && lane.pan == 0);
+  CHECK(fabsf(ln->pool[slot][LOOP_N-1] - .3f) < 1e-6f);
+  le_engine_destroy(e);
+
+  e = le_engine_create(); le_engine_configure(e, 48000, 2, 2, 1000);
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK); drain(e);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK); drain(e);
+  /* Both commands drain in one callback: end-of-block cleanup is too late. */
+  CHECK(le_push_cmd(e, (le_command){.code = LE_CMD_CLEAR, .arg_i = 0}) == LE_OK);
+  CHECK(le_push_cmd(e, (le_command){.code = LE_CMD_RECORD, .arg_i = 0}) == LE_OK);
+  drain(e); le_engine_get_lane(e, 0, 0, &lane);
+  CHECK(lane.volume == 1 && lane.pan == 0);
+  le_snapshot snapshot; le_engine_get_snapshot(e, &snapshot);
+  CHECK(snapshot.tracks[0].image_revision == 0);
+  le_engine_destroy(e);
+}
+
+static void test_mix_meter_is_pre_output_fold(void) {
+  printf("test_mix_meter_is_pre_output_fold\n");
+  le_engine* e = le_engine_create(); le_engine_configure(e, 48000, 2, 2, 1000);
+  record_mono_track(e, 0, .4f);
+  CHECK(le_engine_set_lane_volume(e, 0, 0, .5f) == LE_OK);
+  CHECK(le_engine_set_lane_pan(e, 0, 0, 1) == LE_OK); drain(e);
+  float in[2 * LOOP_N] = {0}, out[2 * LOOP_N];
+  le_engine_process(e, out, in, LOOP_N);
+  le_snapshot s; le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].peak_l == 0);
+  CHECK(fabsf(s.tracks[0].peak_r - .2f) < 1e-6f);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[2*i] - .1f) < 1e-6f); CHECK(out[2*i+1] == 0);
+  }
+  CHECK(le_engine_set_track_solo(e, 1, 1) == LE_OK); drain(e);
+  le_engine_process(e, out, in, LOOP_N); le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].peak_l == 0 && s.tracks[0].peak_r == 0);
+  le_engine_destroy(e);
+}
+
+static void test_all_eighteen_inputs_mix_independently(void) {
+  printf("test_all_eighteen_inputs_mix_independently\n");
+  enum { N = 18, F = 32 };
+  le_engine* e = le_engine_create(); le_engine_configure(e, 48000, N, N, 1000);
+  float in[N*F], out[N*F];
+  for (int c = 0; c < N; ++c) {
+    CHECK(le_engine_set_monitor_input(e, c, 1) == LE_OK);
+    CHECK(le_engine_set_monitor_input_output(e, c, 1u << c) == LE_OK);
+    for (int f = 0; f < F; ++f) in[f*N+c] = (c+1) * .01f;
+  }
+  CHECK(le_engine_set_input_trim(e, 17, 2) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 0, 17) == LE_OK); drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  le_engine_process(e, out, in, F);
+  le_snapshot s; le_engine_get_snapshot(e, &s);
+  for (int c = 0; c < N; ++c) {
+    CHECK(fabsf(s.input_peaks[c] - (c+1)*.01f) < 1e-6f);
+    for (int f = 0; f < F; ++f) CHECK(fabsf(out[f*N+c] - in[f*N+c]) < 1e-6f);
+  }
+  const int slot = load_i32(&e->tracks[0].lanes[0].a_live);
+  CHECK(fabsf(e->tracks[0].lanes[0].pool[slot][F-1] - .36f) < 1e-6f);
+  CHECK(le_engine_set_input_trim(e, 32, 1) == LE_ERR_INVALID);
+  le_engine_destroy(e);
+}
+
+static void test_log_payload_extraction_is_compact(void) {
+  printf("test_log_payload_extraction_is_compact\n");
+  CHECK(sizeof(le_log_command) == 20);
+  CHECK(sizeof(le_perf_log_entry) == 32);
+  le_command command = {.code = LE_CMD_SET_LANE_PAN, .lanef = {3, 7, -.5f}};
+  le_log_command logged;
+  CHECK(le_log_extract(&command, &logged));
+  CHECK(logged.code == LE_CMD_SET_LANE_PAN && logged.lanef.channel == 3 &&
+        logged.lanef.lane == 7 && logged.lanef.value == -.5f);
+  command.code = LE_CMD_SET_MIX; CHECK(!le_log_extract(&command, &logged));
+  command.code = LE_CMD_RECORD_IMAGE; CHECK(!le_log_extract(&command, &logged));
+}
+
 /* One undo on the track removes the last overdub pass across ALL its lanes
  * consistently (the one shared undo span drives every lane in lockstep). */
 static void test_undo_across_lanes(void) {
@@ -16926,12 +17760,12 @@ static void test_write_log_header(FILE* f, int32_t sample_rate,
   fwrite(&sample_rate, 4, 1, f);
 }
 
-/* Writes one 28-byte events.log entry, matching perf_drain.c's own encoding
- * exactly (frame, code, then the union's 16-byte payload region). */
+/* Writes one 28-byte events.log entry: frame, code, then the primitive
+ * payload. The in-memory command may have padding before its union. */
 static void test_write_log_entry(FILE* f, uint64_t frame, le_command cmd) {
   fwrite(&frame, 8, 1, f);
   fwrite(&cmd.code, 4, 1, f);
-  fwrite(((unsigned char*)&cmd) + 4, 16, 1, f);
+  fwrite(&cmd.arg_i, 16, 1, f);
 }
 
 static void test_write_manifest(const char* dir, const char* body) {
@@ -28635,6 +29469,23 @@ int main(void) {
   test_two_lanes_unmerged_both_play();
   test_lane_fx_colors_only_its_lane();
   test_lane_volume_and_mute();
+  test_mix_trim_boundaries();
+  test_mix_transaction_acceptance();
+  test_record_image_punch_in_preserves_history();
+  test_record_image_fresh_capture_admits_first_shadow();
+  test_record_image_grid_clear_is_in_capture_batch();
+  test_record_image_deferred_shadow_survives_until_capture();
+  test_record_image_acceptance_and_arm();
+  test_armed_image_keeps_live_faders_and_cancel_drops_context();
+  test_mix_meter_is_pre_output_fold();
+  test_all_eighteen_inputs_mix_independently();
+  test_log_payload_extraction_is_compact();
+  test_lane_pan_law();
+  test_track_solo_gates_routing();
+  test_input_trim_scales_capture_only();
+  test_monitor_pan_and_wide_inputs();
+  test_track_stereo_peaks_follow_fader();
+  test_meters_read_only_what_routes();
   test_undo_across_lanes();
   test_lazy_lane_allocation();
   test_lane_phase_lock_matches_baseline();

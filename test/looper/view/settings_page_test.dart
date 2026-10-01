@@ -124,7 +124,11 @@ void main() {
     ).thenReturn(const FxChainEnvelope());
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
     quantize = RecordTimingCubit(repository: repository, settings: settings);
-    monitor = MonitorCubit(repository: repository, settings: settings);
+    monitor = MonitorCubit(
+      mixSettings: testMixSettings(repository),
+      repository: repository,
+      settings: settings,
+    );
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);

@@ -13,6 +13,7 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
+import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
@@ -623,6 +624,64 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setMix(EngineMixSettings settings) {
+    _checkAlive();
+    if (!settings.isValid) return EngineResult.invalid;
+    final ptr = calloc<le_mix_settings>();
+    try {
+      final native = ptr.ref..revision = settings.revision;
+      for (final entry in settings.lanes.entries) {
+        final i = entry.key.$1 * kMaxLanes + entry.key.$2;
+        native.lane_mask |= 1 << i;
+        native.lane_gain[i] = entry.value.gain;
+        native.lane_pan[i] = entry.value.pan;
+      }
+      for (final entry in settings.images.entries) {
+        final i = entry.key.$1 * kMaxLanes + entry.key.$2;
+        native.image_mask |= 1 << i;
+        native.image_gain[i] = entry.value.gain;
+        native.image_pan[i] = entry.value.pan;
+      }
+      for (final entry in settings.monitors.entries) {
+        native.monitor_mask |= 1 << entry.key;
+        native.monitor_gain[entry.key] = entry.value.gain;
+        native.monitor_pan[entry.key] = entry.value.pan;
+      }
+      for (final entry in settings.trims.entries) {
+        native.trim_mask |= 1 << entry.key;
+        native.input_trim[entry.key] = entry.value;
+      }
+      for (final entry in settings.solos.entries) {
+        native.solo_mask |= 1 << entry.key;
+        if (entry.value) native.solo_values |= 1 << entry.key;
+      }
+      return EngineResult.fromCode(_bindings.le_engine_set_mix(_engine, ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  @override
+  EngineResult recordWithImage(RecordImage image, {int channel = 0}) {
+    _checkAlive();
+    if (!image.isValid) return EngineResult.invalid;
+    final ptr = calloc<le_record_image>();
+    try {
+      final native = ptr.ref..revision = image.revision;
+      for (final entry in image.lanes.entries) {
+        native.lane_mask |= 1 << entry.key;
+        native.gain[entry.key] = entry.value.gain;
+        native.pan[entry.key] = entry.value.pan;
+      }
+      return EngineResult.fromCode(
+        _bindings.le_engine_record_with_image(_engine, channel, ptr),
+      );
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  @override
   EngineResult record({int channel = 0}) {
     _checkAlive();
     return EngineResult.fromCode(
@@ -721,6 +780,36 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     return EngineResult.fromCode(
       _bindings.le_engine_set_lane_mute(_engine, channel, lane, muted ? 1 : 0),
+    );
+  }
+
+  @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_lane_pan(_engine, channel, lane, pan),
+    );
+  }
+
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_solo(_engine, channel, solo ? 1 : 0),
+    );
+  }
+
+  // A direct store, not a ring command: works while stopped, like the enable
+  // setters.
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_input_trim(_engine, input, gain),
     );
   }
 
@@ -1498,6 +1587,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setMonitorInputPan({required int input, required double pan}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_input_pan(_engine, input, pan),
+    );
+  }
+
+  @override
   EngineResult setInputConditioningEnabled({
     required int input,
     required bool enabled,
@@ -1894,6 +1991,10 @@ class PumpedNativeEngine extends NativeAudioEngine {
       quantize: s.quantize,
       autoRecord: s.autoRecord,
       overdubFeedback: s.overdubFeedback,
+      mixRevision: s.mixRevision,
+      inputPeaks: s.inputPeaks,
+      monitorPeaks: s.monitorPeaks,
+      outputPeaks: s.outputPeaks,
       tracks: s.tracks,
     );
   }

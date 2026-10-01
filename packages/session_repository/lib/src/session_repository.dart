@@ -52,6 +52,9 @@ class SessionChains {
   final String masterChain;
 }
 
+/// Repository-owned lane mix that cannot be recovered from engine products.
+typedef SessionLaneMix = ({double level, double imagePan, double balance});
+
 /// Desired musical settings supplied by the app layer when saving.
 ///
 /// These values belong to the live repository, independently of the engine's
@@ -85,6 +88,9 @@ class SessionSettings {
     this.defaultMultiple = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.trackPans = const {},
+    this.laneMix = const {},
+    this.inputSetup = const SessionInputSetup(),
   });
 
   SessionSettings._detached(SessionSettings source)
@@ -117,7 +123,14 @@ class SessionSettings {
       autoRecord = source.autoRecord,
       defaultMultiple = source.defaultMultiple,
       looperMode = source.looperMode,
-      primaryTrack = source.primaryTrack;
+      primaryTrack = source.primaryTrack,
+      trackPans = Map.unmodifiable(source.trackPans),
+      laneMix = Map.unmodifiable(source.laneMix),
+      inputSetup = SessionInputSetup(
+        trimDb: Map.unmodifiable(source.inputSetup.trimDb),
+        pan: Map.unmodifiable(source.inputSetup.pan),
+        pairs: Map.unmodifiable(source.inputSetup.pairs),
+      );
 
   /// Denominator-note beats per minute; zero means unset.
   final double tempoBpm;
@@ -190,6 +203,15 @@ class SessionSettings {
 
   /// The crowned track, or minus one when none is crowned.
   final int primaryTrack;
+
+  /// Confirmed pan for every track, including tracks without recorded audio.
+  final Map<int, double> trackPans;
+
+  /// Recorded image, balance, and level for every captured lane.
+  final Map<(int, int), SessionLaneMix> laneMix;
+
+  /// Session-owned recording trim, mono pan, and stereo pair balance.
+  final SessionInputSetup inputSetup;
 }
 
 /// Saves Segno sessions, reads them back, and exports audio.
@@ -376,16 +398,23 @@ class SessionRepository {
   /// [SessionChains] field because a remap is control-surface configuration,
   /// not an effect chain — the two travel together only by coincidence of
   /// both being opaque strings.
+  /// [captureStillValid] guards the snapshot boundary after asynchronous
+  /// command settlement. Once [_capture] detaches the audio, this save writes
+  /// that coherent image even if the device lifecycle changes afterward.
   Future<Session> save(
     String directory, {
     required SessionSettings settings,
     SessionChains chains = const SessionChains(),
     String pedalBindings = '',
+    bool Function()? captureStillValid,
   }) async {
     // Capture intent before any asynchronous audio or file work begins.
     final savedSettings = SessionSettings._detached(settings);
     await _awaitLayersSettled();
-    final captured = _capture();
+    if (captureStillValid?.call() == false) {
+      throw StateError('session changed before save capture');
+    }
+    final captured = _capture(savedSettings);
     await Directory(directory).create(recursive: true);
 
     final written = <String>{};
@@ -559,7 +588,7 @@ class SessionRepository {
   /// undo/redo depths are track-wide, so every lane carries the same count). A
   /// lane whose live buffer is empty is skipped, and a track left with no lane
   /// is dropped.
-  _Capture _capture() {
+  _Capture _capture([SessionSettings settings = const SessionSettings()]) {
     final snapshot = _engine.snapshot();
     final laneStems = <(int, int), List<Float32List>>{};
     final tracks = <SessionTrack>[];
@@ -596,14 +625,23 @@ class SessionRepository {
         if (layerPcm.length != total) continue;
         laneStems[(i, l)] = layerPcm;
         final laneSnap = track.lanes[l];
+        // The lane's mix (slice 3) comes from the looper repository, not
+        // the engine: the engine holds the level times the balance and the
+        // image plus the track's pan, and neither product can be taken
+        // apart again. An export hands in no settings and persists no
+        // manifest, so its fallback only feeds the mixdown, where the
+        // engine's gain times unity plays the same.
+        final mix = settings.laneMix[(i, l)];
         lanes.add(
           SessionLane(
             lane: l,
-            volume: laneSnap.volume,
+            volume: mix?.level ?? laneSnap.volume,
             muted: laneSnap.muted,
             outputMask: laneSnap.outputMask,
             inputChannel: laneSnap.inputChannel,
             layers: layerFiles,
+            pan: mix?.imagePan ?? 0,
+            balance: mix?.balance ?? 1,
             undoCount: undoCount,
             redoCount: redoCount,
           ),
@@ -666,6 +704,8 @@ class SessionRepository {
       trackOverdubDecayOverrides: settings.trackOverdubDecayOverrides,
       trackOneShotOverrides: settings.trackOneShotOverrides,
       trackLengthPresetOverrides: settings.trackLengthPresetOverrides,
+      trackPans: settings.trackPans,
+      inputSetup: settings.inputSetup,
       clickMode: settings.clickMode,
       clickOutputMask: settings.clickMask,
       clickVolume: settings.clickVolume,
@@ -685,9 +725,10 @@ class SessionRepository {
     );
   }
 
-  /// Sums every unmuted lane (at its gain) over the session period — the LCM of
-  /// the lane lengths, so every lane's loop closes cleanly. Lanes are summed,
-  /// never merged: a two-lane track contributes both lanes to the mix.
+  /// Sums every unmuted lane (at its gain: the level times its balance) over
+  /// the session period — the LCM of the lane lengths, so every lane's loop
+  /// closes cleanly. Lanes are summed, never merged: a two-lane track
+  /// contributes both lanes to the mix.
   Float32List _mixdown(_Capture captured) {
     final active = <(Float32List, double)>[];
     for (final track in captured.tracks) {
@@ -697,7 +738,7 @@ class SessionRepository {
         if (layerPcm == null) continue;
         final pcm = layerPcm[lane.liveIndex]; // mix the live buffer per lane
         if (pcm.isEmpty) continue;
-        active.add((pcm, lane.volume));
+        active.add((pcm, lane.volume * lane.balance));
       }
     }
     if (active.isEmpty) return Float32List(0);

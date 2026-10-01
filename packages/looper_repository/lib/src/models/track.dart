@@ -39,6 +39,10 @@ class Track extends Equatable {
     this.state = TrackState.empty,
     this.volume = 1,
     this.muted = false,
+    this.pan = 0,
+    this.solo = false,
+    this.peakL = 0,
+    this.peakR = 0,
     this.lengthFrames = 0,
     this.peak = 0,
     this.undoDepth = 0,
@@ -73,6 +77,21 @@ class Track extends Equatable {
 
   /// Whether the track is muted.
   final bool muted;
+
+  /// The track's pan, `-1` (left) .. `1` (right) (accepted design, Mixer).
+  /// Offsets every lane's recorded image; see `LooperRepository.setTrackPan`.
+  final double pan;
+
+  /// Whether the track is soloed: while any track is, only soloed tracks
+  /// route. Independent of [muted].
+  final bool solo;
+
+  /// The track's block peak per side after volume, pan and its chain, `0..1`
+  /// (the Mixer's meter). Live, like [peak].
+  final double peakL;
+
+  /// See [peakL].
+  final double peakR;
 
   /// Captured length in frames, including divisions and independent takes.
   final int lengthFrames;
@@ -285,6 +304,8 @@ class Track extends Equatable {
     state,
     volume,
     muted,
+    pan,
+    solo,
     lengthFrames,
     undoDepth,
     clearRestore,
@@ -327,6 +348,8 @@ class Track extends Equatable {
     state,
     volume,
     muted,
+    pan,
+    solo,
     lengthFrames,
     undoDepth,
     clearRestore,
@@ -348,5 +371,7 @@ class Track extends Equatable {
     chainEnabled,
     peak,
     positionFrames,
+    peakL,
+    peakR,
   ];
 }

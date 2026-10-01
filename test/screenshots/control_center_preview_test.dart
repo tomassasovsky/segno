@@ -491,7 +491,11 @@ void main() {
     final tracks = TracksCubit(settings: settings);
     final inputs = InputsCubit(settings: settings, repository: looper);
     final quantize = RecordTimingCubit(repository: looper, settings: settings);
-    final monitor = MonitorCubit(repository: looper, settings: settings);
+    final monitor = MonitorCubit(
+      mixSettings: testMixSettings(looper),
+      repository: looper,
+      settings: settings,
+    );
     final audio = AudioSetupCubit(
       repository: looper,
       settings: settings,

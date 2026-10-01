@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
@@ -9,8 +10,10 @@ import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
+import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
+import 'package:looper_repository/src/models/mix_settings_snapshot.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginParamInfo, pluginParamInfoFromEngine;
 import 'package:looper_repository/src/models/session_rig.dart';
@@ -307,6 +310,272 @@ class LooperRepository {
     ];
   }
 
+  _PendingMix? _pendingMix;
+  EngineResult _lastMixResult = EngineResult.ok;
+  int _mixRevision = 0;
+  int _mixGeneration = 0;
+
+  /// Changes at every engine lifetime and session replacement boundary.
+  /// Unlike sessionRevision, this also fences stop, reconnect and disposal.
+  int get mixGeneration => _mixGeneration;
+
+  bool _mixRecoveryStartBlocked = false;
+
+  /// Prevents any device-control path from restarting audio while the saved
+  /// mix's exact checkpoint still needs recovery.
+  void blockStartForMixRecovery() => _mixRecoveryStartBlocked = true;
+
+  /// Releases the start fence only after the checkpoint was restored.
+  void clearMixRecoveryStartBlock() => _mixRecoveryStartBlocked = false;
+
+  /// Detached confirmed controls, without the immutable recorded image.
+  MixSettingsSnapshot get mixSettingsSnapshot => MixSettingsSnapshot(
+    trackPans: _trackPan,
+    laneLevels: _laneVolume,
+    monitorLevels: _monitorVolume,
+    inputSetup: _inputSetup,
+    trackSolos: _trackSolo,
+  );
+
+  /// Validates a detached candidate before durable storage is touched.
+  EngineResult validateMixSettings(MixSettingsSnapshot value) {
+    if (!value.isValid) return EngineResult.invalid;
+    for (final lower in {
+      ...value.inputSetup.pairs.keys,
+      ..._inputSetup.pairs.keys,
+    }) {
+      if (value.inputSetup.pairs.containsKey(lower) !=
+              _inputSetup.pairs.containsKey(lower) &&
+          (_inputPairLocked(lower) || _inputPairLocked(lower + 1))) {
+        return EngineResult.invalid;
+      }
+    }
+    return EngineResult.ok;
+  }
+
+  /// Publishes all live controls in one bounded native command. Recorded
+  /// source images are retained from the current confirmed repository.
+  EngineResult applyMixSettings(MixSettingsSnapshot value) {
+    final valid = validateMixSettings(value);
+    if (!valid.isOk) return _mixFailure(valid);
+    final next = _mixIntent()..input = value.inputSetup;
+    next.pans
+      ..clear()
+      ..addAll(value.trackPans);
+    next.levels
+      ..clear()
+      ..addAll(value.laneLevels);
+    next.monitorLevels
+      ..clear()
+      ..addAll(value.monitorLevels);
+    next.solos
+      ..clear()
+      ..addAll(value.trackSolos);
+    return _requestMix(next);
+  }
+
+  final _mixSettingsFailures = StreamController<EngineResult>.broadcast();
+  final Map<int, _PendingImage> _pendingImages = {};
+  int _imageRevision = 0;
+
+  /// Refused edits and publication failures. Cancellation is quiet.
+  Stream<EngineResult> get mixSettingsFailures => _mixSettingsFailures.stream;
+
+  /// Whether the last accepted edit has a published result.
+  bool get mixSettingsSettled => _pendingMix == null;
+
+  EngineResult _mixFailure(EngineResult result) {
+    if (!_mixSettingsFailures.isClosed) _mixSettingsFailures.add(result);
+    return result;
+  }
+
+  _MixIntent _mixIntent() => _MixIntent(
+    pans: _trackPan,
+    solos: _trackSolo,
+    levels: _laneVolume,
+    images: _laneBasePan,
+    balances: _laneBalance,
+    monitorLevels: _monitorVolume,
+    input: _inputSetup,
+  );
+
+  void _acceptMix(_MixIntent value) {
+    final changedMonitors = <int>{
+      for (final input in {..._monitorVolume.keys, ...value.monitorLevels.keys})
+        if ((_monitorVolume[input] ?? 1) != (value.monitorLevels[input] ?? 1))
+          input,
+    };
+    _trackPan
+      ..clear()
+      ..addAll(value.pans);
+    _trackSolo
+      ..clear()
+      ..addAll(value.solos);
+    _laneVolume
+      ..clear()
+      ..addAll(value.levels);
+    _laneBasePan
+      ..clear()
+      ..addAll(value.images);
+    _laneBalance
+      ..clear()
+      ..addAll(value.balances);
+    _monitorVolume
+      ..clear()
+      ..addAll(value.monitorLevels);
+    _inputSetup = value.input;
+    changedMonitors.forEach(_monitorChanged);
+  }
+
+  EngineMixSettings _mixPayload(_MixIntent next, {bool replay = false}) {
+    final old = _mixIntent();
+    final lanes = <(int, int), StereoMix>{};
+    final images = <(int, int), StereoMix>{};
+    final monitors = <int, StereoMix>{};
+    final trims = <int, double>{};
+    final solos = <int, bool>{};
+    final count = _engine.snapshot().tracks.length;
+    for (var ch = 0; ch < count; ch++) {
+      for (var lane = 0; lane < kMaxLanes; lane++) {
+        final key = (ch, lane);
+        final value = next.laneMix(key);
+        if (replay || value != old.laneMix(key)) lanes[key] = value;
+        final source = next.laneImage(key);
+        if (replay || source != old.laneImage(key)) images[key] = source;
+      }
+      if (replay || (next.solos[ch] ?? false) != (old.solos[ch] ?? false)) {
+        solos[ch] = next.solos[ch] ?? false;
+      }
+    }
+    for (var input = 0; input < kMaxChannels; input++) {
+      final value = next.monitorMix(input);
+      if (replay || value != old.monitorMix(input)) monitors[input] = value;
+      if (replay || next.input.trimDbOf(input) != old.input.trimDbOf(input)) {
+        trims[input] = inputTrimGainOfDb(next.input.trimDbOf(input));
+      }
+    }
+    _mixRevision = (_mixRevision + 1) & 0xffffffff;
+    if (_mixRevision == 0) _mixRevision = 1;
+    return EngineMixSettings(
+      revision: _mixRevision,
+      lanes: lanes,
+      images: images,
+      monitors: monitors,
+      trims: trims,
+      solos: solos,
+    );
+  }
+
+  EngineResult _requestMix(
+    _MixIntent next, {
+    bool replay = false,
+    bool startup = false,
+  }) {
+    if (_pendingMix != null) return _mixFailure(EngineResult.notReady);
+    if (!next.input.isValid) return _mixFailure(EngineResult.invalid);
+    if (!_intendRunning) {
+      _acceptMix(next);
+      _lastMixResult = EngineResult.ok;
+      _reproject();
+      return EngineResult.ok;
+    }
+    final payload = _mixPayload(next, replay: replay);
+    final result = _engine.setMix(payload);
+    if (!result.isOk) return _mixFailure(result);
+    _pendingMix = _PendingMix(next, payload.revision, startup: startup);
+    _reproject();
+    return _pendingMix == null ? _lastMixResult : EngineResult.ok;
+  }
+
+  bool _settlePendingMix() {
+    final pending = _pendingMix;
+    if (pending == null || !_engine.commandsSettled) return false;
+    final snapshot = _engine.snapshot();
+    final result = snapshot.mixRevision == pending.revision
+        ? EngineResult.ok
+        : EngineResult.invalid;
+    _pendingMix = null;
+    _lastMixResult = result;
+    if (result.isOk) {
+      _acceptMix(pending.intent);
+    } else {
+      if (pending.startup) stopEngine();
+      _mixFailure(result);
+    }
+    pending.completed.complete(result);
+    return true;
+  }
+
+  void _cancelMix() {
+    _mixGeneration++;
+    if (_pendingImages.isNotEmpty) _settleImages(_engine.snapshot());
+    final pending = _pendingMix;
+    _pendingMix = null;
+    _pendingImages.clear();
+    if (pending != null) {
+      _lastMixResult = EngineResult.notReady;
+      pending.completed.complete(EngineResult.notReady);
+    }
+  }
+
+  /// Waits for callback publication independently of UI polling. Only confirmed
+  /// state is safe to persist. Timeout stops the engine before returning, so a
+  /// queued edit cannot apply later behind the confirmed choice.
+  Future<EngineResult> settleMixSettings({
+    Duration pollInterval = const Duration(milliseconds: 10),
+    int attempts = 50,
+  }) async {
+    final pending = _pendingMix;
+    if (pending == null) return _lastMixResult;
+    for (var i = 0; i < attempts; i++) {
+      if (pending.completed.isCompleted) return pending.completed.future;
+      if (_settlePendingMix()) _reproject();
+      if (pending.completed.isCompleted) return pending.completed.future;
+      await Future<void>.delayed(pollInterval);
+    }
+    if (pending.completed.isCompleted) return pending.completed.future;
+    stopEngine();
+    _mixFailure(EngineResult.notReady);
+    _reproject();
+    return EngineResult.notReady;
+  }
+
+  /// Replaces saved track-pan and input-setup intent in one transaction.
+  EngineResult setMixSettings({
+    required Map<int, double> trackPans,
+    required InputSetup inputSetup,
+    Map<(int, int), double> laneLevels = const {},
+    Map<int, double> monitorLevels = const {},
+  }) => applyMixSettings(
+    mixSettingsSnapshot.copyWith(
+      trackPans: trackPans,
+      inputSetup: inputSetup,
+      laneLevels: {..._laneVolume, ...laneLevels},
+      monitorLevels: {..._monitorVolume, ...monitorLevels},
+    ),
+  );
+
+  void _settleImages(EngineSnapshot snapshot) {
+    for (final entry in _pendingImages.entries.toList()) {
+      final ch = entry.key;
+      if (ch >= snapshot.tracks.length) continue;
+      final track = snapshot.tracks[ch];
+      if (track.imageRevision == entry.value.revision) {
+        _laneBasePan.addAll(entry.value.images);
+        _laneBalance.addAll(entry.value.balances);
+        // A published take changes only source metadata. A concurrently
+        // accepted fader edit still owns its independent live level/offset.
+        _pendingMix?.intent.images.addAll(entry.value.images);
+        _pendingMix?.intent.balances.addAll(entry.value.balances);
+        _pendingImages.remove(ch);
+      } else if (_engine.commandsSettled &&
+          !track.pending &&
+          !snapshot.countingIn) {
+        _pendingImages.remove(ch);
+      }
+    }
+  }
+
   _PendingLengthSettings? _pendingLengthSettings;
   EngineResult _lastLengthResult = EngineResult.ok;
   final _lengthSettingsFailures = StreamController<EngineResult>.broadcast();
@@ -512,6 +781,24 @@ class LooperRepository {
   final Map<(int, int), int> _laneOutput = {};
   final Map<(int, int), double> _laneVolume = {};
   final Map<(int, int), bool> _laneMute = {};
+
+  /// The mix model (accepted design, slice 3). A lane's image is fixed at
+  /// record time from its input's setup: [_laneBasePan] is where the input
+  /// sat (`-1`/`1` for a pair member, its pan otherwise) and [_laneBalance]
+  /// the gain the pair's balance gave its side. The engine is given the
+  /// lane's EFFECTIVE pan (base plus the track's [_trackPan], clamped) and
+  /// its effective volume (the level times the balance gain), so a track's
+  /// fader and pan move every lane together without rewriting what the
+  /// take recorded. Absent entries are centre and unity.
+  final Map<(int, int), double> _laneBasePan = {};
+  final Map<(int, int), double> _laneBalance = {};
+  final Map<int, double> _trackPan = {};
+  final Map<int, bool> _trackSolo = {};
+
+  /// The per-input capture setup (trim, pan, pairs): remembered, pushed as
+  /// the capture trim and the monitors' pan and gain, and seeded onto a
+  /// lane when it records. See [InputSetup].
+  InputSetup _inputSetup = const InputSetup.empty();
   final Map<(int, int), List<TrackEffect>> _laneEffects = {};
 
   /// Per-(channel, lane) chain-enabled flags (R15; absent => enabled). Only
@@ -916,7 +1203,9 @@ class LooperRepository {
 
   void _poll() {
     final lengthSettled = _settlePendingLengthSettings();
+    final mixSettled = _settlePendingMix();
     final snapshot = _engine.snapshot();
+    _settleImages(snapshot);
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
     // A measurement auto-sets the engine's offset (it never flows through
@@ -931,7 +1220,7 @@ class LooperRepository {
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (next == _last && !lengthSettled) return;
+    if (next == _last && !lengthSettled && !mixSettled) return;
     _last = next;
     _forgetEmptyWaveforms(next);
     // Before listeners see it: `auto` monitors resolve against the arm state
@@ -947,11 +1236,13 @@ class LooperRepository {
   /// the next poll tick (which would make a dragged knob feel a tick behind).
   void _reproject() {
     final lengthSettled = _settlePendingLengthSettings();
+    final mixSettled = _settlePendingMix();
     final snapshot = _engine.snapshot();
+    _settleImages(snapshot);
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (next == _last && !lengthSettled) return;
+    if (next == _last && !lengthSettled && !mixSettled) return;
     _last = next;
     _forgetEmptyWaveforms(next);
     _reconcileAutoMonitors();
@@ -1035,6 +1326,7 @@ class LooperRepository {
     // confirmed settings without disarming reconnect supervision.
     _cancelLengthSettings();
     _engine.stop();
+    _cancelMix();
     if (startEngine(config).isOk) {
       _stopReconnectPolling();
     }
@@ -1106,8 +1398,14 @@ class LooperRepository {
         Track(
           channel: i,
           state: s.tracks[i].state,
-          volume: s.tracks[i].volume,
+          // An untouched live fader is unity. Native volume already includes
+          // source balance, which must never become a second saved level.
+          volume: _laneVolume[(i, 0)] ?? 1,
           muted: s.tracks[i].muted,
+          pan: _trackPan[i] ?? 0,
+          solo: s.tracks[i].solo,
+          peakL: s.tracks[i].peakL,
+          peakR: s.tracks[i].peakR,
           lengthFrames: s.tracks[i].lengthFrames,
           peak: s.tracks[i].peak,
           undoDepth: s.tracks[i].undoDepth,
@@ -1131,7 +1429,10 @@ class LooperRepository {
               Lane(
                 inputChannel: s.tracks[i].lanes[l].inputChannel,
                 outputMask: s.tracks[i].lanes[l].outputMask,
-                volume: s.tracks[i].lanes[l].volume,
+                volume: _laneVolume[(i, l)] ?? 1,
+                pan: s.tracks[i].lanes[l].pan,
+                imagePan: _laneBasePan[(i, l)] ?? 0,
+                balance: _laneBalance[(i, l)] ?? 1,
                 muted: s.tracks[i].lanes[l].muted,
                 lengthFrames: s.tracks[i].lanes[l].lengthFrames,
                 effects: _laneEffects[(i, l)] ?? const [],
@@ -1149,6 +1450,11 @@ class LooperRepository {
     ],
     masterEffects: _masterEffects,
     masterChainEnabled: _masterChainEnabled,
+    inputSetup: _inputSetup,
+    // Sized by the engine to the channels the device has.
+    inputPeaks: s.inputPeaks,
+    monitorPeaks: s.monitorPeaks,
+    outputPeaks: s.outputPeaks,
     status: EngineStatus(
       deviceName: _engine.deviceName,
       sampleRate: s.sampleRate,
@@ -1201,6 +1507,8 @@ class LooperRepository {
 
   /// Opens the audio device and starts processing.
   EngineResult startEngine(EngineConfig config) {
+    if (_mixRecoveryStartBlocked) return EngineResult.notReady;
+    _mixGeneration++;
     final result = _engine.start(engineConfigToEngine(config));
     if (result.isOk) {
       _lastEngineConfig = config;
@@ -1305,10 +1613,11 @@ class LooperRepository {
         (key, mask) =>
             _engine.setLaneOutput(channel: key.$1, lane: key.$2, mask: mask),
       );
-      _laneVolume.forEach(
-        (key, volume) =>
-            _engine.setLaneVolume(volume, channel: key.$1, lane: key.$2),
-      );
+      final mixResult = _requestMix(_mixIntent(), replay: true, startup: true);
+      if (!mixResult.isOk) {
+        stopEngine();
+        return mixResult;
+      }
       _laneMute.forEach(
         (key, muted) =>
             _engine.setLaneMute(muted: muted, channel: key.$1, lane: key.$2),
@@ -1337,10 +1646,7 @@ class LooperRepository {
         (input, mask) =>
             _engine.setMonitorInputOutput(input: input, mask: mask),
       );
-      _monitorVolume.forEach(
-        (input, volume) =>
-            _engine.setMonitorInputVolume(input: input, volume: volume),
-      );
+
       _monitorMute.forEach(
         (input, muted) =>
             _engine.setMonitorInputMute(input: input, muted: muted),
@@ -1535,6 +1841,9 @@ class LooperRepository {
   /// reconnect supervision so the engine is not reopened behind the user.
   EngineResult stopEngine() {
     _cancelLengthSettings();
+    // Quiesce the callback before reconciling the final published take image.
+    final result = _engine.stop();
+    _cancelMix();
     if (_intendRunning) {
       final snapshot = _engine.snapshot();
       if (snapshot.tempoBpm > 0) {
@@ -1548,7 +1857,7 @@ class LooperRepository {
     // a later param set doesn't address a freed slot.
     _laneSlots.clear();
     _monitorSlots.clear();
-    return _engine.stop();
+    return result;
   }
 
   /// Detects a cable-free loopback capture path for auto-measuring latency.
@@ -1573,6 +1882,17 @@ class LooperRepository {
     final state = channel >= 0 && channel < snapshot.tracks.length
         ? snapshot.tracks[channel].state
         : null;
+    if (channel < 0 || channel >= snapshot.tracks.length) {
+      return EngineResult.invalid;
+    }
+    if (snapshot.tracks[channel].pending ||
+        snapshot.countingIn ||
+        (state != TrackState.empty &&
+            state != TrackState.playing &&
+            state != TrackState.stopped)) {
+      return _engine.record(channel: channel);
+    }
+    if (_pendingMix != null) return _mixFailure(EngineResult.notReady);
     if (state == TrackState.empty) {
       // A fresh take retires the clear's restore point (the engine's rule),
       // and with it an undo still waiting for that point to land.
@@ -1594,11 +1914,37 @@ class LooperRepository {
       // a device reconnect would replay them and silence the take
       // mid-performance.
       _forgetLaneMutes(channel);
-      for (var lane = 0; lane < laneCount(channel); lane++) {
-        _engine.setLaneMute(muted: false, channel: channel, lane: lane);
-      }
     }
-    return _engine.record(channel: channel);
+    final images = <(int, int), double>{};
+    final balances = <(int, int), double>{};
+    final source = <int, StereoMix>{};
+    for (var lane = 0; lane < laneCount(channel); lane++) {
+      final key = (channel, lane);
+      if (state != TrackState.empty && _laneBasePan.containsKey(key)) continue;
+      final input = _laneInput[key] ?? lane;
+      images[key] = _inputSetup.effectivePanOf(input);
+      balances[key] = _inputSetup.balanceGainOf(input);
+      source[lane] = (gain: balances[key]!, pan: images[key]!);
+    }
+    _imageRevision = (_imageRevision + 1) & 0xffffffff;
+    if (_imageRevision == 0) _imageRevision = 1;
+    final result = _engine.recordWithImage(
+      RecordImage(revision: _imageRevision, lanes: source),
+      channel: channel,
+    );
+    if (result.isOk) {
+      _pendingImages[channel] = _PendingImage(
+        _imageRevision,
+        images,
+        balances,
+        {
+          for (var lane = 0; lane < laneCount(channel); lane++)
+            _laneInput[(channel, lane)] ?? lane,
+        },
+      );
+      _reproject();
+    }
+    return result;
   }
 
   /// Drops the remembered per-lane mutes for [channel] — used when the engine
@@ -2199,8 +2545,56 @@ class LooperRepository {
                   rig.tempoBpm > 300)) {
       throw StateError('session tempo cannot be restored');
     }
+    if (!rig.inputSetup.isValid ||
+        rig.trackPans.entries.any(
+          (e) =>
+              e.key < 0 ||
+              e.key >= 8 ||
+              !e.value.isFinite ||
+              e.value < -1 ||
+              e.value > 1,
+        ) ||
+        rig.tracks.any(
+          (t) =>
+              t.channel < 0 ||
+              t.channel >= 8 ||
+              t.lanes.any(
+                (l) =>
+                    l.lane < 0 ||
+                    l.lane >= kMaxLanes ||
+                    !l.volume.isFinite ||
+                    l.volume < 0 ||
+                    l.volume > 2 ||
+                    !l.pan.isFinite ||
+                    l.pan < -1 ||
+                    l.pan > 1 ||
+                    !l.balance.isFinite ||
+                    l.balance < 0 ||
+                    l.balance > 1,
+              ),
+        ) ||
+        rig.monitors.any(
+          (m) =>
+              m.input < 0 ||
+              m.input >= kMaxChannels ||
+              !m.volume.isFinite ||
+              m.volume < 0 ||
+              m.volume > 2,
+        )) {
+      throw StateError('session mix cannot be restored');
+    }
+    final restoredMix = _MixIntent(
+      pans: rig.trackPans,
+      solos: const {},
+      levels: const {},
+      images: const {},
+      balances: const {},
+      monitorLevels: const {},
+      input: rig.inputSetup,
+    );
     final revision = ++_sessionRevision;
     _cancelLengthSettings();
+    _cancelMix();
     // Own the settings before the first await. Callers may reuse their maps.
     final recordTimingOverrides = Map.of(rig.trackRecordTimingOverrides);
     final overdubDecayOverrides = Map.of(rig.trackOverdubDecayOverrides);
@@ -2276,6 +2670,8 @@ class LooperRepository {
           ..setLaneInput(channel: channel, lane: 0, inputChannel: 0)
           ..setLaneOutput(channel: channel, lane: 0, mask: 0x3)
           ..setLaneVolume(1, channel: channel)
+          ..setLanePan(pan: 0, channel: channel)
+          ..setTrackSolo(channel: channel, solo: false)
           ..setLaneMute(muted: false, channel: channel)
           ..setLaneCount(channel: channel, count: 1)
           // a_one_shot survives `clear` by design too (see above) — reset
@@ -2441,7 +2837,12 @@ class LooperRepository {
       // not deactivate the top lane the imports just filled.
       final laneCount =
           track.lanes.map((l) => l.lane).reduce((a, b) => a > b ? a : b) + 1;
-      setLaneCount(channel: track.channel, count: laneCount);
+      if (_intendRunning) {
+        _requireSessionSetting(
+          _engine.setLaneCount(channel: track.channel, count: laneCount),
+        );
+      }
+      _laneCount[track.channel] = laneCount;
       for (final lane in track.lanes) {
         setLaneInput(
           channel: track.channel,
@@ -2453,7 +2854,12 @@ class LooperRepository {
           lane: lane.lane,
           mask: lane.outputMask,
         );
-        setLaneVolume(lane.volume, channel: track.channel, lane: lane.lane);
+        // The lane's recorded image (slice 3): the balance gain before the
+        // level push composes with it, the image before the track pan
+        // below lands on top of it.
+        restoredMix.balances[(track.channel, lane.lane)] = lane.balance;
+        restoredMix.images[(track.channel, lane.lane)] = lane.pan;
+        restoredMix.levels[(track.channel, lane.lane)] = lane.volume;
         setLaneMute(muted: lane.muted, channel: track.channel, lane: lane.lane);
       }
     }
@@ -2559,7 +2965,7 @@ class LooperRepository {
       if (definedMonitors.contains(input)) continue;
       setMonitorInputMode(input: input, mode: MonitorMode.off);
       setMonitorOutput(input: input, mask: _defaultMonitorOutputMask);
-      setMonitorVolume(input: input, volume: 1);
+      restoredMix.monitorLevels[input] = 1;
       setMonitorMute(input: input, muted: false);
       setMonitorEffects(input: input, effects: const []);
       setMonitorChainEnabled(input: input, enabled: true);
@@ -2567,7 +2973,7 @@ class LooperRepository {
     for (final monitor in rig.monitors) {
       setMonitorInputMode(input: monitor.input, mode: monitor.mode);
       setMonitorOutput(input: monitor.input, mask: monitor.outputMask);
-      setMonitorVolume(input: monitor.input, volume: monitor.volume);
+      restoredMix.monitorLevels[monitor.input] = monitor.volume;
       setMonitorMute(input: monitor.input, muted: monitor.muted);
       setMonitorEffects(input: monitor.input, effects: monitor.effects);
       // The chain flag comes from the monitor's own envelope (R15); a
@@ -2577,6 +2983,20 @@ class LooperRepository {
         input: monitor.input,
         enabled: monitor.chainEnabled,
       );
+    }
+    // The input setup (slice 3): trims to the engine, pans and balances onto
+    // the monitors. After the monitors above, so their gains compose with
+    // the pairs' balance; before the tracks' lanes are seeded by a later
+    // record, which reads it.
+    _requireSessionSetting(_requestMix(restoredMix, replay: true));
+    _requireSessionSetting(
+      await settleMixSettings(
+        pollInterval: clearPollInterval,
+        attempts: clearPollAttempts,
+      ),
+    );
+    if (revision != _sessionRevision) {
+      throw StateError('session replacement was superseded');
     }
 
     // Last, after every import/commit that could throw: [rigReplaced]'s
@@ -2690,6 +3110,7 @@ class LooperRepository {
         mode: monitorMode(input),
         outputMask: monitorOutput(input),
         volume: monitorVolume(input),
+        pan: _inputSetup.effectivePanOf(input),
         muted: monitorMuted(input),
         effects: monitorEffects(input),
         chainEnabled: monitorChainEnabled(input),
@@ -2738,6 +3159,29 @@ class LooperRepository {
       }
     }
     return false;
+  }
+
+  bool _inputPairLocked(int input) {
+    if (_pendingImages.values.any(
+      (pending) => pending.inputs.contains(input),
+    )) {
+      return true;
+    }
+    // The callback may be ahead of the UI projection, including when an
+    // accepted arm has just become a recording or overdub.
+    final snapshot = _engine.snapshot();
+    for (var channel = 0; channel < snapshot.tracks.length; channel++) {
+      final track = snapshot.tracks[channel];
+      if (!track.pending &&
+          track.state != TrackState.recording &&
+          track.state != TrackState.overdubbing) {
+        continue;
+      }
+      for (var lane = 0; lane < laneCount(channel); lane++) {
+        if ((_laneInput[(channel, lane)] ?? lane) == input) return true;
+      }
+    }
+    return _autoArms(input);
   }
 
   /// Re-pushes the resolved gate for every [MonitorMode.auto] input whose
@@ -2844,12 +3288,14 @@ class LooperRepository {
   /// all its lanes together, not just lane 0. Returns the last failing lane's
   /// result, or [EngineResult.ok] if all lanes succeed.
   EngineResult setVolume(double volume, {int channel = 0}) {
-    var result = EngineResult.ok;
-    for (var lane = 0; lane < laneCount(channel); lane++) {
-      final r = setLaneVolume(volume, channel: channel, lane: lane);
-      if (r != EngineResult.ok) result = r;
+    if (channel < 0 || channel >= 8 || !volume.isFinite) {
+      return _mixFailure(EngineResult.invalid);
     }
-    return result;
+    final next = _mixIntent();
+    for (var lane = 0; lane < laneCount(channel); lane++) {
+      next.levels[(channel, lane)] = volume.clamp(0.0, 2.0);
+    }
+    return _requestMix(next);
   }
 
   /// Whether track [channel] is muted per the repository's remembered
@@ -2900,13 +3346,34 @@ class LooperRepository {
   /// buffers for any newly added lanes. Remembered and re-applied on every
   /// (re)start; takes effect immediately only while running.
   EngineResult setLaneCount({required int channel, required int count}) {
-    if (count <= 1) {
+    if (channel < 0 || channel >= 8) return EngineResult.invalid;
+    final bounded = count.clamp(1, kMaxLanes);
+    // Structural growth allocates on the control thread. Start only with an
+    // empty command queue, so the one following initialization batch can fit.
+    if (_pendingMix != null || (_intendRunning && !_engine.commandsSettled)) {
+      return _mixFailure(EngineResult.notReady);
+    }
+    final previous = laneCount(channel);
+    final next = _mixIntent();
+    next.images.removeWhere(
+      (key, _) => key.$1 == channel && key.$2 >= math.min(previous, bounded),
+    );
+    next.balances.removeWhere(
+      (key, _) => key.$1 == channel && key.$2 >= math.min(previous, bounded),
+    );
+    for (var lane = previous; lane < bounded; lane++) {
+      next.levels[(channel, lane)] = _trackLevel(channel);
+    }
+    if (_intendRunning) {
+      final result = _engine.setLaneCount(channel: channel, count: bounded);
+      if (!result.isOk) return result;
+    }
+    if (bounded == 1) {
       _laneCount.remove(channel);
     } else {
-      _laneCount[channel] = count;
+      _laneCount[channel] = bounded;
     }
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setLaneCount(channel: channel, count: count);
+    return _requestMix(next, replay: true);
   }
 
   /// Track [channel]'s remembered active lane count (`1` if unset).
@@ -2947,8 +3414,129 @@ class LooperRepository {
     required int channel,
     required int lane,
   }) {
-    _laneVolume[(channel, lane)] = volume;
-    return _engine.setLaneVolume(volume, channel: channel, lane: lane);
+    if (channel < 0 ||
+        channel >= 8 ||
+        lane < 0 ||
+        lane >= kMaxLanes ||
+        !volume.isFinite) {
+      return _mixFailure(EngineResult.invalid);
+    }
+    final next = _mixIntent();
+    next.levels[(channel, lane)] = volume.clamp(0.0, 2.0);
+    return _requestMix(next);
+  }
+
+  /// Track [channel]'s pan, `-1` (left) .. `1` (right); the repository's
+  /// remembered intent.
+  double trackPan(int channel) => _trackPan[channel] ?? 0;
+
+  /// Confirmed pans, including empty tracks.
+  Map<int, double> get trackPans => Map.unmodifiable(_trackPan);
+
+  /// Sets track [channel]'s pan (accepted design, Mixer): every lane's
+  /// recorded image moves by it. Remembered and re-applied on every
+  /// (re)start; re-projects, since the pan is projected from the cache.
+  EngineResult setTrackPan(double pan, {int channel = 0}) {
+    if (channel < 0 || channel >= 8 || !pan.isFinite) {
+      return _mixFailure(EngineResult.invalid);
+    }
+    final next = _mixIntent();
+    next.pans[channel] = pan.clamp(-1.0, 1.0);
+    return _requestMix(next);
+  }
+
+  /// Whether this track is soloed in the confirmed mix.
+  bool trackSoloed(int channel) => _trackSolo[channel] ?? false;
+
+  /// Changes only the track's solo flag, independently of mute.
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    if (channel < 0 || channel >= 8) return _mixFailure(EngineResult.invalid);
+    final next = _mixIntent();
+    next.solos[channel] = solo;
+    return _requestMix(next);
+  }
+
+  /// Clears every solo as one accepted change.
+  EngineResult clearSolo() => _requestMix(_mixIntent()..solos.clear());
+
+  /// Resets all track levels and pan together, preserving image balance,
+  /// mute, solo, FX and PCM.
+  EngineResult resetMixer() {
+    final next = _mixIntent()..pans.clear();
+    for (var ch = 0; ch < 8; ch++) {
+      for (var lane = 0; lane < kMaxLanes; lane++) {
+        next.levels[(ch, lane)] = 1;
+      }
+    }
+    return _requestMix(next);
+  }
+
+  /// Confirmed per-input capture setup.
+  InputSetup get inputSetup => _inputSetup;
+
+  /// Capture gain only. The UI chooses half-decibel increments.
+  EngineResult setInputTrimDb({required int input, required double db}) {
+    if (input < 0 || input >= kMaxChannels || !db.isFinite) {
+      return _mixFailure(EngineResult.invalid);
+    }
+    return setInputSetup(
+      _inputSetup.withTrim(input, db.clamp(kMinInputTrimDb, kMaxInputTrimDb)),
+    );
+  }
+
+  /// Moves live monitoring and future recording images.
+  EngineResult setInputPan({required int input, required double pan}) {
+    if (input < 0 || input >= kMaxChannels || !pan.isFinite) {
+      return _mixFailure(EngineResult.invalid);
+    }
+    return setInputSetup(_inputSetup.withPan(input, pan.clamp(-1.0, 1.0)));
+  }
+
+  /// Pair membership cannot change while either source is armed/capturing.
+  EngineResult setInputPair({required int input, required bool paired}) {
+    if (input < 0 ||
+        input + 1 >= kMaxChannels ||
+        input.isOdd ||
+        _inputPairLocked(input) ||
+        _inputPairLocked(input + 1)) {
+      return _mixFailure(EngineResult.invalid);
+    }
+    return setInputSetup(_inputSetup.withPair(input, paired: paired));
+  }
+
+  /// Changes both members' effective live mix atomically.
+  EngineResult setPairBalance({required int input, required double balance}) {
+    if (!_inputSetup.pairs.containsKey(input) || !balance.isFinite) {
+      return _mixFailure(EngineResult.invalid);
+    }
+    return setInputSetup(
+      _inputSetup.withBalance(input, balance.clamp(-1.0, 1.0)),
+    );
+  }
+
+  /// Replaces the validated whole setup without changing confirmed intent on
+  /// refusal. Call settleMixSettings before saving it.
+  EngineResult setInputSetup(InputSetup setup) {
+    if (!setup.isValid) return _mixFailure(EngineResult.invalid);
+    for (final lower in {...setup.pairs.keys, ..._inputSetup.pairs.keys}) {
+      if (setup.pairs.containsKey(lower) !=
+              _inputSetup.pairs.containsKey(lower) &&
+          (_inputPairLocked(lower) || _inputPairLocked(lower + 1))) {
+        return _mixFailure(EngineResult.invalid);
+      }
+    }
+    return _requestMix(_mixIntent()..input = setup);
+  }
+
+  /// The track's level as the repository remembers it: lane 0's, else any
+  /// lane's, else unity.
+  double _trackLevel(int channel) {
+    final first = _laneVolume[(channel, 0)];
+    if (first != null) return first;
+    for (final entry in _laneVolume.entries) {
+      if (entry.key.$1 == channel) return entry.value;
+    }
+    return 1;
   }
 
   /// Mutes or unmutes lane [lane] of track [channel]. Remembered and re-applied
@@ -3006,10 +3594,12 @@ class LooperRepository {
   /// +6.02 dB headroom above unity). Remembered and re-applied on every
   /// (re)start; takes effect immediately while running.
   EngineResult setMonitorVolume({required int input, required double volume}) {
-    _monitorVolume[input] = volume;
-    _monitorChanged(input);
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMonitorInputVolume(input: input, volume: volume);
+    if (input < 0 || input >= kMaxChannels || !volume.isFinite) {
+      return _mixFailure(EngineResult.invalid);
+    }
+    final next = _mixIntent();
+    next.monitorLevels[input] = volume.clamp(0.0, 2.0);
+    return _requestMix(next);
   }
 
   /// Mutes or unmutes monitor [input]. Remembered and re-applied on every
@@ -4887,6 +5477,7 @@ class LooperRepository {
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
     _cancelLengthSettings();
+    _cancelMix();
     await _stopPollingAndClose();
     _engine.dispose();
   }
@@ -4904,6 +5495,7 @@ class LooperRepository {
     await _rigReplaced.close();
     await _recoveryRefusals.close();
     await _lengthSettingsFailures.close();
+    await _mixSettingsFailures.close();
     await _controller.close();
   }
 }
@@ -4984,4 +5576,56 @@ class _WaveformRead {
 
   /// Whether the sweep has completed since the key change.
   bool swept = false;
+}
+
+class _MixIntent {
+  _MixIntent({
+    required Map<int, double> pans,
+    required Map<int, bool> solos,
+    required Map<(int, int), double> levels,
+    required Map<(int, int), double> images,
+    required Map<(int, int), double> balances,
+    required Map<int, double> monitorLevels,
+    required this.input,
+  }) : pans = Map.of(pans),
+       solos = Map.of(solos),
+       levels = Map.of(levels),
+       images = Map.of(images),
+       balances = Map.of(balances),
+       monitorLevels = Map.of(monitorLevels);
+  final Map<int, double> pans;
+  final Map<int, bool> solos;
+  final Map<(int, int), double> levels;
+  final Map<(int, int), double> images;
+  final Map<(int, int), double> balances;
+  final Map<int, double> monitorLevels;
+  InputSetup input;
+  StereoMix laneMix((int, int) key) => (
+    gain: levels[key] ?? 1,
+    pan: pans[key.$1] ?? 0,
+  );
+  StereoMix laneImage((int, int) key) => (
+    gain: balances[key] ?? 1,
+    pan: images[key] ?? 0,
+  );
+  StereoMix monitorMix(int i) => (
+    gain: (monitorLevels[i] ?? 1) * input.balanceGainOf(i),
+    pan: input.effectivePanOf(i),
+  );
+}
+
+class _PendingMix {
+  _PendingMix(this.intent, this.revision, {required this.startup});
+  final _MixIntent intent;
+  final int revision;
+  final bool startup;
+  final completed = Completer<EngineResult>();
+}
+
+class _PendingImage {
+  _PendingImage(this.revision, this.images, this.balances, this.inputs);
+  final int revision;
+  final Map<(int, int), double> images;
+  final Map<(int, int), double> balances;
+  final Set<int> inputs;
 }

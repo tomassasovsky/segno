@@ -468,7 +468,9 @@ void main() {
       expect(state.transport.masterPositionFrames, 24000);
       expect(state.transport.progress, closeTo(0.25, 1e-6));
       expect(state.track.state, TrackState.playing);
-      expect(state.track.volume, closeTo(0.8, 1e-6));
+      // The native snapshot reports effective gain; projection retains the
+      // independent live fader so source balance is not saved twice.
+      expect(state.track.volume, closeTo(1, 1e-6));
       expect(state.track.muted, isFalse);
       expect(state.track.lengthFrames, 96000);
       expect(state.track.peak, closeTo(0.5, 1e-6));
@@ -1393,7 +1395,7 @@ void main() {
       expect(track.lanes, hasLength(2));
       expect(track.lanes[0].inputChannel, 0);
       expect(track.lanes[0].outputMask, 0x1);
-      expect(track.lanes[0].volume, closeTo(0.8, 1e-6));
+      expect(track.lanes[0].volume, closeTo(1, 1e-6));
       expect(track.lanes[0].effects, isEmpty);
       expect(track.lanes[1].inputChannel, 1);
       expect(track.lanes[1].muted, isTrue);
@@ -1891,6 +1893,7 @@ void main() {
 
   group('commands forward to the engine', () {
     test('each command calls the matching engine method', () {
+      engine.nextSnapshot = _pendingSnapshot(pending: false, trigger: -1);
       buildRepo()
         ..startEngine(const EngineConfig(sampleRate: 48000))
         ..record()
@@ -1924,7 +1927,8 @@ void main() {
         ]),
       );
       expect(engine.lastConfig?.sampleRate, 48000);
-      expect(engine.lastVolume, 0.5);
+      // The stopped engine keeps the fader intent for its next start.
+      expect(engine.lastVolume, isNull);
       expect(engine.lastMuted, isTrue);
     });
 
@@ -1947,6 +1951,22 @@ void main() {
 
       expect(repo.startEngine(config), EngineResult.device);
       expect(repo.lastEngineConfig, isNull);
+    });
+
+    test('mix recovery blocks every start path before lifecycle changes', () {
+      final repo = buildRepo();
+      final generation = repo.mixGeneration;
+      repo.blockStartForMixRecovery();
+
+      expect(repo.startEngine(const EngineConfig()), EngineResult.notReady);
+      expect(repo.mixGeneration, generation);
+      expect(repo.lastEngineConfig, isNull);
+      expect(engine.calls, isNot(contains('start')));
+
+      repo.clearMixRecoveryStartBlock();
+      expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+      expect(repo.mixGeneration, generation + 1);
+      expect(engine.calls, contains('start'));
     });
 
     test('setQuantize is deferred until running, then applied', () {
@@ -5102,6 +5122,7 @@ void main() {
     test(
       'setVolume on a multi-lane track sets EVERY lane, not just lane 0',
       () {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
           ..setLaneCount(channel: 2, count: 3);
@@ -5751,8 +5772,8 @@ void main() {
             'importLayer',
             'finalizeLayers',
             'commitSession',
-            'setLaneVolume',
             'setLaneMute',
+            'setMix',
           ]),
         );
         expect(engine.importedTracks[0], pcm);
@@ -5854,7 +5875,9 @@ void main() {
         ..stopEngine()
         ..startEngine(const EngineConfig());
 
-      expect(engine.laneVol, {(0, 0): 0.5});
+      expect(engine.laneVol[(0, 0)], 0.5);
+      expect(engine.laneVol[(2, 0)], 1);
+      expect(engine.laneVol.values.where((gain) => gain != 1), [0.5]);
       expect(engine.laneMute, {(0, 0): false});
     });
 

@@ -69,6 +69,7 @@ void main() {
         state: TrackState.playing,
         volume: 0.8,
         muted: true,
+        solo: true,
         multiple: 2,
         lanes: [
           PerformanceLaneSnapshot(lane: 0, lengthFrames: 240, deferred: false),
@@ -79,8 +80,25 @@ void main() {
       expect(decoded.state, TrackState.playing);
       expect(decoded.volume, 0.8);
       expect(decoded.muted, isTrue);
+      expect(decoded.solo, isTrue);
       expect(decoded.multiple, 2);
       expect(decoded.lanes, hasLength(1));
+    });
+
+    test('solo defaults to false and reads as false when absent', () {
+      const track = PerformanceTrackSnapshot(
+        channel: 0,
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        multiple: 1,
+      );
+      expect(track.solo, isFalse);
+      expect(track.toJson()['solo'], isFalse);
+
+      // Manifests written before per-track solo existed carry no key.
+      final legacy = Map<String, dynamic>.from(track.toJson())..remove('solo');
+      expect(PerformanceTrackSnapshot.fromJson(legacy).solo, isFalse);
     });
   });
 

@@ -7,6 +7,7 @@ class _FakeLane {
   int outputMask = 0x3;
   double volume = 1;
   bool muted = false;
+  double pan = 0;
 
   /// Ordinal-ordered layer buffers (undo… live … redo). Its length matches the
   /// owning track's `undoDepth + 1 + redoDepth`; a single-layer lane holds just
@@ -20,6 +21,7 @@ class _FakeTrack {
   int lengthFrames = 0;
   int undoDepth = 0;
   int redoDepth = 0;
+  bool solo = false;
   final List<_FakeLane> lanes = [_FakeLane()];
 
   int get liveIndex => undoDepth;
@@ -45,6 +47,7 @@ class FakeSessionEngine implements AudioEngine {
   // needed to exercise B5c's Free-mode 8-independent-lengths round trip.
   final List<_FakeTrack> _tracks = List.generate(8, (_) => _FakeTrack());
   int masterLength = 0;
+  int mixRevision = 0;
 
   /// The session-level looper mode reported by [snapshot] (B5c). Mutable so a
   /// test can seed a non-default mode before calling
@@ -180,6 +183,7 @@ class FakeSessionEngine implements AudioEngine {
     latencyState: LatencyState.idle,
     measuredLatencyMs: -1,
     masterLengthFrames: masterLength,
+    mixRevision: mixRevision,
     tempoBpm: tempoBpm,
     tempoSource: tempoSource,
     tsNum: tsNum,
@@ -209,6 +213,7 @@ class FakeSessionEngine implements AudioEngine {
           quantizeDivOverride: quantizeDivOverride[i],
           overdubFeedbackOverride: overdubFeedbackOverride[i],
           layerInFlight: i == 0 && _consumeInFlightPoll(),
+          solo: t.solo,
           lanes: [
             for (final lane in t.lanes)
               LaneSnapshot(
@@ -216,6 +221,7 @@ class FakeSessionEngine implements AudioEngine {
                 outputMask: lane.outputMask,
                 volume: lane.volume,
                 muted: lane.muted,
+                pan: lane.pan,
                 lengthFrames: t.lengthFrames,
                 rms: 0,
                 peak: 0,
@@ -350,6 +356,30 @@ class FakeSessionEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    final track = _tracks[channel];
+    while (track.lanes.length <= lane) {
+      track.lanes.add(_FakeLane());
+    }
+    track.lanes[lane].pan = pan;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    _tracks[channel].solo = solo;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) =>
+      EngineResult.ok;
+
   // ---- unused by SessionRepository: inert defaults ----
   @override
   String get version => 'fake';
@@ -369,6 +399,20 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult measureLatency() => EngineResult.ok;
   @override
   EngineResult record({int channel = 0}) => EngineResult.ok;
+
+  @override
+  EngineResult recordWithImage(RecordImage image, {int channel = 0}) {
+    if (!image.isValid) return EngineResult.invalid;
+    return record(channel: channel);
+  }
+
+  @override
+  EngineResult setMix(EngineMixSettings settings) {
+    if (!settings.isValid) return EngineResult.invalid;
+    mixRevision = settings.revision;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult stopTrack({int channel = 0}) => EngineResult.ok;
   @override
@@ -603,6 +647,11 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setMonitorInputMute({
     required int input,
     required bool muted,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorInputPan({
+    required int input,
+    required double pan,
   }) => EngineResult.ok;
   @override
   EngineResult setInputConditioningEnabled({

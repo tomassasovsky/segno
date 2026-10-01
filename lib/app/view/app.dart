@@ -13,7 +13,9 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
@@ -57,6 +59,7 @@ class App extends StatefulWidget {
     required this.controllerRepository,
     required this.midiDeviceRepository,
     required this.settings,
+    required this.mixSettings,
     required this.waveformWindow,
     required this.sessionRepository,
     required this.performanceRepository,
@@ -147,6 +150,9 @@ class App extends StatefulWidget {
   /// The shared settings repository (persists latency calibration + config).
   final SettingsRepository settings;
 
+  /// The shared mix transaction owner created before audio bootstrap.
+  final MixSettingsCoordinator mixSettings;
+
   /// Manages the secondary output-waveform window.
   final WaveformWindowService waveformWindow;
 
@@ -171,6 +177,9 @@ class App extends StatefulWidget {
 /// [ControlCubit], [PedalCubit], and dialog routes on one repository.
 class _AppState extends State<App> {
   late final PedalRepository _pedal;
+  late final MixSettingsCoordinator _mixSettings;
+  late final MixSettingsPersistence _mixPersistence;
+  StreamSubscription<MixSettingsOutcome>? _mixFailureSubscription;
   PowerKeySource? _powerKeySource;
   ControlCubit? _control;
 
@@ -178,6 +187,9 @@ class _AppState extends State<App> {
   void initState() {
     super.initState();
     _pedal = widget.pedalRepository ?? PedalRepository(NoopPedalLink());
+    _mixPersistence = SettingsMixPersistence(widget.settings);
+    _mixSettings = widget.mixSettings;
+    _mixFailureSubscription = _mixSettings.failures.listen(_showMixFailure);
     _powerKeySource =
         widget.powerKeySource ??
         openAppliancePowerKeySource(onAppliance: isAppliance());
@@ -186,7 +198,43 @@ class _AppState extends State<App> {
   @override
   void dispose() {
     unawaited(_powerKeySource?.close());
+    unawaited(_mixFailureSubscription?.cancel());
+    unawaited(_mixSettings.close());
     super.dispose();
+  }
+
+  void _showMixFailure(MixSettingsOutcome outcome) {
+    if (!mounted || outcome.status == MixSettingsStatus.superseded) return;
+    AppLog.error('mix settings: ${outcome.status.name} ${outcome.error ?? ''}');
+    if (outcome.status == MixSettingsStatus.recoveryRequired) {
+      showAppToast(
+        id: AppToastId.mixSettings,
+        type: ToastificationType.error,
+        dismissible: false,
+        title: const Text('Mix settings need recovery'),
+        description: const Text('Audio was stopped to protect your settings.'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final recovered = await _mixSettings.recover();
+              if (recovered.isOk) dismissAppToast(AppToastId.mixSettings);
+            },
+            child: const Text('Retry'),
+          ),
+        ],
+      );
+      return;
+    }
+    showAppSnackToast(
+      id: AppToastId.mixSettings,
+      type: ToastificationType.error,
+      title: Text(
+        outcome.status == MixSettingsStatus.storageFailed
+            ? 'Mix change could not be saved'
+            : 'Mix change was not applied',
+      ),
+      icon: const Icon(Icons.error_outline),
+    );
   }
 
   @override
@@ -197,6 +245,10 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.controllerRepository),
         RepositoryProvider.value(value: widget.midiDeviceRepository),
         RepositoryProvider.value(value: widget.settings),
+        RepositoryProvider.value(value: _mixSettings),
+        RepositoryProvider<MixSettingsPersistence>.value(
+          value: _mixPersistence,
+        ),
         RepositoryProvider.value(value: widget.sessionRepository),
         RepositoryProvider.value(value: widget.performanceRepository),
         RepositoryProvider.value(value: _pedal),
@@ -248,6 +300,7 @@ class _AppState extends State<App> {
             create: (context) {
               final bloc = LooperBloc(
                 repository: context.read<LooperRepository>(),
+                mixSettings: context.read<MixSettingsCoordinator>(),
                 settings: context.read<SettingsRepository>(),
               );
               // Boot-restore the persisted mode (B5c) — dispatched as an
@@ -385,6 +438,7 @@ class _AppState extends State<App> {
               final cubit = MonitorCubit(
                 repository: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
+                mixSettings: context.read<MixSettingsCoordinator>(),
               );
               unawaited(cubit.load());
               return cubit;

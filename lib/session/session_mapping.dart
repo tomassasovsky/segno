@@ -33,14 +33,13 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
     for (final monitor in looper.allMonitors().values)
       SessionMonitor(
         input: monitor.input,
-        // Both: the boolean is the gate every manifest has carried, and the
-        // name is which of the two non-off states it was. `auto` follows the
-        // record arm, `on` does not, and a boolean cannot tell them apart.
-        enabled: monitor.mode != MonitorMode.off,
         mode: monitor.mode.name,
         outputMask: monitor.outputMask,
         volume: monitor.volume,
         muted: monitor.muted,
+        // No pan: on load the monitors' pans are rebuilt from the session's
+        // input setup (`loopSettingsFromLooper`), which is what produced
+        // them, so a written copy would never be read back.
         encoded: encodeFxChain(
           FxChainEnvelope(
             chainEnabled: monitor.chainEnabled,
@@ -81,6 +80,24 @@ SessionSettings settingsFromLooper(LooperRepository looper) {
     trackOverdubDecayOverrides: looper.trackOverdubDecayOverrides,
     trackOneShotOverrides: looper.trackOneShotOverrides,
     trackLengthPresetOverrides: looper.trackLengthPresetOverrides,
+    trackPans: {
+      for (final track in looper.state.tracks)
+        if (track.pan != 0) track.channel: track.pan,
+    },
+    laneMix: {
+      for (final track in looper.state.tracks)
+        for (var lane = 0; lane < track.lanes.length; lane++)
+          (track.channel, lane): (
+            level: track.lanes[lane].volume,
+            imagePan: track.lanes[lane].imagePan,
+            balance: track.lanes[lane].balance,
+          ),
+    },
+    inputSetup: SessionInputSetup(
+      trimDb: looper.state.inputSetup.trimDb,
+      pan: looper.state.inputSetup.pan,
+      pairs: looper.state.inputSetup.pairs,
+    ),
     clickMode: transport.clickMode,
     clickMask: transport.clickMask,
     clickVolume: transport.clickVolume,
@@ -201,6 +218,7 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   trackOverdubDecayOverrides: bundle.session.trackOverdubDecayOverrides,
   trackOneShotOverrides: bundle.session.trackOneShotOverrides,
   trackLengthPresetOverrides: bundle.session.trackLengthPresetOverrides,
+  trackPans: bundle.session.trackPans,
   clickMode: bundle.session.clickMode,
   clickMask: bundle.session.clickOutputMask,
   clickVolume: bundle.session.clickVolume,
@@ -210,6 +228,14 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   defaultMultiple: bundle.session.defaultMultiple,
   recordTiming: bundle.session.recordTiming,
   overdubDecay: bundle.session.overdubDecay,
+  // The input setup (slice 3): trims, pans and pairs. The monitors' pans are
+  // not mapped from the manifest's monitors — the repository derives them
+  // from this on apply, the same way it did when the session was saved.
+  inputSetup: InputSetup(
+    trimDb: bundle.session.inputSetup.trimDb,
+    pan: bundle.session.inputSetup.pan,
+    pairs: bundle.session.inputSetup.pairs,
+  ),
 );
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage
@@ -228,17 +254,10 @@ SessionRigMonitor _rigMonitor(SessionMonitor monitor, FxChainEnvelope chain) =>
 
 /// The gate a manifest monitor restores to.
 ///
-/// A v7 manifest says which one by name. Anything older only says whether the
-/// monitor was on at all, and the honest reading of that is `on`: it is what
-/// the bundle was heard as, and the alternative — guessing `auto` — would make
-/// a monitor that used to play unconditionally start following the arm.
-///
-/// A name this build does not know reads as "the manifest did not say" rather
-/// than as `off`, for the same reason the settings restore does: a gate
-/// written by a future build is not a deliberate disable.
+/// An unknown name is corrupt current-schema data, not an alternate gate.
 MonitorMode _monitorMode(SessionMonitor monitor) =>
     monitorModeFromName(monitor.mode) ??
-    (monitor.enabled ? MonitorMode.on : MonitorMode.off);
+    (throw FormatException('invalid monitor mode ${monitor.mode}'));
 
 /// Builds the rig's tracks from [bundle], zipping each manifest lane with its
 /// decoded PCM. A lane with no decoded audio is dropped; a track left with no
@@ -258,6 +277,8 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           muted: lane.muted,
           outputMask: lane.outputMask,
           inputChannel: lane.inputChannel,
+          pan: lane.pan,
+          balance: lane.balance,
           undoCount: lane.undoCount,
           redoCount: lane.redoCount,
         ),

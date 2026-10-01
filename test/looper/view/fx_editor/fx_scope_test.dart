@@ -175,6 +175,7 @@ void main() {
 
     setUp(() {
       monitor = MonitorCubit(
+        mixSettings: testMixSettings(repository),
         repository: repository,
         settings: SettingsRepository(store: FakeKeyValueStore()),
       );

@@ -9,6 +9,7 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
+import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
@@ -155,6 +156,27 @@ class MockAudioEngine implements AudioEngine {
     (_) => _MockTrack(),
   );
 
+  /// Per-input capture trim (`setInputTrim`), linear, default unity. Held
+  /// across start/stop like the lane volumes above (the native engine resets
+  /// it on configure; the mock is a simplified simulation).
+  final List<double> _inputTrim = List<double>.filled(LE_MAX_CHANNELS, 1);
+
+  /// The capture trim the mock holds for [input] (linear), or `1` for an
+  /// out-of-range input. A read-back seam like [monitorInputPan]: the engine
+  /// snapshot carries no trim (the repository keeps its own dB intent), so
+  /// tests read the mock directly.
+  double inputTrimOf({required int input}) =>
+      input < 0 || input >= LE_MAX_CHANNELS ? 1 : _inputTrim[input];
+
+  /// Per-input monitor pan (`setMonitorInputPan`), `-1..1`, default centre.
+  final List<double> _monitorPan = List<double>.filled(LE_MAX_CHANNELS, 0);
+
+  /// The monitor pan the mock holds for [input] (`-1..1`), or `0` for an
+  /// out-of-range input. A read-back seam: the engine snapshot carries no
+  /// per-monitor pan, so tests read the mock directly.
+  double monitorInputPan({required int input}) =>
+      input < 0 || input >= LE_MAX_CHANNELS ? 0 : _monitorPan[input];
+
   int get _negotiatedInputs {
     final requested = _activeConfig?.inputChannels ?? 0;
     return requested > 0 ? requested : inputChannels;
@@ -214,13 +236,16 @@ class MockAudioEngine implements AudioEngine {
       _framesProcessed += buffer;
       if (_perfArmed) _perfFrames += buffer;
     }
+    final inputs = _running ? _negotiatedInputs : 0;
+    final outputs = _running ? _negotiatedOutputs : 0;
     return EngineSnapshot(
+      mixRevision: _mixRevision,
       isRunning: _running,
       devicePresent: _running,
       sampleRate: _activeConfig?.sampleRate ?? 48000,
       bufferFrames: _activeConfig?.bufferFrames ?? 128,
-      inputChannels: _running ? _negotiatedInputs : 0,
-      outputChannels: _running ? _negotiatedOutputs : 0,
+      inputChannels: inputs,
+      outputChannels: outputs,
       framesProcessed: _framesProcessed,
       xrunCount: 0,
       inputRms: 0,
@@ -259,6 +284,11 @@ class MockAudioEngine implements AudioEngine {
       countInBars: _countInBars,
       looperMode: _looperMode,
       primaryTrack: _primaryTrack,
+      // One entry per negotiated channel, like the native projection; all
+      // zero because the mock processes no audio.
+      inputPeaks: List<double>.filled(inputs, 0),
+      monitorPeaks: List<double>.filled(inputs, 0),
+      outputPeaks: List<double>.filled(outputs, 0),
       tracks: [for (final track in _tracks) track.snapshot()],
     );
   }
@@ -450,6 +480,56 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  int _mixRevision = 0;
+
+  @override
+  EngineResult setMix(EngineMixSettings settings) {
+    if (!settings.isValid) return EngineResult.invalid;
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    for (final e in settings.lanes.entries) {
+      _tracks[e.key.$1].laneAt(e.key.$2)
+        ..liveLevel = e.value.gain
+        ..livePan = e.value.pan
+        ..compose();
+    }
+    for (final e in settings.images.entries) {
+      _tracks[e.key.$1].laneAt(e.key.$2)
+        ..imageGain = e.value.gain
+        ..imagePan = e.value.pan
+        ..compose();
+    }
+    for (final e in settings.monitors.entries) {
+      setMonitorInputVolume(input: e.key, volume: e.value.gain);
+      setMonitorInputPan(input: e.key, pan: e.value.pan);
+    }
+    for (final e in settings.trims.entries) {
+      _inputTrim[e.key] = e.value;
+    }
+    for (final e in settings.solos.entries) {
+      _tracks[e.key].solo = e.value;
+    }
+    _mixRevision = settings.revision;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult recordWithImage(RecordImage image, {int channel = 0}) {
+    if (!image.isValid || channel < 0 || channel >= LE_MAX_TRACKS) {
+      return EngineResult.invalid;
+    }
+    final result = record(channel: channel);
+    if (!result.isOk) return result;
+    for (final e in image.lanes.entries) {
+      _tracks[channel].laneAt(e.key)
+        ..imageGain = e.value.gain
+        ..imagePan = e.value.pan
+        ..compose();
+    }
+    _tracks[channel].imageRevision = image.revision;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult record({int channel = 0}) => _requireRunning();
 
@@ -515,6 +595,38 @@ class MockAudioEngine implements AudioEngine {
     final result = _requireRunning();
     if (!result.isOk) return result;
     _tracks[channel].laneAt(lane).muted = muted;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    if (lane < 0 || lane >= kMaxLanes) return EngineResult.invalid;
+    _tracks[channel].laneAt(lane).pan = pan.clamp(-1.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    _tracks[channel].solo = solo;
+    return EngineResult.ok;
+  }
+
+  // A direct store like the enable setters: no running gate.
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) {
+    if (input < 0 || input >= LE_MAX_CHANNELS) return EngineResult.invalid;
+    // NaN lands on silence, not on unity, mirroring the native clamp.
+    _inputTrim[input] = gain.isNaN ? 0 : gain.clamp(0.0, LE_MAX_INPUT_TRIM);
     return EngineResult.ok;
   }
 
@@ -975,6 +1087,17 @@ class MockAudioEngine implements AudioEngine {
   }) => _requireRunning();
 
   @override
+  EngineResult setMonitorInputPan({required int input, required double pan}) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) {
+      return EngineResult.invalid;
+    }
+    _monitorPan[input] = pan.clamp(-1.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  @override
   EngineResult setMonitorInputFx({
     required int input,
     required int index,
@@ -1295,10 +1418,20 @@ class MockPluginSlotHandle implements PluginSlotHandle {
 }
 
 class _MockLane {
+  double liveLevel = 1;
+  double livePan = 0;
+  double imageGain = 1;
+  double imagePan = 0;
+  void compose() {
+    volume = liveLevel * imageGain;
+    pan = (livePan + imagePan).clamp(-1.0, 1.0);
+  }
+
   int inputChannel = -1;
   int outputMask = 0x3;
   double volume = 1;
   bool muted = false;
+  double pan = 0;
 
   /// The engine-owned "holds restorable audio" flag (#595). The mock never
   /// records, so it stays `false` — exposed so [TrackSnapshot.lanes] carries
@@ -1317,6 +1450,9 @@ class _MockTrack {
   /// The DEFINING-recording length preset (A6, D17): `0` = AUTO.
   int lengthPresetBars = 0;
 
+  /// Solo (`setTrackSolo`). Held across start/stop like [oneShot] below.
+  bool solo = false;
+
   /// One Shot (song-mode-spec.md §2, B4/B5c): `true` = play once then stop.
   /// Not reset on stop/start, mirroring [lengthPresetBars]'s existing
   /// (native-inaccurate) mock treatment above — the mock is a simplified
@@ -1329,6 +1465,7 @@ class _MockTrack {
   /// audio thread's take lifecycle, so this stays at its default `0` unless a
   /// test sets it directly to exercise the disarm-image take-identity seam.
   int settledTakeId = 0;
+  int imageRevision = 0;
 
   _MockLane laneAt(int lane) => _lanes[lane.clamp(0, kMaxLanes - 1)];
 
@@ -1344,6 +1481,7 @@ class _MockTrack {
           rms: 0,
           peak: 0,
           recoverable: _lanes[i].recoverable,
+          pan: _lanes[i].pan,
         ),
     ];
     final lane0 = lanes.isEmpty ? const LaneSnapshot.empty() : lanes.first;
@@ -1361,6 +1499,8 @@ class _MockTrack {
       lengthPresetBars: lengthPresetBars,
       oneShot: oneShot,
       settledTakeId: settledTakeId,
+      solo: solo,
+      imageRevision: imageRevision,
       lanes: lanes,
     );
   }

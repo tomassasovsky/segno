@@ -63,6 +63,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(MonitorMode.off);
+    registerFallbackValue(MixSettingsSnapshot());
     // For the guard tests' `any(that: ...)` event matchers.
     registerFallbackValue(const LooperOutputEnabledToggled(0, enabled: true));
   });
@@ -83,6 +84,30 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     when(() => repository.state).thenReturn(_rig);
     when(repository.allMonitors).thenReturn(const {});
+    var currentMix = MixSettingsSnapshot();
+    MixSettingsSnapshot? pendingMix;
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.mixSettingsSettled).thenReturn(true);
+    when(() => repository.mixSettingsSnapshot).thenAnswer((_) => currentMix);
+    when(
+      () => repository.validateMixSettings(any()),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.applyMixSettings(any())).thenAnswer((call) {
+      pendingMix = call.positionalArguments.first as MixSettingsSnapshot;
+      return EngineResult.ok;
+    });
+    when(() => repository.settleMixSettings()).thenAnswer((_) async {
+      if (pendingMix case final accepted?) {
+        currentMix = accepted;
+        pendingMix = null;
+        accepted.monitorLevels.keys.forEach(monitorChanges.add);
+      }
+      return EngineResult.ok;
+    });
+    when(() => repository.monitorVolume(any())).thenAnswer(
+      (call) =>
+          currentMix.monitorLevels[call.positionalArguments.first as int] ?? 1,
+    );
     when(
       () => repository.setMonitorInputMode(
         input: any(named: 'input'),
@@ -140,7 +165,11 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tracks = TracksCubit(settings: settings);
     inputs = InputsCubit(settings: settings, repository: repository);
-    monitor = MonitorCubit(repository: repository, settings: settings);
+    monitor = MonitorCubit(
+      mixSettings: testMixSettings(repository),
+      repository: repository,
+      settings: settings,
+    );
     tray = SettingsTrayCubit(settings: settings)..showSignalTab(stage);
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).

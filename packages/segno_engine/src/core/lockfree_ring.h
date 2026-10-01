@@ -82,6 +82,14 @@ typedef struct le_command {
       int32_t count;
       int32_t bars[LE_MAX_TRACKS];
     } presets;
+    le_mix_settings mix;
+    struct {
+      int32_t channel;
+      uint32_t sequence;
+      int32_t action;
+      float trigger;
+      le_record_image image;
+    } record_image;
     struct { /* COMMIT_SESSION: exact recorded span and musical bar count. */
       int32_t base_frames, loop_bars;
     } session;

@@ -143,6 +143,27 @@ bytes are that command's union, unchanged, so a reader already familiar with
 | `LE_CMD_SET_MASTER_FX`                | 51    | fx          | No      | ” |
 | `LE_CMD_SET_MASTER_FX_COUNT`          | 52    | fxcount     | No      | ” |
 | `LE_CMD_FINALIZE_TAKE`                | 56    | —           | No      | The `ARM`/`DISARM` rationale from the other side: finalize *intent*, and the transport fact it causes is what's logged — `LE_PLOG_RECORD_END` from the finalize it triggers, or `LE_PLOG_RECORD_ABORT` (unpaired, header version 3) when it cancels a count-in. A refused/no-op apply logs nothing: nothing audible happened. |
+| `LE_CMD_RESTORE_TEMPO`               | 58    | generic     | No      | Restores the tempo/grid owner; no direct change to the recorded sample stream |
+| `LE_CMD_SET_ONE_SHOT_MASK`           | 59    | generic     | No      | Sets Once for a complete track mask; the actual end logs the same synthetic Stop as single-track Once |
+| `LE_CMD_SET_AUTO_RECORD`             | 60    | generic     | No      | Selects sound-triggered start and cancels incompatible count-in; the actual capture start remains a transport fact |
+| `LE_CMD_SET_LENGTH_PRESETS`          | 61    | presets     | No      | Atomic future length settings; subsequent capture facts describe the result |
+| `LE_CMD_SET_LANE_PAN`                 | 62    | lanef       | Yes     | Lane pan (slice 3): the lane's recorded image plus the track's pan, as the engine holds it |
+| `LE_CMD_SET_TRACK_SOLO`               | 63    | generic     | Yes     | Track solo: an audibility gate, like mute — the offline render and the DAW export honour it |
+| `LE_CMD_SET_MONITOR_INPUT_PAN`        | 64    | lanef       | Yes     | Monitor pan (slice 3); the monitor tap is already post-pan, so the logged value is what was heard |
+
+Atomic mix transactions (`LE_CMD_SET_MIX`, 65) are not stored as raw
+commands in this format: their bounded payload exceeds the sixteen-byte event
+payload. Successful application emits the addressed volume, pan and Solo
+primitive events at the same frame. Refused transactions emit none of them.
+The recording-image wrapper (`LE_CMD_RECORD_IMAGE`, 66) likewise uses existing
+recording transport facts and applied lane-image events rather than serializing
+its larger command payload. Input capture trim is already present in captured
+PCM and is not applied a second time by replay.
+
+Recording images retain source balance and position separately from live
+lane level and track pan. The volume/pan events contain their effective
+composition at application time, so replay does not apply the image twice.
+Arming freezes the source image, not the player's live fader controls.
 
 The track/master FX **param and enabled setters** (direct-atomic, no ring
 command) push nothing either — deliberately NOT mirroring the lane family's
