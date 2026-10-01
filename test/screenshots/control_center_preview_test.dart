@@ -475,8 +475,11 @@ void main() {
     final pedalRepository = PedalRepository(NoopPedalLink());
     final pedal = PedalCubit(pedal: pedalRepository);
     addTearDown(pedal.close);
+    final mixSettings = testMixSettings(looper, settings: settings);
+    addTearDown(() => unawaited(mixSettings.close()));
     final control = ControlCubit(
       looper: looper,
+      mixSettings: mixSettings,
       pedal: pedalRepository,
       settings: settings,
       performance: performance,
@@ -498,7 +501,7 @@ void main() {
     final inputs = InputsCubit(settings: settings, repository: looper);
     final quantize = RecordTimingCubit(repository: looper, settings: settings);
     final monitor = MonitorCubit(
-      mixSettings: testMixSettings(looper),
+      mixSettings: mixSettings,
       repository: looper,
       settings: settings,
     );

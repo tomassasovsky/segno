@@ -338,6 +338,7 @@ final class ModeAction extends ControlAction {
     InteractionMode.record => 'tracks',
     InteractionMode.mute => 'mute',
     InteractionMode.fx => 'fx',
+    InteractionMode.custom => 'custom',
   };
 
   @override

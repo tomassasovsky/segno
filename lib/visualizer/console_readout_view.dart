@@ -240,6 +240,7 @@ class _Footer extends StatelessWidget {
     final function = switch (readout.mode) {
       'mute' => l10n.readoutFunctionMute,
       'fx' => l10n.readoutFunctionFx,
+      'custom' => l10n.readoutFunctionCustom,
       _ => l10n.readoutFunctionTracks,
     };
     final bank = String.fromCharCode(0x41 + readout.activeBank);

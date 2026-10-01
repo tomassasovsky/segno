@@ -8,8 +8,10 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/common/fx_chain_persistence.dart';
 import 'package:segno/control/binding/binding_scope.dart';
+import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/controller_learn.dart';
@@ -17,6 +19,7 @@ import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_binding_set.dart';
+import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/control_projection.dart';
 import 'package:segno/logging/app_log.dart';
@@ -146,6 +149,7 @@ class ControlCubit extends Cubit<ControlState> {
     required PedalRepository pedal,
     required SettingsRepository settings,
     required PerformanceRepository performance,
+    required MixSettingsCoordinator mixSettings,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
     SimulatedControllerSource? simulatedSource,
@@ -159,6 +163,7 @@ class ControlCubit extends Cubit<ControlState> {
        _pedal = pedal,
        _settings = settings,
        _performance = performance,
+       _mixSettings = mixSettings,
        _controller = controller,
        _simulatedSource = simulatedSource,
        _learnTimeout = learnTimeout,
@@ -186,6 +191,7 @@ class ControlCubit extends Cubit<ControlState> {
   final PedalRepository _pedal;
   final SettingsRepository _settings;
   final PerformanceRepository _performance;
+  final MixSettingsCoordinator _mixSettings;
   final ControllerRepository? _controller;
 
   /// The seam a synthetic controller event is pushed through (#519). The same
@@ -223,6 +229,12 @@ class ControlCubit extends Cubit<ControlState> {
   Duration _longPress = const Duration(milliseconds: 800);
   final _pressedButtons = <PedalButton>{};
   final _bindingGestures = <PedalButton, _HoldGesture>{};
+  // Remembers the completed action identity, not its enabled value. The LED
+  // always reads that action's current function state from the rig.
+  final _customLastActions =
+      <PedalBindingKey, ({ControlAction action, List<int> channels})>{};
+  final _customActiveKeys = <PedalButton, PedalBindingKey>{};
+  int _customActionSession = -1;
   final _displayBoundTargets =
       <
         PedalButton,
@@ -466,10 +478,9 @@ class ControlCubit extends Cubit<ControlState> {
   // Mode
   // ---------------------------------------------------------------------------
 
-  /// Cycles Record -> Mute -> FX -> Record for the keyboard and mode chip.
+  /// Cycles Tracks -> Mute -> FX -> Custom -> Tracks for the mode chip.
   ///
-  /// A three-stop cycle, not a toggle: FX mode joins the same MODE footswitch
-  /// rather than claiming a switch the hardware does not have. Side effects
+  /// Side effects
   /// fire for the LANDED mode only — cycling PAST a mode never runs its entry
   /// work (A5), which falls out of [setMode] being the single entry point.
   ///
@@ -477,7 +488,8 @@ class ControlCubit extends Cubit<ControlState> {
   void toggleMode() => setMode(switch (state.mode) {
     InteractionMode.record => InteractionMode.mute,
     InteractionMode.mute => InteractionMode.fx,
-    InteractionMode.fx => InteractionMode.record,
+    InteractionMode.fx => InteractionMode.custom,
+    InteractionMode.custom => InteractionMode.record,
   });
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
@@ -502,6 +514,7 @@ class ControlCubit extends Cubit<ControlState> {
     }
     if (isClosed) return;
     _invalidateGestures();
+    _customLastActions.clear();
     _fxReturn = InteractionMode.record;
     emit(
       state.copyWith(
@@ -569,6 +582,18 @@ class ControlCubit extends Cubit<ControlState> {
               for (final track in _tracks)
                 if (_playable(track)) track.channel,
             },
+          ),
+        );
+      case InteractionMode.custom:
+        // No entry side effects of its own. Custom mode changes what the
+        // SWITCHES mean and nothing else — it arms nothing, cancels nothing
+        // and moves no transport, so there is nothing here for a mode
+        // change to undo later.
+        emit(
+          state.copyWith(
+            mode: InteractionMode.custom,
+            excluded: const <int>{},
+            parkedResume: const <int>{},
           ),
         );
       case InteractionMode.fx:
@@ -676,6 +701,10 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.mute:
         _muteRecPlay();
       case InteractionMode.fx:
+      case InteractionMode.custom:
+        // Inert. In FX the switch is reserved (A4); in custom it runs
+        // whatever the setup assigned, dispatched at the press rather than
+        // here, so this path must not also act.
         break;
     }
   }
@@ -770,6 +799,9 @@ class ControlCubit extends Cubit<ControlState> {
         parkAll();
       case InteractionMode.fx:
         panicTrackChains();
+      case InteractionMode.custom:
+        // Inert here: the switch runs its assignment at the press.
+        break;
     }
   }
 
@@ -818,6 +850,11 @@ class ControlCubit extends Cubit<ControlState> {
         _muteTrackPressed(channel);
       case InteractionMode.fx:
         toggleTrackChain(channel);
+      case InteractionMode.custom:
+        // Inert here: the switch runs its assignment at the press. Note the
+        // on-screen surfaces still call this — selection happens at their
+        // own call sites, so a tile tap in custom mode selects and stops.
+        break;
     }
   }
 
@@ -1063,6 +1100,7 @@ class ControlCubit extends Cubit<ControlState> {
           _systemGesture(button)?.release();
           _bindingGestures[button]?.release();
         }
+        _customActiveKeys.remove(button);
         // Unconditional: a momentary is keyed to the button, so this finds
         // the held one (if any) whatever else that button's release did.
         _releaseBinding(button);
@@ -1095,6 +1133,18 @@ class ControlCubit extends Cubit<ControlState> {
       'press ${button.name}  [mode=${state.mode.name} '
       'cursor=${state.cursor}]',
     );
+    if (state.mode == InteractionMode.custom) {
+      // These two physical exits cannot be assigned. They act on contact,
+      // without a second action waiting on the release.
+      if (button == PedalButton.mode) {
+        setMode(InteractionMode.record);
+      } else if (button == PedalButton.bank) {
+        toggleBankWithCursor();
+      } else {
+        _armCustom(button);
+      }
+      return;
+    }
     final fx = state.mode == InteractionMode.fx;
     // A remap overrides its button's contextual DEFAULT, and only in FX mode —
     // the other two modes are transport surfaces a binding must never shadow.
@@ -1152,6 +1202,135 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  /// The gesture shape is fixed on contact; its bank-keyed action and
+  /// target are resolved only when the gesture fires.
+  void _armCustom(PedalButton button) {
+    if (state.pedalSetupUnavailable) return;
+    final pair = state.pedalSetup.customFor(button, bank: state.activeBank);
+    if (pair.hold == null) {
+      _fireCustomAction(button, hold: false);
+      return;
+    }
+    _armGesture(
+      _bindingGestures.putIfAbsent(button, _HoldGesture.new),
+      onHold: () => _fireCustomAction(button, hold: true),
+      onTap: () => _fireCustomAction(button, hold: false),
+    );
+  }
+
+  void _fireCustomAction(PedalButton button, {required bool hold}) {
+    if (state.mode != InteractionMode.custom ||
+        state.pedalSetupUnavailable ||
+        _takeLocked()) {
+      return;
+    }
+    final bank = state.activeBank;
+    final pair = state.pedalSetup.customFor(button, bank: bank);
+    final action = hold ? pair.hold : pair.press;
+    if (action == null || action is UnavailableAction) return;
+    _syncCustomSession();
+    final key = PedalBindingKey(
+      button: button,
+      bank: PedalBindingKey.isBankKeyed(button) ? bank : null,
+    );
+    final channels = List<int>.unmodifiable(_channelsForAction(action));
+    _customLastActions[key] = (action: action, channels: channels);
+    _customActiveKeys[button] = key;
+    _log('action ${action.key}');
+    _runAction(action, channels);
+    _pushProjected();
+  }
+
+  /// Resolves one action's target exactly once at its firing boundary.
+  List<int> _channelsForAction(ControlAction action) => switch (action) {
+    TrackPedalAction(:final channel) ||
+    SelectTrackAction(:final channel) => [channel],
+    TrackOperationAction(:final scope) => switch (scope) {
+      SelectedTrackScope() => [state.cursor],
+      FixedTrackScope(:final channel) => [channel],
+      AllTracksScope() => [for (var c = 0; c < _channelCount; c++) c],
+    },
+    CommandAction(
+      command: ControlCommand.recordPlay ||
+          ControlCommand.stop ||
+          ControlCommand.undo ||
+          ControlCommand.redo,
+    ) =>
+      [state.cursor],
+    _ => const [],
+  };
+
+  /// One dispatcher for the current supported catalogue actions.
+  void _runAction(ControlAction action, List<int> channels) {
+    switch (action) {
+      case UnavailableAction():
+        return;
+      case ModeAction(:final mode):
+        _enterPedalMode(mode);
+      case CommandAction(:final command):
+        _runCommand(command, channels.isEmpty ? state.cursor : channels.first);
+      case TrackPedalAction():
+        final channel = channels.single;
+        selectTrack(channel);
+        _recAdvance(channel);
+      case SelectTrackAction():
+        selectTrack(channels.single);
+      case TrackOperationAction(:final operation):
+        if (operation == TrackOperation.solo && channels.length > 1) {
+          unawaited(_mixSettings.toggleTrackSolos(channels.toSet()));
+          return;
+        }
+        for (final channel in channels) {
+          _runTrackOperation(operation, channel);
+        }
+    }
+  }
+
+  void _runCommand(ControlCommand command, int selectedChannel) {
+    switch (command) {
+      case ControlCommand.recordPlay:
+        _recAdvance(selectedChannel);
+      case ControlCommand.stop:
+        _recStop(selectedChannel);
+      case ControlCommand.undo:
+        undo(selectedChannel);
+      case ControlCommand.redo:
+        redo(selectedChannel);
+      case ControlCommand.clearAll:
+        unawaited(clearAll());
+      case ControlCommand.cutSound:
+        _looper.cutSound();
+      case ControlCommand.recordPerformance:
+        togglePerformanceRecord();
+      case ControlCommand.nextBank:
+        toggleBankWithCursor();
+    }
+  }
+
+  void _runTrackOperation(TrackOperation operation, int channel) {
+    final track = _trackAt(channel);
+    switch (operation) {
+      case TrackOperation.mute:
+        if (track == null) return;
+        _looper.setMute(muted: !_looper.trackMuted(channel), channel: channel);
+      case TrackOperation.solo:
+        unawaited(_mixSettings.toggleTrackSolo(channel: channel));
+      case TrackOperation.clear:
+        _looper.clear(channel: channel);
+      case TrackOperation.undo:
+        undo(channel);
+      case TrackOperation.redo:
+        redo(channel);
+    }
+  }
+
+  /// Arms a bound switch's press/hold pair.
+  ///
+  /// Both halves are built at press time and act on the binding the foot
+  /// committed to, so an assignment edited mid-gesture cannot retarget it —
+  /// the same latching every system gesture uses. The generation is what
+  /// makes a configuration change retire this one rather than letting it
+  /// land somewhere else.
   void _armBoundHold(PedalBinding binding) {
     _armGesture(
       _bindingGestures.putIfAbsent(binding.key.button, _HoldGesture.new),
@@ -1389,6 +1568,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// momentaries on the same rule as [setGlobalBindings].
   void applySessionBindings(PedalBindingSet next) {
     _invalidateGestures();
+    _customLastActions.clear();
     if (next == state.sessionBindings) return;
     emit(state.copyWith(sessionBindings: next));
   }
@@ -1405,6 +1585,7 @@ class ControlCubit extends Cubit<ControlState> {
     for (final gesture in _bindingGestures.values) {
       gesture.cancel();
     }
+    _customActiveKeys.clear();
     _displayBoundTargets.clear();
     releaseAllMomentary();
     _pushProjected();
@@ -2215,8 +2396,83 @@ class ControlCubit extends Cubit<ControlState> {
       performanceArmed: _performanceArmed,
       masterGain: _masterGain,
       boundChains: _boundChains(),
+      customFunctions: _customFunctionStates(looperState),
     );
     _pedal.pushState(frame);
+  }
+
+  void _syncCustomSession() {
+    final session = _looper.sessionRevision;
+    if (_customActionSession == session) return;
+    _customActionSession = session;
+    _customLastActions.clear();
+    _customActiveKeys.clear();
+  }
+
+  Map<int, bool> _customFunctionStates(LooperState looper) {
+    if (state.mode != InteractionMode.custom || state.pedalSetupUnavailable) {
+      return const {};
+    }
+    _syncCustomSession();
+    final result = <int, bool>{};
+    for (var channel = 0; channel < PedalStateFrame.trackCount; channel++) {
+      final button = kTrackSwitches[channel % ControlState.tracksPerBank];
+      final key = PedalBindingKey(button: button, bank: channel ~/ 4);
+      final pair = state.pedalSetup.customFor(button, bank: channel ~/ 4);
+      final last = _customLastActions[key];
+      final completed =
+          last != null &&
+          (last.action == pair.press || last.action == pair.hold);
+      final action = completed ? last.action : pair.press ?? pair.hold;
+      if (action == null || action is UnavailableAction) continue;
+      final contact =
+          _customActiveKeys[button] == key && _pressedButtons.contains(button);
+      // A completed contact retains its fired target. Once released,
+      // selected-scope feedback follows the cursor the NEXT stomp will use.
+      final channels = completed && contact
+          ? last.channels
+          : _channelsForAction(action);
+      result[channel] = _customActionIsActive(
+        action,
+        channels,
+        looper,
+        contact: contact,
+      );
+    }
+    return result;
+  }
+
+  bool _customActionIsActive(
+    ControlAction action,
+    List<int> channels,
+    LooperState looper, {
+    required bool contact,
+  }) {
+    bool everyTrack(bool Function(Track) enabled) =>
+        channels.isNotEmpty &&
+        channels.every(
+          (channel) =>
+              channel >= 0 &&
+              channel < looper.tracks.length &&
+              enabled(looper.tracks[channel]),
+        );
+
+    return switch (action) {
+      ModeAction(:final mode) => state.mode == mode,
+      SelectTrackAction() =>
+        channels.isNotEmpty && state.cursor == channels.first,
+      TrackPedalAction() => contact,
+      TrackOperationAction(operation: TrackOperation.mute) => everyTrack(
+        (track) => track.muted,
+      ),
+      TrackOperationAction(operation: TrackOperation.solo) => everyTrack(
+        (track) => track.solo,
+      ),
+      CommandAction(command: ControlCommand.recordPerformance) =>
+        _performanceArmed,
+      CommandAction(command: ControlCommand.recordPlay) => contact,
+      _ => contact,
+    };
   }
 
   // ---------------------------------------------------------------------------

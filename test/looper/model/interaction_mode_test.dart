@@ -4,9 +4,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-/// The persisted-token contract: tokens derive from member names, so the
-/// `play` -> `mute` rename must keep loading the token old installs stored —
-/// these tests pin the legacy shim in [InteractionMode.fromToken].
+/// Only current mode tokens are persisted; unknown tokens use Record.
 void main() {
   group('InteractionMode', () {
     group('token', () {
@@ -14,6 +12,7 @@ void main() {
         expect(InteractionMode.record.token, 'record');
         expect(InteractionMode.mute.token, 'mute');
         expect(InteractionMode.fx.token, 'fx');
+        expect(InteractionMode.custom.token, 'custom');
       });
     });
 
@@ -23,17 +22,15 @@ void main() {
         expect(InteractionMode.fromToken('mute'), InteractionMode.mute);
       });
 
-      test('accepts the legacy pre-rename token "play" as mute', () {
-        expect(InteractionMode.fromToken('play'), InteractionMode.mute);
-      });
-
       test('defaults to record for null or unknown tokens', () {
         expect(InteractionMode.fromToken(null), InteractionMode.record);
         expect(InteractionMode.fromToken('bogus'), InteractionMode.record);
+        expect(InteractionMode.fromToken('play'), InteractionMode.record);
       });
 
       test('parses "fx" — the boot-default gate lives elsewhere', () {
         expect(InteractionMode.fromToken('fx'), InteractionMode.fx);
+        expect(InteractionMode.fromToken('custom'), InteractionMode.custom);
       });
     });
 
@@ -47,33 +44,34 @@ void main() {
           InteractionMode.bootDefaultFromToken('mute'),
           InteractionMode.mute,
         );
-        // The legacy shim survives on this path too.
-        expect(
-          InteractionMode.bootDefaultFromToken('play'),
-          InteractionMode.mute,
-        );
       });
 
-      test('coerces a stored "fx" to record — FX is never a boot mode', () {
+      test('boots into Record for performance-only or unknown modes', () {
         expect(
           InteractionMode.bootDefaultFromToken('fx'),
           InteractionMode.record,
         );
+        expect(
+          InteractionMode.bootDefaultFromToken('custom'),
+          InteractionMode.record,
+        );
+        expect(
+          InteractionMode.bootDefaultFromToken('play'),
+          InteractionMode.record,
+        );
       });
 
-      test('bootDefaults excludes fx', () {
+      test('only Record and Mute are boot defaults', () {
         expect(
           InteractionMode.bootDefaults,
-          isNot(contains(InteractionMode.fx)),
+          [InteractionMode.record, InteractionMode.mute],
         );
       });
     });
 
     group('settings persistence', () {
-      test('a stored legacy "play" default loads as mute', () async {
+      test('an obsolete stored mode uses Record', () async {
         final store = FakeKeyValueStore();
-        // What an install that predates the rename has on disk under the
-        // settings key — written by the old `play` member's token.
         store.values['looper.default_mode'] = 'play';
         final settings = SettingsRepository(store: store);
 
@@ -81,7 +79,7 @@ void main() {
           await settings.loadDefaultInteractionMode(),
         );
 
-        expect(loaded, InteractionMode.mute);
+        expect(loaded, InteractionMode.record);
       });
 
       test('a saved mute default round-trips through the repository', () async {

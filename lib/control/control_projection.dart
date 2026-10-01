@@ -61,7 +61,8 @@ Set<int> armedTracks(LooperState looper, ControlState overlay) {
 /// Mute mode: green = armed AND audible (a muted or excluded track reads
 /// off; while parked, the parked-resume members show what Rec/Play brings
 /// back). Record mode: the cursor and any capturing track read red. FX mode:
-/// blue = the track's Track-stage chain is engaged.
+/// blue = the track's Track-stage chain is engaged. Custom mode: blue = the
+/// assigned function is active, based on its current target/contact state.
 ///
 /// The FX-mode reading costs ZERO new wire bytes (R8): the same `trackLeds`
 /// enum-index byte carries a different meaning per mode, so the firmware
@@ -74,6 +75,7 @@ PedalTrackLed projectTrackLed(
   ControlState overlay,
   int channel, {
   Map<int, bool?> boundChains = const {},
+  Map<int, bool> customFunctions = const {},
 }) {
   final track = channel >= 0 && channel < looper.tracks.length
       ? looper.tracks[channel]
@@ -88,6 +90,10 @@ PedalTrackLed projectTrackLed(
       if (channel == overlay.cursor) return PedalTrackLed.red;
       if (track?.isCapturing ?? false) return PedalTrackLed.red;
       return PedalTrackLed.off;
+    case InteractionMode.custom:
+      return customFunctions[channel] ?? false
+          ? PedalTrackLed.blue
+          : PedalTrackLed.off;
     case InteractionMode.fx:
       // A BOUND switch reports its own target, not this channel's track chain.
       // The two are different flags — a binding can name a chain on any stage
@@ -117,10 +123,17 @@ PedalStateFrame projectFrame(
   bool performanceArmed = false,
   double masterGain = 1.0,
   Map<int, bool?> boundChains = const {},
+  Map<int, bool> customFunctions = const {},
 }) {
   final leds = <PedalTrackLed>[
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
-      projectTrackLed(looper, overlay, channel, boundChains: boundChains),
+      projectTrackLed(
+        looper,
+        overlay,
+        channel,
+        boundChains: boundChains,
+        customFunctions: customFunctions,
+      ),
   ];
   // global_color carries the ring's activity color: red while recording,
   // amber while overdubbing, green while a loop plays, off when idle. (The
@@ -158,15 +171,13 @@ PedalStateFrame projectFrame(
     selectedTrack: overlay.cursor,
     // The wire frame still calls mute mode PLAY: PedalMode is the pedal
     // firmware's protocol enum (its mode LED predates the rename), so the
-    // mapping — not the wire token — carries the new name. FX rides protocol
-    // the wire's mode byte; this projection is transport-AGNOSTIC (B10) — the
-    // codec alone decides how a mode reaches the board, so nothing here
-    // branches
-    // on the negotiated version.
+    // mapping — not the wire token — carries the new name. Each mode has one
+    // current UART value; the codec and board require an exact v6 HELLO.
     mode: switch (overlay.mode) {
       InteractionMode.record => PedalMode.rec,
       InteractionMode.mute => PedalMode.play,
       InteractionMode.fx => PedalMode.fx,
+      InteractionMode.custom => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -186,6 +197,7 @@ PedalStateFrame projectFrame(
         overlay: overlay,
         frame: frame,
         boundChains: boundChains,
+        customFunctions: customFunctions,
       ),
     ),
     'control-surface invariants must hold at projection time',

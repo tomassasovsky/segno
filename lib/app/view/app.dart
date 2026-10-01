@@ -573,6 +573,7 @@ class _AppState extends State<App> {
             create: (context) {
               final cubit = ControlCubit(
                 looper: context.read<LooperRepository>(),
+                mixSettings: context.read<MixSettingsCoordinator>(),
                 pedal: context.read<PedalRepository>(),
                 settings: context.read<SettingsRepository>(),
                 performance: context.read<PerformanceRepository>(),
