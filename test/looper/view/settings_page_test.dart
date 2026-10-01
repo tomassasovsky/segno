@@ -402,6 +402,7 @@ void main() {
     // The Loop settings entry opens its own route rather than a section
     // (accepted design, slice 2c); tapping it here, with no root navigator,
     // leaves the page on the Audio section.
+    expect(find.byKey(const Key('settings_tab_pedals')), findsOneWidget);
     expect(find.byKey(const Key('settings_tab_loop')), findsOneWidget);
     await tester.tap(find.byKey(const Key('settings_tab_loop')));
     await tester.pumpAndSettle();

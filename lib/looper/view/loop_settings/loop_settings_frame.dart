@@ -47,6 +47,7 @@ class LoopSettingsFrame extends StatelessWidget {
     required this.onStage,
     required this.children,
     this.titleLeft = 36,
+    this.actions,
     super.key,
   });
 
@@ -68,6 +69,11 @@ class LoopSettingsFrame extends StatelessWidget {
 
   /// The title's inset from the left edge.
   final double titleLeft;
+
+  /// The page's own actions, drawn at the title's right edge (the Pedals
+  /// page's Cancel and Save). Inset by [titleLeft] on the right so the row
+  /// reads as one titlebar rather than a heading with a stray button.
+  final Widget? actions;
 
   @override
   Widget build(BuildContext context) {
@@ -145,6 +151,16 @@ class LoopSettingsFrame extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (actions != null)
+                  Positioned(
+                    right: titleLeft,
+                    top: 28,
+                    height: 72,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: actions,
+                    ),
+                  ),
                 ...children,
               ],
             ),

@@ -1,5 +1,5 @@
 {
-  "version": "2.17",
+  "version": "2.19",
   "children": [
     {
       "type": "frame",
@@ -298734,6 +298734,59 @@
       "fontFamily": "Inter",
       "fontSize": 13,
       "fontWeight": "normal"
+    },
+    {
+      "type": "frame",
+      "id": "qaI7U",
+      "x": 34744,
+      "y": -4122,
+      "name": "Native implementation / Pedal setup / PR 1028",
+      "width": 1920,
+      "height": 740,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 24,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "kN35j",
+          "name": "Pedal setup implementation heading",
+          "fill": "#F1F2F4",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Pedal setup · native implementation",
+          "fontFamily": "Inter",
+          "fontSize": 40,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "favTg",
+          "name": "Accepted layout and capabilities",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Accepted Layout A keeps the Fusion-shaped hardware map visible, with Press and Hold together. Four track pedals edit as one group; fixed controls stay dimmed and outside focus. Settings and the Control tray both open Pedals. Stage closes the originating tray.\n\nSave confirms storage before activating assignments. Cancel preserves the previous setup. Failed writes restore the prior data; a failed restoration keeps a persistent warning and an available Save. Unreadable explicit assignments stay inactive until a deliberate confirmed replacement. The warning sits in the clear gap between the pedal rows.\n\nMode has separate Press and Hold. Record/Play and track presses remain immediate. Track Hold acts only in Tracks; Record/Play Hold also works in Mute. Arm overdub preserves an existing pending arm or active capture. Bank Hold keeps performance-recording access.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 26,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "xuJAc",
+          "name": "Staged implementation boundary",
+          "fill": "#98A2B3",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "PR #1028 exposes Track controls. Custom setup and the accepted Mode Hold → Custom default return with the real runtime in PR #1030. Interim Hold → FX is not the final design. LED colors, external pedals and other performance actions remain separate slices. Physical controls still require appliance validation.\n\nThis repository canvas predates the full accepted working design. Preserve that newer source during the final design synchronization; this note does not claim the old screens are current.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 24,
+          "fontWeight": "normal"
+        }
+      ]
     }
   ],
   "variables": {
