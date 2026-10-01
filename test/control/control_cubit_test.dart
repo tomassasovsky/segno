@@ -114,6 +114,7 @@ void main() {
     late PedalRepository pedal;
     late PerformanceRepository performance;
     late ControlCubit cubit;
+    late bool takeIsLocked;
     late Directory tempDir;
     late DateTime clock;
 
@@ -140,7 +141,15 @@ void main() {
     }
 
     setUp(() async {
+      takeIsLocked = false;
       looper = _MockLooperRepository();
+      when(() => looper.sessionRevision).thenReturn(0);
+      when(
+        () => looper.settleFxRecipes(
+          waitForCallback: true,
+          cancelled: any(named: 'cancelled'),
+        ),
+      ).thenAnswer((_) async => EngineResult.ok);
       looperStates = StreamController<LooperState>.broadcast(sync: true);
       settings = SettingsRepository(store: FakeKeyValueStore());
       transport = FakePedalLink();
@@ -241,6 +250,7 @@ void main() {
         pedal: pedal,
         settings: settings,
         performance: performance,
+        takeLocked: () => takeIsLocked,
       );
       setEngine(_emptyTracks());
     });
@@ -586,13 +596,13 @@ void main() {
         await pumpEventQueue();
       }
 
-      /// Holds [button] past the 500 ms long-press threshold, then releases.
+      /// Holds [button] past the 800 ms long-press threshold, then releases.
       /// Real delays (not fake_async) — the wire events reach the cubit
       /// through the repository's stream, which a fake clock cannot pump.
       Future<void> hold(PedalButton button) async {
         transport.press(button, down: true);
         await pumpEventQueue();
-        await Future<void>.delayed(const Duration(milliseconds: 600));
+        await Future<void>.delayed(const Duration(milliseconds: 850));
         transport.press(button, down: false);
         await pumpEventQueue();
       }
@@ -675,7 +685,7 @@ void main() {
 
         // Past the threshold, foot STILL down: the mode has flipped and the
         // pushed frame already carries FX.
-        await Future<void>.delayed(const Duration(milliseconds: 600));
+        await Future<void>.delayed(const Duration(milliseconds: 850));
         expect(cubit.state.mode, InteractionMode.fx);
         expect(
           transport.lastFrame?.mode,
@@ -710,7 +720,7 @@ void main() {
         expect(cubit.state.cursor, ControlState.tracksPerBank);
         // Held past the threshold: the hold means nothing and the release
         // adds nothing.
-        await Future<void>.delayed(const Duration(milliseconds: 600));
+        await Future<void>.delayed(const Duration(milliseconds: 850));
         transport.press(PedalButton.bank, down: false);
         await pumpEventQueue();
         expect(cubit.state.activeBank, 1);
@@ -751,7 +761,7 @@ void main() {
         expect(performance.armedDirectory, isNotNull);
 
         // Past disarm's double-press guard window (D-GUARD) — the fake clock
-        // does not advance with the real 600 ms long-press delay.
+        // does not advance with the real 850 ms long-press delay.
         clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
 
         // `done`, not the first non-armed status: disarm passes through
@@ -781,7 +791,7 @@ void main() {
         // Past the threshold, foot STILL down: the arm has landed and the
         // pushed frame already carries it — commit-at-threshold, like the
         // MODE hold's own FX flip.
-        await Future<void>.delayed(const Duration(milliseconds: 600));
+        await Future<void>.delayed(const Duration(milliseconds: 850));
         await armed;
         await pumpEventQueue();
         final frame = transport.lastFrame;
@@ -868,13 +878,13 @@ void main() {
         await pumpEventQueue();
       }
 
-      /// Holds [button] past the 500 ms long-press threshold, then releases.
+      /// Holds [button] past the 800 ms long-press threshold, then releases.
       /// Real delays (not fake_async) — the wire events reach the cubit
       /// through the repository's stream, which a fake clock cannot pump.
       Future<void> hold(PedalButton button) async {
         transport.press(button, down: true);
         await pumpEventQueue();
-        await Future<void>.delayed(const Duration(milliseconds: 600));
+        await Future<void>.delayed(const Duration(milliseconds: 850));
         transport.press(button, down: false);
         await pumpEventQueue();
       }
@@ -986,7 +996,7 @@ void main() {
         expect(chainEnabled[1], isFalse); // the press panicked
 
         cubit.setMode(InteractionMode.record); // foot leaves FX mid-hold
-        await Future<void>.delayed(const Duration(milliseconds: 600));
+        await Future<void>.delayed(const Duration(milliseconds: 850));
         transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
 
@@ -1983,8 +1993,8 @@ void main() {
 
         test('long-press redoes instead', () async {
           transport.press(PedalButton.undo, down: true);
-          // Default long-press threshold is 500 ms.
-          await Future<void>.delayed(const Duration(milliseconds: 600));
+          // Default long-press threshold is 800 ms.
+          await Future<void>.delayed(const Duration(milliseconds: 850));
           transport.press(PedalButton.undo, down: false);
           await pumpEventQueue();
 
@@ -2037,8 +2047,8 @@ void main() {
               PerformanceCaptureStatus.armed,
             );
             transport.press(PedalButton.mode, down: true);
-            // Default long-press threshold is 500 ms.
-            await Future<void>.delayed(const Duration(milliseconds: 600));
+            // Default long-press threshold is 800 ms.
+            await Future<void>.delayed(const Duration(milliseconds: 850));
             transport.press(PedalButton.mode, down: false);
             await armed;
 
@@ -2053,13 +2063,13 @@ void main() {
             PerformanceCaptureStatus.armed,
           );
           transport.press(PedalButton.mode, down: true);
-          await Future<void>.delayed(const Duration(milliseconds: 600));
+          await Future<void>.delayed(const Duration(milliseconds: 850));
           transport.press(PedalButton.mode, down: false);
           await armed;
           expect(performance.armedDirectory, isNotNull);
 
           // Past disarm's double-press guard window (D-GUARD) — the fake
-          // clock does not advance with the real 600ms long-press delay
+          // clock does not advance with the real 850ms long-press delay
           // above, so it must be moved explicitly for the second long-press
           // to actually disarm rather than be guarded.
           clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
@@ -2071,7 +2081,7 @@ void main() {
             PerformanceCaptureStatus.done,
           );
           transport.press(PedalButton.mode, down: true);
-          await Future<void>.delayed(const Duration(milliseconds: 600));
+          await Future<void>.delayed(const Duration(milliseconds: 850));
           transport.press(PedalButton.mode, down: false);
           await disarmed;
 
@@ -2137,6 +2147,309 @@ void main() {
         ];
         setEngine(_emptyTracks());
         cubit.setMode(InteractionMode.fx);
+      });
+
+      group('Press and Hold assignment', () {
+        const chain0 = FxChainTarget(
+          FxAddress(stage: FxStage.track),
+        );
+
+        Future<void> assign({BindingScope scope = BindingScope.fixed}) async {
+          trackChains[0] = [BuiltInEffect(type: TrackEffectType.drive)];
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              PedalBinding(
+                key: const PedalBindingKey(
+                  button: PedalButton.track1,
+                  bank: 0,
+                ),
+                target: chain3.canonicalString(),
+                holdTarget: chain0.canonicalString(),
+                holdScope: scope,
+              ),
+            ]),
+          );
+        }
+
+        test('short release fires Press once; Hold suppresses Press', () async {
+          await assign();
+          await press(PedalButton.track1);
+          expect(chainEnabled, isEmpty, reason: 'down alone chooses neither');
+          await release(PedalButton.track1);
+          expect(chainEnabled[3], isFalse);
+          expect(chainEnabled.containsKey(0), isFalse);
+
+          await press(PedalButton.track1);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          expect(chainEnabled[0], isFalse, reason: 'Hold fires while down');
+          await release(PedalButton.track1);
+          expect(chainEnabled[3], isFalse, reason: 'no second Press');
+        });
+
+        test(
+          'selected Hold follows cursor before firing',
+          () async {
+            await assign(scope: BindingScope.selected);
+            chainEnabled[0] = false;
+            chainEnabled[3] = true;
+            cubit.selectTrack(0);
+            await press(PedalButton.track1);
+            cubit.selectTrack(3);
+            await Future<void>.delayed(const Duration(milliseconds: 850));
+            expect(chainEnabled[3], isFalse, reason: 'cursor at fire time');
+            expect(chainEnabled[0], isFalse, reason: 'old selection untouched');
+            await release(PedalButton.track1);
+          },
+        );
+
+        test('while Held, LED follows fired Hold instead of Press', () async {
+          await assign(scope: BindingScope.selected);
+          chainEnabled[0] = true;
+          chainEnabled[3] = true;
+          cubit.selectTrack(0);
+          expect(transport.lastFrame?.trackLeds[0], isNot(PedalTrackLed.off));
+          await press(PedalButton.track1);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          expect(chainEnabled[0], isFalse);
+          expect(chainEnabled[3], isTrue);
+          expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.off);
+          await release(PedalButton.track1);
+        });
+
+        test('a remembered Bank A Hold never lights Bank B binding', () async {
+          trackChains[0] = [BuiltInEffect(type: TrackEffectType.drive)];
+          chainEnabled[0] = false;
+          chainEnabled[3] = false;
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              PedalBinding(
+                key: const PedalBindingKey(
+                  button: PedalButton.track1,
+                  bank: 0,
+                ),
+                target: chain0.canonicalString(),
+                holdTarget: chain3.canonicalString(),
+              ),
+              PedalBinding(
+                key: const PedalBindingKey(
+                  button: PedalButton.track1,
+                  bank: 1,
+                ),
+                target: chain0.canonicalString(),
+              ),
+            ]),
+          );
+          await press(PedalButton.track1);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          await release(PedalButton.track1);
+          expect(chainEnabled[3], isTrue);
+          expect(transport.lastFrame?.trackLeds[0], isNot(PedalTrackLed.off));
+          cubit.toggleBankWithCursor();
+          expect(cubit.state.activeBank, 1);
+          expect(transport.lastFrame?.trackLeds[4], PedalTrackLed.off);
+          await stomp(PedalButton.track1);
+          expect(chainEnabled[0], isTrue);
+          expect(transport.lastFrame?.trackLeds[4], PedalTrackLed.blue);
+        });
+
+        test('take lock after down cancels Hold and short release', () async {
+          await assign();
+          await press(PedalButton.track1);
+          takeIsLocked = true;
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          await release(PedalButton.track1);
+          expect(chainEnabled, isEmpty);
+        });
+
+        test('equal session binding recall retires a pending hold', () async {
+          await assign();
+          await press(PedalButton.track1);
+          cubit.applySessionBindings(PedalBindingSet.empty);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          await release(PedalButton.track1);
+          expect(chainEnabled, isEmpty);
+        });
+
+        test(
+          'session revision fences Hold before binding recall completes',
+          () async {
+            var session = 0;
+            when(() => looper.sessionRevision).thenAnswer((_) => session);
+            await assign();
+            await press(PedalButton.track1);
+            session =
+                1; // applySession begins before applySessionBindings is called
+            await Future<void>.delayed(const Duration(milliseconds: 850));
+            await release(PedalButton.track1);
+            expect(chainEnabled, isEmpty);
+          },
+        );
+
+        test(
+          'a take lock acquired after down cancels system Stop Hold',
+          () async {
+            trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
+            chainEnabled[1] = false;
+            chainEnabled[3] = false;
+            await cubit.setGlobalBindings(
+              PedalBindingSet([bind(PedalButton.stop)]),
+            );
+            await press(PedalButton.stop);
+            expect(chainEnabled[3], isTrue, reason: 'bound Press is immediate');
+            takeIsLocked = true;
+            await Future<void>.delayed(const Duration(milliseconds: 850));
+            await release(PedalButton.stop);
+            expect(
+              chainEnabled[1],
+              isFalse,
+              reason: 'restore-all did not fire',
+            );
+          },
+        );
+
+        test(
+          'selected momentary restores its fired track after cursor moves',
+          () async {
+            trackChains[0] = [BuiltInEffect(type: TrackEffectType.drive)];
+            chainEnabled[0] = false;
+            chainEnabled[3] = true;
+            await cubit.setGlobalBindings(
+              PedalBindingSet([
+                PedalBinding(
+                  key: const PedalBindingKey(
+                    button: PedalButton.track1,
+                    bank: 0,
+                  ),
+                  target: chain3.canonicalString(),
+                  behavior: BindingBehavior.momentary,
+                  scope: BindingScope.selected,
+                ),
+              ]),
+            );
+            cubit.selectTrack(0);
+            await press(PedalButton.track1);
+            expect(chainEnabled[0], isTrue);
+            cubit.selectTrack(3);
+            await release(PedalButton.track1);
+            expect(chainEnabled[0], isFalse);
+            expect(chainEnabled[3], isTrue);
+          },
+        );
+
+        test(
+          'refused momentary has no latch; refused restore retries',
+          () async {
+            chainEnabled[3] = false;
+            var refuseEnable = true;
+            var refuseRestore = false;
+            final recipeApplied = Completer<EngineResult>();
+            when(
+              () => looper.settleFxRecipes(
+                waitForCallback: true,
+                cancelled: any(named: 'cancelled'),
+              ),
+            ).thenAnswer((_) => recipeApplied.future);
+            when(
+              () => looper.setTrackChainEnabled(
+                channel: any(named: 'channel'),
+                enabled: any(named: 'enabled'),
+              ),
+            ).thenAnswer((call) {
+              final enabled = call.namedArguments[#enabled] as bool;
+              if ((enabled && refuseEnable) || (!enabled && refuseRestore)) {
+                return EngineResult.notReady;
+              }
+              chainEnabled[call.namedArguments[#channel] as int] = enabled;
+              return EngineResult.ok;
+            });
+            await cubit.setGlobalBindings(
+              PedalBindingSet([
+                PedalBinding(
+                  key: const PedalBindingKey(
+                    button: PedalButton.track1,
+                    bank: 0,
+                  ),
+                  target: chain3.canonicalString(),
+                  behavior: BindingBehavior.momentary,
+                ),
+              ]),
+            );
+
+            await press(PedalButton.track1);
+            expect(chainEnabled[3], isFalse);
+            expect(cubit.state.heldMomentary, isEmpty);
+            await release(PedalButton.track1);
+
+            refuseEnable = false;
+            await press(PedalButton.track1);
+            expect(chainEnabled[3], isTrue);
+            refuseRestore = true;
+            await release(PedalButton.track1);
+            expect(chainEnabled[3], isTrue);
+            expect(cubit.state.heldMomentary, isNotEmpty);
+
+            refuseRestore = false;
+            recipeApplied.complete(EngineResult.ok);
+            // No LooperState change accompanies this callback acknowledgment.
+            await pumpEventQueue();
+            expect(chainEnabled[3], isFalse);
+            expect(cubit.state.heldMomentary, isEmpty);
+          },
+        );
+
+        test(
+          'removed stable slot cannot block a replacement assignment',
+          () async {
+            trackChains[3] = [
+              BuiltInEffect(
+                type: TrackEffectType.drive,
+                slotId: 'old',
+                enabled: false,
+              ),
+            ];
+            await cubit.setGlobalBindings(
+              PedalBindingSet([
+                PedalBinding(
+                  key: const PedalBindingKey(
+                    button: PedalButton.track1,
+                    bank: 0,
+                  ),
+                  target: const FxSlotTarget(
+                    address: FxAddress(stage: FxStage.track, index: 3),
+                    slotId: 'old',
+                  ).canonicalString(),
+                  behavior: BindingBehavior.momentary,
+                ),
+              ]),
+            );
+            await press(PedalButton.track1);
+            expect(trackChains[3]!.single.enabled, isTrue);
+            trackChains[3] = [
+              BuiltInEffect(
+                type: TrackEffectType.reverb,
+                slotId: 'new',
+              ),
+            ];
+            await release(PedalButton.track1);
+            await cubit.setGlobalBindings(
+              PedalBindingSet([
+                PedalBinding(
+                  key: const PedalBindingKey(
+                    button: PedalButton.track1,
+                    bank: 0,
+                  ),
+                  target: const FxSlotTarget(
+                    address: FxAddress(stage: FxStage.track, index: 3),
+                    slotId: 'new',
+                  ).canonicalString(),
+                ),
+              ]),
+            );
+            await stomp(PedalButton.track1);
+            expect(trackChains[3]!.single.enabled, isFalse);
+            expect(cubit.state.heldMomentary, isEmpty);
+          },
+        );
       });
 
       group('what the LED reports', () {
@@ -2320,7 +2633,7 @@ void main() {
           expect(chainEnabled[3], isFalse, reason: 'the binding ran');
           expect(chainEnabled.containsKey(1), isFalse, reason: 'no panic');
 
-          await Future<void>.delayed(const Duration(milliseconds: 600));
+          await Future<void>.delayed(const Duration(milliseconds: 850));
           await release(PedalButton.stop);
 
           // The hold restored every Track chain, the one the binding had just
@@ -2340,7 +2653,7 @@ void main() {
             PerformanceCaptureStatus.armed,
           );
           await press(PedalButton.mode);
-          await Future<void>.delayed(const Duration(milliseconds: 600));
+          await Future<void>.delayed(const Duration(milliseconds: 850));
           await release(PedalButton.mode);
           await armed;
 

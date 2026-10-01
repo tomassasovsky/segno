@@ -894,8 +894,8 @@ void main() {
   });
 
   group('pedal timing', () {
-    test('long-press defaults to 500 ms and round-trips', () async {
-      expect(await repository.loadPedalLongPressMs(), 500);
+    test('long-press defaults to 800 ms and round-trips', () async {
+      expect(await repository.loadPedalLongPressMs(), 800);
       await repository.savePedalLongPressMs(750);
       expect(await repository.loadPedalLongPressMs(), 750);
     });

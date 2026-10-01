@@ -113,11 +113,10 @@ void main() {
       );
     });
 
-    test('an unknown behavior falls back to toggle — a momentary that never '
-        'releases is the failure mode worth avoiding', () {
+    test('an unknown explicit behavior refuses the binding', () {
       final json = _binding(PedalButton.stop).toJson()
         ..['behavior'] = 'latching';
-      expect(PedalBinding.fromJson(json)?.behavior, BindingBehavior.toggle);
+      expect(PedalBinding.fromJson(json), isNull);
     });
 
     test('fromJson refuses a missing or empty target', () {

@@ -2515,3 +2515,45 @@ catalogue preserves raw source data but does not prove complete runtime
 parameter preservation; unverified ranges and defaults are not inferred from
 preset samples. Appliance operation and the existing human merge gate remain
 separate from these local results.
+
+## October assignments reconstruction (#1026, parts 4a–4b)
+
+Reconstructed on reviewed FX surfaces revision
+`0d601db8ec3450afb8ca94071ce96c969ffde1d9`, retaining original assignments
+parent `b89342e2dd8c64d08d2fa928f635016cc1f69374`.
+
+FX bindings carry separate Press/Hold targets and fixed/selected scopes.
+A control with a Hold defers its short action to release; crossing the hold
+threshold performs only Hold. Normal Record/Play and Stop retain immediate
+contact behavior. The default ordinary hold threshold is 800 ms; a valid
+explicit saved threshold is preserved. Held navigation is cancelled by
+invalidating configuration, disconnect, mode changes or session replacement.
+
+Selected targets resolve when the action fires. A completed momentary keeps
+its original target through later selection and bank changes. Input, output
+and All tracks destinations keep their explicit addresses. Stable effect-slot
+identity is never replaced with a nearby slot or matching name.
+
+Invalid programmatic binding combinations are rejected, and invalid persisted
+entries remain unavailable. Unknown explicit scope/behavior tokens do not
+silently become a different assignment. Compact omission of default fields
+is the current format, not a compatibility migration.
+
+The reconstruction preserves the UART console as the built-in control owner
+and the controller repository as the CTRL owner. MIDI disconnect does not
+release unrelated built-in contacts. No retired USB pedal binding path,
+application heartbeat or second expression interpreter is restored.
+
+Independent behavioral probes exposed six boundary failures: refused release
+restoration after an unchanged recipe acknowledgment, Hold LEDs reading the
+Press target, removed target identities blocking reassignment, system holds
+crossing a newly acquired take lock, and pending holds firing during an
+awaited session change, and Bank B LED state sent in Bank A frame positions.
+Their original failures are retained separately from
+the repair results. Validation and the final gate are recorded in
+`docs/reviews/design-assignments-restack/README.md`.
+
+This slice establishes binding and gesture behavior. The accepted Layout A
+setup, Custom mode entry, LED palette and shared external/MIDI action pickers
+remain the next dependent slices. Tests do not establish physical pedal timing
+or appliance behavior.

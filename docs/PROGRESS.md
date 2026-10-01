@@ -47,6 +47,23 @@ recorded in the [verification record](reviews/design-fx-surfaces-restack/README.
 Exact factory parameter/DSP completion remains M6 work; physical appliance
 validation and the human merge gate remain separate. No deployment is implied.
 
+## October 2026 pedal gesture reconstruction (#1026)
+
+FX assignments now carry separate Press/Hold targets and explicit fixed or
+selected-track scope, using the existing UART control owner. Holds resolve
+selection when they fire and retain that target until release. The accepted
+800 ms default is shared with Settings; normal Record/Play and Stop remain
+immediate. Session changes, take locks and disconnects invalidate pending
+work without applying it to a replacement session.
+
+Refused momentary restoration waits for callback readiness, removed effects
+do not strand a pedal, and LEDs follow the successfully dispatched action in
+the correct bank. The
+[verification record](reviews/design-assignments-restack/README.md) separates
+independent behavioral checks from physical pedal validation. Layout A setup,
+Custom mode and external/MIDI assignment surfaces are the next dependent
+slices. No appliance deployment or human merge approval is implied.
+
 ## September 2026 appliance integration
 
 The console link, CTRL jacks, and appliance delivery stack (#984, #986, #990)

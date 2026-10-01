@@ -903,7 +903,9 @@ class _LongPressUndo extends _FuzzAction {
   void apply(_Harness h, FakeAsync fa) {
     h.sim.press(PedalButton.undo, down: true);
     fa
-      ..elapse(const Duration(milliseconds: 600))
+      // Cross the accepted 800 ms default without deriving the oracle from
+      // the production gesture helper.
+      ..elapse(const Duration(milliseconds: 850))
       ..flushMicrotasks();
     h.sim.press(PedalButton.undo, down: false);
   }
@@ -1161,7 +1163,7 @@ List<_FuzzAction> _generate(int seed, int steps) {
       // rather than adding to them. `_SetMode` stays a corpus-only action.
       < 78 => _Pump(const [0, 1, 17, 256, 300][rng.next(5)], 0.5),
       < 82 => const _Tick(),
-      < 85 => _Elapse(const [5, 50, 600][rng.next(3)]),
+      < 85 => _Elapse(const [5, 50, 850][rng.next(3)]),
       // FX actions (the F6 alphabet): set/clear a lane or monitor chain, or the
       // race ordering — monitor-then-record with no drain between. Input is
       // pinned to 0 (not randomized like _SetMonitorChain): a track's lane 0

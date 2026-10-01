@@ -1,0 +1,13 @@
+# M3.1 PR readiness review
+
+Scope: the twelve changed M3.1 code, test and configuration paths in `final-hashes.json`, compared with base `0d601db8ec3450afb8ca94071ce96c969ffde1d9`. This includes the independent root Settings default and fuzzer timing amendments. The same reviewer performed these five role passes sequentially and authored none of this delta. Earlier M2.6 package/native work is excluded from the review's authorship claim; unchanged repository and wire code was read only to trace the current contracts. Later assignment UI/action-catalogue work and the pre-existing app overflow are outside this slice.
+
+Binding: the final source snapshot and `final-hashes.json` bind this report. ControlCubit is `3de5752f05393cdcebe5d27e6bea600756ef128a2b6e120d2c78c545c63a5eaa`; its test is `e5f7ecad7f6fd140e66b0ca6692c2354519a7f57bf783922daca7fc0d3f99a1d`. The entire changed diff and relevant enclosing functions/callers were inspected. This is a source review, not an assertion that the eventual remote PR head has green CI.
+
+No unresolved source hygiene finding remains. The reviewed delta contains no conflict markers, debug print, new skip, TODO placeholder, generated artifact, secret, manifest change or lint suppression. The spelling additions are four prose words. Root owns explicit staging, intentional merge resolution, tracking documentation, commit/PR metadata and remote checks; index conflict status is not mistaken for conflict text in the source.
+
+The final root static packet passes format, strict analysis, actual Bloc lint and whitespace with 652 scanned files and no source drift. The final full-app result passes with unchanged inputs and 91.1128473% coverage against a 90% floor. Root reports 2,261 passing app tests plus six existing skips. Fresh Settings verification passes 141 tests. These output packets were inspected; no duplicate broad checks were run by this reviewer.
+
+The first full-app run failed the three historical Redo corpus cases whose 600 ms fixture became a short press under the accepted 800 ms baseline; the failed log remains retained. The reviewed correction uses 850 ms while preserving every audio/LED assertion and random seed draw count. It does not modify production timing to satisfy the fixture. The final independent two-case LED replay passes unchanged and closes the last wire-index counterexample.
+
+The final source snapshot and hashes bind this report; changed bytes require reconciliation. The observed local gates are green; exact-head remote CI and root's final commit/PR binding still determine release readiness. No ready-to-merge or hardware-validation claim is made here.
