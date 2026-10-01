@@ -141,10 +141,16 @@ class PerformanceLaneSnapshot {
   /// then places no disarm segment for the channel (the arm image covers it).
   final int takeId;
 
-  /// Effective arm/disarm lane controls used by offline route replay.
+  /// Effective arm/disarm lane level used by offline route replay.
   final double volume;
+
+  /// Effective arm/disarm lane pan used by offline route replay.
   final double pan;
+
+  /// Whether the lane was muted at this snapshot boundary.
   final bool muted;
+
+  /// Output channel mask for this lane at the snapshot boundary.
   final int outputMask;
 
   /// Serializes this lane snapshot to a JSON map.
