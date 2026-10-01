@@ -47,7 +47,7 @@ unchanged; no compatibility fallback or second transaction framework was added.
 | R1: malformed target aliases | Shared address structure and target construction reject malformed coordinates before configuration admission; valid unavailable identities remain retained. |
 | R2–R4: stale picker, calibration owner and pending Save | Editor identity fences asynchronous results; owner tokens fence calibration disposal; pending Save retains its draft and reachable outcome. |
 | R5–R6: unavailable-target repair and focus | Change control preserves row type and authored values; existing focus controls handle selectable targets and exclude disabled choices. |
-| R7: synthetic firmware release | Detach silently resets contacts and publishes NONE; reclassification orders NONE before expression, without synthesizing an opening during absence/midscale debounce. |
+| R7: synthetic firmware release | Detach silently resets contacts and publishes NONE; reclassification orders NONE before expression, without synthesizing an opening during absence/midpoint debounce. |
 | R8–R10: refused cleanup and holder order | Exact authored cleanup survives refusal; retries resolve current survivors; accepted Released activation receives its own priority and lifetime. |
 | R11: older cleanup overwrites a new press | Cleanup registration runs inside the existing FIFO. Only successful same-target acquisition supersedes its older cleanup; refused acquisition and other targets retain their obligations. |
 | R12: MIDI release waiter retires a new press | Deferred release checks the accepted contribution order, so a newer accepted same-trigger press invalidates the old waiter. |
