@@ -2,8 +2,9 @@
 #define SEGNO_TEST_ADAFRUIT_NEOPIXEL_H
 
 // Deterministic Arduino I/O for compiling the actual console sketch on the
-// host. Only pin levels, time and outgoing UART bytes are simulated; input
-// classification and the wire codec remain the production implementation.
+// host. Pin levels, time, outgoing UART bytes, and LED pixels are simulated;
+// input classification and the wire codec remain the production implementation.
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -57,16 +58,20 @@ inline FakeSerial Serial1;
 
 class Adafruit_NeoPixel {
  public:
-  Adafruit_NeoPixel(int, int, int) {}
+  Adafruit_NeoPixel(int count, int, int) : pixels_(count, 0) {}
   void begin() {}
   void setBrightness(int) {}
   void show() {}
-  void clear() {}
-  void setPixelColor(int, uint32_t) {}
+  void clear() { std::fill(pixels_.begin(), pixels_.end(), 0); }
+  void setPixelColor(int index, uint32_t color) { pixels_[index] = color; }
+  uint32_t getPixelColor(int index) const { return pixels_[index]; }
   static uint32_t Color(uint8_t r, uint8_t g, uint8_t b) {
     return (uint32_t)r << 16 | (uint32_t)g << 8 | b;
   }
   static uint32_t gamma32(uint32_t color) { return color; }
+
+ private:
+  std::vector<uint32_t> pixels_;
 };
 
 #endif

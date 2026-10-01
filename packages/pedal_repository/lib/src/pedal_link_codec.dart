@@ -45,7 +45,8 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
-  /// 5: CTRL kind `none` — the board can say a jack is empty instead of
+  /// 6: mode value `3` is Custom, with the same STATE shape. 5: CTRL kind
+  /// `none` — the board can say a jack is empty instead of
   /// reporting an unplugged jack as a pedal at full toe. 4: CTRL (`0x04`)
   /// grew a contact byte and reports an expression pedal's raw position;
   /// calibration moved here, where it can be deliberate and survive a
@@ -53,7 +54,7 @@ abstract final class PedalLinkCodec {
   /// when the ring stopped tracking the loop. The board is flashed over SWD
   /// independently of the app, so the two can drift; this is what makes
   /// that visible rather than silent.
-  static const protocolVersion = 5;
+  static const protocolVersion = 6;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
