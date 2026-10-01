@@ -28,7 +28,8 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 5: CTRL kind NONE -- the board can now say a jack is EMPTY (a plug pulled
+/* 6: mode value 3 is CUSTOM, with the same STATE shape. 5: CTRL kind NONE --
+ * the board can now say a jack is EMPTY (a plug pulled
  * out, or the tip-normal contact on a switched jack), instead of reporting an
  * unplugged jack as a pedal at full toe. 4: CTRL (0x04) grew a contact byte
  * and reports an expression pedal's RAW position; calibration moved to segno.
@@ -36,7 +37,7 @@ extern "C" {
  * stopped tracking the loop. The board is flashed over SWD independently of
  * the app, so the two can drift; this is what makes that visible instead of
  * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 5u
+#define PEDAL_LINK_PROTOCOL_VERSION 6u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -112,7 +113,13 @@ enum {
 };
 
 /* Enum wire values, mirroring the Dart enums' declaration order. */
-enum { PEDAL_MODE_REC = 0, PEDAL_MODE_PLAY, PEDAL_MODE_FX, PEDAL_MODE_COUNT };
+enum {
+  PEDAL_MODE_REC = 0,
+  PEDAL_MODE_PLAY,
+  PEDAL_MODE_FX,
+  PEDAL_MODE_CUSTOM,
+  PEDAL_MODE_COUNT
+};
 enum {
   PEDAL_LOOPER_MULTI = 0,
   PEDAL_LOOPER_SYNC,

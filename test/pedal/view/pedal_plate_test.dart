@@ -163,14 +163,20 @@ void main() {
   });
 
   testWidgets('the MODE LED reflects the frame mode color', (tester) async {
-    await pumpPlate(tester, frame: _frame().copyWith(mode: PedalMode.fx));
-    final led = tester.widget<Container>(
-      find.byKey(const Key('pedalFaceplate_led_mode')),
-    );
-    expect(
-      (led.decoration! as BoxDecoration).color,
-      SurfaceTheme.dark.ledBlue,
-    );
+    final colors = {
+      PedalMode.rec: SurfaceTheme.dark.ledRed,
+      PedalMode.play: SurfaceTheme.dark.ledGreen,
+      PedalMode.fx: SurfaceTheme.dark.ledBlue,
+      PedalMode.custom: SurfaceTheme.dark.ledAmber,
+    };
+    expect(colors.keys, PedalMode.values.toSet());
+    for (final mode in PedalMode.values) {
+      await pumpPlate(tester, frame: _frame().copyWith(mode: mode));
+      final led = tester.widget<Container>(
+        find.byKey(const Key('pedalFaceplate_led_mode')),
+      );
+      expect((led.decoration! as BoxDecoration).color, colors[mode]);
+    }
   });
 
   group('selection state', () {

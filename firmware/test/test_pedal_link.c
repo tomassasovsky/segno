@@ -67,7 +67,8 @@ static const enum_pin BTN_PINS[] = {
   {"track3", PEDAL_BTN_TRACK3}, {"track4", PEDAL_BTN_TRACK4}, {"clear", PEDAL_BTN_CLEAR},
   {"bank", PEDAL_BTN_BANK}};
 static const enum_pin MODE_PINS[] = {
-  {"rec", PEDAL_MODE_REC}, {"play", PEDAL_MODE_PLAY}, {"fx", PEDAL_MODE_FX}};
+  {"rec", PEDAL_MODE_REC}, {"play", PEDAL_MODE_PLAY}, {"fx", PEDAL_MODE_FX},
+  {"custom", PEDAL_MODE_CUSTOM}};
 static const enum_pin LOOPER_PINS[] = {
   {"multi", PEDAL_LOOPER_MULTI}, {"sync", PEDAL_LOOPER_SYNC}, {"song", PEDAL_LOOPER_SONG},
   {"band", PEDAL_LOOPER_BAND}, {"free", PEDAL_LOOPER_FREE}};
@@ -216,6 +217,13 @@ static void check_fixture(const char *dir, const char *name) {
               st.loop_length_micros == 0xFFFFFFFFu && st.track_leds[0] == PEDAL_LED_BLUE &&
               st.track_leds[1] == PEDAL_LED_OFF && st.selected_track == 2,
           "fx_mode: fields differ");
+  } else if (strcmp(name, "custom_mode_bankb.bin") == 0) {
+    CHECK(st.mode == PEDAL_MODE_CUSTOM && st.active_bank == 1 && st.selected_track == 5 &&
+              st.global_color == PEDAL_GLOBAL_AMBER && st.looper_mode == PEDAL_LOOPER_BAND &&
+              st.counting_in && st.loop_length_micros == 1234567u && st.master_gain == 128 &&
+              st.track_leds[1] == PEDAL_LED_RED && st.track_leds[5] == PEDAL_LED_BLUE &&
+              !st.goodbye && !st.clear_fade,
+          "custom_mode_bankb: fields differ");
   } else if (strcmp(name, "mode_counting_in.bin") == 0) {
     CHECK(st.counting_in == 1 && st.looper_mode == PEDAL_LOOPER_BAND && st.global_color == PEDAL_GLOBAL_RED,
           "mode_counting_in: fields differ");
@@ -287,6 +295,10 @@ static void check_rejections(void) {
   pl[0] = 0x10;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 0, "reserved flag accepted");
   pl[0] = 0;
+  pl[1] = PEDAL_MODE_CUSTOM;
+  CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 1 &&
+            out.mode == PEDAL_MODE_CUSTOM,
+        "custom mode rejected");
   pl[1] = PEDAL_MODE_COUNT;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 0, "bad mode accepted");
   pl[1] = 0;

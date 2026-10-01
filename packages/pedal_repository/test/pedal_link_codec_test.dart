@@ -54,6 +54,34 @@ void main() {
       expect(payload[18], 255);
     });
 
+    test('Custom is mode byte 3 in the unchanged 19-byte STATE', () {
+      final frame = PedalStateFrame.blank().copyWith(
+        mode: PedalMode.custom,
+        activeBank: 1,
+        selectedTrack: 5,
+        trackLeds: const [
+          PedalTrackLed.off,
+          PedalTrackLed.green,
+          PedalTrackLed.red,
+          PedalTrackLed.blue,
+          PedalTrackLed.off,
+          PedalTrackLed.blue,
+          PedalTrackLed.off,
+          PedalTrackLed.green,
+        ],
+      );
+      final payload = PedalLinkCodec.encodeStatePayload(frame);
+      expect(payload, hasLength(19));
+      expect(payload[1], 3);
+      expect(payload[4], 1);
+      expect(payload[5], 5);
+      expect(PedalLinkCodec.decodeStatePayload(payload), frame);
+      expect(
+        PedalLinkCodec.decodeStatePayload(List<int>.of(payload)..[1] = 4),
+        isNull,
+      );
+    });
+
     test('master gain is quantized to one byte', () {
       final frame = PedalStateFrame.blank().copyWith(masterGain: 0.5);
       final decoded = PedalLinkCodec.decodeStatePayload(

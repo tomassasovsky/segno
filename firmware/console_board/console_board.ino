@@ -548,12 +548,13 @@ static Rgb ledColor(uint8_t led) {
     default: return {0, 0, 0};
   }
 }
-// The mode pill's colour: rec red, play green, FX blue. Solid, always — this
-// pill means the interaction mode and nothing else.
+// The mode pill's colour: rec red, play green, FX blue, Custom amber. Solid,
+// always — this pill means the interaction mode and nothing else.
 static Rgb modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY: return {0, 255, 0};
     case PEDAL_MODE_FX: return {0, 0, 255};
+    case PEDAL_MODE_CUSTOM: return {255, 255, 0};
     default: return {255, 0, 0};  // PEDAL_MODE_REC
   }
 }
