@@ -105,22 +105,26 @@ playable deliverable of this part.
 
 ## `armSnapshot`
 
-The state captured at the arm instant — everything the offline renderer and
-`.als` generator need to establish t=0, since the engine snapshot alone
-cannot supply the FX chains of any stage, monitor configuration, or the limiter
-state (those live in `performance_repository`'s caller-supplied
-`PerformanceChains`, mirroring how `session_repository`'s `SessionChains` works
-for session saves).
+The capture's initial state. Lane, monitor and track chains come from the
+caller-supplied `PerformanceChains`. The selected output chain, destination,
+policy, level and mute come from the engine after the audio callback acknowledges
+arming. These facts must not be substituted with a pre-arm read taken before
+asynchronous file work. The settled snapshot is published atomically; an
+incomplete arm must not leave plausible but incorrect recovery metadata. The master phase comes from the sample-accurate `PERF_ARMED` event, not this control-thread snapshot. If publication fails after capture starts, the repository retains the live capture and its settled in-memory facts so Stop can finalize it; it does not silently become idle.
 
 ```jsonc
 {
-  "clockFrame": 0,
-  "masterLenFrames": 96000,
   "masterGain": 1.0,
   "limiterOn": true,
   "limiterCeiling": 0.99,
   "latencyOffsetFrames": 128,
   "tempoBpm": 96.0,
+  "followOutput": false,
+  "captureBus": 0,
+  "captureMask": 3,
+  "outputEnabledMask": 3,
+  "outputLevel": 1.0,
+  "outputMuted": false,
   "fxStagesVersion": 1,
   "tracks": [ /* see below */ ],
   "monitors": [
@@ -129,32 +133,36 @@ for session saves).
   "trackChains": [
     { "channel": 0, "chainEnabled": false, "effects": [ /* see FX entries */ ] }
   ],
-  "masterEffects": [ /* see FX entries */ ],
-  "masterChainEnabled": false
+  "outputEffects": [ /* see FX entries */ ],
+  "outputChainEnabled": false
 }
 ```
 
 | Field | Notes |
 |---|---|
-| `clockFrame` | Master playhead position at the arm instant. |
-| `masterLenFrames` | Master loop length in frames at arm time. |
 | `masterGain` | Master output gain at arm time. |
 | `limiterOn` / `limiterCeiling` | Master peak limiter state at arm time. |
 | `latencyOffsetFrames` | The active device profile's record-offset latency compensation. |
+| `followOutput` | Required capture policy, frozen at arm. Both policies capture after the selected destination FX. Default excludes final output controls. Follow applies that destination’s current level and mute; arm values seed replay and later events change them. Neither policy applies destination Mono/Balance, final hardware master gain or limiter. |
+| `captureBus` | The destination actually captured: the first with an enabled channel at successful arm, not a pre-I/O guess. It remains fixed for the take. Its selected output chain is captured at the same boundary. Omission means bus 0; a provided value must be an integer from 0 through 15. |
+| `captureMask` | Required nonzero unsigned 32-bit mask confined to the selected pair, frozen at arm. Missing/disabled jacks are not invented as routes. Invalid or absent identity is refused before reconstruction. |
+| `outputEnabledMask` | The complete structural output gate at arm. Source fan-out uses this mask; a destination-local mask cannot stand in for the entire interface. |
+| `outputLevel` / `outputMuted` | `captureBus`'s level and mute at arm time, the starting point of that replay. Written only when off their defaults (unity, unmuted). |
 | `tempoBpm` | The engine tempo at the arm instant, verbatim (`0` = unset, the same sentinel `session.json`'s `tempoBpm` uses; absent = written before the field existed — both read as "no tempo evidence"). The **crash-salvage fallback** for a DAW export's tempo, not the authoritative value: D6's tempo lock only engages once grid content exists, so a tempo dialed in (or derived by the first loop) after an arm-over-empty-grid is only knowable at disarm — see `disarmSnapshot.tempoBpm`. |
 | `fxStagesVersion` | FX-stage schema revision (FX v3, R20): `1` = the four-stage model below. **Absent = a legacy snapshot** written before those fields existed; see "FX stages" below. |
 | `tracks` | One entry per **non-empty** track (empty tracks are omitted); carries the **Loop** stage, per lane. |
 | `monitors` | The **Input** stage: one entry per hardware input the caller supplied chain/routing state for. Each entry's `chainEnabled` is that monitor chain's bypass flag, written only when `false` (absent = engaged, or legacy — see the marker below); `enabled` beside it is the input's own monitor gate, not an FX flag. |
 | `trackChains` | The **Track** stage: one entry per track channel with bus FX or a non-default chain flag. Omitted when there are none. |
-| `masterEffects` / `masterChainEnabled` | The **Master** insert's entries and chain flag. `masterEffects` is omitted when empty; `masterChainEnabled` is omitted while engaged (i.e. absent = `true`). |
+| `outputEffects` / `outputChainEnabled` | The actual captured destination’s output chain and bypass flag, captured by the engine at arm. The chain is applied once by reconstruction to audio before that stage; the already captured top-level master audio is never processed a second time. Empty effects and an engaged chain use the writer’s default omission rule. |
 
 ### FX stages and the presence-keyed version marker
 
 The snapshot records all four FX stages of the v3 model, each with its
 chain-level bypass flag alongside its entries (which carry their own `enabled`
 bits): Input (`monitors[]`), Loop (`tracks[].lanes[]`), Track (`trackChains[]`)
-and Master (`masterEffects`/`masterChainEnabled`). A replay seeds arm-time
-bypass state from these rather than assuming everything was audible (R3).
+and captured Output (`outputEffects`/`outputChainEnabled`, the selected destination's
+chain since slice 3b). A replay seeds arm-time bypass state from these rather
+than assuming everything was audible (R3).
 
 Every flag is written **only when disabled**, so a rig with no bypassed chain
 produces the same bytes a pre-FX-v3 build did. `fxStagesVersion` is what makes

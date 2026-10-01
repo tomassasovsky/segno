@@ -385,6 +385,7 @@ void main() {
           laneLevels: {(1, 0): 0.6},
           monitorLevels: {},
           inputSetup: (trimDb: {}, pan: {}, pairs: {}),
+          outputSetup: (level: {}, muted: {}, mono: {}, balance: {}),
         ),
       );
       await repository.saveLaneMute(1, 0, muted: true);
@@ -1023,11 +1024,18 @@ void main() {
       Map<(int, int), double> levels = const {},
       Map<int, double> monitors = const {},
       StoredInputSetup input = const (trimDb: {}, pan: {}, pairs: {}),
+      StoredOutputSetup output = const (
+        level: {},
+        muted: {},
+        mono: {},
+        balance: {},
+      ),
     }) => (
       trackPans: pans,
       laneLevels: levels,
       monitorLevels: monitors,
       inputSetup: input,
+      outputSetup: output,
     );
 
     test(
@@ -1090,6 +1098,55 @@ void main() {
         expect(await repository.readMixSettingsCheckpoint(), checkpoint);
         expect((await repository.loadMixSettings(scarlett)).inputSetup.pairs, {
           2: 0,
+        });
+      },
+    );
+
+    test(
+      'output facts share the mix checkpoint and remain device scoped',
+      () async {
+        await repository.replaceMixSettings(
+          device: builtIn,
+          mix: mix(
+            output: (
+              level: {0: .4},
+              muted: {},
+              mono: {},
+              balance: {},
+            ),
+          ),
+        );
+        await repository.replaceMixSettings(
+          device: scarlett,
+          mix: mix(
+            output: (
+              level: {1: .5},
+              muted: {1: true},
+              mono: {0: true},
+              balance: {0: -.25},
+            ),
+          ),
+        );
+        final checkpoint = await repository.readMixSettingsCheckpoint();
+        expect(
+          store.values.keys.where((key) => key.startsWith('output_')),
+          isEmpty,
+        );
+        final setup = (await repository.loadMixSettings(scarlett)).outputSetup;
+        expect(setup.level, {1: .5});
+        expect(setup.muted, {1: true});
+        expect(setup.mono, {0: true});
+        expect(setup.balance, {0: -.25});
+        expect((await repository.loadMixSettings(builtIn)).outputSetup.level, {
+          0: .4,
+        });
+        await repository.replaceMixSettings(device: scarlett, mix: mix());
+        await repository.restoreMixSettingsCheckpoint(checkpoint);
+        expect((await repository.loadMixSettings(scarlett)).outputSetup.muted, {
+          1: true,
+        });
+        expect((await repository.loadMixSettings(builtIn)).outputSetup.level, {
+          0: .4,
         });
       },
     );

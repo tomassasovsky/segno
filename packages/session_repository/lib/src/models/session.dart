@@ -518,6 +518,120 @@ class SessionInputSetup {
       Object.hash(_mapHash(trimDb), _mapHash(pan), _mapHash(pairs));
 }
 
+/// The output setup a session persists (slice 3b): every output
+/// destination's level, mute, Stereo/Mono and balance, each map keyed by
+/// the destination (bus, one per stereo pair of outputs) and holding only
+/// the destinations off that fact's default (unity, unmuted, Stereo,
+/// centre), so an untouched rig serializes to nothing.
+///
+/// Plain maps rather than the looper domain's `OutputSetup`, like
+/// [SessionInputSetup]. Serialized as `{"level": {"1": 0.5}, "muted":
+/// {"0": true}, "mono": {"1": true}, "balance": {"0": -0.2}}` with each
+/// empty map left out and the whole object omitted from the manifest when
+/// all four are empty; absence in schema 8 reads as the default.
+@immutable
+class SessionOutputSetup {
+  /// Creates a [SessionOutputSetup].
+  const SessionOutputSetup({
+    this.level = const {},
+    this.muted = const {},
+    this.mono = const {},
+    this.balance = const {},
+  });
+
+  /// Projects a [SessionOutputSetup] from a current-schema JSON map.
+  factory SessionOutputSetup.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const SessionOutputSetup();
+    if (json.keys.any(
+      (key) =>
+          key != 'level' && key != 'muted' && key != 'mono' && key != 'balance',
+    )) {
+      throw const FormatException('invalid output setup field');
+    }
+    double number(Object? raw) {
+      if (raw is! num) throw const FormatException('invalid output number');
+      return raw.toDouble();
+    }
+
+    bool flag(Object? raw) {
+      if (raw is! bool) throw const FormatException('invalid output flag');
+      return raw;
+    }
+
+    final result = SessionOutputSetup(
+      level: _channelMapFromJson(json['level'], number),
+      muted: _channelMapFromJson(json['muted'], flag),
+      mono: _channelMapFromJson(json['mono'], flag),
+      balance: _channelMapFromJson(json['balance'], number),
+    );
+    if (!result.isValid) throw const FormatException('invalid output setup');
+    return result;
+  }
+
+  /// Level per destination, `0..1`.
+  final Map<int, double> level;
+
+  /// The muted destinations (`true`).
+  final Map<int, bool> muted;
+
+  /// The destinations in Mono (`true`).
+  final Map<int, bool> mono;
+
+  /// Balance per destination, `-1` (left) .. `1` (right).
+  final Map<int, double> balance;
+
+  /// Whether every map is empty (the whole object is then left out of the
+  /// manifest).
+  bool get isEmpty =>
+      level.isEmpty && muted.isEmpty && mono.isEmpty && balance.isEmpty;
+
+  /// Strict schema 8 shape and ranges; the engine accepts at most 16 buses.
+  bool get isValid {
+    bool channels(Iterable<int> keys) =>
+        keys.every((key) => key >= 0 && key < 16);
+    bool numbers(Map<int, double> values, double min, double max) =>
+        channels(values.keys) &&
+        values.values.every(
+          (value) => value.isFinite && value >= min && value <= max,
+        );
+    return numbers(level, 0, 1) &&
+        numbers(balance, -1, 1) &&
+        channels(muted.keys) &&
+        muted.values.every((value) => value) &&
+        channels(mono.keys) &&
+        mono.values.every((value) => value);
+  }
+
+  /// Serializes this setup to a JSON map, each empty map left out.
+  Map<String, dynamic> toJson() {
+    if (!isValid) throw const FormatException('invalid output setup');
+    return {
+      if (level.isNotEmpty) 'level': _channelMapToJson(level),
+      if (muted.isNotEmpty) 'muted': _channelMapToJson(muted),
+      if (mono.isNotEmpty) 'mono': _channelMapToJson(mono),
+      if (balance.isNotEmpty) 'balance': _channelMapToJson(balance),
+    };
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionOutputSetup &&
+          runtimeType == other.runtimeType &&
+          _mapEquals(level, other.level) &&
+          _mapEquals(muted, other.muted) &&
+          _mapEquals(mono, other.mono) &&
+          _mapEquals(balance, other.balance);
+
+  @override
+  int get hashCode => Object.hash(
+    _mapHash(level),
+    _mapHash(muted),
+    _mapHash(mono),
+    _mapHash(balance),
+  );
+}
+
 /// A saved Segno session, paired with per-lane, per-layer WAV files in a
 /// `.segno` bundle directory. Only the current schema 8 is accepted.
 ///
@@ -568,6 +682,7 @@ class Session {
     this.defaultMultiple = 0,
     this.pedalBindings = '',
     this.inputSetup = const SessionInputSetup(),
+    this.outputSetup = const SessionOutputSetup(),
   });
 
   /// Projects a [Session] from a decoded JSON map.
@@ -649,6 +764,9 @@ class Session {
       pedalBindings: json['pedalBindings'] as String,
       inputSetup: SessionInputSetup.fromJson(
         json['inputSetup'] as Map<String, dynamic>?,
+      ),
+      outputSetup: SessionOutputSetup.fromJson(
+        json['outputSetup'] as Map<String, dynamic>?,
       ),
     );
   }
@@ -797,6 +915,13 @@ class Session {
   /// Omitted from the manifest when it is the default setup.
   final SessionInputSetup inputSetup;
 
+  /// The output setup the session was saved with (slice 3b): every
+  /// destination's level, mute, Stereo/Mono and balance. Session-level like
+  /// [inputSetup]: a destination's setup exists whether or not anything was
+  /// recorded. Omitted from the manifest when it is the default setup;
+  /// absent on an older manifest reads as the default.
+  final SessionOutputSetup outputSetup;
+
   /// Serializes this session manifest to a JSON map. Always writes the
   /// current [formatVersion].
   Map<String, dynamic> toJson() => {
@@ -851,6 +976,7 @@ class Session {
     'defaultMultiple': defaultMultiple,
     'pedalBindings': pedalBindings,
     if (!inputSetup.isEmpty) 'inputSetup': inputSetup.toJson(),
+    if (!outputSetup.isEmpty) 'outputSetup': outputSetup.toJson(),
   };
 
   @override
@@ -901,7 +1027,8 @@ class Session {
             other.trackLengthPresetOverrides,
           ) &&
           _mapEquals(trackPans, other.trackPans) &&
-          inputSetup == other.inputSetup;
+          inputSetup == other.inputSetup &&
+          outputSetup == other.outputSetup;
 
   // hashAll, not hash: the field count passed v6's addition of
   // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
@@ -942,6 +1069,7 @@ class Session {
     _mapHash(trackLengthPresetOverrides),
     _mapHash(trackPans),
     inputSetup,
+    outputSetup,
   ]);
 }
 

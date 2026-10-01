@@ -137,6 +137,74 @@ void main() {
     expect(audio.calls.where((call) => call == 'setMix'), hasLength(2));
   });
 
+  test('compound output edits publish one confirmed mix value', () async {
+    final level = coordinator.setOutputLevel(bus: 0, level: .4);
+    final muted = coordinator.setOutputMute(bus: 0, muted: true);
+    final mono = coordinator.setOutputMono(bus: 0, mono: true);
+    final balance = coordinator.setOutputBalance(bus: 0, balance: -.25);
+    expect((await level).isOk, isTrue);
+    await Future.wait([muted, mono, balance]);
+    await coordinator.flush();
+    expect(
+      repository.outputSetup.of(0),
+      const OutputBus(level: .4, muted: true, mono: true, balance: -.25),
+    );
+    expect(
+      persistence.candidates.last.outputSetup.of(0),
+      repository.outputSetup.of(0),
+    );
+    expect(
+      audio.calls.where((call) => call == 'setMix').length,
+      lessThanOrEqualTo(2),
+    );
+  });
+
+  test('output storage refusal retains the exact old setup', () async {
+    persistence.refuseWrite = true;
+    final result = await coordinator.setOutputLevel(bus: 0, level: .4);
+    expect(result.status, MixSettingsStatus.storageFailed);
+    expect(repository.outputSetup, const OutputSetup());
+    expect(persistence.durable, 'exact prior durable value');
+    expect(audio.calls, isNot(contains('setMix')));
+  });
+
+  test('output native refusal restores prior durable checkpoint', () async {
+    audio.mixResult = EngineResult.notReady;
+    final result = await coordinator.setOutputMono(bus: 0, mono: true);
+    expect(result.status, MixSettingsStatus.rejected);
+    expect(repository.outputSetup, const OutputSetup());
+    expect(persistence.durable, 'exact prior durable value');
+    expect(persistence.restores, 1);
+  });
+
+  test(
+    'output native refusal restores a genuinely absent checkpoint',
+    () async {
+      persistence.durable = null;
+      audio.mixResult = EngineResult.notReady;
+      final result = await coordinator.setOutputMute(bus: 0, muted: true);
+      expect(result.status, MixSettingsStatus.rejected);
+      expect(repository.outputSetup, const OutputSetup());
+      expect(persistence.durable, isNull);
+      expect(persistence.restores, 1);
+    },
+  );
+
+  test('failed output rollback stops audio until recovery succeeds', () async {
+    persistence.refuseRestore = true;
+    audio.mixResult = EngineResult.notReady;
+    final result = await coordinator.setOutputBalance(bus: 0, balance: .7);
+    expect(result.status, MixSettingsStatus.recoveryRequired);
+    expect(repository.outputSetup, const OutputSetup());
+    expect(audio.calls, contains('stop'));
+    expect(repository.startEngine(const EngineConfig()), EngineResult.notReady);
+    persistence.refuseRestore = false;
+    expect((await coordinator.recover()).isOk, isTrue);
+    expect(persistence.durable, 'exact prior durable value');
+    audio.mixResult = EngineResult.ok;
+    expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+  });
+
   test(
     'storage refusal leaves actual controls and durable value unchanged',
     () async {

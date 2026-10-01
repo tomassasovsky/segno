@@ -137,6 +137,8 @@ static int32_t install(le_engine* e, le_fx_state* fx, _Atomic int32_t* type,
    * the first time the audio thread dispatches it the slot is live. Ordering is
    * not load-bearing for safety: a weak observer that sees PLUGIN before the
    * pointer loads NULL and renders one dry sample — never a crash. */
+  /* Only publish atomic host/type state here. The callback retires any
+   * prior built-in drain when it observes LE_FX_PLUGIN in fx_apply_chain. */
   atomic_store_explicit(&fx->plugin[index], slot, memory_order_release);
   le_plugin_slot_set_ready(slot, 1);
   atomic_store_explicit(type, LE_FX_PLUGIN, memory_order_release);

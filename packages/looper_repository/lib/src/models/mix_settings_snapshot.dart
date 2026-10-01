@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
+import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/session_rig.dart';
 import 'package:segno_engine/segno_engine.dart' show kMaxChannels, kMaxLanes;
 
@@ -11,11 +12,13 @@ class MixSettingsSnapshot extends Equatable {
     Map<(int, int), double> laneLevels = const {},
     Map<int, double> monitorLevels = const {},
     InputSetup inputSetup = const InputSetup.empty(),
+    OutputSetup outputSetup = const OutputSetup(),
     Map<int, bool> trackSolos = const {},
   }) : trackPans = Map.unmodifiable(trackPans),
        laneLevels = Map.unmodifiable(laneLevels),
        monitorLevels = Map.unmodifiable(monitorLevels),
        inputSetup = inputSetup.copyWith(),
+       outputSetup = outputSetup.detached(),
        trackSolos = Map.unmodifiable(trackSolos);
 
   /// The live controls a session will restore, excluding recorded images and
@@ -23,6 +26,7 @@ class MixSettingsSnapshot extends Equatable {
   factory MixSettingsSnapshot.fromRig(SessionRig rig) => MixSettingsSnapshot(
     trackPans: rig.trackPans,
     inputSetup: rig.inputSetup,
+    outputSetup: rig.outputSetup,
     laneLevels: {
       for (final track in rig.tracks)
         for (final lane in track.lanes) (track.channel, lane.lane): lane.volume,
@@ -44,12 +48,16 @@ class MixSettingsSnapshot extends Equatable {
   /// Capture trim and future source positioning.
   final InputSetup inputSetup;
 
+  /// Confirmed destination controls.
+  final OutputSetup outputSetup;
+
   /// Temporary audibility flags; persistence must omit these.
   final Map<int, bool> trackSolos;
 
   /// Structural validity, independent of the outgoing rig's arm state.
   bool get isValid =>
       inputSetup.isValid &&
+      outputSetup.isValid &&
       trackPans.entries.every(
         (e) => e.key >= 0 && e.key < 8 && _pan(e.value),
       ) &&
@@ -77,12 +85,14 @@ class MixSettingsSnapshot extends Equatable {
     Map<(int, int), double>? laneLevels,
     Map<int, double>? monitorLevels,
     InputSetup? inputSetup,
+    OutputSetup? outputSetup,
     Map<int, bool>? trackSolos,
   }) => MixSettingsSnapshot(
     trackPans: trackPans ?? this.trackPans,
     laneLevels: laneLevels ?? this.laneLevels,
     monitorLevels: monitorLevels ?? this.monitorLevels,
     inputSetup: inputSetup ?? this.inputSetup,
+    outputSetup: outputSetup ?? this.outputSetup,
     trackSolos: trackSolos ?? this.trackSolos,
   );
 
@@ -92,6 +102,7 @@ class MixSettingsSnapshot extends Equatable {
     laneLevels,
     monitorLevels,
     inputSetup,
+    outputSetup,
     trackSolos,
   ];
 }

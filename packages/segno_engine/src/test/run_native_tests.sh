@@ -103,6 +103,14 @@ $CC $STD $EXTRA_CFLAGS src/test/test_engine_races.c -lpthread -lm \
   -o "$OUT/segno_race_tests.exe"
 "$OUT/segno_race_tests.exe"
 
+echo "== building plugin runtime race tests =="
+# Real installer and DSP, with a minimal fake host: portable and TSAN-covered.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_plugin_runtime_races.c \
+  src/core/engine_plugin.c src/core/engine_fx.c -lpthread -lm \
+  -o "$OUT/segno_plugin_runtime_race_tests.exe"
+"$OUT/segno_plugin_runtime_race_tests.exe"
+
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
   exit 0
 fi

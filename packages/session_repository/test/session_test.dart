@@ -122,6 +122,60 @@ void main() {
       expect(json['baseLengthFrames'], 96000);
     });
 
+    test('schema 8 keeps output setup and all four nullable override maps', () {
+      final manifest = session.toJson()
+        ..['tracks'] = <Object>[]
+        ..['outputSetup'] = {
+          'level': {'1': 0.5},
+          'muted': {'1': true},
+          'mono': {'0': true},
+          'balance': {'0': -0.25},
+        }
+        ..['trackRecordTimingOverrides'] = {'0': 'bar'}
+        ..['trackOverdubDecayOverrides'] = {'1': 30}
+        ..['trackOneShotOverrides'] = {'2': false}
+        ..['trackLengthPresetOverrides'] = {'3': 0};
+      final parsed = Session.fromJson(manifest);
+      final roundTrip = Session.fromJson(
+        jsonDecode(jsonEncode(parsed.toJson())) as Map<String, dynamic>,
+      );
+      expect(
+        roundTrip.outputSetup,
+        const SessionOutputSetup(
+          level: {1: .5},
+          muted: {1: true},
+          mono: {0: true},
+          balance: {0: -.25},
+        ),
+      );
+      expect(roundTrip.trackRecordTimingOverrides, {0: RecordTiming.bar});
+      expect(roundTrip.trackOverdubDecayOverrides, {1: 30});
+      expect(roundTrip.trackOneShotOverrides, {2: false});
+      expect(roundTrip.trackLengthPresetOverrides, {3: 0});
+    });
+
+    test('invalid output facts in schema 8 are rejected', () {
+      final manifest = session.toJson();
+      expect(
+        () => Session.fromJson(
+          manifest
+            ..['outputSetup'] = {
+              'muted': {'0': 'yes'},
+            },
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => Session.fromJson(
+          session.toJson()
+            ..['outputSetup'] = {
+              'level': {'16': .5},
+            },
+        ),
+        throwsFormatException,
+      );
+    });
+
     group('monitor gate (schema 8)', () {
       test('a named gate round-trips', () {
         const monitor = SessionMonitor(

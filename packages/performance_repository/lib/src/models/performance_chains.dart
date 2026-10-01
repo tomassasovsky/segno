@@ -8,8 +8,9 @@ import 'package:segno_engine/segno_engine.dart';
 /// way `session_repository`'s `SessionChains` works for session saves).
 ///
 /// All four stages of the FX v3 model are represented: Input ([monitors]),
-/// Loop ([laneChains]), Track ([trackChains]) and Master ([masterEffects] +
-/// [masterChainEnabled]). Every stage also carries its chain-enabled flag, and
+/// Loop ([laneChains]), Track ([trackChains]). The selected output stage is
+/// captured from the engine at arm.
+/// Every stage also carries its chain-enabled flag, and
 /// each entry its own `enabled` bit, so a replay can seed arm-time bypass
 /// state instead of guessing (R3).
 @immutable
@@ -19,8 +20,6 @@ class PerformanceChains {
     this.laneChains = const [],
     this.monitors = const [],
     this.trackChains = const [],
-    this.masterEffects = const [],
-    this.masterChainEnabled = true,
     this.limiterEnabled = false,
     this.limiterCeiling = 0.99,
   });
@@ -36,12 +35,6 @@ class PerformanceChains {
   /// The Track-stage (per-track stereo bus) chains active at the moment of the
   /// snapshot.
   final List<PerformanceTrackChain> trackChains;
-
-  /// The Master insert chain's entries, in order (empty = no Master FX).
-  final List<TrackEffect> masterEffects;
-
-  /// Whether the Master insert chain is engaged as a whole.
-  final bool masterChainEnabled;
 
   /// Whether the master peak limiter is enabled.
   final bool limiterEnabled;

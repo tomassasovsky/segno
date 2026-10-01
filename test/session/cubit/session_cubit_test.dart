@@ -743,6 +743,33 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
+      'loadNamed leaves the live rig alone when performance disarm refuses',
+      setUp: () {
+        when(
+          performance.disarmAndFinalize,
+        ).thenAnswer((_) async => EngineResult.device);
+      },
+      seed: () => const SessionState(currentSessionName: 'A'),
+      build: build,
+      act: (cubit) => cubit.loadNamed('B'),
+      expect: () => [
+        isA<SessionState>().having(
+          (s) => s.status,
+          'status',
+          SessionStatus.working,
+        ),
+        isA<SessionState>()
+            .having((s) => s.status, 'status', SessionStatus.failure)
+            .having((s) => s.currentSessionName, 'current', 'A'),
+      ],
+      verify: (_) {
+        verify(performance.disarmAndFinalize).called(1);
+        verifyNever(() => repository.read(any()));
+        verifyNever(() => looper.applySession(any()));
+      },
+    );
+
+    blocTest<SessionCubit, SessionState>(
       'renameSession makes the current pointer follow a rename of the open one',
       setUp: () {
         stubCatalog();
