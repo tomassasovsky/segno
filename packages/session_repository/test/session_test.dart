@@ -76,7 +76,12 @@ void main() {
         encoded: '{"chainEnabled":true,"entries":[]}',
       ),
     ],
-    masterChain: '{"chainEnabled":true,"entries":[{"t":9}]}',
+    outputChains: [
+      SessionOutputChain(
+        bus: 0,
+        encoded: '{"chainEnabled":true,"entries":[{"t":9}]}',
+      ),
+    ],
     tempoBpm: 128.5,
     tempoSource: TempoSource.manual,
     tsNum: 6,
@@ -293,7 +298,23 @@ void main() {
       });
     });
 
-    test('serializes the bus stages (Track + Master)', () {
+    test('rejects malformed and duplicate output destinations', () {
+      for (final bus in [-1, 16, 0.5, '1']) {
+        final json = session.toJson()
+          ..['outputChains'] = [
+            {'bus': bus, 'encoded': ''},
+          ];
+        expect(() => Session.fromJson(json), throwsFormatException);
+      }
+      final json = session.toJson()
+        ..['outputChains'] = [
+          {'bus': 1, 'encoded': ''},
+          {'bus': 1, 'encoded': ''},
+        ];
+      expect(() => Session.fromJson(json), throwsFormatException);
+    });
+
+    test('serializes the bus stages (Track + outputs)', () {
       final json = session.toJson();
       expect(json['trackChains'], [
         {
@@ -302,7 +323,12 @@ void main() {
         },
         {'channel': 1, 'encoded': '{"chainEnabled":true,"entries":[]}'},
       ]);
-      expect(json['masterChain'], '{"chainEnabled":true,"entries":[{"t":9}]}');
+      expect(json['outputChains'], [
+        {
+          'bus': 0,
+          'encoded': '{"chainEnabled":true,"entries":[{"t":9}]}',
+        },
+      ]);
     });
 
     test('round-trips bus-stage chain strings byte-intact', () {
@@ -320,7 +346,11 @@ void main() {
         loaded.trackChains[1].encoded,
         '{"chainEnabled":true,"entries":[]}',
       );
-      expect(loaded.masterChain, '{"chainEnabled":true,"entries":[{"t":9}]}');
+      expect(loaded.outputChains.single.bus, 0);
+      expect(
+        loaded.outputChains.single.encoded,
+        '{"chainEnabled":true,"entries":[{"t":9}]}',
+      );
       expect(loaded, session);
     });
 

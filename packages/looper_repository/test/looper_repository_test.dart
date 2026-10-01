@@ -18,6 +18,7 @@ import 'package:segno_engine/segno_engine.dart'
         FxChannelOutput,
         FxChannels,
         FxPlacement,
+        FxRack,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
@@ -3151,6 +3152,8 @@ void main() {
               PluginEffect(
                 ref: PluginRef(format: PluginFormat.clap, id: 'A'),
                 state: 'AAAA',
+                rack: FxRack(id: 'rack', name: 'My rack'),
+                module: 'Hosted module',
               ),
             ],
           );
@@ -3188,6 +3191,8 @@ void main() {
         expect(engine.preparedPluginParams, isEmpty);
         // A different plugin must not receive another plugin's opaque blob.
         expect(fx.state, isEmpty);
+        expect(fx.rack, const FxRack(id: 'rack', name: 'My rack'));
+        expect(fx.module, 'Hosted module');
       },
     );
 
@@ -3549,7 +3554,8 @@ void main() {
 
         // What the browse sheet builds: an identity, no name. On a lane the
         // load resolves it; a bus entry never loads, so nothing else would.
-        repo.setMasterEffects(
+        repo.setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
@@ -3557,14 +3563,15 @@ void main() {
           ],
         );
         expect(
-          (repo.masterEffects.single as PluginEffect).name,
+          (repo.outputEffects(0).single as PluginEffect).name,
           'Valhalla Vintage Verb',
         );
 
         // And a relink onto a DIFFERENT plugin re-reads it: the surface keeps
         // the entry's own name across the edit, which would leave the card
         // naming the plugin that was replaced.
-        repo.setMasterEffects(
+        repo.setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'ddee4455ffff0000'),
@@ -3573,7 +3580,7 @@ void main() {
           ],
         );
         expect(
-          (repo.masterEffects.single as PluginEffect).name,
+          (repo.outputEffects(0).single as PluginEffect).name,
           'TAL Reverb 4',
         );
       },
@@ -3613,14 +3620,15 @@ void main() {
         // The master is restored after it, out of its own field — and after
         // the track's kick has already registered its continuation, so this
         // chain is named only if the master write kicks the recovery too.
-        repo.setMasterEffects(
+        repo.setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
             ),
           ],
         );
-        expect((repo.masterEffects.single as PluginEffect).name, isEmpty);
+        expect((repo.outputEffects(0).single as PluginEffect).name, isEmpty);
 
         // On the STREAM, not just the getters: the cards read the projected
         // state, so a recovery that names the cache without emitting leaves
@@ -3630,7 +3638,7 @@ void main() {
           emitsThrough(
             predicate<LooperState>(
               (s) =>
-                  (s.masterEffects.singleOrNull as PluginEffect?)?.name ==
+                  (s.outputEffects(0).singleOrNull as PluginEffect?)?.name ==
                   'Valhalla Vintage Verb',
               'the master chain named',
             ),
@@ -3641,7 +3649,7 @@ void main() {
         await named;
 
         expect(
-          (repo.masterEffects.single as PluginEffect).name,
+          (repo.outputEffects(0).single as PluginEffect).name,
           'Valhalla Vintage Verb',
         );
         expect(
@@ -3669,7 +3677,8 @@ void main() {
       // running when it lands, since the isolate is shared.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(
@@ -3711,7 +3720,8 @@ void main() {
       // re-applies the chain, so the card would strobe between a spinner and
       // its relink offer for the length of the drag.
       for (var i = 0; i < 3; i++) {
-        repo.setMasterEffects(
+        repo.setOutputEffects(
+          bus: 0,
           effects: [
             BuiltInEffect(type: TrackEffectType.drive, params: [i / 3]),
           ],
@@ -3781,7 +3791,8 @@ void main() {
       addTearDown(repo.dispose);
       await repo.pluginCatalog.scan();
 
-      repo.setMasterEffects(
+      repo.setOutputEffects(
+        bus: 0,
         effects: const [
           PluginEffect(
             ref: PluginRef(format: PluginFormat.vst3, id: ''),
@@ -3789,7 +3800,7 @@ void main() {
         ],
       );
 
-      expect((repo.masterEffects.single as PluginEffect).name, isEmpty);
+      expect((repo.outputEffects(0).single as PluginEffect).name, isEmpty);
     });
 
     test(
@@ -6319,10 +6330,11 @@ void main() {
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         )
         ..setTrackChainEnabled(channel: 1, enabled: false)
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         )
-        ..setMasterChainEnabled(enabled: false);
+        ..setOutputChainEnabled(bus: 0, enabled: false);
       addTearDown(repo.dispose);
       expect(engine.recipes[(FxOwner.track, 0, 0)]?.slots, hasLength(1));
       expect(engine.recipes[(FxOwner.output, 0, 0)]?.slots, hasLength(1));
@@ -6340,10 +6352,10 @@ void main() {
       expect(engine.recipes[(FxOwner.output, 0, 0)]?.enabled, isTrue);
       // Repository caches clean.
       expect(repo.trackEffects(0), isEmpty);
-      expect(repo.masterEffects, isEmpty);
+      expect(repo.outputEffects(0), isEmpty);
       expect(repo.trackChainEnabled(0), isTrue);
       expect(repo.trackChainEnabled(1), isTrue);
-      expect(repo.masterChainEnabled, isTrue);
+      expect(repo.outputChainEnabled(0), isTrue);
       expect(repo.allTrackChains(), isEmpty);
 
       // And a restart replays nothing stale.
@@ -6367,10 +6379,12 @@ void main() {
             ),
             1: const FxChainEnvelope(chainEnabled: false),
           },
-          masterChain: FxChainEnvelope(
-            chainEnabled: false,
-            entries: [BuiltInEffect(type: TrackEffectType.filter)],
-          ),
+          outputChains: {
+            0: FxChainEnvelope(
+              chainEnabled: false,
+              entries: [BuiltInEffect(type: TrackEffectType.filter)],
+            ),
+          },
         ),
         clearPollInterval: Duration.zero,
       );
@@ -6386,7 +6400,7 @@ void main() {
       );
       expect(engine.recipes[(FxOwner.output, 0, 0)]?.enabled, isFalse);
       expect(repo.trackChainEnabled(1), isFalse);
-      expect(repo.masterChainEnabled, isFalse);
+      expect(repo.outputChainEnabled(0), isFalse);
 
       // The caches are truthful: a restart reproduces the loaded bus chains.
       repo
@@ -6836,10 +6850,11 @@ void main() {
             effects: [BuiltInEffect(type: TrackEffectType.reverb)],
           )
           ..setTrackChainEnabled(channel: 2, enabled: false)
-          ..setMasterEffects(
+          ..setOutputEffects(
+            bus: 0,
             effects: [BuiltInEffect(type: TrackEffectType.filter)],
           )
-          ..setMasterChainEnabled(enabled: false);
+          ..setOutputChainEnabled(bus: 0, enabled: false);
         addTearDown(repo.dispose);
 
         final tracks = repo.allTrackChains();
@@ -6852,7 +6867,7 @@ void main() {
         expect(tracks[2]!.entries, isEmpty);
         expect(tracks[2]!.chainEnabled, isFalse);
 
-        final master = repo.masterChainEnvelope();
+        final master = repo.outputChainEnvelope(0);
         expect(
           (master.entries.single as BuiltInEffect).type,
           TrackEffectType.filter,
@@ -6866,7 +6881,7 @@ void main() {
       final repo = buildRepo();
       addTearDown(repo.dispose);
 
-      expect(repo.masterChainEnvelope(), const FxChainEnvelope());
+      expect(repo.outputChainEnvelope(0), const FxChainEnvelope());
     });
 
     test('allMonitors captures an enabled DRY monitor (no FX chain)', () {
@@ -7380,7 +7395,8 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.filter)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         );
 
@@ -7388,7 +7404,7 @@ void main() {
         ...repo.laneEffects(0, 0).map((e) => e.slotId),
         repo.monitorEffects(0).single.slotId,
         repo.trackEffects(0).single.slotId,
-        repo.masterEffects.single.slotId,
+        repo.outputEffects(0).single.slotId,
       ];
       expect(ids.every((id) => id != null), isTrue);
       expect(ids.toSet(), hasLength(ids.length));
@@ -7712,14 +7728,14 @@ void main() {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
-      // Nine entries, the last of them Pre. Clamping before the partition
-      // would drop that Pre entry and leave eight Post ones; clamping after
+      // One more entry than capacity, the last of them Pre. Clamping before
+      // the partition would drop that Pre entry; clamping after
       // it keeps every Pre entry and cuts the Post tail.
       repo.setLaneEffects(
         channel: 0,
         lane: 0,
         effects: [
-          for (var i = 0; i < 8; i++)
+          for (var i = 0; i < kTrackEffectMax; i++)
             at(TrackEffectType.drive, FxPlacement.post),
           at(TrackEffectType.reverb, FxPlacement.pre),
         ],
@@ -7998,7 +8014,8 @@ void main() {
       // after the mix, so a chain arriving with Pre entries — pasted, or
       // restored from a destination that had them — must land Post rather
       // than name a Pre count the output stage cannot honour.
-      repo.setMasterEffects(
+      repo.setOutputEffects(
+        bus: 0,
         effects: [
           at(TrackEffectType.reverb, FxPlacement.pre),
           at(TrackEffectType.drive, FxPlacement.post),
@@ -8006,12 +8023,12 @@ void main() {
       );
 
       expect(
-        repo.masterEffects.map((e) => e.placement),
+        repo.outputEffects(0).map((e) => e.placement),
         [FxPlacement.post, FxPlacement.post],
       );
-      expect(fxPreCount(repo.masterEffects), 0);
+      expect(fxPreCount(repo.outputEffects(0)), 0);
       // Order is the order it was handed: nothing moved, only the placement.
-      expect(repo.masterEffects.map((e) => (e as BuiltInEffect).type), [
+      expect(repo.outputEffects(0).map((e) => (e as BuiltInEffect).type), [
         TrackEffectType.reverb,
         TrackEffectType.drive,
       ]);
@@ -8091,11 +8108,12 @@ void main() {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
-      repo.setMasterEffects(
+      repo.setOutputEffects(
+        bus: 0,
         effects: [BuiltInEffect(type: TrackEffectType.echo, enabled: false)],
       );
 
-      expect(repo.masterEffects, hasLength(1));
+      expect(repo.outputEffects(0), hasLength(1));
       final recipe = engine.recipes[(FxOwner.output, 0, 0)]!;
       expect(recipe.slots.single.type.code, TrackEffectType.echo.code);
       expect(recipe.slots.single.enabled, isFalse);
@@ -8115,7 +8133,8 @@ void main() {
             ),
           ],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'q'),
@@ -8129,7 +8148,7 @@ void main() {
       expect(trackPlugin.unavailable, isTrue);
       expect(trackPlugin.unsupported, isTrue);
       expect(trackPlugin.ref.id, 'p');
-      final masterPlugin = repo.masterEffects.single as PluginEffect;
+      final masterPlugin = repo.outputEffects(0).single as PluginEffect;
       expect(masterPlugin.unavailable, isTrue);
       expect(masterPlugin.unsupported, isTrue);
       expect(
@@ -8153,16 +8172,17 @@ void main() {
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         )
         ..setTrackChainEnabled(channel: 0, enabled: false)
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         )
-        ..setMasterChainEnabled(enabled: false);
+        ..setOutputChainEnabled(bus: 0, enabled: false);
 
       final state = repo.state;
       expect(state.tracks.first.effects, hasLength(1));
       expect(state.tracks.first.chainEnabled, isFalse);
-      expect(state.masterEffects, hasLength(1));
-      expect(state.masterChainEnabled, isFalse);
+      expect(state.outputEffects(0), hasLength(1));
+      expect(state.outputChainEnabled(0), isFalse);
     });
   });
 
@@ -8186,7 +8206,8 @@ void main() {
           channel: 1,
           effects: [BuiltInEffect(type: TrackEffectType.echo)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         );
 
@@ -8208,7 +8229,7 @@ void main() {
         EngineResult.ok,
       );
       expect(
-        repo.setMasterEffectEnabled(index: 0, enabled: false),
+        repo.setOutputEffectEnabled(bus: 0, index: 0, enabled: false),
         EngineResult.ok,
       );
 
@@ -8216,7 +8237,7 @@ void main() {
       expect(repo.laneEffects(0, 0).single.enabled, isFalse);
       expect(repo.monitorEffects(2).single.enabled, isFalse);
       expect(repo.trackEffects(1).single.enabled, isFalse);
-      expect(repo.masterEffects.single.enabled, isFalse);
+      expect(repo.outputEffects(0).single.enabled, isFalse);
       // Granular enable commands act on the already installed recipe.
       expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
       expect(engine.monitorFxEnabled[(2, 0)], isFalse);
@@ -8238,7 +8259,7 @@ void main() {
         EngineResult.invalid,
       );
       expect(
-        repo.setMasterEffectEnabled(index: 3, enabled: false),
+        repo.setOutputEffectEnabled(bus: 0, index: 3, enabled: false),
         EngineResult.invalid,
       );
     });
@@ -8261,22 +8282,23 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.echo)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         )
         ..setLaneEffectEnabled(channel: 0, lane: 0, index: 0, enabled: false)
         ..setMonitorEffectEnabled(input: 1, index: 0, enabled: false)
         ..setTrackEffectEnabled(channel: 0, index: 0, enabled: false)
-        ..setMasterEffectEnabled(index: 0, enabled: false)
+        ..setOutputEffectEnabled(bus: 0, index: 0, enabled: false)
         ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
         ..setMonitorChainEnabled(input: 1, enabled: false)
         ..setTrackChainEnabled(channel: 0, enabled: false)
-        ..setMasterChainEnabled(enabled: false);
+        ..setOutputChainEnabled(bus: 0, enabled: false);
 
       expect(repo.laneEffects(0, 0).single.enabled, isFalse);
       expect(repo.monitorEffects(1).single.enabled, isFalse);
       expect(repo.trackEffects(0).single.enabled, isFalse);
-      expect(repo.masterEffects.single.enabled, isFalse);
+      expect(repo.outputEffects(0).single.enabled, isFalse);
       expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
       for (final owner in [
         FxOwner.lane,
@@ -8300,12 +8322,12 @@ void main() {
         ..setLaneChainEnabled(channel: 0, lane: 1, enabled: false)
         ..setMonitorChainEnabled(input: 3, enabled: false)
         ..setTrackChainEnabled(channel: 2, enabled: false)
-        ..setMasterChainEnabled(enabled: false);
+        ..setOutputChainEnabled(bus: 0, enabled: false);
 
       expect(repo.laneChainEnabled(0, 1), isFalse);
       expect(repo.monitorChainEnabled(3), isFalse);
       expect(repo.trackChainEnabled(2), isFalse);
-      expect(repo.masterChainEnabled, isFalse);
+      expect(repo.outputChainEnabled(0), isFalse);
       expect(engine.laneFxChainEnabled[(0, 1)], isFalse);
       expect(engine.monitorFxChainEnabled[3], isFalse);
       expect(engine.trackFxChainEnabled[2], isFalse);
@@ -8350,7 +8372,7 @@ void main() {
       addTearDown(repo.dispose);
 
       expect(repo.trackFxChainFingerprint(0), FxFingerprint.offset);
-      expect(repo.masterFxChainFingerprint(), FxFingerprint.offset);
+      expect(repo.outputFxChainFingerprint(0), FxFingerprint.offset);
 
       repo.setTrackEffects(
         channel: 0,
@@ -8456,13 +8478,14 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.delay)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         )
         ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
         ..setMonitorChainEnabled(input: 1, enabled: false)
         ..setTrackChainEnabled(channel: 0, enabled: false)
-        ..setMasterChainEnabled(enabled: false)
+        ..setOutputChainEnabled(bus: 0, enabled: false)
         ..stopEngine();
 
       expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
@@ -8525,20 +8548,21 @@ void main() {
     test('a master param write behaves the same', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.delay)],
         );
       addTearDown(repo.dispose);
       engine.calls.clear();
 
       expect(
-        repo.setMasterEffectParam(index: 0, param: 0, value: 0.4),
+        repo.setOutputEffectParam(bus: 0, index: 0, param: 0, value: 0.4),
         EngineResult.ok,
       );
 
       expect(engine.calls, contains('setOutputFxParam'));
       expect(engine.calls, isNot(contains('setFxRecipe')));
-      expect((repo.masterEffects.single as BuiltInEffect).params[0], 0.4);
+      expect((repo.outputEffects(0).single as BuiltInEffect).params[0], 0.4);
     });
 
     test('an out-of-range bus param write is rejected', () {
@@ -8550,7 +8574,7 @@ void main() {
         EngineResult.invalid,
       );
       expect(
-        repo.setMasterEffectParam(index: 4, param: 0, value: 1),
+        repo.setOutputEffectParam(bus: 0, index: 4, param: 0, value: 1),
         EngineResult.invalid,
       );
     });
@@ -8589,7 +8613,8 @@ void main() {
     test('a master plugin placeholder refuses a live param write', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.clap, id: 'm'),
@@ -8600,14 +8625,17 @@ void main() {
       engine.calls.clear();
 
       expect(
-        repo.setMasterPluginParam(index: 0, paramId: 7, value: 0.9),
+        repo.setOutputPluginParam(bus: 0, index: 0, paramId: 7, value: 0.9),
         EngineResult.invalid,
       );
 
       expect(engine.calls, isNot(contains('setOutputFx')));
       expect(engine.calls, isNot(contains('setOutputFxParam')));
       expect(engine.pluginParamSets, isEmpty);
-      expect((repo.masterEffects.single as PluginEffect).paramValues, isEmpty);
+      expect(
+        (repo.outputEffects(0).single as PluginEffect).paramValues,
+        isEmpty,
+      );
     });
 
     test('a bus plugin param write on a built-in entry is rejected', () {
@@ -8617,7 +8645,8 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
       addTearDown(repo.dispose);
@@ -8632,7 +8661,7 @@ void main() {
         EngineResult.invalid,
       );
       expect(
-        repo.setMasterPluginParam(index: 0, paramId: 1, value: 0.5),
+        repo.setOutputPluginParam(bus: 0, index: 0, paramId: 1, value: 0.5),
         EngineResult.invalid,
       );
       // ...and an out-of-range index too.
@@ -8646,7 +8675,7 @@ void main() {
         EngineResult.invalid,
       );
       expect(
-        repo.setMasterPluginParam(index: 9, paramId: 1, value: 0.5),
+        repo.setOutputPluginParam(bus: 0, index: 9, paramId: 1, value: 0.5),
         EngineResult.invalid,
       );
     });

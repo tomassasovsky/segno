@@ -85,6 +85,8 @@ void main() {
               BuiltInEffect(
                 type: TrackEffectType.drive,
                 placement: FxPlacement.pre,
+                rack: const FxRack(id: 'input-rack', name: 'Captured rack'),
+                module: 'Overdrive',
               ),
             ],
           ),
@@ -97,7 +99,16 @@ void main() {
         expect(engine.snapshot().tracks[0].imageRevision, 1);
         ticker.add(null);
         await Future<void>.delayed(Duration.zero);
-        expect(repo.laneEffects(0, 0).single.placement, FxPlacement.pre);
+        final source = repo.monitorEffects(0).single;
+        final captured = repo.laneEffects(0, 0).single;
+        expect(captured.placement, FxPlacement.pre);
+        expect(captured.rack, source.rack);
+        expect(captured.module, source.module);
+        expect(captured.slotId, isNot(source.slotId));
+        expect(
+          decodeTrackEffects(encodeTrackEffects([captured])).single,
+          captured,
+        );
         expect(
           repo.laneChainFingerprint(0, 0),
           engine.laneFxFingerprint(channel: 0, lane: 0),

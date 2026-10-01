@@ -3,6 +3,36 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno_engine/segno_engine.dart';
 
 void main() {
+  test('capture facts survive alongside the configured destination map', () {
+    final configured = BuiltInEffect(type: TrackEffectType.delay);
+    final captured = BuiltInEffect(type: TrackEffectType.drive);
+    final before = PerformanceArmSnapshot(
+      masterGain: 1,
+      limiterEnabled: false,
+      limiterCeiling: 0.99,
+      latencyOffsetFrames: 0,
+      outputChains: [
+        PerformanceOutputChain(bus: 1, effects: [configured]),
+      ],
+    );
+    final finalArm = before.withCapture(
+      followOutput: false,
+      captureBus: 1,
+      captureMask: 12,
+      outputEnabledMask: 12,
+      outputLevel: 0.7,
+      outputMuted: false,
+      outputEffects: [captured],
+      outputChainEnabled: false,
+    );
+    final decoded = PerformanceArmSnapshot.fromJson(finalArm.toJson());
+    expect(decoded.outputChains.single.bus, 1);
+    expect(decoded.outputChains.single.effects.single, configured);
+    expect(decoded.outputEffects.single, captured);
+    expect(decoded.outputChainEnabled, isFalse);
+    expect(decoded.captureMask, 12);
+  });
+
   group('PerformanceLaneSnapshot', () {
     test('round-trips a settled lane through JSON', () {
       final lane = PerformanceLaneSnapshot(

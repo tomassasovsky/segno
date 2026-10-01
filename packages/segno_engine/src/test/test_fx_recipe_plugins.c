@@ -1,6 +1,7 @@
 /* Real recipe/command/callback lifecycle with a deterministic hosted effect.
  * Only the host is fake; allocation, admission, publication and retirement use
  * the production engine. Run under ASan/TSan as well as the portable gate. */
+#include <math.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -65,7 +66,57 @@ static void pump(le_engine* e, float input, float* out) {
 static void* parked_process(void* engine) {
   float out[128]; pump(engine, .4f, out); return NULL;
 }
+/* The final slot participates in the complete recipe, and a refused 65-slot
+ * edit leaves the prior recipe sounding and acknowledged. This exercises the
+ * production callback, not just the published arrays. */
+static void test_full_recipe_boundary(void) {
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 2, 1000) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 3) == LE_OK);
+  le_fx_recipe r = {.count = LE_FX_MAX, .enabled = 1};
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    r.type[s] = LE_FX_DRIVE;
+    r.slot_enabled[s] = 1;
+    r.level[s] = 1;
+    r.params[s][1] = 1.0f; /* unity output gain */
+  }
+  const int last = LE_FX_MAX - 1;
+  r.params[last][3] = .375f;
+  r.output_mode[last] = 1;
+  r.placement[last] = 1;
+  r.level[last] = .5f;
+  CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 100, &r) == LE_OK);
+  CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 0);
+  float out[128];
+  for (int n = 0; n < 12; ++n) pump(e, .4f, out);
+  le_engine_drain_events(e);
+  float expected = .4f;
+  for (int s = 0; s < LE_FX_MAX; ++s) expected = tanhf(expected);
+  CHECK(fabsf(out[126]) < 1e-6f);
+  CHECK(fabsf(out[127] - expected * .5f) < 1e-5f);
+  CHECK(load_f32(&e->monitors[0].a_fx_param[last][3]) == .375f);
+  CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 100);
+  r.count = LE_FX_MAX + 1;
+  CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 101, &r) == LE_ERR_INVALID);
+  pump(e, .4f, out);
+  CHECK(fabsf(out[127] - expected * .5f) < 1e-5f);
+  CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 100);
+  r.count = LE_FX_MAX;
+  r.slot_enabled[last] = 0;
+  r.output_mode[last] = 0; r.placement[last] = 0; r.level[last] = 1;
+  CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 102, &r) == LE_OK);
+  for (int n = 0; n < 12; ++n) pump(e, .4f, out);
+  expected = .4f;
+  for (int s = 0; s < last; ++s) expected = tanhf(expected);
+  CHECK(fabsf(out[126] - expected) < 1e-5f);
+  CHECK(fabsf(out[127] - expected) < 1e-5f);
+  CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 102);
+  le_engine_destroy(e);
+}
+
 int main(void) {
+  test_full_recipe_boundary();
   le_engine* e = le_engine_create();
   CHECK(le_engine_configure(e, 48000, 1, 2, 1000) == LE_OK);
   CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);

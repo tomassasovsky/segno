@@ -6,7 +6,6 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/high_contrast_cubit.dart';
 import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
-import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/shortcuts_help_sheet.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
@@ -39,7 +38,6 @@ class _DisplaySystemTabState extends State<DisplaySystemTab> {
     final surface = context.surface;
     final waveform = context.watch<WaveformWindowCubit>().state;
     final highContrast = context.watch<HighContrastCubit>().state;
-    final showIndicators = context.watch<TracksCubit>().state.showIndicators;
     final refreshHz = context.watch<RefreshRateCubit>().state;
 
     return KeyedSubtree(
@@ -97,22 +95,6 @@ class _DisplaySystemTabState extends State<DisplaySystemTab> {
                       semanticLabel: l10n.highContrastTitle,
                       onChanged: (on) => unawaited(
                         context.read<HighContrastCubit>().setEnabled(value: on),
-                      ),
-                    ),
-                  ),
-                  ConsoleRow(
-                    key: const Key('system_track_indicators_row'),
-                    title: l10n.trackIndicatorsTitle,
-                    subtitle: l10n.trackIndicatorsSubtitle,
-                    showDivider: false,
-                    trailing: ConsoleSwitch(
-                      key: const Key('system_track_indicators_switch'),
-                      value: showIndicators,
-                      semanticLabel: l10n.trackIndicatorsTitle,
-                      onChanged: (on) => unawaited(
-                        context.read<TracksCubit>().setShowIndicators(
-                          value: on,
-                        ),
                       ),
                     ),
                   ),

@@ -33,6 +33,8 @@ dependencies:
   flutter_bloc: ^9.1.1
   flutter_localizations:
     sdk: flutter
+  fx_catalogue:
+    path: packages/fx_catalogue
   intl: ^0.20.2
   looper_repository:
     path: packages/looper_repository
