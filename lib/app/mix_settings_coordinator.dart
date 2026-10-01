@@ -412,16 +412,15 @@ class MixSettingsCoordinator {
     await _failures.close();
   }
 
-  /// Sets every active lane's independent playback level.
+  /// Sets a track's gain without changing its independent lane levels.
   Future<MixSettingsOutcome> setTrackVolume(double volume, {int channel = 0}) {
     if (!_track(channel) || !volume.isFinite) return _reject();
     return _submit(
       (_Control.trackLevel, channel, 0),
       (value) => value.copyWith(
-        laneLevels: {
-          ...value.laneLevels,
-          for (var lane = 0; lane < (value.laneCounts[channel] ?? 1); lane++)
-            (channel, lane): volume.clamp(0.0, 2.0),
+        trackLevels: {
+          ...value.trackLevels,
+          channel: volume.clamp(0.0, 2.0),
         },
       ),
     );
@@ -647,7 +646,7 @@ class MixSettingsCoordinator {
     _Control.reset,
     0,
     0,
-  ), (value) => value.copyWith(trackPans: const {}, laneLevels: const {}));
+  ), (value) => value.copyWith(trackPans: const {}, trackLevels: const {}));
 
   /// Sets a temporary Solo flag; durable storage deliberately omits it.
   Future<MixSettingsOutcome> setTrackSolo({

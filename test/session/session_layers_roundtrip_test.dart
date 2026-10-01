@@ -33,6 +33,8 @@ void main() {
   late LooperRepository looper;
   late SessionRepository session;
   late Directory tempDir;
+  late StreamController<void> ticker;
+  late StreamSubscription<LooperState> subscription;
   Timer? pumpDriver;
 
   const loopFrames = 256;
@@ -40,7 +42,12 @@ void main() {
 
   setUp(() async {
     engine = PumpedNativeEngine();
-    looper = LooperRepository(engine: engine)
+    final pollingStarted = Completer<void>();
+    ticker = StreamController<void>.broadcast(
+      sync: true,
+      onListen: pollingStarted.complete,
+    );
+    looper = LooperRepository(engine: engine, ticker: ticker.stream)
       ..startEngine(
         const EngineConfig(
           sampleRate: 48000,
@@ -49,6 +56,9 @@ void main() {
           maxLoopFrames: 48000,
         ),
       );
+    subscription = looper.looperState.listen((_) {});
+    // looperState yields its cached state before attaching the live stream.
+    await pollingStarted.future;
     expect(looper.record(), EngineResult.notReady);
     engine.pump(frames: 0);
     expect(await looper.settleMixSettings(), EngineResult.ok);
@@ -59,7 +69,9 @@ void main() {
 
   tearDown(() async {
     pumpDriver?.cancel();
+    await subscription.cancel();
     await looper.dispose();
+    await ticker.close();
     tempDir.deleteSync(recursive: true);
   });
 
@@ -91,11 +103,20 @@ void main() {
     engine.pump(frames: loopFrames, input: base);
     expect(looper.record(), EngineResult.ok); // finalize -> playing
     engine.pump(frames: 0);
+    // Observe the already-published take image before starting another pass.
+    // A live subscription keeps repository polling active; the synchronous
+    // ticker confirms metadata without advancing native audio or wall time.
+    ticker.add(null);
     for (var p = 0; p < overdubs; p++) {
-      expect(looper.record(), EngineResult.ok); // punch in
+      expect(
+        looper.record(),
+        EngineResult.ok,
+        reason: 'punch-in pass $p from ${engine.snapshot().tracks.first.state}',
+      );
       engine.pump(frames: loopFrames, input: step);
       expect(looper.record(), EngineResult.ok); // punch out
       settle();
+      ticker.add(null); // acknowledge this pass's published image
     }
     for (var u = 0; u < undos; u++) {
       looper.undo();

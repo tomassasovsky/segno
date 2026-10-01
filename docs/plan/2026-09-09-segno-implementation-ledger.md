@@ -1567,3 +1567,87 @@ belong to the media integration: click level has an owner, but click pan and
 backing playback are not represented as working controls here. The foot
 Mixer belongs to the shared performance action model in M3/M4; this visual
 surface does not invent a fourth firmware mode or change the UART protocol.
+
+## Slice 3e — FX placement and printing (#1016 part 3e)
+
+October reconstruction is locally complete on the verified Mixer base. The
+placement and whole-track printing changes are integrated together; historical
+September test counts are not evidence for this candidate.
+
+### Processing contract
+
+Placement belongs to the stable effect instance. Inputs default Pre and
+recorded destinations default Post; Outputs and All tracks keep fixed stages.
+An explicit placement change appends the instance to its new stage while
+preserving identity, power, parameters, channel handling and assignments.
+Reordering stays within a stage. Type replacement retains instance metadata.
+Presets omit placement.
+
+Recorded Pre is prepared from originals, preserving layers and audio history.
+Whole-track Pre processes the combined parts once, as defined in
+`docs/design/2026-09-10-whole-track-pre-render.md`. A part with Post processing
+or an unsupported render dependency keeps the whole-track chain live, with an
+accurate reason. This preserves phase-dependent tails without inventing a
+fixed tail region or changing a part's promised placement behavior.
+
+Independent part levels and recorded source images belong inside the combined
+recipe. The Mixer fader is a separate track gain after track Pre and before
+track Post. It survives empty tracks, session recall and the canonical atomic
+mix transaction. The existing source-position plus track-pan offset law stays
+intact; no lane-zero inference or division reconstructs track gain.
+
+All tracks processes only recorded material, with separate runtime state for
+each destination mix. Outputs also receives the live sources routed there.
+Stop and Clear end recorded feed while downstream Post/output tails drain.
+Mute retains transport and gates its track; bypass sends new audio dry while
+old wet sound drains; Cut clears existing tails. These actions remain distinct.
+
+### Integration and observed proof
+
+The reconstruction retains atomic mix command65, capture-image command66,
+output controls67–73 and structural count74. All-tracks commands use75/76.
+Complete FX recipes use command77 with control-owned staged resources and a
+successful-application revision. Record captures its input recipes together
+with the source image. Queue refusal and cancelled arms must preserve the
+previous remembered recipe; boot and session readiness wait for application.
+Session schema9 requires its current fields; obsolete schemas are rejected.
+Cache-copy admission must exclude queued or autonomous writes before reading
+PCM, and each worker owns its frozen input. Budget, stale-recipe publication,
+callback retirement, refusal and exact durable rollback are independently
+verified on the frozen candidate.
+
+The frozen native reconstruction passes normal, AddressSanitizer and
+telemetry-disabled suites (744 named tests in each), the dedicated thread
+sanitizer tests, the C++ header check and all 186 generated symbol lookups.
+Independent sample comparisons cover combined nonlinear Pre, separate track
+gain, source preservation, output masks, current cache reasons and capture
+publication. The same capture produces identical samples across callback
+partitions, including active cached playback and image-only overdubs. Rejected
+channel edits preserve the previous sound. Saved mixdown gain also passes an
+unchanged independent numeric WAV check.
+
+Independent real-engine checks also pass delayed acknowledgments, input
+capture metadata and Clear/Undo restoration, including chain power and dry
+new recording. Separate stop/start and reconnect probes preserve the latest
+accepted history recipe. Two real Bloc/Settings cases retain the prior durable
+chain until a delayed callback confirms the replacement. Bus plugins remain
+explicit unsupported placeholders; relink drops another plugin's private state.
+
+Aggregate testing additionally caught stale effects after loading a smaller
+rig and a completed empty plugin scan returning missing plugins to Loading.
+Both repairs received independent source review and retain the failing
+behavioral assertions. The Mac app built and opened Tracks, Mixer and saved
+input/track effects; a hot restart exercised the final Dart repair. Its native
+framework exports all 186 bindings. All seven applicable Dart suites pass,
+including 2,401 app tests with six existing skips and 596 repository tests.
+App coverage is 92.98% and repository coverage 95.55%; all configured floors
+pass. Strict analysis, explicit formatting and the real 640-file Bloc scan
+pass. Independent bug and five-role reviews have no open findings. The
+verification record is `docs/reviews/design-fx-placement-restack/README.md`;
+publication and current-head remote CI remain separate gates.
+
+FX surfaces follow in3f; playback transforms are M4; final offline rendering,
+backing and click are M5. Exact source FX definitions and real DSP parity
+remain M6. M7 must finish ordering/recovery of platform storage writes already
+in flight across session replacement. Appliance listening is separately
+required; desktop proof does not certify device timing.

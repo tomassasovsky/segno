@@ -47,6 +47,7 @@ export 'src/engine_snapshot.dart'
         kMaxMonitoredInputs,
         kMaxOutputBuses;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
+export 'src/fx_recipe.dart' show FxOwner, FxRecipe, FxRecipeSlot;
 export 'src/input_conditioning_param.dart' show InputConditioningParam;
 export 'src/lane_cache.dart' show LaneCacheState;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
@@ -76,6 +77,10 @@ export 'src/plugin_descriptor.dart'
 export 'src/track_effect.dart'
     show
         BuiltInEffect,
+        FxChannelInput,
+        FxChannelOutput,
+        FxChannels,
+        FxPlacement,
         ParamReadout,
         PluginEffect,
         PluginRef,
@@ -84,6 +89,7 @@ export 'src/track_effect.dart'
         TrackEffectType,
         decodeTrackEffects,
         encodeTrackEffects,
+        fxPreCount,
         kPluginFxCode,
         kTrackEffectMax,
         kTrackEffectParams;

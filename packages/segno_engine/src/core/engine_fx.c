@@ -1105,14 +1105,15 @@ int le_fx_type_drains(int32_t type) {
  * A slot the chain does NOT process cannot advance this state machine; the
  * per-buffer snapshots settle such slots to bypass while their effective bit
  * is 0 (le_fx_enable_force_bypass), so gaps never strand a ramp. */
-void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
+void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
-                    const int32_t* enabled) {
+                    const int32_t* enabled, int gain_at, float gain) {
   float xl = *l;
   float xr = *r;
   if (fx->enable_clear_cooldown > 0) fx->enable_clear_cooldown--;
   for (int s = 0; s < count; ++s) {
+    if (s == gain_at) { xl *= gain; xr *= gain; }
     const int32_t ty = types[s];
     if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT && LE_FX[ty].process) {
       /* Plugin installation can replace a draining built-in without a ring
@@ -1189,16 +1190,57 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
       }
       /* The feed: the whole dry signal while settled enabled (and always for
        * a crossfading type), a scaled copy while a draining type ramps,
-       * exact silence while it drains. */
+       * exact silence while it drains.
+       *
+       * Channel handling (slice 3e) rides the FEED, not the dry: the entry's
+       * input choice decides what its effects are handed, and the untouched
+       * (xl, xr) stays the dry side of the crossfade — so a bypassed entry
+       * passes the signal through exactly as it arrived, choice and all. */
       const int fades = mix < 1.0f && !le_fx_type_drains(ty);
-      float wl = mix >= 1.0f || fades ? xl : xl * mix;
-      float wr = mix >= 1.0f || fades ? xr : xr * mix;
+      float il = xl;
+      float ir = xr;
+      if (fx->chan_any) {
+        switch (fx->chan[s].in_mode) {
+          case LE_FX_CHAN_IN_LEFT:
+            ir = il;
+            break;
+          case LE_FX_CHAN_IN_RIGHT:
+            il = ir;
+            break;
+          case LE_FX_CHAN_IN_MONO: {
+            const float mid = 0.5f * (il + ir);
+            il = mid;
+            ir = mid;
+            break;
+          }
+          default:
+            break;
+        }
+      }
+      float wl = mix >= 1.0f || fades ? il : il * mix;
+      float wr = mix >= 1.0f || fades ? ir : ir * mix;
       LE_FX[ty].process(fx, s, sr, cap, &wl, &wr, params[s]);
       /* Sanitize a plugin slot's output before it re-enters the chain (D-RT).
        * Built-ins are already bounded, so only the plugin row pays this. */
       if (ty == LE_FX_PLUGIN) {
         wl = fx_sanitize(wl);
         wr = fx_sanitize(wr);
+      }
+      /* The entry's output choice and then its level, both AFTER its effects
+       * (the accepted design's order). Stereo keeps what the effects made and
+       * the gains are a balance; Mono averages them and the gains place the
+       * result. Applied to the wet only, so the crossfade below still blends
+       * against the untouched dry — and a tail draining out of a bypassed
+       * entry keeps the level it was heard at. */
+      if (fx->chan_any) {
+        const le_fx_chan* c = &fx->chan[s];
+        if (c->out_mode == LE_FX_CHAN_OUT_MONO) {
+          const float mid = 0.5f * (wl + wr);
+          wl = mid;
+          wr = mid;
+        }
+        wl *= c->gl * c->level;
+        wr *= c->gr * c->level;
       }
       if (mix >= 1.0f) {
         /* Settled wet: verbatim, not via the crossfade arithmetic. */
@@ -1233,8 +1275,16 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
       }
     }
   }
+  if (gain_at == count) { xl *= gain; xr *= gain; }
   *l = xl;
   *r = xr;
+}
+
+void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
+                    int count, const int32_t* types,
+                    const float params[LE_FX_MAX][LE_FX_PARAMS],
+                    const int32_t* enabled) {
+  fx_apply_chain_with_gain(fx, sr, cap, l, r, count, types, params, enabled, 0, 1);
 }
 
 int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type) {

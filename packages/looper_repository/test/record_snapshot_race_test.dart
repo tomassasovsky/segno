@@ -1,6 +1,7 @@
 @Tags(['fuzz'])
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +11,17 @@ import 'package:looper_repository/looper_repository.dart';
 // package — every other name is the domain type from the looper_repository
 // barrel.
 import 'package:segno_engine/segno_engine.dart'
-    show FxFingerprint, PumpedNativeEngine;
+    show FxFingerprint, PumpedNativeEngine, RecordImage;
+
+class _CaptureImageEngine extends PumpedNativeEngine {
+  RecordImage? lastImage;
+
+  @override
+  EngineResult recordWithImage(RecordImage image, {int channel = 0}) {
+    lastImage = image;
+    return super.recordWithImage(image, channel: channel);
+  }
+}
 
 /// The record-time snapshot race, pinned against the REAL native engine.
 ///
@@ -32,12 +43,15 @@ void main() {
       ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
       : null;
 
-  late PumpedNativeEngine engine;
+  late _CaptureImageEngine engine;
   late LooperRepository repo;
+  late StreamController<void> ticker;
+  late StreamSubscription<LooperState> subscription;
 
   setUp(() async {
-    engine = PumpedNativeEngine();
-    repo = LooperRepository(engine: engine)
+    engine = _CaptureImageEngine();
+    ticker = StreamController<void>.broadcast();
+    repo = LooperRepository(engine: engine, ticker: ticker.stream)
       ..startEngine(
         const EngineConfig(
           sampleRate: 48000,
@@ -46,6 +60,7 @@ void main() {
           maxLoopFrames: 48000,
         ),
       );
+    subscription = repo.looperState.listen((_) {});
     // Startup mix must be confirmed before a take can be admitted. Keep this
     // outside the monitor-edit -> Record race window exercised below.
     expect(repo.record(), EngineResult.notReady);
@@ -54,12 +69,44 @@ void main() {
   });
 
   tearDown(() async {
+    await subscription.cancel();
     await repo.dispose();
+    await ticker.close();
   });
 
   group('record-time snapshot race (real engine)', () {
+    test(
+      'a live Pre effect submits zero monitor split and a Pre take recipe',
+      () async {
+        expect(
+          repo.setMonitorEffects(
+            input: 0,
+            effects: [
+              BuiltInEffect(
+                type: TrackEffectType.drive,
+                placement: FxPlacement.pre,
+              ),
+            ],
+          ),
+          EngineResult.ok,
+        );
+        expect(repo.monitorEffects(0).single.placement, FxPlacement.pre);
+        expect(repo.record(), EngineResult.ok);
+        expect(engine.lastImage!.laneFx[0]!.preCount, 1);
+        engine.pump(frames: 128);
+        expect(engine.snapshot().tracks[0].imageRevision, 1);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(repo.laneEffects(0, 0).single.placement, FxPlacement.pre);
+        expect(
+          repo.laneChainFingerprint(0, 0),
+          engine.laneFxFingerprint(channel: 0, lane: 0),
+        );
+      },
+    );
+
     test('monitor FX set then record-from-EMPTY with NO drain between still '
-        'lands on the take lane, cache == engine', () {
+        'lands on the take lane, cache == engine', () async {
       // Push a monitor chain on input 0 but DO NOT pump — the FX write is still
       // in flight on the command ring (the monitor count is unpublished). Then
       // record from EMPTY in the SAME turn (no drain) — the ordering the old
@@ -81,14 +128,17 @@ void main() {
       );
       expect(repo.record(), EngineResult.ok);
 
-      // A single drain lands both the monitor push and the lane push.
-      engine.pump(frames: 0);
+      // One callback accepts the monitor recipe and the armed take image.
+      engine.pump(frames: 128);
+      expect(engine.snapshot().tracks[0].imageRevision, 1);
 
       // The take's lane chain equals what was monitored — not dry.
       expect(
         engine.laneFxFingerprint(channel: 0, lane: 0),
         engine.monitorFxFingerprint(input: 0),
       );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
       // ...and the repo cache agrees with the engine — the single enforced
       // contract (the pure-sink guarantee).
       expect(

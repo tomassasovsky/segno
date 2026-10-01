@@ -25,6 +25,114 @@ void main() {
       ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
       : null;
 
+  test(
+    'atomic FX recipe crosses FFI with power channels and application identity',
+    () {
+      final engine = PumpedNativeEngine();
+      addTearDown(engine.dispose);
+      engine
+        ..start(
+          const EngineConfig(
+            inputChannels: 1,
+            outputChannels: 2,
+            maxLoopFrames: 1000,
+          ),
+        )
+        ..setMonitorInputEnabled(input: 0, enabled: true)
+        ..setMonitorInputOutput(input: 0, mask: 3)
+        ..pump(frames: 0);
+      final recipe = FxRecipe(
+        slots: [
+          FxRecipeSlot(
+            type: TrackEffectType.drive,
+            params: [0, 1],
+            channels: const FxChannels(
+              output: FxChannelOutput.mono,
+              placement: -1,
+              level: .5,
+            ),
+          ),
+        ],
+      );
+      expect(
+        engine.setFxRecipe(owner: FxOwner.monitor, recipe: recipe, revision: 7),
+        EngineResult.ok,
+      );
+      expect(engine.fxRecipeRevision(owner: FxOwner.monitor), 0);
+      expect(
+        engine.setMonitorInputFxParam(input: 0, index: 0, param: 1, value: .1),
+        EngineResult.invalid,
+      );
+      engine.pump(input: .2);
+      expect(engine.fxRecipeRevision(owner: FxOwner.monitor), 7);
+      // tanh(.2) * .5, then the instance's mono pan hard left.
+      expect(engine.snapshot().outputPeaks[0], closeTo(.0986876601, 1e-6));
+      expect(engine.snapshot().outputPeaks[1], 0);
+      expect(engine.preparePlugin(pluginId: 'missing-test-plugin'), isNull);
+      engine.pump(frames: 64, input: .2);
+      expect(engine.snapshot().outputPeaks[0], closeTo(.0986876601, 1e-6));
+    },
+    skip: skip,
+  );
+
+  test(
+    'record recipe and independent track gain cross FFI '
+    'without changing originals',
+    () {
+      final engine = PumpedNativeEngine();
+      addTearDown(engine.dispose);
+      engine
+        ..start(
+          const EngineConfig(
+            inputChannels: 1,
+            outputChannels: 1,
+            maxLoopFrames: 1000,
+          ),
+        )
+        ..pump(frames: 0);
+      expect(
+        engine.setMix(
+          EngineMixSettings(
+            revision: 1,
+            lanes: const {(0, 0): (gain: .25, pan: 0)},
+            trackLevels: const {0: .75},
+          ),
+        ),
+        EngineResult.ok,
+      );
+      engine.pump(frames: 0);
+      expect(
+        engine.recordWithImage(
+          RecordImage(
+            revision: 9,
+            lanes: const {0: (gain: 1, pan: 0)},
+            laneFx: {
+              0: FxRecipe(
+                preCount: 1,
+                slots: [
+                  FxRecipeSlot(type: TrackEffectType.drive, params: [0, .5]),
+                ],
+              ),
+            },
+          ),
+        ),
+        EngineResult.ok,
+      );
+      engine.pump(frames: 64, input: .2);
+      expect(engine.snapshot().tracks[0].imageRevision, 9);
+      expect(engine.record(), EngineResult.ok);
+      engine
+        ..pump()
+        ..pump(frames: 64);
+      // tanh(.2 * .25) * .5 * .75; the track fader is outside part Pre.
+      expect(engine.snapshot().outputPeaks[0], closeTo(.0187343906, 1e-6));
+      expect(engine.snapshot().tracks[0].volume, .75);
+      expect(engine.snapshot().tracks[0].lanes[0].volume, .25);
+      expect(engine.exportTrack(0), everyElement(closeTo(.2, 1e-6)));
+    },
+    skip: skip,
+  );
+
   test('bounded preset vectors cross FFI and publish only accepted values', () {
     final engine = PumpedNativeEngine();
     addTearDown(engine.dispose);

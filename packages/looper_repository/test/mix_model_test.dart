@@ -309,14 +309,16 @@ void main() {
       expect(engine.lanePan[(2, 0)], isNull);
     });
 
-    test('returns levels and pans, keeps mute and solo', () {
+    test('resets track gain and pan, keeps part level, mute and solo', () {
       final repo = start()
+        ..setLaneVolume(0.6, channel: 0, lane: 0)
         ..setVolume(0.4)
         ..setTrackPan(0.7)
         ..setMute(muted: true)
         ..setTrackSolo(channel: 1, solo: true)
         ..resetMixer();
-      expect(engine.laneVol[(0, 0)], 1.0);
+      expect(engine.trackLevels[0], 1.0);
+      expect(engine.laneVol[(0, 0)], 0.6);
       expect(engine.lanePan[(0, 0)], 0.0);
       expect(repo.trackMuted(0), isTrue);
       expect(repo.trackSoloed(1), isTrue);
@@ -460,12 +462,15 @@ void main() {
         ..record();
       expect(engine.lanePan[(0, 0)], -1.0);
       expect(engine.lanePan[(0, 1)], 1.0);
-      expect(engine.laneVol[(0, 0)], 0.5);
+      expect(engine.laneVol[(0, 0)], 1.0);
       expect(engine.laneVol[(0, 1)], 0.0);
-      // The track fader keeps the image: both lanes scale together.
+      // The whole-track gain is independent of both part levels and the
+      // captured left/right image, so it is applied once after the part sum.
+      expect(engine.trackLevels[0], 0.5);
       repo.setVolume(1);
       expect(engine.laneVol[(0, 0)], 1.0);
       expect(engine.laneVol[(0, 1)], 0.0);
+      expect(engine.trackLevels[0], 1.0);
       // The projection shows the level, not the engine's product.
       expect(repo.state.tracks[0].volume, 1.0);
     });
@@ -476,7 +481,7 @@ void main() {
         ..setPairBalance(input: 0, balance: 2 / 3)
         ..record();
       final native = engine.snapshot().tracks[0];
-      expect(native.volume, closeTo(0.5, 1e-15));
+      expect(native.volume, 1.0);
       expect(native.lanes.single.volume, closeTo(0.5, 1e-15));
       // Save reads the lane projection; both fader projections remain unity.
       expect(repo.state.tracks[0].volume, 1.0);
@@ -485,11 +490,12 @@ void main() {
       expect(repo.state.tracks[0].lanes.single.imagePan, -1);
     });
 
-    test('a grown lane takes the track level too', () {
+    test('a grown lane keeps its part level under independent track gain', () {
       final repo = start()
         ..setVolume(0.3)
         ..setLaneCount(channel: 0, count: 2);
-      expect(engine.laneVol[(0, 1)], 0.3);
+      expect(engine.laneVol[(0, 1)], 1.0);
+      expect(engine.trackLevels[0], 0.3);
       expect(repo.state.tracks[0].volume, 0.3);
     });
 
@@ -587,6 +593,19 @@ void main() {
         );
       },
     );
+
+    test('empty-track gain stays separate from future lane levels', () {
+      final fromRig = MixSettingsSnapshot.fromRig(
+        const SessionRig(trackLevels: {7: .65}),
+      );
+      final withLane = fromRig.copyWith(laneLevels: const {(7, 0): .4});
+      expect(fromRig.trackLevels, {7: .65});
+      expect(fromRig.laneLevels, isEmpty);
+      expect(withLane.trackLevels, {7: .65});
+      expect(withLane.laneLevels, {(7, 0): .4});
+      expect(withLane.isValid, isTrue);
+      expect(MixSettingsSnapshot(trackLevels: const {7: 2.1}).isValid, isFalse);
+    });
 
     test('restores track pans, lane images and the input setup', () async {
       final repo = start()

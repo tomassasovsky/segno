@@ -528,7 +528,7 @@ class SessionInputSetup {
 /// [SessionInputSetup]. Serialized as `{"level": {"1": 0.5}, "muted":
 /// {"0": true}, "mono": {"1": true}, "balance": {"0": -0.2}}` with each
 /// empty map left out and the whole object omitted from the manifest when
-/// all four are empty; absence in schema 8 reads as the default.
+/// all four are empty; absence in the current schema reads as the default.
 @immutable
 class SessionOutputSetup {
   /// Creates a [SessionOutputSetup].
@@ -585,7 +585,7 @@ class SessionOutputSetup {
   bool get isEmpty =>
       level.isEmpty && muted.isEmpty && mono.isEmpty && balance.isEmpty;
 
-  /// Strict schema 8 shape and ranges; the engine accepts at most 16 buses.
+  /// Strict current-schema shape and ranges; the engine accepts 16 buses.
   bool get isValid {
     bool channels(Iterable<int> keys) =>
         keys.every((key) => key >= 0 && key < 16);
@@ -633,13 +633,13 @@ class SessionOutputSetup {
 }
 
 /// A saved Segno session, paired with per-lane, per-layer WAV files in a
-/// `.segno` bundle directory. Only the current schema 8 is accepted.
+/// `.segno` bundle directory. Only the current schema 9 is accepted.
 ///
 /// Track settings are session-level maps, independent of audio entries.
 /// Missing entries inherit the session default; explicit values, including
 /// Loop (`false`) and values equal to the default, remain explicit.
-/// Mixer pan also lives in [trackPans], so an empty track keeps its chosen
-/// position. [inputSetup] owns recording trim, mono pan and stereo pairs.
+/// Mixer gain and pan live in [trackLevels] and [trackPans], so an empty track
+/// keeps both choices. [inputSetup] owns recording trim, mono pan and pairs.
 /// [trackChains] and [masterChain] are the bus stages; [monitors] and
 /// [laneChains] are the input and loop stages. Their chain strings use the
 /// current chain envelope. [pedalBindings] remains opaque to this package.
@@ -655,6 +655,7 @@ class Session {
     this.monitors = const [],
     this.trackChains = const [],
     this.masterChain = '',
+    this.allTracksChain = '',
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -675,6 +676,7 @@ class Session {
     this.trackOverdubDecayOverrides = const {},
     this.trackOneShotOverrides = const {},
     this.trackLengthPresetOverrides = const {},
+    this.trackLevels = const {},
     this.trackPans = const {},
     this.laneInputs = const {},
     this.laneOutputs = const {},
@@ -724,6 +726,7 @@ class Session {
           SessionTrackChain.fromJson(c as Map<String, dynamic>),
       ],
       masterChain: json['masterChain'] as String,
+      allTracksChain: json['allTracksChain'] as String,
       tempoBpm: (json['tempoBpm'] as num).toDouble(),
       tempoSource: _readEnum(json['tempoSource'], TempoSource.values),
       tsNum: (json['tsNum'] as num).toInt(),
@@ -760,6 +763,7 @@ class Session {
         json['trackPans'],
         (value) => (value! as num).toDouble(),
       ),
+      trackLevels: _readTrackLevels(json['trackLevels']),
       laneInputs: _laneMapFromJson(json['laneInputs'], min: -1, max: 31),
       laneOutputs: _laneMapFromJson(
         json['laneOutputs'],
@@ -781,9 +785,8 @@ class Session {
     );
   }
 
-  /// The manifest schema version. v8 stores track settings independently
-  /// of recorded audio and retains nullable override intent.
-  static const int formatVersion = 8;
+  /// The current manifest schema stores per-track settings and all FX stages.
+  static const int formatVersion = 9;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -812,6 +815,10 @@ class Session {
   /// The single Master insert chain as an opaque chain-envelope string;
   /// `''` when the session defines none.
   final String masterChain;
+
+  /// The single All tracks recorded-mix chain as an opaque chain-envelope
+  /// string; `''` when the session defines none.
+  final String allTracksChain;
 
   /// Denominator-note beats per minute (schema v4, Phase A); `0` = unset (no
   /// tempo was ever set — mirrors `TransportState.tempoBpm`/
@@ -893,6 +900,9 @@ class Session {
   /// Confirmed track pans, independent of whether a track holds audio.
   final Map<int, double> trackPans;
 
+  /// Confirmed whole-track gains, independent of recorded lane levels.
+  final Map<int, double> trackLevels;
+
   /// Whether the musical grid follows loop timing.
   final bool syncTempo;
 
@@ -928,8 +938,7 @@ class Session {
   /// The output setup the session was saved with (slice 3b): every
   /// destination's level, mute, Stereo/Mono and balance. Session-level like
   /// [inputSetup]: a destination's setup exists whether or not anything was
-  /// recorded. Omitted from the manifest when it is the default setup;
-  /// absent on an older manifest reads as the default.
+  /// recorded. Omitted from the manifest when it is the default setup.
   final SessionOutputSetup outputSetup;
 
   /// Explicit source choices retained for inactive lanes and empty tracks.
@@ -953,6 +962,7 @@ class Session {
     'monitors': [for (final m in monitors) m.toJson()],
     'trackChains': [for (final c in trackChains) c.toJson()],
     'masterChain': masterChain,
+    'allTracksChain': allTracksChain,
     'tempoBpm': tempoBpm,
     'tempoSource': tempoSource.name,
     'tsNum': tsNum,
@@ -989,6 +999,10 @@ class Session {
       'trackPans': {
         for (final entry in trackPans.entries) '${entry.key}': entry.value,
       },
+    if (trackLevels.isNotEmpty)
+      'trackLevels': {
+        for (final entry in trackLevels.entries) '${entry.key}': entry.value,
+      },
     if (laneInputs.isNotEmpty) 'laneInputs': _laneMapToJson(laneInputs),
     if (laneOutputs.isNotEmpty) 'laneOutputs': _laneMapToJson(laneOutputs),
     if (laneCounts.isNotEmpty) 'laneCounts': _channelMapToJson(laneCounts),
@@ -1024,6 +1038,7 @@ class Session {
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
           masterChain == other.masterChain &&
+          allTracksChain == other.allTracksChain &&
           pedalBindings == other.pedalBindings &&
           _listEquals(tracks, other.tracks) &&
           _listEquals(laneChains, other.laneChains) &&
@@ -1049,6 +1064,7 @@ class Session {
             other.trackLengthPresetOverrides,
           ) &&
           _mapEquals(trackPans, other.trackPans) &&
+          _mapEquals(trackLevels, other.trackLevels) &&
           _laneMapEquals(laneInputs, other.laneInputs) &&
           _laneMapEquals(laneOutputs, other.laneOutputs) &&
           _mapEquals(laneCounts, other.laneCounts) &&
@@ -1077,6 +1093,7 @@ class Session {
     looperMode,
     primaryTrack,
     masterChain,
+    allTracksChain,
     pedalBindings,
     Object.hashAll(tracks),
     Object.hashAll(laneChains),
@@ -1093,6 +1110,7 @@ class Session {
     _mapHash(trackOneShotOverrides),
     _mapHash(trackLengthPresetOverrides),
     _mapHash(trackPans),
+    _mapHash(trackLevels),
     _laneMapHash(laneInputs),
     _laneMapHash(laneOutputs),
     _mapHash(laneCounts),
@@ -1121,6 +1139,24 @@ Map<int, T> _readOverrides<T>(Object? json, T Function(Object?) decode) => {
   for (final entry in (json as Map<String, dynamic>? ?? const {}).entries)
     int.parse(entry.key): decode(entry.value),
 };
+
+Map<int, double> _readTrackLevels(Object? raw) {
+  final values = _readOverrides(raw, (value) {
+    if (value is! num) throw const FormatException('invalid track gain');
+    return value.toDouble();
+  });
+  if (values.entries.any(
+    (entry) =>
+        entry.key < 0 ||
+        entry.key >= 8 ||
+        !entry.value.isFinite ||
+        entry.value < 0 ||
+        entry.value > 2,
+  )) {
+    throw const FormatException('invalid track gain');
+  }
+  return values;
+}
 
 bool _mapEquals<T>(Map<int, T> a, Map<int, T> b) =>
     a.length == b.length &&

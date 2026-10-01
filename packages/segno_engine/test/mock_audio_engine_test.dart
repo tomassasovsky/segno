@@ -150,13 +150,15 @@ void main() {
         // A boost above unity is not clamped down to 1.0 — the native engine
         // allows up to LE_MAX_GAIN (+6 dB headroom), and the mock must match.
         expect(engine.setLaneVolume(1.5), EngineResult.ok);
-        expect(engine.snapshot().tracks[0].volume, closeTo(1.5, 1e-6));
+        expect(engine.snapshot().tracks[0].lanes[0].volume, closeTo(1.5, 1e-6));
 
         // Out-of-range values clamp to 0..LE_MAX_GAIN, not 0..1.
         expect(engine.setLaneVolume(2.5), EngineResult.ok);
-        expect(engine.snapshot().tracks[0].volume, closeTo(2, 1e-6));
+        expect(engine.snapshot().tracks[0].lanes[0].volume, closeTo(2, 1e-6));
         expect(engine.setLaneVolume(-1), EngineResult.ok);
-        expect(engine.snapshot().tracks[0].volume, 0);
+        expect(engine.snapshot().tracks[0].lanes[0].volume, 0);
+        // Part gain does not change the independent whole-track fader.
+        expect(engine.snapshot().tracks[0].volume, 1);
 
         // The explicit (channel, lane) addressing path behaves identically.
         expect(engine.setLaneVolume(1.5, channel: 2), EngineResult.ok);
@@ -164,6 +166,7 @@ void main() {
           engine.snapshot().tracks[2].lanes[0].volume,
           closeTo(1.5, 1e-6),
         );
+        expect(engine.snapshot().tracks[2].volume, 1);
       },
     );
 

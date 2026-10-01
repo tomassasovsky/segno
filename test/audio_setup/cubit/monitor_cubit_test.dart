@@ -10,14 +10,32 @@ import '../../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
-/// Counts the string writes the debounce is meant to collapse.
+/// Counts the monitor FX envelope writes the debounce is meant to collapse.
 class _CountingStore extends FakeKeyValueStore {
   int stringWrites = 0;
 
   @override
   Future<void> setString(String key, String value) {
-    stringWrites++;
+    if (key == 'monitor_fx.0') stringWrites++;
     return super.setString(key, value);
+  }
+}
+
+class _DeferredMonitorFxStore extends FakeKeyValueStore {
+  final firstWrite = Completer<void>();
+  final firstWriteStarted = Completer<void>();
+  int fxWrites = 0;
+
+  @override
+  Future<void> setString(String key, String value) async {
+    if (key == 'monitor_fx.0') {
+      fxWrites++;
+      if (fxWrites == 1) {
+        firstWriteStarted.complete();
+        await firstWrite.future;
+      }
+    }
+    await super.setString(key, value);
   }
 }
 
@@ -40,6 +58,19 @@ void main() {
     var currentMix = MixSettingsSnapshot();
     MixSettingsSnapshot? pendingMix;
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
+    when(() => repository.fxRecipesSettled).thenReturn(true);
+    when(
+      () => repository.settleFxRecipes(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(
+      () => repository.settleFxRecipes(
+        waitForCallback: true,
+        cancelled: any(named: 'cancelled'),
+      ),
+    ).thenAnswer((_) async => EngineResult.ok);
     when(() => repository.mixSettingsSettled).thenReturn(true);
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.mixSettingsSnapshot).thenAnswer((_) => currentMix);
@@ -126,6 +157,14 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setMonitorEffects(
+        input: any(named: 'input'),
+        effects: any(named: 'effects'),
+        chainEnabled: any(named: 'chainEnabled'),
+        allowUnavailable: true,
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setMonitorChainEnabled(
         input: any(named: 'input'),
         enabled: any(named: 'enabled'),
@@ -136,6 +175,14 @@ void main() {
         input: any(named: 'input'),
         index: any(named: 'index'),
         param: any(named: 'param'),
+        value: any(named: 'value'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorPluginParam(
+        input: any(named: 'input'),
+        index: any(named: 'index'),
+        paramId: any(named: 'paramId'),
         value: any(named: 'value'),
       ),
     ).thenReturn(EngineResult.ok);
@@ -321,6 +368,49 @@ void main() {
       // repository lives, and this cubit outlives nothing.
       expect(changes.hasListener, isFalse);
     });
+
+    test(
+      'a mode announce cannot persist an earlier pending FX recipe',
+      () async {
+        final oldFx = BuiltInEffect(type: TrackEffectType.drive);
+        final newFx = BuiltInEffect(type: TrackEffectType.reverb);
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(FxChainEnvelope(entries: [oldFx])),
+        );
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.load();
+        final applied = Completer<EngineResult>();
+        var settled = false;
+        when(() => repository.fxRecipesSettled).thenAnswer((_) => settled);
+        when(
+          () => repository.settleFxRecipes(
+            waitForCallback: true,
+            cancelled: any(named: 'cancelled'),
+          ),
+        ).thenAnswer((_) => applied.future);
+        when(() => repository.monitorEffects(0)).thenReturn([newFx]);
+
+        changes.add(0); // admitted structural recipe
+        await Future<void>.delayed(Duration.zero);
+        when(() => repository.monitorMode(0)).thenReturn(MonitorMode.on);
+        changes.add(0); // unrelated mode change while FX remains pending
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          decodeFxChain(await settings.loadMonitorEffects(0)).entries,
+          [oldFx],
+        );
+
+        settled = true;
+        applied.complete(EngineResult.ok);
+        await pumpEventQueue();
+        expect(
+          decodeFxChain(await settings.loadMonitorEffects(0)).entries,
+          [newFx],
+        );
+      },
+    );
 
     blocTest<MonitorCubit, MonitorState>(
       'a chain switched off elsewhere reaches the console',
@@ -733,7 +823,12 @@ void main() {
         expect(monitor.chainEnabled, isFalse);
         expect(monitor.effects, hasLength(1));
         verify(
-          () => repository.setMonitorChainEnabled(input: 0, enabled: false),
+          () => repository.setMonitorEffects(
+            input: 0,
+            effects: any(named: 'effects'),
+            chainEnabled: false,
+            allowUnavailable: true,
+          ),
         ).called(1);
       },
     );
@@ -753,7 +848,12 @@ void main() {
         expect(cubit.state.inputs, contains(0));
         expect(cubit.state.forInput(0).chainEnabled, isFalse);
         verify(
-          () => repository.setMonitorChainEnabled(input: 0, enabled: false),
+          () => repository.setMonitorEffects(
+            input: 0,
+            effects: any(named: 'effects'),
+            chainEnabled: false,
+            allowUnavailable: true,
+          ),
         ).called(1);
       },
     );
@@ -831,6 +931,8 @@ void main() {
           () => repository.setMonitorEffects(
             input: 0,
             effects: any(named: 'effects'),
+            chainEnabled: true,
+            allowUnavailable: true,
           ),
         ).called(greaterThanOrEqualTo(1));
       },
@@ -1183,6 +1285,30 @@ void main() {
     });
 
     group('monitor effects', () {
+      test('new session monitor edit follows a deferred prior save', () async {
+        final store = _DeferredMonitorFxStore();
+        settings = SettingsRepository(store: store);
+        var sessionRevision = 0;
+        when(
+          () => repository.sessionRevision,
+        ).thenAnswer((_) => sessionRevision);
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.addEffect(0);
+        await store.firstWriteStarted.future;
+        sessionRevision = 1;
+        cubit.addEffect(0);
+        await pumpEventQueue();
+        expect(store.fxWrites, 1);
+        store.firstWrite.complete();
+        await pumpEventQueue();
+        expect(store.fxWrites, 2);
+        expect(
+          decodeFxChain(await settings.loadMonitorEffects(0)).entries,
+          hasLength(2),
+        );
+      });
+
       blocTest<MonitorCubit, MonitorState>(
         'addEffect appends a default drive, applies, and persists',
         build: build,
@@ -1202,6 +1328,120 @@ void main() {
             ),
           ).called(1);
           expect(await settings.loadMonitorEffects(0), isNotNull);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        "a live input's new instances are Pre",
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0, type: TrackEffectType.filter)
+            ..insertPlugin(
+              0,
+              const PluginRef(format: PluginFormat.vst3, id: 'p'),
+            );
+        },
+        verify: (cubit) {
+          // An input's Pre entries are what a take records; its Post entries
+          // are copied onto the lane and run after that take's player. The
+          // accepted design makes Pre the default here, and the model's own
+          // default is Post — so a surface that forgets to say leaves an
+          // input's effects out of every take it records.
+          final chain = cubit.state.forInput(0).effects;
+          expect(chain.map((e) => e.placement), [
+            FxPlacement.pre,
+            FxPlacement.pre,
+          ]);
+          expect((chain[0] as BuiltInEffect).type, TrackEffectType.filter);
+          expect(chain[1], isA<PluginEffect>());
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'a reorder across the Pre/Post boundary is refused',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0, type: TrackEffectType.drive)
+            ..addEffect(0, type: TrackEffectType.delay)
+            // Send the delay to Post, then try to drag the drive past it.
+            ..setEffectPlacement(0, 1, FxPlacement.post)
+            ..moveEffect(0, 0, 1);
+        },
+        verify: (cubit) => expect(
+          cubit.state.forInput(0).effects.map((e) => (e as BuiltInEffect).type),
+          [TrackEffectType.drive, TrackEffectType.delay],
+        ),
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'setEffectPlacement moves an instance to the end of its new stage',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0, type: TrackEffectType.drive)
+            ..addEffect(0, type: TrackEffectType.delay)
+            ..addEffect(0, type: TrackEffectType.reverb)
+            // The first of three Pre entries goes Post; the two behind it
+            // close up, and it lands last.
+            ..setEffectPlacement(0, 0, FxPlacement.post);
+        },
+        verify: (cubit) {
+          final chain = cubit.state.forInput(0).effects;
+          expect(chain.map((e) => (e as BuiltInEffect).type), [
+            TrackEffectType.delay,
+            TrackEffectType.reverb,
+            TrackEffectType.drive,
+          ]);
+          expect(chain.map((e) => e.placement), [
+            FxPlacement.pre,
+            FxPlacement.pre,
+            FxPlacement.post,
+          ]);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'a retype preserves the input slot identity, power, and channels',
+        build: build,
+        seed: () => MonitorState(
+          inputs: {
+            0: InputMonitor(
+              input: 0,
+              effects: [
+                BuiltInEffect(
+                  type: TrackEffectType.drive,
+                  enabled: false,
+                  slotId: 'monitor-slot',
+                  placement: FxPlacement.pre,
+                  channels: const FxChannels(
+                    input: FxChannelInput.left,
+                    output: FxChannelOutput.mono,
+                    placement: .25,
+                    level: .6,
+                  ),
+                ),
+              ],
+            ),
+          },
+        ),
+        act: (cubit) => cubit.setEffectType(0, 0, TrackEffectType.reverb),
+        verify: (cubit) {
+          final fx = cubit.state.forInput(0).effects.single;
+          expect((fx as BuiltInEffect).type, TrackEffectType.reverb);
+          expect(fx.placement, FxPlacement.pre);
+          expect(fx.slotId, 'monitor-slot');
+          expect(fx.enabled, isFalse);
+          expect(
+            fx.channels,
+            const FxChannels(
+              input: FxChannelInput.left,
+              output: FxChannelOutput.mono,
+              placement: .25,
+              level: .6,
+            ),
+          );
         },
       );
 
@@ -1410,6 +1650,7 @@ void main() {
       addTearDown(cubit.close);
       // The structural add persists straight through; only the knob is
       // coalesced, so count from here.
+      await pumpEventQueue();
       final writesBeforeDrag = store.stringWrites;
 
       for (var i = 0; i < 8; i++) {
@@ -1437,6 +1678,7 @@ void main() {
 
     test('closing flushes a drag that ended inside the window', () async {
       final cubit = buildDebounced()..addEffect(0);
+      await pumpEventQueue();
       final writesBeforeDrag = store.stringWrites;
       cubit.setEffectParam(0, 0, 0, 0.42);
       expect(store.stringWrites, writesBeforeDrag);
@@ -1453,6 +1695,7 @@ void main() {
       () async {
         final cubit = buildDebounced()..addEffect(0);
         addTearDown(cubit.close);
+        await pumpEventQueue();
         final writesBeforeDrag = store.stringWrites;
         cubit.setEffectParam(0, 0, 0, 0.42);
         expect(store.stringWrites, writesBeforeDrag);

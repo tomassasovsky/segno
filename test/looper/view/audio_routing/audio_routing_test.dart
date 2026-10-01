@@ -67,6 +67,9 @@ void main() {
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
+    when(() => repository.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
     settings = SettingsRepository(store: FakeKeyValueStore());
     states = StreamController<LooperState>.broadcast();
     monitorChanges = StreamController<int>.broadcast();

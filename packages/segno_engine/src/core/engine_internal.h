@@ -383,6 +383,19 @@ void le_perf_drain_set_mid_cycle_hook_for_test(void (*fn)(void*), void* ctx);
  * Not part of the FFI surface. */
 void le_perf_render_force_dry_write_failure_for_test(int32_t channel);
 
+/* Structural FX recipe ownership; all except apply are control-thread only. */
+struct le_prepared_fx;
+int le_fx_edit_pending(le_engine* e, int owner, int channel, int lane);
+struct le_prepared_fx* le_fx_prepare_capture(le_engine* e, int channel,
+                                            const le_record_image* image);
+void le_fx_recipe_admitted(le_engine* e, struct le_prepared_fx* edit,
+                           uint32_t image_revision);
+void le_fx_recipe_abandon(struct le_prepared_fx* edit);
+void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* edit, uint64_t frame);
+struct le_command;
+void le_plog_push(le_engine* e, uint64_t frame, struct le_command command);
+void le_fx_recipe_collect(le_engine* e, int quiescent);
+
 #ifdef __cplusplus
 }
 #endif

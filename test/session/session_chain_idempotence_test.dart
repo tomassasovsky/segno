@@ -50,7 +50,7 @@ void main() {
     'save is byte-idempotent across all four stages (flow SC-6)',
     () async {
       // A current Session object carrying bare-array FX payloads. The manifest
-      // reader itself accepts only schema 8; this exercises the FX decoder.
+      // reader itself accepts only schema 9; this exercises the FX decoder.
       final bareChains = (
         session: Session(
           sampleRate: 48000,

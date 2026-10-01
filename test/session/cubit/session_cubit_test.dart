@@ -80,6 +80,7 @@ void main() {
     when(looper.allLaneChains).thenReturn(const {});
     when(looper.allTrackChains).thenReturn(const {});
     when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+    when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
     when(looper.allMonitors).thenReturn(const {});
     when(() => looper.sessionTransport).thenReturn(const TransportState());
     when(() => looper.lengthSettingsSettled).thenReturn(true);
@@ -719,6 +720,41 @@ void main() {
         verify(() => looper.applySession(any())).called(1);
         verify(performance.disarmAndFinalize).called(1);
       },
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'invalid effect placement refuses session before the live rig changes',
+      setUp: () {
+        stubCatalog();
+        when(() => repository.read(any())).thenAnswer(
+          (_) async => (
+            session: const Session(
+              sampleRate: 48000,
+              channels: 1,
+              baseLengthFrames: 0,
+              tracks: [],
+              allTracksChain:
+                  '{"chainEnabled":true,"entries":['
+                  '{"type":1,"placement":"sideways"}]}',
+            ),
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+        );
+      },
+      seed: () => const SessionState(currentSessionName: 'A'),
+      build: build,
+      act: (cubit) => cubit.loadNamed('B'),
+      expect: () => [
+        isA<SessionState>().having(
+          (state) => state.status,
+          'status',
+          SessionStatus.working,
+        ),
+        isA<SessionState>()
+            .having((state) => state.status, 'status', SessionStatus.failure)
+            .having((state) => state.currentSessionName, 'current', 'A'),
+      ],
+      verify: (_) => verifyNever(() => looper.applySession(any())),
     );
 
     blocTest<SessionCubit, SessionState>(

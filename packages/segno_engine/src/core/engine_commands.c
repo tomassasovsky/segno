@@ -33,6 +33,7 @@
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
+#include "engine_internal.h"
 #include "layer_staging_ring.h" /* le_layer_staging_ring_push (retired-layer persistence) */
 #include "segno_engine_api.h"
 #include "perf_drain.h"     /* le_perf_drain_start/stop (capture-to-disk thread) */
@@ -702,6 +703,7 @@ static void le_handle_event(le_engine* engine, const le_command* evt,
 }
 
 void le_engine_drain_events(le_engine* engine) {
+  le_fx_recipe_collect(engine, 0);
   if (engine == NULL) return;
   le_command evt;
   while (le_ring_pop(&engine->evt_ring, &evt)) {
@@ -1108,6 +1110,10 @@ int le_mix_valid(const le_engine* e, const le_mix_settings* mix) {
          !le_mix_float(mix->output_balance[i], -1, 1))) return 0;
   }
   const uint32_t tracks = (1u << e->track_count) - 1u;
+  if (mix->track_gain_mask & ~tracks) return 0;
+  for (int ch = 0; ch < e->track_count; ++ch)
+    if ((mix->track_gain_mask & (1u << ch)) &&
+        !le_mix_float(mix->track_gain[ch], 0, LE_MAX_GAIN)) return 0;
   if ((mix->lane_count_mask | mix->source_track_mask) & ~tracks) return 0;
   for (int ch = 0; ch < e->track_count; ++ch) {
     if (!(mix->lane_count_mask & (1u << ch))) continue;
@@ -1144,7 +1150,8 @@ int le_mix_valid(const le_engine* e, const le_mix_settings* mix) {
 
 int le_image_valid(const le_engine* e, int32_t channel,
                    const le_record_image* image) {
-  if (!e || !image || image->revision == 0 || channel < 0 ||
+  if (!e || !image || (image->fx_lane_mask >> LE_MAX_LANES) ||
+      (image->fx_lane_mask && !image->lane_fx) || image->revision == 0 || channel < 0 ||
       channel >= e->track_count || (image->lane_mask >> LE_MAX_LANES)) return 0;
   for (int l = 0; l < LE_MAX_LANES; ++l) {
     if ((image->lane_mask & (1u << l)) &&
@@ -1256,7 +1263,10 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
   if (clocked && sequence == 0) sequence = 1;
   const le_command command = {
       .code = LE_CMD_RECORD_IMAGE,
-      .record_image = {channel, sequence, action, trigger, *image}};
+      .record_image = {channel, sequence, action, trigger, *image, e->record_fx_prepared}};
+  le_command owned_command = command;
+  owned_command.record_image.image.lane_fx = NULL;
+  owned_command.record_image.image.fx_lane_mask = 0;
   int32_t result;
   if (fresh_shadow >= 0 || clear_first) {
     /* The entire bounded sequence was admitted before preparation, and no
@@ -1271,7 +1281,7 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
       e->ring.buffer[(tail + count++) & e->ring.mask] = (le_command){
           .code = LE_CMD_CLEAR, .arg_i = channel};
     }
-    e->ring.buffer[(tail + count++) & e->ring.mask] = command;
+    e->ring.buffer[(tail + count++) & e->ring.mask] = owned_command;
 #ifdef LE_NATIVE_TESTS
     extern void le_test_record_image_staged(le_engine* engine);
     le_test_record_image_staged(e);
@@ -1286,7 +1296,7 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
     atomic_store_explicit(&e->ring.tail, tail + count, memory_order_release);
     result = LE_OK;
   } else {
-    result = le_push_cmd(e, command);
+    result = le_push_cmd(e, owned_command);
   }
   if (result == LE_OK && clocked) e->clock_commands_posted = sequence;
   return result;
@@ -1341,6 +1351,13 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
          (quantized_arm && engine->armed_trigger[channel] == 0));
     if (cancelling_arm) return le_cancel_arm(engine, channel);
     return LE_ERR_INVALID;
+  }
+  if (st != LE_TRACK_RECORDING && st != LE_TRACK_OVERDUBBING &&
+      !load_i32(&engine->a_counting_in) &&
+      !(engine->armed[channel] && load_i32(&t->a_pending))) {
+    for (int lane = 0; lane < le_lanes_active(t); ++lane)
+      if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane))
+        return LE_ERR_INVALID;
   }
   int fresh_shadow = -1;
   int clear_first = 0;
@@ -1556,8 +1573,15 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
 
 int32_t le_engine_record_with_image(le_engine* engine, int32_t channel,
                                      const le_record_image* image) {
-  if (!image) return LE_ERR_INVALID;
-  return le_record_impl(engine, channel, image);
+  if (!engine || !image || !le_image_valid(engine, channel, image)) return LE_ERR_INVALID;
+  struct le_prepared_fx* recipes = le_fx_prepare_capture(engine, channel, image);
+  if (image->fx_lane_mask && !recipes) return LE_ERR_INVALID;
+  engine->record_fx_prepared = recipes;
+  const int32_t rc = le_record_impl(engine, channel, image);
+  engine->record_fx_prepared = NULL;
+  if (rc == LE_OK) le_fx_recipe_admitted(engine, recipes, image->revision);
+  else le_fx_recipe_abandon(recipes);
+  return rc;
 }
 
 int32_t le_engine_stop_track(le_engine* engine, int32_t channel) {
@@ -2749,6 +2773,7 @@ static int32_t le_fx_prepare_entry(le_fx_state* fx, const int32_t* type_pushed,
 
 int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
                               int32_t index, int32_t type) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
@@ -2798,16 +2823,24 @@ static void le_fx_seed_entering_slots(int32_t* count_pushed,
 }
 
 int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
-                                    int32_t lane, int32_t count) {
+                                    int32_t lane, int32_t count,
+                                    int32_t pre_count) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
+  /* Clamped against the count it travels with, never against the published
+   * one: a Pre run longer than its chain would have the audio thread render
+   * entries that are not there and the wet cache key a prefix that cannot be
+   * rebuilt. */
+  if (pre_count < 0) pre_count = 0;
+  if (pre_count > count) pre_count = count;
   le_lane* ln = &engine->tracks[channel].lanes[lane];
-  const int32_t rc =
-      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
-                                       .fxcount = {channel, lane, count}});
+  const int32_t rc = le_push_cmd(
+      engine, (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
+                           .fxcount = {channel, lane, count, pre_count}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&ln->fx_count_pushed, ln->a_fx_enabled, count);
     le_lane_fx_gen_bump(ln); /* chain identity moved (wet-cache fast path) */
@@ -2818,6 +2851,7 @@ int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
 int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
                                     int32_t lane, int32_t index, int32_t param,
                                     float value) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
@@ -2847,6 +2881,7 @@ int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
 int32_t le_engine_set_lane_fx_enabled(le_engine* engine, int32_t channel,
                                       int32_t lane, int32_t index,
                                       int32_t enabled) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
@@ -2861,6 +2896,7 @@ int32_t le_engine_set_lane_fx_enabled(le_engine* engine, int32_t channel,
 
 int32_t le_engine_set_lane_fx_chain_enabled(le_engine* engine, int32_t channel,
                                             int32_t lane, int32_t enabled) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
@@ -2915,6 +2951,7 @@ int32_t le_engine_set_monitor_input_mute(le_engine* engine, int32_t input,
 
 int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
                                        int32_t index, int32_t type) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_MONITOR, input, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
@@ -2937,6 +2974,7 @@ int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
 
 int32_t le_engine_set_monitor_input_fx_count(le_engine* engine, int32_t input,
                                              int32_t count) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_MONITOR, input, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   if (count < 0) count = 0;
@@ -2944,7 +2982,7 @@ int32_t le_engine_set_monitor_input_fx_count(le_engine* engine, int32_t input,
   le_monitor_input* m = &engine->monitors[input];
   const int32_t rc =
       le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MONITOR_INPUT_FX_COUNT,
-                                       .fxcount = {input, 0, count}});
+                                       .fxcount = {input, 0, count, 0}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&m->fx_count_pushed, m->a_fx_enabled, count);
   }
@@ -2954,6 +2992,7 @@ int32_t le_engine_set_monitor_input_fx_count(le_engine* engine, int32_t input,
 int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
                                              int32_t index, int32_t param,
                                              float value) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_MONITOR, input, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
@@ -2974,6 +3013,7 @@ int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
  * generic monitor volume/mute shape). */
 int32_t le_engine_set_monitor_input_fx_enabled(le_engine* engine, int32_t input,
                                                int32_t index, int32_t enabled) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_MONITOR, input, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
@@ -2987,6 +3027,7 @@ int32_t le_engine_set_monitor_input_fx_enabled(le_engine* engine, int32_t input,
 int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
                                                      int32_t input,
                                                      int32_t enabled) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_MONITOR, input, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   const int32_t on = enabled ? 1 : 0;
@@ -3040,6 +3081,7 @@ int32_t le_engine_set_input_conditioning_param(le_engine* engine, int32_t input,
 
 int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
                                int32_t index, int32_t type) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_TRACK, channel, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
@@ -3061,15 +3103,21 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
 }
 
 int32_t le_engine_set_track_fx_count(le_engine* engine, int32_t channel,
-                                     int32_t count) {
+                                     int32_t count, int32_t pre_count) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_TRACK, channel, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
+  /* Clamped against the count it travels with, for the reason the lane's is:
+   * a Pre run longer than its chain would have the render cover entries that
+   * are not there. */
+  if (pre_count < 0) pre_count = 0;
+  if (pre_count > count) pre_count = count;
   le_fx_bus* b = &engine->tracks[channel].bus;
-  const int32_t rc =
-      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_TRACK_FX_COUNT,
-                                       .fxcount = {channel, 0, count}});
+  const int32_t rc = le_push_cmd(
+      engine, (le_command){.code = LE_CMD_SET_TRACK_FX_COUNT,
+                           .fxcount = {channel, 0, count, pre_count}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&b->fx_count_pushed, b->a_fx_enabled, count);
   }
@@ -3079,6 +3127,7 @@ int32_t le_engine_set_track_fx_count(le_engine* engine, int32_t channel,
 int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
                                      int32_t index, int32_t param,
                                      float value) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_TRACK, channel, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
@@ -3091,6 +3140,7 @@ int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
 
 int32_t le_engine_set_track_fx_enabled(le_engine* engine, int32_t channel,
                                        int32_t index, int32_t enabled) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_TRACK, channel, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
@@ -3102,6 +3152,7 @@ int32_t le_engine_set_track_fx_enabled(le_engine* engine, int32_t channel,
 int32_t le_engine_set_track_fx_chain_enabled(le_engine* engine,
                                              int32_t channel,
                                              int32_t enabled) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_TRACK, channel, 0)) return LE_ERR_INVALID;
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   store_i32(&engine->tracks[channel].bus.a_fx_chain_enabled, enabled ? 1 : 0);
@@ -3134,6 +3185,7 @@ int32_t le_engine_get_output_fx_snapshot(le_engine* engine, int32_t bus,
 
 int32_t le_engine_set_output_fx(le_engine* engine, int32_t bus, int32_t index,
                                 int32_t type) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_OUTPUT, bus, 0)) return LE_ERR_INVALID;
   if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
@@ -3155,13 +3207,14 @@ int32_t le_engine_set_output_fx(le_engine* engine, int32_t bus, int32_t index,
 
 int32_t le_engine_set_output_fx_count(le_engine* engine, int32_t bus,
                                       int32_t count) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_OUTPUT, bus, 0)) return LE_ERR_INVALID;
   if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
   le_fx_bus* b = &engine->outputs[bus].fx;
   const int32_t rc =
       le_push_cmd(engine, (le_command){.code = LE_CMD_SET_OUTPUT_FX_COUNT,
-                                       .fxcount = {bus, 0, count}});
+                                       .fxcount = {bus, 0, count, 0}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&b->fx_count_pushed, b->a_fx_enabled, count);
   }
@@ -3171,6 +3224,7 @@ int32_t le_engine_set_output_fx_count(le_engine* engine, int32_t bus,
 int32_t le_engine_set_output_fx_param(le_engine* engine, int32_t bus,
                                       int32_t index, int32_t param,
                                       float value) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_OUTPUT, bus, 0)) return LE_ERR_INVALID;
   if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
@@ -3184,6 +3238,7 @@ int32_t le_engine_set_output_fx_param(le_engine* engine, int32_t bus,
 
 int32_t le_engine_set_output_fx_enabled(le_engine* engine, int32_t bus,
                                         int32_t index, int32_t enabled) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_OUTPUT, bus, 0)) return LE_ERR_INVALID;
   if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   store_i32(&engine->outputs[bus].fx.a_fx_enabled[index], enabled ? 1 : 0);
@@ -3194,11 +3249,262 @@ int32_t le_engine_set_output_fx_enabled(le_engine* engine, int32_t bus,
 
 int32_t le_engine_set_output_fx_chain_enabled(le_engine* engine, int32_t bus,
                                               int32_t enabled) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_OUTPUT, bus, 0)) return LE_ERR_INVALID;
   if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
   store_i32(&engine->outputs[bus].fx.a_fx_chain_enabled, enabled ? 1 : 0);
   le_plog_push_ctrl(engine, (le_command){.code = LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED,
     .arg_i = bus, .arg_f = enabled != 0});
   return LE_OK;
+}
+
+/* ---- the All tracks recorded-mix chain (slice 3e) ----
+ *
+ * The output-bus setters' twin with one config and no bus argument. The only
+ * real difference is the prepare: one shared chain drives one DSP instance
+ * per output bus, so a type set has to allocate for every bus the configured
+ * device has, and a failure on any of them leaves the type unpushed. */
+
+/* Buses the configured device actually has. A type set prepares exactly
+ * these, so a stereo interface allocates one instance's rings rather than
+ * sixteen. A configure resets the chain (le_fx_bus_reset), and the repository
+ * re-pushes it on the next start, so the instances are always prepared
+ * against the device that is actually open. */
+static int32_t le_all_tracks_bus_count(le_engine* engine) {
+  int32_t n = (engine->out_channels + 1) / 2;
+  if (n < 1) n = 1; /* an unconfigured engine still owns bus 0's instance */
+  if (n > LE_MAX_OUTPUT_BUSES) n = LE_MAX_OUTPUT_BUSES;
+  return n;
+}
+
+int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
+                                    int32_t type) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_ALL_TRACKS, 0, 0)) return LE_ERR_INVALID;
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  if (!le_record_capacity(engine, 1)) return LE_ERR_INVALID;
+  le_fx_bus* b = &engine->all_tracks;
+  const int32_t cap =
+      engine->fx_delay_frames > 0 ? engine->fx_delay_frames : 48000;
+  const int32_t buses = le_all_tracks_bus_count(engine);
+  /* Every instance first: a half-prepared type would have one destination
+   * play the effect and another play dry. */
+  for (int32_t k = 0; k < buses; ++k) {
+    if (le_fx_prepare(&engine->all_tracks_fx[k], index, type, cap) != LE_OK) {
+      return LE_ERR_INVALID;
+    }
+  }
+  const int32_t changed = b->fx_type_pushed[index] != type;
+  if (changed) {
+    float defaults[LE_FX_PARAMS];
+    le_fx_defaults(type, defaults);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&b->a_fx_param[index][p], defaults[p]);
+    }
+  }
+  const int32_t rc =
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_ALL_TRACKS_FX,
+                                       .fx = {0, 0, index, type}});
+  if (rc == LE_OK) {
+    b->fx_type_pushed[index] = type;
+    if (changed) store_i32(&b->a_fx_enabled[index], 1);
+  }
+  return rc;
+}
+
+int32_t le_engine_set_all_tracks_fx_count(le_engine* engine, int32_t count) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_ALL_TRACKS, 0, 0)) return LE_ERR_INVALID;
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  const int32_t rc = le_push_cmd(
+      engine, (le_command){.code = LE_CMD_SET_ALL_TRACKS_FX_COUNT,
+                           .fxcount = {0, 0, count, 0}});
+  if (rc == LE_OK) {
+    le_fx_seed_entering_slots(&engine->all_tracks.fx_count_pushed,
+                              engine->all_tracks.a_fx_enabled, count);
+  }
+  return rc;
+}
+
+int32_t le_engine_set_all_tracks_fx_param(le_engine* engine, int32_t index,
+                                          int32_t param, float value) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_ALL_TRACKS, 0, 0)) return LE_ERR_INVALID;
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  store_f32(&engine->all_tracks.a_fx_param[index][param], value);
+  return LE_OK;
+}
+
+int32_t le_engine_set_all_tracks_fx_enabled(le_engine* engine, int32_t index,
+                                            int32_t enabled) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_ALL_TRACKS, 0, 0)) return LE_ERR_INVALID;
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  store_i32(&engine->all_tracks.a_fx_enabled[index], enabled ? 1 : 0);
+  return LE_OK;
+}
+
+int32_t le_engine_set_all_tracks_fx_chain_enabled(le_engine* engine,
+                                                  int32_t enabled) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_ALL_TRACKS, 0, 0)) return LE_ERR_INVALID;
+  if (engine == NULL) return LE_ERR_INVALID;
+  store_i32(&engine->all_tracks.a_fx_chain_enabled, enabled ? 1 : 0);
+  return LE_OK;
+}
+
+/* ---- per-entry channel handling and level (slice 3e) ----
+ *
+ * The accepted design's rack input/output choices and rack level, on every
+ * chain owner. Direct atomic publishes like the params: they change gain and
+ * routing WITHIN an entry, never its DSP state, so there is nothing for the
+ * audio thread to reset and no ring command to order against.
+ *
+ * The pan gains are precomputed here, exactly as a lane's are, so the
+ * per-sample path is two multiplies. Centre is exact unity, so an entry left
+ * alone is bit-identical to one with no channel handling at all.
+ *
+ * The five owners share one implementation, addressed by the published block;
+ * the public wrappers below only resolve which block. */
+
+/* Validate the complete tuple before any field is published. In particular,
+ * a valid input choice cannot leak through a refused output choice. */
+static int le_fx_channels_valid(int32_t index, int32_t in_mode, int32_t out_mode) {
+  return index >= 0 && index < LE_FX_MAX &&
+      in_mode >= LE_FX_CHAN_IN_STEREO && in_mode <= LE_FX_CHAN_IN_MONO &&
+      out_mode >= LE_FX_CHAN_OUT_STEREO && out_mode <= LE_FX_CHAN_OUT_MONO;
+}
+
+static int32_t le_fx_chan_set_in(_Atomic int32_t* a_in, int32_t index,
+                                 int32_t mode) {
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (mode < LE_FX_CHAN_IN_STEREO || mode > LE_FX_CHAN_IN_MONO) {
+    return LE_ERR_INVALID;
+  }
+  store_i32(&a_in[index], mode);
+  return LE_OK;
+}
+
+static int32_t le_fx_chan_set_out(_Atomic int32_t* a_out,
+                                  _Atomic uint32_t* a_pan,
+                                  _Atomic uint32_t* a_gl,
+                                  _Atomic uint32_t* a_gr, int32_t index,
+                                  int32_t mode, float placement) {
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (mode < LE_FX_CHAN_OUT_STEREO || mode > LE_FX_CHAN_OUT_MONO) {
+    return LE_ERR_INVALID;
+  }
+  /* NaN reads as centre, the le_store_pan rule. */
+  if (!(placement >= -1.0f)) placement = placement < -1.0f ? -1.0f : 0.0f;
+  if (placement > 1.0f) placement = 1.0f;
+  float gl;
+  float gr;
+  le_pan_gains(placement, &gl, &gr);
+  store_f32(&a_gl[index], gl);
+  store_f32(&a_gr[index], gr);
+  store_f32(&a_pan[index], placement);
+  store_i32(&a_out[index], mode);
+  return LE_OK;
+}
+
+static int32_t le_fx_chan_set_level(_Atomic uint32_t* a_level, int32_t index,
+                                    float level) {
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (!(level >= 0.0f)) level = 0.0f; /* NaN reads as silence */
+  if (level > LE_MAX_GAIN) level = LE_MAX_GAIN;
+  store_f32(&a_level[index], level);
+  return LE_OK;
+}
+
+int32_t le_engine_set_lane_fx_channels(le_engine* engine, int32_t channel,
+                                       int32_t lane, int32_t index,
+                                       int32_t in_mode, int32_t out_mode,
+                                       float placement, float level) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane)) return LE_ERR_INVALID;
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  if (!le_fx_channels_valid(index, in_mode, out_mode)) return LE_ERR_INVALID;
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  const int32_t rc = le_fx_chan_set_in(ln->a_fx_chan_in, index, in_mode);
+  if (rc != LE_OK) return rc;
+  const int32_t rc2 =
+      le_fx_chan_set_out(ln->a_fx_chan_out, ln->a_fx_chan_pan_bits,
+                         ln->a_fx_chan_gl_bits, ln->a_fx_chan_gr_bits, index,
+                         out_mode, placement);
+  if (rc2 != LE_OK) return rc2;
+  const int32_t rc3 =
+      le_fx_chan_set_level(ln->a_fx_chan_level_bits, index, level);
+  /* The channel handling is part of what the wet cache renders, so a change
+   * moves the lane's chain identity like a param does. */
+  if (rc3 == LE_OK) le_lane_fx_gen_bump(ln);
+  return rc3;
+}
+
+int32_t le_engine_set_monitor_input_fx_channels(le_engine* engine,
+                                                int32_t input, int32_t index,
+                                                int32_t in_mode,
+                                                int32_t out_mode,
+                                                float placement, float level) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_MONITOR, input, 0)) return LE_ERR_INVALID;
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  if (!le_fx_channels_valid(index, in_mode, out_mode)) return LE_ERR_INVALID;
+  le_monitor_input* m = &engine->monitors[input];
+  const int32_t rc = le_fx_chan_set_in(m->a_fx_chan_in, index, in_mode);
+  if (rc != LE_OK) return rc;
+  const int32_t rc2 = le_fx_chan_set_out(
+      m->a_fx_chan_out, m->a_fx_chan_pan_bits, m->a_fx_chan_gl_bits,
+      m->a_fx_chan_gr_bits, index, out_mode, placement);
+  if (rc2 != LE_OK) return rc2;
+  return le_fx_chan_set_level(m->a_fx_chan_level_bits, index, level);
+}
+
+/* The three bus owners share one body; only the block differs. */
+static int32_t le_fx_bus_set_channels(le_fx_bus* b, int32_t index,
+                                      int32_t in_mode, int32_t out_mode,
+                                      float placement, float level) {
+  if (!le_fx_channels_valid(index, in_mode, out_mode)) return LE_ERR_INVALID;
+  const int32_t rc = le_fx_chan_set_in(b->a_fx_chan_in, index, in_mode);
+  if (rc != LE_OK) return rc;
+  const int32_t rc2 = le_fx_chan_set_out(
+      b->a_fx_chan_out, b->a_fx_chan_pan_bits, b->a_fx_chan_gl_bits,
+      b->a_fx_chan_gr_bits, index, out_mode, placement);
+  if (rc2 != LE_OK) return rc2;
+  return le_fx_chan_set_level(b->a_fx_chan_level_bits, index, level);
+}
+
+int32_t le_engine_set_track_fx_channels(le_engine* engine, int32_t channel,
+                                        int32_t index, int32_t in_mode,
+                                        int32_t out_mode, float placement,
+                                        float level) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_TRACK, channel, 0)) return LE_ERR_INVALID;
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  return le_fx_bus_set_channels(&engine->tracks[channel].bus, index, in_mode,
+                                out_mode, placement, level);
+}
+
+int32_t le_engine_set_output_fx_channels(le_engine* engine, int32_t bus,
+                                         int32_t index, int32_t in_mode,
+                                         int32_t out_mode, float placement,
+                                         float level) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_OUTPUT, bus, 0)) return LE_ERR_INVALID;
+  if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
+  return le_fx_bus_set_channels(&engine->outputs[bus].fx, index, in_mode,
+                                out_mode, placement, level);
+}
+
+int32_t le_engine_set_all_tracks_fx_channels(le_engine* engine, int32_t index,
+                                             int32_t in_mode, int32_t out_mode,
+                                             float placement, float level) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_ALL_TRACKS, 0, 0)) return LE_ERR_INVALID;
+  if (engine == NULL) return LE_ERR_INVALID;
+  return le_fx_bus_set_channels(&engine->all_tracks, index, in_mode, out_mode,
+                                placement, level);
 }
 
 int32_t le_engine_set_output_level(le_engine* engine, int32_t bus,

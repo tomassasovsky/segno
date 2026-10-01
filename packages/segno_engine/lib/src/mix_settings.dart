@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:segno_engine/src/fx_recipe.dart';
+
 /// The lowest capture trim, in dB.
 const double kMinInputTrimDb = -24;
 
@@ -32,6 +34,7 @@ class EngineMixSettings {
     Map<(int, int), StereoMix> images = const {},
     Map<int, StereoMix> monitors = const {},
     Map<int, double> trims = const {},
+    Map<int, double> trackLevels = const {},
     Map<int, bool> solos = const {},
     Map<int, OutputMix> outputs = const {},
     Map<(int, int), int> laneInputs = const {},
@@ -42,6 +45,7 @@ class EngineMixSettings {
        images = Map.unmodifiable(images),
        monitors = Map.unmodifiable(monitors),
        trims = Map.unmodifiable(trims),
+       trackLevels = Map.unmodifiable(trackLevels),
        solos = Map.unmodifiable(solos),
        outputs = Map.unmodifiable(outputs),
        laneInputs = Map.unmodifiable(laneInputs),
@@ -63,6 +67,9 @@ class EngineMixSettings {
 
   /// Hardware-input addressed capture gain.
   final Map<int, double> trims;
+
+  /// Whole-track gain after Pre and before Post, independent of part levels.
+  final Map<int, double> trackLevels;
 
   /// Independent track solo flags.
   final Map<int, bool> solos;
@@ -124,6 +131,14 @@ class EngineMixSettings {
             e.value >= 0 &&
             e.value <= _maxInputTrimGain,
       ) &&
+      trackLevels.entries.every(
+        (e) =>
+            e.key >= 0 &&
+            e.key < 8 &&
+            e.value.isFinite &&
+            e.value >= 0 &&
+            e.value <= 2,
+      ) &&
       solos.keys.every((k) => k >= 0 && k < 8) &&
       outputs.entries.every(
         (e) =>
@@ -153,8 +168,15 @@ bool _validMix(StereoMix mix) =>
 /// actual capture start, and discarded if that request is cancelled.
 class RecordImage {
   /// Creates a copied image.
-  RecordImage({required this.revision, required Map<int, StereoMix> lanes})
-    : lanes = Map.unmodifiable(lanes);
+  RecordImage({
+    required this.revision,
+    required Map<int, StereoMix> lanes,
+    Map<int, FxRecipe> laneFx = const {},
+  }) : lanes = Map.unmodifiable(lanes),
+       laneFx = Map.unmodifiable(laneFx);
+
+  /// Recipes frozen with this arm and published only when capture starts.
+  final Map<int, FxRecipe> laneFx;
 
   /// Durable per-track publication identity, including very short takes.
   final int revision;
@@ -166,6 +188,7 @@ class RecordImage {
   bool get isValid =>
       revision > 0 &&
       revision <= 0xffffffff &&
+      laneFx.entries.every((e) => e.key >= 0 && e.key < 8 && e.value.isValid) &&
       lanes.entries.every(
         (e) =>
             e.key >= 0 && e.key < 8 && _validMix(e.value) && e.value.gain <= 1,

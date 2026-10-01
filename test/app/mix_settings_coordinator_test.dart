@@ -180,25 +180,29 @@ void main() {
     expect(audio.calls.where((call) => call == 'setMix'), hasLength(1));
   });
 
-  test('queued route growth and track fader cover the new lane', () async {
-    persistence.writeGate = Completer<void>();
-    final first = coordinator.setTrackPan(.2);
-    await _turn();
-    final route = coordinator.setRecordingInput(
-      channel: 0,
-      input: 1,
-      selected: true,
-    );
-    final volume = coordinator.setTrackVolume(.25);
-    persistence.writeGate!.complete();
-    expect((await first).isOk, isTrue);
-    expect((await route).isOk, isTrue);
-    expect((await volume).isOk, isTrue);
-    expect(repository.mixSettingsSnapshot.laneCounts[0], 2);
-    expect(repository.mixSettingsSnapshot.laneLevels[(0, 0)], .25);
-    expect(repository.mixSettingsSnapshot.laneLevels[(0, 1)], .25);
-    expect(persistence.candidates.last.laneLevels[(0, 1)], .25);
-  });
+  test(
+    'queued route growth and track fader keep part levels independent',
+    () async {
+      persistence.writeGate = Completer<void>();
+      final first = coordinator.setTrackPan(.2);
+      await _turn();
+      final route = coordinator.setRecordingInput(
+        channel: 0,
+        input: 1,
+        selected: true,
+      );
+      final volume = coordinator.setTrackVolume(.25);
+      persistence.writeGate!.complete();
+      expect((await first).isOk, isTrue);
+      expect((await route).isOk, isTrue);
+      expect((await volume).isOk, isTrue);
+      expect(repository.mixSettingsSnapshot.laneCounts[0], 2);
+      expect(repository.mixSettingsSnapshot.trackLevels[0], .25);
+      expect(repository.mixSettingsSnapshot.laneLevels, {(0, 1): 1});
+      expect(persistence.candidates.last.trackLevels[0], .25);
+      expect(persistence.candidates.last.laneLevels, {(0, 1): 1});
+    },
+  );
 
   test(
     'routing storage refusal leaves live and durable routes intact',
@@ -304,12 +308,13 @@ void main() {
       persistence.writeGate = Completer<void>();
       final operation = coordinator.setTrackVolume(.25);
       await _turn();
-      expect(repository.mixSettingsSnapshot.laneLevels[(0, 0)] ?? 1, 1);
+      expect(repository.mixSettingsSnapshot.trackLevels[0] ?? 1, 1);
       expect(audio.laneVol[(0, 0)], 1);
       expect(audio.calls, isNot(contains('setMix')));
       persistence.writeGate!.complete();
       expect((await operation).isOk, isTrue);
-      expect(audio.laneVol[(0, 0)], .25);
+      expect(repository.mixSettingsSnapshot.trackLevels[0], .25);
+      expect(audio.laneVol[(0, 0)], 1);
     },
   );
 
@@ -465,6 +470,9 @@ void main() {
     () async {
       audio.nextSnapshot = _rig(trackCount: 8);
       final seed = MixSettingsSnapshot(
+        trackLevels: {
+          for (var channel = 0; channel < 8; channel++) channel: .3,
+        },
         trackPans: {
           for (var channel = 0; channel < 8; channel++)
             channel: -.7 + channel / 10,
@@ -499,19 +507,22 @@ void main() {
       expect(repository.mixSettingsSnapshot, seed);
       expect(persistence.candidates, hasLength(1));
       for (var channel = 0; channel < 8; channel++) {
-        expect(audio.pendingMix!.lanes[(channel, 0)]!.gain, 1);
-        expect(audio.pendingMix!.lanes[(channel, 0)]!.pan, 0);
+        expect(audio.pendingMix!.trackLevels[channel], 1);
+        expect(audio.pendingMix!.lanes[(channel, 0)]?.pan ?? 0, 0);
       }
-      expect(audio.pendingMix!.lanes[(7, 7)]!.gain, 1);
+      expect(audio.pendingMix!.lanes[(7, 7)], isNull);
       audio
         ..publishMix()
         ..commandsAreSettled = true;
       expect((await reset).isOk, isTrue);
       for (var channel = 0; channel < 8; channel++) {
         expect(repository.trackPan(channel), 0);
-        expect(audio.liveMix[(channel, 0)]!.gain, 1);
+        expect(repository.state.tracks[channel].volume, 1);
+        expect(audio.liveMix[(channel, 0)]!.gain, .2 + channel / 10);
       }
       final after = repository.mixSettingsSnapshot;
+      expect(after.trackLevels, isEmpty);
+      expect(after.laneLevels, seed.laneLevels);
       expect(after.trackSolos, {1: true, 6: true});
       expect(after.laneOutputs, {(7, 7): 12});
       expect(after.inputSetup, seed.inputSetup);
@@ -524,7 +535,8 @@ void main() {
       expect(audio.importedLayers[(0, 0, 0)], orderedEquals(pcm));
       expect(audio.calls, ['setMix']);
       expect(persistence.candidates.single.trackPans, isEmpty);
-      expect(persistence.candidates.single.laneLevels, isEmpty);
+      expect(persistence.candidates.single.trackLevels, isEmpty);
+      expect(persistence.candidates.single.laneLevels, seed.laneLevels);
     },
   );
 
@@ -537,6 +549,7 @@ void main() {
       'reset $refusal refusal retains exact mix and durable checkpoint',
       () async {
         final seed = MixSettingsSnapshot(
+          trackLevels: const {0: .4, 7: 1.5},
           trackPans: const {0: -.5, 7: .7},
           laneLevels: const {(0, 0): .2, (7, 7): .8},
           trackSolos: const {1: true},
@@ -661,6 +674,7 @@ void main() {
       expect(
         repository.applyMixSettings(
           MixSettingsSnapshot(
+            trackLevels: const {0: .4, 7: 1.5},
             trackPans: const {0: -.5, 7: .7},
             laneLevels: const {(0, 0): .2, (7, 7): .8},
           ),

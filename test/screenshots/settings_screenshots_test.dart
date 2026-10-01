@@ -121,6 +121,9 @@ void main() {
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    when(() => repository.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
     when(() => repository.state).thenReturn(
       const LooperState(
         tracks: [Track()],

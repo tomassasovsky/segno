@@ -94,6 +94,9 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     monitorChanges = StreamController<int>.broadcast();
     monitorParams = StreamController<int>.broadcast();
+    when(() => repository.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
     addTearDown(monitorChanges.close);
     addTearDown(monitorParams.close);
     when(

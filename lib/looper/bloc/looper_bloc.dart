@@ -137,10 +137,21 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperLaneEffectTypeChanged>((event, _) {
       final effects = _repository.laneEffects(event.channel, event.lane);
       if (event.index < 0 || event.index >= effects.length) return;
+      final old = effects[event.index];
       _pushLaneEffects(
         event.channel,
         event.lane,
-        [...effects]..[event.index] = BuiltInEffect(type: event.type),
+        [...effects]
+          ..[event.index] = BuiltInEffect(
+            type: event.type,
+            // The bus handler's rule, which this stage was missing: a retype
+            // changes the device, not the user's power decision, the slot's
+            // identity, or where in the signal the player put it.
+            enabled: old.enabled,
+            slotId: old.slotId,
+            placement: old.placement,
+            channels: old.channels,
+          ),
       );
     });
     on<LooperLaneEffectMoved>((event, _) {
@@ -150,18 +161,34 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       if (target < 0) target = 0;
       if (target > effects.length - 1) target = effects.length - 1;
       if (event.from == target) return;
+      // Reorder stays within a stage (slice 3e): the chain is stored
+      // Pre-first, so a move across the boundary would be re-partitioned back
+      // and land somewhere nobody asked for. Placement moves through the
+      // placement control, which says where it lands.
+      if (effects[event.from].placement != effects[target].placement) return;
       final next = [...effects];
       next.insert(target, next.removeAt(event.from));
       _pushLaneEffects(event.channel, event.lane, next);
     });
+    on<LooperLaneEffectPlacementChanged>((event, _) {
+      final result = _repository.setLaneEffectPlacement(
+        channel: event.channel,
+        lane: event.lane,
+        slotId: event.slotId,
+        placement: event.placement,
+      );
+      if (!result.isOk) return;
+      _persistRepositoryLaneChain(event.channel, event.lane);
+    });
     on<LooperLaneEffectParamChanged>((event, _) {
-      _repository.setLaneEffectParam(
+      final result = _repository.setLaneEffectParam(
         channel: event.channel,
         lane: event.lane,
         index: event.index,
         param: event.param,
         value: event.value,
       );
+      if (!result.isOk) return;
       // Re-save the whole chain (the engine call above was granular and did not
       // reset DSP; persistence stores the chain as one encoded string) — and
       // DEBOUNCED, because this is the knob-drag path: one pointer move used
@@ -169,13 +196,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _schedulePersistLaneChain(event.channel, event.lane);
     });
     on<LooperLanePluginParamChanged>((event, _) {
-      _repository.setLanePluginParam(
+      final result = _repository.setLanePluginParam(
         channel: event.channel,
         lane: event.lane,
         index: event.index,
         paramId: event.paramId,
         value: event.value,
       );
+      if (!result.isOk) return;
       // Persist the whole chain (the param set above was granular); the encoded
       // chain carries the plugin's remembered paramValues. Debounced for the
       // same reason as the built-in param path above.
@@ -188,35 +216,32 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       ]);
     });
     on<LooperLanePluginRelinked>((event, _) {
-      _repository.relinkLanePlugin(
+      final result = _repository.relinkLanePlugin(
         channel: event.channel,
         lane: event.lane,
         index: event.index,
         ref: event.ref,
       );
-      unawaited(
-        _settings?.saveLaneEffects(
-          event.channel,
-          event.lane,
-          _encodedLaneChain(event.channel, event.lane),
-        ),
-      );
+      if (!result.isOk) return;
+      _persistRepositoryLaneChain(event.channel, event.lane);
     });
     on<LooperLaneEffectEnabledToggled>((event, _) {
-      _repository.setLaneEffectEnabled(
+      final result = _repository.setLaneEffectEnabled(
         channel: event.channel,
         lane: event.lane,
         index: event.index,
         enabled: event.enabled,
       );
+      if (!result.isOk) return;
       _persistLaneChain(event.channel, event.lane);
     });
     on<LooperLaneChainEnabledToggled>((event, _) {
-      _repository.setLaneChainEnabled(
+      final result = _repository.setLaneChainEnabled(
         channel: event.channel,
         lane: event.lane,
         enabled: event.enabled,
       );
+      if (!result.isOk) return;
       _persistLaneChain(event.channel, event.lane);
     });
     on<LooperLaneChainResyncedFromInput>((event, _) {
@@ -255,6 +280,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       if (event.from < 0 || event.from >= chain.length) return;
       final to = event.to.clamp(0, chain.length - 1);
       if (event.from == to) return;
+      // Reorder stays within a stage — see the lane handler. An output chain
+      // is wholly Post, so this only ever refuses anything on the Track
+      // stage.
+      if (chain[event.from].placement != chain[to].placement) return;
       final next = [...chain];
       next.insert(to, next.removeAt(event.from));
       _pushBusChain(event.address, next);
@@ -268,11 +297,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         [...chain]
           ..[event.index] = BuiltInEffect(
             type: event.type,
-            // A retype changes the DEVICE, not the user's power decision or the
-            // slot's identity: keeping both means a powered-off device stays
-            // off (D-POWER/R23) and bindings targeting the slot survive (A9).
+            // A retype changes the DEVICE, not the user's power decision, the
+            // slot's identity, or its placement: keeping them means a
+            // powered-off device stays off (D-POWER/R23), bindings targeting
+            // the slot survive (A9), and the entry stays where it sat.
             enabled: old.enabled,
             slotId: old.slotId,
+            placement: old.placement,
+            channels: old.channels,
           ),
       );
     });
@@ -281,20 +313,19 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       // every slot's type, and the engine resets a slot's DSP state on every
       // type push — so a knob drag would clear the bus's reverb tails and
       // delay lines at pointer-move rate.
-      if (event.address.stage == FxStage.master) {
-        _repository.setMasterEffectParam(
-          index: event.index,
-          param: event.param,
-          value: event.value,
-        );
-      } else {
-        _repository.setTrackEffectParam(
-          channel: event.address.index,
-          index: event.index,
-          param: event.param,
-          value: event.value,
-        );
-      }
+      final result = event.address.stage == FxStage.master
+          ? _repository.setMasterEffectParam(
+              index: event.index,
+              param: event.param,
+              value: event.value,
+            )
+          : _repository.setTrackEffectParam(
+              channel: event.address.index,
+              index: event.index,
+              param: event.param,
+              value: event.value,
+            );
+      if (!result.isOk) return;
       // Debounced: the engine write above is per-move, this is per-drag.
       _schedulePersistBusChain(event.address);
     });
@@ -331,17 +362,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       if (event.index < 0 || event.index >= chain.length) return;
       final old = chain[event.index];
       if (old is! PluginEffect) return;
-      // Re-identify the entry and clear the D-MISS placeholder flags, but keep
-      // everything the user owns: the persisted state blob, their parameter
-      // tweaks, the power decision, and the slot id. A bus plugin's Relink is
-      // its ONLY action, so dropping those would destroy them irrecoverably.
-      //
-      // Deliberately unlike the repository, which drops the parameter capture
-      // when a relink points at a DIFFERENT plugin, because ids are not
-      // portable between plugins. A bus-stage entry never loads — the
-      // repository marks every one of them unsupported — so nothing here is
-      // ever replayed into anything, and what is kept is kept against the day
-      // this stage can host.
+      // Identity, placement, channels and power belong to this entry. A
+      // different plugin id cannot inherit the old one's state bytes or
+      // parameter ids, even while bus hosting is unavailable.
+      final samePlugin = old.ref.id == event.ref.id;
       _pushBusChain(
         event.address,
         [...chain]
@@ -352,7 +376,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
             // cannot (cold, uninstalled) an empty name falls back to the id.
             // Keeping the old one would leave the card naming the plugin that
             // was just replaced, which is worse than naming none.
-            name: old.ref.id == event.ref.id ? old.name : '',
+            name: samePlugin ? old.name : '',
+            state: samePlugin ? old.state : '',
+            paramValues: samePlugin ? old.paramValues : const {},
             unavailable: false,
             unsupported: false,
             versionChanged: false,
@@ -360,50 +386,111 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
     });
     on<LooperTrackEffectsChanged>((event, _) {
-      _repository.setTrackEffects(
+      final result = _repository.setTrackEffects(
         channel: event.channel,
         effects: event.effects,
       );
-      _persistTrackChain(event.channel);
+      if (!result.isOk) return;
+      _persistAfterFx(
+        (#track, event.channel),
+        () => saveTrackFxChain(
+          settings: _settings,
+          looper: _repository,
+          channel: event.channel,
+        ),
+      );
     });
     on<LooperTrackEffectEnabledToggled>((event, _) {
-      _repository.setTrackEffectEnabled(
+      final result = _repository.setTrackEffectEnabled(
         channel: event.channel,
         index: event.index,
         enabled: event.enabled,
       );
+      if (!result.isOk) return;
       _persistTrackChain(event.channel);
     });
     on<LooperTrackChainEnabledToggled>((event, _) {
-      _repository.setTrackChainEnabled(
+      final result = _repository.setTrackChainEnabled(
         channel: event.channel,
         enabled: event.enabled,
       );
+      if (!result.isOk) return;
       _persistTrackChain(event.channel);
     });
     on<LooperTrackChainToggled>((event, _) {
       // Resolved here, against the repository's remembered intent — the same
       // truth `ControlCubit` toggles from, and the same shape as the mute
       // toggle above.
-      _repository.setTrackChainEnabled(
+      final result = _repository.setTrackChainEnabled(
         channel: event.channel,
         enabled: !_repository.trackChainEnabled(event.channel),
       );
+      if (!result.isOk) return;
       _persistTrackChain(event.channel);
     });
     on<LooperMasterEffectsChanged>((event, _) {
-      _repository.setMasterEffects(effects: event.effects);
-      _persistMasterChain();
+      final result = _repository.setMasterEffects(effects: event.effects);
+      if (!result.isOk) return;
+      _persistAfterFx(#master, _saveMasterChain);
     });
-    on<LooperMasterEffectEnabledToggled>((event, _) {
-      _repository.setMasterEffectEnabled(
+    on<LooperTrackEffectPlacementChanged>((event, _) {
+      final result = _repository.setTrackEffectPlacement(
+        channel: event.channel,
+        slotId: event.slotId,
+        placement: event.placement,
+      );
+      if (!result.isOk) return;
+      _persistAfterFx(
+        (#track, event.channel),
+        () => saveTrackFxChain(
+          settings: _settings,
+          looper: _repository,
+          channel: event.channel,
+        ),
+      );
+    });
+    on<LooperAllTracksEffectsChanged>((event, _) {
+      final result = _repository.setAllTracksEffects(effects: event.effects);
+      if (!result.isOk) return;
+      _persistAfterFx(#allTracks, _saveAllTracksChain);
+    });
+    on<LooperAllTracksEffectEnabledToggled>((event, _) {
+      final result = _repository.setAllTracksEffectEnabled(
         index: event.index,
         enabled: event.enabled,
       );
+      if (!result.isOk) return;
+      _persistAllTracksChain();
+    });
+    on<LooperAllTracksChainEnabledToggled>((event, _) {
+      final result = _repository.setAllTracksChainEnabled(
+        enabled: event.enabled,
+      );
+      if (!result.isOk) return;
+      _persistAllTracksChain();
+    });
+    on<LooperAllTracksEffectParamChanged>((event, _) {
+      // Granular, NOT a whole-chain push — see the bus param handler: a
+      // re-push would reset every slot's DSP state at pointer-move rate.
+      final result = _repository.setAllTracksEffectParam(
+        index: event.index,
+        param: event.param,
+        value: event.value,
+      );
+      if (!result.isOk) return;
+      _persistAllTracksChain();
+    });
+    on<LooperMasterEffectEnabledToggled>((event, _) {
+      final result = _repository.setMasterEffectEnabled(
+        index: event.index,
+        enabled: event.enabled,
+      );
+      if (!result.isOk) return;
       _persistMasterChain();
     });
     on<LooperMasterChainEnabledToggled>((event, _) {
-      _repository.setMasterChainEnabled(enabled: event.enabled);
+      final result = _repository.setMasterChainEnabled(enabled: event.enabled);
+      if (!result.isOk) return;
       _persistMasterChain();
     });
     on<LooperLanePluginEditorOpened>((event, _) {
@@ -592,11 +679,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
     );
+    _fxReplaySubscription = _repository.fxReplayConfirmed.listen(
+      _onFxReplayConfirmed,
+    );
     _controllerSubscription = controller?.events.listen(_onControllerEvent);
     // Persist chains the repository mutates on its own — the record-time
     // snapshot-copy of a monitor chain onto the take's lanes (F3). The bloc
     // stays the single settings writer for chains.
-    _repository.onLaneChainChanged = _persistLaneChain;
+    _repository.onLaneChainChanged = _persistRepositoryLaneChain;
   }
 
   final LooperRepository _repository;
@@ -618,6 +708,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// otherwise emit at pointer rate. Flushed in [close].
   final WriteDebouncer _fxPersist;
   late final StreamSubscription<LooperState> _subscription;
+  late final StreamSubscription<({int mixGeneration, int sessionRevision})>
+  _fxReplaySubscription;
+  final Map<
+    Object,
+    ({int sessionRevision, Object token, Future<void> Function() save})
+  >
+  _pendingFxSaves = {};
+  final Set<Object> _savingFxKeys = {};
   StreamSubscription<ControllerEvent>? _controllerSubscription;
 
   /// The inbound editor-sync poll cadence (D-SYNC: ≤10 Hz).
@@ -634,9 +732,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// every lane on clear), and the unmute is persisted per lane so it survives
   /// a restart. Shared by every clear path (per-track and clear-all).
   void _clearAndArm(int channel) {
-    _repository
-      ..clear(channel: channel)
-      ..setMute(muted: false, channel: channel);
+    if (!_repository.clear(channel: channel).isOk) return;
+    _repository.setMute(muted: false, channel: channel);
     final lanes = channel >= 0 && channel < state.tracks.length
         ? state.tracks[channel].lanes.length
         : 1;
@@ -651,6 +748,91 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     return lane >= 0 && lane < lanes.length && lanes[lane].muted;
   }
 
+  void _persistAfterFx(Object key, Future<void> Function() save) {
+    if (_settings == null) return;
+    final sessionRevision = _repository.sessionRevision;
+    _pendingFxSaves[key] = (
+      sessionRevision: sessionRevision,
+      token: Object(),
+      save: save,
+    );
+    if (_repository.fxRecipesSettled) {
+      unawaited(_savePendingFx(key, sessionRevision));
+    } else {
+      unawaited(_waitAndPersistFx(key, sessionRevision));
+    }
+  }
+
+  Future<void> _savePendingFx(Object key, int sessionRevision) async {
+    if (!_savingFxKeys.add(key)) return;
+    Object? attemptedToken;
+    try {
+      while (true) {
+        final pending = _pendingFxSaves[key];
+        if (pending == null ||
+            pending.sessionRevision != sessionRevision ||
+            sessionRevision != _repository.sessionRevision ||
+            isClosed ||
+            !_repository.fxRecipesSettled) {
+          return;
+        }
+        attemptedToken = pending.token;
+        try {
+          await pending.save();
+        } on Object catch (error, stackTrace) {
+          // Keep this target dirty for a later confirmed replay or edit.
+          addError(error, stackTrace);
+          return;
+        }
+        if (identical(_pendingFxSaves[key]?.token, pending.token)) {
+          _pendingFxSaves.remove(key);
+          return;
+        }
+      }
+    } finally {
+      _savingFxKeys.remove(key);
+      final next = _pendingFxSaves[key];
+      if (next != null &&
+          !identical(next.token, attemptedToken) &&
+          next.sessionRevision == _repository.sessionRevision &&
+          !isClosed &&
+          _repository.fxRecipesSettled) {
+        unawaited(_savePendingFx(key, next.sessionRevision));
+      }
+    }
+  }
+
+  void _onFxReplayConfirmed(
+    ({int mixGeneration, int sessionRevision}) replay,
+  ) {
+    if (isClosed ||
+        replay.mixGeneration != _repository.mixGeneration ||
+        replay.sessionRevision != _repository.sessionRevision) {
+      return;
+    }
+    for (final entry in _pendingFxSaves.entries.toList()) {
+      if (entry.value.sessionRevision == replay.sessionRevision) {
+        unawaited(_savePendingFx(entry.key, replay.sessionRevision));
+      }
+    }
+  }
+
+  void _persistRepositoryLaneChain(int channel, int lane) {
+    _persistAfterFx(
+      (#lane, channel, lane),
+      () => _saveLaneChain(channel, lane),
+    );
+  }
+
+  Future<void> _waitAndPersistFx(Object key, int sessionRevision) async {
+    final result = await _repository.settleFxRecipes(
+      waitForCallback: true,
+      cancelled: () => isClosed,
+    );
+    if (!result.isOk || isClosed) return;
+    await _savePendingFx(key, sessionRevision);
+  }
+
   /// Pushes a freshly-computed lane chain to the engine and persists it. The
   /// single home for lane FX structural edits — every add/remove/retype/move
   /// handler routes here so the chain surgery lives in one place, never the UI.
@@ -659,18 +841,17 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     // the chain), so any editor-sync poll keyed by a now-stale chain index must
     // be cancelled — otherwise a reorder would silently rebind a poll to a
     // different plugin and close the wrong window.
+    final result = _repository.setLaneEffects(
+      channel: channel,
+      lane: lane,
+      effects: effects,
+    );
+    if (!result.isOk) return;
     _cancelLaneEditorTimers(channel, lane);
-    _repository.setLaneEffects(channel: channel, lane: lane, effects: effects);
     // Persist the repository's chain, not the input: applying it enriches each
     // plugin entry with its resolved display name (so the name survives a
     // restart), which the pre-apply `effects` list does not yet carry.
-    unawaited(
-      _settings?.saveLaneEffects(
-        channel,
-        lane,
-        _encodedLaneChain(channel, lane),
-      ),
-    );
+    _persistRepositoryLaneChain(channel, lane);
   }
 
   /// Persists lane [lane] of [channel]'s current chain — the sink for the
@@ -678,12 +859,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// record-time snapshot copy). Reads the repository's enriched chain so a
   /// persisted plugin entry keeps its resolved name.
   void _persistLaneChain(int channel, int lane) {
-    unawaited(
-      _settings?.saveLaneEffects(
-        channel,
-        lane,
-        _encodedLaneChain(channel, lane),
-      ),
+    unawaited(_saveLaneChain(channel, lane));
+  }
+
+  Future<void> _saveLaneChain(int channel, int lane) async {
+    await _settings?.saveLaneEffects(
+      channel,
+      lane,
+      _encodedLaneChain(channel, lane),
     );
   }
 
@@ -691,7 +874,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// Keyed per lane, so dragging one lane's knob never delays another's write.
   void _schedulePersistLaneChain(int channel, int lane) => _fxPersist.schedule(
     (#lane, channel, lane),
-    () => _persistLaneChain(channel, lane),
+    () => _persistRepositoryLaneChain(channel, lane),
   );
 
   /// Encodes lane [lane] of [channel]'s chain as the persisted envelope
@@ -717,35 +900,43 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   /// Writes [next] to the bus chain at [address] and persists its envelope.
   void _pushBusChain(FxAddress address, List<TrackEffect> next) {
-    _writeBusChain(address, next);
-    _persistBusChain(address);
+    if (!_writeBusChain(address, next).isOk) return;
+    _persistAfterFx(
+      (address.stage, address.index),
+      () => _saveBusChain(address),
+    );
   }
 
   /// The engine half of [_pushBusChain], on its own — for the knob-drag path,
   /// which needs the write immediate and the persistence coalesced.
-  void _writeBusChain(FxAddress address, List<TrackEffect> next) {
+  EngineResult _writeBusChain(FxAddress address, List<TrackEffect> next) {
     if (address.stage == FxStage.master) {
-      _repository.setMasterEffects(effects: next);
-    } else {
-      _repository.setTrackEffects(channel: address.index, effects: next);
+      return _repository.setMasterEffects(effects: next);
     }
+    return _repository.setTrackEffects(
+      channel: address.index,
+      effects: next,
+    );
   }
 
-  /// Persists the bus chain envelope at [address] — used on its own by the
-  /// granular param path, which writes through the repository rather than
-  /// replacing the chain.
-  void _persistBusChain(FxAddress address) {
-    if (address.stage == FxStage.master) {
-      _persistMasterChain();
-    } else {
-      _persistTrackChain(address.index);
-    }
-  }
+  Future<void> _saveBusChain(FxAddress address) =>
+      address.stage == FxStage.master
+      ? _saveMasterChain()
+      : saveTrackFxChain(
+          settings: _settings,
+          looper: _repository,
+          channel: address.index,
+        );
 
-  /// Coalesced twin of [_persistBusChain] — the bus half of
+  /// Coalesced bus-chain persistence — the bus half of
   /// [_schedulePersistLaneChain], keyed by the address it persists.
-  void _schedulePersistBusChain(FxAddress address) =>
-      _fxPersist.schedule(address, () => _persistBusChain(address));
+  void _schedulePersistBusChain(FxAddress address) => _fxPersist.schedule(
+    address,
+    () => _persistAfterFx(
+      (address.stage, address.index),
+      () => _saveBusChain(address),
+    ),
+  );
 
   /// Persists track [channel]'s Track-stage chain envelope (the bus twin of
   /// [_encodedLaneChain]; bus chains carry no inheritance meta) — through the
@@ -787,6 +978,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// bounded burst of removals per load: a load is a deliberate, infrequent
   /// action that already clears every track and re-imports its stems.
   void _resyncSessionChains() {
+    _pendingFxSaves.clear();
     final settings = _settings;
     if (settings == null) return;
     // A loaded session supersedes every edit in flight. Without this, a knob
@@ -817,18 +1009,37 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     // Unconditional: there is exactly one Master envelope and it always has a
     // value, so it is overwritten rather than cleared.
     _persistMasterChain();
+    _persistAllTracksChain();
     // SessionCubit persists the loaded mix before this FX-only resync.
   }
 
   /// Persists the Master insert chain envelope.
   void _persistMasterChain() {
-    unawaited(
-      _settings?.saveMasterFxChain(
-        encodeFxChain(
-          FxChainEnvelope(
-            chainEnabled: _repository.masterChainEnabled,
-            entries: _repository.masterEffects,
-          ),
+    unawaited(_saveMasterChain());
+  }
+
+  Future<void> _saveMasterChain() async {
+    await _settings?.saveMasterFxChain(
+      encodeFxChain(
+        FxChainEnvelope(
+          chainEnabled: _repository.masterChainEnabled,
+          entries: _repository.masterEffects,
+        ),
+      ),
+    );
+  }
+
+  /// Persists the All tracks recorded-mix chain envelope.
+  void _persistAllTracksChain() {
+    unawaited(_saveAllTracksChain());
+  }
+
+  Future<void> _saveAllTracksChain() async {
+    await _settings?.saveAllTracksFxChain(
+      encodeFxChain(
+        FxChainEnvelope(
+          chainEnabled: _repository.allTracksChainEnabled,
+          entries: _repository.allTracksEffects,
         ),
       ),
     );
@@ -936,10 +1147,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     _lanePluginEditorTimers.clear();
     // The repository outlives the bloc; drop the chain-persist callback so a
     // later record doesn't call into a closed bloc.
-    if (_repository.onLaneChainChanged == _persistLaneChain) {
+    if (_repository.onLaneChainChanged == _persistRepositoryLaneChain) {
       _repository.onLaneChainChanged = null;
     }
+    _pendingFxSaves.clear();
     unawaited(_subscription.cancel());
+    unawaited(_fxReplaySubscription.cancel());
     unawaited(_controllerSubscription?.cancel());
     return super.close();
   }

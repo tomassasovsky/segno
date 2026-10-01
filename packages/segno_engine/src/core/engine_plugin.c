@@ -25,6 +25,8 @@
 
 #include "../host/plugin_slot.h"
 #include "engine_private.h"
+#include "engine_fx.h"
+#include "engine_internal.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -150,6 +152,7 @@ int32_t le_engine_set_lane_plugin(le_engine* engine, int32_t channel,
                                   int32_t lane, int32_t index,
                                   const char* plugin_id,
                                   le_plugin_slot** out_slot) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane)) return LE_ERR_INVALID;
   _Atomic int32_t* type = NULL;
   le_fx_state* fx = lane_fx(engine, channel, lane, index, &type);
   if (!fx || !plugin_id) return LE_ERR_INVALID;
@@ -170,6 +173,7 @@ int32_t le_engine_set_lane_plugin(le_engine* engine, int32_t channel,
 int32_t le_engine_set_monitor_plugin(le_engine* engine, int32_t input,
                                      int32_t index, const char* plugin_id,
                                      le_plugin_slot** out_slot) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_MONITOR, input, 0)) return LE_ERR_INVALID;
   _Atomic int32_t* type = NULL;
   le_fx_state* fx = monitor_fx(engine, input, index, &type);
   if (!fx || !plugin_id) return LE_ERR_INVALID;
@@ -184,6 +188,7 @@ int32_t le_engine_set_monitor_plugin(le_engine* engine, int32_t input,
 
 int32_t le_engine_clear_lane_plugin(le_engine* engine, int32_t channel,
                                     int32_t lane, int32_t index) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane)) return LE_ERR_INVALID;
   _Atomic int32_t* type = NULL;
   le_fx_state* fx = lane_fx(engine, channel, lane, index, &type);
   if (!fx) return LE_ERR_INVALID;
@@ -197,6 +202,7 @@ int32_t le_engine_clear_lane_plugin(le_engine* engine, int32_t channel,
 
 int32_t le_engine_clear_monitor_plugin(le_engine* engine, int32_t input,
                                        int32_t index) {
+  if (le_fx_edit_pending(engine, LE_FX_OWNER_MONITOR, input, 0)) return LE_ERR_INVALID;
   _Atomic int32_t* type = NULL;
   le_fx_state* fx = monitor_fx(engine, input, index, &type);
   if (!fx) return LE_ERR_INVALID;

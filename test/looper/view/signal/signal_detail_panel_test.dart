@@ -128,6 +128,17 @@ void main() {
     monitorChains.clear();
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
+    when(() => repository.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
+    when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.fxRecipesSettled).thenReturn(true);
+    when(
+      () => repository.settleFxRecipes(
+        waitForCallback: true,
+        cancelled: any(named: 'cancelled'),
+      ),
+    ).thenAnswer((_) async => EngineResult.ok);
     when(() => repository.monitorChanges).thenAnswer(
       (_) => const Stream<int>.empty(),
     );

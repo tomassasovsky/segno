@@ -21,6 +21,10 @@ void le_plugin_slot_set_ready(le_plugin_slot* slot, int ready) {
 void le_plugin_slot_process(le_plugin_slot* slot, float* l, float* r) {
   if (atomic_load_explicit(&slot->ready, memory_order_acquire)) { *l *= .5f; *r *= .5f; }
 }
+/* This harness exercises positional install only; it never stages recipes. */
+int le_fx_edit_pending(le_engine* e, int owner, int ch, int lane) {
+  (void)e; (void)owner; (void)ch; (void)lane; return 0;
+}
 static int failures;
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); ++failures; } } while (0)
 typedef struct {

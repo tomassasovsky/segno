@@ -29,6 +29,9 @@ void main() {
 
   setUp(() {
     repository = _MockLooperRepository();
+    when(() => repository.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
     stateController = StreamController<LooperState>.broadcast();
     when(
       () => repository.looperState,

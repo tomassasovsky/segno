@@ -62,6 +62,9 @@ void main() {
       initialState: const PedalState(),
     );
     final repository = _MockLooperRepository();
+    when(() => repository.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
     looper = repository;
     when(
       () => repository.setMonitorInputMode(

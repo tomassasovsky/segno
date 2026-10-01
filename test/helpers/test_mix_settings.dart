@@ -25,6 +25,7 @@ extension MixSettingsTestSeeds on SettingsRepository {
     await replaceMixSettings(
       device: 'test',
       mix: (
+        trackLevels: saved.trackLevels,
         trackPans: saved.trackPans,
         laneLevels: {...saved.laneLevels, (channel, lane): volume},
         monitorLevels: saved.monitorLevels,
@@ -42,6 +43,7 @@ extension MixSettingsTestSeeds on SettingsRepository {
     await replaceMixSettings(
       device: 'test',
       mix: (
+        trackLevels: saved.trackLevels,
         trackPans: {...saved.trackPans, channel: pan},
         laneLevels: saved.laneLevels,
         monitorLevels: saved.monitorLevels,
@@ -59,6 +61,7 @@ extension MixSettingsTestSeeds on SettingsRepository {
     await replaceMixSettings(
       device: device,
       mix: (
+        trackLevels: saved.trackLevels,
         trackPans: saved.trackPans,
         laneLevels: saved.laneLevels,
         monitorLevels: saved.monitorLevels,

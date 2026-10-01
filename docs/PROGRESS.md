@@ -331,6 +331,16 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 
 Phases 1–3 of the plan plus several sync refinements. See `git log` for detail.
 
+- **Accepted design, slice 3e (#1016, epic #1009):** the October
+  reconstruction applies complete FX recipes at an audio boundary and persists
+  only their confirmed application. Whole-track Pre combines original parts
+  once while keeping the Mixer gain separate. Capture inheritance, Clear/Undo,
+  restart, plugin ownership and channel refusal have independent sample and
+  persistence checks. All relevant local Dart/native suites, coverage floors,
+  static checks and source reviews pass; publication and current-head CI are
+  separate gates. FX screens follow in 3f; complete offline rendering, exact
+  DSP parity and in-flight cross-session storage ordering retain their later
+  owners. See `docs/reviews/design-fx-placement-restack/README.md`.
 - **Accepted design, slice 3b (#1016, epic #1009):** output destinations
   have level, mute, Stereo/Mono, retained balance and a post-sum effect chain.
   October reconstruction joins output setup to the shared atomic mix and durable

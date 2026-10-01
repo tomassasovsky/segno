@@ -18,6 +18,7 @@ class SettingsMixPersistence implements MixSettingsPersistence {
       settings.replaceMixSettings(
         device: device,
         mix: (
+          trackLevels: candidate.trackLevels,
           trackPans: candidate.trackPans,
           laneLevels: candidate.laneLevels,
           monitorLevels: candidate.monitorLevels,
