@@ -59,6 +59,7 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
       ),
   ],
   masterChain: _encodedMasterChain(looper),
+  allTracksChain: _encodedAllTracksChain(looper),
 );
 
 /// Captures repository-owned settings without depending on an engine report.
@@ -80,6 +81,7 @@ SessionSettings settingsFromLooper(LooperRepository looper) {
     trackOverdubDecayOverrides: looper.trackOverdubDecayOverrides,
     trackOneShotOverrides: looper.trackOneShotOverrides,
     trackLengthPresetOverrides: looper.trackLengthPresetOverrides,
+    trackLevels: looper.mixSettingsSnapshot.trackLevels,
     trackPans: {
       for (final track in looper.state.tracks)
         if (track.pan != 0) track.channel: track.pan,
@@ -143,6 +145,13 @@ OutputSetup outputSetupFromSession(SessionOutputSetup setup) =>
 String _encodedMasterChain(LooperRepository looper) {
   final master = looper.masterChainEnvelope();
   return master == const FxChainEnvelope() ? '' : encodeFxChain(master);
+}
+
+/// The All tracks recorded-mix chain as an envelope string, or the manifest's
+/// "no chain" spelling (`''`) — the Master rule exactly, for the same reason.
+String _encodedAllTracksChain(LooperRepository looper) {
+  final chain = looper.allTracksChainEnvelope();
+  return chain == const FxChainEnvelope() ? '' : encodeFxChain(chain);
 }
 
 /// Gathers the same live four-stage chains into the models a
@@ -219,6 +228,8 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
       chain.channel: decodeFxChain(chain.encoded),
   },
   masterChain: decodeFxChain(bundle.session.masterChain),
+  // Required in the current manifest. An empty string clears the live chain.
+  allTracksChain: decodeFxChain(bundle.session.allTracksChain),
   // Looper mode + crown (schema v4, B5c) — session-level, so read straight
   // off the manifest rather than through `_rigTracks`.
   looperMode: bundle.session.looperMode,
@@ -237,6 +248,7 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   trackOverdubDecayOverrides: bundle.session.trackOverdubDecayOverrides,
   trackOneShotOverrides: bundle.session.trackOneShotOverrides,
   trackLengthPresetOverrides: bundle.session.trackLengthPresetOverrides,
+  trackLevels: bundle.session.trackLevels,
   trackPans: bundle.session.trackPans,
   laneInputs: bundle.session.laneInputs,
   laneOutputs: bundle.session.laneOutputs,

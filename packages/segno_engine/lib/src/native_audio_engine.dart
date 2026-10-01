@@ -9,6 +9,7 @@ import 'package:segno_engine/src/audio_engine.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/ffi_strings.dart';
+import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
@@ -369,6 +370,108 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  PluginSlotHandle? preparePlugin({required String pluginId}) => _loadPlugin(
+    pluginId,
+    (id, out) => _bindings.le_engine_prepare_plugin(_engine, id, out),
+  );
+
+  @override
+  EngineResult discardPreparedPlugin(PluginSlotHandle slot) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return EngineResult.invalid;
+    return EngineResult.fromCode(
+      _bindings.le_engine_discard_prepared_plugin(_engine, slot.pointer),
+    );
+  }
+
+  @override
+  EngineResult preparePluginParam(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return EngineResult.invalid;
+    return EngineResult.fromCode(
+      _bindings.le_engine_prepare_plugin_param(
+        _engine,
+        slot.pointer,
+        paramId,
+        value,
+      ),
+    );
+  }
+
+  bool _writeFxRecipe(le_fx_recipe target, FxRecipe recipe) {
+    if (!recipe.isValid) return false;
+    target
+      ..count = recipe.slots.length
+      ..pre_count = recipe.preCount
+      ..enabled = recipe.enabled ? 1 : 0;
+    for (var i = 0; i < recipe.slots.length; i++) {
+      final slot = recipe.slots[i];
+      final plugin = slot.plugin;
+      if (plugin != null && plugin is! _NativePluginSlotHandle) return false;
+      target.type[i] = plugin == null ? slot.type.code : kPluginFxCode;
+      target.plugin[i] = plugin == null
+          ? nullptr
+          : (plugin as _NativePluginSlotHandle).pointer;
+      target.slot_enabled[i] = slot.enabled ? 1 : 0;
+      for (var p = 0; p < slot.params.length; p++) {
+        target.params[i][p] = slot.params[p];
+      }
+      target.input_mode[i] = slot.channels.input.index;
+      target.output_mode[i] = slot.channels.output.index;
+      target.placement[i] = slot.channels.placement;
+      target.level[i] = slot.channels.level;
+    }
+    return true;
+  }
+
+  @override
+  EngineResult setFxRecipe({
+    required FxOwner owner,
+    required FxRecipe recipe,
+    required int revision,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    _checkAlive();
+    if (revision <= 0 || revision > 0xffffffff) return EngineResult.invalid;
+    final ptr = calloc<le_fx_recipe>();
+    try {
+      if (!_writeFxRecipe(ptr.ref, recipe)) return EngineResult.invalid;
+      return EngineResult.fromCode(
+        _bindings.le_engine_set_fx_recipe(
+          _engine,
+          owner.index,
+          channel,
+          lane,
+          revision,
+          ptr,
+        ),
+      );
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  @override
+  int fxRecipeRevision({
+    required FxOwner owner,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    _checkAlive();
+    return _bindings.le_engine_fx_recipe_revision(
+      _engine,
+      owner.index,
+      channel,
+      lane,
+    );
+  }
+
+  @override
   PluginSlotHandle? setLanePlugin({
     required int channel,
     required int lane,
@@ -631,6 +734,10 @@ class NativeAudioEngine implements AudioEngine {
     final ptr = calloc<le_mix_settings>();
     try {
       final native = ptr.ref..revision = settings.revision;
+      for (final entry in settings.trackLevels.entries) {
+        native.track_gain_mask |= 1 << entry.key;
+        native.track_gain[entry.key] = entry.value;
+      }
       for (final entry in settings.lanes.entries) {
         final i = entry.key.$1 * kMaxLanes + entry.key.$2;
         native.lane_mask |= 1 << i;
@@ -691,8 +798,19 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     if (!image.isValid) return EngineResult.invalid;
     final ptr = calloc<le_record_image>();
+    final recipes = image.laneFx.isEmpty
+        ? nullptr.cast<le_fx_recipe>()
+        : calloc<le_fx_recipe>(LE_MAX_LANES);
     try {
-      final native = ptr.ref..revision = image.revision;
+      final native = ptr.ref
+        ..revision = image.revision
+        ..lane_fx = recipes;
+      for (final entry in image.laneFx.entries) {
+        if (!_writeFxRecipe(recipes[entry.key], entry.value)) {
+          return EngineResult.invalid;
+        }
+        native.fx_lane_mask |= 1 << entry.key;
+      }
       for (final entry in image.lanes.entries) {
         native.lane_mask |= 1 << entry.key;
         native.gain[entry.key] = entry.value.gain;
@@ -703,6 +821,7 @@ class NativeAudioEngine implements AudioEngine {
       );
     } finally {
       calloc.free(ptr);
+      if (recipes != nullptr) calloc.free(recipes);
     }
   }
 
@@ -1201,6 +1320,163 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx(_engine, index, type.code),
+    );
+  }
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx_count(_engine, count),
+    );
+  }
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx_param(_engine, index, param, value),
+    );
+  }
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx_enabled(
+        _engine,
+        index,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx_chain_enabled(
+        _engine,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_lane_fx_channels(
+        _engine,
+        channel,
+        lane,
+        index,
+        channels.input.index,
+        channels.output.index,
+        channels.placement,
+        channels.level,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_input_fx_channels(
+        _engine,
+        input,
+        index,
+        channels.input.index,
+        channels.output.index,
+        channels.placement,
+        channels.level,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_channels(
+        _engine,
+        channel,
+        index,
+        channels.input.index,
+        channels.output.index,
+        channels.placement,
+        channels.level,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_fx_channels(
+        _engine,
+        bus,
+        index,
+        channels.input.index,
+        channels.output.index,
+        channels.placement,
+        channels.level,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx_channels(
+        _engine,
+        index,
+        channels.input.index,
+        channels.output.index,
+        channels.placement,
+        channels.level,
+      ),
+    );
+  }
+
   // ---- Output buses (slice 3b) ----
 
   @override
@@ -1484,10 +1760,17 @@ class NativeAudioEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_lane_fx_count(_engine, channel, lane, count),
+      _bindings.le_engine_set_lane_fx_count(
+        _engine,
+        channel,
+        lane,
+        count,
+        preCount,
+      ),
     );
   }
 
@@ -1589,10 +1872,19 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setTrackFxCount({required int channel, required int count}) {
+  EngineResult setTrackFxCount({
+    required int channel,
+    required int count,
+    int preCount = 0,
+  }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_track_fx_count(_engine, channel, count),
+      _bindings.le_engine_set_track_fx_count(
+        _engine,
+        channel,
+        count,
+        preCount,
+      ),
     );
   }
 

@@ -111,6 +111,15 @@ $CC $STD $EXTRA_CFLAGS src/test/test_plugin_runtime_races.c \
   -o "$OUT/segno_plugin_runtime_race_tests.exe"
 "$OUT/segno_plugin_runtime_race_tests.exe"
 
+echo "== building FX recipe ownership tests =="
+# Real engine admission, callback publication and retirement with a deterministic
+# plugin host. Keep this before the races-only exit so TSAN covers its overlap.
+RECIPE_SRC="${ENGINE_SRC/ src\/core\/plugin_disabled.c/}"
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_fx_recipe_plugins.c \
+  $RECIPE_SRC $ENGINE_LIBS -o "$OUT/segno_fx_recipe_tests.exe"
+"$OUT/segno_fx_recipe_tests.exe"
+
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
   exit 0
 fi

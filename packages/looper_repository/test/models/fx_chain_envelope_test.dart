@@ -70,6 +70,23 @@ void main() {
       expect(decodeFxChain('42'), const FxChainEnvelope());
     });
 
+    test('invalid explicit placement or channels refuse the envelope', () {
+      expect(
+        () => decodeFxChain(
+          '{"chainEnabled":true,"entries":[{"type":1,'
+          '"placement":"sideways"}]}',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => decodeFxChain(
+          '{"chainEnabled":true,"entries":[{"type":1,'
+          '"channels":{"level":3}}]}',
+        ),
+        throwsFormatException,
+      );
+    });
+
     test('wrong-TYPED fields never throw — corrupt persisted strings decode '
         'to safe defaults on the uncaught boot path', () {
       // Envelope-level: a non-bool chainEnabled falls back to enabled.

@@ -6,7 +6,8 @@
  * allocation, making them safe to call from the audio callback.
  *
  * Capacity must be a power of two. The ring stores fixed-size POD commands so
- * the audio thread never dereferences control-owned heap memory.
+ * heap-backed recipes are immutable and retained through the callback's
+ * end-of-block publication before the control owner reclaims them.
  */
 #ifndef SEGNO_LOCKFREE_RING_H
 #define SEGNO_LOCKFREE_RING_H
@@ -43,8 +44,12 @@ typedef struct le_command {
     struct { /* SET_LANE_FX / SET_MONITOR_INPUT_FX (channel = input, lane unused) */
       int32_t channel, lane, index, type;
     } fx;
-    struct { /* SET_LANE_FX_COUNT / SET_MONITOR_INPUT_FX_COUNT (channel = input) */
-      int32_t channel, lane, count;
+    struct { /* SET_LANE_FX_COUNT / SET_MONITOR_INPUT_FX_COUNT (channel = input)
+              * pre_count is the leading Pre run (slice 3e); it rides the same
+              * command as the count so the audio thread never sees a split
+              * that names more Pre entries than the chain has. Owners with no
+              * Pre stage (monitor, track, output) send 0. */
+      int32_t channel, lane, count, pre_count;
     } fxcount;
     struct { /* lane int payload: SET_LANE_INPUT (input ch) / *_OUTPUT (mask) */
       int32_t channel, lane, value;
@@ -83,12 +88,14 @@ typedef struct le_command {
       int32_t bars[LE_MAX_TRACKS];
     } presets;
     le_mix_settings mix;
+    struct le_prepared_fx* recipe;
     struct {
       int32_t channel;
       uint32_t sequence;
       int32_t action;
       float trigger;
       le_record_image image;
+      struct le_prepared_fx* recipes;
     } record_image;
     struct { /* COMMIT_SESSION: exact recorded span and musical bar count. */
       int32_t base_frames, loop_bars;

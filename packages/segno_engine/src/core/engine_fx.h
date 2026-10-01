@@ -77,6 +77,12 @@ extern "C" {
  * the state, because the slot never stopped sounding. Audio thread
  * (le_engine_process), the offline render (perf_render), and the FX chain
  * test. */
+/* Applies one whole-track gain between the Pre prefix and Post suffix. */
+void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
+                    int count, const int32_t* types,
+                    const float params[LE_FX_MAX][LE_FX_PARAMS],
+                    const int32_t* enabled, int gain_at, float gain);
+
 void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],

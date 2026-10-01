@@ -19,15 +19,24 @@ void persistTrackFxChain({
   required LooperRepository looper,
   required int channel,
 }) {
-  if (settings == null) return;
   unawaited(
-    settings.saveTrackFxChain(
-      channel,
-      encodeFxChain(
-        FxChainEnvelope(
-          chainEnabled: looper.trackChainEnabled(channel),
-          entries: looper.trackEffects(channel),
-        ),
+    saveTrackFxChain(settings: settings, looper: looper, channel: channel),
+  );
+}
+
+/// Awaitable twin for lifecycle-fenced FX writes.
+Future<void> saveTrackFxChain({
+  required SettingsRepository? settings,
+  required LooperRepository looper,
+  required int channel,
+}) async {
+  if (settings == null) return;
+  await settings.saveTrackFxChain(
+    channel,
+    encodeFxChain(
+      FxChainEnvelope(
+        chainEnabled: looper.trackChainEnabled(channel),
+        entries: looper.trackEffects(channel),
       ),
     ),
   );

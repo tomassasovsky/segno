@@ -23,6 +23,173 @@ class SegnoEngineBindings {
     ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
   ) : _lookup = lookup;
 
+  /// Structural changes publish in one callback command. A pending structural
+  /// edit fences granular writes to that chain until publication. Refusal leaves
+  /// the active recipe and prepared-plugin ownership unchanged.
+  int le_engine_set_fx_recipe(
+    ffi.Pointer<le_engine> engine,
+    int owner,
+    int channel,
+    int lane,
+    int revision,
+    ffi.Pointer<le_fx_recipe> recipe,
+  ) {
+    return _le_engine_set_fx_recipe(
+      engine,
+      owner,
+      channel,
+      lane,
+      revision,
+      recipe,
+    );
+  }
+
+  late final _le_engine_set_fx_recipePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Uint32,
+            ffi.Pointer<le_fx_recipe>,
+          )
+        >
+      >('le_engine_set_fx_recipe');
+  late final _le_engine_set_fx_recipe = _le_engine_set_fx_recipePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          int,
+          int,
+          ffi.Pointer<le_fx_recipe>,
+        )
+      >();
+
+  int le_engine_fx_recipe_revision(
+    ffi.Pointer<le_engine> engine,
+    int owner,
+    int channel,
+    int lane,
+  ) {
+    return _le_engine_fx_recipe_revision(
+      engine,
+      owner,
+      channel,
+      lane,
+    );
+  }
+
+  late final _le_engine_fx_recipe_revisionPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Uint32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_fx_recipe_revision');
+  late final _le_engine_fx_recipe_revision = _le_engine_fx_recipe_revisionPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  int le_engine_prepare_plugin(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<ffi.Char> plugin_id,
+    ffi.Pointer<ffi.Pointer<le_plugin_slot>> out_slot,
+  ) {
+    return _le_engine_prepare_plugin(
+      engine,
+      plugin_id,
+      out_slot,
+    );
+  }
+
+  late final _le_engine_prepare_pluginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Pointer<le_plugin_slot>>,
+          )
+        >
+      >('le_engine_prepare_plugin');
+  late final _le_engine_prepare_plugin = _le_engine_prepare_pluginPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Pointer<le_plugin_slot>>,
+        )
+      >();
+
+  int le_engine_discard_prepared_plugin(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_plugin_slot> slot,
+  ) {
+    return _le_engine_discard_prepared_plugin(
+      engine,
+      slot,
+    );
+  }
+
+  late final _le_engine_discard_prepared_pluginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_plugin_slot>,
+          )
+        >
+      >('le_engine_discard_prepared_plugin');
+  late final _le_engine_discard_prepared_plugin =
+      _le_engine_discard_prepared_pluginPtr
+          .asFunction<
+            int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_plugin_slot>)
+          >();
+
+  int le_engine_prepare_plugin_param(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_plugin_slot> slot,
+    int param_id,
+    double value,
+  ) {
+    return _le_engine_prepare_plugin_param(
+      engine,
+      slot,
+      param_id,
+      value,
+    );
+  }
+
+  late final _le_engine_prepare_plugin_paramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_plugin_slot>,
+            ffi.Uint32,
+            ffi.Double,
+          )
+        >
+      >('le_engine_prepare_plugin_param');
+  late final _le_engine_prepare_plugin_param =
+      _le_engine_prepare_plugin_paramPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              ffi.Pointer<le_plugin_slot>,
+              int,
+              double,
+            )
+          >();
+
+  /// Opaque engine handle.
   int le_engine_set_mix(
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_mix_settings> settings,
@@ -1523,12 +1690,13 @@ class SegnoEngineBindings {
   late final _le_engine_set_output_mask = _le_engine_set_output_maskPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Sets track [channel]'s active lane count to [count] (clamped 1..LE_MAX_LANES)
-  /// on the calling (control) thread, lazily allocating the loop buffers for any
-  /// newly added lanes before the audio thread can read them. New lanes default to
-  /// recording input channel == their lane index, full stereo output, unity
-  /// volume, unmuted. Shrinking the count leaves the dropped lanes' buffers
-  /// allocated for reuse but stops playing/recording them.
+  /// Internal structural count command. Valid count is 1..LE_MAX_LANES.
+  /// Allocates only newly needed inactive buffers on the control thread and
+  /// queues activation; LE_OK means accepted, not published. Await commandsSettled
+  /// before depending on the count or importing. A prior count command retains
+  /// its buffer lifetime through the end of the callback block. Shrinking refuses
+  /// recoverable lanes. Retained routing and effects remain attached to their
+  /// lane identities. User routing edits use the atomic mix transaction instead.
   int le_engine_set_lane_count(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -2767,9 +2935,9 @@ class SegnoEngineBindings {
   /// Sets chain entry [index] (0..LE_FX_MAX-1) on lane [lane] of track [channel] to
   /// [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY lazily
   /// allocates the entry's delay line (on this calling thread) and seeds the type's
-  /// default parameters. The chain is non-destructive and stageless — every active
-  /// entry colors playback in order. This sets the entry's value only; use
-  /// le_engine_set_lane_fx_count to make entries active.
+  /// default parameters. Every active entry colors playback in order. This sets
+  /// the entry's value only; use le_engine_set_lane_fx_count to make entries
+  /// active.
   int le_engine_set_lane_fx(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -2803,17 +2971,32 @@ class SegnoEngineBindings {
 
   /// Sets the active chain length on lane [lane] of track [channel] to [count]
   /// (0..LE_FX_MAX): only entries [0, count) are processed, in order.
+  ///
+  /// [pre_count] (0..count, clamped) splits that order into the take's own
+  /// processing and what runs after its player. Entries [0, pre_count) are PRE:
+  /// the loop-stage cache renders exactly them from the lane's dry recording and
+  /// swaps the result in at a loop boundary, so they are heard as part of the
+  /// take and a track Stop takes their tails with it. Entries [pre_count, count)
+  /// are POST: they always run live over whichever source is playing, and their
+  /// tails drain past a Stop. The recording itself stays dry either way — the
+  /// print is a rendered copy, never a write back into the take.
+  ///
+  /// pre_count travels with count in one command so the audio thread never sees
+  /// a split naming more Pre entries than the chain has. 0 is the default and
+  /// means an all-Post chain.
   int le_engine_set_lane_fx_count(
     ffi.Pointer<le_engine> engine,
     int channel,
     int lane,
     int count,
+    int pre_count,
   ) {
     return _le_engine_set_lane_fx_count(
       engine,
       channel,
       lane,
       count,
+      pre_count,
     );
   }
 
@@ -2825,11 +3008,12 @@ class SegnoEngineBindings {
             ffi.Int32,
             ffi.Int32,
             ffi.Int32,
+            ffi.Int32,
           )
         >
       >('le_engine_set_lane_fx_count');
   late final _le_engine_set_lane_fx_count = _le_engine_set_lane_fx_countPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int, int)>();
 
   /// Sets parameter [param] (0..LE_FX_PARAMS-1) of chain entry [index] on lane
   /// [lane] of track [channel] to [value] (clamped to 0..1). The parameter's
@@ -3387,26 +3571,46 @@ class SegnoEngineBindings {
   /// Sets track [channel]'s Track-stage active chain length to [count]
   /// (0..LE_FX_MAX): only entries [0, count) are processed, in order. Count 0
   /// (empty) restores the bit-identical per-lane routing path.
+  ///
+  /// [pre_count] (0..count, clamped) splits that order the way a lane's does.
+  /// Entries [0, pre_count) are PRE: the engine renders them over the COMBINED
+  /// material of the track's parts — each part's dry recording through that
+  /// part's own chain, at its level, pan and mute, summed — and swaps the result
+  /// in at the track's loop top, so they are heard as part of the take. Entries
+  /// [pre_count, count) are POST: always live over whatever is playing, and
+  /// their tails drain past a Stop. The recordings themselves stay dry; the
+  /// render is a copy, and every part, overdub layer and undo step survives it.
+  ///
+  /// A part's Post entries keep their live tails. A track with part Post or
+  /// hosted part plugins therefore runs its Pre chain live instead of printing
+  /// that upstream processing; the cache telemetry reports the obstruction.
   int le_engine_set_track_fx_count(
     ffi.Pointer<le_engine> engine,
     int channel,
     int count,
+    int pre_count,
   ) {
     return _le_engine_set_track_fx_count(
       engine,
       channel,
       count,
+      pre_count,
     );
   }
 
   late final _le_engine_set_track_fx_countPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
         >
       >('le_engine_set_track_fx_count');
   late final _le_engine_set_track_fx_count = _le_engine_set_track_fx_countPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
   /// Sets parameter [param] (0..LE_FX_PARAMS-1) of track [channel]'s Track-stage
   /// chain entry [index] to [value] (clamped to 0..1). Direct atomic publish —
@@ -3828,7 +4032,44 @@ class SegnoEngineBindings {
 
   /// Fills [out] with lane [lane] of track [channel]'s cache telemetry. Control
   /// thread; also drains events / runs a scheduler tick first, so polling this is
-  /// enough to drive the cache forward in a device-free test.
+  /// enough to drive the cache forward in a device-free test. */
+  /// /* The whole-track Pre print's telemetry (slice 3e): the lane query's twin,
+  /// one per track. `reason` is where the engine says WHY a track's Pre run is
+  /// running live rather than printed — a part carrying a Post entry (the print
+  /// would have to bake it, and a baked tail cannot drain past a Stop), a hosted
+  /// plugin, a budget that does not fit, a render that failed. Log/test-only in
+  /// v3, like the lane query.
+  int le_engine_get_track_cache(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<le_lane_cache_info> out,
+  ) {
+    return _le_engine_get_track_cache(
+      engine,
+      channel,
+      out,
+    );
+  }
+
+  late final _le_engine_get_track_cachePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<le_lane_cache_info>,
+          )
+        >
+      >('le_engine_get_track_cache');
+  late final _le_engine_get_track_cache = _le_engine_get_track_cachePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<le_lane_cache_info>,
+        )
+      >();
+
   int le_engine_get_lane_cache(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -3910,7 +4151,400 @@ class SegnoEngineBindings {
   /// clamped to 0. Direct store + an immediate eviction pass on the control
   /// thread — no ring command (no heap pointer crosses to the audio thread
   /// here; entries publish through their own atomic seam). The default is
-  /// appliance-tuned (LE_CACHE_DEFAULT_CAP_BYTES, 64 MiB).
+  /// appliance-tuned (LE_CACHE_DEFAULT_CAP_BYTES, 64 MiB). */
+  /// /* ---- the All tracks recorded-mix chain (slice 3e) ----
+  ///
+  /// The accepted design's third FX destination, beside the live inputs and the
+  /// per-track chains: "the single shared chain applied after the loop tracks are
+  /// combined". It is NOT the output bus — an output chain processes every source
+  /// routed to it (live monitoring, the click, backing), where this one processes
+  /// the recorded tracks alone, and runs before those other sources join.
+  ///
+  /// Its entries are always Post: the stage has no dry original of its own,
+  /// because it processes a sum computed live from lanes that each own their own
+  /// recording. There is no Pre count here.
+  ///
+  /// ONE config, N instances. Since slice 3b every source picks its own output
+  /// destinations, so the combined recorded mix is a per-destination quantity —
+  /// a track on Main and a track on Monitor are two different mixes. The chain
+  /// runs once per output bus, over the recorded contribution to that bus, on
+  /// that bus's own filter memory. Setting a type prepares every bus of the
+  /// configured device; le_engine_configure re-prepares them.
+  ///
+  /// An EMPTY chain (the default) leaves the per-track routing path bit-identical
+  /// to the pre-slice-3e engine — topology keys off emptiness, exactly like the
+  /// track bus.
+  int le_engine_set_all_tracks_fx(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int type,
+  ) {
+    return _le_engine_set_all_tracks_fx(
+      engine,
+      index,
+      type,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fxPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_all_tracks_fx');
+  late final _le_engine_set_all_tracks_fx = _le_engine_set_all_tracks_fxPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  int le_engine_set_all_tracks_fx_count(
+    ffi.Pointer<le_engine> engine,
+    int count,
+  ) {
+    return _le_engine_set_all_tracks_fx_count(
+      engine,
+      count,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fx_countPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_all_tracks_fx_count');
+  late final _le_engine_set_all_tracks_fx_count =
+      _le_engine_set_all_tracks_fx_countPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  int le_engine_set_all_tracks_fx_param(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int param,
+    double value,
+  ) {
+    return _le_engine_set_all_tracks_fx_param(
+      engine,
+      index,
+      param,
+      value,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fx_paramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_all_tracks_fx_param');
+  late final _le_engine_set_all_tracks_fx_param =
+      _le_engine_set_all_tracks_fx_paramPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
+
+  int le_engine_set_all_tracks_fx_enabled(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int enabled,
+  ) {
+    return _le_engine_set_all_tracks_fx_enabled(
+      engine,
+      index,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fx_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_all_tracks_fx_enabled');
+  late final _le_engine_set_all_tracks_fx_enabled =
+      _le_engine_set_all_tracks_fx_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  int le_engine_set_all_tracks_fx_chain_enabled(
+    ffi.Pointer<le_engine> engine,
+    int enabled,
+  ) {
+    return _le_engine_set_all_tracks_fx_chain_enabled(
+      engine,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fx_chain_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_all_tracks_fx_chain_enabled');
+  late final _le_engine_set_all_tracks_fx_chain_enabled =
+      _le_engine_set_all_tracks_fx_chain_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// ---- per-entry channel handling and level (slice 3e) ----
+  ///
+  /// The accepted design puts an input choice, an output choice and a level
+  /// around each instance in a chain: the input choice before its effects, the
+  /// output choice and then the level after them.
+  ///
+  /// in_mode   0 Stereo (default, left and right as they arrive)
+  /// 1 Left only   — the incoming left on both sides
+  /// 2 Right only  — the incoming right on both sides
+  /// 3 Mono sum    — their average on both sides
+  /// out_mode  0 Stereo (default) — keeps what the effects made; [placement]
+  /// is a BALANCE over the two sides
+  /// 1 Mono            — averages them; [placement] is a PAN
+  /// placement -1..1, centre 0 (default). One unity-centre law, the same the
+  /// lanes, monitors and output buses use, so centre is exactly
+  /// unity and a hard side is exactly silent.
+  /// level     0..LE_MAX_GAIN, unity 1 (default). Applied last.
+  ///
+  /// Set as one call, because the four values are one control surface and a
+  /// half-applied change would be audible. Direct atomic publishes: they change
+  /// gain within an entry, never its DSP state, so nothing resets and there is
+  /// no ring command to order against. An entry left at its defaults is
+  /// bit-identical to one with no channel handling at all.
+  ///
+  /// A BYPASSED entry passes the signal through exactly as it arrived — the
+  /// choices belong to the entry, so they leave with it.
+  int le_engine_set_lane_fx_channels(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int index,
+    int in_mode,
+    int out_mode,
+    double placement,
+    double level,
+  ) {
+    return _le_engine_set_lane_fx_channels(
+      engine,
+      channel,
+      lane,
+      index,
+      in_mode,
+      out_mode,
+      placement,
+      level,
+    );
+  }
+
+  late final _le_engine_set_lane_fx_channelsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_lane_fx_channels');
+  late final _le_engine_set_lane_fx_channels =
+      _le_engine_set_lane_fx_channelsPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              int,
+              int,
+              int,
+              int,
+              int,
+              double,
+              double,
+            )
+          >();
+
+  int le_engine_set_monitor_input_fx_channels(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int index,
+    int in_mode,
+    int out_mode,
+    double placement,
+    double level,
+  ) {
+    return _le_engine_set_monitor_input_fx_channels(
+      engine,
+      input,
+      index,
+      in_mode,
+      out_mode,
+      placement,
+      level,
+    );
+  }
+
+  late final _le_engine_set_monitor_input_fx_channelsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_monitor_input_fx_channels');
+  late final _le_engine_set_monitor_input_fx_channels =
+      _le_engine_set_monitor_input_fx_channelsPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              int,
+              int,
+              int,
+              int,
+              double,
+              double,
+            )
+          >();
+
+  int le_engine_set_track_fx_channels(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int index,
+    int in_mode,
+    int out_mode,
+    double placement,
+    double level,
+  ) {
+    return _le_engine_set_track_fx_channels(
+      engine,
+      channel,
+      index,
+      in_mode,
+      out_mode,
+      placement,
+      level,
+    );
+  }
+
+  late final _le_engine_set_track_fx_channelsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_track_fx_channels');
+  late final _le_engine_set_track_fx_channels =
+      _le_engine_set_track_fx_channelsPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              int,
+              int,
+              int,
+              int,
+              double,
+              double,
+            )
+          >();
+
+  int le_engine_set_output_fx_channels(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    int index,
+    int in_mode,
+    int out_mode,
+    double placement,
+    double level,
+  ) {
+    return _le_engine_set_output_fx_channels(
+      engine,
+      bus,
+      index,
+      in_mode,
+      out_mode,
+      placement,
+      level,
+    );
+  }
+
+  late final _le_engine_set_output_fx_channelsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_output_fx_channels');
+  late final _le_engine_set_output_fx_channels =
+      _le_engine_set_output_fx_channelsPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              int,
+              int,
+              int,
+              int,
+              double,
+              double,
+            )
+          >();
+
+  int le_engine_set_all_tracks_fx_channels(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int in_mode,
+    int out_mode,
+    double placement,
+    double level,
+  ) {
+    return _le_engine_set_all_tracks_fx_channels(
+      engine,
+      index,
+      in_mode,
+      out_mode,
+      placement,
+      level,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fx_channelsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_all_tracks_fx_channels');
+  late final _le_engine_set_all_tracks_fx_channels =
+      _le_engine_set_all_tracks_fx_channelsPtr
+          .asFunction<
+            int Function(ffi.Pointer<le_engine>, int, int, int, double, double)
+          >();
+
   int le_engine_set_fx_cache_cap(
     ffi.Pointer<le_engine> engine,
     int bytes,
@@ -5360,6 +5994,13 @@ enum le_command_code {
   /// internal structural activation; callback-owned
   LE_CMD_SET_LANE_COUNT(74),
 
+  /// All tracks recorded-mix chain entry type / active length (slice 3e): the
+  /// fx / fxcount arms with channel = 0 (there is one such chain). One shared
+  /// config; the audio thread runs it once per output bus over the recorded
+  /// contribution to that bus.
+  LE_CMD_SET_ALL_TRACKS_FX(75),
+  LE_CMD_SET_ALL_TRACKS_FX_COUNT(76),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100),
@@ -5376,7 +6017,8 @@ enum le_command_code {
   /// master_len, generation — completes
   /// the restore point the control thread left
   /// pending (0 len: a void take, no way back).
-  LE_EVT_CLEAR_FROZEN(102);
+  LE_EVT_CLEAR_FROZEN(102),
+  LE_CMD_SET_FX_RECIPE(77);
 
   final int value;
   const le_command_code(this.value);
@@ -5455,9 +6097,12 @@ enum le_command_code {
     72 => LE_CMD_SET_OUTPUT_FX_COUNT,
     73 => LE_CMD_CUT_SOUND,
     74 => LE_CMD_SET_LANE_COUNT,
+    75 => LE_CMD_SET_ALL_TRACKS_FX,
+    76 => LE_CMD_SET_ALL_TRACKS_FX_COUNT,
     100 => LE_EVT_LAYER_RETIRED,
     101 => LE_EVT_TAKE_CANCELLED,
     102 => LE_EVT_CLEAR_FROZEN,
+    77 => LE_CMD_SET_FX_RECIPE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -5580,6 +6225,13 @@ final class le_mix_settings extends ffi.Struct {
   @ffi.Uint32()
   external int revision;
 
+  @ffi.Uint32()
+  external int track_gain_mask;
+
+  /// after whole-track Pre, before Post
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Float> track_gain;
+
   @ffi.Uint64()
   external int lane_mask;
 
@@ -5659,6 +6311,47 @@ final class le_mix_settings extends ffi.Struct {
   external ffi.Array<ffi.Int32> lane_count;
 }
 
+final class le_engine extends ffi.Opaque {}
+
+final class le_plugin_slot extends ffi.Opaque {}
+
+/// Complete structural recipe, copied before admission. Hosted pointers must
+/// belong to this chain or have been prepared by this engine.
+final class le_fx_recipe extends ffi.Struct {
+  @ffi.Int32()
+  external int count;
+
+  @ffi.Int32()
+  external int pre_count;
+
+  @ffi.Int32()
+  external int enabled;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> type;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> slot_enabled;
+
+  @ffi.Array.multi([8, 4])
+  external ffi.Array<ffi.Array<ffi.Float>> params;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> input_mode;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> output_mode;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Float> placement;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Float> level;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Pointer<le_plugin_slot>> plugin;
+}
+
 /// Source context frozen at the accepted record/arm gesture. The image is
 /// applied only when capture starts, including count-in/signal/grid starts.
 /// Cancelling an arm drops it without changing existing lane playback.
@@ -5677,6 +6370,13 @@ final class le_record_image extends ffi.Struct {
 
   @ffi.Array.multi([8])
   external ffi.Array<ffi.Float> pan;
+
+  /// Optional per-lane recipes frozen with this arm. The producer copies the
+  /// array during this call; the caller retains its own memory.
+  @ffi.Uint32()
+  external int fx_lane_mask;
+
+  external ffi.Pointer<le_fx_recipe> lane_fx;
 }
 
 /// Per-lane state published via le_engine_get_lane: one recordable input lane of
@@ -6465,10 +7165,6 @@ final class le_plugin_desc extends ffi.Struct {
   external int version;
 }
 
-final class le_engine extends ffi.Opaque {}
-
-final class le_plugin_slot extends ffi.Opaque {}
-
 /// Bit flags for le_plugin_param_info.flags.
 enum le_plugin_param_flags {
   LE_PARAM_AUTOMATABLE(1),
@@ -6560,7 +7256,10 @@ enum le_cache_reason {
   LE_CACHE_REASON_PLUGIN(1),
 
   /// repeated render failures
-  LE_CACHE_REASON_RENDER_FAILED(2);
+  LE_CACHE_REASON_RENDER_FAILED(2),
+
+  /// a part Post chain must keep live tails
+  LE_CACHE_REASON_PART_POST(3);
 
   final int value;
   const le_cache_reason(this.value);
@@ -6569,6 +7268,7 @@ enum le_cache_reason {
     0 => LE_CACHE_REASON_NONE,
     1 => LE_CACHE_REASON_PLUGIN,
     2 => LE_CACHE_REASON_RENDER_FAILED,
+    3 => LE_CACHE_REASON_PART_POST,
     _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
   };
 }

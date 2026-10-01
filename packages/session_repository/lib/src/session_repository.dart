@@ -36,6 +36,7 @@ class SessionChains {
     this.monitors = const [],
     this.trackChains = const [],
     this.masterChain = '',
+    this.allTracksChain = '',
   });
 
   /// The Loop-stage (per-lane) effect chains to persist.
@@ -50,6 +51,10 @@ class SessionChains {
   /// The Master insert chain to persist as an opaque envelope string; `''`
   /// when the rig has none.
   final String masterChain;
+
+  /// The All tracks recorded-mix chain to persist as an opaque envelope
+  /// string; `''` when the rig has none.
+  final String allTracksChain;
 }
 
 /// Repository-owned lane mix that cannot be recovered from engine products.
@@ -88,6 +93,7 @@ class SessionSettings {
     this.defaultMultiple = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.trackLevels = const {},
     this.trackPans = const {},
     this.laneMix = const {},
     this.laneInputs = const {},
@@ -128,6 +134,7 @@ class SessionSettings {
       defaultMultiple = source.defaultMultiple,
       looperMode = source.looperMode,
       primaryTrack = source.primaryTrack,
+      trackLevels = Map.unmodifiable(source.trackLevels),
       trackPans = Map.unmodifiable(source.trackPans),
       laneMix = Map.unmodifiable(source.laneMix),
       laneInputs = Map.unmodifiable(source.laneInputs),
@@ -219,6 +226,9 @@ class SessionSettings {
 
   /// Confirmed pan for every track, including tracks without recorded audio.
   final Map<int, double> trackPans;
+
+  /// Confirmed gain for every track, independent of lane levels.
+  final Map<int, double> trackLevels;
 
   /// Recorded image, balance, and level for every captured lane.
   final Map<(int, int), SessionLaneMix> laneMix;
@@ -613,10 +623,11 @@ class SessionRepository {
   /// undo/redo depths are track-wide, so every lane carries the same count). A
   /// lane whose live buffer is empty is skipped, and a track left with no lane
   /// is dropped.
-  _Capture _capture([SessionSettings settings = const SessionSettings()]) {
+  _Capture _capture([SessionSettings? settings]) {
     final snapshot = _engine.snapshot();
     final laneStems = <(int, int), List<Float32List>>{};
     final tracks = <SessionTrack>[];
+    final trackLevels = <int, double>{};
     for (var i = 0; i < snapshot.tracks.length; i++) {
       final track = snapshot.tracks[i];
       // Only export settled tracks: a recording/overdubbing track's buffer is
@@ -656,7 +667,7 @@ class SessionRepository {
         // apart again. An export hands in no settings and persists no
         // manifest, so its fallback only feeds the mixdown, where the
         // engine's gain times unity plays the same.
-        final mix = settings.laneMix[(i, l)];
+        final mix = settings?.laneMix[(i, l)];
         lanes.add(
           SessionLane(
             lane: l,
@@ -673,6 +684,12 @@ class SessionRepository {
         );
       }
       if (lanes.isEmpty) continue;
+      // Save uses its detached confirmed settings (absence means unity).
+      // A live export has no settings argument and captures the engine's
+      // independent track fader at the same boundary as the part levels.
+      trackLevels[i] = settings == null
+          ? track.volume
+          : settings.trackLevels[i] ?? 1;
       tracks.add(
         SessionTrack(
           channel: i,
@@ -682,7 +699,12 @@ class SessionRepository {
         ),
       );
     }
-    return _Capture(snapshot: snapshot, laneStems: laneStems, tracks: tracks);
+    return _Capture(
+      snapshot: snapshot,
+      laneStems: laneStems,
+      tracks: tracks,
+      trackLevels: trackLevels,
+    );
   }
 
   Session _sessionFrom(
@@ -710,6 +732,7 @@ class SessionRepository {
       // the looper domain's business, not this package's.
       trackChains: chains.trackChains,
       masterChain: chains.masterChain,
+      allTracksChain: chains.allTracksChain,
       // Running captures own the tempo and exact grid as one settled report.
       // Stopped saves retain the app's intended settings instead.
       tempoBpm: snapshot.isRunning ? snapshot.tempoBpm : settings.tempoBpm,
@@ -729,6 +752,7 @@ class SessionRepository {
       trackOverdubDecayOverrides: settings.trackOverdubDecayOverrides,
       trackOneShotOverrides: settings.trackOneShotOverrides,
       trackLengthPresetOverrides: settings.trackLengthPresetOverrides,
+      trackLevels: settings.trackLevels,
       trackPans: settings.trackPans,
       laneInputs: settings.laneInputs,
       laneOutputs: settings.laneOutputs,
@@ -755,7 +779,8 @@ class SessionRepository {
     );
   }
 
-  /// Sums every unmuted lane (at its gain: the level times its balance) over
+  /// Sums every unmuted lane at its part level and balance, with its track
+  /// fader applied once, over
   /// the session period — the LCM of the lane lengths, so every lane's loop
   /// closes cleanly. Lanes are summed, never merged: a two-lane track
   /// contributes both lanes to the mix.
@@ -768,7 +793,10 @@ class SessionRepository {
         if (layerPcm == null) continue;
         final pcm = layerPcm[lane.liveIndex]; // mix the live buffer per lane
         if (pcm.isEmpty) continue;
-        active.add((pcm, lane.volume * lane.balance));
+        active.add((
+          pcm,
+          lane.volume * lane.balance * captured.trackLevels[track.channel]!,
+        ));
       }
     }
     if (active.isEmpty) return Float32List(0);
@@ -831,9 +859,11 @@ class _Capture {
     required this.snapshot,
     required this.laneStems,
     required this.tracks,
+    required this.trackLevels,
   });
 
   final EngineSnapshot snapshot;
   final Map<(int, int), List<Float32List>> laneStems;
   final List<SessionTrack> tracks;
+  final Map<int, double> trackLevels;
 }

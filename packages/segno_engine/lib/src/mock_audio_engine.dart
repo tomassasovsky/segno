@@ -5,6 +5,7 @@ import 'package:segno_engine/src/audio_engine.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
+import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
@@ -428,6 +429,63 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Complete recipes accepted by the in-memory engine.
+  final fxRecipes = <(FxOwner, int, int), FxRecipe>{};
+  final _fxRecipeRevisions = <(FxOwner, int, int), int>{};
+
+  @override
+  EngineResult setFxRecipe({
+    required FxOwner owner,
+    required FxRecipe recipe,
+    required int revision,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    final running = _requireRunning();
+    if (!running.isOk) return running;
+    if (!recipe.isValid ||
+        revision <= 0 ||
+        revision > 0xffffffff ||
+        lane < 0 ||
+        lane >= 8 ||
+        channel < 0 ||
+        (owner == FxOwner.lane || owner == FxOwner.track) && channel >= 8 ||
+        owner == FxOwner.monitor && channel >= 32 ||
+        owner == FxOwner.output && channel >= 16 ||
+        owner == FxOwner.allTracks && channel != 0 ||
+        owner != FxOwner.lane && lane != 0 ||
+        (owner == FxOwner.monitor ||
+                owner == FxOwner.output ||
+                owner == FxOwner.allTracks) &&
+            recipe.preCount != 0) {
+      return EngineResult.invalid;
+    }
+    fxRecipes[(owner, channel, lane)] = recipe;
+    _fxRecipeRevisions[(owner, channel, lane)] = revision;
+    return EngineResult.ok;
+  }
+
+  @override
+  int fxRecipeRevision({
+    required FxOwner owner,
+    int channel = 0,
+    int lane = 0,
+  }) => _fxRecipeRevisions[(owner, channel, lane)] ?? 0;
+
+  @override
+  PluginSlotHandle? preparePlugin({required String pluginId}) => null;
+
+  @override
+  EngineResult discardPreparedPlugin(PluginSlotHandle slot) =>
+      EngineResult.invalid;
+
+  @override
+  EngineResult preparePluginParam(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) => EngineResult.invalid;
+
   @override
   PluginSlotHandle? setLanePlugin({
     required int channel,
@@ -556,6 +614,9 @@ class MockAudioEngine implements AudioEngine {
     for (final e in settings.trims.entries) {
       _inputTrim[e.key] = e.value;
     }
+    for (final e in settings.trackLevels.entries) {
+      _tracks[e.key].volume = e.value;
+    }
     for (final e in settings.solos.entries) {
       _tracks[e.key].solo = e.value;
     }
@@ -581,6 +642,9 @@ class MockAudioEngine implements AudioEngine {
         ..imageGain = e.value.gain
         ..imagePan = e.value.pan
         ..compose();
+    }
+    for (final entry in image.laneFx.entries) {
+      fxRecipes[(FxOwner.lane, channel, entry.key)] = entry.value;
     }
     _tracks[channel].imageRevision = image.revision;
     return EngineResult.ok;
@@ -1014,6 +1078,7 @@ class MockAudioEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) => _requireRunning();
 
   @override
@@ -1081,6 +1146,7 @@ class MockAudioEngine implements AudioEngine {
   EngineResult setTrackFxCount({
     required int channel,
     required int count,
+    int preCount = 0,
   }) => _requireRunning();
 
   @override
@@ -1172,6 +1238,105 @@ class MockAudioEngine implements AudioEngine {
   }) {
     if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
     outputFxChainEnabledCalls.add((bus: bus, enabled: enabled));
+    return EngineResult.ok;
+  }
+
+  /// Recorded [setAllTracksFx] calls, in order, for test assertions.
+  final allTracksFxCalls = <({int index, TrackEffectType type})>[];
+
+  /// Recorded [setAllTracksFxCount] calls, in order.
+  final allTracksFxCountCalls = <int>[];
+
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    allTracksFxCalls.add((index: index, type: type));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) {
+    allTracksFxCountCalls.add(count);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    if (param < 0 || param >= kTrackEffectParams) return EngineResult.invalid;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) =>
+      EngineResult.ok;
+
+  /// Recorded channel-handling calls, in order, for test assertions.
+  final fxChannelsCalls = <({String stage, int index, FxChannels channels})>[];
+
+  @override
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'lane', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'monitor', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'track', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'output', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'allTracks', index: index, channels: channels));
     return EngineResult.ok;
   }
 
@@ -1561,6 +1726,7 @@ class _MockLane {
 }
 
 class _MockTrack {
+  double volume = 1;
   int laneCount = 1;
   final List<_MockLane> _lanes = List<_MockLane>.generate(
     kMaxLanes,
@@ -1608,7 +1774,7 @@ class _MockTrack {
     final inputMask = lane0.inputChannel >= 0 ? 1 << lane0.inputChannel : 0;
     return TrackSnapshot(
       state: TrackState.empty,
-      volume: lane0.volume,
+      volume: volume,
       muted: lane0.muted,
       lengthFrames: 0,
       undoDepth: 0,

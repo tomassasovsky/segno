@@ -109,6 +109,7 @@ typedef StoredInputSetup = ({
 
 /// The appliance-wide saved mix and the current device's capture setup.
 typedef StoredMixSettings = ({
+  Map<int, double> trackLevels,
   Map<int, double> trackPans,
   Map<(int, int), double> laneLevels,
   Map<int, double> monitorLevels,
@@ -1215,6 +1216,7 @@ class SettingsRepository {
       );
     }
     return _SavedMixSettings(
+      trackLevels: values(json['trackLevels']),
       pans: values(json['pans']),
       levels: levels,
       monitorLevels: values(json['monitorLevels']),
@@ -1263,7 +1265,8 @@ class SettingsRepository {
         'balance': encoded(setup.balance),
       };
     }
-    if (saved.pans.isEmpty &&
+    if (saved.trackLevels.isEmpty &&
+        saved.pans.isEmpty &&
         saved.levels.isEmpty &&
         saved.monitorLevels.isEmpty &&
         saved.laneInputs.isEmpty &&
@@ -1276,6 +1279,7 @@ class SettingsRepository {
     return _store.setString(
       _mixSettingsKey,
       jsonEncode({
+        'trackLevels': encoded(saved.trackLevels),
         'pans': encoded(saved.pans),
         'levels': {
           for (final entry in saved.levels.entries)
@@ -1304,6 +1308,7 @@ class SettingsRepository {
     await _serializedWrite;
     final saved = await _readMixSettings();
     return (
+      trackLevels: saved.trackLevels,
       trackPans: saved.pans,
       laneLevels: saved.levels,
       monitorLevels: saved.monitorLevels,
@@ -1321,6 +1326,7 @@ class SettingsRepository {
     required StoredMixSettings mix,
   }) {
     final detached = (
+      trackLevels: Map<int, double>.of(mix.trackLevels),
       trackPans: Map<int, double>.of(mix.trackPans),
       laneLevels: Map<(int, int), double>.of(mix.laneLevels),
       monitorLevels: Map<int, double>.of(mix.monitorLevels),
@@ -1340,7 +1346,11 @@ class SettingsRepository {
       ),
     );
     return _serialize(() async {
-      _validateMixerSettings(detached.trackPans, detached.laneLevels);
+      _validateMixerSettings(
+        detached.trackLevels,
+        detached.trackPans,
+        detached.laneLevels,
+      );
       _validateMonitorLevels(detached.monitorLevels);
       _validateRouting(
         detached.laneInputs,
@@ -1350,6 +1360,9 @@ class SettingsRepository {
       _validateInputSetup(detached.inputSetup);
       _validateOutputSetup(detached.outputSetup);
       final saved = await _readMixSettings();
+      saved.trackLevels
+        ..clear()
+        ..addAll(detached.trackLevels);
       saved.pans
         ..clear()
         ..addAll(detached.trackPans);
@@ -1375,10 +1388,19 @@ class SettingsRepository {
   }
 
   void _validateMixerSettings(
+    Map<int, double> trackLevels,
     Map<int, double> pans,
     Map<(int, int), double> levels,
   ) {
-    if (pans.entries.any(
+    if (trackLevels.entries.any(
+          (e) =>
+              e.key < 0 ||
+              e.key >= 8 ||
+              !e.value.isFinite ||
+              e.value < 0 ||
+              e.value > 2,
+        ) ||
+        pans.entries.any(
           (e) =>
               e.key < 0 ||
               e.key >= 8 ||
@@ -1708,6 +1730,17 @@ class SettingsRepository {
   Future<void> saveMasterFxChain(String encoded) =>
       _store.setString(_masterFxChainKey, encoded);
 
+  static const String _allTracksFxChainKey = 'all_tracks_fx_chain';
+
+  /// Loads the persisted All tracks recorded-mix chain as an opaque encoded
+  /// envelope string (see `encodeFxChain`), or `null` if none is saved.
+  Future<String?> loadAllTracksFxChain() =>
+      _store.getString(_allTracksFxChainKey);
+
+  /// Saves the [encoded] All tracks chain envelope.
+  Future<void> saveAllTracksFxChain(String encoded) =>
+      _store.setString(_allTracksFxChainKey, encoded);
+
   static const String _updateAutoCheckKey = 'updates.auto_check';
   static const String _updateChannelKey = 'updates.channel';
   static const String _updateDismissedKey = 'updates.dismissed';
@@ -1767,6 +1800,7 @@ class SettingsRepository {
 
 class _SavedMixSettings {
   _SavedMixSettings({
+    Map<int, double>? trackLevels,
     Map<int, double>? pans,
     Map<(int, int), double>? levels,
     Map<int, double>? monitorLevels,
@@ -1775,7 +1809,8 @@ class _SavedMixSettings {
     Map<int, int>? laneCounts,
     Map<String, StoredInputSetup>? inputSetups,
     Map<String, StoredOutputSetup>? outputSetups,
-  }) : pans = pans ?? {},
+  }) : trackLevels = trackLevels ?? {},
+       pans = pans ?? {},
        levels = levels ?? {},
        monitorLevels = monitorLevels ?? {},
        laneInputs = laneInputs ?? {},
@@ -1784,6 +1819,7 @@ class _SavedMixSettings {
        inputSetups = inputSetups ?? {},
        outputSetups = outputSetups ?? {};
 
+  final Map<int, double> trackLevels;
   final Map<int, double> pans;
   final Map<(int, int), double> levels;
   final Map<int, double> monitorLevels;

@@ -31,9 +31,22 @@ Future<AutoStartResult> tryAutoStartEngine({
   required LooperRepository repository,
   required SettingsRepository settings,
   required MixSettingsCoordinator mixSettings,
-}) => mixSettings.runExclusive(
-  () => _tryAutoStartEngine(repository: repository, settings: settings),
-);
+}) => mixSettings.runExclusive(() async {
+  try {
+    return await _tryAutoStartEngine(
+      repository: repository,
+      settings: settings,
+    );
+  } on FormatException catch (error) {
+    AppLog.error('audio auto-start: invalid saved configuration: $error');
+    repository.stopEngine();
+    return (
+      started: false,
+      asioDrivers: const <AudioDevice>[],
+      recoveryConfig: null,
+    );
+  }
+});
 
 Future<AutoStartResult> _tryAutoStartEngine({
   required LooperRepository repository,
@@ -244,6 +257,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
   // transaction before loading lane effects that depend on active lane counts.
   final mixRequest = repository.applyMixSettings(
     repository.mixSettingsSnapshot.copyWith(
+      trackLevels: savedMix.trackLevels,
       trackPans: savedMix.trackPans,
       laneLevels: savedMix.laneLevels,
       monitorLevels: savedMix.monitorLevels,
@@ -275,9 +289,24 @@ Future<AutoStartResult> _tryAutoStartEngine({
     return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
 
-  // Restore per-track transport overrides and every lane's routing / mix /
-  // effects so saved multi-lane setups are reapplied on launch (mirroring the
-  // latency-offset restore above).
+  // A start may already have replayed remembered chains. Do not issue a
+  // second recipe for the same target until those revisions reach the callback.
+  final startupFx = await repository.settleFxRecipes();
+  if (!startupFx.isOk) {
+    AppLog.error(
+      'audio auto-start: FX replay refused result=${startupFx.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
+  final mintedChains = <Future<void> Function()>[];
+  bool admitted(EngineResult result) {
+    if (result.isOk) return true;
+    AppLog.error('audio auto-start: saved FX refused result=${result.name}');
+    repository.stopEngine();
+    return false;
+  }
+
   for (final track in repository.state.tracks) {
     repository.setOneShot(
       channel: track.channel,
@@ -307,97 +336,133 @@ Future<AutoStartResult> _tryAutoStartEngine({
           lane: lane,
         );
       }
-      // Restore the saved ordered effect chain in one shot. The key holds the
-      // chain envelope (R15) — the chain-enabled flag and inheritance meta
-      // ride inside it; a legacy bare-array chain decodes as enabled with no
-      // meta.
       final chain = decodeFxChain(
         await settings.loadLaneEffects(track.channel, lane),
       );
-      if (chain.entries.isNotEmpty) {
-        repository
-          ..setLaneEffects(
-            channel: track.channel,
-            lane: lane,
-            effects: chain.entries,
-          )
-          ..setLaneChainMeta(
-            channel: track.channel,
-            lane: lane,
-            inheritedFrom: chain.meta?.inheritedFrom ?? const [],
-          );
-        // Mint-once for legacy payloads (A9): entries that decoded id-less
-        // were just minted stable slot ids at the repository write boundary —
-        // persist the minted envelope back, or every launch would re-mint
-        // DIFFERENT ids and a binding stored against one would dangle after
-        // the next restart.
-        if (chain.entries.any((e) => e.slotId == null)) {
-          await settings.saveLaneEffects(
-            track.channel,
-            lane,
+      if (chain.entries.isEmpty && chain.chainEnabled) continue;
+      if (!admitted(
+        repository.setLaneEffects(
+          channel: track.channel,
+          lane: lane,
+          effects: chain.entries,
+          chainEnabled: chain.chainEnabled,
+          allowUnavailable: true,
+        ),
+      )) {
+        return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+      }
+      repository.setLaneChainMeta(
+        channel: track.channel,
+        lane: lane,
+        inheritedFrom: chain.meta?.inheritedFrom ?? const [],
+      );
+      if (chain.entries.any((e) => e.slotId == null)) {
+        final channel = track.channel;
+        final laneIndex = lane;
+        mintedChains.add(
+          () => settings.saveLaneEffects(
+            channel,
+            laneIndex,
             encodeFxChain(
               FxChainEnvelope(
                 chainEnabled: chain.chainEnabled,
                 meta: chain.meta,
-                entries: repository.laneEffects(track.channel, lane),
+                entries: repository.laneEffects(channel, laneIndex),
               ),
-            ),
-          );
-        }
-      }
-      if (!chain.chainEnabled) {
-        repository.setLaneChainEnabled(
-          channel: track.channel,
-          lane: lane,
-          enabled: false,
-        );
-      }
-    }
-    // Restore the Track-stage (stereo bus) chain envelope (FX v3 part 3a).
-    final trackChain = decodeFxChain(
-      await settings.loadTrackFxChain(track.channel),
-    );
-    if (trackChain.entries.isNotEmpty) {
-      repository.setTrackEffects(
-        channel: track.channel,
-        effects: trackChain.entries,
-      );
-      // Mint-once (A9) — see the lane restore above.
-      if (trackChain.entries.any((e) => e.slotId == null)) {
-        await settings.saveTrackFxChain(
-          track.channel,
-          encodeFxChain(
-            FxChainEnvelope(
-              chainEnabled: trackChain.chainEnabled,
-              entries: repository.trackEffects(track.channel),
             ),
           ),
         );
       }
     }
-    if (!trackChain.chainEnabled) {
-      repository.setTrackChainEnabled(channel: track.channel, enabled: false);
+    final trackChain = decodeFxChain(
+      await settings.loadTrackFxChain(track.channel),
+    );
+    if (trackChain.entries.isNotEmpty || !trackChain.chainEnabled) {
+      if (!admitted(
+        repository.setTrackEffects(
+          channel: track.channel,
+          effects: trackChain.entries,
+          chainEnabled: trackChain.chainEnabled,
+          allowUnavailable: true,
+        ),
+      )) {
+        return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+      }
+      if (trackChain.entries.any((e) => e.slotId == null)) {
+        final channel = track.channel;
+        mintedChains.add(
+          () => settings.saveTrackFxChain(
+            channel,
+            encodeFxChain(
+              FxChainEnvelope(
+                chainEnabled: trackChain.chainEnabled,
+                entries: repository.trackEffects(channel),
+              ),
+            ),
+          ),
+        );
+      }
     }
   }
 
-  // Restore the Master insert chain envelope (FX v3 part 3a).
   final masterChain = decodeFxChain(await settings.loadMasterFxChain());
-  if (masterChain.entries.isNotEmpty) {
-    repository.setMasterEffects(effects: masterChain.entries);
-    // Mint-once (A9) — see the lane restore above.
+  if (masterChain.entries.isNotEmpty || !masterChain.chainEnabled) {
+    if (!admitted(
+      repository.setMasterEffects(
+        effects: masterChain.entries,
+        chainEnabled: masterChain.chainEnabled,
+        allowUnavailable: true,
+      ),
+    )) {
+      return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+    }
     if (masterChain.entries.any((e) => e.slotId == null)) {
-      await settings.saveMasterFxChain(
-        encodeFxChain(
-          FxChainEnvelope(
-            chainEnabled: masterChain.chainEnabled,
-            entries: repository.masterEffects,
+      mintedChains.add(
+        () => settings.saveMasterFxChain(
+          encodeFxChain(
+            FxChainEnvelope(
+              chainEnabled: masterChain.chainEnabled,
+              entries: repository.masterEffects,
+            ),
           ),
         ),
       );
     }
   }
-  if (!masterChain.chainEnabled) {
-    repository.setMasterChainEnabled(enabled: false);
+  final allTracksChain = decodeFxChain(await settings.loadAllTracksFxChain());
+  if (allTracksChain.entries.isNotEmpty || !allTracksChain.chainEnabled) {
+    if (!admitted(
+      repository.setAllTracksEffects(
+        effects: allTracksChain.entries,
+        chainEnabled: allTracksChain.chainEnabled,
+        allowUnavailable: true,
+      ),
+    )) {
+      return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+    }
+    if (allTracksChain.entries.any((e) => e.slotId == null)) {
+      mintedChains.add(
+        () => settings.saveAllTracksFxChain(
+          encodeFxChain(
+            FxChainEnvelope(
+              chainEnabled: allTracksChain.chainEnabled,
+              entries: repository.allTracksEffects,
+            ),
+          ),
+        ),
+      );
+    }
+  }
+  final restoredFx = await repository.settleFxRecipes();
+  if (!restoredFx.isOk) {
+    AppLog.error(
+      'audio auto-start: saved FX refused result=${restoredFx.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
+  for (final save in mintedChains) {
+    await save();
   }
 
   // Restore the structural output gate. Only explicitly-disabled outputs were

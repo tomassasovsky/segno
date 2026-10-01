@@ -8,6 +8,7 @@ import 'package:segno_engine/segno_engine.dart' show kMaxChannels, kMaxLanes;
 class MixSettingsSnapshot extends Equatable {
   /// Copies the maps so an awaited transaction cannot observe caller edits.
   MixSettingsSnapshot({
+    Map<int, double> trackLevels = const {},
     Map<int, double> trackPans = const {},
     Map<(int, int), double> laneLevels = const {},
     Map<int, double> monitorLevels = const {},
@@ -17,7 +18,8 @@ class MixSettingsSnapshot extends Equatable {
     Map<(int, int), int> laneInputs = const {},
     Map<(int, int), int> laneOutputs = const {},
     Map<int, int> laneCounts = const {},
-  }) : trackPans = Map.unmodifiable(trackPans),
+  }) : trackLevels = Map.unmodifiable(trackLevels),
+       trackPans = Map.unmodifiable(trackPans),
        laneLevels = Map.unmodifiable(laneLevels),
        monitorLevels = Map.unmodifiable(monitorLevels),
        inputSetup = inputSetup.copyWith(),
@@ -38,6 +40,7 @@ class MixSettingsSnapshot extends Equatable {
       }
     }
     return MixSettingsSnapshot(
+      trackLevels: rig.trackLevels,
       trackPans: rig.trackPans,
       inputSetup: rig.inputSetup,
       outputSetup: rig.outputSetup,
@@ -71,6 +74,9 @@ class MixSettingsSnapshot extends Equatable {
       },
     );
   }
+
+  /// Independent whole-track gains, including tracks without audio.
+  final Map<int, double> trackLevels;
 
   /// Track offsets, including tracks without audio.
   final Map<int, double> trackPans;
@@ -112,6 +118,9 @@ class MixSettingsSnapshot extends Equatable {
       laneCounts.entries.every(
         (e) => e.key >= 0 && e.key < 8 && e.value >= 1 && e.value <= kMaxLanes,
       ) &&
+      trackLevels.entries.every(
+        (e) => e.key >= 0 && e.key < 8 && _level(e.value),
+      ) &&
       trackPans.entries.every(
         (e) => e.key >= 0 && e.key < 8 && _pan(e.value),
       ) &&
@@ -138,6 +147,7 @@ class MixSettingsSnapshot extends Equatable {
 
   /// Replaces only the supplied controls.
   MixSettingsSnapshot copyWith({
+    Map<int, double>? trackLevels,
     Map<int, double>? trackPans,
     Map<(int, int), double>? laneLevels,
     Map<int, double>? monitorLevels,
@@ -148,6 +158,7 @@ class MixSettingsSnapshot extends Equatable {
     Map<(int, int), int>? laneOutputs,
     Map<int, int>? laneCounts,
   }) => MixSettingsSnapshot(
+    trackLevels: trackLevels ?? this.trackLevels,
     trackPans: trackPans ?? this.trackPans,
     laneLevels: laneLevels ?? this.laneLevels,
     monitorLevels: monitorLevels ?? this.monitorLevels,
@@ -161,6 +172,7 @@ class MixSettingsSnapshot extends Equatable {
 
   @override
   List<Object?> get props => [
+    trackLevels,
     trackPans,
     laneLevels,
     monitorLevels,
