@@ -211,6 +211,10 @@ void main() {
           channel: any(named: 'channel'),
         ),
       ).thenReturn(EngineResult.ok);
+      when(() => looper.trackMuted(any())).thenAnswer((call) {
+        final channel = call.positionalArguments.first as int;
+        return looper.state.tracks[channel].muted;
+      });
       when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
       when(
         () => looper.cancelArm(channel: any(named: 'channel')),
@@ -283,6 +287,7 @@ void main() {
       when(() => looper.state).thenReturn(_stateWith(_emptyTracks()));
       cubit = ControlCubit(
         looper: looper,
+        mixSettings: testMixSettings(looper),
         pedal: pedal,
         settings: settings,
         performance: performance,
@@ -300,12 +305,14 @@ void main() {
     });
 
     group('mode', () {
-      test('toggleMode cycles Record -> Mute -> FX -> Record', () {
+      test('toggleMode cycles Record -> Mute -> FX -> Custom -> Record', () {
         expect(cubit.state.mode, InteractionMode.record);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.mute);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.fx);
+        cubit.toggleMode();
+        expect(cubit.state.mode, InteractionMode.custom);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.record);
       });
@@ -365,12 +372,11 @@ void main() {
         expect(cubit.state.mode, InteractionMode.mute);
       });
 
-      test('load boots into mute from the legacy persisted token "play" '
-          '(pre-rename installs)', () async {
+      test('unknown boot mode falls back to Tracks', () async {
         await settings.saveDefaultInteractionMode('play');
         await cubit.load();
-        expect(cubit.state.defaultMode, InteractionMode.mute);
-        expect(cubit.state.mode, InteractionMode.mute);
+        expect(cubit.state.defaultMode, InteractionMode.record);
+        expect(cubit.state.mode, InteractionMode.record);
       });
 
       test('toggleMode does not change the persisted default mode', () async {
@@ -633,9 +639,9 @@ void main() {
         await pumpEventQueue();
       }
 
-      test('fresh setup keeps Mute Press and the working FX Hold', () {
+      test('fresh setup keeps Mute Press and Custom Hold', () {
         expect(cubit.state.pedalSetup.modePress, InteractionMode.mute);
-        expect(cubit.state.pedalSetup.modeHold, InteractionMode.fx);
+        expect(cubit.state.pedalSetup.modeHold, InteractionMode.custom);
       });
 
       test('Press waits for release when MODE has a Hold', () async {
@@ -663,16 +669,28 @@ void main() {
           await pumpEventQueue();
           expect(cubit.state.mode, InteractionMode.record);
           await Future<void>.delayed(const Duration(milliseconds: 850));
-          expect(cubit.state.mode, InteractionMode.fx);
-          expect(transport.lastFrame?.mode, PedalMode.fx);
+          expect(cubit.state.mode, InteractionMode.custom);
+          expect(transport.lastFrame?.mode, PedalMode.custom);
           transport.press(PedalButton.mode, down: false);
           await pumpEventQueue();
-          expect(cubit.state.mode, InteractionMode.fx);
+          expect(cubit.state.mode, InteractionMode.custom);
           expect(performance.armedDirectory, isNull);
         },
       );
 
-      test('MODE Hold returns from FX to the mode that entered it', () async {
+      test('Custom MODE exits directly to Tracks', () async {
+        await stomp(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.mute);
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.custom);
+        await stomp(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.record);
+      });
+
+      test('an explicitly saved FX Hold keeps its return door', () async {
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.copyWith(modeHold: InteractionMode.fx),
+        );
         await stomp(PedalButton.mode);
         expect(cubit.state.mode, InteractionMode.mute);
         await hold(PedalButton.mode);
@@ -1010,6 +1028,209 @@ void main() {
       });
     });
 
+    group('Custom controls', () {
+      Future<void> stomp(PedalButton button) async {
+        transport
+          ..press(button, down: true)
+          ..press(button, down: false);
+        await pumpEventQueue();
+      }
+
+      Future<void> assign(
+        PedalButton button,
+        ControlGesturePair pair, {
+        int bank = 0,
+      }) async {
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.withCustom(button, bank: bank, pair: pair),
+        );
+        cubit.setMode(InteractionMode.custom);
+      }
+
+      test(
+        'unassigned controls do nothing; MODE exits and BANK pages',
+        () async {
+          cubit.setMode(InteractionMode.custom);
+          await stomp(PedalButton.undo);
+          await stomp(PedalButton.clear);
+          verifyNever(() => looper.undo(channel: any(named: 'channel')));
+          verifyNever(() => looper.clear(channel: any(named: 'channel')));
+          await stomp(PedalButton.bank);
+          expect(cubit.state.activeBank, 1);
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.record);
+        },
+      );
+
+      test(
+        'Press-only fires on contact; paired Press waits for release',
+        () async {
+          await assign(
+            PedalButton.undo,
+            const ControlGesturePair(press: CommandAction(ControlCommand.undo)),
+          );
+          transport.press(PedalButton.undo, down: true);
+          await pumpEventQueue();
+          verify(() => looper.undo()).called(1);
+          transport.press(PedalButton.undo, down: false);
+          await pumpEventQueue();
+
+          await assign(
+            PedalButton.undo,
+            const ControlGesturePair(
+              press: CommandAction(ControlCommand.undo),
+              hold: CommandAction(ControlCommand.redo),
+            ),
+          );
+          transport.press(PedalButton.undo, down: true);
+          await pumpEventQueue();
+          verifyNever(() => looper.undo(channel: any(named: 'channel')));
+          transport.press(PedalButton.undo, down: false);
+          await pumpEventQueue();
+          verify(() => looper.undo()).called(1);
+        },
+      );
+
+      test('Hold fires once and suppresses paired Press on release', () async {
+        await assign(
+          PedalButton.undo,
+          const ControlGesturePair(
+            press: CommandAction(ControlCommand.undo),
+            hold: CommandAction(ControlCommand.redo),
+          ),
+        );
+        transport.press(PedalButton.undo, down: true);
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 850));
+        await pumpEventQueue();
+        transport.press(PedalButton.undo, down: false);
+        await pumpEventQueue();
+        verify(() => looper.redo()).called(1);
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+      });
+
+      test('selected Hold follows new cursor at fire', () async {
+        await assign(
+          PedalButton.stop,
+          const ControlGesturePair(
+            hold: TrackOperationAction(
+              operation: TrackOperation.clear,
+              scope: SelectedTrackScope(),
+            ),
+          ),
+        );
+        transport.press(PedalButton.stop, down: true);
+        await pumpEventQueue();
+        cubit.selectTrack(2);
+        await Future<void>.delayed(const Duration(milliseconds: 850));
+        await pumpEventQueue();
+        verify(() => looper.clear(channel: 2)).called(1);
+        transport.press(PedalButton.stop, down: false);
+        await pumpEventQueue();
+      });
+
+      test('bank switch resolves current bank at fire', () async {
+        await assign(
+          PedalButton.track1,
+          const ControlGesturePair(press: CommandAction(ControlCommand.undo)),
+        );
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.withCustom(
+            PedalButton.track1,
+            bank: 1,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.redo),
+            ),
+          ),
+        );
+        cubit.setMode(InteractionMode.custom);
+        await stomp(PedalButton.track1);
+        verify(() => looper.undo()).called(1);
+        cubit.browseBank(1);
+        await stomp(PedalButton.track1);
+        verify(() => looper.redo()).called(1);
+      });
+
+      test('changed assignment and take lock retire pending Hold', () async {
+        await assign(
+          PedalButton.undo,
+          const ControlGesturePair(
+            press: CommandAction(ControlCommand.undo),
+            hold: CommandAction(ControlCommand.redo),
+          ),
+        );
+        transport.press(PedalButton.undo, down: true);
+        await pumpEventQueue();
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.withCustom(
+            PedalButton.undo,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.clearAll),
+            ),
+          ),
+        );
+        transport.press(PedalButton.undo, down: false);
+        await pumpEventQueue();
+        verifyNever(() => looper.clearAll(any()));
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+
+        await assign(
+          PedalButton.undo,
+          const ControlGesturePair(press: CommandAction(ControlCommand.undo)),
+        );
+        takeIsLocked = true;
+        await stomp(PedalButton.undo);
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+      });
+
+      test('assignment alone stays dark; live Mute state drives LED', () async {
+        await assign(
+          PedalButton.track1,
+          const ControlGesturePair(
+            press: TrackOperationAction(
+              operation: TrackOperation.mute,
+              scope: SelectedTrackScope(),
+            ),
+          ),
+        );
+        await pumpEventQueue();
+        expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.off);
+        setEngine(_tracksWith(const [Track(muted: true)]));
+        await pumpEventQueue();
+        expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
+        cubit.selectTrack(1);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.off);
+      });
+
+      test('Hold LED follows fired function, not unrelated Press', () async {
+        await assign(
+          PedalButton.track1,
+          const ControlGesturePair(
+            press: TrackOperationAction(
+              operation: TrackOperation.mute,
+              scope: FixedTrackScope(0),
+            ),
+            hold: TrackOperationAction(
+              operation: TrackOperation.mute,
+              scope: FixedTrackScope(1),
+            ),
+          ),
+        );
+        transport.press(PedalButton.track1, down: true);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.off);
+        await Future<void>.delayed(const Duration(milliseconds: 850));
+        setEngine(_tracksWith(const [Track(channel: 1, muted: true)]));
+        await pumpEventQueue();
+        expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
+        transport.press(PedalButton.track1, down: false);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
+      });
+    });
+
     // The FX-mode button matrix: every one of the ten controls is defined,
     // and the three inert ones are proven inert (A2/A4) — a stray stomp must
     // never erase the set.
@@ -1216,7 +1437,7 @@ void main() {
 
       test('MODE Hold exits the FX door without arming performance', () async {
         await hold(PedalButton.mode);
-        expect(cubit.state.mode, InteractionMode.record);
+        expect(cubit.state.mode, InteractionMode.custom);
         expect(performance.armedDirectory, isNull);
       });
 
@@ -1319,6 +1540,7 @@ void main() {
       test('takeLocked suppresses recPlay', () {
         final locked = ControlCubit(
           looper: looper,
+          mixSettings: testMixSettings(looper),
           pedal: pedal,
           settings: settings,
           performance: performance,
@@ -1332,6 +1554,7 @@ void main() {
       test('takeLocked suppresses rec-mode trackPressed', () {
         final locked = ControlCubit(
           looper: looper,
+          mixSettings: testMixSettings(looper),
           pedal: pedal,
           settings: settings,
           performance: performance,
@@ -1345,6 +1568,7 @@ void main() {
       test('takeLocked suppresses togglePerformanceRecord', () {
         final locked = ControlCubit(
           looper: looper,
+          mixSettings: testMixSettings(looper),
           pedal: pedal,
           settings: settings,
           performance: performance,
@@ -1363,6 +1587,7 @@ void main() {
         addTearDown(lockedPedal.dispose);
         final locked = ControlCubit(
           looper: looper,
+          mixSettings: testMixSettings(looper),
           pedal: lockedPedal,
           settings: settings,
           performance: performance,
@@ -1703,6 +1928,7 @@ void main() {
           addTearDown(recordingPerformance.dispose);
           final armedCubit = ControlCubit(
             looper: looper,
+            mixSettings: testMixSettings(looper),
             pedal: pedal,
             settings: settings,
             performance: recordingPerformance,
@@ -1743,6 +1969,7 @@ void main() {
         addTearDown(unarmedPerformance.dispose);
         final unarmedCubit = ControlCubit(
           looper: looper,
+          mixSettings: testMixSettings(looper),
           pedal: pedal,
           settings: settings,
           performance: unarmedPerformance,
@@ -1770,6 +1997,7 @@ void main() {
           addTearDown(recordingPerformance.dispose);
           final armedCubit = ControlCubit(
             looper: looper,
+            mixSettings: testMixSettings(looper),
             pedal: pedal,
             settings: settings,
             performance: recordingPerformance,
@@ -1903,6 +2131,7 @@ void main() {
           // capture documented no FX at all.
           final wired = ControlCubit(
             looper: looper,
+            mixSettings: testMixSettings(looper),
             pedal: pedal,
             settings: settings,
             performance: performance,
@@ -2177,17 +2406,20 @@ void main() {
           expect(performance.armedDirectory, isNull);
         });
 
-        test('MODE Hold enters FX at 800 ms and does not run Press', () async {
-          transport.press(PedalButton.mode, down: true);
-          await pumpEventQueue();
-          expect(cubit.state.mode, InteractionMode.record);
-          await Future<void>.delayed(const Duration(milliseconds: 850));
-          expect(cubit.state.mode, InteractionMode.fx);
-          transport.press(PedalButton.mode, down: false);
-          await pumpEventQueue();
-          expect(cubit.state.mode, InteractionMode.fx);
-          expect(performance.armedDirectory, isNull);
-        });
+        test(
+          'MODE Hold enters Custom at 800 ms and does not run Press',
+          () async {
+            transport.press(PedalButton.mode, down: true);
+            await pumpEventQueue();
+            expect(cubit.state.mode, InteractionMode.record);
+            await Future<void>.delayed(const Duration(milliseconds: 850));
+            expect(cubit.state.mode, InteractionMode.custom);
+            transport.press(PedalButton.mode, down: false);
+            await pumpEventQueue();
+            expect(cubit.state.mode, InteractionMode.custom);
+            expect(performance.armedDirectory, isNull);
+          },
+        );
 
         test(
           'Bank Hold arms then disarms performance without paging',
@@ -2769,7 +3001,7 @@ void main() {
         });
 
         test(
-          'MODE Hold still exits FX despite an attempted remap',
+          'MODE Hold still enters Custom despite an attempted remap',
           () async {
             await cubit.setGlobalBindings(
               PedalBindingSet([bind(PedalButton.mode)]),
@@ -2777,7 +3009,7 @@ void main() {
             await press(PedalButton.mode);
             await Future<void>.delayed(const Duration(milliseconds: 850));
             await release(PedalButton.mode);
-            expect(cubit.state.mode, InteractionMode.record);
+            expect(cubit.state.mode, InteractionMode.custom);
             expect(performance.armedDirectory, isNull);
           },
         );
@@ -3095,6 +3327,7 @@ void main() {
 
         final reloaded = ControlCubit(
           looper: looper,
+          mixSettings: testMixSettings(looper),
           pedal: pedal,
           settings: settings,
           performance: performance,
@@ -3170,6 +3403,7 @@ void main() {
           addTearDown(idlePedal.dispose);
           final idle = ControlCubit(
             looper: looper,
+            mixSettings: testMixSettings(looper),
             pedal: idlePedal,
             settings: settings,
             performance: performance,

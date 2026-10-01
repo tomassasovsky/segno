@@ -13,6 +13,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
@@ -66,6 +67,7 @@ Finder _column(int channel) => find.byWidgetPredicate(
 );
 
 void main() {
+  late MixSettingsCoordinator mixSettings;
   setUpAll(() => registerFallbackValue(const LooperRecordPressed(0)));
 
   late LooperBloc bloc;
@@ -107,6 +109,7 @@ void main() {
     when(() => repository.undoClearAll()).thenReturn(EngineResult.ok);
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.sessionRevision).thenReturn(0);
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
     when(() => repository.trackChainEnabled(any())).thenReturn(true);
@@ -149,8 +152,11 @@ void main() {
       const Stream<TransportClockState>.empty(),
       initialState: const TransportClockState(),
     );
+    mixSettings = testMixSettings(repository, settings: settings);
+    addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
       looper: repository,
+      mixSettings: mixSettings,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
@@ -215,7 +221,7 @@ void main() {
               ),
               BlocProvider<MonitorCubit>(
                 create: (_) => MonitorCubit(
-                  mixSettings: testMixSettings(repository),
+                  mixSettings: mixSettings,
                   repository: repository,
                   settings: settings,
                 ),
@@ -358,8 +364,8 @@ void main() {
     expect(control.state.cursor, 1); // the digit still selects
   });
 
-  testWidgets('M cycles the mode chip through REC, MUTE and FX, announcing '
-      'each landed mode', (tester) async {
+  testWidgets('M cycles the mode chip through every mode, announcing each '
+      'landed one', (tester) async {
     // Assert the DELIVERED announcement text, not the getter: a getter-only
     // assertion passes even when two ARB keys collide and the string that
     // actually ships is some other surface's copy.
@@ -399,6 +405,10 @@ void main() {
     expect(control.state.mode, InteractionMode.fx);
     expect(announcements, contains(l10n.a11yModeFx));
     expect(l10n.a11yModeFx, 'FX mode');
+    await cycle();
+    expect(control.state.mode, InteractionMode.custom);
+    expect(announcements, contains(l10n.a11yModeCustom));
+    expect(l10n.a11yModeCustom, 'Custom controls');
     await cycle();
     expect(control.state.mode, InteractionMode.record);
     expect(announcements, contains(l10n.a11yModeRecord));

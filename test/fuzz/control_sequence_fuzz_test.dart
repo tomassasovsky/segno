@@ -718,7 +718,8 @@ class _Harness {
       ),
     );
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    bloc = LooperBloc(repository: repo, mixSettings: testMixSettings(repo));
+    final mixSettings = testMixSettings(repo);
+    bloc = LooperBloc(repository: repo, mixSettings: mixSettings);
     sim = FakePedalLink();
     pedalRepo = PedalRepository(sim);
     sim.hello();
@@ -732,6 +733,7 @@ class _Harness {
     );
     control = ControlCubit(
       looper: repo,
+      mixSettings: mixSettings,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
@@ -1152,8 +1154,8 @@ List<_FuzzAction> _generate(int seed, int steps) {
       ),
       < 65 => _Select(rng.next(8)),
       < 68 => const _ToggleMode(),
-      // NB: no `_SetMode` in the random alphabet. FX mode is already reachable
-      // here — `_Tap`/`_ToggleMode` walk the three-stop cycle — and giving it
+      // NB: no `_SetMode` in the random alphabet. FX and custom are already
+      // reachable here — `_Tap`/`_ToggleMode` walk the cycle — and giving one
       // its own band would have taken draws from `_Pump` (the only action that
       // feeds audio in, so the only way tracks gain content) and shifted every
       // subsequent draw, replacing the sequences the fixed seeds have explored

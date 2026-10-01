@@ -140,7 +140,7 @@
     "shortcutGroupTracks": "Pistas",
     "shortcutGroupNavigation": "Navegación",
     "shortcutPlayStopAll": "Reproducir o detener todas las pistas",
-    "shortcutMode": "Cambiar modo grabación / silencio / FX",
+    "shortcutMode": "Cambiar modo pistas / silencio / FX / personalizado",
     "shortcutArm": "Armar o desarmar la grabación de actuación",
     "shortcutSelectTrack": "Seleccionar una pista (silenciarla en modo silencio; en modo FX, alternar la cadena de FX asignada a esa tecla)",
     "shortcutBank": "Cambiar de banco A / B",

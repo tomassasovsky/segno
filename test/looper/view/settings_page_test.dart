@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -32,6 +35,7 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
 void main() {
+  late MixSettingsCoordinator mixSettings;
   late SettingsRepository settings;
   late TracksCubit tracks;
   late WaveformWindowCubit waveformWindow;
@@ -104,8 +108,11 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
+    mixSettings = testMixSettings(repository, settings: settings);
+    addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
       looper: repository,
+      mixSettings: mixSettings,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
@@ -130,7 +137,7 @@ void main() {
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
     quantize = RecordTimingCubit(repository: repository, settings: settings);
     monitor = MonitorCubit(
-      mixSettings: testMixSettings(repository),
+      mixSettings: mixSettings,
       repository: repository,
       settings: settings,
     );

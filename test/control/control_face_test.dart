@@ -26,6 +26,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_key_value_store.dart';
+import '../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -175,8 +176,11 @@ void main() {
     addTearDown(controller.dispose);
     pedal = PedalRepository(pedalLink ?? NoopPedalLink());
     addTearDown(pedal.dispose);
+    final mixSettings = testMixSettings(looper, settings: settings);
+    addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
       looper: looper,
+      mixSettings: mixSettings,
       pedal: pedal,
       settings: settings,
       performance: performance,

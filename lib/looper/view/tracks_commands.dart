@@ -107,10 +107,9 @@ class TracksCommands {
         tracks[channel].isCapturing;
   }
 
-  /// Cycles the system record → mute → FX mode and announces the mode it
-  /// landed on. Always the full three-stop cycle: the #632 mode-switch style
-  /// governs the pedal's own tap/hold split only — this path has no hold, so
-  /// it keeps FX reachable whatever the style (and with no pedal at all).
+  /// Cycles Tracks → Mute → FX → Custom and announces the selected mode.
+  /// Keyboard navigation keeps every mode reachable independently of the
+  /// configured Mode pedal Press and Hold.
   void toggleMode() {
     final overlay = context.read<ControlCubit>()..toggleMode();
     final l10n = context.l10n;
@@ -118,6 +117,7 @@ class TracksCommands {
       InteractionMode.record => l10n.a11yModeRecord,
       InteractionMode.mute => l10n.a11yModeMute,
       InteractionMode.fx => l10n.a11yModeFx,
+      InteractionMode.custom => l10n.a11yModeCustom,
     });
   }
 
@@ -166,6 +166,7 @@ class TracksCommands {
   /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
   /// Mute mode: `1`–`8` select + mute/unmute.
   /// FX mode: `1`–`8` select + toggle that track's FX chain.
+  /// Custom mode: `1`–`8` select without invoking a footswitch assignment.
   ///
   /// Kept in sync with `shortcuts_help_sheet.dart` by contract: a row added
   /// here is added there in the same change, or the legend starts lying.
@@ -293,6 +294,10 @@ class TracksCommands {
             // missing channel as "off" and dispatch enable forever.
             announceFxChainToggle(channel);
             bloc.add(LooperTrackChainToggled(channel));
+          case InteractionMode.custom:
+            // Selection only: what a control does in Custom controls is
+            // assigned per FOOTSWITCH, and a digit key is not one.
+            break;
         }
       }
       return KeyEventResult.handled;

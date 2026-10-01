@@ -415,6 +415,26 @@ void main() {
     });
   }
 
+  test('grouped Solo toggles use one mix and cancel in pairs', () async {
+    persistence.writeGate = Completer<void>();
+    final blocking = coordinator.setTrackPan(.2);
+    await _turn();
+    unawaited(coordinator.toggleTrackSolos({0, 1, 2}));
+    unawaited(coordinator.toggleTrackSolos({0, 1, 2}));
+    unawaited(coordinator.toggleTrackSolos({1, 3}));
+    persistence.writeGate!.complete();
+    await blocking;
+    expect(
+      [
+        for (var channel = 0; channel < 4; channel++)
+          repository.trackSoloed(channel),
+      ],
+      [false, true, false, true],
+    );
+    expect(persistence.candidates, hasLength(1));
+    expect(audio.calls.where((call) => call == 'setMix'), hasLength(2));
+  });
+
   test(
     'Solo toggle waits for callback then inverts its confirmed result',
     () async {

@@ -138,11 +138,11 @@ class ControlGesturePair extends Equatable {
 class PedalSetup extends Equatable {
   /// Creates a [PedalSetup].
   ///
-  /// MODE Hold remains the working FX door in this slice; the accepted Custom
-  /// default follows when Custom dispatch is available.
+  /// The defaults are the accepted ones: MODE presses to Mute, and its hold
+  /// opens the Custom controls.
   const PedalSetup({
     this.modePress = InteractionMode.mute,
-    this.modeHold = InteractionMode.fx,
+    this.modeHold = InteractionMode.custom,
     this.recordHold = RecordHold.undoRecording,
     this.trackHold = TrackHold.armOverdub,
   }) : custom = const <PedalBindingKey, ControlGesturePair>{};

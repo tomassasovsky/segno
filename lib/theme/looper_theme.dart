@@ -118,12 +118,13 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// The meter color for [state] in the current mode ([mode] selects the
   /// mute or record table). Transparent if the table omits it.
   ///
-  /// FX mode shares the MUTE table: like mute mode it is a mixing view (no
-  /// track arms to record from it), and giving it a third palette would say
-  /// something about the meters that FX mode does not change.
+  /// FX and Custom share the Mute table. The meters continue to show the
+  /// track's transport state independently of its pedal assignments.
   Color meterColor(LooperMeterState state, {required InteractionMode mode}) =>
       switch (mode) {
-        InteractionMode.mute || InteractionMode.fx => muteMeterColors,
+        InteractionMode.mute ||
+        InteractionMode.fx ||
+        InteractionMode.custom => muteMeterColors,
         InteractionMode.record => recordMeterColors,
       }[state] ??
       Colors.transparent;

@@ -140,7 +140,11 @@ class MixSettingsCoordinator {
     ),
   );
 
-  Future<MixSettingsOutcome> _submit(_Target target, _Edit edit) {
+  Future<MixSettingsOutcome> _submit(
+    _Target target,
+    _Edit edit, {
+    bool drain = true,
+  }) {
     if (_recovery case final recovery?) return Future.value(recovery);
     if (_closed || _exclusiveCount != 0) {
       return Future.value(
@@ -161,7 +165,9 @@ class MixSettingsCoordinator {
     var queuedTarget = target;
     var queuedEdit = edit;
     if (target.$1 == _Control.clearSolo) {
-      _pending.removeWhere((key, _) => _soloControl(key.$1));
+      _pending.removeWhere(
+        (key, _) => _soloControl(key.$1),
+      );
     } else if (_soloControl(target.$1)) {
       final previous = _pending.keys
           .where((key) => key.$2 == target.$2 && _soloControl(key.$1))
@@ -186,8 +192,11 @@ class MixSettingsCoordinator {
     _pending
       ..remove(queuedTarget)
       ..[queuedTarget] = queuedEdit;
-    return _draining ??= _drain().whenComplete(() => _draining = null);
+    return drain ? _startDrain() : Future.value(_applied);
   }
+
+  Future<MixSettingsOutcome> _startDrain() =>
+      _draining ??= _drain().whenComplete(() => _draining = null);
 
   bool _current(int generation, String device) =>
       generation == _repository.mixGeneration && device == _device();
@@ -667,6 +676,28 @@ class MixSettingsCoordinator {
       (_Control.soloToggle, channel, 0),
       _soloEdit(_Control.soloToggle, channel),
     );
+  }
+
+  /// Toggles a set of Solo flags in one ordered mix admission.
+  Future<MixSettingsOutcome> toggleTrackSolos(Set<int> channels) {
+    if (channels.isEmpty || channels.any((channel) => !_track(channel))) {
+      return _reject();
+    }
+    if (_closed || _exclusiveCount != 0 || _recovery != null) {
+      return toggleTrackSolo(channel: channels.first);
+    }
+    // Queue every member before draining, so the whole set enters one native
+    // mix revision. Per-channel parity also composes with Mixer Solo and Clear.
+    for (final channel in channels.toList()..sort()) {
+      unawaited(
+        _submit(
+          (_Control.soloToggle, channel, 0),
+          _soloEdit(_Control.soloToggle, channel),
+          drain: false,
+        ),
+      );
+    }
+    return _startDrain();
   }
 
   static bool _soloControl(_Control control) =>

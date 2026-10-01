@@ -73,6 +73,7 @@ String _modeLabel(AppLocalizations l10n, InteractionMode mode) =>
       InteractionMode.record => l10n.actionModeExit,
       InteractionMode.mute => l10n.actionModeMute,
       InteractionMode.fx => l10n.actionModeFx,
+      InteractionMode.custom => l10n.actionModeCustom,
     };
 
 String _commandLabel(AppLocalizations l10n, ControlCommand command) =>

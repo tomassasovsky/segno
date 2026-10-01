@@ -9,6 +9,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -42,6 +43,7 @@ class _FakeSource implements ControllerSource {
 /// events reaching the rig, the learn flow that creates them, and the
 /// release-all rule extended to MIDI-source disconnect (B1).
 void main() {
+  late MixSettingsCoordinator mixSettings;
   const expression = MappingTrigger(
     kind: ControllerSourceKind.midiCc,
     id: 11,
@@ -167,8 +169,11 @@ void main() {
         engine: FakeAudioEngine(),
         exportsRoot: () async => tempDir.path,
       );
+      mixSettings = testMixSettings(looper, settings: settings);
+      addTearDown(mixSettings.close);
       cubit = ControlCubit(
         looper: looper,
+        mixSettings: mixSettings,
         pedal: pedal,
         settings: settings,
         performance: performance,
@@ -670,6 +675,7 @@ void main() {
         await cubit.close();
         cubit = ControlCubit(
           looper: looper,
+          mixSettings: mixSettings,
           pedal: pedal,
           settings: settings,
           performance: performance,
@@ -706,6 +712,7 @@ void main() {
         await cubit.close();
         cubit = ControlCubit(
           looper: looper,
+          mixSettings: mixSettings,
           pedal: pedal,
           settings: settings,
           performance: performance,
@@ -735,6 +742,7 @@ void main() {
           await cubit.close();
           cubit = ControlCubit(
             looper: looper,
+            mixSettings: mixSettings,
             pedal: pedal,
             settings: settings,
             performance: performance,
@@ -1145,6 +1153,7 @@ void main() {
           );
           final cubit2 = ControlCubit(
             looper: looper,
+            mixSettings: mixSettings,
             pedal: pedal,
             settings: settings,
             performance: performance,
@@ -1203,6 +1212,7 @@ void main() {
         );
         final cubit2 = ControlCubit(
           looper: looper,
+          mixSettings: mixSettings,
           pedal: pedal,
           settings: settings,
           performance: performance,

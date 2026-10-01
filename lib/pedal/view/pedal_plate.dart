@@ -1067,6 +1067,11 @@ String _ledStateLabel(
     led == PedalTrackLed.off
         ? l10n.pedalSimLedChainDisabled
         : l10n.pedalSimLedChainEnabled,
+  // Custom feedback follows the function's state or active contact.
+  InteractionMode.custom =>
+    led == PedalTrackLed.off
+        ? l10n.pedalSimLedInactive
+        : l10n.pedalSimLedActive,
   InteractionMode.record || InteractionMode.mute => switch (led) {
     PedalTrackLed.off => l10n.pedalSimLedOff,
     PedalTrackLed.green => l10n.pedalSimLedArmed,
