@@ -16,6 +16,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -97,10 +98,13 @@ void main() {
     addTearDown(performance.dispose);
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
+    final pedal = PedalRepository(NoopPedalLink());
+    final pedalCubit = PedalCubit(pedal: pedal);
+    addTearDown(() => unawaited(pedalCubit.close()));
     final control = ControlCubit(
       looper: looper,
       mixSettings: mixSettings,
-      pedal: PedalRepository(NoopPedalLink()),
+      pedal: pedal,
       settings: settings,
       performance: performance,
     );
@@ -126,6 +130,7 @@ void main() {
           child: MultiBlocProvider(
             providers: [
               BlocProvider.value(value: control),
+              BlocProvider.value(value: pedalCubit),
               BlocProvider.value(value: tracks),
             ],
             child: const PedalSetupPage(),

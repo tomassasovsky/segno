@@ -17,6 +17,7 @@ import 'package:segno/theme/theme.dart';
 class PedalSetupMap extends StatelessWidget {
   /// Creates a [PedalSetupMap].
   const PedalSetupMap({
+    required this.frame,
     required this.selected,
     required this.editable,
     required this.onSelect,
@@ -25,6 +26,9 @@ class PedalSetupMap extends StatelessWidget {
     required this.onToggleBank,
     super.key,
   });
+
+  /// The actual frame sent to the board; selection never lights an indicator.
+  final PedalStateFrame? frame;
 
   /// The switches drawn as a group with the selected one — the four track
   /// caps, when Track controls is editing them as one.
@@ -118,6 +122,12 @@ class PedalSetupMap extends StatelessWidget {
       badge: button == PedalButton.bank ? _bankLetter : null,
       slot: slot,
       selected: selected.contains(button),
+      ledColor: frame?.colorFor(button) ?? PedalColor.defaultColor,
+      // A draft bank is not a performance bank change. Do not show another
+      // track's live state beside a different assignment's label.
+      ledActive:
+          (frame?.isLit(button) ?? false) &&
+          (channel == null || frame?.activeBank == bank),
       enabled: live,
       onTap: !live
           ? null
@@ -134,6 +144,8 @@ class PedalSetupMap extends StatelessWidget {
 class PedalSetupCap extends StatelessWidget {
   /// Creates a selectable hardware pedal.
   const PedalSetupCap({
+    required this.ledColor,
+    required this.ledActive,
     required this.legend,
     required this.slot,
     required this.selected,
@@ -142,6 +154,12 @@ class PedalSetupCap extends StatelessWidget {
     this.badge,
     super.key,
   });
+
+  /// The published hue, independent of selection and editability.
+  final PedalColor ledColor;
+
+  /// Whether this physical indicator is currently lit.
+  final bool ledActive;
 
   /// The physical pedal's label and accessible name.
   final String legend;
@@ -176,7 +194,9 @@ class PedalSetupCap extends StatelessWidget {
             height: 12,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: selected && enabled ? surface.accent : surface.cardHigh,
+                color: ledActive
+                    ? Color.fromARGB(255, ledColor.r, ledColor.g, ledColor.b)
+                    : surface.cardHigh,
                 borderRadius: BorderRadius.circular(6),
               ),
             ),

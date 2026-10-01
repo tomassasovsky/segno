@@ -33,6 +33,24 @@ Map<String, PedalLinkMessage> _enumPins() {
 
 final goldenMessages = <String, PedalLinkMessage>{
   ..._enumPins(),
+  'physical_hues_mask': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      mode: PedalMode.custom,
+      pedalColors: const [
+        PedalColor(0, 128, 255),
+        PedalColor(165, 1, 2),
+        PedalColor(3, 4, 5),
+        PedalColor(6, 7, 8),
+        PedalColor(9, 10, 11),
+        PedalColor(12, 13, 14),
+        PedalColor(15, 16, 17),
+        PedalColor(18, 19, 20),
+        PedalColor(21, 22, 23),
+        PedalColor(254, 253, 252),
+      ],
+      activeButtonMask: 0x201,
+    ),
+  ),
   'blank_goodbye': StateMessage(PedalStateFrame.blank(goodbye: true)),
   'idle_rec': StateMessage(
     PedalStateFrame.blank().copyWith(globalColor: GlobalColor.green),

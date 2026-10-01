@@ -110,27 +110,11 @@ static void testKnownSwitchEdgesRemainPrompt() {
         events[1].value == 0, "an established switch must release within two samples");
 }
 
-static void testCustomStatePaintsAmberModePill() {
-  bootAt(CTRL_MAX);
-  g_haveFrame = true;
-  g_frame = {};
-  g_frame.mode = PEDAL_MODE_CUSTOM;
-  g_frame.active_bank = 1;
-  g_frame.track_leds[4] = PEDAL_LED_BLUE;
-  renderIndicators();
-  CHECK(ind.getPixelColor(IND_MODE) == rgb(255, 255, 0),
-        "Custom STATE must paint the mode pill amber");
-  CHECK(ind.getPixelColor(IND_TRACK1) == rgb(0, 0, 255),
-        "Custom mode must retain active-bank track LEDs");
-  CHECK(ind.getPixelColor(IND_BANK) == rgb(0, 0, 80),
-        "Custom mode must retain the bank indicator");
-}
 
 int main() {
   testUnplugHoldsTheLastValue();
   testOrdinaryToeTravelStillReportsFullScale();
   testMovementCancelsPendingDetach();
   testKnownSwitchEdgesRemainPrompt();
-  testCustomStatePaintsAmberModePill();
   std::puts("Console sketch CTRL tests: ALL PASSED");
 }

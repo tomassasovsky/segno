@@ -17,6 +17,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Which half of the plate the setup is editing.
@@ -92,6 +93,9 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final control = context.watch<ControlCubit>();
+    final frame = context.select<PedalCubit, PedalStateFrame?>(
+      (cubit) => cubit.state.frame,
+    );
     return FutureBuilder<void>(
       future: _initialLoad,
       builder: (context, snapshot) {
@@ -149,6 +153,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                       left: _left,
                       top: _mapTop,
                       child: PedalSetupMap(
+                        frame: frame,
                         selected: _selectedGroup,
                         editable: _editable,
                         onSelect: (button) =>
