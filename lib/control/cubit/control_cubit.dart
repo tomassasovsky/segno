@@ -516,9 +516,17 @@ class ControlCubit extends Cubit<ControlState> {
       rethrow;
     }
     if (isClosed) return;
-    _invalidateGestures();
-    _customLastActions.clear();
-    _fxReturn = InteractionMode.record;
+    // A hue edit changes the frame but not the action already accepted under
+    // a foot. Retire gestures only when their actual dispatch configuration
+    // changed, or when recovering from an unavailable stored setup.
+    final behaviorChanged =
+        state.pedalSetupUnavailable ||
+        setup.copyWith(palette: state.pedalSetup.palette) != state.pedalSetup;
+    if (behaviorChanged) {
+      _invalidateGestures();
+      _customLastActions.clear();
+      _fxReturn = InteractionMode.record;
+    }
     emit(
       state.copyWith(
         pedalSetup: setup,
@@ -1324,7 +1332,8 @@ class ControlCubit extends Cubit<ControlState> {
     if (!accepted ||
         isClosed ||
         state.mode != InteractionMode.custom ||
-        state.pedalSetup != setup ||
+        state.pedalSetupUnavailable ||
+        state.pedalSetup.copyWith(palette: setup.palette) != setup ||
         _looper.sessionRevision != session ||
         !identical(_customDispatchTokens[button], token)) {
       return;

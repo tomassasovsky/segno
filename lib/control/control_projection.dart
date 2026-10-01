@@ -126,7 +126,7 @@ PedalStateFrame projectFrame(
   Map<int, bool> customFunctions = const {},
   Map<PedalButton, bool> physicalCustomStates = const {},
   Set<PedalButton> acceptedContacts = const {},
-  List<PedalColor> pedalColors = defaultPedalColors,
+  List<PedalColor>? pedalColors,
 }) {
   final leds = <PedalTrackLed>[
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
@@ -198,7 +198,7 @@ PedalStateFrame projectFrame(
     clearFadeActive: clearFadeActive,
     performanceArmed: performanceArmed,
     masterGain: masterGain,
-    pedalColors: pedalColors,
+    pedalColors: pedalColors ?? overlay.pedalSetup.palette.frameColors,
     activeButtonMask: activeButtonMask,
   );
   // The control-surface invariant spec runs on every projection in debug

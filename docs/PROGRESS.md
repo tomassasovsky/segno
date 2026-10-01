@@ -968,3 +968,22 @@ Full app: 2,346 passing, six existing skips, 91.126% coverage. Pedal package:
 pass. Independent source/five-role review and a separate adversary are clean.
 [Validation and limits](reviews/design-pedal-led-restack/README.md) bind the exact
 candidate. Palette editing is the next slice; hardware acceptance remains open.
+
+## Reusable LED palette — October 1, 2026
+
+PR #1032 adds the accepted LED colors editor to Layout A. All ten physical
+indicators have saved hues, including fixed controls. Reusable custom colors
+keep stable identities; Hue/Saturation/Brightness edit exact RGB. Draft
+preview stays local until durable Save, and Cancel preserves the live setup.
+Color-only saves preserve held actions, pending gestures and delayed native
+receipts. Actual assignment changes still retire those gestures.
+
+The palette is app-owned configuration on the existing protocol 8 frame; no
+firmware, native engine or package changes are introduced. Malformed explicit
+settings are refused through the existing recovery path. Clear and Restore
+retain later palette edits. The saved Pen note and setup images record the
+color context and non-overlapping placement beside the raised pedal row.
+
+Verification and review are recorded in
+[the palette report](reviews/design-led-palette-restack/README.md). Physical
+color appearance and brightness remain appliance checks.

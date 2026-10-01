@@ -298740,7 +298740,7 @@
       "id": "qaI7U",
       "x": 34744,
       "y": -4122,
-      "name": "Native implementation / Pedal setup and indicators / PR 1028–1031",
+      "name": "Native implementation / Pedal setup and indicators / PR 1028–1032",
       "width": 1920,
       "height": 1060,
       "fill": "#111215",
@@ -298780,7 +298780,7 @@
           "fill": "#98A2B3",
           "textGrowth": "fixed-width",
           "width": "fill_container",
-          "content": "Custom setup uses the same map, with per-bank Press and Hold assignments. Fresh Mode is Mute on Press and Custom on Hold. In Custom, Mode returns to Tracks and Bank changes the four visible assignments. A hold fires once without replaying Press. All ten LEDs use the action state or an accepted contact, never assignment presence or editor selection.\n\nThe setup map reads the same published state as the physical board. Selection marks the pedal body. Editing another bank does not change performance: its track indicators stay dark until that bank is active. Fixed controls can show their live state while their editing targets remain disabled. Rejected commands and released contacts do not remain lit.\n\nClear affects Custom assignments only; Restore keeps later Track controls edits. Save warnings remain between pedal rows. Solo shares the Mixer command owner. Configurable hue is independent of activity; fresh indicators are white and black is a deliberate dark choice. The palette editor is the next slice. UART v8 is required with the ten-pill board; older protocol versions are not accepted. Physical operation and brightness still need appliance validation.\n\nThis repository canvas predates the full accepted working design. Preserve that newer source during final synchronization; this note does not claim the old screens are current.",
+          "content": "Custom setup uses the same map, with per-bank Press and Hold assignments. Fresh Mode is Mute on Press and Custom on Hold. In Custom, Mode returns to Tracks and Bank changes the four visible assignments. A hold fires once without replaying Press. All ten LEDs use the action state or an accepted contact, never assignment presence or editor selection.\n\nThe setup map reads the same published state as the physical board. Selection marks the pedal body. Editing another bank does not change performance: its track indicators stay dark until that bank is active. Fixed controls can show their live state while their editing targets remain disabled. Rejected commands and released contacts do not remain lit.\n\nClear affects Custom assignments only; Restore keeps later Track controls edits. Save warnings remain between pedal rows. Solo shares the Mixer command owner. Configurable hue is independent of activity; fresh indicators are white and black is a deliberate dark choice. LED colors now edits all ten physical switches. Color drafts stay local until Save; changing only hue preserves activity and gesture ownership. Clear and Restore preserve later color edits. UART v8 is required with the ten-pill board; older protocol versions are not accepted. Physical operation and brightness still need appliance validation.\n\nThis repository canvas predates the full accepted working design. Preserve that newer source during final synchronization; this note does not claim the old screens are current.",
           "lineHeight": 1.4,
           "fontFamily": "Inter",
           "fontSize": 24,
@@ -299040,6 +299040,339 @@
               ]
             }
           ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ZwFzy",
+      "x": 34744,
+      "y": -2492,
+      "name": "Native implementation / Reusable pedal palette / PR 1032",
+      "width": 1920,
+      "height": 880,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "Y1mc3",
+          "name": "Palette implementation title",
+          "fill": "#F1F2F4",
+          "content": "LED colors · one physical palette",
+          "fontFamily": "Inter",
+          "fontSize": 40,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "o18RtA",
+          "name": "Palette layout and save contract",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Track controls, Custom controls and LED colors stay together at the upper right, clear of the raised Clear and Bank pedals. LED colors selects every physical switch independently, with no bank paging. Selection marks the body; only published action state lights an indicator.\n\nEight named colors plus reusable Custom entries. Add or edit with Hue, Saturation and Brightness. Preview is local; Save confirms storage before publishing colors. Cancel and failed Save keep the live palette. A hue-only Save preserves held actions, toggle state, pending gestures and FX return.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 26,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "UAIsy",
+          "name": "Default palette colors",
+          "width": "fill_container",
+          "height": 130,
+          "gap": 16,
+          "children": [
+            {
+              "type": "frame",
+              "id": "QKofn",
+              "name": "White swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "T0xTe",
+                  "name": "White color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "NTRnl",
+                  "name": "White name",
+                  "fill": "#F1F2F4",
+                  "content": "White",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "I3oxl",
+              "name": "Amber swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "M4cCU",
+                  "name": "Amber color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#EFBC72",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "t385Lj",
+                  "name": "Amber name",
+                  "fill": "#F1F2F4",
+                  "content": "Amber",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "LY8Hj",
+              "name": "Red swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "OZNEE",
+                  "name": "Red color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#EE6B70",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "NM2Xs",
+                  "name": "Red name",
+                  "fill": "#F1F2F4",
+                  "content": "Red",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "roHwL",
+              "name": "Orange swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ynzXh",
+                  "name": "Orange color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#EF9666",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "e0U9JW",
+                  "name": "Orange name",
+                  "fill": "#F1F2F4",
+                  "content": "Orange",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Uyk84",
+              "name": "Green swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "kZiT8",
+                  "name": "Green color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#7ACB9E",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "DsLKx",
+                  "name": "Green name",
+                  "fill": "#F1F2F4",
+                  "content": "Green",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "l8wybl",
+              "name": "Cyan swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "FxEIq",
+                  "name": "Cyan color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#73CFDF",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "Q7lxap",
+                  "name": "Cyan name",
+                  "fill": "#F1F2F4",
+                  "content": "Cyan",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Z5HFB2",
+              "name": "Blue swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "GwpYt",
+                  "name": "Blue color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#82AAFF",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "CHjl7",
+                  "name": "Blue name",
+                  "fill": "#F1F2F4",
+                  "content": "Blue",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "R8wooF",
+              "name": "Violet swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "VEvRv",
+                  "name": "Violet color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#B19AFA",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "b6AkZD",
+                  "name": "Violet name",
+                  "fill": "#F1F2F4",
+                  "content": "Violet",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "ePxvO",
+          "name": "Reusable colors and validation",
+          "fill": "#98A2B3",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Custom 1 can be shared by Mode and Bank: editing it updates both references without changing either action. Saved hue is bank-independent. Long palettes scroll and retain keyboard/encoder focus. Black is valid; fresh white stays RGB FFFFFF.\n\nUnreadable explicit palettes remain unavailable until deliberately replaced. No old protocol or default-color fallback is restored. The console renderer still applies its physical brightness limits; screen colors are design values, not optical calibration.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 26,
+          "fontWeight": "normal"
         }
       ]
     }
