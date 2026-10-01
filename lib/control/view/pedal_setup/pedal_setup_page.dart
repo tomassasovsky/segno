@@ -7,9 +7,12 @@ import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
+import 'package:segno/control/view/pedal_setup/pedal_color_dialog.dart';
+import 'package:segno/control/view/pedal_setup/pedal_led_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_map.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -27,12 +30,15 @@ enum PedalSetupContext {
 
   /// The free map: eight switches, each with its own Press and Hold.
   custom,
+
+  /// Colors of all ten physical indicators, independent of bank.
+  leds,
 }
 
 /// The accepted Pedals setup (Layout A): the hardware map stays on screen
 /// while the chosen switch's Press and Hold are edited together.
 ///
-/// One draft, two contexts, one Save. Every edit lands in a local draft and
+/// One draft for assignments and colors, one Save. Every edit stays local and
 /// nothing reaches the rig until Save, which is what lets Clear custom
 /// assignments offer Restore and lets Cancel mean something. An unfinished
 /// draft cannot ride out on someone else's save either: it lives here, not in
@@ -154,6 +160,8 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                       top: _mapTop,
                       child: PedalSetupMap(
                         frame: frame,
+                        palette: _draft?.palette,
+                        physicalLabels: _context == PedalSetupContext.leds,
                         selected: _selectedGroup,
                         editable: _editable,
                         onSelect: (button) =>
@@ -351,6 +359,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
       width: 1720,
       height: 72,
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           LoopChoiceButton(
             key: const Key('pedal_setup_context_tracks'),
@@ -369,6 +378,15 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
             width: 225,
             height: 64,
           ),
+          const SizedBox(width: 8),
+          LoopChoiceButton(
+            key: const Key('pedal_setup_context_leds'),
+            label: l10n.pedalSetupContextLeds,
+            selected: _context == PedalSetupContext.leds,
+            onTap: () => _openContext(PedalSetupContext.leds),
+            width: 225,
+            height: 64,
+          ),
         ],
       ),
     );
@@ -383,6 +401,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
       _selected = switch (next) {
         PedalSetupContext.tracks => PedalButton.mode,
         PedalSetupContext.custom => PedalButton.track1,
+        PedalSetupContext.leds => PedalButton.mode,
       };
     });
   }
@@ -396,6 +415,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
 
   /// The switches this context can edit.
   Set<PedalButton> get _editable => switch (_context) {
+    PedalSetupContext.leds => PedalButton.values.toSet(),
     // Stop, Undo, Clear and Bank do one thing here and keep it: the accepted
     // design dims them rather than offering an assignment it would refuse.
     PedalSetupContext.tracks => {
@@ -429,7 +449,53 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   Widget _editor(BuildContext context, PedalSetup setup) => switch (_context) {
     PedalSetupContext.tracks => _tracksEditor(context, setup),
     PedalSetupContext.custom => _customEditor(context, setup),
+    PedalSetupContext.leds => PedalLedEditor(
+      title: _controlName(context),
+      palette: setup.palette,
+      button: _selected,
+      onChoose: (entry) => setState(() {
+        final latest = _draft ?? context.read<ControlCubit>().state.pedalSetup;
+        _draft = latest.copyWith(
+          palette: latest.palette.withChoice(_selected, entry),
+        );
+        _saved = false;
+      }),
+      onAdd: () => unawaited(_editColor()),
+      onEdit: (entry) => unawaited(_editColor(entry)),
+    ),
   };
+
+  Future<void> _editColor([CustomPaletteEntry? entry]) async {
+    final control = context.read<ControlCubit>();
+    final liveAtOpen = control.state.pedalSetup;
+    final button = _selected;
+    final palette = (_draft ?? liveAtOpen).palette;
+    final chosen = await showPedalColorDialog(
+      context,
+      initial: entry == null
+          ? const PedalColor(64, 160, 224)
+          : palette.colorOf(entry)!,
+      editing: entry != null,
+    );
+    if (chosen == null || !mounted || control.state.pedalSetup != liveAtOpen) {
+      return;
+    }
+    // Merge into the latest draft, without taking over another selection or
+    // resurrecting a setup replaced while the dialog was open.
+    final latest = _draft ?? control.state.pedalSetup;
+    if (entry != null && !latest.palette.customs.containsKey(entry.number)) {
+      return;
+    }
+    final number = entry?.number ?? latest.palette.nextCustomNumber;
+    var next = latest.palette.withCustom(number, chosen);
+    if (entry == null) {
+      next = next.withChoice(button, CustomPaletteEntry(number));
+    }
+    setState(() {
+      _draft = latest.copyWith(palette: next);
+      _saved = false;
+    });
+  }
 
   /// Track controls: the fixed plate's three configurable gestures.
   ///

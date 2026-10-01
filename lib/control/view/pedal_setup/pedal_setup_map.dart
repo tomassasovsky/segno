@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/control/binding/pedal_button_legend.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -24,11 +25,19 @@ class PedalSetupMap extends StatelessWidget {
     required this.bank,
     required this.bankSelectable,
     required this.onToggleBank,
+    this.palette,
+    this.physicalLabels = false,
     super.key,
   });
 
   /// The actual frame sent to the board; selection never lights an indicator.
   final PedalStateFrame? frame;
+
+  /// Local hue preview. Activity still comes only from the published frame.
+  final PedalPalette? palette;
+
+  /// Names physical switches when editing their bank-independent colors.
+  final bool physicalLabels;
 
   /// The switches drawn as a group with the selected one — the four track
   /// caps, when Track controls is editing them as one.
@@ -107,7 +116,7 @@ class PedalSetupMap extends StatelessWidget {
   );
 
   Widget _cap(BuildContext context, PedalButton button, Size slot) {
-    final channel = pedalTrackChannel(button, bank);
+    final channel = pedalTrackChannel(button, physicalLabels ? 0 : bank);
     final live =
         editable.contains(button) ||
         (button == PedalButton.bank && bankSelectable);
@@ -119,19 +128,22 @@ class PedalSetupMap extends StatelessWidget {
       legend: channel == null
           ? pedalButtonLegend(button)
           : 'TRACK ${channel + 1}',
-      badge: button == PedalButton.bank ? _bankLetter : null,
+      badge: button == PedalButton.bank && !physicalLabels ? _bankLetter : null,
       slot: slot,
       selected: selected.contains(button),
-      ledColor: frame?.colorFor(button) ?? PedalColor.defaultColor,
+      ledColor:
+          palette?.colorFor(button) ??
+          frame?.colorFor(button) ??
+          PedalColor.defaultColor,
       // A draft bank is not a performance bank change. Do not show another
       // track's live state beside a different assignment's label.
       ledActive:
           (frame?.isLit(button) ?? false) &&
-          (channel == null || frame?.activeBank == bank),
+          (physicalLabels || channel == null || frame?.activeBank == bank),
       enabled: live,
       onTap: !live
           ? null
-          : button == PedalButton.bank
+          : button == PedalButton.bank && bankSelectable
           ? onToggleBank
           : () => onSelect(button),
     );

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -19,6 +20,7 @@ void main() {
       expect(setup.trackHold, TrackHold.armOverdub);
       expect(setup.custom, isEmpty);
       expect(setup.hasCustomAssignments, isFalse);
+      expect(setup.palette, const PedalPalette());
     });
   });
 
@@ -105,10 +107,47 @@ void main() {
       expect(cleared.hasCustomAssignments, isFalse);
       expect(cleared.modePress, InteractionMode.fx);
       expect(cleared.trackHold, TrackHold.clearTrack);
+      expect(cleared.palette, setup.palette);
     });
   });
 
   group('encoding', () {
+    test('palette saves with gestures, round-trips, and keeps equal bytes', () {
+      final palette = const PedalPalette()
+          .withCustom(1, const PedalColor(0, 0, 0))
+          .withChoice(PedalButton.stop, const CustomPaletteEntry(1));
+      final setup = const PedalSetup(
+        trackHold: TrackHold.clearTrack,
+      ).copyWith(palette: palette);
+      expect(PedalSetup.decode(setup.encode()), setup);
+      expect(
+        PedalSetup.decode(
+          setup.encode(),
+        ).palette.colorFor(PedalButton.stop).rgb,
+        0,
+      );
+      expect(
+        PedalSetup.decode(const PedalSetup().encode()).palette.isEmpty,
+        isTrue,
+      );
+    });
+
+    test('an explicit invalid palette rejects the entire setup', () {
+      for (final blob in [
+        '{"palette":null}',
+        '{"palette":42}',
+        '{"palette":{"leds":{"mode":"custom:1"}}}',
+        '{"palette":{"leds":{"futureButton":"white"}}}',
+        '{"palette":{"customs":[{"number":1,"rgb":0},{"number":1,"rgb":1}]}}',
+      ]) {
+        expect(
+          () => PedalSetup.decode(blob),
+          throwsFormatException,
+          reason: blob,
+        );
+      }
+    });
+
     test('round-trips a full setup', () {
       final setup =
           const PedalSetup(
