@@ -23,6 +23,40 @@ void main() {
       expect(engine.snapshot().tracks, before.tracks);
     });
 
+    test('restores exact internal tempo and clears an unset grid', () {
+      expect(
+        engine.restoreTempo(bpm: 120, source: TempoSource.tapped),
+        EngineResult.notRunning,
+      );
+      engine.start(engine.defaultConfig);
+      for (final source in [
+        TempoSource.manual,
+        TempoSource.tapped,
+        TempoSource.derived,
+      ]) {
+        expect(engine.restoreTempo(bpm: 97.5, source: source), EngineResult.ok);
+        expect(engine.snapshot().tempoBpm, 97.5);
+        expect(engine.snapshot().tempoSource, source);
+      }
+      expect(
+        engine.restoreTempo(bpm: 0, source: TempoSource.none),
+        EngineResult.ok,
+      );
+      expect(engine.snapshot().tempoBpm, 0);
+      expect(engine.snapshot().tempoSource, TempoSource.none);
+      for (final bpm in [double.nan, double.infinity, -1.0, 301.0]) {
+        expect(
+          engine.restoreTempo(bpm: bpm, source: TempoSource.manual),
+          EngineResult.invalid,
+        );
+      }
+      expect(
+        engine.restoreTempo(bpm: 120, source: TempoSource.external),
+        EngineResult.invalid,
+      );
+      expect(engine.snapshot().tempoBpm, 0);
+    });
+
     test('defaults to 18 inputs and 20 outputs', () {
       expect(engine.defaultConfig.inputChannels, 18);
       expect(engine.defaultConfig.outputChannels, 20);

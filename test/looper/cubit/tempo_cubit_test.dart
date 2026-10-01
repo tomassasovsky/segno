@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -12,6 +14,7 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
+  late StreamController<LooperState> looperStates;
 
   setUpAll(() {
     registerFallbackValue(GridDivision.off);
@@ -21,6 +24,14 @@ void main() {
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.recordStartRevision).thenReturn(0);
+    when(
+      () => repository.setAutoRecord(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    looperStates = StreamController<LooperState>.broadcast();
+    when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
+    when(() => repository.sessionTransport).thenReturn(const TransportState());
     for (final stub in <void Function()>[
       () => when(() => repository.setTempo(any())).thenReturn(EngineResult.ok),
       () => when(
@@ -115,6 +126,60 @@ void main() {
       verify: (_) => verify(
         () => repository.setTimeSignature(any(), any()),
       ).called(1),
+    );
+
+    blocTest<TempoCubit, TempoSettings>(
+      'refused edits preserve displayed settings and the saved start method',
+      setUp: () async {
+        await settings.saveAutoRecord(value: true);
+        when(
+          () => repository.setTempo(96),
+        ).thenReturn(EngineResult.invalid);
+        when(
+          () => repository.setTimeSignature(5, 8),
+        ).thenReturn(EngineResult.invalid);
+        when(
+          () => repository.setSyncTempo(on: false),
+        ).thenReturn(EngineResult.invalid);
+        when(
+          () => repository.setQuantizeDiv(GridDivision.bar),
+        ).thenReturn(EngineResult.invalid);
+        when(
+          () => repository.setClickMode(ClickMode.rec),
+        ).thenReturn(EngineResult.invalid);
+        when(
+          () => repository.setClickOutput(1),
+        ).thenReturn(EngineResult.invalid);
+        when(
+          () => repository.setClickVolume(0.5),
+        ).thenReturn(EngineResult.invalid);
+        when(
+          () => repository.setCountIn(2),
+        ).thenReturn(EngineResult.invalid);
+      },
+      build: () => TempoCubit(repository: repository, settings: settings),
+      act: (cubit) async {
+        await cubit.setTempo(96);
+        await cubit.setTimeSignature(5, 8);
+        await cubit.setSyncTempo(value: false);
+        await cubit.setQuantizeDiv(GridDivision.bar);
+        await cubit.setClickMode(ClickMode.rec);
+        await cubit.setClickOutput(1);
+        await cubit.setClickVolume(0.5);
+        await cubit.setCountInBars(2);
+      },
+      expect: () => <TempoSettings>[],
+      verify: (_) async {
+        expect(await settings.loadTempoBpm(), 0);
+        expect(await settings.loadTimeSignature(), (4, 4));
+        expect(await settings.loadSyncTempo(), isTrue);
+        expect(await settings.loadQuantizeDiv(), GridDivision.off.code);
+        expect(await settings.loadClickMode(), ClickMode.off.code);
+        expect(await settings.loadClickOutputMask(), 0);
+        expect(await settings.loadClickVolume(), 1);
+        expect(await settings.loadCountInBars(), 0);
+        expect(await settings.loadAutoRecord(), isTrue);
+      },
     );
 
     blocTest<TempoCubit, TempoSettings>(
@@ -271,6 +336,87 @@ void main() {
         kValidTimeSignatures.where((ts) => ts.$2 == 8).map((ts) => ts.$1),
         [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
       );
+    },
+  );
+
+  tearDown(() => looperStates.close());
+
+  blocTest<TempoCubit, TempoSettings>(
+    'setting a count-in persists Sound start as off (the engine clears it, '
+    'D9)',
+    setUp: () => settings.saveAutoRecord(value: true),
+    build: () => TempoCubit(repository: repository, settings: settings),
+    act: (cubit) => cubit.setCountInBars(2),
+    expect: () => [const TempoSettings(countInBars: 2)],
+    verify: (_) async {
+      expect(await settings.loadCountInBars(), 2);
+      expect(await settings.loadAutoRecord(), isFalse);
+    },
+  );
+
+  blocTest<TempoCubit, TempoSettings>(
+    'follows a recalled count-in without changing startup settings',
+    setUp: () => settings.saveCountInBars(2),
+    build: () => TempoCubit(repository: repository, settings: settings),
+    act: (cubit) async {
+      await cubit.load();
+      looperStates.add(const LooperState());
+      await Future<void>.delayed(Duration.zero);
+    },
+    expect: () => [
+      const TempoSettings(countInBars: 2),
+      const TempoSettings(),
+    ],
+    verify: (_) async => expect(await settings.loadCountInBars(), 2),
+  );
+
+  blocTest<TempoCubit, TempoSettings>(
+    'follows all recalled musical settings and a subsequent reset',
+    build: () => TempoCubit(repository: repository, settings: settings),
+    act: (cubit) async {
+      await cubit.load();
+      when(() => repository.sessionTransport).thenReturn(
+        const TransportState(
+          tempoBpm: 96,
+          tsNum: 5,
+          tsDen: 8,
+          syncTempo: false,
+          quantizeDiv: GridDivision.eighth,
+          clickMode: ClickMode.playRec,
+          clickMask: 3,
+          clickVolume: 0.5,
+          countInBars: 2,
+        ),
+      );
+      looperStates.add(const LooperState());
+      await Future<void>.delayed(Duration.zero);
+      when(
+        () => repository.sessionTransport,
+      ).thenReturn(const TransportState());
+      looperStates.add(const LooperState());
+      await Future<void>.delayed(Duration.zero);
+      await cubit.load();
+    },
+    expect: () => [
+      const TempoSettings(),
+      const TempoSettings(
+        bpm: 96,
+        tsNum: 5,
+        tsDen: 8,
+        syncTempo: false,
+        quantizeDiv: GridDivision.eighth,
+        clickMode: ClickMode.playRec,
+        clickOutputMask: 3,
+        clickVolume: 0.5,
+        countInBars: 2,
+      ),
+      const TempoSettings(),
+    ],
+    verify: (_) async {
+      expect(await settings.loadTempoBpm(), 0);
+      expect(await settings.loadQuantizeDiv(), GridDivision.off.code);
+      expect(await settings.loadCountInBars(), 0);
+      verify(() => repository.setCountIn(0)).called(1);
     },
   );
 }

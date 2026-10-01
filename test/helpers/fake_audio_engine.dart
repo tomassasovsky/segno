@@ -79,6 +79,9 @@ class FakeAudioEngine implements AudioEngine {
   CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
 
   @override
+  bool get commandsSettled => true;
+
+  @override
   EngineSnapshot snapshot() => perfStopped
       ? EngineSnapshot(
           isRunning: nextSnapshot.isRunning,
@@ -291,6 +294,30 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-track division overrides passed to [setTrackQuantizeDiv].
+  final Map<int, GridDivision?> trackQuantizeDiv = {};
+
+  @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) {
+    trackQuantizeDiv[channel] = div;
+    return EngineResult.ok;
+  }
+
+  /// Per-track feedback overrides passed to [setTrackOverdubFeedback].
+  final Map<int, double?> trackOverdubFeedback = {};
+
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) {
+    trackOverdubFeedback[channel] = feedback;
+    return EngineResult.ok;
+  }
+
   /// Per-track forced multiples passed to [setTrackMultiple].
   final Map<int, int> trackMultiple = {};
 
@@ -360,6 +387,18 @@ class FakeAudioEngine implements AudioEngine {
 
   /// The last value passed to [setCountIn].
   int? lastCountIn;
+
+  /// Exact session tempo restores in call order.
+  final List<({double bpm, TempoSource source})> tempoRestores = [];
+
+  @override
+  EngineResult restoreTempo({
+    required double bpm,
+    required TempoSource source,
+  }) {
+    tempoRestores.add((bpm: bpm, source: source));
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setTempo(double bpm) {
@@ -454,6 +493,14 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult setOneShot({required int channel, required bool oneShot}) {
     trackOneShot[channel] = oneShot;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) {
+    for (var channel = 0; channel < 8; channel++) {
+      if ((channels & (1 << channel)) != 0) trackOneShot[channel] = oneShot;
+    }
     return EngineResult.ok;
   }
 
@@ -914,7 +961,8 @@ class FakeAudioEngine implements AudioEngine {
       EngineResult.ok;
 
   @override
-  EngineResult commitSession(int baseFrames) => EngineResult.ok;
+  EngineResult commitSession(int baseFrames, {required int loopBars}) =>
+      EngineResult.ok;
 
   // --- Performance recording capture ---
 

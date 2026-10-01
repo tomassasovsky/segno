@@ -109,6 +109,15 @@ typedef enum le_perf_log_code {
                                         * index, type = enabled (0/1). */
   LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED = 313, /* generic arm: arg_i = input,
                                               * arg_f = enabled (0.0/1.0). */
+  /* 317, not 315: 315 and 316 are taken FURTHER DOWN this enum
+   * (LE_PLOG_PERF_ARMED and LE_PLOG_TRANSPORT_HELD), and duplicate
+   * enumerator VALUES are legal C — the collision compiles silently and only
+   * shows up as a renderer reading one arm of the union as the other. Codes
+   * are on-disk wire values; pick the next free NUMBER, never the next line. */
+  LE_PLOG_SET_TRACK_OVERDUB_FEEDBACK = 317, /* generic arm: arg_i = channel,
+                                             * arg_f = feedback (0..1), or a
+                                             * negative value = inherit the
+                                             * global coefficient (309). */
   LE_PLOG_RECORD_ABORT = 314, /* a take died having captured NOTHING: either it
                                * left RECORDING (finalize_new_track's void
                                * branch: armed, then stopped before a single

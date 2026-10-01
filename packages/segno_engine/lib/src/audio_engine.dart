@@ -112,6 +112,9 @@ abstract interface class EngineMetering {
   /// Reads the current lock-free [EngineSnapshot] published by the engine.
   EngineSnapshot snapshot();
 
+  /// Whether queued engine edits have finished and their state is published.
+  bool get commandsSettled;
+
   /// Reads the audio callback's self-measurement (native issue #722): how long
   /// each device callback took against its deadline, how far apart callbacks
   /// arrived, and how many real backend dropouts happened — in a whole-session
@@ -307,6 +310,26 @@ abstract interface class LooperTransport {
   /// with a record press continues into overdub instead of playback.
   EngineResult setRecDub({required bool enabled});
 
+  /// Sets track [channel]'s musical quantization division override: `null`
+  /// inherits the global division (`setQuantizeDiv`), otherwise the track's
+  /// arms fire on that division's boundaries, read live, so a change while
+  /// armed takes effect at the next boundary. Only meaningful while the
+  /// track's quantize gate is effectively on ([setQuantize] /
+  /// [setTrackQuantize]).
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  });
+
+  /// Sets track [channel]'s overdub feedback override: `null` inherits the
+  /// global [setOverdubFeedback], otherwise the coefficient (clamped to
+  /// `0..1`) for this track's overdub passes. Live: a change during a pass
+  /// ramps at the write head over ~10 ms instead of stepping.
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  });
+
   /// Sets the overdub [feedback] coefficient (clamped by the engine to `0..1`,
   /// default `1.0`). While a track is overdubbing, its existing content is
   /// scaled by this before the new layer is summed in: `1.0` is the classic
@@ -383,6 +406,10 @@ abstract interface class TempoControl {
   /// [TempoSource.manual] (last writer wins). Ignored while the tempo is
   /// locked (see the class doc).
   EngineResult setTempo(double bpm);
+
+  /// Restores an internal session tempo, including an unset grid, while no
+  /// track is playing, recording or armed. Preserves the saved tempo origin.
+  EngineResult restoreTempo({required double bpm, required TempoSource source});
 
   /// Sets the time signature to [num]/[den]. Only the 17 Sheeran-verified
   /// signatures are valid — `num` 2..7 for `den == 4`, `num` 5..15 for
@@ -520,12 +547,15 @@ abstract interface class LooperModeControl {
   /// [oneShot] is `true`, the track plays once and then stops instead of
   /// looping. Accepted in every looper mode and NOT gated by the D4 content
   /// lock — like [crownPrimary], it is a persistent per-track SETTING, not
-  /// content — though it is only behaviorally active in Free/Song (the only
-  /// modes with a per-track transport-wrap event to hook). Survives a track
+  /// content. It is active in all five modes. Survives a track
   /// clear/undo-to-empty and a mode switch; a fresh (re)start of the engine
   /// resets it to `false` (see [TrackSnapshot.oneShot]'s doc). Returns
   /// [EngineResult.invalid] for an out-of-range channel.
   EngineResult setOneShot({required int channel, required bool oneShot});
+
+  /// Applies the same playback choice to [channels] in one audio command.
+  /// Bit n selects track n; zero and out-of-range bits are rejected.
+  EngineResult setOneShotMask({required int channels, required bool oneShot});
 }
 
 /// Global master-output bus: post-mix gain and the peak limiter.
@@ -902,7 +932,7 @@ abstract interface class SessionIo {
 
   /// Establishes the master loop at [baseFrames] and starts every imported
   /// track playing at its whole-loop multiple.
-  EngineResult commitSession(int baseFrames);
+  EngineResult commitSession(int baseFrames, {required int loopBars});
 }
 
 /// Discovery of installed VST3 / CLAP plugins (umbrella D-SCAN).

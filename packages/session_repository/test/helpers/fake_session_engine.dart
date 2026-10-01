@@ -59,6 +59,17 @@ class FakeSessionEngine implements AudioEngine {
   /// channel; absent = `false`.
   final Map<int, bool> oneShot = {};
 
+  /// Per-track record timing and decay overrides reported by [snapshot]
+  /// (slice 2b), keyed by channel; absent = inherit.
+  final Map<int, bool> quantizeOverride = {};
+  final Map<int, GridDivision> quantizeDivOverride = {};
+  final Map<int, double> overdubFeedbackOverride = {};
+
+  /// The record start gate and the global overdub feedback reported by
+  /// [snapshot] (slice 2b).
+  bool quantize = false;
+  double overdubFeedback = 1;
+
   // ---- tempo grid + click + count-in (A1/A2, threaded to Session v4 by A7)
   // ----
   // Mutable so a test can seed non-default grid state before calling
@@ -158,6 +169,9 @@ class FakeSessionEngine implements AudioEngine {
   CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
 
   @override
+  bool get commandsSettled => true;
+
+  @override
   EngineSnapshot snapshot() => EngineSnapshot(
     isRunning: true,
     sampleRate: sampleRate,
@@ -181,6 +195,8 @@ class FakeSessionEngine implements AudioEngine {
     countInBars: countInBars,
     looperMode: looperMode,
     primaryTrack: primaryTrack,
+    quantize: quantize,
+    overdubFeedback: overdubFeedback,
     tracks: [
       for (final (i, t) in _tracks.indexed)
         TrackSnapshot(
@@ -194,6 +210,9 @@ class FakeSessionEngine implements AudioEngine {
           peak: 0,
           multiple: t.multiple,
           oneShot: oneShot[i] ?? false,
+          quantizeOverride: quantizeOverride[i],
+          quantizeDivOverride: quantizeDivOverride[i],
+          overdubFeedbackOverride: overdubFeedbackOverride[i],
           layerInFlight: i == 0 && _consumeInFlightPoll(),
           lanes: [
             for (final lane in t.lanes)
@@ -270,7 +289,7 @@ class FakeSessionEngine implements AudioEngine {
       EngineResult.ok;
 
   @override
-  EngineResult commitSession(int baseFrames) {
+  EngineResult commitSession(int baseFrames, {required int loopBars}) {
     if (baseFrames <= 0) return EngineResult.invalid;
     masterLength = baseFrames;
     for (final track in _tracks) {
@@ -385,6 +404,16 @@ class FakeSessionEngine implements AudioEngine {
     required bool? enabled,
   }) => EngineResult.ok;
   @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) => EngineResult.ok;
+  @override
   EngineResult setTrackMultiple({
     required int channel,
     required int multiple,
@@ -397,6 +426,12 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setMasterGain(double gain) => EngineResult.ok;
   @override
   EngineResult setAutoRecord({required bool enabled}) => EngineResult.ok;
+  @override
+  EngineResult restoreTempo({
+    required double bpm,
+    required TempoSource source,
+  }) => EngineResult.ok;
+
   @override
   EngineResult setTempo(double bpm) => EngineResult.ok;
   @override
@@ -429,6 +464,12 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setOneShot({required int channel, required bool oneShot}) =>
       EngineResult.ok;
+
+  @override
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) {
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       EngineResult.ok;

@@ -378,3 +378,82 @@ Final review and validation are under `docs/reviews/design-edits-restack/`:
 150-symbol FFI parity, analysis, Bloc lint and formatting clean. All five
 review roles have no unresolved findings in this slice.
 The later stack, Linux/appliance validation and human merge gates remain open.
+## Slice 2b — Timing ownership and session recall (#1061)
+
+Reconstructed on reviewed slice 2a `cf16b6b7`, retaining original timing
+parent `42c4d079`. Tracking: #1061, part of #1012 and #1058; PR #1014 remains
+stacked on the slice 2a branch. This section supersedes the original timing
+slice's migration, Once relaunch and session-recall assumptions.
+
+### Accepted behavior
+
+- Record timing is one setting: Immediately, Loop start, Bar, 1/2, 1/4,
+  1/8 or 1/16. Each track can inherit the default or keep an explicit value.
+  The engine reads its own gate and division at recording boundaries. A
+  refused change does not enable the old grid, change the displayed choice
+  or persist an edit. Immediate recording retains its remembered grid.
+- Overdub decay is 0–100 percent. Zero keeps previous layers; 100 replaces
+  prior audio as the pass is written. Intermediate values compound across
+  overdub passes. Changes ramp at the write head; playback does not decay.
+  A nullable per-track override remains distinct from its default.
+- Loop/Once is available in all five modes. Enabling Once during playback
+  finishes the current pass. Explicitly launching a track after its automatic
+  Once end plays its full recording from the beginning, without restarting
+  siblings or changing their shared clock. Queued recording actions retain
+  their own behavior. Default and group Once edits use one atomic native
+  command, so queue refusal cannot change only some tracks.
+- Count-in and Sound start exclude each other. Tempo owns their startup
+  restore; Record Options edits the same repository state. Delayed preference
+  reads cannot overwrite a recalled session or a later user edit.
+
+### Ownership and persistence
+
+Widgets dispatch typed events through Bloc/Cubit and repositories to
+`AudioEngine`. Settings stores typed defaults and nullable overrides. The
+obsolete per-track boolean preference is removed without migration.
+
+Session schema v8 holds timing, decay, Loop/Once and length-preset overrides
+in four content-independent maps. Empty tracks retain their settings, including
+explicit values equal to defaults. First-use offline recall restores all eight
+tracks' desired settings before any audio interface has been configured.
+
+Save detaches caller maps before its first await. With a running engine it
+waits for accepted commands to publish and captured layers to settle, then
+reads BPM, tempo source, signature, exact bar count, mode and primary track
+from the same native report. Offline saves use the detached desired settings.
+It never infers recorded bar count from BPM or a future recording preference.
+
+Recall validates unsupported tempo sources and invalid bar counts before
+clearing anything. It waits for the clear to publish before restoring the
+exact grid and importing audio. Recalled settings do not overwrite startup
+preferences merely because a session was opened.
+
+### Engine boundary and validation
+
+The public APIs carry per-track recording division and feedback, exact
+BPM/source restoration, a masked Once update, exact session bar count and
+command-publication settlement. Successful posts are counted on control;
+only the callback owns the applied count and release-publishes it after
+snapshot updates. Readers acquire that publication before testing the
+snapshot. No callback allocation, file I/O or lock was added.
+
+The final rebuilt native library, five review roles, aggregate tests and
+coverage evidence are recorded in `docs/reviews/design-timing-restack/`.
+Native-dependent Dart tests were run with that library; earlier slice counts
+are not used as proof for this reconstruction. The pumped test engine also
+forwards native crown and recording settings instead of reporting defaults.
+
+### Boundaries and next step
+
+Hardware timing, audible decay transitions and physical pedals still need
+appliance validation. Full remote CI remains a separate gate for this stacked
+PR, and merge approval remains with the user.
+
+Existing Free/Song audio session import and shared-mode division import
+limitations remain explicit. This slice verifies musical settings and exact
+shared-grid recall, not every older audio import transport. External tempo is
+reserved and rejected on this reconstructed head until its receiving path is
+integrated. No compatibility fallback or automatic mode conversion is added.
+
+Next: slice 2c, the accepted Loop settings hub and its editors, using these
+shared timing, playback and recall rules.

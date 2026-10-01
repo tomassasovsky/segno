@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
-import 'package:segno_engine/segno_engine.dart' show LooperMode;
+import 'package:segno_engine/segno_engine.dart'
+    show ClickMode, GridDivision, LooperMode, RecordTiming, TempoSource;
 
 /// One lane's restored audio, routing, and mix inside a [SessionRigTrack].
 ///
@@ -61,8 +62,6 @@ class SessionRigTrack {
   const SessionRigTrack({
     required this.channel,
     required this.lanes,
-    this.lengthPresetBars = 0,
-    this.oneShot = false,
   });
 
   /// Track channel index.
@@ -71,17 +70,6 @@ class SessionRigTrack {
   /// The track's lanes, each with its own audio, routing, and mix. Lane 0 is
   /// first — it is the primary import that resets the track's undo state.
   final List<SessionRigLane> lanes;
-
-  /// The track's length preset (A6): `0` = AUTO, `1..64` = a fixed bar count.
-  /// Restored on session load; it only governs a FUTURE defining recording on
-  /// this track, so restoring it here is inert for the audio the load just
-  /// imported — it only matters if the user re-records the track later.
-  final int lengthPresetBars;
-
-  /// The track's One Shot flag (song-mode-spec.md §2, B5c): `true` = plays
-  /// once then stops. Restored on session load — see
-  /// `LooperRepository.applySession`'s reset-then-restore handling.
-  final bool oneShot;
 }
 
 /// One hardware input's live-monitor configuration inside a [SessionRig] —
@@ -155,8 +143,91 @@ class SessionRig {
     this.monitors = const [],
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
-    this.oneShotChannels = const {},
+    this.recordTiming = RecordTiming.immediately,
+    this.overdubDecay = 0,
+    this.defaultOneShot = false,
+    this.defaultMultiple = 0,
+    this.trackRecordTimingOverrides = const {},
+    this.trackOverdubDecayOverrides = const {},
+    this.trackOneShotOverrides = const {},
+    this.trackLengthPresetOverrides = const {},
+    this.loopBars = 0,
+    this.tempoBpm = 0,
+    this.tempoSource = TempoSource.none,
+    this.tsNum = 4,
+    this.tsDen = 4,
+    this.syncTempo = true,
+    this.quantizeDiv = GridDivision.off,
+    this.clickMode = ClickMode.off,
+    this.clickMask = 0,
+    this.clickVolume = 1,
+    this.countInBars = 0,
+    this.recDub = false,
+    this.autoRecord = false,
   });
+
+  /// Default recording timing, shared by tracks with no override.
+  final RecordTiming recordTiming;
+
+  /// Default decay percentage.
+  final int overdubDecay;
+
+  /// Default playback: Once when true, Loop when false.
+  final bool defaultOneShot;
+
+  /// Default future recording length (`0` = Auto).
+  final int defaultMultiple;
+
+  /// Explicit timing overrides, independent of whether a track has audio.
+  final Map<int, RecordTiming> trackRecordTimingOverrides;
+
+  /// Explicit decay overrides; missing entries inherit the default.
+  final Map<int, int> trackOverdubDecayOverrides;
+
+  /// Explicit playback overrides; custom false values are retained.
+  final Map<int, bool> trackOneShotOverrides;
+
+  /// Future recording length presets, independent of recorded audio.
+  final Map<int, int> trackLengthPresetOverrides;
+
+  /// Saved musical tempo; zero means no tempo was established.
+  final double tempoBpm;
+
+  /// Exact musical grid span; zero means no established grid.
+  final int loopBars;
+
+  /// Origin of the saved musical tempo.
+  final TempoSource tempoSource;
+
+  /// Time-signature numerator.
+  final int tsNum;
+
+  /// Time-signature denominator.
+  final int tsDen;
+
+  /// Whether recorded loops follow the musical grid.
+  final bool syncTempo;
+
+  /// Grid subdivision retained even when quantization is disabled.
+  final GridDivision quantizeDiv;
+
+  /// Click playback condition.
+  final ClickMode clickMode;
+
+  /// Click destination channel mask.
+  final int clickMask;
+
+  /// Click gain.
+  final double clickVolume;
+
+  /// Count-in bars; exclusive with sound-activated start.
+  final int countInBars;
+
+  /// Whether completing a take enters overdub.
+  final bool recDub;
+
+  /// Whether an armed take waits for sound.
+  final bool autoRecord;
 
   /// The base (master) loop length in frames; `0` for an empty session.
   final int baseLengthFrames;
@@ -192,13 +263,4 @@ class SessionRig {
   /// gets the engine's own crown (its lowest recorded track) once the import
   /// commits.
   final int primaryTrack;
-
-  /// Every channel with One Shot armed (post-B5c independent review fix),
-  /// independent of whether that channel has a [SessionRigTrack] entry — a
-  /// channel pre-armed with One Shot but never recorded onto has no track
-  /// entry at all (see `SessionRepository._capture`'s doc), so its flag only
-  /// round-trips through this session-level set, not through
-  /// [SessionRigTrack.oneShot]. Restored unconditionally on apply, like
-  /// [looperMode]/[primaryTrack] above.
-  final Set<int> oneShotChannels;
 }

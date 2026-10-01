@@ -105,6 +105,41 @@ void main() {
     });
   });
 
+  group('RecordTiming', () {
+    test('maps the persisted choice to its gate and musical division', () {
+      const choices = [
+        (0, 'immediately', RecordTiming.immediately, false, GridDivision.off),
+        (1, 'loopStart', RecordTiming.loopStart, true, GridDivision.off),
+        (2, 'bar', RecordTiming.bar, true, GridDivision.bar),
+        (3, 'half', RecordTiming.half, true, GridDivision.half),
+        (4, 'quarter', RecordTiming.quarter, true, GridDivision.quarter),
+        (5, 'eighth', RecordTiming.eighth, true, GridDivision.eighth),
+        (6, 'sixteenth', RecordTiming.sixteenth, true, GridDivision.sixteenth),
+      ];
+      for (final (code, name, timing, gate, division) in choices) {
+        expect(RecordTiming.fromCode(code), timing);
+        expect(RecordTiming.fromName(name), timing);
+        expect(timing.code, code);
+        expect(timing.quantize, gate);
+        expect(timing.division, division);
+        expect(RecordTiming.of(quantize: gate, division: division), timing);
+      }
+      expect(
+        RecordTiming.of(quantize: false, division: GridDivision.bar),
+        RecordTiming.immediately,
+      );
+    });
+
+    test('unknown or absent persisted choices have no override', () {
+      for (final code in [null, -1, 7, 999]) {
+        expect(RecordTiming.fromCode(code), isNull);
+      }
+      for (final name in [null, '', 'unknown']) {
+        expect(RecordTiming.fromName(name), isNull);
+      }
+    });
+  });
+
   group('ClickMode', () {
     test('fromCode maps each known code', () {
       expect(ClickMode.fromCode(0), ClickMode.off);
@@ -161,6 +196,76 @@ void main() {
     });
   });
 
+  group('record settings snapshots', () {
+    test(
+      'track native sentinels differ from explicit false, off, and zero',
+      () {
+        final ptr = calloc<le_track_snapshot>();
+        addTearDown(() => calloc.free(ptr));
+        ptr.ref
+          ..quantize_override = -1
+          ..quantize_div_override = -1
+          ..overdub_feedback_override = -1;
+        final inherited = TrackSnapshot.fromNative(ptr.ref);
+        expect(inherited.quantizeOverride, isNull);
+        expect(inherited.quantizeDivOverride, isNull);
+        expect(inherited.overdubFeedbackOverride, isNull);
+        expect(const TrackSnapshot.empty().quantizeOverride, isNull);
+        expect(const TrackSnapshot.empty().quantizeDivOverride, isNull);
+        expect(const TrackSnapshot.empty().overdubFeedbackOverride, isNull);
+
+        ptr.ref.quantize_override = 0;
+        final gate = TrackSnapshot.fromNative(ptr.ref);
+        expect(gate.quantizeOverride, isFalse);
+        expect(gate, isNot(inherited));
+        ptr.ref.quantize_override = -1;
+        ptr.ref.quantize_div_override = 0;
+        final division = TrackSnapshot.fromNative(ptr.ref);
+        expect(division.quantizeDivOverride, GridDivision.off);
+        expect(division, isNot(inherited));
+        ptr.ref.quantize_div_override = -1;
+        ptr.ref.overdub_feedback_override = 0;
+        final feedback = TrackSnapshot.fromNative(ptr.ref);
+        expect(feedback.overdubFeedbackOverride, 0);
+        expect(feedback, isNot(inherited));
+        expect(feedback, TrackSnapshot.fromNative(ptr.ref));
+        expect(feedback.hashCode, TrackSnapshot.fromNative(ptr.ref).hashCode);
+      },
+    );
+
+    test('global native record settings each participate in equality', () {
+      final ptr = calloc<le_snapshot>();
+      addTearDown(() => calloc.free(ptr));
+      ptr.ref.overdub_feedback = 1;
+      final baseline = EngineSnapshot.fromNative(ptr.ref, const []);
+      expect(baseline.quantize, isFalse);
+      expect(baseline.autoRecord, isFalse);
+      expect(baseline.overdubFeedback, 1);
+      expect(const EngineSnapshot.initial().quantize, isFalse);
+      expect(const EngineSnapshot.initial().autoRecord, isFalse);
+      expect(const EngineSnapshot.initial().overdubFeedback, 1);
+      ptr.ref.quantize = 1;
+      final quantize = EngineSnapshot.fromNative(ptr.ref, const []);
+      expect(quantize.quantize, isTrue);
+      expect(quantize, isNot(baseline));
+      ptr.ref.quantize = 0;
+      ptr.ref.auto_record = 1;
+      final autoRecord = EngineSnapshot.fromNative(ptr.ref, const []);
+      expect(autoRecord.autoRecord, isTrue);
+      expect(autoRecord, isNot(baseline));
+      ptr.ref.auto_record = 0;
+      ptr.ref.overdub_feedback = 0.25;
+      final feedback = EngineSnapshot.fromNative(ptr.ref, const []);
+      expect(feedback.overdubFeedback, 0.25);
+      expect(feedback, isNot(baseline));
+      expect(feedback, EngineSnapshot.fromNative(ptr.ref, const []));
+      expect(
+        feedback.hashCode,
+        EngineSnapshot.fromNative(ptr.ref, const []).hashCode,
+      );
+    });
+  });
+
   group('TrackSnapshot.fromNative', () {
     test('projects every native track field', () {
       final ptr = calloc<le_track_snapshot>();
@@ -182,7 +287,10 @@ void main() {
           ..restore_state = 2
           ..position_frames = 24000
           ..pending = 1
-          ..pending_trigger = 2;
+          ..pending_trigger = 2
+          ..quantize_override = 1
+          ..quantize_div_override = 4
+          ..overdub_feedback_override = 0.625;
 
         final track = TrackSnapshot.fromNative(ptr.ref);
         expect(track.state, TrackState.playing);
@@ -202,6 +310,9 @@ void main() {
         expect(track.positionFrames, 24000);
         expect(track.pending, isTrue);
         expect(track.pendingTrigger, 2);
+        expect(track.quantizeOverride, isTrue);
+        expect(track.quantizeDivOverride, GridDivision.eighth);
+        expect(track.overdubFeedbackOverride, 0.625);
         // No lanes supplied => empty list, so the derived count is 0.
         expect(track.lanes, isEmpty);
         expect(track.laneCount, 0);
@@ -541,7 +652,10 @@ void main() {
           ..count_in_bars = 2
           ..counting_in = 1
           ..count_in_beats_left = 5
-          ..looper_mode = 3;
+          ..looper_mode = 3
+          ..quantize = 1
+          ..auto_record = 1
+          ..overdub_feedback = 0.375;
 
         const tracks = [
           TrackSnapshot(
@@ -602,6 +716,9 @@ void main() {
         expect(snapshot.countInBeatsLeft, 5);
         // Looper mode (B2a) trailing field.
         expect(snapshot.looperMode, LooperMode.band);
+        expect(snapshot.quantize, isTrue);
+        expect(snapshot.autoRecord, isTrue);
+        expect(snapshot.overdubFeedback, 0.375);
       } finally {
         calloc.free(ptr);
       }
@@ -1188,6 +1305,9 @@ void main() {
         'countInBeatsLeft',
         'looperMode',
         'primaryTrack',
+        'quantize',
+        'autoRecord',
+        'overdubFeedback',
         'tracks',
       };
 

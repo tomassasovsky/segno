@@ -158,8 +158,6 @@ class SessionTrack {
     required this.multiple,
     required this.lengthFrames,
     required this.lanes,
-    this.lengthPresetBars = 0,
-    this.oneShot = false,
   });
 
   /// Projects a [SessionTrack] from a decoded JSON map.
@@ -216,8 +214,6 @@ class SessionTrack {
       multiple: (json['multiple'] as num).toInt(),
       lengthFrames: (json['lengthFrames'] as num).toInt(),
       lanes: lanes,
-      lengthPresetBars: (json['lengthPresetBars'] as num?)?.toInt() ?? 0,
-      oneShot: json['oneShot'] as bool? ?? false,
     );
   }
 
@@ -233,31 +229,12 @@ class SessionTrack {
   /// The track's lanes, each with its own mix/routing and audio layers.
   final List<SessionLane> lanes;
 
-  /// This track's persisted length preset in bars (schema v4, Phase A);
-  /// `0` = AUTO (no preset — today's only behavior).
-  ///
-  /// Placeholder pending A6 (`2026-07-22-feat-tempo-aware-looper-modes-part-1
-  /// -plan.md`, task A6 — track length presets): as of this PR the looper
-  /// domain's `Track` model has no length-preset field yet, so
-  /// `session_repository`'s capture path always writes `0` here. The field
-  /// exists now — matching the manifest v4 schema in full per D12 — so a
-  /// session saved on this code round-trips the value once A6 lands the
-  /// real per-track preset choice; no migration is needed later.
-  final int lengthPresetBars;
-
-  /// This track's persisted One Shot flag (schema v4, B5c; song-mode-spec.md
-  /// §2): `true` = the track plays once and then stops instead of looping.
-  /// Default `false` (today's only behavior pre-B5c).
-  final bool oneShot;
-
   /// Serializes this track to a JSON map.
   Map<String, dynamic> toJson() => {
     'channel': channel,
     'multiple': multiple,
     'lengthFrames': lengthFrames,
     'lanes': [for (final l in lanes) l.toJson()],
-    'lengthPresetBars': lengthPresetBars,
-    'oneShot': oneShot,
   };
 
   @override
@@ -268,8 +245,6 @@ class SessionTrack {
           channel == other.channel &&
           multiple == other.multiple &&
           lengthFrames == other.lengthFrames &&
-          lengthPresetBars == other.lengthPresetBars &&
-          oneShot == other.oneShot &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -277,8 +252,6 @@ class SessionTrack {
     channel,
     multiple,
     lengthFrames,
-    lengthPresetBars,
-    oneShot,
     Object.hashAll(lanes),
   );
 }
@@ -492,24 +465,10 @@ class SessionMonitor {
 /// `bool countIn`) — the ERD predates those implementation details and the
 /// plan's own D12 says to prefer fidelity to the real model.
 ///
-/// B5c adds [looperMode] and [primaryTrack] here (session-level) and
-/// [SessionTrack.oneShot] (per-track) — the `songSections`/`bandGroups`
-/// fields the index plan ERD originally sketched are DROPPED per the B1
-/// spec (a Song/Band "section" is a track, nothing separate to persist).
-///
-/// [oneShotChannels] is a post-B5c addition (independent review of #295):
-/// [SessionTrack.oneShot] only exists for a channel `_capture()` actually
-/// builds a [SessionTrack] for, which requires the channel to hold content
-/// (`lanes` non-empty) — but `LooperModeControl.setOneShot`'s own doc says
-/// One Shot is "a persistent per-track SETTING, not content" and is settable
-/// on an empty track in advance of recording (the UI honors this:
-/// `SetupTrackOneShotRow` renders for every track regardless of state). A
-/// flag armed on a still-empty channel therefore had no manifest field to
-/// round-trip through — silently dropped on save. [oneShotChannels] fixes
-/// this the same way [looperMode]/[primaryTrack] fixed the equivalent gap
-/// for those fields: hoisted to session level, captured from every channel
-/// unconditionally (see `SessionRepository._sessionFrom`), independent of
-/// whether that channel has a [SessionTrack] entry at all.
+/// Track settings are session-level maps, independent of audio entries.
+/// Missing entries inherit the session default; explicit values, including
+/// Loop (`false`) and values equal to the default, remain explicit.
+/// Schema v8 replaces per-audio-track settings and the One Shot channel set.
 ///
 /// Schema v5 (FX system v3, #351 part 3b) adds the two BUS stages of the
 /// four-stage FX model — [trackChains] (one per track channel) and the single
@@ -554,13 +513,24 @@ class Session {
     this.tsNum = 4,
     this.tsDen = 4,
     this.quantizeDiv = GridDivision.off,
+    this.loopBars = 0,
+    this.recordTiming = RecordTiming.immediately,
+    this.overdubDecay = 0,
     this.clickMode = ClickMode.off,
     this.clickOutputMask = 0,
     this.clickVolume = 1,
     this.countInBars = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
-    this.oneShotChannels = const [],
+    this.defaultOneShot = false,
+    this.trackRecordTimingOverrides = const {},
+    this.trackOverdubDecayOverrides = const {},
+    this.trackOneShotOverrides = const {},
+    this.trackLengthPresetOverrides = const {},
+    this.syncTempo = true,
+    this.recDub = false,
+    this.autoRecord = false,
+    this.defaultMultiple = 0,
     this.pedalBindings = '',
   });
 
@@ -612,39 +582,45 @@ class Session {
       tsNum: (json['tsNum'] as num?)?.toInt() ?? 4,
       tsDen: (json['tsDen'] as num?)?.toInt() ?? 4,
       quantizeDiv: _gridDivisionFromJson(json['quantizeDiv'] as String?),
+      loopBars: (json['loopBars'] as num?)?.toInt() ?? 0,
+      recordTiming:
+          RecordTiming.fromName(json['recordTiming'] as String?) ??
+          RecordTiming.immediately,
+      overdubDecay: (json['overdubDecay'] as num?)?.toInt() ?? 0,
       clickMode: _clickModeFromJson(json['clickMode'] as String?),
       clickOutputMask: (json['clickOutputMask'] as num?)?.toInt() ?? 0,
       clickVolume: (json['clickVolume'] as num?)?.toDouble() ?? 1,
       countInBars: (json['countInBars'] as num?)?.toInt() ?? 0,
       looperMode: _looperModeFromJson(json['looperMode'] as String?),
       primaryTrack: (json['primaryTrack'] as num?)?.toInt() ?? -1,
-      oneShotChannels: [
-        for (final c in (json['oneShotChannels'] as List<dynamic>? ?? const []))
-          (c as num).toInt(),
-      ],
+      defaultOneShot: json['defaultOneShot'] as bool? ?? false,
+      trackRecordTimingOverrides: _readOverrides(
+        json['trackRecordTimingOverrides'],
+        (value) => RecordTiming.values.byName(value! as String),
+      ),
+      trackOverdubDecayOverrides: _readOverrides(
+        json['trackOverdubDecayOverrides'],
+        (value) => (value! as num).toInt(),
+      ),
+      trackOneShotOverrides: _readOverrides(
+        json['trackOneShotOverrides'],
+        (value) => value! as bool,
+      ),
+      trackLengthPresetOverrides: _readOverrides(
+        json['trackLengthPresetOverrides'],
+        (value) => (value! as num).toInt(),
+      ),
+      syncTempo: json['syncTempo'] as bool? ?? true,
+      recDub: json['recDub'] as bool? ?? false,
+      autoRecord: json['autoRecord'] as bool? ?? false,
+      defaultMultiple: (json['defaultMultiple'] as num?)?.toInt() ?? 0,
       pedalBindings: json['pedalBindings'] as String? ?? '',
     );
   }
 
-  /// The manifest schema version this code writes and accepts. v7 adds each
-  /// monitor's gate by NAME ([SessionMonitor.mode]) beside the boolean it has
-  /// always carried, because the gate grew a third state: a monitor left on
-  /// `auto` — follow the record arm — saved and reloaded as `on`, monitoring
-  /// unconditionally. Presence-keyed like every rung before it, so a v6 bundle
-  /// loads with the boolean's answer and nothing else changes. v6 adds the
-  /// opaque [pedalBindings] blob — presence-keyed like every rung before it,
-  /// so a v5 bundle loads with `''` (no session remap, globals apply). v5 adds
-  /// the Track-stage + Master FX chains and moves every chain string to the
-  /// looper domain's chain envelope (see the class doc); both fields are
-  /// presence-keyed, so a v4 bundle loads with the bus stages empty and every
-  /// enabled flag defaulted true. v4 added the tempo-grid + click + count-in
-  /// fields; every one of those is additive and defaults to grid-off, so v3
-  /// (and earlier) manifests still load losslessly. v3 replaced the per-track
-  /// single `stem` with per-lane [SessionTrack.lanes] (each holding ordered
-  /// audio layers); v2 added the lane + monitor effect chains. v1 through v5
-  /// bundles all still load — a legacy track migrates to one lane-0 live
-  /// layer, and a v1 bundle loads with empty chains.
-  static const int formatVersion = 7;
+  /// The manifest schema version. v8 stores track settings independently
+  /// of recorded audio and retains nullable override intent.
+  static const int formatVersion = 8;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -699,6 +675,21 @@ class Session {
   /// [GridDivision.off]).
   final GridDivision quantizeDiv;
 
+  /// Exact saved relationship between the master loop and the musical grid.
+  /// Zero preserves an intentionally grid-free loop.
+  final int loopBars;
+
+  /// The session's default record timing (accepted design, slice 2b): the
+  /// engine's quantize gate and [quantizeDiv] as the one setting they pair
+  /// into. Captured on save like the tempo-grid fields; absent on an older
+  /// manifest reads [RecordTiming.immediately].
+  final RecordTiming recordTiming;
+
+  /// The session's default overdub decay in percent (`0..100`, slice 2b);
+  /// `0` keeps every layer whole. Captured on save like the tempo-grid
+  /// fields.
+  final int overdubDecay;
+
   /// Click audibility mode (schema v4, Phase A; default [ClickMode.off]).
   /// The richer 4-value replacement for the index plan ERD's `metronomeOn`
   /// sketch — see the class doc.
@@ -717,23 +708,39 @@ class Session {
   /// `countIn` boolean sketch — see the class doc.
   final int countInBars;
 
-  /// The session's looper mode (schema v4, B5c; default [LooperMode.multi]).
-  /// Wired through `LooperRepository.applySession` on load (unlike the
-  /// tempo-grid fields above, which are captured on save but not yet applied
-  /// on load — see that method's doc).
+  /// The session's looper mode, restored with its musical settings on load.
   final LooperMode looperMode;
 
   /// The session's crowned primary track (schema v4, B5c, D18); `-1` = none
   /// was ever crowned (default).
   final int primaryTrack;
 
-  /// Every channel with One Shot armed (schema v4, post-B5c independent
-  /// review fix), captured regardless of whether that channel holds content
-  /// — see the class doc. The authoritative, content-independent source for
-  /// restoring One Shot on load; [SessionTrack.oneShot] remains the
-  /// per-track mirror of this for a content-bearing channel (kept for a
-  /// manifest a pre-fix build might still need to read defensively).
-  final List<int> oneShotChannels;
+  /// The default playback choice: Loop (`false`) or Once (`true`).
+  final bool defaultOneShot;
+
+  /// Explicit record timing choices, including choices equal to the default.
+  final Map<int, RecordTiming> trackRecordTimingOverrides;
+
+  /// Explicit decay percentages; missing tracks follow [overdubDecay].
+  final Map<int, int> trackOverdubDecayOverrides;
+
+  /// Explicit playback choices; missing tracks follow [defaultOneShot].
+  final Map<int, bool> trackOneShotOverrides;
+
+  /// Configured track lengths in bars, independent of recorded audio.
+  final Map<int, int> trackLengthPresetOverrides;
+
+  /// Whether the musical grid follows loop timing.
+  final bool syncTempo;
+
+  /// Whether ending a recording starts overdubbing.
+  final bool recDub;
+
+  /// Whether sound starts the recording.
+  final bool autoRecord;
+
+  /// Default track length in base loops; zero selects automatic length.
+  final int defaultMultiple;
 
   /// This session's pedal remap as an OPAQUE encoded string (schema v6);
   /// `''` when the session defines none — which is also what every
@@ -751,7 +758,7 @@ class Session {
   final String pedalBindings;
 
   /// Serializes this session manifest to a JSON map. Always writes the
-  /// current [formatVersion] (v7 — this code never writes an older schema).
+  /// current [formatVersion].
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
     'sampleRate': sampleRate,
@@ -767,13 +774,36 @@ class Session {
     'tsNum': tsNum,
     'tsDen': tsDen,
     'quantizeDiv': quantizeDiv.name,
+    'loopBars': loopBars,
+    'recordTiming': recordTiming.name,
+    'overdubDecay': overdubDecay,
     'clickMode': clickMode.name,
     'clickOutputMask': clickOutputMask,
     'clickVolume': clickVolume,
     'countInBars': countInBars,
     'looperMode': looperMode.name,
     'primaryTrack': primaryTrack,
-    'oneShotChannels': oneShotChannels,
+    'defaultOneShot': defaultOneShot,
+    'trackRecordTimingOverrides': {
+      for (final entry in trackRecordTimingOverrides.entries)
+        '${entry.key}': entry.value.name,
+    },
+    'trackOverdubDecayOverrides': {
+      for (final entry in trackOverdubDecayOverrides.entries)
+        '${entry.key}': entry.value,
+    },
+    'trackOneShotOverrides': {
+      for (final entry in trackOneShotOverrides.entries)
+        '${entry.key}': entry.value,
+    },
+    'trackLengthPresetOverrides': {
+      for (final entry in trackLengthPresetOverrides.entries)
+        '${entry.key}': entry.value,
+    },
+    'syncTempo': syncTempo,
+    'recDub': recDub,
+    'autoRecord': autoRecord,
+    'defaultMultiple': defaultMultiple,
     'pedalBindings': pedalBindings,
   };
 
@@ -790,6 +820,9 @@ class Session {
           tsNum == other.tsNum &&
           tsDen == other.tsDen &&
           quantizeDiv == other.quantizeDiv &&
+          loopBars == other.loopBars &&
+          recordTiming == other.recordTiming &&
+          overdubDecay == other.overdubDecay &&
           clickMode == other.clickMode &&
           clickOutputMask == other.clickOutputMask &&
           clickVolume == other.clickVolume &&
@@ -802,7 +835,24 @@ class Session {
           _listEquals(laneChains, other.laneChains) &&
           _listEquals(monitors, other.monitors) &&
           _listEquals(trackChains, other.trackChains) &&
-          _listEquals(oneShotChannels, other.oneShotChannels);
+          defaultOneShot == other.defaultOneShot &&
+          syncTempo == other.syncTempo &&
+          recDub == other.recDub &&
+          autoRecord == other.autoRecord &&
+          defaultMultiple == other.defaultMultiple &&
+          _mapEquals(
+            trackRecordTimingOverrides,
+            other.trackRecordTimingOverrides,
+          ) &&
+          _mapEquals(
+            trackOverdubDecayOverrides,
+            other.trackOverdubDecayOverrides,
+          ) &&
+          _mapEquals(trackOneShotOverrides, other.trackOneShotOverrides) &&
+          _mapEquals(
+            trackLengthPresetOverrides,
+            other.trackLengthPresetOverrides,
+          );
 
   // hashAll, not hash: the field count passed v6's addition of
   // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
@@ -816,6 +866,9 @@ class Session {
     tsNum,
     tsDen,
     quantizeDiv,
+    loopBars,
+    recordTiming,
+    overdubDecay,
     clickMode,
     clickOutputMask,
     clickVolume,
@@ -828,7 +881,15 @@ class Session {
     Object.hashAll(laneChains),
     Object.hashAll(monitors),
     Object.hashAll(trackChains),
-    Object.hashAll(oneShotChannels),
+    defaultOneShot,
+    syncTempo,
+    recDub,
+    autoRecord,
+    defaultMultiple,
+    _mapHash(trackRecordTimingOverrides),
+    _mapHash(trackOverdubDecayOverrides),
+    _mapHash(trackOneShotOverrides),
+    _mapHash(trackLengthPresetOverrides),
   ]);
 }
 
@@ -869,3 +930,16 @@ bool _listEquals<T>(List<T> a, List<T> b) {
   }
   return true;
 }
+
+Map<int, T> _readOverrides<T>(Object? json, T Function(Object?) decode) => {
+  for (final entry in (json as Map<String, dynamic>? ?? const {}).entries)
+    int.parse(entry.key): decode(entry.value),
+};
+
+bool _mapEquals<T>(Map<int, T> a, Map<int, T> b) =>
+    a.length == b.length &&
+    a.entries.every((entry) => b[entry.key] == entry.value);
+
+int _mapHash<T>(Map<int, T> values) => Object.hashAllUnordered(
+  values.entries.map((entry) => Object.hash(entry.key, entry.value)),
+);

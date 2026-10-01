@@ -32,6 +32,9 @@ void main() {
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
+    when(
+      () => repository.looperState,
+    ).thenAnswer((_) => const Stream<LooperState>.empty());
     for (final stub in <void Function()>[
       () => when(() => repository.setTempo(any())).thenReturn(EngineResult.ok),
       () => when(

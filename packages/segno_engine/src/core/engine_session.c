@@ -269,8 +269,12 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
   return LE_OK;
 }
 
-int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames) {
+int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames,
+                                  int32_t loop_bars) {
   if (engine == NULL) return LE_ERR_INVALID;
+  if (base_frames <= 0 || loop_bars < 0 || loop_bars > INT32_MAX / 15) {
+    return LE_ERR_INVALID;
+  }
   /* Free/Song mode (B2b, adversarial-review BUG 2 fix; broadened to SONG by
    * B4): session import establishes ONE shared base length for every
    * imported track (LE_CMD_COMMIT_SESSION's handler, engine_process.c) —
@@ -294,5 +298,8 @@ int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames) {
   if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) {
     return LE_ERR_INVALID;
   }
-  return le_push(engine, LE_CMD_COMMIT_SESSION, base_frames, 0.0f);
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_COMMIT_SESSION,
+                                  .session = {.base_frames = base_frames,
+                                              .loop_bars = loop_bars}});
 }

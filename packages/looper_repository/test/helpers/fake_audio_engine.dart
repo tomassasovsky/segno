@@ -44,6 +44,9 @@ class FakeAudioEngine implements AudioEngine {
   int snapshotCalls = 0;
 
   @override
+  bool get commandsSettled => true;
+
+  @override
   EngineSnapshot snapshot() {
     snapshotCalls++;
     return nextSnapshot;
@@ -291,6 +294,32 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-track division overrides passed to [setTrackQuantizeDiv].
+  final Map<int, GridDivision?> trackQuantizeDiv = {};
+
+  @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) {
+    trackQuantizeDiv[channel] = div;
+    calls.add('setTrackQuantizeDiv');
+    return EngineResult.ok;
+  }
+
+  /// Per-track feedback overrides passed to [setTrackOverdubFeedback].
+  final Map<int, double?> trackOverdubFeedback = {};
+
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) {
+    trackOverdubFeedback[channel] = feedback;
+    calls.add('setTrackOverdubFeedback');
+    return EngineResult.ok;
+  }
+
   final Map<int, int> trackMultiple = {};
   int? lastDefaultMultiple;
   bool? lastRecDub;
@@ -342,6 +371,19 @@ class FakeAudioEngine implements AudioEngine {
   int? lastClickOutput;
   double? lastClickVolume;
   int? lastCountIn;
+
+  /// Exact session tempo restores in call order.
+  final List<({double bpm, TempoSource source})> tempoRestores = [];
+
+  @override
+  EngineResult restoreTempo({
+    required double bpm,
+    required TempoSource source,
+  }) {
+    tempoRestores.add((bpm: bpm, source: source));
+    calls.add('restoreTempo');
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setTempo(double bpm) {
@@ -463,6 +505,14 @@ class FakeAudioEngine implements AudioEngine {
   bool? lastLimiterEnabled;
   double? lastLimiterCeiling;
   double? lastOverdubFeedback;
+
+  @override
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) {
+    for (var channel = 0; channel < 8; channel++) {
+      if ((channels & (1 << channel)) != 0) trackOneShot[channel] = oneShot;
+    }
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) {
@@ -997,7 +1047,7 @@ class FakeAudioEngine implements AudioEngine {
   int? committedBaseFrames;
 
   @override
-  EngineResult commitSession(int baseFrames) {
+  EngineResult commitSession(int baseFrames, {required int loopBars}) {
     calls.add('commitSession');
     committedBaseFrames = baseFrames;
     return EngineResult.ok;

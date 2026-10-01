@@ -110,8 +110,44 @@ static int le_transport_held(le_engine* e) {
   return 1;
 }
 
+static void le_reset_track_playback(le_track* t) {
+  t->playback_offset = 0;
+  t->once_ended = 0;
+  t->once_current_pass = 0;
+  t->sounding_frames = 0;
+}
+
+/* Full-track read coordinate on the shared clock. Playback can have an origin
+ * of its own after Once; recording and grid arms keep the musical clock. */
+static int32_t le_shared_track_position(le_engine* e, le_track* t) {
+  const int32_t len = load_i32(&t->lanes[0].a_len);
+  if (len <= 0 || e->clock.length <= 0) return 0;
+  int64_t position = e->clock.position;
+  if (load_i32(&t->a_sync_divisor) < 2) {
+    int32_t k = load_i32(&t->a_multiple);
+    if (k < 1) k = 1;
+    position += ((e->loop_iteration - t->start_iter) % (uint64_t)k) *
+                (uint64_t)e->clock.length;
+  }
+  return (int32_t)((position + t->playback_offset) % len);
+}
+
+/* Only an explicit launch after automatic end restarts the audio. History
+ * restoration and ordinary manual Stop keep their separate phase rules. */
+static void le_restart_once(le_engine* e, le_track* t) {
+  if (!t->once_ended) return;
+  le_reset_track_playback(t);
+  const int32_t len = load_i32(&t->lanes[0].a_len);
+  if (e->clock.length > 0 && len > 0) {
+    const int32_t position = le_shared_track_position(e, t);
+    t->playback_offset = position == 0 ? 0 : len - position;
+  } else if (t->free_clock.length > 0) {
+    t->free_clock.position = 0;
+  }
+}
+
 /* The unpark rule: starting to record or play ANYTHING while the transport is
- * held resumes the entire loop — every stopped content track returns to
+ * held resumes the parked loop — each manually stopped content track returns to
  * PLAYING with its mute preserved (mute silences, park freezes; unparking
  * un-freezes). Callers latch le_transport_held BEFORE mutating state and call
  * this after the start lands. Each resume logs a synthetic LE_CMD_PLAY so a
@@ -120,6 +156,7 @@ static void le_unpark_stopped(le_engine* e, uint64_t frame) {
   for (int32_t c = 0; c < e->track_count; ++c) {
     le_track* t = &e->tracks[c];
     if (load_i32(&t->a_state) != LE_TRACK_STOPPED) continue;
+    if (t->once_ended) continue; /* an automatic end needs its own launch */
     if (load_i32(&t->lanes[0].a_len) <= 0) continue;
     store_i32(&t->a_state, LE_TRACK_PLAYING);
     le_plog_push(e, frame, (le_command){.code = LE_CMD_PLAY, .arg_i = c});
@@ -291,7 +328,7 @@ static int le_tempo_locked(le_engine* e) {
  * same with the effective state and stops playing loops ahead of the switch;
  * this is the audio-thread re-check for the block in between. A queued crown
  * can also change the target base, so measure the actual spans here. */
-static int le_looper_mode_switch_blocked(le_engine* e, int32_t mode) {
+static int le_transport_edit_blocked(le_engine* e) {
   if (e->count_in_total > 0) return 1;
   for (int32_t t = 0; t < e->track_count; ++t) {
     le_track* tr = &e->tracks[t];
@@ -300,6 +337,11 @@ static int le_looper_mode_switch_blocked(le_engine* e, int32_t mode) {
     if (tr->pending_record) return 1;
     if (st == LE_TRACK_PLAYING && load_i32(&tr->lanes[0].a_len) > 0) return 1;
   }
+  return 0;
+}
+
+static int le_looper_mode_switch_blocked(le_engine* e, int32_t mode) {
+  if (le_transport_edit_blocked(e)) return 1;
   if (mode != LE_LOOPER_MODE_FREE && mode != LE_LOOPER_MODE_SONG) {
     const int32_t primary = le_mode_base_channel(e, mode);
     if (primary >= 0) {
@@ -369,6 +411,8 @@ static void le_apply_mode_switch(le_engine* e, int32_t m) {
     const int32_t len = load_i32(&tr->lanes[0].a_len);
     tr->start_iter = 0;
     tr->free_iteration = 0;
+    tr->playback_offset = 0;
+    tr->sounding_frames = 0;
     e->trk_play_pos[t] = 0;
     e->track_viz_bucket[t] = -1;
     if (len <= 0) {
@@ -469,6 +513,15 @@ static void sync_grid_to_loop(le_engine* e, int32_t len) {
   }
   store_i32(&e->a_loop_bars, bars);
   e->grid_total_beats = bars * num;
+}
+
+/* Bar count is part of the recorded musical grid. It cannot be inferred
+ * from a tempo that may have clamped, or from a future-capture preference. */
+static void le_restore_musical_grid(le_engine* e, int32_t bars) {
+  e->grid_prev_beat = -1;
+  store_i32(&e->a_loop_bars, bars);
+  e->grid_total_beats = bars * load_i32(&e->a_ts_num);
+  store_i32(&e->a_current_beat, 0);
 }
 
 /* ---- track length presets (A6, D17; song-mode-spec.md §1) ----
@@ -643,8 +696,15 @@ static inline void grid_beat_frame(le_engine* e, int32_t pos, int click_on,
  * change while an arm is pending re-evaluates on the very next check (D8), and
  * a change to OFF reverts the pending fire to the loop top with no extra
  * bookkeeping. */
-static int le_live_subdiv_ratio(le_engine* e, int64_t* num, int64_t* den) {
-  const int32_t div = load_i32(&e->a_quantize_div);
+static int le_live_subdiv_ratio(le_engine* e, int32_t ch, int64_t* num,
+                                int64_t* den) {
+  int32_t div = load_i32(&e->a_quantize_div);
+  /* Per-track division (slice 2b): the track's own override, read live like
+   * the global it replaces, so an armed track follows its own grid. */
+  if (ch >= 0 && ch < e->track_count) {
+    const int32_t ov = load_i32(&e->tracks[ch].a_quantize_div_override);
+    if (ov >= 0) div = ov;
+  }
   if (div == LE_GRID_DIV_OFF || e->grid_total_beats <= 0 ||
       e->clock.length <= 0) {
     return 0;
@@ -1073,6 +1133,7 @@ static void le_restore_multiple_or_divisor(le_track* t, int32_t base,
  * Historical audio keeps its span; the current mode owns the clock model. */
 static void le_restore_track_clock(le_engine* e, le_track* t, int32_t len,
                                     int32_t saved_master_len, uint64_t frame) {
+  le_reset_track_playback(t);
   const int32_t mode = load_i32(&e->a_looper_mode);
   if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) {
     le_loop_clock_set_length(&t->free_clock, len);
@@ -1584,6 +1645,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
   le_track* t = &e->tracks[ch];
   switch (load_i32(&t->a_state)) {
     case LE_TRACK_EMPTY:
+      le_reset_track_playback(t);
       /* A fresh capture may define a new loop length: leftover armed shadow
        * slots (sized for the previous loop) are dropped; control reclaimed
        * them when it posted this command/arm. */
@@ -1599,7 +1661,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
          * No RECORD_START / unmute here — the commit at the count-in's
          * downbeat does both when the capture actually begins. */
         {
-          const int32_t ci_bars = load_i32(&e->a_count_in_bars);
+          const int32_t ci_bars = load_i32(&e->a_record_start);
           if (ci_bars > 0 && load_f32(&e->a_tempo_bpm_bits) > 0.0f &&
               le_count_in_begin(e, ch, ci_bars)) {
             break;
@@ -1660,6 +1722,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
        * by le_engine_record before this command). Auto-unmute first — an
        * overdub over a Stop-muted (or parked-muted) track must be audible —
        * and unpark the loop when this start is what wakes a held transport. */
+      le_restart_once(e, t);
       le_capture_start_unmute(e, t, frame);
       store_i32(&t->a_state, LE_TRACK_OVERDUBBING);
       le_dub_session_start(e, t);
@@ -1681,6 +1744,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
  * because redo needs it. The caller acks the state command. */
 static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
   le_track* t = &e->tracks[ch];
+  le_reset_track_playback(t);
   le_audio_rev_bump(t); /* [R1] undo to empty: content-less from here */
   t->record_pos = 0;
   t->start_iter = 0;
@@ -1779,6 +1843,7 @@ static void handle_play(le_engine* e, int32_t ch, uint64_t frame) {
   const int was_held = le_transport_held(e);
   le_track* t = &e->tracks[ch];
   if (load_i32(&t->a_state) == LE_TRACK_STOPPED) {
+    le_restart_once(e, t);
     store_i32(&t->a_state, LE_TRACK_PLAYING);
     /* Playing anything from a held transport unparks the entire loop. */
     if (was_held) le_unpark_stopped(e, frame);
@@ -1827,6 +1892,7 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
 static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
   le_track* t = &e->tracks[ch];
+  le_reset_track_playback(t);
   /* A user clear on a capturing track (accepted design, slice 2): freeze the
    * take STOPPED at the clear boundary first — the same finalize a stop press
    * runs, so a defining take still sets the grid and a later take keeps its
@@ -2042,6 +2108,31 @@ static void le_truncate_capture_tail(le_engine* e, le_track* t, int32_t drop) {
   t->record_pos -= drop;
 }
 
+static void le_apply_one_shot(le_track* t, int enabled) {
+  const int32_t state = load_i32(&t->a_state);
+  if (enabled && !load_i32(&t->a_one_shot) &&
+      (state == LE_TRACK_PLAYING || state == LE_TRACK_OVERDUBBING)) {
+    t->once_current_pass = 1;
+  } else if (!enabled) {
+    t->once_current_pass = 0;
+  }
+  store_i32(&t->a_one_shot, enabled);
+}
+
+/* Coupled recording-start edits cancel signal arms in the same command as
+ * the setting; grid/section arms belong to other controls and stay pending. */
+static void le_cancel_signal_arms(le_engine* e) {
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    if (t->pending_record && t->pending_trigger == 1) {
+      t->pending_record = 0;
+      t->pending_trigger = 0;
+      store_i32(&t->a_pending, 0);
+    }
+  }
+}
+
+
 /* Performance event log emission (part 3): the audited subset of LE_CMD_* that
  * affects audibility gets logged verbatim (same code, same union arm) at
  * `frame` — the elapsed-frames-since-arm value at the START of the buffer
@@ -2063,6 +2154,7 @@ static void le_truncate_capture_tail(le_engine* e, le_track* t, int32_t drop) {
  * finalize_new_track / handle_finalize_take). A command that changes
  * output but isn't logged here is a standing review-checklist item (the
  * umbrella plan). */
+
 static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
   switch (cmd->code) {
     case LE_CMD_MEASURE_LATENCY: {
@@ -2116,7 +2208,8 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         const int trig = cmd->arg_f >= 1.5f ? 2 : (cmd->arg_f != 0.0f ? 1 : 0);
         int64_t sn, sd;
         if (trig == 0 && load_i32(&t->a_state) == LE_TRACK_RECORDING &&
-            e->clock.length > 0 && le_live_subdiv_ratio(e, &sn, &sd)) {
+            e->clock.length > 0 &&
+            le_live_subdiv_ratio(e, cmd->arg_i, &sn, &sd)) {
           /* Quantized record END (D8): the capture must end on the NEAREST
            * loop-locked subdivision boundary. Strictly nearer behind ->
            * truncate right now (drop the tail past that boundary and finalize);
@@ -2384,6 +2477,20 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       break;
     /* ---- tempo grid (see the helper block above finalize_master). Not
      * perf-logged: in this part none of these changes audible output. */
+    case LE_CMD_RESTORE_TEMPO: {
+      if (!le_restored_tempo_valid(cmd->arg_f, cmd->arg_i) ||
+          le_transport_edit_blocked(e)) break;
+      store_f32(&e->a_tempo_bpm_bits, cmd->arg_f);
+      store_i32(&e->a_tempo_source, cmd->arg_i);
+      e->has_tap = 0;
+      e->last_tap_frame = 0;
+      if (cmd->arg_i == LE_TEMPO_SOURCE_NONE) {
+        le_restore_musical_grid(e, 0);
+      } else {
+        regrid_surviving_master(e);
+      }
+      break;
+    }
     case LE_CMD_SET_TEMPO: {
       if (le_tempo_locked(e)) break; /* D6: rejected (no-op) while locked */
       float bpm = cmd->arg_f;
@@ -2461,15 +2568,22 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       }
       break;
     }
-    /* ---- One Shot (B4; see LE_CMD_SET_ONE_SHOT's doc, segno_engine_api.h).
-     * Accepted in ANY mode, like LE_CMD_CROWN_PRIMARY above — a persistent
-     * per-track setting, not gated by a pending mode switch. Only consumed by
-     * advance_track_clock_frame's free_clock wrap check below, so it is
-     * inert outside Free/Song by construction. Not perf-logged, for the
-     * same reason as LE_CMD_SET_LOOPER_MODE / LE_CMD_CROWN_PRIMARY. */
+    /* Once is a setting in every mode. A change during existing playback
+     * finishes that pass; it does not demand a fresh full playback lap. */
     case LE_CMD_SET_ONE_SHOT: {
       if (!valid_channel(e, cmd->arg_i)) break;
-      store_i32(&e->tracks[cmd->arg_i].a_one_shot, cmd->arg_f != 0.0f ? 1 : 0);
+      le_apply_one_shot(&e->tracks[cmd->arg_i], cmd->arg_f != 0.0f);
+      break;
+    }
+    case LE_CMD_SET_ONE_SHOT_MASK: {
+      const uint32_t channels = (uint32_t)cmd->arg_i;
+      const uint32_t valid = (1u << e->track_count) - 1u;
+      if (channels == 0 || (channels & ~valid) != 0) break;
+      for (int32_t c = 0; c < e->track_count; ++c) {
+        if (channels & (1u << c)) {
+          le_apply_one_shot(&e->tracks[c], cmd->arg_f != 0.0f);
+        }
+      }
       break;
     }
     /* ---- MIDI clock (Phase C/E, D15; see LE_CMD_SET_CLOCK_MODE's doc,
@@ -2516,7 +2630,10 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       int32_t bars = cmd->arg_i;
       if (bars < 0) bars = 0;
       if (bars > LE_COUNT_IN_MAX_BARS) bars = LE_COUNT_IN_MAX_BARS;
-      store_i32(&e->a_count_in_bars, bars);
+      if (bars > 0 || load_i32(&e->a_record_start) >= 0) {
+        store_i32(&e->a_record_start, bars);
+      }
+      if (bars > 0) le_cancel_signal_arms(e);
       /* ANY mid-count-in change cancels the count-in in flight — not just a
        * change to 0 (code-review fix). The running countdown was frozen at
        * le_count_in_begin from whatever bars was in effect THEN
@@ -2529,6 +2646,17 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       if (e->count_in_total > 0) le_count_in_reset(e);
       break;
     }
+    case LE_CMD_SET_AUTO_RECORD:
+      if (cmd->arg_i) {
+        store_i32(&e->a_record_start, -1);
+        if (e->count_in_total > 0) le_count_in_reset(e);
+      } else {
+        if (load_i32(&e->a_record_start) < 0) {
+          store_i32(&e->a_record_start, 0);
+        }
+        le_cancel_signal_arms(e);
+      }
+      break;
     /* ---- track length presets (A6, D17; see the helper block above
      * finalize_master). Not perf-logged, like the tempo grid / click block
      * above — state only, no direct audible effect at the moment it's set. */
@@ -2885,8 +3013,9 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       atomic_store_explicit(&e->a_perf_armed, 0, memory_order_release);
       break;
     case LE_CMD_COMMIT_SESSION: {
-      const int32_t base = cmd->arg_i;
-      if (base <= 0) break;
+      const int32_t base = cmd->session.base_frames;
+      const int32_t bars = cmd->session.loop_bars;
+      if (base <= 0 || bars < 0 || bars > INT32_MAX / 15) break;
       /* KNOWN GAP (B2b; B4 extends the same guard to SONG), guarded
        * (adversarial-review BUG 2 fix): this command establishes ONE shared
        * `base` length for every imported track via a whole-loop multiple —
@@ -2934,15 +3063,9 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       le_loop_clock_set_length(&e->clock, base);
       e->loop_iteration = 0;
       store_i32(&e->a_master_len, base);
-      /* A session import replaces the loop wholesale: the pre-import beat
-       * grid (if any) described the OLD loop and must not be applied to the
-       * new one. Reset the loop-derived grid; the tempo value and source
-       * survive (D6). Deriving a grid for imported audio from the manifest is
-       * A7's job — until then an import is grid-free. */
-      store_i32(&e->a_loop_bars, 0);
-      store_i32(&e->a_current_beat, 0);
-      e->grid_total_beats = 0;
-      e->grid_prev_beat = -1;
+      /* Restore the actual saved grid, including an explicitly grid-free
+       * loop and a bar count whose derived BPM reached the tempo clamp. */
+      le_restore_musical_grid(e, bars);
       for (int32_t t = 0; t < e->track_count; ++t) {
         le_track* tr = &e->tracks[t];
         if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
@@ -3372,6 +3495,33 @@ static inline void track_viz_tap_frame(le_engine* e, int tc,
   }
 }
 
+/* One Shot's stop (B4; every mode since slice 2b): the same audible
+ * transition as a manual Stop press on a sounding track — handle_stop's
+ * PLAYING/OVERDUBBING -> STOPPED branch, pending mutes landing the same way,
+ * an overdub in flight ending its capture and draining/retiring through the
+ * ordinary dub machinery.
+ *
+ * Synthetic LE_CMD_STOP (#420): apply_command logs a manual Stop before
+ * handle_stop runs — without an entry here a perf-log replay hears the
+ * track playing forever past the wrap. Same replays-match-what-a-listener-
+ * heard rule as le_unpark_stopped's synthetic LE_CMD_PLAY and
+ * le_capture_start_unmute's synthetic LE_CMD_SET_LANE_MUTE. Deliberately NO
+ * LE_PLOG_RECORD_END for a wrap mid-overdub: a manual Stop on an OVERDUBBING
+ * track pushes none either — RECORD_END means "left RECORDING"
+ * (perf_log_ring.h), a state the callers never admit, and the dub pass's
+ * end is already logged when its layer retires (LE_PLOG_LAYER_RETIRED) — so
+ * emitting one would make the wrap's log DIFFER from a manual stop's and
+ * hand perf_render's RECORD_START/END pairing an unpaired END. */
+static void le_one_shot_stop(le_engine* e, le_track* t, int32_t ch,
+                             uint64_t frame) {
+  t->once_ended = 1;
+  t->once_current_pass = 0;
+  t->sounding_frames = 0;
+  le_plog_push(e, frame, (le_command){.code = LE_CMD_STOP, .arg_i = ch});
+  store_i32(&t->a_state, LE_TRACK_STOPPED);
+  le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 1, frame);
+}
+
 /* Free/Song mode (B2b, broadened to SONG by B4): advances track [ch]'s own
  * clock by one frame, mirroring le_loop_clock_tick's per-master-clock shape
  * but scoped to a single track — ticks (and bumps the track's own wrap
@@ -3385,13 +3535,8 @@ static inline void track_viz_tap_frame(le_engine* e, int tc,
  * recording never reaches PLAYING/OVERDUBBING before finalize_master sets
  * free_clock, so this is a defensive belt more than a reachable guard.
  *
- * One Shot (B4, Sheeran manual §5.9.4): the wrap this function detects
- * (le_loop_clock_tick's boundary return — this track's OWN clock completing
- * one full lap) is the ONLY per-track transport-wrap event the engine
- * currently instruments, which is exactly why One Shot's "stop instead of
- * loop" behavior is wired HERE and only reachable in Free/Song (the two
- * modes that call this function at all — see the call site's mode guard,
- * advance_transport_frame). A one-shot track that wraps stops immediately:
+ * Free/Song Once stops at this track's own wrap. Shared modes use their
+ * playback coordinate in le_shared_clock_one_shots. A track that wraps stops:
  * the transition mirrors handle_stop's own PLAYING/OVERDUBBING -> STOPPED
  * branch exactly (same pending-mute landing via le_consume_pending_mutes),
  * so an overdub in flight ends its capture and drains/retires through the
@@ -3406,23 +3551,51 @@ static inline void advance_track_clock_frame(le_engine* e, int32_t ch,
   if (state != LE_TRACK_PLAYING && state != LE_TRACK_OVERDUBBING) return;
   if (le_loop_clock_tick(&t->free_clock)) {
     t->free_iteration++;
-    if (load_i32(&t->a_one_shot)) {
-      /* Synthetic LE_CMD_STOP (#420): this auto-stop is the same audible
-       * transition as a manual Stop press, which apply_command logs before
-       * handle_stop runs — without an entry here a perf-log replay hears
-       * the track playing forever past the wrap. Same replays-match-what-a-
-       * listener-heard rule as le_unpark_stopped's synthetic LE_CMD_PLAY
-       * and le_capture_start_unmute's synthetic LE_CMD_SET_LANE_MUTE.
-       * Deliberately NO LE_PLOG_RECORD_END for a wrap mid-overdub: a manual
-       * Stop on an OVERDUBBING track pushes none either — RECORD_END means
-       * "left RECORDING" (perf_log_ring.h), a state this function's guard
-       * never admits, and the dub pass's end is already logged when its
-       * layer retires (LE_PLOG_LAYER_RETIRED) — so emitting one would make
-       * the wrap's log DIFFER from a manual stop's and hand perf_render's
-       * RECORD_START/END pairing an unpaired END. */
-      le_plog_push(e, frame, (le_command){.code = LE_CMD_STOP, .arg_i = ch});
-      store_i32(&t->a_state, LE_TRACK_STOPPED);
-      le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 1, frame);
+    if (load_i32(&t->a_one_shot)) le_one_shot_stop(e, t, ch, frame);
+  }
+}
+
+/* One Shot in the shared-clock modes (accepted design, slice 2b; the
+ * Multi/Sync/Band half of le_engine_set_one_shot's doc). Called once per
+ * ticking frame AFTER the grid and section arms have fired, so the arms see
+ * the states they were queued against (a punch-out lands as a punch-out, a
+ * section stop stays a stop, and a held transport is measured before any
+ * Once stop could fake one). A one-shot track that is sounding stops when
+ * its own read coordinate returns to zero. Ordinarily that follows the shared
+ * segment/division rules; after an automatic-end relaunch it includes the
+ * track's playback origin, leaving the musical capture grid untouched.
+ * Two guards keep the stop from cutting a pass short:
+ *   - sounding_frames counts the frames the track has been sounding and is
+ *     reset while it is not; a lap end only stops a track that has sounded
+ *     for a whole lap (k * base, or the division's length), so a take
+ *     finalized mid-lap (this frame included) plays its first full lap. When
+ *     Once is enabled during playback, once_current_pass instead permits the
+ *     current pass to finish without requiring another full lap;
+ *   - a track whose grid arm fired this frame into OVERDUBBING (a punch-in,
+ *     or a rec/dub finalize) is skipped: the queued pass wins, and Once ends
+ *     the track at that pass's end.
+ * No-op with no master (Free/Song keep e->clock dormant and tick their own
+ * clocks through advance_track_clock_frame). */
+static inline void le_shared_clock_one_shots(le_engine* e, int tc,
+                                             const uint8_t* fired,
+                                             uint64_t frame) {
+  const int32_t base = e->clock.length;
+  if (base <= 0) return;
+  for (int t = 0; t < tc; ++t) {
+    le_track* tr = &e->tracks[t];
+    const int32_t st = load_i32(&tr->a_state);
+    if (st != LE_TRACK_PLAYING && st != LE_TRACK_OVERDUBBING) {
+      tr->sounding_frames = 0;
+      continue;
+    }
+    tr->sounding_frames++;
+    if (!load_i32(&tr->a_one_shot)) continue;
+    if (fired[t] && st == LE_TRACK_OVERDUBBING) continue;
+    const int32_t len = load_i32(&tr->lanes[0].a_len);
+    const int lap_end = len > 0 && le_shared_track_position(e, tr) == 0;
+    if (lap_end &&
+        (tr->once_current_pass || tr->sounding_frames >= (uint64_t)len)) {
+      le_one_shot_stop(e, tr, t, frame);
     }
   }
 }
@@ -3508,6 +3681,9 @@ static inline void advance_transport_frame(le_engine* e, int tc,
          * every loop top clicks even without a beat-index transition. */
         if (e->grid_total_beats <= 0) e->grid_prev_beat = -1;
       }
+      /* Which tracks' grid arms fire on this tick: read by the Once check
+       * below, which runs after the arms so it sees what they did. */
+      uint8_t fired[LE_MAX_TRACKS] = {0};
       /* Grid-armed fire check. The loop top (wrap) is every division's
        * boundary AND the layer boundary, so it fires everything — the exact
        * pre-A3 behavior, and the whole behavior when the quantize division is
@@ -3521,38 +3697,44 @@ static inline void advance_transport_frame(le_engine* e, int tc,
        * simply uses the new division, and OFF reverts to loop-top-only.
        * Stateless per-frame index compare, gated on an actual trigger-0
        * pending so the dormant cost is a few flag reads. */
-      int boundary = wrapped;
-      if (!boundary) {
-        int has_pending = 0;
-        for (int qt = 0; qt < tc; ++qt) {
-          if (e->tracks[qt].pending_record &&
-              e->tracks[qt].pending_trigger == 0) {
-            has_pending = 1;
-            break;
+      /* Per track since slice 2b: each armed track is checked against ITS
+       * OWN effective division (le_live_subdiv_ratio's override), so two
+       * armed tracks can fire on different grids in the same lap. The wrap
+       * still fires every one of them. */
+      for (int qt = 0; qt < tc; ++qt) {
+        le_track* pt = &e->tracks[qt];
+        if (!pt->pending_record || pt->pending_trigger != 0) continue;
+        int boundary = wrapped;
+        /* A Sync/Band force-arm begins a DEFINING take, and
+         * finalize_new_track's division-playback formula reads a phase locked
+         * to the primary's loop top — which only holds if the take began
+         * there. A subdivision boundary would start it a quarter (or an
+         * eighth) into the primary's cycle and the sub-loop would play
+         * rotated by that much. The same rule the Band section transport
+         * states a dozen lines below; here it is keyed on the ARM's nature,
+         * so it covers a per-track division and a global one alike. */
+        const int sync_defining_arm =
+            load_i32(&pt->a_state) == LE_TRACK_EMPTY &&
+            le_sync_quantize_active(e, qt);
+        if (!boundary && !sync_defining_arm) {
+          int64_t sn, sd;
+          if (le_live_subdiv_ratio(e, qt, &sn, &sd)) {
+            const int32_t p = e->clock.position; /* just ticked to p >= 1 */
+            boundary =
+                le_grid_loop_subdiv_at(p, e->clock.length, sn, sd) !=
+                le_grid_loop_subdiv_at(p - 1, e->clock.length, sn, sd);
           }
         }
-        int64_t sn, sd;
-        if (has_pending && le_live_subdiv_ratio(e, &sn, &sd)) {
-          const int32_t p = e->clock.position; /* just ticked to p >= 1 */
-          boundary =
-              le_grid_loop_subdiv_at(p, e->clock.length, sn, sd) !=
-              le_grid_loop_subdiv_at(p - 1, e->clock.length, sn, sd);
-        }
-      }
-      if (boundary) {
-        /* Fire the grid-armed pending records so a deferred start/finalize/
+        /* Fire the grid-armed pending record so a deferred start/finalize/
          * overdub lands exactly on the grid. Signal-triggered arms fire in
          * process_input_frame, not here. handle_record enforces the
          * one-capturer hand-off. */
-        for (int qt = 0; qt < tc; ++qt) {
-          if (e->tracks[qt].pending_record &&
-              e->tracks[qt].pending_trigger == 0 &&
-              (wrapped ||
-               load_i32(&e->tracks[qt].a_state) != LE_TRACK_OVERDUBBING)) {
-            e->tracks[qt].pending_record = 0;
-            store_i32(&e->tracks[qt].a_pending, 0);
-            handle_record(e, qt, frame);
-          }
+        if (boundary &&
+            (wrapped || load_i32(&pt->a_state) != LE_TRACK_OVERDUBBING)) {
+          pt->pending_record = 0;
+          store_i32(&pt->a_pending, 0);
+          handle_record(e, qt, frame);
+          fired[qt] = 1;
         }
       }
       /* Band section transport (B3b, trigger 2): fires ONLY on the true
@@ -3573,6 +3755,10 @@ static inline void advance_transport_frame(le_engine* e, int tc,
           }
         }
       }
+      /* Once (slice 2b): a one-shot track whose own lap ended on this tick
+       * stops here, after the arms above have done what they were queued
+       * for. */
+      le_shared_clock_one_shots(e, tc, fired, frame);
     } else {
       /* Nothing is playing or recording: hold the transport at the top so the
        * next play starts from the beginning rather than looping in silence.
@@ -3591,7 +3777,11 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       }
       e->clock.position = 0;
       e->loop_iteration = 0;
-      for (int t = 0; t < tc; ++t) e->tracks[t].start_iter = 0;
+      for (int t = 0; t < tc; ++t) {
+        e->tracks[t].start_iter = 0;
+        e->tracks[t].playback_offset = 0;
+        e->tracks[t].sounding_frames = 0; /* the next launch is a fresh lap */
+      }
     }
   }
   /* Free/Song mode (B2b, index Architecture §4; broadened to SONG by B4):
@@ -4320,6 +4510,18 @@ static inline void mix_tracks_frame(
    * exclusive with Free mode's per-track override above by construction —
    * see sync_division_positions_frame's doc). */
   sync_division_positions_frame(e, tc, pos, trk_pos, trk_len);
+  /* An automatic-end relaunch owns only its read origin. Keep the normal
+   * segment representation so live/cached PCM, metering and overdub writes
+   * all use the same shifted position. Fresh recording never uses it. */
+  for (int t = 0; t < tc; ++t) {
+    if (e->clock.length > 0 && e->tracks[t].playback_offset != 0 &&
+        trk_len[t] > 0 &&
+        (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING)) {
+      const int32_t position = le_shared_track_position(e, &e->tracks[t]);
+      seg_base[t] = (position / trk_len[t]) * trk_len[t];
+      trk_pos[t] = position % trk_len[t];
+    }
+  }
   /* Each track's read index for THIS frame, kept for the block-end publish of
    * a_play_pos (le_track_snapshot.position_frames): the one place the mode's
    * position rule is already resolved, so the app never re-derives it. */
@@ -4361,6 +4563,25 @@ static inline void mix_tracks_frame(
       if (od_gain < od_target) od_gain = od_target;
     }
     e->tracks[t].od_gain = od_gain;
+    /* Overdub decay (slice 2b): this track's own feedback override, or the
+     * global coefficient, reached through the same ramp as the punch
+     * envelope so a live change never steps the retained layer at the write
+     * head. Snaps like od_gain on a loop too short to host the ramp. */
+    float trk_fb = e->tracks[t].fb_cur;
+    {
+      const float ov = load_f32(&e->tracks[t].a_overdub_fb_bits);
+      const float fb_target = ov >= 0.0f ? ov : overdub_fb;
+      if (!od_fade_on) {
+        trk_fb = fb_target;
+      } else if (trk_fb < fb_target) {
+        trk_fb += od_step;
+        if (trk_fb > fb_target) trk_fb = fb_target;
+      } else if (trk_fb > fb_target) {
+        trk_fb -= od_step;
+        if (trk_fb < fb_target) trk_fb = fb_target;
+      }
+      e->tracks[t].fb_cur = trk_fb;
+    }
 
     /* Per-pass layer capture for this frame, shared by every lane: the write
      * position uses the session-latched offset (a mid-dub offset change must
@@ -4475,8 +4696,9 @@ static inline void mix_tracks_frame(
           }
           /* Feedback scales the existing content at the write head before the new
            * layer is summed in, bounding runaway buildup. fb == 1.0 (the default)
-           * is the classic additive `+= insample`. */
-          lbuf[wdub] = lbuf[wdub] * overdub_fb + insample * od_gain;
+           * is the classic additive `+= insample`. trk_fb is this track's own
+           * (ramped) coefficient, the global one when it inherits. */
+          lbuf[wdub] = lbuf[wdub] * trk_fb + insample * od_gain;
         }
       }
       /* #728 trailing overlap capture: a just-finalized non-defining take keeps
@@ -4673,7 +4895,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
 
   le_command cmd;
-  while (le_ring_pop(&e->ring, &cmd)) apply_command(e, &cmd, perf_frame_base);
+  while (le_ring_pop(&e->ring, &cmd)) {
+    apply_command(e, &cmd, perf_frame_base);
+    e->commands_applied++; /* rejected and no-op commands settle too */
+  }
 
   /* Close the count-in cancel-race grace window (code-review fix) right
    * after this block's command drain: it is open for exactly one block's
@@ -5127,4 +5352,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
     }
   }
+  /* Session capture waits on publication, not a ring that becomes empty
+   * before its last command is applied. Release covers every snapshot store
+   * above; the control-side query acquires it before reading that snapshot. */
+  atomic_store_explicit(&e->a_commands_published, e->commands_applied,
+                         memory_order_release);
 }
