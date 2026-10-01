@@ -1822,6 +1822,19 @@ int32_t le_engine_set_track_quantize(le_engine* engine, int32_t channel,
   return LE_OK;
 }
 
+int32_t le_engine_set_track_quantize_div(le_engine* engine, int32_t channel,
+                                         int32_t div) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (div > LE_GRID_DIV_SIXTEENTH) return LE_ERR_INVALID;
+  /* A plain store: the audio thread reads the override live at every
+   * boundary check, so a pending arm follows the new division from its next
+   * boundary on, exactly as the global setter's command does. */
+  store_i32(&engine->tracks[channel].a_quantize_div_override,
+            div < 0 ? -1 : div);
+  return LE_OK;
+}
+
 /* ---- tempo grid (state + locks; see segno_engine_api.h's tempo section) ----
  * Plain le_push producers: validation that needs no engine state runs here on
  * the control thread; the D6 tempo lock is enforced on the AUDIO thread
@@ -1832,6 +1845,32 @@ int32_t le_engine_set_tempo(le_engine* engine, float bpm) {
   /* Clamped to 30..300 by the audio thread on apply (matching the old stack's
    * observable clamp-on-read behaviour). */
   return le_push(engine, LE_CMD_SET_TEMPO, 0, bpm);
+}
+
+int32_t le_engine_restore_tempo(le_engine* engine, float bpm, int32_t source) {
+  if (engine == NULL || !le_restored_tempo_valid(bpm, source)) {
+    return LE_ERR_INVALID;
+  }
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (load_i32(&engine->a_counting_in) ||
+      engine->clock_commands_posted !=
+          atomic_load_explicit(&engine->a_clock_commands_applied,
+                               memory_order_acquire)) return LE_ERR_NOT_READY;
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    le_track* t = &engine->tracks[c];
+    const int32_t state = le_effective_state(t);
+    if (state == LE_TRACK_PLAYING || state == LE_TRACK_RECORDING ||
+        state == LE_TRACK_OVERDUBBING || engine->armed[c] ||
+        load_i32(&t->a_pending) || t->cancel_pending ||
+        t->clear_restore_pending ||
+        t->state_cmds_posted !=
+            atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
+      return LE_ERR_NOT_READY;
+    }
+  }
+  return le_push(engine, LE_CMD_RESTORE_TEMPO, source, bpm);
 }
 
 int32_t le_engine_set_time_signature(le_engine* engine, int32_t num,
@@ -1854,7 +1893,11 @@ int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div) {
   if (div < LE_GRID_DIV_OFF || div > LE_GRID_DIV_SIXTEENTH) {
     return LE_ERR_INVALID;
   }
-  return le_push(engine, LE_CMD_SET_QUANTIZE_DIV, div, 0.0f);
+  /* Publish only accepted requests. le_push validates the handle/configure
+   * state and a full ring must leave the snapshot's setting unchanged. */
+  const int32_t result = le_push(engine, LE_CMD_SET_QUANTIZE_DIV, div, 0.0f);
+  if (result == LE_OK) engine->quantize_div = div;
+  return result;
 }
 
 /* ---- looper mode (B2a, D4; see segno_engine_api.h's looper-mode section) ----
@@ -2014,15 +2057,22 @@ int32_t le_engine_crown_primary(le_engine* engine, int32_t channel) {
   return le_post_clock_command(engine, LE_CMD_CROWN_PRIMARY, channel);
 }
 
-/* ---- One Shot (B4, Sheeran manual §5.9.4; see segno_engine_api.h's
- * LE_CMD_SET_ONE_SHOT / le_engine_set_one_shot docs for the full mode-
- * gating rationale) ---- */
+/* One Shot is a live setting in every mode; the callback owns its pass edge. */
 
 int32_t le_engine_set_one_shot(le_engine* engine, int32_t channel,
                                int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   return le_push(engine, LE_CMD_SET_ONE_SHOT, channel, enabled ? 1.0f : 0.0f);
+}
+
+int32_t le_engine_set_one_shot_mask(le_engine* engine, uint32_t channels,
+                                    int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  const uint32_t valid = (1u << engine->track_count) - 1u;
+  if (channels == 0 || (channels & ~valid) != 0) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_ONE_SHOT_MASK, (int32_t)channels,
+                 enabled ? 1.0f : 0.0f);
 }
 
 /* Reuses le_engine_record's own quantize-arm TOGGLE shape (armed[] /
@@ -2122,15 +2172,18 @@ int32_t le_engine_set_click_volume(le_engine* engine, float volume) {
 int32_t le_engine_set_count_in(le_engine* engine, int32_t bars) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (bars < 0 || bars > LE_COUNT_IN_MAX_BARS) return LE_ERR_INVALID;
-  engine->count_in_bars = bars; /* control-side mirror (D9 exclusion below) */
-  if (bars > 0 && engine->auto_record) {
-    /* D9 mutual exclusion, count-in's direction: enabling count-in clears
-     * sound-activated record outright — the mode AND any tracks still
-     * waiting on the input threshold (le_engine_set_auto_record(0) cancels
-     * those arms). */
-    le_engine_set_auto_record(engine, 0);
+  const int32_t result = le_push(engine, LE_CMD_SET_COUNT_IN, bars, 0.0f);
+  if (result != LE_OK) return result;
+  engine->count_in_bars = bars;
+  if (bars > 0) {
+    engine->auto_record = 0;
+    /* The same accepted command cancels these on the callback. No separate
+     * DISARM posts can fail after the setting has already changed. */
+    for (int32_t c = 0; c < engine->track_count; ++c) {
+      if (engine->armed_trigger[c] == 1) engine->armed[c] = 0;
+    }
   }
-  return le_push(engine, LE_CMD_SET_COUNT_IN, bars, 0.0f);
+  return LE_OK;
 }
 
 int32_t le_engine_set_track_multiple(le_engine* engine, int32_t channel,
@@ -2202,23 +2255,16 @@ int32_t le_engine_set_tuner_input(le_engine* engine, int32_t input) {
 
 int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
+  const int32_t result =
+      le_push(engine, LE_CMD_SET_AUTO_RECORD, enabled ? 1 : 0, 0.0f);
+  if (result != LE_OK) return result;
   engine->auto_record = enabled ? 1 : 0;
-  /* Turning it off cancels any tracks still waiting for an input-level start. */
   if (!engine->auto_record) {
     for (int32_t c = 0; c < engine->track_count; ++c) {
-      if (engine->armed_trigger[c] == 1) le_cancel_arm(engine, c);
+      if (engine->armed_trigger[c] == 1) engine->armed[c] = 0;
     }
-  } else if (engine->count_in_bars > 0) {
-    /* D9 mutual exclusion, auto-record's direction: enabling sound-activated
-     * record clears the count-in setting (the SET_COUNT_IN(0) it posts also
-     * cancels a count-in already in flight). If both are somehow set at once
-     * anyway — raw command posts — count-in still wins at press time
-     * (le_engine_record checks it before the auto-record arm). The push's
-     * result is deliberately ignored: pre-configure there is no ring, and
-     * the zeroed control mirror is already authoritative for press
-     * decisions. */
+  } else {
     engine->count_in_bars = 0;
-    (void)le_push(engine, LE_CMD_SET_COUNT_IN, 0, 0.0f);
   }
   return LE_OK;
 }
@@ -2245,6 +2291,23 @@ int32_t le_engine_set_overdub_feedback(le_engine* engine, float feedback) {
   store_f32(&engine->a_overdub_fb_bits, feedback);
   le_plog_push_ctrl(engine, (le_command){.code = LE_PLOG_SET_OVERDUB_FEEDBACK,
                                         .arg_f = feedback});
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_overdub_feedback(le_engine* engine,
+                                             int32_t channel, float feedback) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (feedback < 0.0f) {
+    feedback = -1.0f; /* inherit */
+  } else if (feedback > 1.0f) {
+    feedback = 1.0f;
+  }
+  store_f32(&engine->tracks[channel].a_overdub_fb_bits, feedback);
+  le_plog_push_ctrl(engine,
+                    (le_command){.code = LE_PLOG_SET_TRACK_OVERDUB_FEEDBACK,
+                                 .arg_i = channel,
+                                 .arg_f = feedback});
   return LE_OK;
 }
 

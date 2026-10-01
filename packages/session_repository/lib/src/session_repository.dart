@@ -52,6 +52,141 @@ class SessionChains {
   final String masterChain;
 }
 
+/// Desired musical settings supplied by the app layer when saving.
+///
+/// These values belong to the live repository, independently of the engine's
+/// running state and of whether a track contains recorded audio. Missing map
+/// entries mean Use default; explicit entries are never collapsed to defaults.
+@immutable
+class SessionSettings {
+  /// Creates the settings payload for a session save.
+  const SessionSettings({
+    this.tempoBpm = 0,
+    this.tempoSource = TempoSource.none,
+    this.tsNum = 4,
+    this.tsDen = 4,
+    this.syncTempo = true,
+    this.quantizeDiv = GridDivision.off,
+    this.loopBars = 0,
+    this.recordTiming = RecordTiming.immediately,
+    this.overdubDecay = 0,
+    this.defaultOneShot = false,
+    this.trackRecordTimingOverrides = const {},
+    this.trackOverdubDecayOverrides = const {},
+    this.trackOneShotOverrides = const {},
+    this.trackLengthPresetOverrides = const {},
+    this.clickMode = ClickMode.off,
+    this.clickMask = 0,
+    this.clickVolume = 1,
+    this.countInBars = 0,
+    this.recDub = false,
+    this.autoRecord = false,
+    this.defaultMultiple = 0,
+    this.looperMode = LooperMode.multi,
+    this.primaryTrack = -1,
+  });
+
+  SessionSettings._detached(SessionSettings source)
+    : tempoBpm = source.tempoBpm,
+      tempoSource = source.tempoSource,
+      tsNum = source.tsNum,
+      tsDen = source.tsDen,
+      syncTempo = source.syncTempo,
+      quantizeDiv = source.quantizeDiv,
+      loopBars = source.loopBars,
+      recordTiming = source.recordTiming,
+      overdubDecay = source.overdubDecay,
+      defaultOneShot = source.defaultOneShot,
+      trackRecordTimingOverrides = Map.unmodifiable(
+        source.trackRecordTimingOverrides,
+      ),
+      trackOverdubDecayOverrides = Map.unmodifiable(
+        source.trackOverdubDecayOverrides,
+      ),
+      trackOneShotOverrides = Map.unmodifiable(source.trackOneShotOverrides),
+      trackLengthPresetOverrides = Map.unmodifiable(
+        source.trackLengthPresetOverrides,
+      ),
+      clickMode = source.clickMode,
+      clickMask = source.clickMask,
+      clickVolume = source.clickVolume,
+      countInBars = source.countInBars,
+      recDub = source.recDub,
+      autoRecord = source.autoRecord,
+      defaultMultiple = source.defaultMultiple,
+      looperMode = source.looperMode,
+      primaryTrack = source.primaryTrack;
+
+  /// Denominator-note beats per minute; zero means unset.
+  final double tempoBpm;
+
+  /// The origin of the stored tempo.
+  final TempoSource tempoSource;
+
+  /// Time-signature numerator.
+  final int tsNum;
+
+  /// Time-signature denominator.
+  final int tsDen;
+
+  /// Whether loop and musical grid timing are synchronized.
+  final bool syncTempo;
+
+  /// The musical grid division.
+  final GridDivision quantizeDiv;
+
+  /// Saved master-loop grid relationship; zero preserves a grid-free loop.
+  final int loopBars;
+
+  /// The default record timing.
+  final RecordTiming recordTiming;
+
+  /// The default overdub decay percentage.
+  final int overdubDecay;
+
+  /// The default playback choice: Loop or Once.
+  final bool defaultOneShot;
+
+  /// Explicit record timing choices for any track.
+  final Map<int, RecordTiming> trackRecordTimingOverrides;
+
+  /// Explicit overdub decay percentages for any track.
+  final Map<int, int> trackOverdubDecayOverrides;
+
+  /// Explicit playback choices for any track.
+  final Map<int, bool> trackOneShotOverrides;
+
+  /// Configured track lengths in bars, including empty tracks.
+  final Map<int, int> trackLengthPresetOverrides;
+
+  /// Click audibility mode.
+  final ClickMode clickMode;
+
+  /// Click output-channel mask.
+  final int clickMask;
+
+  /// Click output gain.
+  final double clickVolume;
+
+  /// Count-in duration in bars.
+  final int countInBars;
+
+  /// Whether ending recording begins overdubbing.
+  final bool recDub;
+
+  /// Whether sound starts recording.
+  final bool autoRecord;
+
+  /// Default track length in base loops; zero is automatic.
+  final int defaultMultiple;
+
+  /// The session recording mode.
+  final LooperMode looperMode;
+
+  /// The crowned track, or minus one when none is crowned.
+  final int primaryTrack;
+}
+
 /// Saves Segno sessions, reads them back, and exports audio.
 ///
 /// A session is a `.segno` bundle directory: a [Session.manifestName] manifest,
@@ -70,7 +205,8 @@ class SessionRepository {
   /// keeps the catalog testable (point it at a temp dir).
   ///
   /// [clearPollInterval]/[clearPollAttempts] bound how long a save/export waits
-  /// for in-flight overdub layers to settle before capturing. Tests can shrink
+  /// for queued commands and in-flight overdub layers to settle before
+  /// capturing. Tests can shrink
   /// these.
   SessionRepository({
     required AudioEngine engine,
@@ -226,6 +362,9 @@ class SessionRepository {
   /// independently of audio, so they are written for every lane / monitor that
   /// has one, regardless of which tracks hold audio.
   ///
+  /// [settings] carries the repository-owned musical choices, including
+  /// settings for empty tracks and edits made while the engine is stopped.
+  ///
   /// [pedalBindings] is this session's pedal remap as its opaque encoded
   /// string, handed in by the bloc layer the same way [chains] are (`''` for
   /// no session remap). It is a separate parameter rather than a
@@ -234,9 +373,12 @@ class SessionRepository {
   /// both being opaque strings.
   Future<Session> save(
     String directory, {
+    required SessionSettings settings,
     SessionChains chains = const SessionChains(),
     String pedalBindings = '',
   }) async {
+    // Capture intent before any asynchronous audio or file work begins.
+    final savedSettings = SessionSettings._detached(settings);
     await _awaitLayersSettled();
     final captured = _capture();
     await Directory(directory).create(recursive: true);
@@ -259,7 +401,12 @@ class SessionRepository {
       }
     }
 
-    final session = _sessionFrom(captured, chains, pedalBindings);
+    final session = _sessionFrom(
+      captured,
+      chains,
+      savedSettings,
+      pedalBindings,
+    );
     await File('$directory/${Session.manifestName}').writeAsString(
       const JsonEncoder.withIndent('  ').convert(session.toJson()),
     );
@@ -310,7 +457,8 @@ class SessionRepository {
   /// The stems are raw PCM at the saved rate; loading them on a device running
   /// a different rate would play the session back at the wrong pitch (there is
   /// no resampling), so this refuses with [SessionSampleRateMismatch] rather
-  /// than decode something unusable.
+  /// than decode something unusable. A session without audio can restore its
+  /// settings at any device sample rate.
   Future<SessionBundle> read(String directory) async {
     final manifest = await File(
       '$directory/${Session.manifestName}',
@@ -319,8 +467,24 @@ class SessionRepository {
       jsonDecode(manifest) as Map<String, dynamic>,
     );
 
+    if (session.loopBars < 0 || session.loopBars > 0x7fffffff ~/ 15) {
+      throw const FormatException('session contains an invalid bar grid');
+    }
+
+    final validTempo = switch (session.tempoSource) {
+      TempoSource.none => session.tempoBpm == 0,
+      TempoSource.manual ||
+      TempoSource.tapped ||
+      TempoSource.derived => session.tempoBpm >= 30 && session.tempoBpm <= 300,
+      TempoSource.external => false,
+    };
+    if (!validTempo) {
+      throw const FormatException('session contains an unsupported tempo pair');
+    }
+
     final current = _engine.snapshot();
-    if (current.sampleRate > 0 &&
+    if (session.tracks.isNotEmpty &&
+        current.sampleRate > 0 &&
         session.sampleRate > 0 &&
         current.sampleRate != session.sampleRate) {
       throw SessionSampleRateMismatch(
@@ -446,8 +610,6 @@ class SessionRepository {
           channel: i,
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
-          lengthPresetBars: track.lengthPresetBars,
-          oneShot: track.oneShot,
           lanes: lanes,
         ),
       );
@@ -458,6 +620,7 @@ class SessionRepository {
   Session _sessionFrom(
     _Capture captured,
     SessionChains chains,
+    SessionSettings settings,
     String pedalBindings,
   ) {
     final snapshot = captured.snapshot;
@@ -479,43 +642,37 @@ class SessionRepository {
       // the looper domain's business, not this package's.
       trackChains: chains.trackChains,
       masterChain: chains.masterChain,
-      // Tempo/signature/quantize/click/count-in are session-level settings,
-      // not derived-from-track-content state, so — unlike baseLengthFrames
-      // above — they persist regardless of whether any track has content.
-      // This is deliberate, not an oversight: D6 says a derived tempo
-      // survives clearing its source loop ("clearing all tracks offers a
-      // tempo reset, never forces it"), and D7 lets a manual/tapped tempo be
-      // dialed in before the first recording ever starts — both cases are a
-      // zero-track snapshot the app must still round-trip faithfully.
-      tempoBpm: snapshot.tempoBpm,
-      tempoSource: snapshot.tempoSource,
-      tsNum: snapshot.tsNum,
-      tsDen: snapshot.tsDen,
-      quantizeDiv: snapshot.quantizeDiv,
-      clickMode: snapshot.clickMode,
-      clickOutputMask: snapshot.clickMask,
-      clickVolume: snapshot.clickVolume,
-      countInBars: snapshot.countInBars,
-      // Looper mode + crown (schema v4, B5c) are session-level SETTINGS, not
-      // derived-from-track-content state either — same reasoning as the
-      // tempo-grid fields above, and [snapshot.looperMode]/
-      // [snapshot.primaryTrack] persist regardless of track content by
-      // construction (D18; [LooperModeControl]'s class doc).
-      looperMode: snapshot.looperMode,
-      primaryTrack: snapshot.primaryTrack,
-      // One Shot, per channel (post-B5c independent review fix): read
-      // straight off `snapshot.tracks` — EVERY channel, unconditional on
-      // `state`/`lengthFrames` — rather than off `captured.tracks` (which
-      // the loop above only builds for a settled, content-bearing channel).
-      // `LooperModeControl.setOneShot` is explicitly "not gated by the D4
-      // content lock" and settable on an empty track in advance of
-      // recording, so this is the one content-independent home the flag
-      // needs to round-trip a pre-armed-but-empty channel through save/load
-      // — see [Session.oneShotChannels]'s doc.
-      oneShotChannels: [
-        for (var i = 0; i < snapshot.tracks.length; i++)
-          if (snapshot.tracks[i].oneShot) i,
-      ],
+      // Running captures own the tempo and exact grid as one settled report.
+      // Stopped saves retain the app's intended settings instead.
+      tempoBpm: snapshot.isRunning ? snapshot.tempoBpm : settings.tempoBpm,
+      tempoSource: snapshot.isRunning
+          ? snapshot.tempoSource
+          : settings.tempoSource,
+      tsNum: snapshot.isRunning ? snapshot.tsNum : settings.tsNum,
+      tsDen: snapshot.isRunning ? snapshot.tsDen : settings.tsDen,
+      syncTempo: settings.syncTempo,
+      quantizeDiv: settings.quantizeDiv,
+      loopBars: snapshot.isRunning ? snapshot.loopBars : settings.loopBars,
+      recordTiming: settings.recordTiming,
+      overdubDecay: settings.overdubDecay,
+      defaultOneShot: settings.defaultOneShot,
+      trackRecordTimingOverrides: settings.trackRecordTimingOverrides,
+      trackOverdubDecayOverrides: settings.trackOverdubDecayOverrides,
+      trackOneShotOverrides: settings.trackOneShotOverrides,
+      trackLengthPresetOverrides: settings.trackLengthPresetOverrides,
+      clickMode: settings.clickMode,
+      clickOutputMask: settings.clickMask,
+      clickVolume: settings.clickVolume,
+      countInBars: settings.countInBars,
+      recDub: settings.recDub,
+      autoRecord: settings.autoRecord,
+      defaultMultiple: settings.defaultMultiple,
+      looperMode: snapshot.isRunning
+          ? snapshot.looperMode
+          : settings.looperMode,
+      primaryTrack: snapshot.isRunning
+          ? snapshot.primaryTrack
+          : settings.primaryTrack,
       // Control-surface configuration (schema v6), opaque here like the
       // chains — handed straight through from the bloc layer.
       pedalBindings: pedalBindings,
@@ -555,18 +712,25 @@ class SessionRepository {
     return mix;
   }
 
-  /// Waits until no track has an overdub undo layer in flight (the punch-out
+  /// Waits for queued commands to publish their reports and for no track to
+  /// have an overdub undo layer in flight (the punch-out
   /// fade tail / drain window, ~tens of ms): exporting during it would copy a
   /// buffer the audio thread is still writing, losing the tail. Throws on
   /// timeout rather than silently exporting a mid-fade stem.
   Future<void> _awaitLayersSettled() async {
     for (var attempt = 0; attempt < _clearPollAttempts; attempt++) {
+      // Acquire the command publication before reading its resulting layers.
+      final commandsSettled = _engine.commandsSettled;
       final snapshot = _engine.snapshot();
-      if (snapshot.tracks.every((t) => !t.layerInFlight)) return;
+      if ((!snapshot.isRunning || commandsSettled) &&
+          snapshot.tracks.every((t) => !t.layerInFlight)) {
+        return;
+      }
       await Future<void>.delayed(_clearPollInterval);
     }
     throw StateError(
-      'an overdub layer never settled — cannot export a stable capture',
+      'engine commands or an overdub layer never settled — '
+      'cannot export a stable capture',
     );
   }
 }

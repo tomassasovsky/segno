@@ -186,10 +186,10 @@ void main() {
             undoDepth: 1,
             redoDepth: 1,
           ),
-        ).save(dir);
+        ).save(dir, settings: const SessionSettings());
         await repoWith(
           FakeSessionEngine()..seedTrack(0, Float32List.fromList([9, 9, 9, 9])),
-        ).save(dir);
+        ).save(dir, settings: const SessionSettings());
 
         await repo().duplicateSession('Source', 'Copy');
 

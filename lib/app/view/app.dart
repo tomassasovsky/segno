@@ -353,6 +353,8 @@ class _AppState extends State<App> {
             },
           ),
           BlocProvider(
+            // Restore defaults at startup, before a session can be recalled.
+            lazy: false,
             create: (context) {
               final cubit = QuantizeCubit(
                 repository: context.read<LooperRepository>(),
@@ -363,6 +365,7 @@ class _AppState extends State<App> {
             },
           ),
           BlocProvider(
+            lazy: false,
             create: (context) {
               final cubit = TempoCubit(
                 repository: context.read<LooperRepository>(),
@@ -402,8 +405,20 @@ class _AppState extends State<App> {
             },
           ),
           BlocProvider(
+            lazy: false,
             create: (context) {
               final cubit = RecordOptionsCubit(
+                repository: context.read<LooperRepository>(),
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = PlaybackOptionsCubit(
                 repository: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
               );

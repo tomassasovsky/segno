@@ -73,6 +73,9 @@ typedef struct le_command {
       int32_t value;
       uint32_t sequence;
     } clock;
+    struct { /* COMMIT_SESSION: exact recorded span and musical bar count. */
+      int32_t base_frames, loop_bars;
+    } session;
     struct { /* LE_EVT_CLEAR_FROZEN: a stopped take, tagged by its CLEAR. */
       int32_t channel, len, master_len;
       uint32_t generation;

@@ -87,9 +87,15 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setTrackQuantize(
+      () => repository.setTrackRecordTiming(
         channel: any(named: 'channel'),
-        enabled: any(named: 'enabled'),
+        timing: any(named: 'timing'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackOverdubDecay(
+        channel: any(named: 'channel'),
+        percent: any(named: 'percent'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
@@ -222,6 +228,9 @@ void main() {
         output: any(named: 'output'),
         enabled: any(named: 'enabled'),
       ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setAllOneShot(oneShot: any(named: 'oneShot')),
     ).thenReturn(EngineResult.ok);
     when(repository.tapTempo).thenReturn(EngineResult.ok);
     when(() => repository.setClickMode(any())).thenReturn(EngineResult.ok);
@@ -410,13 +419,45 @@ void main() {
     },
   );
 
+  late SettingsRepository trackSettings;
+  LooperBloc buildBlocWithSettings() {
+    trackSettings = SettingsRepository(store: FakeKeyValueStore());
+    return LooperBloc(repository: repository, settings: trackSettings);
+  }
+
   blocTest<LooperBloc, LooperState>(
-    'LooperTrackQuantizeChanged forwards the override to the repository',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperTrackQuantizeChanged(2, enabled: true)),
-    verify: (_) => verify(
-      () => repository.setTrackQuantize(channel: 2, enabled: true),
-    ).called(1),
+    'LooperTrackRecordTimingChanged forwards the override to the repository '
+    'and persists its code',
+    build: buildBlocWithSettings,
+    act: (bloc) => bloc.add(
+      const LooperTrackRecordTimingChanged(2, timing: RecordTiming.quarter),
+    ),
+    verify: (_) async {
+      verify(
+        () => repository.setTrackRecordTiming(
+          channel: 2,
+          timing: RecordTiming.quarter,
+        ),
+      ).called(1);
+      expect(
+        await trackSettings.loadTrackRecordTiming(2),
+        RecordTiming.quarter.code,
+      );
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackOverdubDecayChanged forwards the override to the repository '
+    'and persists it',
+    build: buildBlocWithSettings,
+    act: (bloc) =>
+        bloc.add(const LooperTrackOverdubDecayChanged(1, percent: 40)),
+    verify: (_) async {
+      verify(
+        () => repository.setTrackOverdubDecay(channel: 1, percent: 40),
+      ).called(1);
+      expect(await trackSettings.loadTrackOverdubDecay(1), 40);
+    },
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -446,70 +487,72 @@ void main() {
     ).called(1),
   );
 
+  for (final once in [true, false]) {
+    blocTest<LooperBloc, LooperState>(
+      'group playback choice $once is one atomic repository operation',
+      build: () {
+        when(() => repository.state).thenReturn(
+          const LooperState(
+            tracks: [Track(), Track(channel: 1), Track(channel: 2)],
+          ),
+        );
+        return buildBlocWithSettings();
+      },
+      act: (bloc) => bloc.add(LooperAllOneShotToggled(oneShot: once)),
+      verify: (_) async {
+        verify(() => repository.setAllOneShot(oneShot: once)).called(1);
+        verifyNever(
+          () => repository.setOneShot(
+            channel: any(named: 'channel'),
+            oneShot: any(named: 'oneShot'),
+          ),
+        );
+        for (final channel in [0, 1, 2]) {
+          expect(await trackSettings.loadTrackOneShot(channel), once);
+        }
+      },
+    );
+  }
+
   blocTest<LooperBloc, LooperState>(
-    'LooperAllOneShotToggled sweeps every track the repository is holding, '
-    'from the repository snapshot rather than the bloc state — the console '
-    "switch's whole point is that no half-applied sweep is observable",
+    'refused group playback choice is not persisted',
     build: () {
-      when(() => repository.state).thenReturn(
-        const LooperState(
-          tracks: [
-            Track(oneShot: true),
-            Track(channel: 1),
-            Track(channel: 2, oneShot: true),
-          ],
-        ),
-      );
-      return buildBloc();
+      when(
+        () => repository.state,
+      ).thenReturn(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      when(
+        () => repository.setAllOneShot(oneShot: true),
+      ).thenReturn(EngineResult.invalid);
+      return buildBlocWithSettings();
     },
     act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: true)),
-    verify: (_) {
-      for (final channel in [0, 1, 2]) {
-        verify(
-          () => repository.setOneShot(channel: channel, oneShot: true),
-        ).called(1);
-      }
+    verify: (_) async {
+      expect(await trackSettings.loadTrackOneShot(0), isNull);
+      expect(await trackSettings.loadTrackOneShot(1), isNull);
     },
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperAllOneShotToggled carries the flag it was given — clearing the '
-    'switch clears every track, it does not toggle each one',
+    'refused record timing and decay do not persist',
     build: () {
-      when(() => repository.state).thenReturn(
-        const LooperState(
-          tracks: [Track(oneShot: true), Track(channel: 1, oneShot: true)],
+      when(
+        () => repository.setTrackRecordTiming(
+          channel: 2,
+          timing: RecordTiming.bar,
         ),
-      );
-      return buildBloc();
+      ).thenReturn(EngineResult.invalid);
+      when(
+        () => repository.setTrackOverdubDecay(channel: 2, percent: 40),
+      ).thenReturn(EngineResult.invalid);
+      return buildBlocWithSettings();
     },
-    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: false)),
-    verify: (_) {
-      verify(
-        () => repository.setOneShot(channel: 0, oneShot: false),
-      ).called(1);
-      verify(
-        () => repository.setOneShot(channel: 1, oneShot: false),
-      ).called(1);
-      verifyNever(
-        () => repository.setOneShot(
-          channel: any(named: 'channel'),
-          oneShot: true,
-        ),
-      );
+    act: (bloc) => bloc
+      ..add(const LooperTrackRecordTimingChanged(2, timing: RecordTiming.bar))
+      ..add(const LooperTrackOverdubDecayChanged(2, percent: 40)),
+    verify: (_) async {
+      expect(await trackSettings.loadTrackRecordTiming(2), isNull);
+      expect(await trackSettings.loadTrackOverdubDecay(2), isNull);
     },
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperAllOneShotToggled with no tracks writes nothing',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: true)),
-    verify: (_) => verifyNever(
-      () => repository.setOneShot(
-        channel: any(named: 'channel'),
-        oneShot: any(named: 'oneShot'),
-      ),
-    ),
   );
 
   blocTest<LooperBloc, LooperState>(

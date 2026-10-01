@@ -1725,6 +1725,37 @@ class SegnoEngineBindings {
   late final _le_engine_set_track_quantize = _le_engine_set_track_quantizePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Sets track [channel]'s musical quantization division override (accepted
+  /// design, slice 2b): a negative [div] inherits the global default
+  /// (le_engine_set_quantize_div); 0 = the loop top only; 1..5 = bar .. 1/16
+  /// note (le_grid_div). Read live wherever the global division is read, so a
+  /// pending arm on this track fires on this track's own boundaries and a change
+  /// while armed re-evaluates on the next boundary of the new division. Only
+  /// meaningful while the track's quantize gate is effectively on
+  /// (le_engine_set_quantize / le_engine_set_track_quantize): the gate decides
+  /// whether a press waits at all, the division decides for what.
+  int le_engine_set_track_quantize_div(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int div,
+  ) {
+    return _le_engine_set_track_quantize_div(
+      engine,
+      channel,
+      div,
+    );
+  }
+
+  late final _le_engine_set_track_quantize_divPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_quantize_div');
+  late final _le_engine_set_track_quantize_div =
+      _le_engine_set_track_quantize_divPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Cancels track [channel]'s pending record arm, whatever armed it — the
   /// quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
   /// section toggle. No-op (LE_OK) when the track is not armed.
@@ -1832,6 +1863,35 @@ class SegnoEngineBindings {
       >('le_engine_set_tempo');
   late final _le_engine_set_tempo = _le_engine_set_tempoPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
+  /// Restores a session's exact musical tempo and its source while stopped.
+  /// NONE requires BPM 0; MANUAL/TAPPED/DERIVED require finite BPM in 30..300.
+  /// EXTERNAL is live clock state and cannot be restored by a session.
+  /// Invalid arguments return LE_ERR_INVALID; unconfigured engines return
+  /// LE_ERR_NOT_RUNNING. Sounding/capturing/armed tracks or unacknowledged
+  /// transport changes return LE_ERR_NOT_READY without posting. The callback
+  /// rechecks transport before applying. Post after clear settlement and before
+  /// the new session's mode/crown/import commands. No audio or loop span changes.
+  int le_engine_restore_tempo(
+    ffi.Pointer<le_engine> engine,
+    double bpm,
+    int source,
+  ) {
+    return _le_engine_restore_tempo(
+      engine,
+      bpm,
+      source,
+    );
+  }
+
+  late final _le_engine_restore_tempoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float, ffi.Int32)
+        >
+      >('le_engine_restore_tempo');
+  late final _le_engine_restore_tempo = _le_engine_restore_tempoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, double, int)>();
 
   /// Sets the time signature. Only the 17 Sheeran signatures are valid — x/4 for
   /// num 2..7 and x/8 for num 5..15 — anything else returns LE_ERR_INVALID
@@ -2036,8 +2096,8 @@ class SegnoEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// Sets track [channel]'s One Shot flag (0/1). Rejects only an out-of-range
-  /// channel; accepted in every looper mode, though inert outside Free/Song
-  /// (see the class doc above). A SETTING, not content: like
+  /// channel; accepted and live in every looper mode (see the class doc
+  /// above). A SETTING, not content: like
   /// a_length_preset_bars and target_multiple, it is untouched by clear /
   /// undo-to-empty / mode switches — handle_clear's per-track reset
   /// (engine_process.c) deliberately does not include it, the same "cleared
@@ -2064,6 +2124,32 @@ class SegnoEngineBindings {
         >
       >('le_engine_set_one_shot');
   late final _le_engine_set_one_shot = _le_engine_set_one_shotPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Updates all selected One Shot flags with one queued command. Bit c in
+  /// channels selects track c. A zero mask or any bit outside track_count is
+  /// invalid. A full command ring refuses the entire update without changing
+  /// any track; accepted updates land together before the next audio block.
+  /// Per-track default/override provenance remains the caller's responsibility.
+  int le_engine_set_one_shot_mask(
+    ffi.Pointer<le_engine> engine,
+    int channels,
+    int enabled,
+  ) {
+    return _le_engine_set_one_shot_mask(
+      engine,
+      channels,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_one_shot_maskPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Uint32, ffi.Int32)
+        >
+      >('le_engine_set_one_shot_mask');
+  late final _le_engine_set_one_shot_mask = _le_engine_set_one_shot_maskPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
   /// Sets the MIDI clock mode (le_clock_mode: 0 off, 1 send). RECEIVE (2) and
@@ -2166,7 +2252,10 @@ class SegnoEngineBindings {
   /// behave exactly as without count-in (quantize governs — D9). Mutually
   /// exclusive with sound-activated recording: enabling count-in disables
   /// auto-record (and cancels its threshold arms), and enabling auto-record
-  /// clears the count-in — count-in wins when both are somehow set at once.
+  /// clears the count-in. Each setter posts one command; an unconfigured engine
+  /// returns LE_ERR_NOT_RUNNING and a full ring returns LE_ERR_INVALID without
+  /// changing either setting or pending arms. Snapshots publish the applied pair
+  /// together after processing; accepted control decisions take effect at once.
   int le_engine_set_count_in(
     ffi.Pointer<le_engine> engine,
     int bars,
@@ -2397,9 +2486,40 @@ class SegnoEngineBindings {
       _le_engine_set_overdub_feedbackPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
 
+  /// Sets track [channel]'s overdub feedback override (accepted design, slice
+  /// 2b): a negative [feedback] inherits the global coefficient
+  /// (le_engine_set_overdub_feedback); otherwise the value is clamped to [0,1]
+  /// and used for this track's overdub passes. Live: a change during a pass
+  /// reaches the write head through a ~10 ms ramp, never a step, so the
+  /// retained layer has no level seam. Like the global coefficient, only
+  /// overdub passes apply it; playback never decays.
+  int le_engine_set_track_overdub_feedback(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    double feedback,
+  ) {
+    return _le_engine_set_track_overdub_feedback(
+      engine,
+      channel,
+      feedback,
+    );
+  }
+
+  late final _le_engine_set_track_overdub_feedbackPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
+        >
+      >('le_engine_set_track_overdub_feedback');
+  late final _le_engine_set_track_overdub_feedback =
+      _le_engine_set_track_overdub_feedbackPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
+
   /// Enables sound-activated recording: a record press on an empty track waits and
   /// begins capturing the first frame the input level crosses the threshold. A
   /// second press before then cancels. Disabling cancels tracks still waiting.
+  /// Enabling clears and cancels count-in. Queue/configuration refusal leaves
+  /// both settings and pending arms unchanged; see le_engine_set_count_in.
   int le_engine_set_auto_record(
     ffi.Pointer<le_engine> engine,
     int enabled,
@@ -4029,25 +4149,53 @@ class SegnoEngineBindings {
 
   /// Establishes the master loop at `base_frames` and starts every imported track
   /// (EMPTY with a loaded length) playing at its whole-loop multiple
-  /// (length / base_frames). Posts a command; returns LE_OK or an le_result error.
+  /// (length / base_frames). Restores exactly `loop_bars` musical bars over that
+  /// span; zero keeps the loop grid-free even when a tempo is known. The caller
+  /// restores tempo/source/signature before this commit. Does not infer bars
+  /// from BPM or change audio length. Requires base_frames > 0 and loop_bars in
+  /// 0..INT32_MAX/15 (the largest supported signature has 15 beats). Posts one
+  /// command; returns LE_OK or an le_result error.
   int le_engine_commit_session(
     ffi.Pointer<le_engine> engine,
     int base_frames,
+    int loop_bars,
   ) {
     return _le_engine_commit_session(
       engine,
       base_frames,
+      loop_bars,
     );
   }
 
   late final _le_engine_commit_sessionPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
         >
       >('le_engine_commit_session');
   late final _le_engine_commit_session = _le_engine_commit_sessionPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Read-only control-thread query: 1 when every successfully queued command
+  /// has been consumed (including rejected/no-op outcomes) and the callback has
+  /// published its resulting snapshot values; 0 while pending, unconfigured or
+  /// null. Acquire this before taking the snapshot for a running-session save.
+  /// Does not wait or drain. Direct atomic setters need no command settlement;
+  /// active capture and pending overdub layers still require their own checks.
+  int le_engine_commands_settled(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_engine_commands_settled(
+      engine,
+    );
+  }
+
+  late final _le_engine_commands_settledPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_engine_commands_settled',
+      );
+  late final _le_engine_commands_settled = _le_engine_commands_settledPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
   /// Allocates a MIDI capture handle bound to the compiled-in per-OS backend.
   /// Returns NULL on allocation failure or when no backend is available for the
@@ -4541,8 +4689,8 @@ enum le_command_code {
   /// (default 0 = no outputs).
   LE_CMD_SET_CLICK_OUTPUT(22),
 
-  /// arg_i = base loop length in frames: publish
-  /// the master loop and start imported tracks
+  /// session arm: base_frames and loop_bars;
+  /// publish grid and start imported tracks
   LE_CMD_COMMIT_SESSION(23),
 
   /// arg_f = 0..LE_MAX_GAIN (the click's ONLY
@@ -4551,7 +4699,8 @@ enum le_command_code {
 
   /// arg_i = count-in length in measures
   /// (0 = off, up to LE_COUNT_IN_MAX_BARS).
-  /// 0 also cancels an in-progress count-in.
+  /// Cancels an in-progress count-in; positive
+  /// bars disable sound start and its arms.
   LE_CMD_SET_COUNT_IN(25),
 
   /// lane records this input channel (-1 = none).
@@ -4718,6 +4867,18 @@ enum le_command_code {
   /// finalized length back so the control thread can file the redo entry.
   LE_CMD_CANCEL_TAKE(57),
 
+  /// Exact musical tempo restoration on a stopped rig. arg_i = tempo source,
+  /// arg_f = BPM (0 only with NONE). Rechecked by the callback.
+  LE_CMD_RESTORE_TEMPO(58),
+
+  /// One queued command updates a subset of tracks together. arg_i = track
+  /// bitmask, arg_f = 0/1; uses the same pass semantics as SET_ONE_SHOT.
+  LE_CMD_SET_ONE_SHOT_MASK(59),
+
+  /// arg_i = sound-start enabled (0/1). Enabling cancels count-in;
+  /// disabling cancels pending signal-triggered recording arms.
+  LE_CMD_SET_AUTO_RECORD(60),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100),
@@ -4798,6 +4959,9 @@ enum le_command_code {
     55 => LE_CMD_SET_INPUT_COND_PARAM,
     56 => LE_CMD_FINALIZE_TAKE,
     57 => LE_CMD_CANCEL_TAKE,
+    58 => LE_CMD_RESTORE_TEMPO,
+    59 => LE_CMD_SET_ONE_SHOT_MASK,
+    60 => LE_CMD_SET_AUTO_RECORD,
     100 => LE_EVT_LAYER_RETIRED,
     101 => LE_EVT_TAKE_CANCELLED,
     102 => LE_EVT_CLEAR_FROZEN,
@@ -5035,8 +5199,8 @@ final class le_track_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int sync_divisor;
 
-  /// Trailing (B4, One Shot): 0/1, default 0. Settable in any mode; only
-  /// behaviorally active in Free/Song — see LE_CMD_SET_ONE_SHOT's doc.
+  /// Trailing (B4, One Shot): 0/1, default 0. Live in every mode; see
+  /// le_engine_set_one_shot for playback and relaunch semantics.
   @ffi.Int32()
   external int one_shot;
 
@@ -5079,6 +5243,21 @@ final class le_track_snapshot extends ffi.Struct {
   /// the boundary from this rather than guessing from the settings.
   @ffi.Int32()
   external int pending_trigger;
+
+  /// -1 inherit, 0 forced off, 1 forced on
+  /// (le_engine_set_track_quantize)
+  @ffi.Int32()
+  external int quantize_override;
+
+  /// -1 inherit, else le_grid_div
+  /// (le_engine_set_track_quantize_div)
+  @ffi.Int32()
+  external int quantize_div_override;
+
+  /// negative = inherit, else 0..1
+  /// (le_engine_set_track_overdub_feedback)
+  @ffi.Float()
+  external double overdub_feedback_override;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -5508,6 +5687,18 @@ final class le_snapshot extends ffi.Struct {
   /// per-track peaks. Sibling of output_rms above.
   @ffi.Float()
   external double output_peak;
+
+  /// 0/1: the global loop-grid record quantize gate
+  @ffi.Int32()
+  external int quantize;
+
+  /// 0/1: sound-activated record start
+  @ffi.Int32()
+  external int auto_record;
+
+  /// the global coefficient, 0..1 (default 1)
+  @ffi.Float()
+  external double overdub_feedback;
 }
 
 /// The plugin format a descriptor was discovered in.

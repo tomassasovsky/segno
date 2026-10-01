@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -12,14 +14,20 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
+  late StreamController<LooperState> looperStates;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    when(() => repository.sessionRevision).thenReturn(0);
+    looperStates = StreamController<LooperState>.broadcast();
+    when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
   });
+
+  tearDown(() => looperStates.close());
 
   group('QuantizeCubit', () {
     test('defaults to off', () {
@@ -49,15 +57,44 @@ void main() {
     );
 
     blocTest<QuantizeCubit, bool>(
-      'setEnabled to the current value still persists but emits nothing new',
+      'setEnabled reapplies an explicit value even if the cache matches',
       build: () => QuantizeCubit(repository: repository, settings: settings),
       act: (cubit) => cubit.setEnabled(value: false),
-      expect: () => <bool>[],
+      expect: () => [false],
       verify: (_) async {
         expect(await settings.loadQuantize(), isFalse);
-        verifyNever(
-          () => repository.setQuantize(enabled: any(named: 'enabled')),
-        );
+        verify(() => repository.setQuantize(enabled: false)).called(1);
+      },
+    );
+
+    blocTest<QuantizeCubit, bool>(
+      'a refused edit preserves the displayed and saved value',
+      setUp: () {
+        when(
+          () => repository.setQuantize(enabled: true),
+        ).thenReturn(EngineResult.invalid);
+      },
+      build: () => QuantizeCubit(repository: repository, settings: settings),
+      act: (cubit) => cubit.setEnabled(value: true),
+      expect: () => <bool>[],
+      verify: (_) async => expect(await settings.loadQuantize(), isFalse),
+    );
+
+    blocTest<QuantizeCubit, bool>(
+      'follows recall and reset without changing startup settings',
+      setUp: () => settings.saveQuantize(value: true),
+      build: () => QuantizeCubit(repository: repository, settings: settings),
+      act: (cubit) async {
+        await cubit.load();
+        looperStates.add(const LooperState());
+        await Future<void>.delayed(Duration.zero);
+        await cubit.load();
+        await cubit.toggle();
+      },
+      expect: () => [true, false, true],
+      verify: (_) async {
+        expect(await settings.loadQuantize(), isTrue);
+        verify(() => repository.setQuantize(enabled: true)).called(2);
       },
     );
   });

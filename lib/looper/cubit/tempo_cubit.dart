@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -79,16 +81,8 @@ const List<(int num, int den)> kValidTimeSignatures = [
   (15, 8),
 ];
 
-/// The persisted tempo/click/count-in intent [TempoCubit] loads at startup and
-/// re-applies to the [LooperRepository] on every setter — the same shape
-/// [LooperRepository]'s own re-apply-on-restart fields mirror, but owned here
-/// (the presentation layer) since persistence is a cubit concern, not the
-/// repository's (pattern: `RecordOptions` / `record_options_cubit.dart`).
-///
-/// This is the cubit's own record of what was explicitly configured; the
-/// *live* effective values (which may additionally reflect a tap or a
-/// loop-derived tempo) are read from [TransportState] instead — see
-/// `TempoSettingsSection`'s class doc.
+/// The tempo, click and count-in settings, following repository changes such
+/// as session recall. Explicit edits are also persisted as startup defaults.
 class TempoSettings extends Equatable {
   /// Creates a [TempoSettings].
   const TempoSettings({
@@ -103,9 +97,7 @@ class TempoSettings extends Equatable {
     this.countInBars = 0,
   });
 
-  /// The explicitly-set tempo in BPM; `0` means never explicitly set (mirrors
-  /// [LooperRepository]'s own `_tempoBpm` semantics — a tapped or
-  /// loop-derived tempo is never written here).
+  /// The tempo in BPM; `0` means no tempo has been established.
   final double bpm;
 
   /// Time-signature numerator.
@@ -189,17 +181,49 @@ class TempoCubit extends Cubit<TempoSettings> {
     required SettingsRepository settings,
   }) : _repository = repository,
        _settings = settings,
-       super(const TempoSettings());
+       super(const TempoSettings()) {
+    _subscription = _repository.looperState.listen(_onLooperState);
+  }
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
+  late final StreamSubscription<LooperState> _subscription;
+  int _userEditRevision = 0;
+
+  void _onLooperState(LooperState _) => _syncFromRepository();
+
+  void _syncFromRepository() {
+    final transport = _repository.sessionTransport;
+    emit(
+      TempoSettings(
+        bpm: transport.tempoBpm,
+        tsNum: transport.tsNum,
+        tsDen: transport.tsDen,
+        syncTempo: transport.syncTempo,
+        quantizeDiv: transport.quantizeDiv,
+        clickMode: transport.clickMode,
+        clickOutputMask: transport.clickMask,
+        clickVolume: transport.clickVolume,
+        countInBars: transport.countInBars,
+      ),
+    );
+  }
+
+  @override
+  Future<void> close() async {
+    await _subscription.cancel();
+    await super.close();
+  }
 
   /// Restores the persisted tempo/click/count-in settings and applies them to
   /// the repository.
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
+    final sessionRevision = _repository.sessionRevision;
+    final userEditRevision = _userEditRevision;
+    final recordStartRevision = _repository.recordStartRevision;
     final bpm = await _settings.loadTempoBpm();
     final (tsNum, tsDen) = await _settings.loadTimeSignature();
     final syncTempo = await _settings.loadSyncTempo();
@@ -210,35 +234,53 @@ class TempoCubit extends Cubit<TempoSettings> {
     final clickOutputMask = await _settings.loadClickOutputMask();
     final clickVolume = await _settings.loadClickVolume();
     final countInBars = await _settings.loadCountInBars();
-
-    // Only an explicitly-set tempo is restored — pushing the unset `0` would
-    // clamp up to 30 BPM and falsely turn the grid on (mirrors
-    // LooperRepository.startEngine's own re-apply guard).
-    if (bpm > 0) _repository.setTempo(bpm);
-    _repository
-      ..setTimeSignature(tsNum, tsDen)
-      ..setSyncTempo(on: syncTempo)
-      ..setQuantizeDiv(quantizeDiv)
-      ..setClickMode(clickMode)
-      ..setClickOutput(clickOutputMask)
-      ..setClickVolume(clickVolume)
-      ..setCountIn(countInBars);
-
-    if (!isClosed) {
-      emit(
-        TempoSettings(
-          bpm: bpm,
-          tsNum: tsNum,
-          tsDen: tsDen,
-          syncTempo: syncTempo,
-          quantizeDiv: quantizeDiv,
-          clickMode: clickMode,
-          clickOutputMask: clickOutputMask,
-          clickVolume: clickVolume,
-          countInBars: countInBars,
-        ),
+    final autoRecord = await _settings.loadAutoRecord();
+    if (isClosed) return;
+    if (sessionRevision != _repository.sessionRevision ||
+        userEditRevision != _userEditRevision) {
+      _syncFromRepository();
+      return;
+    }
+    var restored = state;
+    // An unset tempo must not become a manual 30 BPM grid.
+    if (bpm > 0 && _repository.setTempo(bpm).isOk) {
+      restored = restored.copyWith(bpm: bpm);
+    }
+    if (_repository.setTimeSignature(tsNum, tsDen).isOk) {
+      restored = restored.copyWith(tsNum: tsNum, tsDen: tsDen);
+    }
+    if (_repository.setSyncTempo(on: syncTempo).isOk) {
+      restored = restored.copyWith(syncTempo: syncTempo);
+    }
+    if (_repository.setQuantizeDiv(quantizeDiv).isOk) {
+      restored = restored.copyWith(quantizeDiv: quantizeDiv);
+    }
+    if (_repository.setClickMode(clickMode).isOk) {
+      restored = restored.copyWith(clickMode: clickMode);
+    }
+    if (_repository.setClickOutput(clickOutputMask).isOk) {
+      restored = restored.copyWith(clickOutputMask: clickOutputMask);
+    }
+    if (_repository.setClickVolume(clickVolume).isOk) {
+      restored = restored.copyWith(clickVolume: clickVolume);
+    }
+    // One startup owner restores the mutually exclusive start methods. A
+    // later Sound start edit in RecordOptionsCubit also takes precedence.
+    if (recordStartRevision == _repository.recordStartRevision) {
+      if (countInBars > 0) {
+        if (_repository.setCountIn(countInBars).isOk) {
+          restored = restored.copyWith(countInBars: countInBars);
+        }
+      } else if (_repository.setAutoRecord(enabled: autoRecord).isOk &&
+          _repository.setCountIn(0).isOk) {
+        restored = restored.copyWith(countInBars: 0);
+      }
+    } else {
+      restored = restored.copyWith(
+        countInBars: _repository.sessionTransport.countInBars,
       );
     }
+    emit(restored);
   }
 
   /// Sets and persists the tempo in BPM, applying it now.
@@ -254,8 +296,10 @@ class TempoCubit extends Cubit<TempoSettings> {
   /// unconditionally too: [Cubit] already no-ops a no-change emit
   /// internally.
   Future<void> setTempo(double bpm) async {
+    _userEditRevision++;
+    if (!_repository.setTempo(bpm).isOk) return;
     emit(state.copyWith(bpm: bpm));
-    _repository.setTempo(bpm);
+
     await _settings.saveTempoBpm(bpm);
   }
 
@@ -264,24 +308,30 @@ class TempoCubit extends Cubit<TempoSettings> {
   /// and the engine itself rejects anything else without applying it.
   /// Unconditional repository call — see [setTempo]'s doc.
   Future<void> setTimeSignature(int num, int den) async {
+    _userEditRevision++;
+    if (!_repository.setTimeSignature(num, den).isOk) return;
     emit(state.copyWith(tsNum: num, tsDen: den));
-    _repository.setTimeSignature(num, den);
+
     await _settings.saveTimeSignature(num, den);
   }
 
   /// Sets and persists loop↔grid sync, applying it now. Unconditional
   /// repository call — see [setTempo]'s doc.
   Future<void> setSyncTempo({required bool value}) async {
+    _userEditRevision++;
+    if (!_repository.setSyncTempo(on: value).isOk) return;
     emit(state.copyWith(syncTempo: value));
-    _repository.setSyncTempo(on: value);
+
     await _settings.saveSyncTempo(value: value);
   }
 
   /// Sets and persists the musical quantization granularity, applying it
   /// now. Unconditional repository call — see [setTempo]'s doc.
   Future<void> setQuantizeDiv(GridDivision div) async {
+    _userEditRevision++;
+    if (!_repository.setQuantizeDiv(div).isOk) return;
     emit(state.copyWith(quantizeDiv: div));
-    _repository.setQuantizeDiv(div);
+
     await _settings.saveQuantizeDiv(div.code);
   }
 
@@ -290,38 +340,54 @@ class TempoCubit extends Cubit<TempoSettings> {
   /// setter the pedal-toggle staleness bug hit (a pedal press moves the live
   /// engine's click mode without this cubit ever knowing).
   Future<void> setClickMode(ClickMode mode) async {
+    _userEditRevision++;
+    if (!_repository.setClickMode(mode).isOk) return;
     emit(state.copyWith(clickMode: mode));
-    _repository.setClickMode(mode);
+
     await _settings.saveClickMode(mode.code);
   }
 
   /// Sets and persists the click output routing bitmask, applying it now.
   /// Unconditional repository call — see [setTempo]'s doc.
   Future<void> setClickOutput(int mask) async {
+    _userEditRevision++;
+    if (!_repository.setClickOutput(mask).isOk) return;
     emit(state.copyWith(clickOutputMask: mask));
-    _repository.setClickOutput(mask);
+
     await _settings.saveClickOutputMask(mask);
   }
 
   /// Sets and persists the click volume, applying it now. Unconditional
   /// repository call — see [setTempo]'s doc.
   Future<void> setClickVolume(double volume) async {
+    _userEditRevision++;
+    if (!_repository.setClickVolume(volume).isOk) return;
     emit(state.copyWith(clickVolume: volume));
-    _repository.setClickVolume(volume);
+
     await _settings.saveClickVolume(volume);
   }
 
   /// Sets and persists the count-in length in measures (`0` = off), applying
-  /// it now. Unconditional repository call — see [setTempo]'s doc.
+  /// it now. Unconditional repository call — see [setTempo]'s doc. A
+  /// count-in clears Sound start (the engine's rule, D9), persisted here too
+  /// so a restart does not bring Sound start back over it.
   Future<void> setCountInBars(int bars) async {
     final clamped = bars < 0 ? 0 : bars;
+    _userEditRevision++;
+    if (!_repository.setCountIn(clamped).isOk) return;
     emit(state.copyWith(countInBars: clamped));
-    _repository.setCountIn(clamped);
-    await _settings.saveCountInBars(clamped);
+
+    await Future.wait([
+      _settings.saveCountInBars(clamped),
+      if (clamped > 0) _settings.saveAutoRecord(value: false),
+    ]);
   }
 
   /// Registers a tempo tap; two taps within the engine's window set the
   /// tempo from their interval. A momentary action forwarded straight to the
   /// repository — never persisted (see the class doc).
-  EngineResult tapTempo() => _repository.tapTempo();
+  EngineResult tapTempo() {
+    _userEditRevision++;
+    return _repository.tapTempo();
+  }
 }

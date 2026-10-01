@@ -52,8 +52,10 @@ class Track extends Equatable {
     this.pendingTrigger,
     this.positionFrames = 0,
     this.lengthPresetBars = 0,
-    this.quantizeOverride,
+    this.recordTimingOverride,
+    this.overdubDecayOverride,
     this.oneShot = false,
+    this.oneShotOverride,
     this.lanes = const [],
     this.effects = const [],
     this.chainEnabled = true,
@@ -121,22 +123,41 @@ class Track extends Equatable {
   /// next defining recording only. See `LooperRepository.setTrackLengthPreset`.
   final int lengthPresetBars;
 
-  /// This track's override on the global quantize-recording setting: `null`
-  /// inherits it, `false` forces it off, `true` forces it on.
+  /// This track's record timing override (accepted design, Length &
+  /// quantize): `null` follows the default in full, else the timing this
+  /// track's own record and overdub requests wait for. A custom value equal
+  /// to the current default stays custom, so later default changes do not
+  /// reach it.
   ///
   /// Projected from the repository's own re-apply cache rather than from the
-  /// engine snapshot, like `primaryTrack` and the FX chains: the engine TAKES
-  /// the value and never reports it back, so the repository is the only thing
-  /// that knows it. Carried here rather than read through a getter so a
-  /// surface that shows the override is refreshed by the same stream as
-  /// everything else it draws — including on a session load, which sets the
-  /// overrides with no user gesture to hang a re-read off.
-  final bool? quantizeOverride;
+  /// engine snapshot, like `primaryTrack` and the FX chains: the cache is
+  /// what the repository re-applies on every (re)start, so it holds the
+  /// answer while the engine is stopped too. Carried here rather than read
+  /// through a getter so a surface that shows the override is refreshed by
+  /// the same stream as everything else it draws — including on a session
+  /// load, which sets the overrides with no user gesture to hang a re-read
+  /// off.
+  final RecordTiming? recordTimingOverride;
 
-  /// One Shot (song-mode-spec.md §2, B5c): `true` = this track plays once and
-  /// then stops instead of looping. Settable in any looper mode, but only
-  /// behaviorally active in Free/Song. See `LooperRepository.setOneShot`.
+  /// The quantize gate this track's override amounts to: `null` inherits the
+  /// global gate, `false` forces the press immediate, `true` forces it to
+  /// wait. What the older three-way surfaces read; [recordTimingOverride] is
+  /// the full setting.
+  bool? get quantizeOverride => recordTimingOverride?.quantize;
+
+  /// This track's overdub decay override in percent (`0..100`; accepted
+  /// design, Playback & overdub): `null` follows the default. Each overdub
+  /// pass keeps `1 - decay / 100` of the existing layer before adding the
+  /// new input; `0` keeps it all. Cached like [recordTimingOverride].
+  final int? overdubDecayOverride;
+
+  /// Effective playback choice in every mode: `true` finishes the current
+  /// pass and stops this track; `false` keeps looping.
   final bool oneShot;
+
+  /// Playback override: `null` follows the shared default. Explicit Loop
+  /// (`false`) remains custom even when the default is also Loop.
+  final bool? oneShotOverride;
 
   /// Lane 0's recorded input as a bitmask (`1 << inputChannel`, or `0` when
   /// lane 0 records no input). Mirrors lane 0; per-lane inputs are in [lanes].
@@ -271,8 +292,10 @@ class Track extends Equatable {
     pending,
     pendingTrigger,
     lengthPresetBars,
-    quantizeOverride,
+    recordTimingOverride,
+    overdubDecayOverride,
     oneShot,
+    oneShotOverride,
     lanes,
     effects,
     chainEnabled,
@@ -310,8 +333,10 @@ class Track extends Equatable {
     pending,
     pendingTrigger,
     lengthPresetBars,
-    quantizeOverride,
+    recordTimingOverride,
+    overdubDecayOverride,
     oneShot,
+    oneShotOverride,
     lanes,
     effects,
     chainEnabled,

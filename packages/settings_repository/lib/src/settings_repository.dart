@@ -1121,22 +1121,63 @@ class SettingsRepository {
     required int input,
   }) => _store.remove(_inputNameKey(device, input));
 
-  String _trackQuantizeKey(int channel) => 'track_quantize.$channel';
+  String _trackRecordTimingKey(int channel) => 'track_record_timing.$channel';
 
-  /// Loads track [channel]'s quantize override: `null` (inherit the global
-  /// default), `false` (force off), or `true` (force on).
-  Future<bool?> loadTrackQuantize(int channel) async {
-    final value = await _store.getInt(_trackQuantizeKey(channel));
-    if (value == null || value < 0) return null;
-    return value > 0;
-  }
+  /// Loads track [channel]'s record timing override as its `RecordTiming`
+  /// code (`0` = immediately, `1` = loop start, `2..6` = bar to 1/16), or
+  /// `null` to follow the default.
+  Future<int?> loadTrackRecordTiming(int channel) =>
+      _store.getInt(_trackRecordTimingKey(channel));
 
-  /// Saves track [channel]'s quantize override (`null` => inherit).
-  Future<void> saveTrackQuantize(int channel, {required bool? enabled}) =>
-      _store.setInt(
-        _trackQuantizeKey(channel),
-        enabled == null ? -1 : (enabled ? 1 : 0),
-      );
+  /// Saves track [channel]'s record timing override by code (`null` =>
+  /// follow the default).
+  Future<void> saveTrackRecordTiming(int channel, int? code) => code == null
+      ? _store.remove(_trackRecordTimingKey(channel))
+      : _store.setInt(_trackRecordTimingKey(channel), code);
+
+  static const String _overdubDecayKey = 'looper.overdub_decay';
+  String _trackOverdubDecayKey(int channel) => 'track_overdub_decay.$channel';
+
+  /// Loads the default overdub decay in percent (`0..100`); `0` when unset.
+  Future<int> loadOverdubDecay() async =>
+      await _store.getInt(_overdubDecayKey) ?? 0;
+
+  /// Saves the default overdub decay in percent.
+  Future<void> saveOverdubDecay(int percent) =>
+      _store.setInt(_overdubDecayKey, percent);
+
+  /// Loads track [channel]'s overdub decay override in percent, or `null`
+  /// to follow the default.
+  Future<int?> loadTrackOverdubDecay(int channel) =>
+      _store.getInt(_trackOverdubDecayKey(channel));
+
+  /// Saves track [channel]'s overdub decay override (`null` => follow the
+  /// default).
+  Future<void> saveTrackOverdubDecay(int channel, int? percent) =>
+      percent == null
+      ? _store.remove(_trackOverdubDecayKey(channel))
+      : _store.setInt(_trackOverdubDecayKey(channel), percent);
+
+  static const String _defaultOneShotKey = 'looper.default_one_shot';
+  String _trackOneShotKey(int channel) => 'track_one_shot.$channel';
+
+  /// Loads the default playback choice: `false` loops, `true` plays once.
+  Future<bool> loadDefaultOneShot() async =>
+      await _store.getBool(_defaultOneShotKey) ?? false;
+
+  /// Saves the default playback choice.
+  Future<void> saveDefaultOneShot({required bool oneShot}) =>
+      _store.setBool(_defaultOneShotKey, value: oneShot);
+
+  /// Loads the track's playback override; `null` follows the default.
+  Future<bool?> loadTrackOneShot(int channel) =>
+      _store.getBool(_trackOneShotKey(channel));
+
+  /// Saves the track's playback override; `null` removes the override.
+  Future<void> saveTrackOneShot(int channel, {required bool? oneShot}) =>
+      oneShot == null
+      ? _store.remove(_trackOneShotKey(channel))
+      : _store.setBool(_trackOneShotKey(channel), value: oneShot);
 
   String _laneCountKey(int channel) => 'lane_count.$channel';
   String _laneInputKey(int channel, int lane) => 'lane_input.$channel.$lane';

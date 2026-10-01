@@ -62,6 +62,36 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
   masterChain: _encodedMasterChain(looper),
 );
 
+/// Captures repository-owned settings without depending on an engine report.
+SessionSettings settingsFromLooper(LooperRepository looper) {
+  final transport = looper.sessionTransport;
+  return SessionSettings(
+    tempoBpm: transport.tempoBpm,
+    tempoSource: transport.tempoSource,
+    tsNum: transport.tsNum,
+    tsDen: transport.tsDen,
+    syncTempo: transport.syncTempo,
+    quantizeDiv: transport.quantizeDiv,
+    loopBars: transport.loopBars,
+    recordTiming: looper.defaultRecordTiming,
+    overdubDecay: looper.defaultOverdubDecay,
+    defaultOneShot: looper.defaultOneShot,
+    trackRecordTimingOverrides: looper.trackRecordTimingOverrides,
+    trackOverdubDecayOverrides: looper.trackOverdubDecayOverrides,
+    trackOneShotOverrides: looper.trackOneShotOverrides,
+    trackLengthPresetOverrides: looper.trackLengthPresetOverrides,
+    clickMode: transport.clickMode,
+    clickMask: transport.clickMask,
+    clickVolume: transport.clickVolume,
+    countInBars: transport.countInBars,
+    recDub: transport.recDub,
+    autoRecord: transport.autoRecord,
+    defaultMultiple: transport.defaultMultiple,
+    looperMode: transport.looperMode,
+    primaryTrack: transport.primaryTrack,
+  );
+}
+
 /// The Master insert as an envelope string, or the manifest's own "no chain"
 /// spelling (`''`) when the rig has no Master state at all — so a default rig
 /// does not persist a redundant envelope, and the manifest has ONE way to say
@@ -156,11 +186,28 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   // off the manifest rather than through `_rigTracks`.
   looperMode: bundle.session.looperMode,
   primaryTrack: bundle.session.primaryTrack,
-  // One Shot (post-B5c independent review fix) — also session-level and read
-  // straight off the manifest, so a channel armed with no content (and thus
-  // no `_rigTracks` entry) still restores; see `SessionRig.oneShotChannels`'s
-  // doc.
-  oneShotChannels: bundle.session.oneShotChannels.toSet(),
+  // Desired settings are independent of the audio tracks kept by _rigTracks.
+  tempoBpm: bundle.session.tempoBpm,
+  tempoSource: bundle.session.tempoSource,
+  tsNum: bundle.session.tsNum,
+  tsDen: bundle.session.tsDen,
+  syncTempo: bundle.session.syncTempo,
+  quantizeDiv: bundle.session.quantizeDiv,
+  loopBars: bundle.session.loopBars,
+  defaultOneShot: bundle.session.defaultOneShot,
+  trackRecordTimingOverrides: bundle.session.trackRecordTimingOverrides,
+  trackOverdubDecayOverrides: bundle.session.trackOverdubDecayOverrides,
+  trackOneShotOverrides: bundle.session.trackOneShotOverrides,
+  trackLengthPresetOverrides: bundle.session.trackLengthPresetOverrides,
+  clickMode: bundle.session.clickMode,
+  clickMask: bundle.session.clickOutputMask,
+  clickVolume: bundle.session.clickVolume,
+  countInBars: bundle.session.countInBars,
+  recDub: bundle.session.recDub,
+  autoRecord: bundle.session.autoRecord,
+  defaultMultiple: bundle.session.defaultMultiple,
+  recordTiming: bundle.session.recordTiming,
+  overdubDecay: bundle.session.overdubDecay,
 );
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage
@@ -219,8 +266,6 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
         SessionRigTrack(
           channel: track.channel,
           lanes: lanes,
-          lengthPresetBars: track.lengthPresetBars,
-          oneShot: track.oneShot,
         ),
       );
     }
