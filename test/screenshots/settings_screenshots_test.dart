@@ -14,6 +14,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
@@ -53,6 +54,7 @@ class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
 
 void main() {
   late MixSettingsCoordinator mixSettings;
+  late FxChainPersistence fxPersistence;
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   // These golden generators load the local Flutter SDK's Material fonts and
@@ -125,6 +127,7 @@ void main() {
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -182,9 +185,11 @@ void main() {
     // is a no-op and would leave the transport and event streams open.
     final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
+    fxPersistence = FxChainPersistence(looper: repository);
     mixSettings = testMixSettings(repository, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
+      fxPersistence: fxPersistence,
       looper: repository,
       mixSettings: mixSettings,
       pedal: pedalRepo,
@@ -262,6 +267,7 @@ void main() {
               ),
               BlocProvider<MonitorCubit>.value(
                 value: MonitorCubit(
+                  fxPersistence: fxPersistence,
                   mixSettings: mixSettings,
                   repository: repository,
                   settings: settings,

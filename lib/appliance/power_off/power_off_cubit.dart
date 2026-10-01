@@ -18,7 +18,7 @@ part 'power_off_state.dart';
 class PowerOffCubit extends Cubit<PowerOffState> {
   /// Creates a [PowerOffCubit].
   PowerOffCubit({
-    required void Function() flush,
+    required FutureOr<void> Function() flush,
     required void Function() pedalGoodbye,
     required Future<void> Function() powerOff,
     Duration markHold = const Duration(seconds: 2),
@@ -28,7 +28,7 @@ class PowerOffCubit extends Cubit<PowerOffState> {
        _markHold = markHold,
        super(const PowerOffState());
 
-  final void Function() _flush;
+  final FutureOr<void> Function() _flush;
   final void Function() _pedalGoodbye;
   final Future<void> Function() _powerOff;
   final Duration _markHold;
@@ -111,7 +111,7 @@ class PowerOffCubit extends Cubit<PowerOffState> {
 
   Future<void> _halt() async {
     try {
-      _flush();
+      await _flush();
     } on Object catch (error, stack) {
       AppLog.error('power-off flush failed', error: error, stack: stack);
     }

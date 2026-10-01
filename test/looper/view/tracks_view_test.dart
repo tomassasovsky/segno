@@ -13,6 +13,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
@@ -68,6 +69,7 @@ Finder _column(int channel) => find.byWidgetPredicate(
 
 void main() {
   late MixSettingsCoordinator mixSettings;
+  late FxChainPersistence fxPersistence;
   setUpAll(() => registerFallbackValue(const LooperRecordPressed(0)));
 
   late LooperBloc bloc;
@@ -152,9 +154,11 @@ void main() {
       const Stream<TransportClockState>.empty(),
       initialState: const TransportClockState(),
     );
+    fxPersistence = FxChainPersistence(looper: repository);
     mixSettings = testMixSettings(repository, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
+      fxPersistence: fxPersistence,
       looper: repository,
       mixSettings: mixSettings,
       pedal: pedalRepo,
@@ -221,6 +225,7 @@ void main() {
               ),
               BlocProvider<MonitorCubit>(
                 create: (_) => MonitorCubit(
+                  fxPersistence: fxPersistence,
                   mixSettings: mixSettings,
                   repository: repository,
                   settings: settings,
@@ -2066,6 +2071,7 @@ void main() {
         addTearDown(() => tester.binding.setSurfaceSize(null));
         seed(
           const LooperState(
+            status: EngineStatus(sampleRate: 48000),
             transport: TransportState(
               masterLengthFrames: 384000,
               loopBars: 4,

@@ -1,5 +1,6 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:session_repository/session_repository.dart';
 
 /// Bloc-layer mapping between the session bundle (data) and the looper
@@ -17,13 +18,25 @@ import 'package:session_repository/session_repository.dart';
 /// the same envelope format settings use, so a saved chain round-trips exactly:
 /// entries, per-slot enabled bits, stable slot ids, the chain-enabled flag, and
 /// (for the Loop stage) inheritance provenance.
-SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
+SessionChains chainsFromLooper(
+  LooperRepository looper, {
+  required FxChainPersistence projection,
+}) => SessionChains(
   laneChains: [
     for (final entry in looper.allLaneChains().entries)
       SessionLaneChain(
         channel: entry.key.$1,
         lane: entry.key.$2,
-        encoded: encodeFxChain(entry.value),
+        encoded: encodeFxChain(
+          projection.project(
+            FxAddress(
+              stage: FxStage.loop,
+              index: entry.key.$1,
+              lane: entry.key.$2,
+            ),
+            entry.value,
+          ),
+        ),
       ),
   ],
   monitors: [
@@ -41,9 +54,12 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
         // input setup (`loopSettingsFromLooper`), which is what produced
         // them, so a written copy would never be read back.
         encoded: encodeFxChain(
-          FxChainEnvelope(
-            chainEnabled: monitor.chainEnabled,
-            entries: monitor.effects,
+          projection.project(
+            FxAddress(stage: FxStage.input, index: monitor.input),
+            FxChainEnvelope(
+              chainEnabled: monitor.chainEnabled,
+              entries: monitor.effects,
+            ),
           ),
         ),
       ),
@@ -54,18 +70,34 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
     for (final entry in looper.allTrackChains().entries)
       SessionTrackChain(
         channel: entry.key,
-        encoded: encodeFxChain(entry.value),
+        encoded: encodeFxChain(
+          projection.project(
+            FxAddress(stage: FxStage.track, index: entry.key),
+            entry.value,
+          ),
+        ),
       ),
   ],
   outputChains: [
     for (final entry in looper.allOutputChains().entries)
-      SessionOutputChain(bus: entry.key, encoded: encodeFxChain(entry.value)),
+      SessionOutputChain(
+        bus: entry.key,
+        encoded: encodeFxChain(
+          projection.project(
+            FxAddress(stage: FxStage.output, index: entry.key),
+            entry.value,
+          ),
+        ),
+      ),
   ],
-  allTracksChain: _encodedAllTracksChain(looper),
+  allTracksChain: _encodedAllTracksChain(looper, projection: projection),
 );
 
 /// Captures repository-owned settings without depending on an engine report.
-SessionSettings settingsFromLooper(LooperRepository looper) {
+SessionSettings settingsFromLooper(
+  LooperRepository looper, {
+  MixSettingsSnapshot? mix,
+}) {
   final transport = looper.sessionTransport;
   return SessionSettings(
     tempoBpm: transport.tempoBpm,
@@ -83,7 +115,7 @@ SessionSettings settingsFromLooper(LooperRepository looper) {
     trackOverdubDecayOverrides: looper.trackOverdubDecayOverrides,
     trackOneShotOverrides: looper.trackOneShotOverrides,
     trackLengthPresetOverrides: looper.trackLengthPresetOverrides,
-    trackLevels: looper.mixSettingsSnapshot.trackLevels,
+    trackLevels: (mix ?? looper.mixSettingsSnapshot).trackLevels,
     trackPans: {
       for (final track in looper.state.tracks)
         if (track.pan != 0) track.channel: track.pan,
@@ -144,8 +176,14 @@ OutputSetup outputSetupFromSession(SessionOutputSetup setup) =>
 /// — so a default rig does not persist a redundant envelope, and the manifest
 /// has ONE way to say "empty". Both spellings decode to the same empty enabled
 /// envelope, and both reset a leftover chain on load.
-String _encodedAllTracksChain(LooperRepository looper) {
-  final chain = looper.allTracksChainEnvelope();
+String _encodedAllTracksChain(
+  LooperRepository looper, {
+  FxChainPersistence? projection,
+}) {
+  final live = looper.allTracksChainEnvelope();
+  final chain =
+      projection?.project(const FxAddress(stage: FxStage.allTracks), live) ??
+      live;
   return chain == const FxChainEnvelope() ? '' : encodeFxChain(chain);
 }
 

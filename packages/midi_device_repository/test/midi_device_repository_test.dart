@@ -208,9 +208,37 @@ void main() {
 
       expect(repository.connection.status, MidiConnectionStatus.none);
       expect(repository.connection.selectedId, '');
-      verify(source.close).called(1);
+      verify(source.close).called(2);
       expect(await settings.loadMidiDevice(), isNull);
     });
+  });
+
+  test(
+    'rapid A then B selection opens only the latest captured request',
+    () async {
+      enumerated = const [dev1, dev2];
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+      final a = repository.select('id-1');
+      final b = repository.select('id-2');
+      await Future.wait([a, b]);
+      verifyNever(() => source.open('id-1'));
+      verify(() => source.open('id-2')).called(1);
+      expect(repository.connection.selectedId, 'id-2');
+      expect((await settings.loadMidiDevice())?.id, 'id-2');
+    },
+  );
+
+  test('None invalidates an unfinished selection before it opens', () async {
+    enumerated = const [dev1];
+    final repository = await hydrated();
+    addTearDown(repository.dispose);
+    final selection = repository.select('id-1');
+    final none = repository.selectNone();
+    await Future.wait([selection, none]);
+    verifyNever(() => source.open(any()));
+    expect(repository.connection.status, MidiConnectionStatus.none);
+    expect(await settings.loadMidiDevice(), isNull);
   });
 
   group('launch auto-reconnect', () {
@@ -376,7 +404,7 @@ void main() {
       // The repository has no LooperRepository collaborator at all; its only
       // interactions are open/close/enumerate on the MIDI source.
       verify(() => source.open(any())).called(2);
-      verify(source.close).called(1);
+      verify(source.close).called(3);
       verify(() => source.enumerate()).called(greaterThanOrEqualTo(1));
       verifyNoMoreInteractions(source);
     });

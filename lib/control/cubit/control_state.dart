@@ -25,10 +25,45 @@ class ControlState extends Equatable {
     this.globalBindings = PedalBindingSet.empty,
     this.sessionBindings = PedalBindingSet.empty,
     this.heldMomentary = const <PedalBindingKey>{},
-    this.controllerBindings = ControllerBindingSet.empty,
-    this.controllerLearn,
     this.clearAllPulse = 0,
+    this.midiMappings = MidiMappingSet.empty,
+    this.midiControlEnabled = true,
+    this.midiLoaded = false,
+    this.midiUnavailable = false,
+    this.midiPersistenceUncertain = false,
+    this.midiRemotePaused = false,
+    this.midiEdit,
+    this.midiSaveError,
+    this.midiLevels = const {},
   });
+
+  /// Confirmed mappings; malformed storage remains unavailable until repair.
+  final MidiMappingSet midiMappings;
+
+  /// Confirmed durable Remote preference.
+  final bool midiControlEnabled;
+
+  /// Whether the initial MIDI configuration read completed.
+  final bool midiLoaded;
+
+  /// Explicit saved MIDI bytes could not be decoded.
+  final bool midiUnavailable;
+
+  /// A refused write could not verify exact rollback.
+  final bool midiPersistenceUncertain;
+
+  /// Live safety pause after Remote Off, including a refused disable Save.
+  final bool midiRemotePaused;
+
+  /// Current edit owner and its scoped Learn capture.
+  final MidiEdit? midiEdit;
+
+  /// Last durable mutation error; remains visible until confirmed repair.
+  final String? midiSaveError;
+
+  /// Complete readings projected for the editor, cleared on source
+  /// invalidation.
+  final Map<MidiSource, MidiControlEvent> midiLevels;
 
   /// Tracks per bank.
   static const int tracksPerBank = 4;
@@ -116,21 +151,6 @@ class ControlState extends Equatable {
   /// rule: emptied at the single release-all point (B1) and on each release.
   final Set<PedalBindingKey> heldMomentary;
 
-  /// The external-MIDI mapping set (part 7), restored from the global
-  /// `controller.mappings` settings blob at boot and edited by the MIDI-learn
-  /// settings section.
-  ///
-  /// GLOBAL-ONLY (R19): no session carries a copy, because expression hardware
-  /// belongs to the rig rather than the song. Invalidation rule: same as the
-  /// pedal remap — only an explicit edit writes it, and a target that no
-  /// longer exists goes INERT rather than being dropped.
-  final ControllerBindingSet controllerBindings;
-
-  /// The MIDI-learn capture in progress, or `null` when nothing is listening.
-  /// Invalidation rule: cleared when the capture applies, is cancelled, or
-  /// times out — never by engine truth.
-  final ControllerLearn? controllerLearn;
-
   /// A monotonic pulse bumped each time a [ControlCubit.clearAll] leaves at
   /// least one track holding a clear restore point. NOT stored intent — an
   /// emitted-once cue a surface listens for (the tracks view's post-clear-all
@@ -195,10 +215,18 @@ class ControlState extends Equatable {
     PedalBindingSet? globalBindings,
     PedalBindingSet? sessionBindings,
     Set<PedalBindingKey>? heldMomentary,
-    ControllerBindingSet? controllerBindings,
-    ControllerLearn? controllerLearn,
-    bool clearControllerLearn = false,
     int? clearAllPulse,
+    MidiMappingSet? midiMappings,
+    bool? midiControlEnabled,
+    bool? midiLoaded,
+    bool? midiUnavailable,
+    bool? midiPersistenceUncertain,
+    bool? midiRemotePaused,
+    MidiEdit? midiEdit,
+    bool clearMidiEdit = false,
+    String? midiSaveError,
+    bool clearMidiSaveError = false,
+    Map<MidiSource, MidiControlEvent>? midiLevels,
   }) => ControlState(
     mode: mode ?? this.mode,
     defaultMode: defaultMode ?? this.defaultMode,
@@ -215,13 +243,19 @@ class ControlState extends Equatable {
     globalBindings: globalBindings ?? this.globalBindings,
     sessionBindings: sessionBindings ?? this.sessionBindings,
     heldMomentary: heldMomentary ?? this.heldMomentary,
-    controllerBindings: controllerBindings ?? this.controllerBindings,
-    // `clearControllerLearn` exists because a capture ENDING is a real edit:
-    // `??` alone could never write the null that "nothing is listening" is.
-    controllerLearn: clearControllerLearn
-        ? null
-        : controllerLearn ?? this.controllerLearn,
     clearAllPulse: clearAllPulse ?? this.clearAllPulse,
+    midiMappings: midiMappings ?? this.midiMappings,
+    midiControlEnabled: midiControlEnabled ?? this.midiControlEnabled,
+    midiLoaded: midiLoaded ?? this.midiLoaded,
+    midiUnavailable: midiUnavailable ?? this.midiUnavailable,
+    midiPersistenceUncertain:
+        midiPersistenceUncertain ?? this.midiPersistenceUncertain,
+    midiRemotePaused: midiRemotePaused ?? this.midiRemotePaused,
+    midiEdit: clearMidiEdit ? null : midiEdit ?? this.midiEdit,
+    midiSaveError: clearMidiSaveError
+        ? null
+        : midiSaveError ?? this.midiSaveError,
+    midiLevels: midiLevels ?? this.midiLevels,
   );
 
   @override
@@ -239,8 +273,15 @@ class ControlState extends Equatable {
     globalBindings,
     sessionBindings,
     heldMomentary,
-    controllerBindings,
-    controllerLearn,
     clearAllPulse,
+    midiMappings,
+    midiControlEnabled,
+    midiLoaded,
+    midiUnavailable,
+    midiPersistenceUncertain,
+    midiRemotePaused,
+    midiEdit,
+    midiSaveError,
+    midiLevels,
   ];
 }

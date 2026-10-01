@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
@@ -91,6 +92,7 @@ void main() {
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
+    when(() => repository.sessionRevision).thenReturn(0);
     settings = SettingsRepository(store: FakeKeyValueStore());
     monitorChanges = StreamController<int>.broadcast();
     monitorParams = StreamController<int>.broadcast();
@@ -132,6 +134,7 @@ void main() {
     final inputs = InputsCubit(repository: repository, settings: settings);
     final outputs = OutputsCubit(repository: repository, settings: settings);
     final monitors = MonitorCubit(
+      fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
       settings: settings,

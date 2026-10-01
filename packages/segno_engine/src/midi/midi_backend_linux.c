@@ -157,6 +157,11 @@ static void* le_alsa_midi_thread(void* arg) {
           d2 = (uint8_t)(ev->data.control.value & 0x7F);
           have = 1;
           break;
+        case SND_SEQ_EVENT_PGMCHANGE:
+          status = (uint8_t)(0xC0u | (ev->data.control.channel & 0x0Fu));
+          d1 = (uint8_t)(ev->data.control.value & 0x7F);
+          have = 1;
+          break;
         default:
           break;
       }

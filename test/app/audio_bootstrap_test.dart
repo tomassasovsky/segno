@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/app.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/looper/looper.dart';
@@ -1177,13 +1178,16 @@ void main() {
         ticker: const Stream<void>.empty(),
       )..startEngine(const EngineConfig());
       settings = SettingsRepository(store: FakeKeyValueStore());
+      final fxPersistence = FxChainPersistence(looper: repository);
       final mixSettings = testMixSettings(repository, settings: settings);
       bloc = LooperBloc(
+        fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: repository,
         settings: settings,
       );
       monitor = MonitorCubit(
+        fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: repository,
         settings: settings,

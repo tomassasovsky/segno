@@ -109,12 +109,6 @@ Future<void> runSegno(
   // runs with no controller source. The waveform sub-window already returned
   // above, so it never opens MIDI.
   final midiSource = createNativeMidiSource();
-  // The push seam behind "Simulate input" (#519): a plain source in the same
-  // list as the real MIDI one, so a synthetic sweep/press is indistinguishable
-  // downstream and works with nothing plugged in. Owned by the repository — it
-  // is disposed when the repository disposes its sources — and handed to
-  // ControlCubit, which paces the synthetic sequence.
-  final simulatedControllerSource = SimulatedControllerSource();
   // The console board's pedal link: the Pi's uart3 to the board's Pico 2 on
   // the appliance (the link owns the device node, retries until the overlay
   // lands, and reports every state change to the log), or a board-less link
@@ -123,13 +117,11 @@ Future<void> runSegno(
       ? UartPedalLink(log: AppLog.info)
       : NoopPedalLink();
   final pedalRepository = PedalRepository(pedalLink, log: AppLog.info);
-  // The console's two CTRL jacks join the same pipeline as MIDI: a pedal in a
-  // jack is bound and learned exactly like a controller, so nothing about the
-  // binding model knows where a control came from.
+  // The repository owns source lifetimes and forwards exact console samples.
+  // Musical assignments consume the selected-device stream separately.
   final controllerRepository = ControllerRepository(
     sources: [
       ?midiSource,
-      simulatedControllerSource,
       ConsoleCtrlSource(pedalRepository),
     ],
   );
@@ -203,7 +195,6 @@ Future<void> runSegno(
     () => App(
       repository: looper,
       controllerRepository: controllerRepository,
-      simulatedControllerSource: simulatedControllerSource,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
       displayCount: () =>

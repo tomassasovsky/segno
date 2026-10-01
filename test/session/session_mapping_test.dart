@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/session/session_mapping.dart';
 // The chains a performance arm records cross the boundary as ENGINE models
 // (the manifest embeds them as canonical JSON), so the assertions on them name
@@ -110,7 +111,10 @@ void main() {
       final files = SessionRepository(engine: engine);
       await files.save(
         directory.path,
-        chains: chainsFromLooper(looper),
+        chains: chainsFromLooper(
+          looper,
+          projection: FxChainPersistence(looper: looper),
+        ),
         settings: settingsFromLooper(looper),
       );
       final manifest =
@@ -258,6 +262,7 @@ void main() {
 
     setUp(() {
       looper = _MockLooperRepository();
+      when(() => looper.sessionRevision).thenReturn(0);
       when(looper.allLaneChains).thenReturn(const {});
       when(looper.allTrackChains).thenReturn(const {});
       when(looper.allOutputChains).thenReturn(const {});
@@ -272,7 +277,10 @@ void main() {
         1: InputMonitor(input: 1, mode: MonitorMode.on, outputMask: 0x2),
       });
 
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       expect(chains.monitors, hasLength(1));
       final monitor = chains.monitors.single;
@@ -293,7 +301,11 @@ void main() {
       });
 
       final saved = {
-        for (final m in chainsFromLooper(looper).monitors) m.input: m,
+        for (final m in chainsFromLooper(
+          looper,
+          projection: FxChainPersistence(looper: looper),
+        ).monitors)
+          m.input: m,
       };
 
       expect(saved[0]!.mode, 'auto');
@@ -310,7 +322,10 @@ void main() {
         ),
       });
 
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       final decoded = decodeFxChain(chains.monitors.single.encoded).entries;
       expect((decoded.single as BuiltInEffect).type, TrackEffectType.reverb);
@@ -322,13 +337,22 @@ void main() {
         0: InputMonitor(input: 0, mode: MonitorMode.on, pan: -1),
       });
 
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       expect(chains.monitors.single.toJson().containsKey('pan'), isFalse);
     });
 
     test('emits no monitors when none are configured', () {
-      expect(chainsFromLooper(looper).monitors, isEmpty);
+      expect(
+        chainsFromLooper(
+          looper,
+          projection: FxChainPersistence(looper: looper),
+        ).monitors,
+        isEmpty,
+      );
     });
 
     test('encodes every stage as the chain ENVELOPE — chain flag, per-slot '
@@ -350,7 +374,10 @@ void main() {
         0: InputMonitor(input: 0, mode: MonitorMode.on, chainEnabled: false),
       });
 
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       final lane = decodeFxChain(chains.laneChains.single.encoded);
       expect(lane.chainEnabled, isFalse);
@@ -369,7 +396,10 @@ void main() {
         FxChainEnvelope(entries: [BuiltInEffect(type: TrackEffectType.reverb)]),
       );
 
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
       expect(chains.allTracksChain, isNotEmpty);
       expect(
         decodeFxChain(chains.allTracksChain).entries.single,
@@ -379,7 +409,13 @@ void main() {
       // A rig with no All tracks state writes the manifest's one way to say
       // "empty", the Master rule exactly.
       when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
-      expect(chainsFromLooper(looper).allTracksChain, '');
+      expect(
+        chainsFromLooper(
+          looper,
+          projection: FxChainPersistence(looper: looper),
+        ).allTracksChain,
+        '',
+      );
     });
 
     test('captures Track and destination output chains as envelopes', () {
@@ -395,7 +431,10 @@ void main() {
         ),
       });
 
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       expect(chains.trackChains.single.channel, 1);
       final track = decodeFxChain(chains.trackChains.single.encoded);
@@ -414,7 +453,10 @@ void main() {
     });
 
     test('omits unconfigured output chains from the manifest', () {
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       expect(chains.trackChains, isEmpty);
       expect(chains.outputChains, isEmpty);

@@ -9,6 +9,7 @@ import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
@@ -315,6 +316,7 @@ void main() {
     final inputs = InputsCubit(repository: repository, settings: settings);
     final outputs = OutputsCubit(repository: repository, settings: settings);
     final monitors = MonitorCubit(
+      fxPersistence: FxChainPersistence(looper: repository),
       repository: repository,
       settings: settings,
       mixSettings: testMixSettings(repository, settings: settings),

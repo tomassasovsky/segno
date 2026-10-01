@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:segno/common/fx_chain_persistence.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -17,9 +17,12 @@ void main() {
   group('persistTrackFxChain', () {
     late _MockLooperRepository looper;
     late SettingsRepository settings;
+    late FxChainPersistence projection;
 
     setUp(() {
       looper = _MockLooperRepository();
+      when(() => looper.sessionRevision).thenReturn(0);
+      projection = FxChainPersistence(looper: looper);
       settings = SettingsRepository(store: FakeKeyValueStore());
       when(() => looper.trackChainEnabled(any())).thenReturn(true);
       when(() => looper.trackEffects(any())).thenReturn(const <TrackEffect>[]);
@@ -31,7 +34,12 @@ void main() {
         () => looper.trackEffects(2),
       ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
 
-      persistTrackFxChain(settings: settings, looper: looper, channel: 2);
+      await saveTrackFxChain(
+        projection: projection,
+        settings: settings,
+        looper: looper,
+        channel: 2,
+      );
 
       final encoded = await settings.loadTrackFxChain(2);
       expect(encoded, isNotNull);
@@ -42,7 +50,12 @@ void main() {
 
     test('round-trips an ENGAGED chain too (the flag is written either way, '
         'so a re-enable is not stored as "never touched")', () async {
-      persistTrackFxChain(settings: settings, looper: looper, channel: 0);
+      await saveTrackFxChain(
+        projection: projection,
+        settings: settings,
+        looper: looper,
+        channel: 0,
+      );
 
       final envelope = decodeFxChain(await settings.loadTrackFxChain(0));
       expect(envelope.chainEnabled, isTrue);
@@ -52,7 +65,12 @@ void main() {
     test(
       'is a no-op when settings is null (the bloc dependency is optional)',
       () async {
-        persistTrackFxChain(settings: null, looper: looper, channel: 0);
+        await saveTrackFxChain(
+          projection: projection,
+          settings: null,
+          looper: looper,
+          channel: 0,
+        );
 
         // No throw, and nothing read off the repository either — the guard
         // returns before composing the envelope.
@@ -66,7 +84,12 @@ void main() {
       () async {
         when(() => looper.trackChainEnabled(1)).thenReturn(false);
 
-        persistTrackFxChain(settings: settings, looper: looper, channel: 1);
+        await saveTrackFxChain(
+          projection: projection,
+          settings: settings,
+          looper: looper,
+          channel: 1,
+        );
 
         expect(
           decodeFxChain(await settings.loadTrackFxChain(1)).chainEnabled,

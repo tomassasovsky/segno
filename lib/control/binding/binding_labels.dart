@@ -1,17 +1,15 @@
-import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/pedal/console_ctrl_source.dart';
 
 /// How a binding's target and its control are NAMED, in one place.
 ///
 /// Pure functions of the target and the localizations, so the same words reach
 /// the picker entry, the row, and the Semantics announcement — three spellings
 /// of one target would read as three different mappings. Shared by the pedal
-/// assignment screen (part 6b) and the MIDI-learn section (part 7), which is
+/// assignment screen and MIDI controls page, which is
 /// why they live next to the binding model rather than inside either feature.
 
 /// Names the chain at [address] — its stage and position.
@@ -104,35 +102,6 @@ String? fxSlotName(LooperRepository looper, FxSlotTarget target) {
     };
   }
   return null;
-}
-
-/// Names the CONTROL a binding is keyed to — the CC/note number and the
-/// channel it was learned on.
-String controlLabel(AppLocalizations l10n, MappingTrigger trigger) {
-  // An omni trigger has no channel of its own; it is shown as channel 1, the
-  // one a user reading their controller's display would see first. Learned
-  // controller bindings always carry a channel, so this only covers a
-  // hand-written mapping.
-  final channel = (trigger.midiChannel ?? 0) + 1;
-  return switch (trigger.kind) {
-    ControllerSourceKind.midiCc => l10n.midiLearnCcControl(trigger.id, channel),
-    ControllerSourceKind.midiNote => l10n.midiLearnNoteControl(
-      trigger.id,
-      channel,
-    ),
-    // A CTRL jack has no channel — it is named by the jack it is plugged
-    // into, counted from one the way the panel labels them. A switch on the
-    // ring (the B of a two-switch pedal) is the jack's second switch.
-    ControllerSourceKind.consoleSwitch =>
-      trigger.id >= ConsoleCtrlSource.ringIdOffset
-          ? l10n.consoleCtrlRingSwitchControl(
-              trigger.id - ConsoleCtrlSource.ringIdOffset + 1,
-            )
-          : l10n.consoleCtrlSwitchControl(trigger.id + 1),
-    ControllerSourceKind.consoleExpression => l10n.consoleCtrlExpressionControl(
-      trigger.id + 1,
-    ),
-  };
 }
 
 /// The live label of the parameter [target] names, or `null` when the chain,

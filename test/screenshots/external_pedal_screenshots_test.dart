@@ -14,6 +14,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
@@ -69,6 +70,7 @@ void main() {
 
   setUp(() {
     looper = _MockLooperRepository();
+    when(() => looper.sessionRevision).thenReturn(0);
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     when(() => looper.state).thenReturn(
@@ -162,6 +164,7 @@ void main() {
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     final control = ControlCubit(
+      fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
       pedal: pedal,

@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/session/session.dart';
@@ -60,6 +61,7 @@ void main() {
         ticker: const Stream<void>.empty(),
       )..startEngine(const EngineConfig());
       settings = SettingsRepository(store: FakeKeyValueStore());
+      final fxPersistence = FxChainPersistence(looper: looper);
       final mixSettings = testMixSettings(looper, settings: settings);
       // The rig BEFORE the cubit exists: the cubit follows every monitor write
       // the repository makes, so a fixture that wrote after constructing it
@@ -69,11 +71,13 @@ void main() {
         ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
         ..setMonitorOutput(input: 1, mask: 0x2);
       monitor = MonitorCubit(
+        fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: looper,
         settings: settings,
       );
       bloc = LooperBloc(
+        fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: looper,
         settings: settings,

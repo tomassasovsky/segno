@@ -8,6 +8,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -180,6 +181,10 @@ void main() {
       takeIsLocked = false;
       looper = _MockLooperRepository();
       when(() => looper.sessionRevision).thenReturn(0);
+      when(() => looper.mixGeneration).thenReturn(0);
+      when(() => looper.mixSettingsSettled).thenReturn(true);
+      when(() => looper.fxRecipesSettled).thenReturn(true);
+      when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
       when(
         () => looper.settleFxRecipes(
           waitForCallback: true,
@@ -287,6 +292,7 @@ void main() {
       // snapshot has to exist before the first one; setEngine() re-stubs it.
       when(() => looper.state).thenReturn(_stateWith(_emptyTracks()));
       cubit = ControlCubit(
+        fxPersistence: FxChainPersistence(looper: looper),
         looper: looper,
         mixSettings: testMixSettings(looper),
         pedal: pedal,
@@ -298,7 +304,7 @@ void main() {
     });
 
     tearDown(() async {
-      await cubit.close();
+      if (!cubit.isClosed) await cubit.close();
       await pedal.dispose();
       await looperStates.close();
       performance.dispose();
@@ -1845,6 +1851,7 @@ void main() {
 
       test('takeLocked suppresses recPlay', () {
         final locked = ControlCubit(
+          fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
           pedal: pedal,
@@ -1859,6 +1866,7 @@ void main() {
 
       test('takeLocked suppresses rec-mode trackPressed', () {
         final locked = ControlCubit(
+          fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
           pedal: pedal,
@@ -1873,6 +1881,7 @@ void main() {
 
       test('takeLocked suppresses togglePerformanceRecord', () {
         final locked = ControlCubit(
+          fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
           pedal: pedal,
@@ -1892,6 +1901,7 @@ void main() {
         await pumpEventQueue();
         addTearDown(lockedPedal.dispose);
         final locked = ControlCubit(
+          fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
           pedal: lockedPedal,
@@ -2233,6 +2243,7 @@ void main() {
           );
           addTearDown(recordingPerformance.dispose);
           final armedCubit = ControlCubit(
+            fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
             pedal: pedal,
@@ -2274,6 +2285,7 @@ void main() {
         );
         addTearDown(unarmedPerformance.dispose);
         final unarmedCubit = ControlCubit(
+          fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
           pedal: pedal,
@@ -2302,6 +2314,7 @@ void main() {
           );
           addTearDown(recordingPerformance.dispose);
           final armedCubit = ControlCubit(
+            fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
             pedal: pedal,
@@ -2436,6 +2449,7 @@ void main() {
           // before this was wired both armed with an empty chain set, so a
           // capture documented no FX at all.
           final wired = ControlCubit(
+            fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
             pedal: pedal,
@@ -3333,6 +3347,42 @@ void main() {
               ]),
             );
 
+        for (final restoring in [false, true]) {
+          test('close cancels and drains a pending binding '
+              '${restoring ? 'release' : 'press'} confirmation', () async {
+            chainEnabled[3] = false;
+            await bindMomentary();
+            if (restoring) await press(PedalButton.recPlay);
+            final receipt = Completer<EngineResult>();
+            bool Function()? cancelled;
+            when(
+              () => looper.settleFxRecipes(
+                waitForCallback: true,
+                cancelled: any(named: 'cancelled'),
+              ),
+            ).thenAnswer((call) {
+              cancelled = call.namedArguments[#cancelled] as bool Function();
+              return receipt.future;
+            });
+            if (restoring) {
+              await release(PedalButton.recPlay);
+            } else {
+              await press(PedalButton.recPlay);
+            }
+            expect(cancelled, isNotNull);
+            final closing = cubit.close();
+            await pumpEventQueue();
+            final closedBeforeReceipt = cubit.isClosed;
+            final cancellationRequested = cancelled!();
+            receipt.complete(EngineResult.notReady);
+            await closing;
+            await pumpEventQueue();
+            expect(cancellationRequested, isTrue);
+            expect(closedBeforeReceipt, isFalse);
+            expect(cubit.isClosed, isTrue);
+          });
+        }
+
         test(
           'press enables and release restores what the press captured',
           () async {
@@ -3632,6 +3682,7 @@ void main() {
         );
 
         final reloaded = ControlCubit(
+          fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
           pedal: pedal,
@@ -3725,6 +3776,7 @@ void main() {
           await pumpEventQueue();
           addTearDown(idlePedal.dispose);
           final idle = ControlCubit(
+            fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
             pedal: idlePedal,

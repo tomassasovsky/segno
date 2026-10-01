@@ -86,6 +86,7 @@ String _commandLabel(AppLocalizations l10n, ControlCommand command) =>
       ControlCommand.cutSound => l10n.actionCutSound,
       ControlCommand.recordPerformance => l10n.actionRecordPerformance,
       ControlCommand.nextBank => l10n.actionNextBank,
+      ControlCommand.tapTempo => l10n.actionTapTempo,
     };
 
 String _operationLabel(AppLocalizations l10n, TrackOperation operation) =>

@@ -33,6 +33,10 @@ void main() {
       // The bank is NOT under `command:` — the accepted catalogue spells it
       // this way, and a shared vocabulary has to match it exactly.
       expect(const CommandAction(ControlCommand.nextBank).key, 'bank:next');
+      expect(
+        ControlAction.tryParse('command:tap-tempo'),
+        const CommandAction(ControlCommand.tapTempo),
+      );
       expect(const TrackPedalAction(2).key, 'track:2');
       expect(const SelectTrackAction(2).key, 'select-track:2');
       expect(

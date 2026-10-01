@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
@@ -134,7 +135,10 @@ void main() {
   Future<void> saveThenLoad(String dir) async {
     await session.save(
       dir,
-      chains: chainsFromLooper(looper),
+      chains: chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      ),
       settings: settingsFromLooper(looper),
     );
     // Wipe to an empty rig so a failed load would be visible, then load back.

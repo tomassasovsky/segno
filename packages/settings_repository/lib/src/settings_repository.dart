@@ -40,6 +40,30 @@ final class PedalSetupSaveException implements Exception {
             '$restoreFailure';
 }
 
+/// A MIDI configuration Save that was not confirmed durable.
+final class MidiSettingsSaveException implements Exception {
+  /// Preserves the original refusal and exact-checkpoint recovery result.
+  const MidiSettingsSaveException({
+    required this.cause,
+    required this.checkpointRestored,
+    this.restoreFailure,
+  });
+
+  /// Original write/readback failure.
+  final Object cause;
+
+  /// Whether rollback was verified byte for byte.
+  final bool checkpointRestored;
+
+  /// Rollback or rollback-verification failure, if any.
+  final Object? restoreFailure;
+
+  @override
+  String toString() =>
+      'MIDI settings Save failed: $cause; '
+      'checkpoint restored: $checkpointRestored; $restoreFailure';
+}
+
 /// A persisted audio device configuration, used to auto-start the engine on
 /// launch with the user's last-used options.
 @immutable
@@ -429,6 +453,64 @@ class SettingsRepository {
     await _store.remove(_midiInputDeviceNameKey);
   }
 
+  static const String _midiConfigurationKey = 'midi.configuration';
+
+  /// One atomic opaque envelope for Remote enable and all mappings.
+  Future<String?> loadMidiConfiguration() async {
+    await _serializedWrite;
+    return _store.getString(_midiConfigurationKey);
+  }
+
+  /// Confirms exact saved bytes; on refusal restores and verifies the
+  /// checkpoint.
+  Future<void> saveMidiConfiguration(String encoded) => _serialize(() async {
+    final String? checkpoint;
+    try {
+      checkpoint = await _store.getString(_midiConfigurationKey);
+    } on Object catch (error, trace) {
+      Error.throwWithStackTrace(
+        MidiSettingsSaveException(
+          cause: error,
+          checkpointRestored: false,
+        ),
+        trace,
+      );
+    }
+    try {
+      await _store.setString(_midiConfigurationKey, encoded);
+      if (await _store.getString(_midiConfigurationKey) != encoded) {
+        throw StateError('MIDI configuration write was not retained');
+      }
+    } on Object catch (error, trace) {
+      try {
+        if (checkpoint == null) {
+          await _store.remove(_midiConfigurationKey);
+        } else {
+          await _store.setString(_midiConfigurationKey, checkpoint);
+        }
+        if (await _store.getString(_midiConfigurationKey) != checkpoint) {
+          throw StateError('MIDI configuration checkpoint was not restored');
+        }
+      } on Object catch (restoreError, restoreTrace) {
+        Error.throwWithStackTrace(
+          MidiSettingsSaveException(
+            cause: error,
+            checkpointRestored: false,
+            restoreFailure: restoreError,
+          ),
+          restoreTrace,
+        );
+      }
+      Error.throwWithStackTrace(
+        MidiSettingsSaveException(
+          cause: error,
+          checkpointRestored: true,
+        ),
+        trace,
+      );
+    }
+  });
+
   static const String _pedalLongPressMsKey = 'pedal.long_press_ms';
 
   /// Loads the pedal long-press threshold in milliseconds (Undo long-press =
@@ -597,26 +679,6 @@ class SettingsRepository {
   /// Saves the recent-plugin ids as a newline-separated list.
   Future<void> saveRecentPlugins(String encoded) =>
       _store.setString(recentPluginsKey, encoded);
-
-  static const String _controllerMappingsKey = 'controller.mappings';
-
-  /// Loads the external-MIDI mapping set as its opaque encoded string, or
-  /// `null` when none was ever saved (external control drives nothing).
-  ///
-  /// Opaque here for the same reason the pedal remap is: the binding model
-  /// lives in `controller_repository` and its TARGETS are canonical-JSON
-  /// strings only the app can decode, so this package persists the blob
-  /// without knowing its shape.
-  ///
-  /// GLOBAL-ONLY in v1 (R19), unlike the pedal remap: expression hardware is
-  /// per-rig, not per-song, so no session carries a copy of this key and a
-  /// session stays portable across machines with different controllers.
-  Future<String?> loadControllerMappings() =>
-      _store.getString(_controllerMappingsKey);
-
-  /// Saves the external-MIDI mapping set as its [encoded] string.
-  Future<void> saveControllerMappings(String encoded) =>
-      _store.setString(_controllerMappingsKey, encoded);
 
   static const String _refreshHzKey = 'ui.refresh_hz';
 

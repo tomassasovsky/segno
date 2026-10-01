@@ -9,6 +9,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
@@ -36,6 +37,7 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 void main() {
   late MixSettingsCoordinator mixSettings;
+  late FxChainPersistence fxPersistence;
   late SettingsRepository settings;
   late TracksCubit tracks;
   late WaveformWindowCubit waveformWindow;
@@ -82,6 +84,7 @@ void main() {
       initialState: const MidiSetupState(),
     );
     repository = _MockLooperRepository();
+    when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -108,9 +111,11 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
+    fxPersistence = FxChainPersistence(looper: repository);
     mixSettings = testMixSettings(repository, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
+      fxPersistence: fxPersistence,
       looper: repository,
       mixSettings: mixSettings,
       pedal: pedalRepo,
@@ -137,6 +142,7 @@ void main() {
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
     quantize = RecordTimingCubit(repository: repository, settings: settings);
     monitor = MonitorCubit(
+      fxPersistence: fxPersistence,
       mixSettings: mixSettings,
       repository: repository,
       settings: settings,

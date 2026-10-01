@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:controller_repository/controller_repository.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno_engine/segno_engine.dart'
     show EngineSnapshot, TrackSnapshot;
@@ -17,17 +17,6 @@ import '../../helpers/helpers.dart';
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockSettingsRepository extends Mock implements SettingsRepository {}
-
-class _FakeControllerSource implements ControllerSource {
-  final StreamController<RawControllerInput> _controller =
-      StreamController<RawControllerInput>.broadcast();
-  @override
-  Stream<RawControllerInput> get inputs => _controller.stream;
-  void press(ControllerSourceKind kind, int id) =>
-      _controller.add(RawControllerInput(kind: kind, id: id, value: 127));
-  @override
-  Future<void> dispose() => _controller.close();
-}
 
 const _playingState = LooperState(
   transport: TransportState(isRunning: true, masterLengthFrames: 48000),
@@ -67,6 +56,8 @@ void main() {
     when(() => repository.mixSettingsSnapshot).thenAnswer((_) => currentMix);
     when(() => repository.allTracksChainEnabled).thenReturn(true);
     when(() => repository.allTracksEffects).thenReturn(const []);
+    when(repository.allLaneChains).thenReturn(const {});
+    when(repository.allTrackChains).thenReturn(const {});
     when(
       () => repository.validateMixSettings(any()),
     ).thenReturn(EngineResult.ok);
@@ -103,10 +94,8 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => stateController.stream);
-    // A fresh synchronous snapshot read, distinct from the bloc's own
-    // (stream-driven) `state` — `_cancelPendingArms` reads this directly
-    // (narrows the cancel-arm TOCTOU race; see its doc). Defaults to no
-    // tracks; per-test overrides stub a pending track set.
+    // Repository state is a fresh synchronous snapshot; per-test overrides
+    // supply recorded or pending tracks independently of stream publication.
     when(() => repository.state).thenReturn(const LooperState());
     // The mute toggle resolves against the repository's remembered intent
     // (synchronous), not the polled snapshot — see LooperMuteToggled.
@@ -336,6 +325,7 @@ void main() {
   tearDown(() => stateController.close());
 
   LooperBloc buildBloc() => LooperBloc(
+    fxPersistence: FxChainPersistence(looper: repository),
     repository: repository,
     mixSettings: testMixSettings(repository),
   );
@@ -392,6 +382,7 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'takeLocked suppresses LooperRecordPressed',
     build: () => LooperBloc(
+      fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
       takeLocked: () => true,
@@ -404,6 +395,7 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'takeLocked suppresses LooperClearPressed',
     build: () => LooperBloc(
+      fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
       takeLocked: () => true,
@@ -563,6 +555,7 @@ void main() {
   LooperBloc buildBlocWithSettings() {
     trackSettings = SettingsRepository(store: FakeKeyValueStore());
     return LooperBloc(
+      fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository, settings: trackSettings),
       repository: repository,
       settings: trackSettings,
@@ -1461,6 +1454,7 @@ void main() {
           ),
         );
         return LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -1507,6 +1501,7 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLaneMuteToggled persists the toggled mute onto the lane',
       build: () => LooperBloc(
+        fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
         settings: settings,
@@ -1523,6 +1518,7 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperClearPressed persists the unmute so a cleared track stays armed',
       build: () => LooperBloc(
+        fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
         settings: settings,
@@ -1551,6 +1547,7 @@ void main() {
         () => repository.clear(channel: 1),
       ).thenReturn(EngineResult.invalid),
       build: () => LooperBloc(
+        fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
         settings: settings,
@@ -1565,6 +1562,7 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'a lane effect structural edit persists the encoded chain onto the lane',
       build: () => LooperBloc(
+        fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
         settings: settings,
@@ -1587,6 +1585,7 @@ void main() {
       'snapshot copy (F3)',
       () async {
         final bloc = LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -1628,6 +1627,7 @@ void main() {
           ),
         ]);
         return LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -1654,6 +1654,7 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLaneEffectParamChanged persists the re-encoded chain',
       build: () => LooperBloc(
+        fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
         settings: settings,
@@ -1678,6 +1679,7 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLanePluginParamChanged persists the re-encoded chain',
       build: () => LooperBloc(
+        fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
         settings: settings,
@@ -1758,6 +1760,7 @@ void main() {
         'LooperTrackEffectsChanged pushes the chain and persists the '
         'envelope with the repo chain flag',
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -1791,6 +1794,7 @@ void main() {
             ),
           ).thenAnswer((_) => applied.future);
           final bloc = LooperBloc(
+            fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
             settings: settings,
@@ -1821,6 +1825,7 @@ void main() {
             ),
           ).thenAnswer((_) => applied.future);
           final bloc = LooperBloc(
+            fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
             settings: settings,
@@ -1880,6 +1885,7 @@ void main() {
           ),
         ).thenAnswer((_) => oldWait.future);
         final bloc = LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -1919,6 +1925,7 @@ void main() {
             return writes == 1 ? firstWrite.future : Future<void>.value();
           });
           final bloc = LooperBloc(
+            fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
             settings: settings,
@@ -1944,6 +1951,7 @@ void main() {
           () => settings.saveTrackFxChain(1, any()),
         ).thenAnswer((_) async => throw StateError('storage refused')),
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -1977,6 +1985,7 @@ void main() {
           });
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2019,6 +2028,7 @@ void main() {
           ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2066,6 +2076,7 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2118,6 +2129,7 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2158,6 +2170,7 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2207,6 +2220,7 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2257,6 +2271,7 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2311,6 +2326,7 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2364,6 +2380,7 @@ void main() {
           ).thenReturn(true);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2396,6 +2413,7 @@ void main() {
         setUp: () =>
             when(() => repository.trackEffects(0)).thenReturn(const []),
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2426,6 +2444,7 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2458,6 +2477,7 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2487,6 +2507,7 @@ void main() {
           ).thenReturn(true);
         },
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2504,6 +2525,7 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'LooperTrackEffectEnabledToggled flips the slot and re-persists',
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2527,6 +2549,7 @@ void main() {
         'LooperTrackChainEnabledToggled flips the chain flag and '
         're-persists',
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2545,6 +2568,7 @@ void main() {
         'LooperOutputEffectsChanged pushes the chain and persists the '
         'envelope',
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2566,6 +2590,7 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'LooperMasterEffectEnabledToggled flips the slot and re-persists',
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2589,6 +2614,7 @@ void main() {
         'LooperOutputChainEnabledToggled flips the chain flag and '
         're-persists',
         build: () => LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2611,6 +2637,7 @@ void main() {
         // The engine refused it, so the repository still holds the old mode.
         when(() => repository.settledLooperMode).thenReturn(LooperMode.multi);
         return LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2636,6 +2663,7 @@ void main() {
         // below would write nothing at all.
         when(() => repository.settledLooperMode).thenReturn(LooperMode.free);
         return LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2653,6 +2681,7 @@ void main() {
         when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
         when(() => repository.settledLooperMode).thenReturn(LooperMode.band);
         return LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -2728,6 +2757,7 @@ void main() {
     });
 
     LooperBloc buildDebounced() => LooperBloc(
+      fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
       settings: settings,
@@ -2994,6 +3024,7 @@ void main() {
       () async {
         when(() => settings.loadLooperMode()).thenAnswer((_) async => 2);
         final bloc = LooperBloc(
+          fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
@@ -3015,6 +3046,7 @@ void main() {
     test('defaults to Multi when nothing was ever persisted', () async {
       when(() => settings.loadLooperMode()).thenAnswer((_) async => 0);
       final bloc = LooperBloc(
+        fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
         settings: settings,
@@ -3045,277 +3077,6 @@ void main() {
       verifyNever(() => repository.play(channel: 2));
     },
   );
-
-  group('controller wiring', () {
-    late _FakeControllerSource source;
-    late ControllerRepository controller;
-
-    setUp(() {
-      source = _FakeControllerSource();
-      controller = ControllerRepository(sources: [source]);
-    });
-
-    tearDown(() => controller.dispose());
-
-    test('a mapped controller press drives the repository', () async {
-      final bloc = LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        controller: controller,
-      );
-      addTearDown(bloc.close);
-
-      // Default mapping: CC 80 -> recordOverdub on channel 0.
-      source.press(ControllerSourceKind.midiCc, 80);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      verify(() => repository.record()).called(1);
-    });
-
-    test(
-      'play/playAll/stopAll drive the repository under a custom mapping '
-      '(not in the built-in default)',
-      () async {
-        const kind = ControllerSourceKind.midiCc;
-        final mapping = ControllerMapping.defaults().merge(
-          const ControllerMapping(
-            entries: [
-              MappingEntry(
-                trigger: MappingTrigger(kind: kind, id: 90),
-                action: LooperAction.play,
-              ),
-              MappingEntry(
-                trigger: MappingTrigger(kind: kind, id: 91),
-                action: LooperAction.playAll,
-              ),
-              MappingEntry(
-                trigger: MappingTrigger(kind: kind, id: 92),
-                action: LooperAction.stopAll,
-              ),
-            ],
-          ),
-        );
-        final customController = ControllerRepository(
-          sources: [source],
-          mapping: mapping,
-        );
-        addTearDown(customController.dispose);
-        final bloc = LooperBloc(
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          controller: customController,
-        );
-        addTearDown(bloc.close);
-
-        source.press(kind, 90);
-        await Future<void>.delayed(Duration.zero);
-        source.press(kind, 91);
-        await Future<void>.delayed(Duration.zero);
-        source.press(kind, 92);
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
-
-        verify(() => repository.play()).called(1);
-      },
-    );
-
-    test('stop (CC 81) forwards to repository.stopTrack', () async {
-      final bloc = LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        controller: controller,
-      );
-      addTearDown(bloc.close);
-
-      source.press(ControllerSourceKind.midiCc, 81);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      verify(() => repository.stopTrack()).called(1);
-    });
-
-    test('undo (CC 82) forwards to repository.undo', () async {
-      final bloc = LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        controller: controller,
-      );
-      addTearDown(bloc.close);
-
-      source.press(ControllerSourceKind.midiCc, 82);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      verify(() => repository.undo()).called(1);
-    });
-
-    test('clear (CC 83) forwards to repository.clear', () async {
-      final bloc = LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        controller: controller,
-      );
-      addTearDown(bloc.close);
-
-      source.press(ControllerSourceKind.midiCc, 83);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      verify(() => repository.clear()).called(1);
-    });
-
-    test('tapTempo (CC 84) forwards to repository.tapTempo', () async {
-      final bloc = LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        controller: controller,
-      );
-      addTearDown(bloc.close);
-
-      source.press(ControllerSourceKind.midiCc, 84);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      verify(repository.tapTempo).called(1);
-    });
-
-    test('toggleMetronome (CC 85) turns the click on from off', () async {
-      final bloc = LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        controller: controller,
-      );
-      addTearDown(bloc.close);
-
-      source.press(ControllerSourceKind.midiCc, 85);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      verify(() => repository.setClickMode(ClickMode.rec)).called(1);
-    });
-
-    test(
-      'toggleMetronome (CC 85) turns the click back off when audible',
-      () async {
-        final bloc = LooperBloc(
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          controller: controller,
-        );
-        addTearDown(bloc.close);
-        // Posted after the bloc subscribes (stateController is a broadcast
-        // stream — an earlier post would be missed).
-        stateController.add(
-          const LooperState(
-            transport: TransportState(clickMode: ClickMode.playRec),
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
-
-        source.press(ControllerSourceKind.midiCc, 85);
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
-
-        verify(() => repository.setClickMode(ClickMode.off)).called(1);
-      },
-    );
-
-    test('toggleMetronome persists the resulting mode via settings', () async {
-      final settings = SettingsRepository(store: FakeKeyValueStore());
-      final bloc = LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        controller: controller,
-        settings: settings,
-      );
-      addTearDown(bloc.close);
-
-      source.press(ControllerSourceKind.midiCc, 85);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      expect(await settings.loadClickMode(), ClickMode.rec.code);
-    });
-
-    test(
-      'cancelArm (CC 86) re-presses record on every pending track',
-      () async {
-        // _cancelPendingArms reads repository.state directly (a fresh
-        // synchronous snapshot), not the bloc's own stream-driven state —
-        // see its doc — so the pending set is stubbed there, not posted
-        // through stateController.
-        when(() => repository.state).thenReturn(
-          const LooperState(
-            tracks: [
-              Track(pending: true),
-              Track(channel: 1),
-              Track(channel: 2, pending: true),
-            ],
-          ),
-        );
-        final bloc = LooperBloc(
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          controller: controller,
-        );
-        addTearDown(bloc.close);
-
-        source.press(ControllerSourceKind.midiCc, 86);
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
-
-        verify(() => repository.record()).called(1);
-        verify(() => repository.record(channel: 2)).called(1);
-        verifyNever(() => repository.record(channel: 1));
-      },
-    );
-
-    test(
-      'cancelArm (CC 86) reads a fresh repository snapshot, not the '
-      "bloc's own ~16ms-stale polled state (narrows the TOCTOU race)",
-      () async {
-        // The bloc's own (stream-driven) state says nothing is pending —
-        // stale relative to the engine, as it would be mid-poll-interval.
-        final bloc = LooperBloc(
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          controller: controller,
-        );
-        addTearDown(bloc.close);
-        expect(bloc.state.tracks, isEmpty);
-        // repository.state (a fresh synchronous engine read) says
-        // otherwise. If cancelArm read `state.tracks` (the bloc's own,
-        // stale) instead of `_repository.state.tracks`, this would find
-        // nothing to cancel.
-        when(
-          () => repository.state,
-        ).thenReturn(const LooperState(tracks: [Track(pending: true)]));
-
-        source.press(ControllerSourceKind.midiCc, 86);
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
-
-        verify(() => repository.record()).called(1);
-      },
-    );
-
-    test('cancelArm (CC 86) is a no-op when nothing is pending', () async {
-      // Default stub (setUp): repository.state has no tracks.
-      final bloc = LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        controller: controller,
-      );
-      addTearDown(bloc.close);
-
-      source.press(ControllerSourceKind.midiCc, 86);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      verifyNever(() => repository.record(channel: any(named: 'channel')));
-    });
-  });
 
   // A REAL repository over the fake engine, not the mock the rest of this file
   // uses: the resync reads the repository's own chain enumerations and writes
@@ -3349,6 +3110,7 @@ void main() {
       )..startEngine(const EngineConfig());
       settings = SettingsRepository(store: FakeKeyValueStore());
       bloc = LooperBloc(
+        fxPersistence: FxChainPersistence(looper: looper),
         mixSettings: testMixSettings(looper),
         repository: looper,
         settings: settings,
@@ -3551,6 +3313,7 @@ void main() {
 
     test('is a no-op without a settings dependency', () async {
       final blocWithoutSettings = LooperBloc(
+        fxPersistence: FxChainPersistence(looper: looper),
         repository: looper,
         mixSettings: testMixSettings(looper),
       );

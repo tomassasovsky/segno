@@ -2587,3 +2587,20 @@ pedal package, firmware contract, static and independent byte checks are recorde
 in [the scoped evidence](../reviews/design-custom-protocol-restack/README.md).
 Custom runtime follows in PR #1030. Physical validation and the human merge gate
 remain separate.
+
+## MIDI reconstruction — October 1, 2026
+
+Part 4g is reconstructed as a complete format, Learn, editor and runtime slice
+on the verified External controls stack. PR #1047 incorporates the original
+format/model/wiring work from #1047–#1049 while preserving UART console
+ownership and raw instrument messages as a separate concern. Explicit formats,
+captured-time freshness, confirmed Save/Cancel, shared momentary ownership and
+pending-write recovery are covered by the
+[scoped verification](../reviews/design-midi-controls-restack/README.md).
+
+The full application suite, nine packages and three native configurations pass.
+Independent source review and a separate adversary cover the documented
+boundaries; real controllers remain a bench gate. This does not complete M3's
+broader shared value catalogue: Mixer pan/balance/levels and loop/click settings
+follow next, with future operation and instrument targets wired by their owners.
+No source proof is treated as deployment or human merge approval.
