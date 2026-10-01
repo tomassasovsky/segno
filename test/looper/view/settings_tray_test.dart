@@ -16,6 +16,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
@@ -119,6 +120,7 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
 void main() {
+  late MixSettingsCoordinator mixSettings;
   late SettingsTrayCubit cubit;
   late SettingsRepository settings;
   late _MockLooperBloc looperBloc;
@@ -155,8 +157,11 @@ void main() {
       exportsRoot: () async => '.',
     );
     controller = ControllerRepository(sources: const []);
+    mixSettings = testMixSettings(looper, settings: settings);
+    addTearDown(() => unawaited(mixSettings.close()));
     controlCubit = ControlCubit(
       looper: looper,
+      mixSettings: mixSettings,
       pedal: PedalRepository(NoopPedalLink()),
       settings: settings,
       performance: performance,
@@ -203,7 +208,7 @@ void main() {
             BlocProvider<TracksCubit>.value(value: tracksCubit),
             BlocProvider<MonitorCubit>(
               create: (_) => MonitorCubit(
-                mixSettings: testMixSettings(looper),
+                mixSettings: mixSettings,
                 repository: looper,
                 settings: settings,
               ),

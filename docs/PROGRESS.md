@@ -64,6 +64,18 @@ independent behavioral checks from physical pedal validation. Layout A setup,
 Custom mode and external/MIDI assignment surfaces are the next dependent
 slices. No appliance deployment or human merge approval is implied.
 
+## October 2026 Custom pedal runtime (#1026)
+
+Layout A now edits and runs Custom Press/Hold assignments. Mode exits and Bank
+pages; fresh Mode defaults to Mute/Custom. Gesture lifetime follows accepted
+selection, session and connection rules. Grouped Solo shares the app-wide mix
+coordinator, and Clear/Restore preserves unrelated setup edits. See the
+[verification record](reviews/design-custom-runtime-restack/README.md).
+
+Application and independent behavioral checks pass. Configurable physical LED
+colors and all-ten activity transport are the next slices; no appliance
+installation or human merge approval is implied.
+
 ## September 2026 appliance integration
 
 The console link, CTRL jacks, and appliance delivery stack (#984, #986, #990)

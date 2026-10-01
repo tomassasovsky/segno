@@ -1,6 +1,8 @@
 @Tags(['screenshots'])
 library;
 
+import 'dart:async';
+
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -12,6 +14,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -49,6 +52,7 @@ class _MockMidiDeviceRepository extends Mock implements MidiDeviceRepository {}
 class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
 
 void main() {
+  late MixSettingsCoordinator mixSettings;
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   // These golden generators load the local Flutter SDK's Material fonts and
@@ -178,8 +182,11 @@ void main() {
     // is a no-op and would leave the transport and event streams open.
     final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
+    mixSettings = testMixSettings(repository, settings: settings);
+    addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
       looper: repository,
+      mixSettings: mixSettings,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
@@ -255,7 +262,7 @@ void main() {
               ),
               BlocProvider<MonitorCubit>.value(
                 value: MonitorCubit(
-                  mixSettings: testMixSettings(repository),
+                  mixSettings: mixSettings,
                   repository: repository,
                   settings: settings,
                 ),

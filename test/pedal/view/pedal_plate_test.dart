@@ -35,6 +35,7 @@ void main() {
   pumpPlate(
     WidgetTester tester, {
     PedalStateFrame? frame,
+    InteractionMode mode = InteractionMode.record,
     Set<PedalButton> selected = const {},
   }) async {
     final presses = <({PedalButton button, bool down})>[];
@@ -53,7 +54,7 @@ void main() {
               onPress: (button, {required down}) =>
                   presses.add((button: button, down: down)),
               onTurn: turns.add,
-              mode: InteractionMode.record,
+              mode: mode,
               l10n: AppLocalizations.of(context),
               mainScreen: const SizedBox(key: _mainScreenKey),
               waveformScreen: const SizedBox(key: _waveformScreenKey),
@@ -93,6 +94,20 @@ void main() {
     expect(ledColor(0), SurfaceTheme.dark.ledRed);
     expect(ledColor(1), SurfaceTheme.dark.ledGreen);
     expect(ledColor(2), SurfaceTheme.dark.ledOff);
+  });
+
+  testWidgets('Custom LED labels describe active state, not assignment', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await pumpPlate(
+      tester,
+      mode: InteractionMode.custom,
+      frame: _frame(leds: {0: PedalTrackLed.blue}),
+    );
+    expect(find.bySemanticsLabel('drums, action active'), findsOneWidget);
+    expect(find.bySemanticsLabel('bass, action inactive'), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('onPress fires with the pressed button on down and up', (

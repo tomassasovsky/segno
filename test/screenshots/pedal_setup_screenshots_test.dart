@@ -95,8 +95,11 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
+    final mixSettings = testMixSettings(looper, settings: settings);
+    addTearDown(() => unawaited(mixSettings.close()));
     final control = ControlCubit(
       looper: looper,
+      mixSettings: mixSettings,
       pedal: PedalRepository(NoopPedalLink()),
       settings: settings,
       performance: performance,
@@ -169,5 +172,34 @@ void main() {
   ) async {
     await pump(tester, unreadable: true);
     await shot(tester, 'unavailable');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Custom controls on bank B', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_custom')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_cap_bank')));
+    await tester.pumpAndSettle();
+    await shot(tester, 'custom_bank_b');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Clear custom assignments asks before it empties the draft', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_custom')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_press')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_choice_group_transport')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_choice_command:stop')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_clear_custom')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/pedal_setup_clear.png'),
+    );
   }, skip: !hasScreenshotFonts);
 }

@@ -158,7 +158,9 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                         onToggleBank: () => setState(() => _bank = 1 - _bank),
                       ),
                     ),
-                    if (control.state.pedalSetupUnavailable)
+                    if (control.state.pedalSetupUnavailable ||
+                        control.state.pedalSetupPersistenceUncertain ||
+                        _saveFailed)
                       Positioned(
                         left: _left,
                         top: 388,
@@ -166,8 +168,21 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                         height: 64,
                         child: Center(
                           child: AppText(
-                            l10n.pedalSetupUnavailable,
-                            key: const Key('pedal_setup_unavailable'),
+                            [
+                              if (control.state.pedalSetupUnavailable)
+                                l10n.pedalSetupUnavailable,
+                              if (control.state.pedalSetupPersistenceUncertain)
+                                l10n.pedalSetupSaveUncertain
+                              else if (_saveFailed)
+                                l10n.pedalSetupSaveFailed,
+                            ].join('\n'),
+                            key: Key(
+                              control.state.pedalSetupUnavailable
+                                  ? 'pedal_setup_unavailable'
+                                  : control.state.pedalSetupPersistenceUncertain
+                                  ? 'pedal_setup_save_uncertain'
+                                  : 'pedal_setup_save_failed',
+                            ),
                             maxLines: 2,
                             textAlign: TextAlign.center,
                             style: TextStyle(
@@ -216,21 +231,6 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_saveFailed || uncertain)
-          Padding(
-            padding: const EdgeInsets.only(right: 24),
-            child: AppText(
-              uncertain
-                  ? l10n.pedalSetupSaveUncertain
-                  : l10n.pedalSetupSaveFailed,
-              key: Key(
-                uncertain
-                    ? 'pedal_setup_save_uncertain'
-                    : 'pedal_setup_save_failed',
-              ),
-              style: TextStyle(color: surface.warning, fontSize: 24),
-            ),
-          ),
         if (_saved && !dirty && !uncertain && !unavailable)
           Padding(
             padding: const EdgeInsets.only(right: 24),
@@ -317,7 +317,9 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   }
 
   void _restoreCleared() => setState(() {
-    _draft = _cleared;
+    _draft = (_draft ?? context.read<ControlCubit>().state.pedalSetup).copyWith(
+      custom: _cleared!.custom,
+    );
     _cleared = null;
     _saved = false;
   });
@@ -326,9 +328,8 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     final confirmed = await showPedalClearDialog(context);
     if (!confirmed || !mounted) return;
     setState(() {
-      // The cleared setup is what Restore puts back — the DRAFT at the moment
-      // of the clear, not what is saved, so clearing after other edits and
-      // then restoring keeps those edits.
+      // Restore keeps the Custom draft from before Clear. Later edits to
+      // Track controls remain independent of restoring this map.
       _cleared = setup;
       _draft = setup.clearedCustom();
       _saved = false;
@@ -354,17 +355,15 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
             width: 202,
             height: 64,
           ),
-          if (ControlAction.tryParse('mode:custom') != null) ...[
-            const SizedBox(width: 8),
-            LoopChoiceButton(
-              key: const Key('pedal_setup_context_custom'),
-              label: l10n.pedalSetupContextCustom,
-              selected: _context == PedalSetupContext.custom,
-              onTap: () => _openContext(PedalSetupContext.custom),
-              width: 225,
-              height: 64,
-            ),
-          ],
+          const SizedBox(width: 8),
+          LoopChoiceButton(
+            key: const Key('pedal_setup_context_custom'),
+            label: l10n.pedalSetupContextCustom,
+            selected: _context == PedalSetupContext.custom,
+            onTap: () => _openContext(PedalSetupContext.custom),
+            width: 225,
+            height: 64,
+          ),
         ],
       ),
     );

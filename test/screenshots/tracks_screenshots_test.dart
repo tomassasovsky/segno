@@ -1,6 +1,8 @@
 @Tags(['screenshots'])
 library;
 
+import 'dart:async';
+
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -12,6 +14,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -50,6 +53,7 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
 ///   flutter test --tags screenshots \
 ///     --update-goldens test/screenshots/tracks_screenshots_test.dart
 void main() {
+  late MixSettingsCoordinator mixSettings;
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   // Golden generators load the local SDK's Material fonts and compare against
@@ -144,8 +148,11 @@ void main() {
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
     );
+    mixSettings = testMixSettings(repository, settings: settings);
+    addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
       looper: repository,
+      mixSettings: mixSettings,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
@@ -219,7 +226,7 @@ void main() {
               ),
               BlocProvider<MonitorCubit>(
                 create: (_) => MonitorCubit(
-                  mixSettings: testMixSettings(repository),
+                  mixSettings: mixSettings,
                   repository: repository,
                   settings: settings,
                 ),
