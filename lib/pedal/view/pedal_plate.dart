@@ -1041,6 +1041,7 @@ Color _modeColor(SurfaceTheme surface, PedalMode mode) => switch (mode) {
   PedalMode.rec => surface.ledRed,
   PedalMode.play => surface.ledGreen,
   PedalMode.fx => surface.ledBlue,
+  PedalMode.custom => surface.ledAmber,
 };
 
 Color _ringColor(SurfaceTheme surface, GlobalColor color) => switch (color) {

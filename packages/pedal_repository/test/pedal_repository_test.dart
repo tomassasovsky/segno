@@ -210,6 +210,7 @@ void main() {
     });
 
     for (final protocol in [
+      PedalLinkCodec.protocolVersion - 1,
       PedalLinkCodec.protocolVersion,
       PedalLinkCodec.protocolVersion + 1,
     ]) {
@@ -239,9 +240,14 @@ void main() {
                 firmwareMinor: 0,
               ),
             );
-            async
-              ..flushMicrotasks()
-              ..elapse(guarded.helloTimeout);
+            async.flushMicrotasks();
+            expect(
+              guarded.status,
+              protocol == PedalLinkCodec.protocolVersion
+                  ? PedalLinkStatus.connected
+                  : PedalLinkStatus.incompatible,
+            );
+            async.elapse(guarded.helloTimeout);
             expect(guarded.status, PedalLinkStatus.disconnected);
             guardedLink.sent.clear();
 

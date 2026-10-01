@@ -28,4 +28,8 @@ enum PedalMode {
   /// The track buttons toggle each track's FX chain; the LEDs carry
   /// chain-enabled state (`PedalTrackLed.blue`).
   fx,
+
+  /// The user-assigned control mode's wire identity. The board only renders
+  /// the mode and reports physical input; action dispatch stays in the app.
+  custom,
 }

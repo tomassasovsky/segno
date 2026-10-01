@@ -2575,3 +2575,15 @@ performance-recording path meanwhile. The repository Pen is older than the
 accepted working design; scoped notes are saved, and full synchronization
 remains part of final acceptance. Physical validation and the human merge gate
 are unchanged.
+
+
+## Custom console protocol reconstruction — October 1, 2026
+
+PR #1029 now targets the current UART console: protocol 6, Custom mode value 3,
+unchanged STATE and HELLO shapes, and amber Mode feedback. Mismatched firmware
+remains incompatible, with controls and STATE gated until a matching handshake.
+The retired MIDI pedal protocol and firmware are not restored. Full application,
+pedal package, firmware contract, static and independent byte checks are recorded
+in [the scoped evidence](../reviews/design-custom-protocol-restack/README.md).
+Custom runtime follows in PR #1030. Physical validation and the human merge gate
+remain separate.
