@@ -1,6 +1,34 @@
 # Verification — MIDI controls
 
-Results bind to [source.json](source.json). The final application run had no
+## CI coverage correction
+
+The first published workflow passed its tests but failed root coverage at
+89.07%. The author-side run below included screenshot/native tests which the
+ordinary CI job skips. That local coverage did not establish the remote gate.
+
+Added 23 behavioral MIDI editor journeys, bringing that file to 38 passing
+tests. These exercise every supported Learn format, source/channel identity,
+multiple targets, Save/Cancel, duplicate sources, failed writes and deletion,
+target repair, button edges, controller changes and picker navigation. An
+independent source and five-perspective review found one timing-fixture risk;
+explicit capture timestamps fixed it without changing the decoder rules.
+The revised test delta has no unresolved actionable review findings.
+
+The final root run excludes author-only screenshot tests and supplies no native
+engine library: 2,306 pass, 68 existing skips, 23,095/25,660 covered lines
+(90.0039%). Its inputs did not change during execution. The existing 90% floor
+and exclusions are unchanged. Formatting, strict analysis and Bloc lint across
+703 actual files also pass. No application, package, native or Pen bytes changed;
+their earlier source and execution evidence remains applicable. The first
+failing CI run and intermediate local runs are retained in the evidence.
+
+The current manifest includes the reviewed test-only correction. Remote CI on
+the new published head remains required; this local result does not replace it.
+
+## Original author-side verification
+
+The original results bind to the previous fingerprint recorded in
+[source.json](source.json). That application run had no
 input drift. The only later application change explicitly marks an already
 ignored Future returned by removing a completed decision from its map;
 independent review confirmed unchanged execution, and both close regressions

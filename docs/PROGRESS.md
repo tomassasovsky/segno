@@ -23,6 +23,12 @@ coverage, independent review and adversarial probes. Native renders are saved
 in Pen. The broader shared target catalogue remains the next M3 slice;
 physical MIDI validation, published-head CI and human merge stay separate.
 
+The first MIDI publication passed tests but failed ordinary CI coverage at
+89.07%. A reviewed test-only correction adds 23 editor journeys. The matching
+local run excludes author screenshots and supplies no native library: 2,306
+tests pass at 90.0039% coverage, with static gates clean. New published-head CI
+is still required; the earlier author-side coverage did not establish it.
+
 ## October 2026 external pedal reconstruction (#1026)
 
 Single, Dual and Expression now share a confirmed External setup and the
