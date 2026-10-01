@@ -602,8 +602,17 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'LooperTrackSoloToggled applies temporary solo',
     build: buildBloc,
-    act: (bloc) => bloc.add(const LooperTrackSoloToggled(1, solo: true)),
+    act: (bloc) => bloc.add(const LooperTrackSoloToggled(1)),
     verify: (_) => expect(currentMix.trackSolos[1], isTrue),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'rapid Solo presses cancel before the published widget state changes',
+    build: buildBloc,
+    act: (bloc) => bloc
+      ..add(const LooperTrackSoloToggled(1))
+      ..add(const LooperTrackSoloToggled(1)),
+    verify: (_) => expect(currentMix.trackSolos[1] ?? false, isFalse),
   );
 
   blocTest<LooperBloc, LooperState>(

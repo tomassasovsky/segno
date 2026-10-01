@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +19,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_top_bar.dart';
@@ -1463,6 +1465,491 @@ void main() {
       await tester.tap(find.byKey(const Key('stage_view_track')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('stage_track_run')), findsOneWidget);
+    });
+
+    /// Opens the Mixer through the same menu a player uses.
+    Future<void> showMixer(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('stage_view_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('stage_view_mixer')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the view menu switches to the Mixer and back', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 1000),
+          ],
+        ),
+      );
+      await pump(tester);
+      await showMixer(tester);
+
+      expect(find.byKey(const Key('stage_mixer_run')), findsOneWidget);
+      expect(find.byKey(const Key('mixer_mute_0')), findsOneWidget);
+      expect(find.byKey(const Key('mixer_mute_1')), findsOneWidget);
+      expect(find.byKey(const Key('stage_track_run')), findsNothing);
+      // Browsing views never touches playback or the selection.
+      verifyNever(() => bloc.add(any()));
+      expect(control.state.cursor, 0);
+
+      await tester.tap(find.byKey(const Key('stage_view_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('stage_view_track')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('stage_track_run')), findsOneWidget);
+      expect(find.byKey(const Key('stage_mixer_run')), findsNothing);
+    });
+
+    testWidgets('Mute and Solo write the track they are on, and a long press '
+        'on Solo clears every one', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 1000),
+          ],
+        ),
+      );
+      await pump(tester);
+      await showMixer(tester);
+
+      await tester.tap(find.byKey(const Key('mixer_mute_1')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperMuteToggled(1))).called(1);
+
+      await tester.tap(find.byKey(const Key('mixer_solo_1')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperTrackSoloToggled(1))).called(1);
+
+      await tester.longPress(find.byKey(const Key('mixer_solo_0')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperSoloCleared())).called(1);
+    });
+
+    testWidgets('the pan bar previews under the finger and commits once, and '
+        'a double tap returns the track to the centre', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [Track(state: TrackState.playing, lengthFrames: 1000)],
+        ),
+      );
+      await pump(tester);
+      await showMixer(tester);
+      final l10n = AppLocalizations.of(
+        tester.element(find.byType(TracksView)),
+      );
+      String readout() => tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const Key('mixer_pan_readout_0')),
+              matching: find.byType(Text),
+            ),
+          )
+          .data!;
+      expect(readout(), l10n.routingPanCenter);
+
+      final bar = find.byKey(const Key('mixer_pan_0'));
+      final box = tester.getRect(bar);
+      final gesture = await tester.startGesture(
+        Offset(box.left + 4, box.center.dy),
+      );
+      await tester.pump();
+      await gesture.moveBy(const Offset(40, 0));
+      await tester.pump();
+      await gesture.moveTo(Offset(box.left + box.width * 0.9, box.center.dy));
+      await tester.pump();
+      // The readout follows the finger; nothing is written yet.
+      expect(readout(), isNot(l10n.routingPanCenter));
+      verifyNever(() => bloc.add(any(that: isA<LooperTrackPanChanged>())));
+
+      await gesture.up();
+      await tester.pump();
+      final panned = verify(
+        () => bloc.add(captureAny(that: isA<LooperTrackPanChanged>())),
+      ).captured.cast<LooperTrackPanChanged>();
+      expect(panned, hasLength(1));
+      expect(panned.single.pan, greaterThan(0));
+
+      await tester.tap(bar);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(bar);
+      // Settles the double-tap recogniser's own countdown.
+      await tester.pumpAndSettle();
+      final centred = verify(
+        () => bloc.add(captureAny(that: isA<LooperTrackPanChanged>())),
+      ).captured.cast<LooperTrackPanChanged>();
+      expect(centred.last.pan, 0);
+    });
+
+    testWidgets('the level marker rides the meter, commits once, and a double '
+        'tap returns the track to unity', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000, volume: 0.5),
+          ],
+        ),
+      );
+      await pump(tester);
+      await showMixer(tester);
+      expect(find.byKey(const Key('mixer_level_marker_0')), findsOneWidget);
+
+      final meter = find.byKey(const Key('mixer_level_0'));
+      final box = tester.getRect(meter);
+      final gesture = await tester.startGesture(box.center);
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, -20));
+      await tester.pump();
+      await gesture.moveTo(Offset(box.center.dx, box.top + box.height * 0.1));
+      await tester.pump();
+      verifyNever(() => bloc.add(any(that: isA<LooperVolumeChanged>())));
+      expect(
+        tester
+            .widget<AppText>(find.byKey(const Key('mixer_gain_readout_0')))
+            .data,
+        '−0.6 dB',
+      );
+
+      await gesture.up();
+      await tester.pump();
+      final levels = verify(
+        () => bloc.add(captureAny(that: isA<LooperVolumeChanged>())),
+      ).captured.cast<LooperVolumeChanged>();
+      expect(levels, hasLength(1));
+      // The marker travels in decibels; 10% from the top is near unity.
+      expect(levels.single.volume, closeTo(0.94, 0.05));
+
+      await tester.tap(meter);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(meter);
+      await tester.pumpAndSettle();
+      final unity = verify(
+        () => bloc.add(captureAny(that: isA<LooperVolumeChanged>())),
+      ).captured.cast<LooperVolumeChanged>();
+      expect(unity.last.volume, 1);
+    });
+
+    for (final gain in [0.0, 1.0, 2.0]) {
+      testWidgets('gain $gain keeps its logarithmic marker body inside the '
+          'meter', (tester) async {
+        seed(LooperState(tracks: [Track(volume: gain)]));
+        await pump(tester);
+        await showMixer(tester);
+
+        final meter = tester.getRect(find.byKey(const Key('mixer_level_0')));
+        final marker = tester.getRect(
+          find.byKey(const Key('mixer_level_marker_0')),
+        );
+        final unity = tester.getRect(find.byKey(const Key('mixer_unity_0')));
+        expect(marker.top, greaterThanOrEqualTo(meter.top));
+        expect(marker.bottom, lessThanOrEqualTo(meter.bottom));
+        final expected = gain == 0
+            ? meter.bottom - marker.height
+            : gain == 2
+            ? meter.top
+            : unity.top;
+        expect(marker.top, closeTo(expected, 0.02));
+        expect(
+          tester
+              .widget<AppText>(
+                find.byKey(const Key('mixer_gain_readout_0')),
+              )
+              .data,
+          switch (gain) {
+            0 => '−∞',
+            1 => '0.0 dB',
+            _ => '+6.0 dB',
+          },
+        );
+      });
+    }
+
+    testWidgets('a foreign gain write cancels a live touch draft before lift', (
+      tester,
+    ) async {
+      const original = LooperState(tracks: [Track(volume: 0.5)]);
+      final changes = StreamController<LooperState>.broadcast();
+      addTearDown(changes.close);
+      seed(original);
+      whenListen(bloc, changes.stream, initialState: original);
+      await pump(tester);
+      await showMixer(tester);
+
+      final meter = tester.getRect(find.byKey(const Key('mixer_level_0')));
+      final gesture = await tester.startGesture(meter.center);
+      await gesture.moveBy(const Offset(0, -40));
+      await tester.pump();
+      changes.add(const LooperState(tracks: [Track(volume: 0.8)]));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AppText>(find.byKey(const Key('mixer_gain_readout_0')))
+            .data,
+        '−1.9 dB',
+      );
+      await gesture.up();
+      await tester.pump();
+      verifyNever(() => bloc.add(any(that: isA<LooperVolumeChanged>())));
+      expect(
+        tester
+            .widget<AppText>(find.byKey(const Key('mixer_gain_readout_0')))
+            .data,
+        '−1.9 dB',
+      );
+    });
+
+    testWidgets('bank changes discard an equal-valued pan draft and metadata '
+        'selects through the shared cursor', (tester) async {
+      seed(
+        LooperState(
+          tracks: [
+            for (var channel = 0; channel < 8; channel++)
+              Track(channel: channel),
+          ],
+        ),
+      );
+      await pump(tester);
+      await showMixer(tester);
+
+      final pan = tester.getRect(find.byKey(const Key('mixer_pan_0')));
+      final gesture = await tester.startGesture(pan.center);
+      await gesture.moveBy(const Offset(40, 0));
+      await tester.pump();
+      control.browseBank(1);
+      await tester.pumpAndSettle();
+      expect(control.state.activeBank, 1);
+      expect(find.byKey(const Key('mixer_pan_0')), findsNothing);
+      expect(find.byKey(const Key('mixer_pan_4')), findsOneWidget);
+      await gesture.up();
+      await tester.pump();
+      verifyNever(() => bloc.add(any(that: isA<LooperTrackPanChanged>())));
+      await tester.tap(find.byKey(const Key('mixer_select_4')));
+      await tester.pump();
+      expect(control.state.cursor, 4);
+    });
+
+    testWidgets('a held gain tap cannot commit after selecting another track', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      await pump(tester);
+      await showMixer(tester);
+      final meter = tester.getRect(find.byKey(const Key('mixer_level_0')));
+      final oldTouch = await tester.startGesture(meter.center);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('mixer_select_1')));
+      await tester.pumpAndSettle();
+      expect(control.state.cursor, 1);
+      await oldTouch.up();
+      await tester.pumpAndSettle();
+      verifyNever(() => bloc.add(any(that: isA<LooperVolumeChanged>())));
+    });
+
+    testWidgets('opening Reset discards a held pan drag before release', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await showMixer(tester);
+      final pan = tester.getRect(find.byKey(const Key('mixer_pan_0')));
+      final oldTouch = await tester.startGesture(pan.center);
+      await oldTouch.moveBy(const Offset(40, 0));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('stage_reset_mixer')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('mixer_reset_confirm')), findsOneWidget);
+      await oldTouch.up();
+      await tester.pump();
+      verifyNever(() => bloc.add(any(that: isA<LooperTrackPanChanged>())));
+    });
+
+    testWidgets('encoder pan draft cancels on Escape and commits on press', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await showMixer(tester);
+      final bar = find.byKey(const Key('mixer_pan_0'));
+      final centre = AppLocalizations.of(tester.element(bar)).routingPanCenter;
+      Focus.of(tester.element(bar)).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(
+        tester
+            .widget<AppText>(find.byKey(const Key('mixer_pan_readout_0')))
+            .data,
+        isNot(centre),
+      );
+      verifyNever(() => bloc.add(any(that: isA<LooperTrackPanChanged>())));
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(
+        tester
+            .widget<AppText>(find.byKey(const Key('mixer_pan_readout_0')))
+            .data,
+        centre,
+      );
+      verifyNever(() => bloc.add(any(that: isA<LooperTrackPanChanged>())));
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      final edits = verify(
+        () => bloc.add(captureAny(that: isA<LooperTrackPanChanged>())),
+      ).captured.cast<LooperTrackPanChanged>();
+      expect(edits, hasLength(1));
+      expect(edits.single.pan, closeTo(0.05, 0.001));
+    });
+
+    testWidgets('the strip meters the two sides separately', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 1000,
+              peakL: 1,
+              peakR: 0.001,
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+      await showMixer(tester);
+
+      double fill(String key) => tester
+          .widget<FractionallySizedBox>(
+            find.descendant(
+              of: find.byKey(Key(key)),
+              matching: find.byType(FractionallySizedBox),
+            ),
+          )
+          .heightFactor!;
+      // Left is at full scale, right is all but silent: one lane each, not a
+      // single bar of their sum.
+      expect(fill('mixer_meter_l_0'), 1);
+      expect(fill('mixer_meter_r_0'), lessThan(0.2));
+    });
+
+    testWidgets('the reduced-height Mixer keeps its side scale at the meter', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          tracks: [
+            Track(),
+            Track(channel: 1),
+            Track(channel: 2),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      await tracks.rename(0, 'GUITAR');
+      await pump(tester);
+      await showMixer(tester);
+      final scale = tester.getRect(find.byType(StageDbScale).first);
+      final meter = tester.getRect(find.byKey(const Key('mixer_level_0')));
+      final run = tester.getRect(find.byKey(const Key('stage_mixer_run')));
+      final factor = scale.height / MixerColumn.minimumHeight;
+      expect(factor, lessThan(1));
+      expect(
+        run.width,
+        closeTo(
+          tester.getSize(find.byType(TracksView)).width -
+              2 * StageTopBar.sideInset -
+              2 * StageDbScale.width * factor -
+              32 * factor,
+          0.05,
+        ),
+      );
+      final title = tester.renderObject<RenderParagraph>(
+        find.text('GUITAR'),
+      );
+      expect(title.size.height, lessThan(50));
+      expect(
+        tester.getSize(find.byKey(const Key('mixer_mute_0'))).width,
+        greaterThan(35),
+      );
+      for (final key in ['mixer_mute_0', 'mixer_solo_0']) {
+        final label = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.byKey(Key(key)),
+            matching: find.byType(Text),
+          ),
+        );
+        expect(label.size.height, lessThan(35));
+      }
+      expect(
+        meter.top,
+        closeTo(scale.top + MixerColumn.meterTopInset * factor, 0.05),
+      );
+      expect(
+        meter.bottom,
+        closeTo(scale.bottom - MixerColumn.meterBottomInset * factor, 0.05),
+      );
+      final marks = [0, -6, -12, -18, -24, -36, -48, -60];
+      for (var index = 0; index < marks.length - 1; index++) {
+        final upper = tester.getRect(
+          find.descendant(
+            of: find.byType(StageDbScale).first,
+            matching: find.text('${marks[index]}'),
+          ),
+        );
+        final lower = tester.getRect(
+          find.descendant(
+            of: find.byType(StageDbScale).first,
+            matching: find.text('${marks[index + 1]}'),
+          ),
+        );
+        expect(upper.bottom, lessThanOrEqualTo(lower.top));
+      }
+    });
+
+    testWidgets('Reset mixer belongs to the Mixer, and resets the mix', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          tracks: [Track(state: TrackState.playing, lengthFrames: 1000)],
+        ),
+      );
+      await pump(tester);
+      // Not on the Track view: an action that changes eight values at once
+      // sits beside the values it changes.
+      expect(find.byKey(const Key('stage_reset_mixer')), findsNothing);
+
+      await showMixer(tester);
+      expect(find.byKey(const Key('stage_reset_mixer')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('stage_reset_mixer')));
+      await tester.pump();
+      expect(find.byKey(const Key('mixer_reset_confirm')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('mixer_reset_cancel')));
+      await tester.pumpAndSettle();
+      verifyNever(() => bloc.add(const LooperMixerReset()));
+      await tester.tap(find.byKey(const Key('stage_reset_mixer')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('mixer_reset_apply')));
+      await tester.pumpAndSettle();
+      verify(() => bloc.add(const LooperMixerReset())).called(1);
+    });
+
+    testWidgets('Reset confirmation cannot apply to a replaced session', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await showMixer(tester);
+      await tester.tap(find.byKey(const Key('stage_reset_mixer')));
+      await tester.pump();
+      when(() => repository.mixGeneration).thenReturn(1);
+      await tester.tap(find.byKey(const Key('mixer_reset_apply')));
+      await tester.pumpAndSettle();
+      verifyNever(() => bloc.add(const LooperMixerReset()));
     });
 
     testWidgets('the footer reads tempo, elapsed time, output and mode', (
