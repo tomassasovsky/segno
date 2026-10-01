@@ -387,6 +387,22 @@ class MidiMappingEngine {
     );
   }
 
+  /// Forget replaced target owners without replaying their old contact state.
+  /// Other rows retain accepted claims and the physical contact stays down
+  /// until its actual release, so reappearance never synthesizes a press.
+  void invalidateTargets(Set<String> keys) {
+    for (final state in [..._active.values, ..._retired.values]) {
+      var changed = false;
+      for (final (index, control) in state.mapping.controls.indexed) {
+        if (!keys.contains(control.key)) continue;
+        state.rows.remove(index);
+        changed = true;
+      }
+      if (changed) state.previous = null;
+    }
+    _retired.removeWhere((_, state) => !state.hasClaims);
+  }
+
   /// Discard all claims only when the entire owning session is replaced.
   void reset() {
     _active.clear();

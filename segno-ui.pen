@@ -302358,6 +302358,200 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "sJfGy",
+      "x": 43032,
+      "y": 3744,
+      "name": "Native implementation / Shared Mixer controls / M3.10",
+      "width": 4000,
+      "height": 2720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "kP3d9",
+          "name": "Shared Mixer reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Mixer controls · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "a13AJ",
+          "name": "c/ Shared Mixer values and ownership",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "MIDI, external switches and expression share track, lane and live-input gain; pan, linked-input balance and output controls. Gain endpoints show dB; pan and balance show placement. Save keeps the draft, Escape restores the opening endpoint. Held values remain temporary; saved sessions retain Released intent. Native renders at 1920 × 1080; physical controller validation remains separate.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "h4vFZS",
+          "name": "Shared Mixer reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "fzjv8",
+              "name": "MIDI · track, lane and input gain reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "NaDLg",
+                  "name": "MIDI · track, lane and input gain label",
+                  "fill": "#F1F2F4",
+                  "content": "MIDI · track, lane and input gain",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "Q8pN7T",
+                  "name": "MIDI · track, lane and input gain native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_mixer_gains.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Pa5kG",
+              "name": "MIDI · pan and output controls reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "D6Ntkz",
+                  "name": "MIDI · pan and output controls label",
+                  "fill": "#F1F2F4",
+                  "content": "MIDI · pan and output controls",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "g8n8Ev",
+                  "name": "MIDI · pan and output controls native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_mixer_placement.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "jSg77",
+          "name": "Shared Mixer reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "hYDVS",
+              "name": "External button · Held / Released pan reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "t4aVi",
+                  "name": "External button · Held / Released pan label",
+                  "fill": "#F1F2F4",
+                  "content": "External button · Held / Released pan",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "VB2TD",
+                  "name": "External button · Held / Released pan native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_mixer_pan.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qVaAe",
+              "name": "Expression · heel and toe gain reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "hent5",
+                  "name": "Expression · heel and toe gain label",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · heel and toe gain",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "UxjF8",
+                  "name": "Expression · heel and toe gain native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_mixer_expression.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {

@@ -4,6 +4,7 @@ import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -207,7 +208,11 @@ class ExternalControlsEditor extends StatelessWidget {
                   ExternalControlRow(:final ExternalActivation activation) =>
                     conditionLabel(l10n, activation.condition),
                   ExternalControlRow(:final ExternalParameter parameter) =>
-                    _percent(parameter.active),
+                    controlValueReadout(
+                      l10n,
+                      parameter.target,
+                      parameter.active,
+                    ),
                   _ => '',
                 },
           onTap: () => onSelect(row.target),
@@ -420,7 +425,11 @@ class ExternalControlsEditor extends StatelessWidget {
                   ),
                 ),
                 AppText(
-                  _percent(value),
+                  controlValueReadout(
+                    context.l10n,
+                    parameter.target,
+                    value,
+                  ),
                   key: Key('external_value_${id}_label'),
                   style: TextStyle(
                     color: surface.textSecondary,
@@ -437,18 +446,22 @@ class ExternalControlsEditor extends StatelessWidget {
             value: value,
             width: 500,
             semanticLabel: '${row.name} $name',
+            semanticValueBuilder: (normalized) => controlValueReadout(
+              context.l10n,
+              parameter.target,
+              normalized,
+            ),
             // Moving a value writes the draft, never the parameter: the
             // accepted design is explicit that editing a mapping dispatches
             // nothing.
             enabled: row.available,
             onChanged: (next) => onValue(active: active, value: next),
+            onEditCancel: (opening) => onValue(active: active, value: opening),
           ),
         ],
       ),
     );
   }
-
-  static String _percent(double value) => '${(value * 100).round()}%';
 }
 
 /// A stable key fragment for a control's [target]: an activation and a

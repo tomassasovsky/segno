@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/mix_value_scale.dart';
 
 void main() {
   group('ControlValueTarget canonical strings', () {
@@ -31,6 +32,52 @@ void main() {
       expect(ControlValueTarget.tryParse(master.canonicalString()), master);
     });
 
+    test('all Mixer coordinates keep distinct canonical identities', () {
+      const targets = <MixValueTarget>[
+        TrackVolumeTarget(3),
+        LaneVolumeTarget(3, 1),
+        MonitorVolumeTarget(2),
+        TrackPanTarget(3),
+        InputPanTarget(2),
+        PairBalanceTarget(2),
+        OutputLevelTarget(1),
+        OutputBalanceTarget(1),
+      ];
+
+      expect(
+        targets.map((target) => target.canonicalString()).toSet(),
+        hasLength(targets.length),
+      );
+      for (final target in targets) {
+        expect(target.isStructurallyValid, isTrue);
+        expect(ControlValueTarget.tryParse(target.canonicalString()), target);
+      }
+    });
+
+    test('Mixer travel uses actual fader law and physical pan/level', () {
+      const gain = TrackVolumeTarget(0);
+      expect(gain.toDomain(0), 0);
+      expect(gain.toDomain(0.5), closeTo(0.04472135955, 1e-10));
+      expect(gain.fromDomain(1), closeTo(0.90880725226, 1e-10));
+      expect(gain.toDomain(gain.fromDomain(1)), closeTo(1, 1e-12));
+      expect(const LaneVolumeTarget(0, 1).toDomain(0.5), gain.toDomain(0.5));
+      expect(const MonitorVolumeTarget(0).fromDomain(1), gain.fromDomain(1));
+      expect(mixerGainAt(1), closeTo(2, 1e-12));
+
+      for (final target in <MixValueTarget>[
+        const TrackPanTarget(0),
+        const InputPanTarget(0),
+        const PairBalanceTarget(0),
+        const OutputBalanceTarget(0),
+      ]) {
+        expect(target.toDomain(0), -1);
+        expect(target.toDomain(0.5), 0);
+        expect(target.toDomain(1), 1);
+        expect(target.fromDomain(0), 0.5);
+      }
+      expect(const OutputLevelTarget(0).toDomain(0.75), 0.75);
+    });
+
     test('equal targets encode byte-identically', () {
       const a = FxParamTarget(
         address: FxAddress(stage: FxStage.output),
@@ -55,6 +102,16 @@ void main() {
         ControlValueTarget.tryParse('{"ctl":"trackVolume","index":0.5}'),
         isNull,
       );
+      for (final encoded in [
+        '{"ctl":"laneVolume","index":2}',
+        '{"ctl":"laneVolume","index":2,"lane":0.5}',
+        '{"ctl":"pairBalance","index":1}',
+        '{"ctl":"outputLevel","index":null}',
+        '{"ctl":"trackPan","index":0,"lane":0}',
+        '{"ctl":"masterGain","index":0}',
+      ]) {
+        expect(ControlValueTarget.tryParse(encoded), isNull);
+      }
       // An FX target missing its slot or param would otherwise widen to
       // "some parameter of some effect", which is exactly the retarget A9
       // forbids.
@@ -96,6 +153,8 @@ void main() {
       'invalid coordinates reject while a valid missing target survives',
       () {
         expect(const TrackVolumeTarget(-1).isStructurallyValid, isFalse);
+        expect(const LaneVolumeTarget(0, -1).isStructurallyValid, isFalse);
+        expect(const PairBalanceTarget(1).isStructurallyValid, isFalse);
         expect(
           const FxParamTarget(
             address: FxAddress(stage: FxStage.loop),

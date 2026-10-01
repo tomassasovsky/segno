@@ -38,6 +38,9 @@ void main() {
     );
     looper = _MockLooperRepository();
     when(() => looper.sessionRevision).thenReturn(0);
+    when(() => looper.mixGeneration).thenReturn(0);
+    when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => looper.laneCount(any())).thenReturn(1);
     looperStates = StreamController<LooperState>.broadcast();
     trackChains = {
       3: [_fx('a'), _fx('b')],

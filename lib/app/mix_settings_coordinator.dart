@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/control/binding/control_value_resolver.dart';
+import 'package:segno/control/binding/control_value_target.dart';
 
 /// One atomic durable mix value, with exact rollback of the previous value.
 abstract interface class MixSettingsPersistence {
@@ -105,7 +107,12 @@ class MixSettingsCoordinator {
     required String Function() device,
   }) : _repository = repository,
        _persistence = persistence,
-       _device = device;
+       _device = device {
+    _syncControllerTopology();
+    _topologySub = repository.looperState.listen(
+      (_) => _syncControllerTopology(),
+    );
+  }
 
   final LooperRepository _repository;
   final MixSettingsPersistence _persistence;
@@ -121,68 +128,209 @@ class MixSettingsCoordinator {
   MixSettingsOutcome? _recovery;
   (String, String?)? _recoveryCheckpoint;
 
-  /// The shared control ledger observes accepted ordinary track-level writes.
-  void Function(int channel, double value)? onOrdinaryTrackLevel;
+  /// Accepted ordinary intent, in the same normalized domain as assignments.
+  void Function(Map<MixValueTarget, double> values)? onOrdinaryValues;
 
-  final _midiReleasedLevels = <int, double>{};
-  int? _midiProjectionGeneration;
+  final _releasedValues = <MixValueTarget, double>{};
+  late final StreamSubscription<LooperState> _topologySub;
+  Object? _controllerLifetime;
+  Set<MixValueTarget> _controllerTargets = {};
+  int _topologyRevision = 0;
+  final _targetRevisions = <MixValueTarget, int>{};
 
-  /// The settled mix as saved while a MIDI momentary value is held.
-  MixSettingsSnapshot get durableSnapshot {
-    if (_midiProjectionGeneration != _repository.sessionRevision) {
-      _midiReleasedLevels.clear();
-      _midiProjectionGeneration = _repository.sessionRevision;
-    }
-    return _projectMidi(_repository.mixSettingsSnapshot, _midiReleasedLevels);
+  /// Retires claims when their concrete owner disappears or is replaced.
+  void Function(Set<MixValueTarget> targets)? onInvalidatedValues;
+
+  /// Capture before any controller queue, then compare again at admission.
+  Map<MixValueTarget, int> controllerOrigins(Iterable<MixValueTarget> targets) {
+    _syncControllerTopology();
+    return {
+      for (final target in targets) target: _targetRevisions[target] ?? 0,
+    };
   }
 
-  MixSettingsSnapshot _projectMidi(
+  /// Unrelated topology changes do not cancel work for surviving owners.
+  bool controllerOriginsCurrent(Map<MixValueTarget, int> origins) {
+    _syncControllerTopology();
+    return origins.entries.every(
+      (entry) => (_targetRevisions[entry.key] ?? 0) == entry.value,
+    );
+  }
+
+  void _syncControllerTopology() {
+    final lifetime = (
+      _repository.mixGeneration,
+      _repository.sessionRevision,
+      _device(),
+    );
+    final targets = _repository.availableMixValueTargets().toSet();
+    final replaced = lifetime != _controllerLifetime;
+    final removed = replaced
+        ? _controllerTargets
+        : _controllerTargets.difference(targets);
+    if (replaced ||
+        removed.isNotEmpty ||
+        targets.difference(_controllerTargets).isNotEmpty) {
+      ++_topologyRevision;
+    }
+    for (final target in {
+      ...removed,
+      ...targets.difference(_controllerTargets),
+    }) {
+      _targetRevisions[target] = _topologyRevision;
+    }
+    _controllerLifetime = lifetime;
+    _controllerTargets = targets;
+    if (removed.isEmpty) return;
+    _releasedValues.removeWhere((target, _) => removed.contains(target));
+    onInvalidatedValues?.call(Set.unmodifiable(removed));
+  }
+
+  /// The settled mix as saved while a controller momentary value is held.
+  MixSettingsSnapshot get durableSnapshot {
+    _syncControllerTopology();
+    return _projectReleased(_repository.mixSettingsSnapshot, _releasedValues);
+  }
+
+  MixSettingsSnapshot _projectReleased(
     MixSettingsSnapshot snapshot,
-    Map<int, double> released,
-  ) => snapshot.copyWith(trackLevels: {...snapshot.trackLevels, ...released});
+    Map<MixValueTarget, double> released,
+  ) {
+    var projected = snapshot;
+    for (final entry in released.entries) {
+      projected = _withValue(projected, entry.key, entry.value);
+    }
+    return projected;
+  }
 
   /// Writes through the existing mix owner, saving the authored Released value
-  /// for a MIDI hold. A refused press never publishes a temporary projection.
-  Future<MixSettingsOutcome> setMidiTrackVolume(
-    double volume, {
-    required int channel,
-    double? releasedValue,
+  /// for a held controller. A refused press never publishes a projection.
+  Future<MixSettingsOutcome> setControllerValues(
+    Map<MixValueTarget, double> values, {
+    Map<MixValueTarget, double> releasedValues = const {},
   }) {
     final generation = _repository.mixGeneration;
     final session = _repository.sessionRevision;
     final device = _device();
+    final origins = controllerOrigins(values.keys);
+    final normalized = Map<MixValueTarget, double>.unmodifiable(values);
+    final lows = Map<MixValueTarget, double>.unmodifiable(releasedValues);
     return runExclusive(() async {
-      if (!_current(generation, device) ||
+      if (_closed ||
+          !controllerOriginsCurrent(origins) ||
+          !_current(generation, device) ||
           session != _repository.sessionRevision) {
         return const MixSettingsOutcome(MixSettingsStatus.superseded);
       }
-      if (!_track(channel) ||
-          !volume.isFinite ||
-          (releasedValue != null && !releasedValue.isFinite)) {
+      if (normalized.isEmpty ||
+          normalized.entries.any(
+            (entry) =>
+                !entry.value.isFinite ||
+                !_repository.valueTargetResolves(entry.key),
+          ) ||
+          lows.entries.any(
+            (entry) =>
+                !entry.value.isFinite || !normalized.containsKey(entry.key),
+          )) {
         return _reject();
       }
       final current = durableSnapshot;
-      final released = Map<int, double>.of(_midiReleasedLevels);
-      if (releasedValue == null) {
-        released.remove(channel);
-      } else {
-        released[channel] = releasedValue.clamp(0.0, 1.0);
+      final released = Map<MixValueTarget, double>.of(_releasedValues);
+      var candidate = _repository.mixSettingsSnapshot;
+      for (final entry in normalized.entries) {
+        released.remove(entry.key);
+        if (lows[entry.key] case final low?) {
+          released[entry.key] = low.clamp(0.0, 1.0);
+        }
+        candidate = _withValue(candidate, entry.key, entry.value);
       }
-      final candidate = _repository.mixSettingsSnapshot.copyWith(
-        trackLevels: {
-          ..._repository.mixSettingsSnapshot.trackLevels,
-          channel: volume,
-        },
-      );
-      return _commit(
-        candidate,
-        generation,
-        device,
-        midiReleased: released,
-        priorDurable: current,
+      return _report(
+        await _commit(
+          candidate,
+          generation,
+          device,
+          releasedProjection: released,
+          priorDurable: current,
+        ),
       );
     });
   }
+
+  static MixSettingsSnapshot _withValue(
+    MixSettingsSnapshot snapshot,
+    MixValueTarget target,
+    double normalized,
+  ) {
+    final value = target.toDomain(normalized);
+    return switch (target) {
+      TrackVolumeTarget(:final channel) => snapshot.copyWith(
+        trackLevels: {...snapshot.trackLevels, channel: value},
+      ),
+      LaneVolumeTarget(:final channel, :final lane) => snapshot.copyWith(
+        laneLevels: {...snapshot.laneLevels, (channel, lane): value},
+      ),
+      MonitorVolumeTarget(:final input) => snapshot.copyWith(
+        monitorLevels: {...snapshot.monitorLevels, input: value},
+      ),
+      TrackPanTarget(:final channel) => snapshot.copyWith(
+        trackPans: {...snapshot.trackPans, channel: value},
+      ),
+      InputPanTarget(:final input) => snapshot.copyWith(
+        inputSetup: snapshot.inputSetup.withPan(input, value),
+      ),
+      PairBalanceTarget(:final input) => snapshot.copyWith(
+        inputSetup: snapshot.inputSetup.withBalance(input, value),
+      ),
+      OutputLevelTarget(:final bus) => snapshot.copyWith(
+        outputSetup: snapshot.outputSetup.withBus(
+          bus,
+          snapshot.outputSetup.of(bus).copyWith(level: value),
+        ),
+      ),
+      OutputBalanceTarget(:final bus) => snapshot.copyWith(
+        outputSetup: snapshot.outputSetup.withBus(
+          bus,
+          snapshot.outputSetup.of(bus).copyWith(balance: value),
+        ),
+      ),
+    };
+  }
+
+  static double _readValue(
+    MixSettingsSnapshot snapshot,
+    MixValueTarget target,
+  ) => target.fromDomain(switch (target) {
+    TrackVolumeTarget(:final channel) => snapshot.trackLevels[channel] ?? 1,
+    LaneVolumeTarget(:final channel, :final lane) =>
+      snapshot.laneLevels[(channel, lane)] ?? 1,
+    MonitorVolumeTarget(:final input) => snapshot.monitorLevels[input] ?? 1,
+    TrackPanTarget(:final channel) => snapshot.trackPans[channel] ?? 0,
+    InputPanTarget(:final input) => snapshot.inputSetup.panOf(input),
+    PairBalanceTarget(:final input) => snapshot.inputSetup.balanceOf(input),
+    OutputLevelTarget(:final bus) => snapshot.outputSetup.of(bus).level,
+    OutputBalanceTarget(:final bus) => snapshot.outputSetup.of(bus).balance,
+  });
+
+  Set<MixValueTarget> _ordinaryTargets(List<_Target> targets) => {
+    for (final target in targets)
+      ...switch (target.$1) {
+        _Control.trackLevel => {TrackVolumeTarget(target.$2)},
+        _Control.laneLevel => {LaneVolumeTarget(target.$2, target.$3)},
+        _Control.monitor => {MonitorVolumeTarget(target.$2)},
+        _Control.pan => {TrackPanTarget(target.$2)},
+        _Control.inputPan => {InputPanTarget(target.$2)},
+        _Control.balance => {PairBalanceTarget(target.$2)},
+        _Control.outputLevel => {OutputLevelTarget(target.$2)},
+        _Control.outputBalance => {OutputBalanceTarget(target.$2)},
+        _Control.reset => {
+          for (final track in _repository.state.tracks) ...{
+            TrackVolumeTarget(track.channel),
+            TrackPanTarget(track.channel),
+          },
+        },
+        _ => <MixValueTarget>{},
+      },
+  };
 
   static const _applied = MixSettingsOutcome(MixSettingsStatus.applied);
 
@@ -281,6 +429,7 @@ class MixSettingsCoordinator {
           ? EngineResult.ok
           : await _repository.settleMixSettings();
       MixSettingsOutcome result;
+      var ordinary = <MixValueTarget>{};
       if (!_current(generation, device)) {
         result = const MixSettingsOutcome(MixSettingsStatus.superseded);
       } else if (!settled.isOk) {
@@ -294,6 +443,9 @@ class MixSettingsCoordinator {
           candidate = edit(candidate!);
           if (candidate == null) break;
         }
+        if (candidate != null) {
+          ordinary = _ordinaryTargets(targets);
+        }
         result = candidate == null
             ? const MixSettingsOutcome(
                 MixSettingsStatus.rejected,
@@ -303,31 +455,22 @@ class MixSettingsCoordinator {
                 candidate,
                 generation,
                 device,
-                midiReleased:
+                releasedProjection:
                     {
-                      ..._midiReleasedLevels,
+                      ..._releasedValues,
                     }..removeWhere(
-                      (channel, _) => targets.any(
-                        (target) =>
-                            target.$1 == _Control.reset ||
-                            target.$1 == _Control.trackLevel &&
-                                target.$2 == channel,
-                      ),
+                      (target, _) => ordinary.contains(target),
                     ),
               );
       }
       if (result.isOk) {
-        final changedChannels = <int>{
-          for (final target in targets)
-            if (target.$1 == _Control.trackLevel) target.$2,
-          if (targets.any((target) => target.$1 == _Control.reset))
-            for (final track in _repository.state.tracks) track.channel,
-        };
-        for (final channel in changedChannels) {
-          onOrdinaryTrackLevel?.call(
-            channel,
-            _repository.mixSettingsSnapshot.trackLevels[channel] ?? 1,
-          );
+        final confirmed = _repository.mixSettingsSnapshot;
+        _syncControllerTopology();
+        if (ordinary.isNotEmpty) {
+          onOrdinaryValues?.call({
+            for (final target in ordinary)
+              target: _readValue(confirmed, target),
+          });
         }
       }
       _report(result);
@@ -341,12 +484,25 @@ class MixSettingsCoordinator {
     MixSettingsSnapshot candidate,
     int generation,
     String device, {
-    Map<int, double>? midiReleased,
+    Map<MixValueTarget, double>? releasedProjection,
     MixSettingsSnapshot? priorDurable,
   }) async {
     final durableCurrent = priorDurable ?? durableSnapshot;
-    final nextReleased = midiReleased ?? _midiReleasedLevels;
-    final durableCandidate = _projectMidi(candidate, nextReleased);
+    final nextReleased =
+        Map<MixValueTarget, double>.of(
+          releasedProjection ?? _releasedValues,
+        )..removeWhere(
+          (target, _) => switch (target) {
+            PairBalanceTarget(:final input) =>
+              !candidate.inputSetup.pairs.containsKey(input),
+            InputPanTarget(:final input) =>
+              candidate.inputSetup.pairOf(input) != null,
+            LaneVolumeTarget(:final channel, :final lane) =>
+              lane >= (candidate.laneCounts[channel] ?? 1),
+            _ => false,
+          },
+        );
+    final durableCandidate = _projectReleased(candidate, nextReleased);
     final current = _repository.mixSettingsSnapshot;
     if (device.isEmpty &&
         (candidate.inputSetup != current.inputSetup ||
@@ -416,11 +572,11 @@ class MixSettingsCoordinator {
       );
       return persistent ? _rollback(device, checkpoint, failure) : failure;
     }
-    final acceptedReleased = Map<int, double>.of(nextReleased);
-    _midiReleasedLevels
+    final acceptedReleased = Map<MixValueTarget, double>.of(nextReleased);
+    _releasedValues
       ..clear()
       ..addAll(acceptedReleased);
-    _midiProjectionGeneration = _repository.sessionRevision;
+
     return _applied;
   }
 
@@ -521,6 +677,7 @@ class MixSettingsCoordinator {
     _closed = true;
     await flush();
     await _exclusiveTail;
+    await _topologySub.cancel();
     await _failures.close();
   }
 

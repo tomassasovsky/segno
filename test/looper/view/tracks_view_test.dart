@@ -112,6 +112,8 @@ void main() {
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => repository.laneCount(any())).thenReturn(1);
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
     when(() => repository.trackChainEnabled(any())).thenReturn(true);

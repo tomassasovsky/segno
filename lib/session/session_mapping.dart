@@ -21,6 +21,7 @@ import 'package:session_repository/session_repository.dart';
 SessionChains chainsFromLooper(
   LooperRepository looper, {
   required FxChainPersistence projection,
+  MixSettingsSnapshot? mix,
 }) => SessionChains(
   laneChains: [
     for (final entry in looper.allLaneChains().entries)
@@ -48,7 +49,7 @@ SessionChains chainsFromLooper(
         input: monitor.input,
         mode: monitor.mode.name,
         outputMask: monitor.outputMask,
-        volume: monitor.volume,
+        volume: mix?.monitorLevels[monitor.input] ?? monitor.volume,
         muted: monitor.muted,
         // No pan: on load the monitors' pans are rebuilt from the session's
         // input setup (`loopSettingsFromLooper`), which is what produced
@@ -99,6 +100,7 @@ SessionSettings settingsFromLooper(
   MixSettingsSnapshot? mix,
 }) {
   final transport = looper.sessionTransport;
+  final snapshot = mix ?? looper.mixSettingsSnapshot;
   return SessionSettings(
     tempoBpm: transport.tempoBpm,
     tempoSource: transport.tempoSource,
@@ -115,29 +117,28 @@ SessionSettings settingsFromLooper(
     trackOverdubDecayOverrides: looper.trackOverdubDecayOverrides,
     trackOneShotOverrides: looper.trackOneShotOverrides,
     trackLengthPresetOverrides: looper.trackLengthPresetOverrides,
-    trackLevels: (mix ?? looper.mixSettingsSnapshot).trackLevels,
-    trackPans: {
-      for (final track in looper.state.tracks)
-        if (track.pan != 0) track.channel: track.pan,
-    },
-    laneInputs: looper.mixSettingsSnapshot.laneInputs,
-    laneOutputs: looper.mixSettingsSnapshot.laneOutputs,
-    laneCounts: looper.mixSettingsSnapshot.laneCounts,
+    trackLevels: snapshot.trackLevels,
+    trackPans: snapshot.trackPans,
+    laneInputs: snapshot.laneInputs,
+    laneOutputs: snapshot.laneOutputs,
+    laneCounts: snapshot.laneCounts,
     laneMix: {
       for (final track in looper.state.tracks)
         for (var lane = 0; lane < track.lanes.length; lane++)
           (track.channel, lane): (
-            level: track.lanes[lane].volume,
+            level:
+                snapshot.laneLevels[(track.channel, lane)] ??
+                track.lanes[lane].volume,
             imagePan: track.lanes[lane].imagePan,
             balance: track.lanes[lane].balance,
           ),
     },
     inputSetup: SessionInputSetup(
-      trimDb: looper.state.inputSetup.trimDb,
-      pan: looper.state.inputSetup.pan,
-      pairs: looper.state.inputSetup.pairs,
+      trimDb: snapshot.inputSetup.trimDb,
+      pan: snapshot.inputSetup.pan,
+      pairs: snapshot.inputSetup.pairs,
     ),
-    outputSetup: _sessionOutputSetup(looper.state.outputSetup),
+    outputSetup: _sessionOutputSetup(snapshot.outputSetup),
     clickMode: transport.clickMode,
     clickMask: transport.clickMask,
     clickVolume: transport.clickVolume,

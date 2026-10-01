@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/control/binding/control_value_resolver.dart';
+import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno_engine/segno_engine.dart'
     show EngineMixSettings, EngineSnapshot, TrackSnapshot;
 import 'package:segno_engine/segno_engine.dart' as engine show LatencyState;
@@ -47,6 +49,7 @@ EngineSnapshot _rig({int trackCount = 1}) => EngineSnapshot(
   bufferFrames: 128,
   inputChannels: 2,
   outputChannels: 2,
+  outputBusCount: 1,
   framesProcessed: 0,
   xrunCount: 0,
   inputRms: 0,
@@ -83,6 +86,21 @@ class _LifecycleAudio extends FakeAudioEngine {
   }
 }
 
+Future<MixSettingsOutcome> applyTrackLevel(
+  MixSettingsCoordinator coordinator,
+  double gain, {
+  required int channel,
+  double? releasedValue,
+}) {
+  final target = TrackVolumeTarget(channel);
+  return coordinator.setControllerValues(
+    {target: target.fromDomain(gain)},
+    releasedValues: {
+      if (releasedValue != null) target: target.fromDomain(releasedValue),
+    },
+  );
+}
+
 void main() {
   late _LifecycleAudio audio;
   late LooperRepository repository;
@@ -113,28 +131,173 @@ void main() {
   });
 
   test(
+    'one confirmed batch projects every available numeric mix field',
+    () async {
+      const targets = <MixValueTarget>[
+        TrackVolumeTarget(0),
+        LaneVolumeTarget(0, 0),
+        MonitorVolumeTarget(0),
+        TrackPanTarget(0),
+        InputPanTarget(0),
+        OutputLevelTarget(0),
+        OutputBalanceTarget(0),
+      ];
+      for (final target in targets) {
+        expect(
+          repository.valueTargetResolves(target),
+          isTrue,
+          reason: target.toString(),
+        );
+      }
+      final batch = await coordinator.setControllerValues(
+        {for (final target in targets) target: 1},
+        releasedValues: {for (final target in targets) target: 0},
+      );
+      expect(
+        batch.isOk,
+        isTrue,
+        reason: '${batch.status} ${batch.engineResult}',
+      );
+      expect(audio.calls.where((call) => call == 'setMix'), hasLength(1));
+      final live = repository.mixSettingsSnapshot;
+      expect(live.trackLevels[0], closeTo(2, 1e-12));
+      expect(live.laneLevels[(0, 0)], closeTo(2, 1e-12));
+      expect(live.monitorLevels[0], closeTo(2, 1e-12));
+      expect(live.trackPans[0], 1);
+      expect(live.inputSetup.panOf(0), 1);
+      expect(live.outputSetup.of(0).level, 1);
+      expect(live.outputSetup.of(0).balance, 1);
+      final saved = persistence.candidates.single;
+      expect(saved.trackLevels[0], 0);
+      expect(saved.laneLevels[(0, 0)], 0);
+      expect(saved.monitorLevels[0], 0);
+      expect(saved.trackPans[0], -1);
+      expect(saved.inputSetup.panOf(0), -1);
+      expect(saved.outputSetup.of(0).level, 0);
+      expect(saved.outputSetup.of(0).balance, -1);
+      expect((await coordinator.setTrackPan(1)).isOk, isTrue);
+      expect(coordinator.durableSnapshot.trackPans[0], 1);
+      expect(coordinator.durableSnapshot.laneLevels[(0, 0)], 0);
+      expect((await coordinator.resetMixer()).isOk, isTrue);
+      final reset = coordinator.durableSnapshot;
+      expect(reset.trackLevels[0] ?? 1, 1);
+      expect(reset.trackPans[0] ?? 0, 0);
+      expect(reset.laneLevels[(0, 0)], 0);
+      expect(reset.monitorLevels[0], 0);
+      expect(reset.outputSetup.of(0).balance, -1);
+    },
+  );
+
+  test('refused controller storage uses the shared failure stream', () async {
+    final failures = <MixSettingsOutcome>[];
+    final subscription = coordinator.failures.listen(failures.add);
+    addTearDown(subscription.cancel);
+    persistence.refuseWrite = true;
+    final result = await coordinator.setControllerValues({
+      const TrackPanTarget(0): 1,
+    });
+    await _turn();
+    expect(result.status, MixSettingsStatus.storageFailed);
+    expect(failures.single, same(result));
+    expect(repository.mixSettingsSnapshot.trackPans[0] ?? 0, 0);
+  });
+
+  test(
+    'missing live coordinates reject an entire batch before persistence',
+    () async {
+      for (final absent in const <MixValueTarget>[
+        LaneVolumeTarget(0, 1),
+        MonitorVolumeTarget(2),
+        InputPanTarget(2),
+        PairBalanceTarget(0),
+        OutputLevelTarget(1),
+        OutputBalanceTarget(1),
+        TrackPanTarget(1),
+      ]) {
+        expect(
+          (await coordinator.setControllerValues({
+            const TrackVolumeTarget(0): 0,
+            absent: 1,
+          })).isOk,
+          isFalse,
+        );
+      }
+      expect(persistence.candidates, isEmpty);
+      expect(repository.mixSettingsSnapshot.trackLevels[0] ?? 1, 1);
+    },
+  );
+
+  test('unrelated pair topology preserves queued track owner', () async {
+    persistence.writeGate = Completer<void>();
+    final pair = coordinator.setInputPair(input: 0, paired: true);
+    await _turn();
+    final track = coordinator.setControllerValues({const TrackPanTarget(0): 1});
+    persistence.writeGate!.complete();
+    expect((await pair).isOk, isTrue);
+    expect((await track).isOk, isTrue);
+    expect(repository.mixSettingsSnapshot.trackPans[0], 1);
+  });
+
+  test(
+    'pair removal invalidates low and queued ingress before reappearance',
+    () async {
+      expect(
+        (await coordinator.setInputPair(input: 0, paired: true)).isOk,
+        isTrue,
+      );
+      expect(
+        (await coordinator.setControllerValues(
+          {const PairBalanceTarget(0): 1},
+          releasedValues: {const PairBalanceTarget(0): 0},
+        )).isOk,
+        isTrue,
+      );
+      expect(coordinator.durableSnapshot.inputSetup.pairs[0], -1);
+      final invalidated = <MixValueTarget>{};
+      coordinator.onInvalidatedValues = invalidated.addAll;
+      persistence.writeGate = Completer<void>();
+      final unlink = coordinator.setInputPair(input: 0, paired: false);
+      await _turn();
+      final stale = coordinator.setControllerValues({
+        const PairBalanceTarget(0): 0,
+      });
+      persistence.writeGate!.complete();
+      expect((await unlink).isOk, isTrue);
+      expect((await stale).status, MixSettingsStatus.superseded);
+      expect(invalidated, contains(const PairBalanceTarget(0)));
+      expect(coordinator.durableSnapshot.inputSetup.pairs, isEmpty);
+      expect(
+        (await coordinator.setInputPair(input: 0, paired: true)).isOk,
+        isTrue,
+      );
+      expect(coordinator.durableSnapshot.inputSetup.pairs[0], 0);
+    },
+  );
+
+  test(
     'momentary level saves authored Released across unrelated mix edits',
     () async {
       expect((await coordinator.setTrackVolume(.47)).isOk, isTrue);
       expect(
-        (await coordinator.setMidiTrackVolume(
+        (await applyTrackLevel(
+          coordinator,
           .8,
           channel: 0,
           releasedValue: .2,
         )).isOk,
         isTrue,
       );
-      expect(repository.mixSettingsSnapshot.trackLevels[0], .8);
-      expect(coordinator.durableSnapshot.trackLevels[0], .2);
-      expect(persistence.candidates.last.trackLevels[0], .2);
+      expect(repository.mixSettingsSnapshot.trackLevels[0], closeTo(.8, 1e-12));
+      expect(coordinator.durableSnapshot.trackLevels[0], closeTo(.2, 1e-12));
+      expect(persistence.candidates.last.trackLevels[0], closeTo(.2, 1e-12));
       expect((await coordinator.setTrackPan(.3)).isOk, isTrue);
-      expect(persistence.candidates.last.trackLevels[0], .2);
-      expect(repository.mixSettingsSnapshot.trackLevels[0], .8);
+      expect(persistence.candidates.last.trackLevels[0], closeTo(.2, 1e-12));
+      expect(repository.mixSettingsSnapshot.trackLevels[0], closeTo(.8, 1e-12));
       expect(
-        (await coordinator.setMidiTrackVolume(.2, channel: 0)).isOk,
+        (await applyTrackLevel(coordinator, .2, channel: 0)).isOk,
         isTrue,
       );
-      expect(coordinator.durableSnapshot.trackLevels[0], .2);
+      expect(coordinator.durableSnapshot.trackLevels[0], closeTo(.2, 1e-12));
     },
   );
 
@@ -143,7 +306,8 @@ void main() {
     () async {
       persistence.refuseWrite = true;
       expect(
-        (await coordinator.setMidiTrackVolume(
+        (await applyTrackLevel(
+          coordinator,
           .8,
           channel: 0,
           releasedValue: .2,
@@ -153,7 +317,8 @@ void main() {
       expect(coordinator.durableSnapshot.trackLevels[0] ?? 1, 1);
       persistence.refuseWrite = false;
       expect(
-        (await coordinator.setMidiTrackVolume(
+        (await applyTrackLevel(
+          coordinator,
           .8,
           channel: 0,
           releasedValue: .2,
@@ -162,11 +327,11 @@ void main() {
       );
       persistence.refuseWrite = true;
       expect(
-        (await coordinator.setMidiTrackVolume(.6, channel: 0)).isOk,
+        (await applyTrackLevel(coordinator, .6, channel: 0)).isOk,
         isFalse,
       );
-      expect(repository.mixSettingsSnapshot.trackLevels[0], .8);
-      expect(coordinator.durableSnapshot.trackLevels[0], .2);
+      expect(repository.mixSettingsSnapshot.trackLevels[0], closeTo(.8, 1e-12));
+      expect(coordinator.durableSnapshot.trackLevels[0], closeTo(.2, 1e-12));
     },
   );
 
@@ -174,7 +339,8 @@ void main() {
     'equal explicit ordinary level supersedes temporary durable low',
     () async {
       expect(
-        (await coordinator.setMidiTrackVolume(
+        (await applyTrackLevel(
+          coordinator,
           .8,
           channel: 0,
           releasedValue: .2,
@@ -182,17 +348,21 @@ void main() {
         isTrue,
       );
       final edits = <double>[];
-      coordinator.onOrdinaryTrackLevel = (_, value) => edits.add(value);
+      coordinator.onOrdinaryValues = (values) {
+        const target = TrackVolumeTarget(0);
+        if (values[target] case final value?) edits.add(target.toDomain(value));
+      };
       expect((await coordinator.setTrackVolume(.8)).isOk, isTrue);
-      expect(edits, [.8]);
-      expect(coordinator.durableSnapshot.trackLevels[0], .8);
-      expect(persistence.candidates.last.trackLevels[0], .8);
+      expect(edits, [closeTo(.8, 1e-12)]);
+      expect(coordinator.durableSnapshot.trackLevels[0], closeTo(.8, 1e-12));
+      expect(persistence.candidates.last.trackLevels[0], closeTo(.8, 1e-12));
     },
   );
 
   test('accepted mixer reset supersedes held track levels at unity', () async {
     expect(
-      (await coordinator.setMidiTrackVolume(
+      (await applyTrackLevel(
+        coordinator,
         .8,
         channel: 0,
         releasedValue: .2,
@@ -200,7 +370,12 @@ void main() {
       isTrue,
     );
     final accepted = <double>[];
-    coordinator.onOrdinaryTrackLevel = (_, value) => accepted.add(value);
+    coordinator.onOrdinaryValues = (values) {
+      const target = TrackVolumeTarget(0);
+      if (values[target] case final value?) {
+        accepted.add(target.toDomain(value));
+      }
+    };
     expect((await coordinator.resetMixer()).isOk, isTrue);
     expect(accepted, [1]);
     expect(coordinator.durableSnapshot.trackLevels[0] ?? 1, 1);
@@ -209,7 +384,8 @@ void main() {
 
   test('refused mixer reset preserves accepted held contribution', () async {
     expect(
-      (await coordinator.setMidiTrackVolume(
+      (await applyTrackLevel(
+        coordinator,
         .8,
         channel: 0,
         releasedValue: .2,
@@ -217,12 +393,17 @@ void main() {
       isTrue,
     );
     final accepted = <double>[];
-    coordinator.onOrdinaryTrackLevel = (_, value) => accepted.add(value);
+    coordinator.onOrdinaryValues = (values) {
+      const target = TrackVolumeTarget(0);
+      if (values[target] case final value?) {
+        accepted.add(target.toDomain(value));
+      }
+    };
     persistence.refuseWrite = true;
     expect((await coordinator.resetMixer()).isOk, isFalse);
     expect(accepted, isEmpty);
-    expect(repository.mixSettingsSnapshot.trackLevels[0], .8);
-    expect(coordinator.durableSnapshot.trackLevels[0], .2);
+    expect(repository.mixSettingsSnapshot.trackLevels[0], closeTo(.8, 1e-12));
+    expect(coordinator.durableSnapshot.trackLevels[0], closeTo(.2, 1e-12));
   });
 
   for (final switchDevice in [false, true]) {
@@ -245,7 +426,8 @@ void main() {
           audio.calls.clear();
         });
         await _turn();
-        final oldMessage = coordinator.setMidiTrackVolume(
+        final oldMessage = applyTrackLevel(
+          coordinator,
           .8,
           channel: 0,
           releasedValue: .2,

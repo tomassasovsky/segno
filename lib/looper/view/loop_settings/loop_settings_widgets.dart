@@ -899,6 +899,7 @@ class LoopSlider extends StatefulWidget {
     this.onChangeEnd,
     this.onDoubleTap,
     this.onEditCancel,
+    this.semanticValueBuilder,
     this.keyboardStep = 0.01,
     this.enabled = true,
     super.key,
@@ -930,6 +931,10 @@ class LoopSlider extends StatefulWidget {
 
   /// The accessible name.
   final String semanticLabel;
+
+  /// The announced value when the slider represents units other than percent.
+  /// When absent, existing Loop settings retain their normalized readout.
+  final String Function(double value)? semanticValueBuilder;
 
   @override
   State<LoopSlider> createState() => _LoopSliderState();
@@ -1048,7 +1053,9 @@ class _LoopSliderState extends State<LoopSlider> {
           return Semantics(
             slider: true,
             label: widget.semanticLabel,
-            value: '${(clamped * 100).round()}',
+            value:
+                widget.semanticValueBuilder?.call(clamped) ??
+                '${(clamped * 100).round()}',
             enabled: enabled,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,

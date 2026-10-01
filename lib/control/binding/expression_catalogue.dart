@@ -143,6 +143,50 @@ class ExpressionDestination extends Equatable {
     group: l10n.trackName(trackNames, channel),
     control: l10n.expressionControlVolume,
   ),
+  LaneVolumeTarget(:final channel, :final lane) => (
+    destination: fxStageLabel(
+      l10n,
+      trackNames,
+      FxAddress(stage: FxStage.loop, index: channel, lane: lane),
+    ),
+    group: fxStageLabel(
+      l10n,
+      trackNames,
+      FxAddress(stage: FxStage.loop, index: channel, lane: lane),
+    ),
+    control: l10n.expressionControlVolume,
+  ),
+  MonitorVolumeTarget(:final input) => (
+    destination: l10n.pedalAssignStageInput(input + 1),
+    group: l10n.pedalAssignStageInput(input + 1),
+    control: l10n.expressionControlVolume,
+  ),
+  TrackPanTarget(:final channel) => (
+    destination: l10n.trackName(trackNames, channel),
+    group: l10n.trackName(trackNames, channel),
+    control: l10n.routingPan,
+  ),
+  InputPanTarget(:final input) => (
+    destination: l10n.pedalAssignStageInput(input + 1),
+    group: l10n.pedalAssignStageInput(input + 1),
+    control: l10n.routingPan,
+  ),
+  PairBalanceTarget(:final input) => (
+    destination: l10n.pedalAssignStageInput(input + 1),
+    group:
+        '${l10n.pedalAssignStageInput(input + 1)} / ${l10n.pedalAssignStageInput(input + 2)}',
+    control: l10n.routingBalance,
+  ),
+  OutputLevelTarget(:final bus) => (
+    destination: l10n.pedalAssignStageOutput(bus + 1),
+    group: l10n.pedalAssignStageOutput(bus + 1),
+    control: l10n.routingOutputLevel,
+  ),
+  OutputBalanceTarget(:final bus) => (
+    destination: l10n.pedalAssignStageOutput(bus + 1),
+    group: l10n.pedalAssignStageOutput(bus + 1),
+    control: l10n.routingBalance,
+  ),
   MasterGainTarget() => (
     destination: l10n.fxEditorMasterTitle,
     group: l10n.fxEditorMasterTitle,
@@ -316,7 +360,18 @@ String _addressLabel(
 ({String id, FxDestinationKind kind, int order})? _placeOf(
   ControlValueTarget target,
 ) => switch (target) {
-  TrackVolumeTarget(:final channel) => _trackPlace(channel),
+  TrackVolumeTarget(:final channel) ||
+  TrackPanTarget(:final channel) => _trackPlace(channel),
+  LaneVolumeTarget(:final channel, :final lane) => _placeOfAddress(
+    FxAddress(stage: FxStage.loop, index: channel, lane: lane),
+  ),
+  MonitorVolumeTarget(:final input) ||
+  InputPanTarget(:final input) ||
+  PairBalanceTarget(
+    :final input,
+  ) => _placeOfAddress(FxAddress(stage: FxStage.input, index: input)),
+  OutputLevelTarget(:final bus) || OutputBalanceTarget(:final bus) =>
+    _placeOfAddress(FxAddress(stage: FxStage.output, index: bus)),
   MasterGainTarget() => (
     id: 'master',
     kind: FxDestinationKind.output,

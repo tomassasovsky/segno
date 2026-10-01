@@ -1,6 +1,8 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/midi_controls/midi_segmented.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -312,6 +314,7 @@ class _Card extends StatelessWidget {
                     value: low,
                     width: _rangeWidth,
                     semanticLabel: '${card.label} $lowCaption',
+                    readout: (value) => _valueLabel(l10n, key, value),
                     enabled: card.available,
                     onChanged: (value) => onRange(key, low: value),
                     onDoubleTap: () => onRange(key, low: 0),
@@ -325,6 +328,7 @@ class _Card extends StatelessWidget {
                   value: high,
                   width: _rangeWidth,
                   semanticLabel: '${card.label} ${captions.high}',
+                  readout: (value) => _valueLabel(l10n, key, value),
                   enabled: card.available,
                   onChanged: (value) => onRange(key, high: value),
                   onDoubleTap: () => onRange(key, high: 1),
@@ -362,6 +366,13 @@ class _Card extends StatelessWidget {
       ),
     );
   }
+
+  String _valueLabel(AppLocalizations l10n, String key, double normalized) {
+    final target = ControlValueTarget.tryParse(key);
+    return target == null
+        ? '${(normalized * 100).round()}%'
+        : controlValueReadout(l10n, target, normalized);
+  }
 }
 
 /// One end of a parameter's range: its caption and value over a slider.
@@ -371,6 +382,7 @@ class _Range extends StatelessWidget {
     required this.value,
     required this.width,
     required this.semanticLabel,
+    required this.readout,
     required this.enabled,
     required this.onChanged,
     required this.onDoubleTap,
@@ -382,6 +394,7 @@ class _Range extends StatelessWidget {
   final double value;
   final double width;
   final String semanticLabel;
+  final String Function(double) readout;
   final bool enabled;
   final ValueChanged<double> onChanged;
   final VoidCallback onDoubleTap;
@@ -405,7 +418,7 @@ class _Range extends StatelessWidget {
                 ),
                 const Spacer(),
                 AppText(
-                  '${(value * 100).round()}%',
+                  readout(value),
                   style: TextStyle(
                     color: surface.textPrimary,
                     fontSize: 21,
@@ -420,6 +433,7 @@ class _Range extends StatelessWidget {
             value: value,
             width: width,
             semanticLabel: semanticLabel,
+            semanticValueBuilder: readout,
             // Moving a value writes the draft, never the parameter: editing a
             // mapping dispatches nothing.
             enabled: enabled,
