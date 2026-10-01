@@ -156,6 +156,9 @@ typedef enum le_perf_log_code {
                                  * FROM. Lets the renderer's phase math see a
                                  * clock the engine froze rather than silently
                                  * running it forward. */
+  LE_PLOG_SET_OUTPUT_FX_PARAM = 318,
+  LE_PLOG_SET_OUTPUT_FX_ENABLED = 319,
+  LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED = 320,
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's

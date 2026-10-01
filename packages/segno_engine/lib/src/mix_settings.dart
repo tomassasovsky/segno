@@ -20,8 +20,10 @@ final double _maxInputTrimGain = inputTrimGainOfDb(kMaxInputTrimDb);
 /// Effective stereo gain and pan at a lane or monitor mix stage.
 typedef StereoMix = ({double gain, double pan});
 
-/// One copied, bounded edit. The callback publishes [revision] after applying
-/// every addressed value; rejected edits publish nothing.
+/// The controls of one output destination.
+typedef OutputMix = ({double level, bool muted, bool mono, double balance});
+
+/// Bounded compound live mix edit.
 class EngineMixSettings {
   /// Creates an immutable edit.
   EngineMixSettings({
@@ -31,11 +33,13 @@ class EngineMixSettings {
     Map<int, StereoMix> monitors = const {},
     Map<int, double> trims = const {},
     Map<int, bool> solos = const {},
+    Map<int, OutputMix> outputs = const {},
   }) : lanes = Map.unmodifiable(lanes),
        images = Map.unmodifiable(images),
        monitors = Map.unmodifiable(monitors),
        trims = Map.unmodifiable(trims),
-       solos = Map.unmodifiable(solos);
+       solos = Map.unmodifiable(solos),
+       outputs = Map.unmodifiable(outputs);
 
   /// Nonzero publication identity.
   final int revision;
@@ -54,6 +58,9 @@ class EngineMixSettings {
 
   /// Independent track solo flags.
   final Map<int, bool> solos;
+
+  /// Destination controls applied at the same publication boundary.
+  final Map<int, OutputMix> outputs;
 
   /// Whether all addresses and values fit the native bounded payload.
   bool get isValid =>
@@ -87,7 +94,18 @@ class EngineMixSettings {
             e.value >= 0 &&
             e.value <= _maxInputTrimGain,
       ) &&
-      solos.keys.every((k) => k >= 0 && k < 8);
+      solos.keys.every((k) => k >= 0 && k < 8) &&
+      outputs.entries.every(
+        (e) =>
+            e.key >= 0 &&
+            e.key < 16 &&
+            e.value.level.isFinite &&
+            e.value.level >= 0 &&
+            e.value.level <= 1 &&
+            e.value.balance.isFinite &&
+            e.value.balance >= -1 &&
+            e.value.balance <= 1,
+      );
 }
 
 bool _validMix(StereoMix mix) =>

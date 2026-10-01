@@ -331,6 +331,19 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 
 Phases 1–3 of the plan plus several sync refinements. See `git log` for detail.
 
+- **Accepted design, slice 3b (#1016, epic #1009):** output destinations
+  have level, mute, Stereo/Mono, retained balance and a post-sum effect chain.
+  October reconstruction joins output setup to the shared atomic mix and durable
+  rollback path. Performance recording freezes the actual destination and its
+  effect chain at callback acknowledgment. Default capture excludes final level
+  and mute; Follow applies their later changes. Both policies exclude hardware
+  Mono/Balance/master gain/limiter. Cut stops current sources and clears old
+  tails and the current click pulse, while preserving monitoring preferences.
+  Failed arm publication retains ownership for Stop; malformed destination
+  metadata is refused. Track-wide routing surfaces are slice 3c. Offline
+  reconstruction still lacks full multi-lane, live-input/click and track-bus
+  replay; these are later integration work, not proof of complete parity.
+  Ledger: `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Accepted design, slice 3a (#1016, epic #1009):** the mix model: per-lane
   pan with a unity-centre balance law, per-track Solo beside mute, a capture
   trim per input on the recorded branch only, monitoring for every hardware

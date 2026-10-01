@@ -751,6 +751,23 @@ void main() {
         pan: {},
         pairs: {},
       ));
+      final savedMix = await settings.loadMixSettings('Fake Device');
+      await settings.replaceMixSettings(
+        device: 'Fake Device',
+        mix: (
+          trackPans: savedMix.trackPans,
+          laneLevels: savedMix.laneLevels,
+          monitorLevels: savedMix.monitorLevels,
+          inputSetup: savedMix.inputSetup,
+          outputSetup: (
+            level: {1: .5},
+            muted: {0: true},
+            mono: {},
+            balance: {1: -.25},
+          ),
+        ),
+      );
+
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
@@ -790,6 +807,20 @@ void main() {
       // The pair's members sit hard on their sides.
       expect(engine.monitorPan[0], -1);
       expect(engine.monitorPan[1], 1);
+      // The output setup: the open device's, as one projection.
+      expect(
+        repository.outputSetup,
+        const OutputSetup(
+          buses: {
+            1: OutputBus(level: 0.5, balance: -0.25),
+            0: OutputBus(muted: true),
+          },
+        ),
+      );
+      expect(engine.outputLevel[1], 0.5);
+      expect(engine.outputBalance[1], -0.25);
+      expect(engine.outputMuted[0], isTrue);
+      expect(engine.outputLevel[0], 1);
     });
 
     test('restores a saved track pan onto every lane the saved lane count '

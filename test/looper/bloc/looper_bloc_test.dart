@@ -149,6 +149,7 @@ void main() {
     ).thenReturn(EngineResult.ok);
     when(repository.clearSolo).thenReturn(EngineResult.ok);
     when(repository.resetMixer).thenReturn(EngineResult.ok);
+    when(repository.cutSound).thenReturn(EngineResult.ok);
     when(
       () => repository.setInputTrimDb(
         input: any(named: 'input'),
@@ -174,6 +175,7 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+
     when(() => repository.setLooperMode(any())).thenReturn(EngineResult.ok);
     // What the repository HOLDS after a set — the value the bloc persists.
     // Tests that care about a refusal or a closed engine override it.
@@ -771,6 +773,65 @@ void main() {
       verify: (_) {
         expect(currentMix.trackPans[1], 0.25);
       },
+    );
+  });
+
+  group('output setup through the shared mix coordinator', () {
+    LooperBloc buildWithDevice() {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(deviceName: 'Scarlett 18i20', outputChannels: 4),
+        ),
+      );
+      return buildBlocWithSettings();
+    }
+
+    blocTest<LooperBloc, LooperState>(
+      'level, mute, Mono and balance persist as one device mix',
+      build: buildWithDevice,
+      act: (bloc) => bloc
+        ..add(const LooperOutputLevelChanged(1, level: 0.5))
+        ..add(const LooperOutputMuteChanged(1, muted: true))
+        ..add(const LooperOutputMonoChanged(0, mono: true))
+        ..add(const LooperOutputBalanceChanged(0, balance: -0.25)),
+      verify: (_) async {
+        final setup = (await trackSettings.loadMixSettings(
+          'Scarlett 18i20',
+        )).outputSetup;
+        expect(setup.level, {1: .5});
+        expect(setup.muted, {1: true});
+        expect(setup.mono, {0: true});
+        expect(setup.balance, {0: -.25});
+        expect(
+          currentMix.outputSetup,
+          const OutputSetup(
+            buses: {
+              0: OutputBus(mono: true, balance: -.25),
+              1: OutputBus(level: .5, muted: true),
+            },
+          ),
+        );
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'an output edit without an open device is refused before publication',
+      build: buildBlocWithSettings,
+      act: (bloc) => bloc.add(const LooperOutputMuteChanged(1, muted: true)),
+      verify: (_) async {
+        expect(currentMix.outputSetup, const OutputSetup());
+        expect(
+          (await trackSettings.loadMixSettings('')).outputSetup.muted,
+          isEmpty,
+        );
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'Cut sound forwards to the repository',
+      build: buildBloc,
+      act: (bloc) => bloc.add(const LooperCutSoundPressed()),
+      verify: (_) => verify(repository.cutSound).called(1),
     );
   });
 

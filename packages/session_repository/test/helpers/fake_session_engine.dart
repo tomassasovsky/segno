@@ -38,6 +38,9 @@ class _FakeTrack {
 /// and per-track PCM closely enough to exercise the session repository's
 /// save/load without the native engine.
 class FakeSessionEngine implements AudioEngine {
+  @override
+  OutputFxSnapshot outputFxSnapshot({required int bus}) =>
+      const OutputFxSnapshot();
   FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
 
   final int channels;
@@ -379,6 +382,22 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setInputTrim({required int input, required double gain}) =>
       EngineResult.ok;
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) =>
+      EngineResult.ok;
+  @override
+  EngineResult cutSound() => EngineResult.ok;
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) => EngineResult.ok;
 
   // ---- unused by SessionRepository: inert defaults ----
   @override
@@ -597,26 +616,32 @@ class FakeSessionEngine implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFx({
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxCount({required int count}) => EngineResult.ok;
+  EngineResult setOutputFxCount({required int bus, required int count}) =>
+      EngineResult.ok;
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxEnabled({
+  EngineResult setOutputFxEnabled({
+    required int bus,
     required int index,
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) =>
-      EngineResult.ok;
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) => EngineResult.ok;
 
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
   /// test can assert that a closed face leaves nothing running.

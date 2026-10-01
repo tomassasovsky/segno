@@ -91,6 +91,7 @@ class SessionSettings {
     this.trackPans = const {},
     this.laneMix = const {},
     this.inputSetup = const SessionInputSetup(),
+    this.outputSetup = const SessionOutputSetup(),
   });
 
   SessionSettings._detached(SessionSettings source)
@@ -130,6 +131,12 @@ class SessionSettings {
         trimDb: Map.unmodifiable(source.inputSetup.trimDb),
         pan: Map.unmodifiable(source.inputSetup.pan),
         pairs: Map.unmodifiable(source.inputSetup.pairs),
+      ),
+      outputSetup = SessionOutputSetup(
+        level: Map.unmodifiable(source.outputSetup.level),
+        muted: Map.unmodifiable(source.outputSetup.muted),
+        mono: Map.unmodifiable(source.outputSetup.mono),
+        balance: Map.unmodifiable(source.outputSetup.balance),
       );
 
   /// Denominator-note beats per minute; zero means unset.
@@ -212,6 +219,9 @@ class SessionSettings {
 
   /// Session-owned recording trim, mono pan, and stereo pair balance.
   final SessionInputSetup inputSetup;
+
+  /// The output setup (slice 3b), persisted session-level.
+  final SessionOutputSetup outputSetup;
 }
 
 /// Saves Segno sessions, reads them back, and exports audio.
@@ -706,6 +716,7 @@ class SessionRepository {
       trackLengthPresetOverrides: settings.trackLengthPresetOverrides,
       trackPans: settings.trackPans,
       inputSetup: settings.inputSetup,
+      outputSetup: settings.outputSetup,
       clickMode: settings.clickMode,
       clickOutputMask: settings.clickMask,
       clickVolume: settings.clickVolume,
@@ -719,6 +730,7 @@ class SessionRepository {
       primaryTrack: snapshot.isRunning
           ? snapshot.primaryTrack
           : settings.primaryTrack,
+
       // Control-surface configuration (schema v6), opaque here like the
       // chains — handed straight through from the bloc layer.
       pedalBindings: pedalBindings,

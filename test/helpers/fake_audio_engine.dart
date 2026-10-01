@@ -7,6 +7,10 @@ import 'package:segno_engine/segno_engine.dart';
 /// Records interactions and returns scripted results/snapshots, so cubit and
 /// widget tests never touch the native audio device.
 class FakeAudioEngine implements AudioEngine {
+  @override
+  OutputFxSnapshot outputFxSnapshot({required int bus}) =>
+      const OutputFxSnapshot();
+
   /// Result returned by [start].
   EngineResult startResult = EngineResult.ok;
 
@@ -16,7 +20,10 @@ class FakeAudioEngine implements AudioEngine {
   List<EngineResult>? startResults;
 
   /// Snapshot returned by [snapshot].
-  EngineSnapshot _nextSnapshot = const EngineSnapshot.initial();
+  EngineSnapshot _nextSnapshot = const EngineSnapshot.initial().copyWith(
+    outputChannels: 2,
+    outputBusCount: 1,
+  );
   EngineSnapshot get nextSnapshot => _nextSnapshot;
   set nextSnapshot(EngineSnapshot value) {
     _nextSnapshot = value;
@@ -28,6 +35,9 @@ class FakeAudioEngine implements AudioEngine {
   bool publishModeCommands = true;
   bool publishMixCommands = true;
   bool publishRecordImages = true;
+
+  /// When false, a test-supplied snapshot remains the performance arm truth.
+  bool publishPerfCommands = true;
   EngineResult mixResult = EngineResult.ok;
   EngineMixSettings? lastMix;
   RecordImage? lastRecordImage;
@@ -110,6 +120,13 @@ class FakeAudioEngine implements AudioEngine {
     publishedMode,
     publishedMixRevision,
     perfStopped: perfStopped,
+    perfArmed: publishPerfCommands ? _publishedPerfArmed : null,
+    perfFollowOutput: _frozenPerfFollowOutput,
+    perfCaptureBus: _frozenPerfCaptureBus,
+    perfCaptureMask: _frozenPerfCaptureMask,
+    perfOutputEnabledMask: _frozenPerfOutputEnabledMask,
+    perfOutputLevel: _frozenPerfOutputLevel,
+    perfOutputMuted: _frozenPerfOutputMuted,
   );
 
   /// Loopback detection result returned by [detectLoopback].
@@ -190,6 +207,12 @@ class FakeAudioEngine implements AudioEngine {
     }
     inputTrim.addAll(settings.trims);
     trackSolo.addAll(settings.solos);
+    for (final entry in settings.outputs.entries) {
+      outputLevel[entry.key] = entry.value.level;
+      outputMuted[entry.key] = entry.value.muted;
+      outputMono[entry.key] = entry.value.mono;
+      outputBalance[entry.key] = entry.value.balance;
+    }
     publishedMixRevision = settings.revision;
   }
 
@@ -318,6 +341,54 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult setInputTrim({required int input, required double gain}) {
     inputTrim[input] = gain;
+    return EngineResult.ok;
+  }
+
+  /// Per-bus facts passed to the output setters (slice 3b).
+  final Map<int, double> outputLevel = {};
+  final Map<int, bool> outputMuted = {};
+  final Map<int, bool> outputMono = {};
+  final Map<int, double> outputBalance = {};
+
+  /// How many times [cutSound] ran.
+  int cutSoundCalls = 0;
+
+  /// The last policy passed to [setPerfFollowOutput].
+  bool? perfFollowOutput;
+
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) {
+    outputLevel[bus] = level;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) {
+    outputMuted[bus] = muted;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) {
+    outputMono[bus] = mono;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) {
+    outputBalance[bus] = balance;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult cutSound() {
+    cutSoundCalls++;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) {
+    perfFollowOutput = follow;
     return EngineResult.ok;
   }
 
@@ -735,19 +806,19 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-channel flag passed to [setTrackFxChainEnabled].
   final Map<int, bool> trackFxChainEnabled = {};
 
-  /// Per-index effect type passed to [setMasterFx].
+  /// Per-index effect type passed to [setOutputFx] on bus 0.
   final Map<int, TrackEffectType> masterFx = {};
 
-  /// Active chain length passed to [setMasterFxCount].
+  /// Bus 0's active chain length passed to [setOutputFxCount].
   int? masterFxCount;
 
-  /// Per-(index, param) value passed to [setMasterFxParam].
+  /// Per-(index, param) value passed to [setOutputFxParam] on bus 0.
   final Map<(int, int), double> masterFxParam = {};
 
-  /// Per-index flag passed to [setMasterFxEnabled].
+  /// Per-index flag passed to [setOutputFxEnabled] on bus 0.
   final Map<int, bool> masterFxEnabled = {};
 
-  /// Flag passed to [setMasterFxChainEnabled].
+  /// Bus 0's flag passed to [setOutputFxChainEnabled].
   bool? masterFxChainEnabled;
 
   @override
@@ -804,11 +875,15 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  // Only bus 0 is addressed by the app today (FxStage.master), so the fake
+  // records that bus and ignores the rest.
   @override
-  EngineResult setMasterFx({
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) {
+    if (bus != 0) return EngineResult.ok;
     // D-ENSEED re-seed on type change — see [setLaneFx].
     if (masterFx[index] != type) {
       masterFxEnabled[index] = true;
@@ -818,7 +893,8 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setMasterFxCount({required int count}) {
+  EngineResult setOutputFxCount({required int bus, required int count}) {
+    if (bus != 0) return EngineResult.ok;
     // D-ENSEED entering-slot seed — see [setLaneFxCount].
     for (var s = masterFxCount ?? 0; s < count; s++) {
       masterFxEnabled[s] = true;
@@ -828,27 +904,32 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) {
-    masterFxParam[(index, param)] = value;
+    if (bus == 0) masterFxParam[(index, param)] = value;
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMasterFxEnabled({
+  EngineResult setOutputFxEnabled({
+    required int bus,
     required int index,
     required bool enabled,
   }) {
-    masterFxEnabled[index] = enabled;
+    if (bus == 0) masterFxEnabled[index] = enabled;
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) {
-    masterFxChainEnabled = enabled;
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) {
+    if (bus == 0) masterFxChainEnabled = enabled;
     return EngineResult.ok;
   }
 
@@ -1120,17 +1201,48 @@ class FakeAudioEngine implements AudioEngine {
   /// The `captureDir` passed to the most recent [perfArm] call.
   String? lastPerfCaptureDir;
 
+  bool? _publishedPerfArmed;
+  bool? _frozenPerfFollowOutput;
+  int? _frozenPerfCaptureBus;
+  int? _frozenPerfCaptureMask;
+  int? _frozenPerfOutputEnabledMask;
+  double? _frozenPerfOutputLevel;
+  bool? _frozenPerfOutputMuted;
+
   @override
   EngineResult perfArm(String captureDir) {
     perfArmCalls++;
     lastPerfCaptureDir = captureDir;
-    return perfArmResult;
+    if (!perfArmResult.isOk) return perfArmResult;
+    if (!publishPerfCommands) return EngineResult.ok;
+    final source = nextSnapshot;
+    final channels = source.outputChannels;
+    if (channels <= 0 || channels > 32) return EngineResult.invalid;
+    final available = (1 << channels) - 1;
+    final enabled = source.outputEnabledMask & available;
+    if (enabled == 0) return EngineResult.invalid;
+    final firstChannel = (enabled & -enabled).bitLength - 1;
+    final bus = firstChannel ~/ 2;
+    _frozenPerfCaptureBus = bus;
+    _frozenPerfCaptureMask = enabled & (0x3 << (2 * bus));
+    _frozenPerfOutputEnabledMask = source.outputEnabledMask;
+    _frozenPerfFollowOutput = perfFollowOutput ?? source.perfFollowOutput;
+    _frozenPerfOutputLevel =
+        outputLevel[bus] ??
+        (bus < source.outputLevels.length ? source.outputLevels[bus] : 1);
+    _frozenPerfOutputMuted =
+        outputMuted[bus] ??
+        (bus < source.outputMuted.length && source.outputMuted[bus]);
+    _publishedPerfArmed = true;
+    return EngineResult.ok;
   }
 
   @override
   EngineResult perfDisarm() {
     perfDisarmCalls++;
-    return perfDisarmResult;
+    if (!perfDisarmResult.isOk) return perfDisarmResult;
+    if (publishPerfCommands) _publishedPerfArmed = false;
+    return EngineResult.ok;
   }
 
   @override
@@ -1299,6 +1411,13 @@ class _LengthSnapshot extends EngineSnapshot {
     LooperMode? mode,
     int mixRevision, {
     required bool perfStopped,
+    required bool? perfArmed,
+    required bool? perfFollowOutput,
+    required int? perfCaptureBus,
+    required int? perfCaptureMask,
+    required int? perfOutputEnabledMask,
+    required double? perfOutputLevel,
+    required bool? perfOutputMuted,
   }) : super(
          isRunning: source.isRunning,
          sampleRate: source.sampleRate,
@@ -1327,11 +1446,18 @@ class _LengthSnapshot extends EngineSnapshot {
          tunerInput: source.tunerInput,
          activeBackend: source.activeBackend,
          outputEnabledMask: source.outputEnabledMask,
-         isPerfArmed: source.isPerfArmed,
+         isPerfArmed: perfArmed ?? source.isPerfArmed,
          perfFrames: source.perfFrames,
          perfOverruns: source.perfOverruns,
          perfZeroFilledFrames: source.perfZeroFilledFrames,
          perfStopped: perfStopped || source.perfStopped,
+         perfFollowOutput: perfFollowOutput ?? source.perfFollowOutput,
+         perfCaptureBus: perfCaptureBus ?? source.perfCaptureBus,
+         perfCaptureMask: perfCaptureMask ?? source.perfCaptureMask,
+         perfOutputEnabledMask:
+             perfOutputEnabledMask ?? source.perfOutputEnabledMask,
+         perfOutputLevel: perfOutputLevel ?? source.perfOutputLevel,
+         perfOutputMuted: perfOutputMuted ?? source.perfOutputMuted,
          tempoBpm: source.tempoBpm,
          tempoSource: source.tempoSource,
          tsNum: source.tsNum,

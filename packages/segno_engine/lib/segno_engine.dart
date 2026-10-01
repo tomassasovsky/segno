@@ -44,7 +44,8 @@ export 'src/engine_snapshot.dart'
         XrunKind,
         kMaxChannels,
         kMaxLanes,
-        kMaxMonitoredInputs;
+        kMaxMonitoredInputs,
+        kMaxOutputBuses;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
 export 'src/input_conditioning_param.dart' show InputConditioningParam;
 export 'src/lane_cache.dart' show LaneCacheState;
@@ -52,6 +53,7 @@ export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mix_settings.dart'
     show
         EngineMixSettings,
+        OutputMix,
         RecordImage,
         StereoMix,
         inputTrimGainOfDb,
@@ -61,6 +63,7 @@ export 'src/mix_settings.dart'
 export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
 export 'src/native_audio_engine.dart'
     show NativeAudioEngine, PumpedNativeEngine;
+export 'src/output_fx_snapshot.dart';
 export 'src/performance_render_progress.dart'
     show PerformanceRenderProgress, PerformanceRenderTrackStatus;
 export 'src/plugin_descriptor.dart'

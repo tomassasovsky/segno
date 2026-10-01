@@ -427,6 +427,12 @@ Future<AutoStartResult> _tryAutoStartEngine({
       pan: inputSetup.pan,
       pairs: inputSetup.pairs,
     ),
+    outputSetup: OutputSetup.fromMaps(
+      level: savedMix.outputSetup.level,
+      muted: savedMix.outputSetup.muted,
+      mono: savedMix.outputSetup.mono,
+      balance: savedMix.outputSetup.balance,
+    ),
   );
   final mixResult = mixRequest.isOk
       ? await repository.settleMixSettings()

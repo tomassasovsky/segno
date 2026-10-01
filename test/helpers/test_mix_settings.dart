@@ -29,6 +29,7 @@ extension MixSettingsTestSeeds on SettingsRepository {
         laneLevels: {...saved.laneLevels, (channel, lane): volume},
         monitorLevels: saved.monitorLevels,
         inputSetup: saved.inputSetup,
+        outputSetup: saved.outputSetup,
       ),
     );
   }
@@ -42,6 +43,7 @@ extension MixSettingsTestSeeds on SettingsRepository {
         laneLevels: saved.laneLevels,
         monitorLevels: saved.monitorLevels,
         inputSetup: saved.inputSetup,
+        outputSetup: saved.outputSetup,
       ),
     );
   }
@@ -55,6 +57,7 @@ extension MixSettingsTestSeeds on SettingsRepository {
         laneLevels: saved.laneLevels,
         monitorLevels: saved.monitorLevels,
         inputSetup: setup,
+        outputSetup: saved.outputSetup,
       ),
     );
   }
