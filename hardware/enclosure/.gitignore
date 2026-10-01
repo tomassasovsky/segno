@@ -32,3 +32,7 @@ out/viewer.html
 # per-quote vendor bundles + per-quote scratch — regenerate before quoting
 out/*.zip
 out/quote_pkg/
+
+# Extracted copies of a package (e.g. an unzipped segno_sheetmetal.zip) are not
+# source: the zip is rebuilt from out/ and checksummed when it is sent (#1090).
+out/*/
