@@ -17,6 +17,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/cache_telemetry_scope.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
+import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_footer.dart';
@@ -316,6 +317,86 @@ class _TracksViewState extends State<TracksView> {
                                           ),
                                       ],
                                     ),
+                                    StageView.mixer => LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final run = Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            const StageDbScale(
+                                              trailing: false,
+                                              topInset:
+                                                  MixerColumn.meterTopInset,
+                                              bottomInset:
+                                                  MixerColumn.meterBottomInset,
+                                            ),
+                                            const SizedBox(width: 16),
+                                            Expanded(
+                                              child: Row(
+                                                key: const Key(
+                                                  'stage_mixer_run',
+                                                ),
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.stretch,
+                                                spacing: 22,
+                                                children: [
+                                                  for (final channel
+                                                      in bankTracks)
+                                                    _MixerSlot(
+                                                      channel: channel,
+                                                      name: l10n
+                                                          .displayTrackName(
+                                                            tracksState.nameOf(
+                                                              channel,
+                                                            ),
+                                                            channel,
+                                                          ),
+                                                      selected:
+                                                          channel ==
+                                                          overlay.cursor,
+                                                      mode: mode,
+                                                      isPrimary:
+                                                          channel ==
+                                                          chrome.primaryTrack,
+                                                      bars: barsOf(channel),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 16),
+                                            const StageDbScale(
+                                              trailing: true,
+                                              topInset:
+                                                  MixerColumn.meterTopInset,
+                                              bottomInset:
+                                                  MixerColumn.meterBottomInset,
+                                            ),
+                                          ],
+                                        );
+                                        if (constraints.maxHeight >=
+                                            MixerColumn.minimumHeight) {
+                                          return run;
+                                        }
+                                        if (constraints.maxHeight <= 0) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        // Scale the row's height while giving
+                                        // it the inverse logical width. The
+                                        // resulting strips still fill the
+                                        // available compact display width.
+                                        final scale =
+                                            constraints.maxHeight /
+                                            MixerColumn.minimumHeight;
+                                        return FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: SizedBox(
+                                            width: constraints.maxWidth / scale,
+                                            height: MixerColumn.minimumHeight,
+                                            child: run,
+                                          ),
+                                        );
+                                      },
+                                    ),
                                   },
                                 ),
                               ),
@@ -451,6 +532,51 @@ class _TrackSlot extends StatelessWidget {
         bars: bars,
         quantizeDiv: quantizeDiv,
         recDub: recDub,
+      ),
+    );
+  }
+}
+
+/// [_TrackSlot]'s twin for the Mixer view: one [MixerColumn] per channel, on
+/// the same steady-slice subscription. The strip's meter and playhead
+/// subscribe to their own live values one level down.
+class _MixerSlot extends StatelessWidget {
+  const _MixerSlot({
+    required this.channel,
+    required this.name,
+    required this.selected,
+    required this.mode,
+    required this.isPrimary,
+    required this.bars,
+  });
+
+  final int channel;
+  final String name;
+  final bool selected;
+  final InteractionMode mode;
+  final bool isPrimary;
+  final int? bars;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = context
+        .select<LooperBloc, ({SteadyTrack? steady, int generation})>(
+          (bloc) => (
+            steady: steadyTrackOf(bloc.state, channel),
+            generation: bloc.state.mixGeneration,
+          ),
+        );
+    final track = values.steady?.track;
+    if (track == null) return const SizedBox.shrink();
+    return Expanded(
+      child: MixerColumn(
+        key: ValueKey(('mixer', channel, values.generation)),
+        track: track,
+        name: name,
+        selected: selected,
+        mode: mode,
+        isPrimary: isPrimary,
+        bars: bars,
       ),
     );
   }

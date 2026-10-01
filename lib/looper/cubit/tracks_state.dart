@@ -1,15 +1,21 @@
 part of 'tracks_cubit.dart';
 
 /// Which presentation of the session the main display shows — the choices
-/// behind the top bar's view icon (the accepted stage). Track, Wave and the
-/// later Mixer are alternate views of the same music and mix; changing one
-/// never changes playback or selection.
+/// behind the top bar's view icon (the accepted stage). Track, Wave and Mixer
+/// are alternate views of the same music and mix; changing one never changes
+/// playback or selection.
 enum StageView {
   /// Four tall level columns for the active bank.
   track,
 
   /// One waveform row per track of the active bank.
   wave,
+
+  /// Four channel strips for the active bank: level, pan, mute and solo.
+  ///
+  /// The same owners the foot Mixer and the expression targets write, never a
+  /// second mixer state (accepted design, Mixer).
+  mixer,
 }
 
 /// State for [TracksCubit]: the persisted tracks-view preferences (per-track

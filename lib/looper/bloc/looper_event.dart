@@ -160,13 +160,7 @@ final class LooperTrackPanChanged extends LooperChannelEvent {
 /// performance state the engine drops on restart.
 final class LooperTrackSoloToggled extends LooperChannelEvent {
   /// Creates a [LooperTrackSoloToggled].
-  const LooperTrackSoloToggled(super.channel, {required this.solo});
-
-  /// Whether the track is soloed.
-  final bool solo;
-
-  @override
-  List<Object?> get props => [channel, solo];
+  const LooperTrackSoloToggled(super.channel);
 }
 
 /// The Mixer's clear Solo: every track is un-soloed.
