@@ -7,7 +7,6 @@ import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/control/control_tab.dart';
-import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/network/network_tab.dart';
 import 'package:segno/system/system_tab.dart';
@@ -191,9 +190,6 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
 
   /// Moves the Control domain's tab. Same rule as [showNetworkTab].
   void showControlTab(ControlTab tab) => emit(state.copyWith(controlTab: tab));
-
-  /// Moves the Loop domain's tab. Same rule as [showNetworkTab].
-  void showLoopTab(LoopTab tab) => emit(state.copyWith(loopTab: tab));
 
   /// Moves the Tracks domain's tab. Same rule as [showNetworkTab].
   void showTracksTab(TracksTab tab) => emit(state.copyWith(tracksTab: tab));

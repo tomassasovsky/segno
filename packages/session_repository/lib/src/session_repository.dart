@@ -71,6 +71,7 @@ class SessionSettings {
     this.recordTiming = RecordTiming.immediately,
     this.overdubDecay = 0,
     this.defaultOneShot = false,
+    this.defaultLengthPresetBars = 0,
     this.trackRecordTimingOverrides = const {},
     this.trackOverdubDecayOverrides = const {},
     this.trackOneShotOverrides = const {},
@@ -97,6 +98,7 @@ class SessionSettings {
       recordTiming = source.recordTiming,
       overdubDecay = source.overdubDecay,
       defaultOneShot = source.defaultOneShot,
+      defaultLengthPresetBars = source.defaultLengthPresetBars,
       trackRecordTimingOverrides = Map.unmodifiable(
         source.trackRecordTimingOverrides,
       ),
@@ -146,6 +148,9 @@ class SessionSettings {
 
   /// The default playback choice: Loop or Once.
   final bool defaultOneShot;
+
+  /// Default length for future recordings: zero is Auto, otherwise bars.
+  final int defaultLengthPresetBars;
 
   /// Explicit record timing choices for any track.
   final Map<int, RecordTiming> trackRecordTimingOverrides;
@@ -656,6 +661,7 @@ class SessionRepository {
       recordTiming: settings.recordTiming,
       overdubDecay: settings.overdubDecay,
       defaultOneShot: settings.defaultOneShot,
+      defaultLengthPresetBars: settings.defaultLengthPresetBars,
       trackRecordTimingOverrides: settings.trackRecordTimingOverrides,
       trackOverdubDecayOverrides: settings.trackOverdubDecayOverrides,
       trackOneShotOverrides: settings.trackOneShotOverrides,

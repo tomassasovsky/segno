@@ -38,12 +38,6 @@ void main() {
         () => repository.setTimeSignature(any(), any()),
       ).thenReturn(EngineResult.ok),
       () => when(
-        () => repository.setSyncTempo(on: any(named: 'on')),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setQuantizeDiv(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
         () => repository.setClickMode(any()),
       ).thenReturn(EngineResult.ok),
       () => when(
@@ -73,8 +67,6 @@ void main() {
       setUp: () async {
         await settings.saveTempoBpm(140);
         await settings.saveTimeSignature(7, 8);
-        await settings.saveSyncTempo(value: false);
-        await settings.saveQuantizeDiv(GridDivision.quarter.code);
         await settings.saveClickMode(ClickMode.playRec.code);
         await settings.saveClickOutputMask(0x3);
         await settings.saveClickVolume(0.5);
@@ -87,8 +79,6 @@ void main() {
           bpm: 140,
           tsNum: 7,
           tsDen: 8,
-          syncTempo: false,
-          quantizeDiv: GridDivision.quarter,
           clickMode: ClickMode.playRec,
           clickOutputMask: 0x3,
           clickVolume: 0.5,
@@ -98,10 +88,6 @@ void main() {
       verify: (_) {
         verify(() => repository.setTempo(140)).called(1);
         verify(() => repository.setTimeSignature(7, 8)).called(1);
-        verify(() => repository.setSyncTempo(on: false)).called(1);
-        verify(
-          () => repository.setQuantizeDiv(GridDivision.quarter),
-        ).called(1);
         verify(() => repository.setClickMode(ClickMode.playRec)).called(1);
         verify(() => repository.setClickOutput(0x3)).called(1);
         verify(() => repository.setClickVolume(0.5)).called(1);
@@ -139,12 +125,6 @@ void main() {
           () => repository.setTimeSignature(5, 8),
         ).thenReturn(EngineResult.invalid);
         when(
-          () => repository.setSyncTempo(on: false),
-        ).thenReturn(EngineResult.invalid);
-        when(
-          () => repository.setQuantizeDiv(GridDivision.bar),
-        ).thenReturn(EngineResult.invalid);
-        when(
           () => repository.setClickMode(ClickMode.rec),
         ).thenReturn(EngineResult.invalid);
         when(
@@ -161,8 +141,6 @@ void main() {
       act: (cubit) async {
         await cubit.setTempo(96);
         await cubit.setTimeSignature(5, 8);
-        await cubit.setSyncTempo(value: false);
-        await cubit.setQuantizeDiv(GridDivision.bar);
         await cubit.setClickMode(ClickMode.rec);
         await cubit.setClickOutput(1);
         await cubit.setClickVolume(0.5);
@@ -172,8 +150,6 @@ void main() {
       verify: (_) async {
         expect(await settings.loadTempoBpm(), 0);
         expect(await settings.loadTimeSignature(), (4, 4));
-        expect(await settings.loadSyncTempo(), isTrue);
-        expect(await settings.loadQuantizeDiv(), GridDivision.off.code);
         expect(await settings.loadClickMode(), ClickMode.off.code);
         expect(await settings.loadClickOutputMask(), 0);
         expect(await settings.loadClickVolume(), 1);
@@ -235,28 +211,6 @@ void main() {
       verify: (_) async {
         expect(await settings.loadTimeSignature(), (5, 8));
         verify(() => repository.setTimeSignature(5, 8)).called(1);
-      },
-    );
-
-    blocTest<TempoCubit, TempoSettings>(
-      'setSyncTempo emits, persists, and applies the new value',
-      build: () => TempoCubit(repository: repository, settings: settings),
-      act: (cubit) => cubit.setSyncTempo(value: false),
-      expect: () => [const TempoSettings(syncTempo: false)],
-      verify: (_) async {
-        expect(await settings.loadSyncTempo(), isFalse);
-        verify(() => repository.setSyncTempo(on: false)).called(1);
-      },
-    );
-
-    blocTest<TempoCubit, TempoSettings>(
-      'setQuantizeDiv emits, persists, and applies the new granularity',
-      build: () => TempoCubit(repository: repository, settings: settings),
-      act: (cubit) => cubit.setQuantizeDiv(GridDivision.bar),
-      expect: () => [const TempoSettings(quantizeDiv: GridDivision.bar)],
-      verify: (_) async {
-        expect(await settings.loadQuantizeDiv(), GridDivision.bar.code);
-        verify(() => repository.setQuantizeDiv(GridDivision.bar)).called(1);
       },
     );
 
@@ -403,8 +357,6 @@ void main() {
         bpm: 96,
         tsNum: 5,
         tsDen: 8,
-        syncTempo: false,
-        quantizeDiv: GridDivision.eighth,
         clickMode: ClickMode.playRec,
         clickOutputMask: 3,
         clickVolume: 0.5,

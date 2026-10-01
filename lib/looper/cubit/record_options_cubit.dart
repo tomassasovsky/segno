@@ -13,6 +13,7 @@ class RecordOptions extends Equatable {
     this.recDub = false,
     this.autoRecord = false,
     this.defaultMultiple = 0,
+    this.defaultLengthBars = 0,
   });
 
   /// When `true`, a record press finalizing a recording continues into overdub
@@ -26,19 +27,31 @@ class RecordOptions extends Equatable {
   /// The global default loop length used by inheriting tracks (`0` = auto).
   final int defaultMultiple;
 
+  /// The default length preset for a defining recording (`0` = Auto, else
+  /// `1..64` bars; accepted design, Length & quantize). Tracks follow it
+  /// unless they carry their own override.
+  final int defaultLengthBars;
+
   /// Returns a copy with the given overrides.
   RecordOptions copyWith({
     bool? recDub,
     bool? autoRecord,
     int? defaultMultiple,
+    int? defaultLengthBars,
   }) => RecordOptions(
     recDub: recDub ?? this.recDub,
     autoRecord: autoRecord ?? this.autoRecord,
     defaultMultiple: defaultMultiple ?? this.defaultMultiple,
+    defaultLengthBars: defaultLengthBars ?? this.defaultLengthBars,
   );
 
   @override
-  List<Object?> get props => [recDub, autoRecord, defaultMultiple];
+  List<Object?> get props => [
+    recDub,
+    autoRecord,
+    defaultMultiple,
+    defaultLengthBars,
+  ];
 }
 
 /// Owns the global record-behavior options: applies them to the repository and
@@ -60,6 +73,7 @@ class RecordOptionsCubit extends Cubit<RecordOptions> {
   Future<void>? _loadFuture;
   late final StreamSubscription<LooperState> _subscription;
   int _userEditRevision = 0;
+  int _acceptedLengthRevision = 0;
 
   void _onLooperState(LooperState looper) {
     emit(
@@ -67,6 +81,7 @@ class RecordOptionsCubit extends Cubit<RecordOptions> {
         recDub: looper.transport.recDub,
         autoRecord: looper.transport.autoRecord,
         defaultMultiple: looper.transport.defaultMultiple,
+        defaultLengthBars: looper.transport.defaultLengthPresetBars,
       ),
     );
   }
@@ -89,6 +104,7 @@ class RecordOptionsCubit extends Cubit<RecordOptions> {
     final userEditRevision = _userEditRevision;
     final recDub = await _settings.loadRecDub();
     final defaultMultiple = await _settings.loadDefaultMultiple();
+    final defaultLengthBars = await _settings.loadDefaultLengthPreset();
     if (isClosed) return;
     if (sessionRevision != _repository.sessionRevision ||
         userEditRevision != _userEditRevision) {
@@ -102,7 +118,44 @@ class RecordOptionsCubit extends Cubit<RecordOptions> {
     if (_repository.setDefaultMultiple(multiple: defaultMultiple).isOk) {
       restored = restored.copyWith(defaultMultiple: defaultMultiple);
     }
+    final lengthRequest = _repository.setDefaultLengthPreset(defaultLengthBars);
+    if (lengthRequest.isOk) {
+      final settled = await _repository.settleLengthSettings();
+      if (isClosed) return;
+      if (sessionRevision != _repository.sessionRevision ||
+          userEditRevision != _userEditRevision) {
+        _syncFromRepository();
+        return;
+      }
+      if (settled.isOk) {
+        restored = restored.copyWith(
+          defaultLengthBars:
+              _repository.sessionTransport.defaultLengthPresetBars,
+        );
+      }
+    }
     emit(restored);
+  }
+
+  /// Sets and persists the default length preset for a defining recording
+  /// (`0` = Auto, else `1..64` bars), applying it now.
+  Future<void> setDefaultLengthBars(int bars) async {
+    final clamped = bars.clamp(0, 64);
+    _userEditRevision++;
+    final sessionRevision = _repository.sessionRevision;
+    if (!_repository.setDefaultLengthPreset(clamped).isOk) return;
+    final lengthRevision = ++_acceptedLengthRevision;
+    final settled = await _repository.settleLengthSettings();
+    if (isClosed) return;
+    if (sessionRevision != _repository.sessionRevision ||
+        lengthRevision != _acceptedLengthRevision) {
+      _syncFromRepository();
+      return;
+    }
+    if (!settled.isOk) return;
+    final confirmed = _repository.sessionTransport.defaultLengthPresetBars;
+    emit(state.copyWith(defaultLengthBars: confirmed));
+    await _settings.saveDefaultLengthPreset(confirmed);
   }
 
   /// Sets and persists the rec/dub second-press mode, applying it now.

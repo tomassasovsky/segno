@@ -29,6 +29,13 @@ A separate proposed gate/division failure was discarded after tracing the real
 native setter: it cannot queue-refuse a valid engine. No speculative API was
 added to satisfy a fake-only failure.
 
+Linux CI subsequently exposed a non-portable constant-PCM expectation in the
+older grouped-history test. With floating-point contraction disabled, one
+crossfaded sample is one float step below the original input, both before and
+after recovery. The repaired test captures the original PCM before Undo and
+requires byte-identical recovery; it does not add a tolerance. All six mode and
+ordering variants pass with contraction disabled. Production audio is unchanged.
+
 ## Verification
 
 The final native source was unchanged across normal, address-sanitized and

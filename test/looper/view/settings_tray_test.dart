@@ -486,6 +486,24 @@ void main() {
   });
 
   group('navigation rail', () {
+    test('every in-tray destination has a rail row', () {
+      // The rail is built from [TrayRailEntry], not from the destinations:
+      // this is what keeps a new destination from being reachable in code
+      // and missing from the rail.
+      for (final destination in SettingsTrayDestination.values) {
+        expect(
+          TrayRailEntry.values.map((e) => e.destination),
+          contains(destination),
+          reason: 'no rail entry for ${destination.name}',
+        );
+      }
+      expect(
+        TrayRailEntry.values.indexOf(TrayRailEntry.loop),
+        TrayRailEntry.values.indexOf(TrayRailEntry.control) + 1,
+        reason: 'the Loop row sits after Control, as the pen stacks them',
+      );
+    });
+
     testWidgets('renders one item per in-tray destination', (tester) async {
       cubit.open();
       await pump(tester);
@@ -602,7 +620,6 @@ void main() {
         SettingsTrayDestination.tuner: PenIcon.tuner,
       };
       const fromFont = {
-        SettingsTrayDestination.loop: LucideIcons.repeat,
         SettingsTrayDestination.audio: LucideIcons.volume2,
         SettingsTrayDestination.network: CupertinoIcons.wifi,
         SettingsTrayDestination.system: LucideIcons.cpu,

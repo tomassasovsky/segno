@@ -25,6 +25,56 @@ void main() {
       ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
       : null;
 
+  test('bounded preset vectors cross FFI and publish only accepted values', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    engine
+      ..start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 800000,
+        ),
+      )
+      ..pump(frames: 0);
+    final count = engine.snapshot().tracks.length;
+    final bars = List.filled(count, 1)..[0] = 2;
+    expect(
+      engine.setLooperModeWithPresets(LooperMode.free, bars),
+      EngineResult.ok,
+    );
+    bars[0] = 0;
+    expect(engine.commandsSettled, isFalse);
+    engine.pump(frames: 0);
+    expect(engine.commandsSettled, isTrue);
+    expect(engine.snapshot().looperMode, LooperMode.free);
+    expect(engine.snapshot().tracks.first.lengthPresetBars, 2);
+    expect(engine.setTrackLengthPresets([1]), EngineResult.invalid);
+    expect(
+      engine.setTrackLengthPresets(List.filled(count, 0x100000001)),
+      EngineResult.invalid,
+    );
+    expect(engine.setTimeSignature(15, 8), EngineResult.ok);
+    expect(
+      engine.setTrackLengthPresets(List.filled(count, 1)),
+      EngineResult.ok,
+    );
+    engine.pump(frames: 0);
+    expect(engine.commandsSettled, isTrue);
+    // The preceding signature made the pending vector exceed capacity.
+    expect(engine.snapshot().tracks.first.lengthPresetBars, 2);
+    expect(
+      engine.setTrackLengthPresets(List.filled(count, 0)),
+      EngineResult.ok,
+    );
+    engine.pump(frames: 0);
+    expect(
+      engine.snapshot().tracks.every((track) => track.lengthPresetBars == 0),
+      isTrue,
+    );
+  }, skip: skip);
+
   test('queued tempo and Once publish only after the callback settles', () {
     final engine = PumpedNativeEngine();
     addTearDown(engine.dispose);

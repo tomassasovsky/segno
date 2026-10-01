@@ -355,9 +355,10 @@ void main() {
       await settings.saveAudioConfig(
         const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
-      // Save a preset for channel 1 only; channel 0 has none (exercises the
-      // null-guard skip in the restore loop, mirroring the multiple/quantize
-      // restores above).
+      // Channel 0 explicitly chooses Auto while channel 1 chooses eight bars.
+      // Both are empty tracks, so neither setting may depend on recorded audio.
+      await settings.saveDefaultLengthPreset(4);
+      await settings.saveTrackLengthPreset(0, 0);
       await settings.saveTrackLengthPreset(1, 8);
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
@@ -379,9 +380,53 @@ void main() {
       );
 
       expect(started.started, isTrue);
+      // One vector carries the default and overrides. Multi applies its
+      // shared default to both tracks while keeping the explicit choices.
+      expect(repository.state.tracks[1].lengthPresetOverride, 8);
+      expect(repository.state.tracks[0].lengthPresetOverride, 0);
+      expect(engine.trackLengthPreset[1], 4);
+      expect(engine.trackLengthPreset[0], 4);
+      expect(engine.lastTrackLengthPresets, [4, 4]);
+      repository.setLooperMode(LooperMode.song);
+      expect((await repository.settleLengthSettings()).isOk, isTrue);
       expect(engine.trackLengthPreset[1], 8);
-      expect(engine.trackLengthPreset.containsKey(0), isFalse);
+      expect(engine.trackLengthPreset[0], 0);
     });
+
+    test(
+      'refused saved length vector leaves preferences and engine stopped',
+      () async {
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+        );
+        await settings.saveDefaultLengthPreset(4);
+        engine
+          ..trackLengthPresetsResult = EngineResult.invalid
+          ..nextSnapshot = const EngineSnapshot(
+            isRunning: true,
+            sampleRate: 48000,
+            bufferFrames: 128,
+            framesProcessed: 0,
+            xrunCount: 0,
+            inputRms: 0,
+            inputPeak: 0,
+            outputRms: 0,
+            latencyState: le.LatencyState.idle,
+            measuredLatencyMs: -1,
+            tracks: [TrackSnapshot.empty()],
+          );
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isFalse);
+        expect(engine.stopCalls, greaterThan(0));
+        expect(await settings.loadDefaultLengthPreset(), 4);
+        expect(repository.sessionTransport.defaultLengthPresetBars, 0);
+      },
+    );
 
     test(
       'restores default Once and preserves explicit Loop overrides',

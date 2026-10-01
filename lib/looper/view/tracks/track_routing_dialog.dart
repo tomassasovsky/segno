@@ -7,7 +7,6 @@ import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
-import 'package:segno/looper/cubit/quantize_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/tracks/routing_tracks_tab.dart';
 import 'package:segno/looper/view/tracks/tracks_face.dart';
@@ -16,7 +15,7 @@ import 'package:segno/theme/theme.dart';
 /// Opens track [channel]'s own routing panel.
 ///
 /// A centred dialog rather than a bottom sheet, as the mockups draw it: it is
-/// two grouped lists, and a sheet tall enough to hold them is the whole screen
+/// a grouped lane list, and a sheet tall enough to hold it is the whole screen
 /// anyway. It re-provides everything it reads, because a dialog route is built
 /// by the navigator and inherits nothing from the caller's subtree.
 Future<void> showTrackRoutingDialog(
@@ -25,7 +24,6 @@ Future<void> showTrackRoutingDialog(
 }) {
   final looper = context.read<LooperBloc>();
   final tracks = context.read<TracksCubit>();
-  final quantize = context.read<QuantizeCubit>();
   final inputs = context.read<InputsCubit>();
   final repository = context.read<LooperRepository>();
   return showDialog<void>(
@@ -35,7 +33,6 @@ Future<void> showTrackRoutingDialog(
       providers: [
         BlocProvider.value(value: looper),
         BlocProvider.value(value: tracks),
-        BlocProvider.value(value: quantize),
         BlocProvider.value(value: inputs),
       ],
       child: RepositoryProvider.value(
@@ -84,17 +81,6 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
   /// The width cap and the scrim inset now live on [ConsoleDialogShell] —
   /// they were the pen's numbers for every dialog, not this one's.
 
-  /// The quantize group's own height: its caption, plus the three rows it
-  /// always has — follow, always, never — in a card that insets 1px top and
-  /// bottom.
-  ///
-  /// Fixed because the QUESTION is: a track's override on the global setting
-  /// has exactly three answers, and a fourth would be a different control.
-  /// [ConsoleStickyGroups] needs it to know when the real caption has
-  /// risen far enough to take the preview's place.
-  static const double _quantizeExtent =
-      ConsolePinnedGroupLabel.extent + kConsoleRowHeight * 3 + 2;
-
   /// Recording [input], or freeing the lane that already does.
   ///
   /// Applied as it is tapped — the Done button dismisses, it does not commit.
@@ -139,21 +125,6 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
     setState(() => _openLane = null);
   }
 
-  /// The three-way choice as a record timing override: follow is no
-  /// override, never is immediately, always is the default's own timing when
-  /// that waits (so the track keeps waiting for the same grid if the default
-  /// later turns off) and the loop top otherwise.
-  void _setQuantize(bool? enabled) {
-    final bloc = context.read<LooperBloc>();
-    final defaultTiming = bloc.state.transport.recordTiming;
-    final timing = switch (enabled) {
-      null => null,
-      false => RecordTiming.immediately,
-      true => defaultTiming.quantize ? defaultTiming : RecordTiming.loopStart,
-    };
-    bloc.add(LooperTrackRecordTimingChanged(widget.channel, timing: timing));
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -173,7 +144,6 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
         child: BlocBuilder<LooperBloc, LooperState>(
           buildWhen: (previous, current) =>
               !sameRouting(previous.tracks, current.tracks) ||
-              !sameQuantize(previous.tracks, current.tracks) ||
               previous.status.inputChannels != current.status.inputChannels ||
               previous.status.outputChannels != current.status.outputChannels,
           builder: (context, state) {
@@ -213,49 +183,17 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
                 // which track this is and Done is how you leave, so both
                 // stay put however many inputs the rig has.
                 //
-                // Both captions are STICKY. A caption belongs to what is
-                // under it, and a lane list long enough to scroll is
-                // exactly where "which group am I in?" stops being
-                // obvious — so LANES holds the top until QUANTIZE
-                // RECORDING arrives and pushes it out, and one of the two
-                // is overhead at every scroll position.
-                //
                 // Flexible, not Expanded — a short panel still shrinks to
                 // its content the way the mockup draws it, and nothing
                 // scrolls until the content runs out of room.
                 Flexible(
                   child: ConsoleStickyGroups(
-                    // What the caption at the bottom edge says, and what
-                    // it hands over to.
-                    upcoming: l10n.trackQuantizeGroup,
-                    upcomingExtent: _quantizeExtent,
-                    previewKey: const Key(
-                      'track_routing_upcoming_group',
-                    ),
                     slivers: [
-                      // A group per caption, so a caption pins only
-                      // while its OWN section is passing: plain pinned
-                      // headers stack up at the top instead, which ends
-                      // with both captions overhead and neither of them
-                      // attached to what is under it.
                       SliverMainAxisGroup(
                         slivers: [
                           ConsolePinnedGroupLabel(l10n.trackLanesGroup),
                           SliverToBoxAdapter(
                             child: _lanes(context, state, track),
-                          ),
-                        ],
-                      ),
-                      const SliverToBoxAdapter(
-                        child: SizedBox(height: kConsoleGroupGap),
-                      ),
-                      SliverMainAxisGroup(
-                        slivers: [
-                          ConsolePinnedGroupLabel(
-                            l10n.trackQuantizeGroup,
-                          ),
-                          SliverToBoxAdapter(
-                            child: _quantizeGroup(context, track),
                           ),
                         ],
                       ),
@@ -388,8 +326,7 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
     return [
       ConsoleRow(
         key: Key('track_routing_input_$input'),
-        // One step in, so the check column lines up with the pick rows of the
-        // quantize group under it.
+        // One step in, so the check gutter is distinct from the lane label.
         indented: true,
         leading: _LaneCheck(
           key: Key('track_routing_check_$input'),
@@ -518,46 +455,6 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
         ],
       ),
     ];
-  }
-
-  // -------------------------------------------------------------- quantize
-
-  /// Follow / always / never, with what "follow" currently MEANS spelled out.
-  ///
-  /// The three sit flat rather than behind a row that opens: this panel is
-  /// already the editor, and hiding three alternatives inside a fourth row
-  /// would put a chooser inside a chooser.
-  Widget _quantizeGroup(BuildContext context, Track track) {
-    final l10n = context.l10n;
-    final global = context.watch<QuantizeCubit>().state;
-    final override = track.quantizeOverride;
-    return ConsoleCard(
-      fill: context.surface.background,
-      children: [
-        ConsolePickRow(
-          key: const Key('track_routing_quantize_follow'),
-          title: l10n.trackQuantizeFollow,
-          state: global
-              ? l10n.trackQuantizeGlobalOn
-              : l10n.trackQuantizeGlobalOff,
-          selected: override == null,
-          onTap: () => _setQuantize(null),
-        ),
-        ConsolePickRow(
-          key: const Key('track_routing_quantize_always'),
-          title: l10n.trackQuantizeAlways,
-          selected: override ?? false,
-          onTap: () => _setQuantize(true),
-        ),
-        ConsolePickRow(
-          key: const Key('track_routing_quantize_never'),
-          title: l10n.trackQuantizeNever,
-          selected: override == false,
-          showDivider: false,
-          onTap: () => _setQuantize(false),
-        ),
-      ],
-    );
   }
 }
 

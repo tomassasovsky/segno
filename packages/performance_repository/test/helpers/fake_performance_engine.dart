@@ -387,6 +387,13 @@ class FakePerformanceEngine implements AudioEngine {
   LooperModeGate looperModeGate(LooperMode mode) => LooperModeGate.open;
   @override
   EngineResult setLooperMode(LooperMode mode) => EngineResult.ok;
+
+  @override
+  EngineResult setTrackLengthPresets(List<int> bars) => EngineResult.ok;
+
+  @override
+  EngineResult setLooperModeWithPresets(LooperMode mode, List<int> bars) =>
+      EngineResult.ok;
   @override
   EngineResult crownPrimary({required int channel}) => EngineResult.ok;
   @override

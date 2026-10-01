@@ -523,6 +523,7 @@ class Session {
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
     this.defaultOneShot = false,
+    this.defaultLengthPresetBars = 0,
     this.trackRecordTimingOverrides = const {},
     this.trackOverdubDecayOverrides = const {},
     this.trackOneShotOverrides = const {},
@@ -594,6 +595,8 @@ class Session {
       looperMode: _looperModeFromJson(json['looperMode'] as String?),
       primaryTrack: (json['primaryTrack'] as num?)?.toInt() ?? -1,
       defaultOneShot: json['defaultOneShot'] as bool? ?? false,
+      defaultLengthPresetBars:
+          (json['defaultLengthPresetBars'] as num?)?.toInt() ?? 0,
       trackRecordTimingOverrides: _readOverrides(
         json['trackRecordTimingOverrides'],
         (value) => RecordTiming.values.byName(value! as String),
@@ -718,6 +721,9 @@ class Session {
   /// The default playback choice: Loop (`false`) or Once (`true`).
   final bool defaultOneShot;
 
+  /// Default length for future recordings: zero is Auto, otherwise bars.
+  final int defaultLengthPresetBars;
+
   /// Explicit record timing choices, including choices equal to the default.
   final Map<int, RecordTiming> trackRecordTimingOverrides;
 
@@ -784,6 +790,7 @@ class Session {
     'looperMode': looperMode.name,
     'primaryTrack': primaryTrack,
     'defaultOneShot': defaultOneShot,
+    'defaultLengthPresetBars': defaultLengthPresetBars,
     'trackRecordTimingOverrides': {
       for (final entry in trackRecordTimingOverrides.entries)
         '${entry.key}': entry.value.name,
@@ -836,6 +843,7 @@ class Session {
           _listEquals(monitors, other.monitors) &&
           _listEquals(trackChains, other.trackChains) &&
           defaultOneShot == other.defaultOneShot &&
+          defaultLengthPresetBars == other.defaultLengthPresetBars &&
           syncTempo == other.syncTempo &&
           recDub == other.recDub &&
           autoRecord == other.autoRecord &&
@@ -882,6 +890,7 @@ class Session {
     Object.hashAll(monitors),
     Object.hashAll(trackChains),
     defaultOneShot,
+    defaultLengthPresetBars,
     syncTempo,
     recDub,
     autoRecord,

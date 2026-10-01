@@ -92,6 +92,7 @@ void main() {
     looperMode: LooperMode.band,
     primaryTrack: 1,
     defaultOneShot: true,
+    defaultLengthPresetBars: 8,
     trackOneShotOverrides: {0: true, 2: false},
     trackRecordTimingOverrides: {0: RecordTiming.bar, 2: RecordTiming.eighth},
     trackOverdubDecayOverrides: {0: 30, 2: 25},
@@ -347,6 +348,7 @@ void main() {
       expect(json['primaryTrack'], 1);
       expect(json['defaultOneShot'], isTrue);
       expect(json['trackOneShotOverrides'], {'0': true, '2': false});
+      expect(json['defaultLengthPresetBars'], 8);
       expect(json['trackLengthPresetOverrides'], {'0': 4, '2': 8});
     });
 
@@ -363,6 +365,7 @@ void main() {
       });
       expect(loaded.trackOverdubDecayOverrides, {0: 30, 2: 25});
       expect(loaded.trackLengthPresetOverrides, {0: 4, 2: 8});
+      expect(loaded.defaultLengthPresetBars, 8);
       expect(loaded.trackOneShotOverrides.containsKey(1), isFalse);
       expect(loaded.tracks.map((track) => track.channel), [0, 1]);
       expect(loaded.syncTempo, isFalse);

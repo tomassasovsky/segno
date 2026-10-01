@@ -17,7 +17,6 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/looper/view/tray/tray.dart';
-import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -54,7 +53,7 @@ void main() {
   late SettingsRepository settings;
   late TracksCubit tracks;
   late InputsCubit inputs;
-  late QuantizeCubit quantize;
+  late RecordTimingCubit quantize;
   late SettingsTrayCubit tray;
 
   /// The live state stream, when a test needs the face to REACT rather than
@@ -63,6 +62,7 @@ void main() {
   StreamController<LooperState>? states;
 
   setUpAll(() {
+    registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(const LooperRecordPressed(0));
   });
 
@@ -72,6 +72,9 @@ void main() {
     repository = _MockLooperRepository();
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setRecordTiming(any()),
     ).thenReturn(EngineResult.ok);
     // The input names follow the OPEN DEVICE, so the cubit reads the
     // repository's stream the moment it is built.
@@ -118,7 +121,7 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tracks = TracksCubit(settings: settings);
     inputs = InputsCubit(settings: settings, repository: repository);
-    quantize = QuantizeCubit(repository: repository, settings: settings);
+    quantize = RecordTimingCubit(repository: repository, settings: settings);
     tray = SettingsTrayCubit(settings: settings)..showTracksTab(tab);
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).
@@ -175,7 +178,6 @@ void main() {
       expect(find.byType(ConsoleDomainPanel<TracksTab>), findsOneWidget);
       expect(find.text(l10n.trayTracksLabel), findsOneWidget);
       expect(find.text(l10n.tracksNamesTab), findsOneWidget);
-      expect(find.text(l10n.tracksLengthsTab), findsOneWidget);
       expect(find.text(l10n.tracksRoutingTab), findsOneWidget);
     });
 
@@ -311,95 +313,6 @@ void main() {
 
       expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
       expect(tracks.state.names[1], 'TRACK 2');
-    });
-  });
-
-  // ---------------------------------------------------------------- lengths
-
-  group('Tracks — Lengths', () {
-    testWidgets('a row reads auto or its bar preset', (tester) async {
-      await pump(tester, tab: TracksTab.lengths);
-      final l10n = l10nOf(tester);
-
-      expect(find.text(l10n.lengthPresetBars(8)), findsOneWidget);
-      expect(find.text(l10n.tracksLengthAuto), findsNWidgets(3));
-    });
-
-    testWidgets('the row opens IN PLACE onto the preset grid', (tester) async {
-      await pump(tester, tab: TracksTab.lengths);
-
-      expect(find.byKey(const Key('tracks_lengths_0_16')), findsNothing);
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('tracks_lengths_0_16')), findsOneWidget);
-      // The list it came from is still there — this is a drawer, not a route.
-      expect(find.byKey(const Key('tracks_lengths_row_3')), findsOneWidget);
-    });
-
-    testWidgets('the chooser GROWS open rather than appearing', (tester) async {
-      await pump(tester, tab: TracksTab.lengths);
-
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-      await tester.pump();
-      await tester.pump(kConsoleMotion ~/ 2);
-      final midway = tester.getSize(
-        find.byKey(const Key('tracks_lengths_slot_0')),
-      );
-      await tester.pumpAndSettle();
-      final settled = tester.getSize(
-        find.byKey(const Key('tracks_lengths_slot_0')),
-      );
-
-      // Goldens only ever photograph settled states, so the growth itself has
-      // to be asserted mid-flight or nothing pins it.
-      expect(midway.height, lessThan(settled.height));
-      expect(midway.height, greaterThan(0));
-    });
-
-    testWidgets('picking a preset writes it and closes the chooser', (
-      tester,
-    ) async {
-      await pump(tester, tab: TracksTab.lengths);
-
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('tracks_lengths_0_16')));
-      await tester.pumpAndSettle();
-
-      verify(
-        () => bloc.add(const LooperTrackLengthPresetChanged(0, 16)),
-      ).called(1);
-      expect(find.byKey(const Key('tracks_lengths_0_16')), findsNothing);
-    });
-
-    testWidgets('only one row is open at a time', (tester) async {
-      await pump(tester, tab: TracksTab.lengths);
-
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_1')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('tracks_lengths_0_16')), findsNothing);
-      expect(find.byKey(const Key('tracks_lengths_1_16')), findsOneWidget);
-    });
-
-    testWidgets('the preset set is the one Settings already offers', (
-      tester,
-    ) async {
-      await pump(tester, tab: TracksTab.lengths);
-
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-      await tester.pumpAndSettle();
-
-      for (final preset in SetupTrackLengthPresetRow.presets) {
-        expect(
-          find.byKey(Key('tracks_lengths_0_$preset')),
-          findsOneWidget,
-          reason: 'preset $preset is offered on Settings but not here',
-        );
-      }
     });
   });
 
@@ -900,12 +813,9 @@ void main() {
       expect(midway.height, greaterThan(0));
     });
 
-    testWidgets('the group you have not reached waits at the bottom edge', (
+    testWidgets('the lane caption stays pinned while routing scrolls', (
       tester,
     ) async {
-      // Two captions, one viewport: the current one pins overhead, and the
-      // one below waits at the bottom edge so the panel's second question is
-      // visible before you have scrolled the whole lane list to find it.
       await pump(
         tester,
         tab: TracksTab.routing,
@@ -921,63 +831,16 @@ void main() {
       await tester.tap(find.byKey(const Key('track_routing_input_0')));
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
-
       final panel = tester.getRect(
         find.byKey(const Key('track_routing_dialog_0')),
       );
       final lanesTop = tester.getRect(find.text(l10n.trackLanesGroup)).top;
-      final firstRow = tester.getRect(
-        find.byKey(const Key('track_routing_input_0')),
-      );
-      // Pinned, not merely present: the caption sits ABOVE its own first row.
-      expect(lanesTop, lessThan(firstRow.top));
-
-      // The upcoming caption is showing, and it is at the BOTTOM of the
-      // scrolling area rather than up with the list.
-      final preview = find.byKey(const Key('track_routing_upcoming_group'));
-      expect(tester.widget<AnimatedOpacity>(preview).opacity, 1);
-      // At the BOTTOM: below the first lane row, not up with the list.
-      expect(tester.getRect(preview).top, greaterThan(firstRow.bottom));
-      expect(
-        tester.getRect(preview).bottom,
-        lessThanOrEqualTo(panel.bottom),
-      );
-
       await tester.drag(
         find.byKey(const Key('track_routing_input_3')),
         const Offset(0, -260),
       );
       await tester.pumpAndSettle();
-
-      expect(
-        tester.getRect(find.text(l10n.trackLanesGroup)).top,
-        lanesTop,
-        reason: 'the caption floats — it does not travel with its list',
-      );
-
-      // Scrolled to the end, the real caption has arrived and the preview has
-      // stood down, so the two are never on screen at once.
-      await tester.drag(
-        find.byKey(const Key('track_routing_input_5')),
-        const Offset(0, -2000),
-      );
-      await tester.pumpAndSettle();
-
-      expect(tester.widget<AnimatedOpacity>(preview).opacity, 0);
-      // The REAL caption — the preview lives outside the scroll view, and is
-      // faded out rather than removed, so scope the search to the list.
-      expect(
-        find.descendant(
-          of: find.byType(CustomScrollView),
-          matching: find.text(l10n.trackQuantizeGroup),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const Key('track_routing_quantize_never')),
-        findsOneWidget,
-      );
-      // The panel itself never moved; only its contents did.
+      expect(tester.getRect(find.text(l10n.trackLanesGroup)).top, lanesTop);
       expect(
         tester.getRect(find.byKey(const Key('track_routing_dialog_0'))),
         panel,
@@ -1048,7 +911,7 @@ void main() {
       verify(() => bloc.add(const LooperLaneInputChanged(0, 1, -1))).called(1);
     });
 
-    testWidgets('the quantize override renders its current value', (
+    testWidgets('routing cannot replace a custom record timing choice', (
       tester,
     ) async {
       await pump(
@@ -1058,7 +921,7 @@ void main() {
           tracks: [
             Track(
               lanes: [Lane(inputChannel: 0)],
-              recordTimingOverride: RecordTiming.immediately,
+              recordTimingOverride: RecordTiming.eighth,
             ),
           ],
           status: EngineStatus(inputChannels: 4, outputChannels: 4),
@@ -1066,47 +929,28 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
       await tester.pumpAndSettle();
-
-      final never = tester.widget<ConsolePickRow>(
-        find.byKey(const Key('track_routing_quantize_never')),
-      );
-      final follow = tester.widget<ConsolePickRow>(
+      expect(
         find.byKey(const Key('track_routing_quantize_follow')),
+        findsNothing,
       );
-      expect(never.selected, isTrue);
-      expect(follow.selected, isFalse);
-    });
-
-    testWidgets('follow spells out what the global currently means', (
-      tester,
-    ) async {
-      await openPanel(tester);
-      final l10n = l10nOf(tester);
-
-      final follow = tester.widget<ConsolePickRow>(
-        find.byKey(const Key('track_routing_quantize_follow')),
-      );
-      expect(follow.selected, isTrue);
-      expect(follow.state, l10n.trackQuantizeGlobalOff);
-    });
-
-    testWidgets('choosing an override writes it', (tester) async {
-      await openPanel(tester);
-
-      await tester.tap(
+      expect(
         find.byKey(const Key('track_routing_quantize_always')),
+        findsNothing,
       );
+      expect(
+        find.byKey(const Key('track_routing_quantize_never')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const Key('track_routing_input_1')));
       await tester.pumpAndSettle();
-
-      // "Always" with a default that does not wait is the loop top.
-      verify(
+      verifyNever(
         () => bloc.add(
           const LooperTrackRecordTimingChanged(
             0,
             timing: RecordTiming.loopStart,
           ),
         ),
-      ).called(1);
+      );
     });
 
     testWidgets('a rig taller than the screen scrolls instead of overflowing', (
@@ -1147,22 +991,14 @@ void main() {
         matching: find.byType(Scrollable),
       );
       final lastInput = find.byKey(const Key('track_routing_input_7'));
-      final quantize = find.byKey(const Key('track_routing_quantize_never'));
-
-      // The content is taller than the panel can draw: the quantize group is
-      // off the bottom, and its sliver does not resolve at all yet. THIS is
-      // the finder that tests visibility — a lane row's does not, because
-      // every lane row lives in one sliver, so `findsOneWidget` on one would
-      // pass even if the list had stopped scrolling entirely.
-      expect(quantize, findsNothing);
       final lastInputTop = tester.getRect(lastInput).top;
-
-      // Scrolling brings it in...
-      await tester.scrollUntilVisible(quantize, 200, scrollable: laneList);
-      expect(quantize, findsOneWidget);
-
-      // ...and carries the lane list with it, asserted by POSITION.
-      expect(tester.getRect(lastInput).top, lessThan(lastInputTop));
+      await tester.drag(laneList, const Offset(0, -200));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('track_routing_input_7')), findsOneWidget);
+      expect(
+        tester.getRect(lastInput).top,
+        lessThanOrEqualTo(lastInputTop),
+      );
     });
 
     testWidgets('Done dismisses; it does not commit', (tester) async {

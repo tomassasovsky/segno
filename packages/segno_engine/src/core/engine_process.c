@@ -322,12 +322,9 @@ static int le_tempo_locked(le_engine* e) {
          load_i32(&e->a_tempo_source) != LE_TEMPO_SOURCE_NONE;
 }
 
-/* Whether a looper-mode switch may land on the audio thread right now
- * (accepted design, slice 2): never over a capture, a pending arm or a
- * playing take. The control thread's le_engine_looper_mode_gate enforces the
- * same with the effective state and stops playing loops ahead of the switch;
- * this is the audio-thread re-check for the block in between. A queued crown
- * can also change the target base, so measure the actual spans here. */
+/* Transport edits such as exact tempo restore require a stopped rig.
+ * Mode switches additionally validate spans, then stop eligible playback
+ * inside their own command so refusal cannot leave partially stopped tracks. */
 static int le_transport_edit_blocked(le_engine* e) {
   if (e->count_in_total > 0) return 1;
   for (int32_t t = 0; t < e->track_count; ++t) {
@@ -341,7 +338,13 @@ static int le_transport_edit_blocked(le_engine* e) {
 }
 
 static int le_looper_mode_switch_blocked(le_engine* e, int32_t mode) {
-  if (le_transport_edit_blocked(e)) return 1;
+  if (e->count_in_total > 0) return 1;
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    const int32_t state = load_i32(&t->a_state);
+    if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING ||
+        t->pending_record || load_i32(&t->a_layer_in_flight)) return 1;
+  }
   if (mode != LE_LOOPER_MODE_FREE && mode != LE_LOOPER_MODE_SONG) {
     const int32_t primary = le_mode_base_channel(e, mode);
     if (primary >= 0) {
@@ -2541,15 +2544,31 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     /* ---- looper mode (B2a, D4; see le_looper_mode_switch_blocked above).
      * Mode selection is not performance logged. */
     case LE_CMD_SET_LOOPER_MODE: {
-      int32_t m = cmd->arg_i;
-
-      /* The control gate refused capture, queues and unfit spans, and stopped
-       * every playing loop ahead of this command; re-checked here so a state
-       * that moved in the one-block window never re-clocks a live rig. */
+      const int32_t m = cmd->presets.mode;
+      const int32_t count = cmd->presets.count;
+      const int changing = m != load_i32(&e->a_looper_mode);
+      /* Validate EVERYTHING against preceding commands before the first
+       * stop or setting write. A refused edit cannot strand stopped tracks. */
       if (m >= LE_LOOPER_MODE_MULTI && m <= LE_LOOPER_MODE_FREE &&
-          !le_looper_mode_switch_blocked(e, m)) le_apply_mode_switch(e, m);
-      if (cmd->clock.sequence != 0) {
-        atomic_store_explicit(&e->a_clock_commands_applied, cmd->clock.sequence,
+          (count == 0 ||
+           le_length_presets_check(e, cmd->presets.bars, count) == LE_OK) &&
+          (!changing || !le_looper_mode_switch_blocked(e, m))) {
+        if (changing) {
+          for (int32_t c = 0; c < e->track_count; ++c) {
+            if (load_i32(&e->tracks[c].a_state) != LE_TRACK_PLAYING ||
+                load_i32(&e->tracks[c].lanes[0].a_len) <= 0) continue;
+            le_plog_push(e, frame,
+                         (le_command){.code = LE_CMD_STOP, .arg_i = c});
+            handle_stop(e, c, frame);
+          }
+          le_apply_mode_switch(e, m);
+        }
+        for (int32_t c = 0; c < count; ++c) {
+          store_i32(&e->tracks[c].a_length_preset_bars, cmd->presets.bars[c]);
+        }
+      }
+      if (cmd->presets.sequence != 0) {
+        atomic_store_explicit(&e->a_clock_commands_applied, cmd->presets.sequence,
                               memory_order_release);
       }
       break;
@@ -2660,6 +2679,14 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     /* ---- track length presets (A6, D17; see the helper block above
      * finalize_master). Not perf-logged, like the tempo grid / click block
      * above — state only, no direct audible effect at the moment it's set. */
+    case LE_CMD_SET_LENGTH_PRESETS:
+      if (le_length_presets_check(e, cmd->presets.bars,
+                                  cmd->presets.count) == LE_OK) {
+        for (int32_t c = 0; c < cmd->presets.count; ++c) {
+          store_i32(&e->tracks[c].a_length_preset_bars, cmd->presets.bars[c]);
+        }
+      }
+      break;
     case LE_CMD_SET_LENGTH_PRESET: {
       if (!valid_channel(e, cmd->arg_i)) break;
       int32_t bars = (int32_t)cmd->arg_f;

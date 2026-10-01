@@ -16,7 +16,18 @@ class FakeAudioEngine implements AudioEngine {
   List<EngineResult>? startResults;
 
   /// Snapshot returned by [snapshot].
-  EngineSnapshot nextSnapshot = const EngineSnapshot.initial();
+  EngineSnapshot _nextSnapshot = const EngineSnapshot.initial();
+  EngineSnapshot get nextSnapshot => _nextSnapshot;
+  set nextSnapshot(EngineSnapshot value) {
+    _nextSnapshot = value;
+    publishedMode = null;
+  }
+
+  bool commandsAreSettled = true;
+  bool publishLengthCommands = true;
+  bool publishModeCommands = true;
+  final Map<int, int> publishedLengths = {};
+  LooperMode? publishedMode;
 
   /// Whether the snapshot reports the capture drain self-stopped on a failed
   /// write (#652). Overlaid onto [nextSnapshot] so a test can flip it mid-run
@@ -79,33 +90,15 @@ class FakeAudioEngine implements AudioEngine {
   CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
 
   @override
-  bool get commandsSettled => true;
+  bool get commandsSettled => commandsAreSettled;
 
   @override
-  EngineSnapshot snapshot() => perfStopped
-      ? EngineSnapshot(
-          isRunning: nextSnapshot.isRunning,
-          sampleRate: nextSnapshot.sampleRate,
-          bufferFrames: nextSnapshot.bufferFrames,
-          framesProcessed: nextSnapshot.framesProcessed,
-          xrunCount: nextSnapshot.xrunCount,
-          inputRms: nextSnapshot.inputRms,
-          inputPeak: nextSnapshot.inputPeak,
-          outputRms: nextSnapshot.outputRms,
-          latencyState: nextSnapshot.latencyState,
-          measuredLatencyMs: nextSnapshot.measuredLatencyMs,
-          masterLengthFrames: nextSnapshot.masterLengthFrames,
-          masterPositionFrames: nextSnapshot.masterPositionFrames,
-          masterGain: nextSnapshot.masterGain,
-          recordOffsetFrames: nextSnapshot.recordOffsetFrames,
-          isPerfArmed: nextSnapshot.isPerfArmed,
-          perfFrames: nextSnapshot.perfFrames,
-          perfOverruns: nextSnapshot.perfOverruns,
-          perfZeroFilledFrames: nextSnapshot.perfZeroFilledFrames,
-          perfStopped: true,
-          tracks: nextSnapshot.tracks,
-        )
-      : nextSnapshot;
+  EngineSnapshot snapshot() => _LengthSnapshot(
+    nextSnapshot,
+    publishedLengths,
+    publishedMode,
+    perfStopped: perfStopped,
+  );
 
   /// Loopback detection result returned by [detectLoopback].
   LoopbackInfo loopback = const LoopbackInfo.none();
@@ -460,6 +453,22 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult setTrackLengthPreset({required int channel, required int bars}) {
     trackLengthPreset[channel] = bars;
+    if (publishLengthCommands) publishedLengths[channel] = bars;
+    return EngineResult.ok;
+  }
+
+  /// The last atomic preset vector, and the scripted result for its call.
+  List<int>? lastTrackLengthPresets;
+  EngineResult trackLengthPresetsResult = EngineResult.ok;
+
+  @override
+  EngineResult setTrackLengthPresets(List<int> bars) {
+    lastTrackLengthPresets = List<int>.of(bars);
+    if (!trackLengthPresetsResult.isOk) return trackLengthPresetsResult;
+    for (var channel = 0; channel < bars.length; channel++) {
+      trackLengthPreset[channel] = bars[channel];
+      if (publishLengthCommands) publishedLengths[channel] = bars[channel];
+    }
     return EngineResult.ok;
   }
 
@@ -475,6 +484,23 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult setLooperMode(LooperMode mode) {
     lastLooperMode = mode;
+    return EngineResult.ok;
+  }
+
+  /// The last atomic mode/preset request, and the scripted result.
+  (LooperMode, List<int>)? lastModeWithPresets;
+  EngineResult modeWithPresetsResult = EngineResult.ok;
+
+  @override
+  EngineResult setLooperModeWithPresets(LooperMode mode, List<int> bars) {
+    lastModeWithPresets = (mode, List<int>.of(bars));
+    if (!modeWithPresetsResult.isOk) return modeWithPresetsResult;
+    lastLooperMode = mode;
+    if (publishModeCommands) publishedMode = mode;
+    for (var channel = 0; channel < bars.length; channel++) {
+      trackLengthPreset[channel] = bars[channel];
+      if (publishLengthCommands) publishedLengths[channel] = bars[channel];
+    }
     return EngineResult.ok;
   }
 
@@ -1148,4 +1174,99 @@ class FakeAudioEngine implements AudioEngine {
     finalizedTakes.add(channel);
     return finalizeTakeResult;
   }
+}
+
+class _LengthSnapshot extends EngineSnapshot {
+  _LengthSnapshot(
+    EngineSnapshot source,
+    Map<int, int> lengths,
+    LooperMode? mode, {
+    required bool perfStopped,
+  }) : super(
+         isRunning: source.isRunning,
+         sampleRate: source.sampleRate,
+         bufferFrames: source.bufferFrames,
+         framesProcessed: source.framesProcessed,
+         xrunCount: source.xrunCount,
+         inputRms: source.inputRms,
+         inputPeak: source.inputPeak,
+         outputRms: source.outputRms,
+         latencyState: source.latencyState,
+         measuredLatencyMs: source.measuredLatencyMs,
+         outputPeak: source.outputPeak,
+         devicePresent: source.devicePresent,
+         inputChannels: source.inputChannels,
+         outputChannels: source.outputChannels,
+         excludedInputMask: source.excludedInputMask,
+         inputClipMask: source.inputClipMask,
+         inputCondMask: source.inputCondMask,
+         masterLengthFrames: source.masterLengthFrames,
+         masterPositionFrames: source.masterPositionFrames,
+         recordOffsetFrames: source.recordOffsetFrames,
+         fxAddedLatencyFrames: source.fxAddedLatencyFrames,
+         masterGain: source.masterGain,
+         tunerHz: source.tunerHz,
+         tunerConfidence: source.tunerConfidence,
+         tunerInput: source.tunerInput,
+         activeBackend: source.activeBackend,
+         outputEnabledMask: source.outputEnabledMask,
+         isPerfArmed: source.isPerfArmed,
+         perfFrames: source.perfFrames,
+         perfOverruns: source.perfOverruns,
+         perfZeroFilledFrames: source.perfZeroFilledFrames,
+         perfStopped: perfStopped || source.perfStopped,
+         tempoBpm: source.tempoBpm,
+         tempoSource: source.tempoSource,
+         tsNum: source.tsNum,
+         tsDen: source.tsDen,
+         syncTempo: source.syncTempo,
+         quantizeDiv: source.quantizeDiv,
+         loopBars: source.loopBars,
+         currentBeat: source.currentBeat,
+         clickMode: source.clickMode,
+         clickMask: source.clickMask,
+         clickVolume: source.clickVolume,
+         countInBars: source.countInBars,
+         countingIn: source.countingIn,
+         countInBeatsLeft: source.countInBeatsLeft,
+         looperMode: mode ?? source.looperMode,
+         primaryTrack: source.primaryTrack,
+         quantize: source.quantize,
+         autoRecord: source.autoRecord,
+         overdubFeedback: source.overdubFeedback,
+         tracks: [
+           for (var channel = 0; channel < source.tracks.length; channel++)
+             _LengthTrack(source.tracks[channel], lengths[channel]),
+         ],
+       );
+}
+
+class _LengthTrack extends TrackSnapshot {
+  _LengthTrack(TrackSnapshot source, int? bars)
+    : super(
+        state: source.state,
+        volume: source.volume,
+        muted: source.muted,
+        lengthFrames: source.lengthFrames,
+        undoDepth: source.undoDepth,
+        rms: source.rms,
+        peak: source.peak,
+        clearRestore: source.clearRestore,
+        redoDepth: source.redoDepth,
+        multiple: source.multiple,
+        inputMask: source.inputMask,
+        outputMask: source.outputMask,
+        layerInFlight: source.layerInFlight,
+        pending: source.pending,
+        lengthPresetBars: bars ?? source.lengthPresetBars,
+        oneShot: source.oneShot,
+        settledTakeId: source.settledTakeId,
+        restoreState: source.restoreState,
+        positionFrames: source.positionFrames,
+        pendingTrigger: source.pendingTrigger,
+        quantizeOverride: source.quantizeOverride,
+        quantizeDivOverride: source.quantizeDivOverride,
+        overdubFeedbackOverride: source.overdubFeedbackOverride,
+        lanes: source.lanes,
+      );
 }
