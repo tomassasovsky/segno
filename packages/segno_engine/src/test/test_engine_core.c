@@ -22294,6 +22294,11 @@ static void test_group_history_gate_projects_order_without_consuming(void) {
       le_engine* e = fm_make_free_engine(1000);
       fm_record_track_value(e, 0, 500, 0.25f);
       fm_record_track_value(e, 1, 750, 0.75f);
+      /* Recovery must preserve the captured PCM exactly, including the seam
+       * fold's platform-dependent rounding of these constant inputs. */
+      float original0[500], original1[750];
+      CHECK(le_engine_export_track_lane(e, 0, 0, original0, 500) == 500);
+      CHECK(le_engine_export_track_lane(e, 1, 0, original1, 750) == 750);
       CHECK(le_engine_undo(e, 0) == LE_OK);
       CHECK(le_engine_undo(e, 1) == LE_OK);
       tg_advance(e, 1);
@@ -22329,9 +22334,9 @@ static void test_group_history_gate_projects_order_without_consuming(void) {
       CHECK(snapshot.master_length_frames == 0);
       float pcm[750];
       CHECK(le_engine_export_track_lane(e, 0, 0, pcm, 750) == 500);
-      for (int frame = 0; frame < 500; ++frame) CHECK(pcm[frame] == 0.25f);
+      CHECK(memcmp(pcm, original0, sizeof(original0)) == 0);
       CHECK(le_engine_export_track_lane(e, 1, 0, pcm, 750) == 750);
-      for (int frame = 0; frame < 750; ++frame) CHECK(pcm[frame] == 0.75f);
+      CHECK(memcmp(pcm, original1, sizeof(original1)) == 0);
       le_engine_destroy(e);
     }
   }
