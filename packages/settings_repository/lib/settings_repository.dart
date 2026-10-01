@@ -9,6 +9,7 @@ export 'package:local_storage_client/local_storage_client.dart'
 export 'src/settings_repository.dart'
     show
         AudioBackend,
+        MidiSettingsSaveException,
         PedalSetupSaveException,
         SettingsRepository,
         StoredAudioConfig,

@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
@@ -62,6 +63,7 @@ void main() {
       initialState: const PedalState(),
     );
     final repository = _MockLooperRepository();
+    when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -114,6 +116,7 @@ void main() {
     when(repository.allOutputChains).thenReturn(const {});
     final settings = SettingsRepository(store: FakeKeyValueStore());
     monitor = MonitorCubit(
+      fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
       settings: settings,

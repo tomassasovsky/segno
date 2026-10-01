@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
@@ -36,6 +37,7 @@ void main() {
       settings: SettingsRepository(store: FakeKeyValueStore()),
     );
     looper = _MockLooperRepository();
+    when(() => looper.sessionRevision).thenReturn(0);
     looperStates = StreamController<LooperState>.broadcast();
     trackChains = {
       3: [_fx('a'), _fx('b')],
@@ -80,6 +82,7 @@ void main() {
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
+      fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
       pedal: PedalRepository(NoopPedalLink()),

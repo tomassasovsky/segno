@@ -7,7 +7,6 @@ import 'dart:io';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:console_facts_client/console_facts_client.dart';
-import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -18,6 +17,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
@@ -397,6 +397,7 @@ void main() {
     LooperState looperState = const LooperState(),
   }) {
     final looper = _MockLooperRepository();
+    when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -475,9 +476,11 @@ void main() {
     final pedalRepository = PedalRepository(NoopPedalLink());
     final pedal = PedalCubit(pedal: pedalRepository);
     addTearDown(pedal.close);
+    final fxPersistence = FxChainPersistence(looper: looper);
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     final control = ControlCubit(
+      fxPersistence: fxPersistence,
       looper: looper,
       mixSettings: mixSettings,
       pedal: pedalRepository,
@@ -501,6 +504,7 @@ void main() {
     final inputs = InputsCubit(settings: settings, repository: looper);
     final quantize = RecordTimingCubit(repository: looper, settings: settings);
     final monitor = MonitorCubit(
+      fxPersistence: fxPersistence,
       mixSettings: mixSettings,
       repository: looper,
       settings: settings,
@@ -924,67 +928,12 @@ void main() {
         status: MidiConnectionStatus.connected,
       ),
     );
-    await rig.control.setControllerBindings(
-      ControllerBindingSet([
-        ContinuousBinding(
-          trigger: const MappingTrigger(
-            kind: ControllerSourceKind.midiCc,
-            id: 11,
-            midiChannel: 0,
-          ),
-          target: const MasterGainTarget().canonicalString(),
-        ),
-        DiscreteBinding(
-          trigger: const MappingTrigger(
-            kind: ControllerSourceKind.midiNote,
-            id: 36,
-            midiChannel: 0,
-          ),
-          target: const FxChainTarget(_master).canonicalString(),
-        ),
-      ]),
-    );
     await pumpTray(tester, cubit: cubit, control: rig);
     await tester.pumpAndSettle();
-    // Past the mappings-write debounce, which would otherwise still be
-    // pending when the tree comes down.
-    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byKey(const Key('midi_open_controls')), findsOneWidget);
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_control_midi.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('control domain, midi device chooser open', (tester) async {
-    await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
-      ..open()
-      ..showDestination(SettingsTrayDestination.control)
-      ..showControlTab(ControlTab.controllers);
-    addTearDown(cubit.close);
-
-    final rig = controlProviders(
-      tester,
-      connection: const MidiConnection(
-        devices: [
-          MidiDevice(id: 'dev-1', name: 'Nektar Pacer'),
-          MidiDevice(id: 'dev-2', name: 'AirTurn BT-200'),
-        ],
-        selectedId: 'dev-1',
-        selectedName: 'Nektar Pacer',
-        status: MidiConnectionStatus.connected,
-      ),
-    );
-    await pumpTray(tester, cubit: cubit, control: rig);
-    await tester.pumpAndSettle();
-    // Opens in place, under the row — the shape `AUDIO / settings-device`
-    // draws for the same question.
-    await tester.tap(find.byKey(const Key('midi_device_row')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_control_midi_device.png'),
     );
   }, skip: !hasFonts);
 

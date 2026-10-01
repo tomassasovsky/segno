@@ -5235,5 +5235,449 @@
     "controllerConsoleMappingsUnavailable": "These saved CTRL mappings are unavailable. Set up the jacks in External pedals.",
     "@controllerConsoleMappingsUnavailable": {
         "description": "The retired generic CTRL rows are visible only for removal; External pedals is their only configuration owner."
-    }
+    },
+    "a11yMidiDisableMapping": "Disable {name}",
+    "@a11yMidiDisableMapping": {
+        "description": "Accessible name of the power button on an enabled mapping row.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yMidiEnableMapping": "Enable {name}",
+    "@a11yMidiEnableMapping": {
+        "description": "Accessible name of the power button on a disabled mapping row.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yMidiLastReceived": "Last received value {value}",
+    "@a11yMidiLastReceived": {
+        "description": "Accessible name of a mapping row signal meter.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            }
+        }
+    },
+    "a11yMidiRemoveControl": "Remove {name}",
+    "@a11yMidiRemoveControl": {
+        "description": "Accessible name of the remove button on a mapping control card.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "midiActionsNeedButton": "Actions need a button.",
+    "@midiActionsNeedButton": {
+        "description": "Notice when Knob / fader is chosen while the mapping drives actions."
+    },
+    "midiAddMapping": "Add mapping",
+    "@midiAddMapping": {
+        "description": "Starts a new MIDI mapping on the selected controller."
+    },
+    "midiButton": "Button",
+    "@midiButton": {
+        "description": "A plain CC read as a press and release."
+    },
+    "midiButtonBehavior": "Button behavior",
+    "@midiButtonBehavior": {
+        "description": "Accessible name of the Momentary or Toggle choice."
+    },
+    "midiCancelLearn": "Cancel Learn",
+    "@midiCancelLearn": {
+        "description": "Stops listening and keeps the editor open."
+    },
+    "midiChannel": "Channel {channel}",
+    "@midiChannel": {
+        "description": "One MIDI channel, numbered from 1.",
+        "placeholders": {
+            "channel": {
+                "type": "int"
+            }
+        }
+    },
+    "midiControlBehavior": "Control behavior",
+    "@midiControlBehavior": {
+        "description": "Accessible name of the Knob / fader or Button choice."
+    },
+    "midiControlOff": "MIDI control Off",
+    "@midiControlOff": {
+        "description": "The MIDI controls switch while remote MIDI assignments are paused."
+    },
+    "midiControlOn": "MIDI control On",
+    "@midiControlOn": {
+        "description": "The MIDI controls switch while remote MIDI assignments dispatch."
+    },
+    "midiControlSettingFailed": "Could not save MIDI control setting",
+    "@midiControlSettingFailed": {
+        "description": "Notice when writing the MIDI control switch failed."
+    },
+    "midiControllerDisconnected": "Controller disconnected",
+    "@midiControllerDisconnected": {
+        "description": "Notice under the mapping list when the selected controller is not connected."
+    },
+    "midiControlsCrumb": "SETTINGS / MIDI",
+    "@midiControlsCrumb": {
+        "description": "Breadcrumb over the MIDI controls page title."
+    },
+    "midiControlsEmpty": "Choose what this control changes.",
+    "@midiControlsEmpty": {
+        "description": "Placeholder when a mapping drives nothing yet."
+    },
+    "midiControlsEnabled": "MIDI controls enabled",
+    "@midiControlsEnabled": {
+        "description": "Notice after MIDI control is turned on."
+    },
+    "midiControlsHeading": "Controls",
+    "@midiControlsHeading": {
+        "description": "Heading over what a MIDI mapping drives."
+    },
+    "midiControlsPaused": "MIDI controls paused",
+    "@midiControlsPaused": {
+        "description": "Notice after MIDI control is turned off."
+    },
+    "midiControlsTitle": "MIDI controls",
+    "@midiControlsTitle": {
+        "description": "Title of the MIDI controls page."
+    },
+    "midiDelete": "Delete",
+    "@midiDelete": {
+        "description": "Deletes the saved MIDI mapping being edited."
+    },
+    "midiDeviceAvailable": "Available",
+    "@midiDeviceAvailable": {
+        "description": "A MIDI device card for a controller that is plugged in but not the one in use."
+    },
+    "midiDeviceConnected": "Connected",
+    "@midiDeviceConnected": {
+        "description": "A MIDI device card for the open, connected controller."
+    },
+    "midiDeviceConnecting": "Connecting…",
+    "@midiDeviceConnecting": {
+        "description": "A MIDI device card while its port is opening."
+    },
+    "midiDeviceDisconnected": "Disconnected",
+    "@midiDeviceDisconnected": {
+        "description": "A MIDI device card, or a mapping row, whose controller is not connected."
+    },
+    "midiDeviceOpenFailed": "Could not open",
+    "@midiDeviceOpenFailed": {
+        "description": "A MIDI device card whose port failed to open."
+    },
+    "midiEditExisting": "Edit existing mapping",
+    "@midiEditExisting": {
+        "description": "Opens the mapping the learned control overlaps."
+    },
+    "midiFormatBankProgram": "Bank + Program",
+    "@midiFormatBankProgram": {
+        "description": "The Bank Select and Program Change format."
+    },
+    "midiFormatBankProgramDetail": "Bank MSB + LSB, then Program Change",
+    "@midiFormatBankProgramDetail": {
+        "description": "Detail under the Bank + Program format."
+    },
+    "midiFormatCc14": "14-bit CC",
+    "@midiFormatCc14": {
+        "description": "The 14-bit Control Change format."
+    },
+    "midiFormatCc14Detail": "Fresh MSB + LSB pairs",
+    "@midiFormatCc14Detail": {
+        "description": "Detail under the 14-bit CC format."
+    },
+    "midiFormatNrpn": "NRPN",
+    "@midiFormatNrpn": {
+        "description": "The NRPN format."
+    },
+    "midiFormatNrpnDetail": "Parameter selection + 14-bit Data Entry",
+    "@midiFormatNrpnDetail": {
+        "description": "Detail under the NRPN format."
+    },
+    "midiFormatRelative": "Relative CC",
+    "@midiFormatRelative": {
+        "description": "The relative Control Change format."
+    },
+    "midiFormatRelativeDetail": "Two’s complement · 1 up, 127 down",
+    "@midiFormatRelativeDetail": {
+        "description": "Detail under the relative CC format."
+    },
+    "midiFormatStandard": "CC, Note or Program",
+    "@midiFormatStandard": {
+        "description": "The ordinary 7-bit MIDI format."
+    },
+    "midiFormatStandardDetail": "Ordinary 7-bit messages",
+    "@midiFormatStandardDetail": {
+        "description": "Detail under the ordinary MIDI format."
+    },
+    "midiKnobOrFader": "Knob / fader",
+    "@midiKnobOrFader": {
+        "description": "A plain CC read as a position."
+    },
+    "midiLearn": "Learn",
+    "@midiLearn": {
+        "description": "Starts listening for a control."
+    },
+    "midiLearnAnother": "Learn another control",
+    "@midiLearnAnother": {
+        "description": "Starts listening for a different control."
+    },
+    "midiLearnReconnect": "Reconnect the controller to continue.",
+    "@midiLearnReconnect": {
+        "description": "Notice when Learn ended while the controller was not connected."
+    },
+    "midiLearnTimedOut": "No message received. Try Learn again.",
+    "@midiLearnTimedOut": {
+        "description": "Notice when Learn heard nothing in time."
+    },
+    "midiMappingRemoved": "Mapping removed",
+    "@midiMappingRemoved": {
+        "description": "Notice after a MIDI mapping is deleted."
+    },
+    "midiMappingTitle": "Mapping",
+    "@midiMappingTitle": {
+        "description": "Title of the MIDI mapping editor."
+    },
+    "midiMessageFormat": "Message format",
+    "@midiMessageFormat": {
+        "description": "Title of the MIDI message format picker."
+    },
+    "midiMissingControl": "Missing control",
+    "@midiMissingControl": {
+        "description": "A mapping row or control whose parameter the rig no longer has."
+    },
+    "midiMomentary": "Momentary",
+    "@midiMomentary": {
+        "description": "A button whose values follow the press."
+    },
+    "midiMoveAControl": "Move a control",
+    "@midiMoveAControl": {
+        "description": "Shown while Learn is listening."
+    },
+    "midiNoControlSelected": "No control selected",
+    "@midiNoControlSelected": {
+        "description": "The mapping editor before Learn has heard a control."
+    },
+    "midiNoDevices": "No MIDI controller found. Plug one in to map it.",
+    "@midiNoDevices": {
+        "description": "Shown in place of the device cards when no MIDI input exists."
+    },
+    "midiNoMappings": "No mappings",
+    "@midiNoMappings": {
+        "description": "Shown when the selected controller has no MIDI mappings."
+    },
+    "midiOmniAllChannels": "Omni · All channels",
+    "@midiOmniAllChannels": {
+        "description": "Listen on every MIDI channel."
+    },
+    "midiOverlaps": "This control overlaps an existing channel mapping.",
+    "@midiOverlaps": {
+        "description": "The learned control reads messages another mapping already reads."
+    },
+    "midiPerformanceActions": "Performance actions",
+    "@midiPerformanceActions": {
+        "description": "Opens the action catalogue for a MIDI mapping."
+    },
+    "midiPerformanceActionsNeedButton": "Performance actions · use a button",
+    "@midiPerformanceActionsNeedButton": {
+        "description": "The action catalogue while the learned format carries no press."
+    },
+    "midiPressed": "Pressed",
+    "@midiPressed": {
+        "description": "An action that runs when the control is pressed."
+    },
+    "midiRangeFrom": "From",
+    "@midiRangeFrom": {
+        "description": "The value a knob writes at the bottom of its travel."
+    },
+    "midiRangeTo": "To",
+    "@midiRangeTo": {
+        "description": "The value a knob writes at the top of its travel."
+    },
+    "midiRangeValue": "Value",
+    "@midiRangeValue": {
+        "description": "The value a Program Change writes."
+    },
+    "midiReceiveChannel": "Receive · Channel {channel}",
+    "@midiReceiveChannel": {
+        "description": "The channel a mapping listens on; opens the channel picker.",
+        "placeholders": {
+            "channel": {
+                "type": "int"
+            }
+        }
+    },
+    "midiReceiveChannelTitle": "Receive channel",
+    "@midiReceiveChannelTitle": {
+        "description": "Title of the MIDI channel picker."
+    },
+    "midiReceiveOmni": "Receive · Omni",
+    "@midiReceiveOmni": {
+        "description": "A mapping that listens on every channel; opens the channel picker."
+    },
+    "midiReceived": "Received {value} / {maximum}",
+    "@midiReceived": {
+        "description": "The value Learn captured, out of the largest the format carries.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            },
+            "maximum": {
+                "type": "int"
+            }
+        }
+    },
+    "midiReceivedSteps": "{count, plural, =1{Received {delta} step} other{Received {delta} steps}}",
+    "@midiReceivedSteps": {
+        "description": "The step a relative control sent when Learn captured it; delta carries its sign.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            },
+            "delta": {
+                "type": "String"
+            }
+        }
+    },
+    "midiReconnectController": "Reconnect controller",
+    "@midiReconnectController": {
+        "description": "Shown while Learn is listening and the controller is not connected."
+    },
+    "midiReleased": "Released",
+    "@midiReleased": {
+        "description": "An action that runs when the control is released."
+    },
+    "midiRemoveActionsFirst": "Remove action targets before learning a high-resolution or relative control.",
+    "@midiRemoveActionsFirst": {
+        "description": "Notice when a format that carries no press is chosen while the mapping drives actions."
+    },
+    "midiRepairControl": "Repair control",
+    "@midiRepairControl": {
+        "description": "Repoints a mapped parameter the rig no longer has."
+    },
+    "midiRepairReady": "Repair ready · Save to keep",
+    "@midiRepairReady": {
+        "description": "Notice after a missing control is repointed, until Save keeps it."
+    },
+    "midiSaveFailed": "Could not save. Your changes are still here.",
+    "@midiSaveFailed": {
+        "description": "Notice when writing a MIDI mapping failed."
+    },
+    "midiSourceBankProgram": "Bank {bank} · Program {number}",
+    "@midiSourceBankProgram": {
+        "description": "A Bank + Program control.",
+        "placeholders": {
+            "bank": {
+                "type": "int"
+            },
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "midiSourceCc": "CC {number}",
+    "@midiSourceCc": {
+        "description": "A plain Control Change control.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "midiSourceCc14": "CC {number} / {lsb} · 14-bit",
+    "@midiSourceCc14": {
+        "description": "A 14-bit Control Change control: its MSB and LSB numbers.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            },
+            "lsb": {
+                "type": "int"
+            }
+        }
+    },
+    "midiSourceNote": "Note {number}",
+    "@midiSourceNote": {
+        "description": "A Note control.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "midiSourceNrpn": "NRPN {parameter}",
+    "@midiSourceNrpn": {
+        "description": "An NRPN control by its parameter number.",
+        "placeholders": {
+            "parameter": {
+                "type": "int"
+            }
+        }
+    },
+    "midiSourceOnChannel": "{source} · Ch {channel}",
+    "@midiSourceOnChannel": {
+        "description": "A MIDI control on one channel, numbered from 1.",
+        "placeholders": {
+            "source": {
+                "type": "String"
+            },
+            "channel": {
+                "type": "int"
+            }
+        }
+    },
+    "midiSourceOnOmni": "{source} · Omni",
+    "@midiSourceOnOmni": {
+        "description": "A MIDI control on every channel.",
+        "placeholders": {
+            "source": {
+                "type": "String"
+            }
+        }
+    },
+    "midiSourceProgram": "Program {number}",
+    "@midiSourceProgram": {
+        "description": "A Program Change control.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "midiSourceRelative": "CC {number} · Relative",
+    "@midiSourceRelative": {
+        "description": "A relative Control Change control.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "midiToggle": "Toggle",
+    "@midiToggle": {
+        "description": "A button that flips on each press."
+    },
+    "midiUnavailableAction": "Unavailable action",
+    "@midiUnavailableAction": {
+        "description": "A mapped action this version does not know."
+    },
+    "midiWhen": "When",
+    "@midiWhen": {
+        "description": "Label before the choice of when an action runs."
+    },
+    "midiControlsEntryDetail": "Choose a controller and assign its buttons, keys and knobs.",
+    "@midiControlsEntryDetail": {
+        "description": "Entry into the shared MIDI controls editor."
+    },
+    "actionTapTempo": "Tap tempo",
+    "@actionTapTempo": {
+        "description": "Shared action for setting tempo by tapping a control."
+    },
+    "midiRetryOff": "Retry Off",
+    "midiResumeOn": "Resume On",
+    "midiResetConfiguration": "Reset mappings",
+    "midiConfigurationUnavailable": "Saved mappings could not be read. Reset them to start again."
 }

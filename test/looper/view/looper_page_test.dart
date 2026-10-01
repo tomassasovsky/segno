@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
@@ -39,6 +40,7 @@ void main() {
         exportsRoot: () async => '.',
       );
       final settings = SettingsRepository(store: FakeKeyValueStore());
+      final fxPersistence = FxChainPersistence(looper: repository);
       final mixSettings = testMixSettings(repository, settings: settings);
       final mixPersistence = SettingsMixPersistence(settings);
       final pedal = _MockPedalCubit();
@@ -68,6 +70,7 @@ void main() {
             RepositoryProvider.value(value: performanceRepository),
             RepositoryProvider.value(value: settings),
             RepositoryProvider.value(value: mixSettings),
+            RepositoryProvider.value(value: fxPersistence),
             RepositoryProvider<MixSettingsPersistence>.value(
               value: mixPersistence,
             ),
@@ -87,6 +90,7 @@ void main() {
               // happens with the tree, not in an awaited teardown.
               BlocProvider<ControlCubit>(
                 create: (_) => ControlCubit(
+                  fxPersistence: fxPersistence,
                   looper: repository,
                   mixSettings: mixSettings,
                   pedal: PedalRepository(NoopPedalLink()),
@@ -105,6 +109,7 @@ void main() {
               ),
               BlocProvider<MonitorCubit>(
                 create: (_) => MonitorCubit(
+                  fxPersistence: fxPersistence,
                   mixSettings: mixSettings,
                   repository: repository,
                   settings: settings,

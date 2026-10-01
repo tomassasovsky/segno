@@ -1,8 +1,8 @@
-import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_host.dart';
@@ -39,7 +39,7 @@ class LooperPage extends StatelessWidget {
           create: (context) => LooperBloc(
             repository: context.read<LooperRepository>(),
             mixSettings: context.read<MixSettingsCoordinator>(),
-            controller: context.read<ControllerRepository>(),
+            fxPersistence: context.read<FxChainPersistence>(),
             settings: context.read<SettingsRepository>(),
             takeLocked: () {
               try {
@@ -56,6 +56,7 @@ class LooperPage extends StatelessWidget {
             looper: context.read<LooperRepository>(),
             performance: context.read<PerformanceRepository>(),
             mixSettings: context.read<MixSettingsCoordinator>(),
+            fxPersistence: context.read<FxChainPersistence>(),
             mixPersistence: context.read<MixSettingsPersistence>(),
             exportDirectory: exportDirectory,
             // The session's pedal remap (part 6b) crossing as an opaque

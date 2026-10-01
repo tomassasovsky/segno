@@ -14,6 +14,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
@@ -54,6 +55,7 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
 ///     --update-goldens test/screenshots/tracks_screenshots_test.dart
 void main() {
   late MixSettingsCoordinator mixSettings;
+  late FxChainPersistence fxPersistence;
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   // Golden generators load the local SDK's Material fonts and compare against
@@ -123,6 +125,7 @@ void main() {
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
+    when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -148,9 +151,11 @@ void main() {
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
     );
+    fxPersistence = FxChainPersistence(looper: repository);
     mixSettings = testMixSettings(repository, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
+      fxPersistence: fxPersistence,
       looper: repository,
       mixSettings: mixSettings,
       pedal: pedalRepo,
@@ -226,6 +231,7 @@ void main() {
               ),
               BlocProvider<MonitorCubit>(
                 create: (_) => MonitorCubit(
+                  fxPersistence: fxPersistence,
                   mixSettings: mixSettings,
                   repository: repository,
                   settings: settings,

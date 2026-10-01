@@ -121,6 +121,69 @@ class MixSettingsCoordinator {
   MixSettingsOutcome? _recovery;
   (String, String?)? _recoveryCheckpoint;
 
+  /// The shared control ledger observes accepted ordinary track-level writes.
+  void Function(int channel, double value)? onOrdinaryTrackLevel;
+
+  final _midiReleasedLevels = <int, double>{};
+  int? _midiProjectionGeneration;
+
+  /// The settled mix as saved while a MIDI momentary value is held.
+  MixSettingsSnapshot get durableSnapshot {
+    if (_midiProjectionGeneration != _repository.sessionRevision) {
+      _midiReleasedLevels.clear();
+      _midiProjectionGeneration = _repository.sessionRevision;
+    }
+    return _projectMidi(_repository.mixSettingsSnapshot, _midiReleasedLevels);
+  }
+
+  MixSettingsSnapshot _projectMidi(
+    MixSettingsSnapshot snapshot,
+    Map<int, double> released,
+  ) => snapshot.copyWith(trackLevels: {...snapshot.trackLevels, ...released});
+
+  /// Writes through the existing mix owner, saving the authored Released value
+  /// for a MIDI hold. A refused press never publishes a temporary projection.
+  Future<MixSettingsOutcome> setMidiTrackVolume(
+    double volume, {
+    required int channel,
+    double? releasedValue,
+  }) {
+    final generation = _repository.mixGeneration;
+    final session = _repository.sessionRevision;
+    final device = _device();
+    return runExclusive(() async {
+      if (!_current(generation, device) ||
+          session != _repository.sessionRevision) {
+        return const MixSettingsOutcome(MixSettingsStatus.superseded);
+      }
+      if (!_track(channel) ||
+          !volume.isFinite ||
+          (releasedValue != null && !releasedValue.isFinite)) {
+        return _reject();
+      }
+      final current = durableSnapshot;
+      final released = Map<int, double>.of(_midiReleasedLevels);
+      if (releasedValue == null) {
+        released.remove(channel);
+      } else {
+        released[channel] = releasedValue.clamp(0.0, 1.0);
+      }
+      final candidate = _repository.mixSettingsSnapshot.copyWith(
+        trackLevels: {
+          ..._repository.mixSettingsSnapshot.trackLevels,
+          channel: volume,
+        },
+      );
+      return _commit(
+        candidate,
+        generation,
+        device,
+        midiReleased: released,
+        priorDurable: current,
+      );
+    });
+  }
+
   static const _applied = MixSettingsOutcome(MixSettingsStatus.applied);
 
   /// Shared user-visible failures, including failed durable rollback.
@@ -145,6 +208,7 @@ class MixSettingsCoordinator {
     _Edit edit, {
     bool drain = true,
   }) {
+    final _ = durableSnapshot;
     if (_recovery case final recovery?) return Future.value(recovery);
     if (_closed || _exclusiveCount != 0) {
       return Future.value(
@@ -235,7 +299,36 @@ class MixSettingsCoordinator {
                 MixSettingsStatus.rejected,
                 engineResult: EngineResult.invalid,
               )
-            : await _commit(candidate, generation, device);
+            : await _commit(
+                candidate,
+                generation,
+                device,
+                midiReleased:
+                    {
+                      ..._midiReleasedLevels,
+                    }..removeWhere(
+                      (channel, _) => targets.any(
+                        (target) =>
+                            target.$1 == _Control.reset ||
+                            target.$1 == _Control.trackLevel &&
+                                target.$2 == channel,
+                      ),
+                    ),
+              );
+      }
+      if (result.isOk) {
+        final changedChannels = <int>{
+          for (final target in targets)
+            if (target.$1 == _Control.trackLevel) target.$2,
+          if (targets.any((target) => target.$1 == _Control.reset))
+            for (final track in _repository.state.tracks) track.channel,
+        };
+        for (final channel in changedChannels) {
+          onOrdinaryTrackLevel?.call(
+            channel,
+            _repository.mixSettingsSnapshot.trackLevels[channel] ?? 1,
+          );
+        }
       }
       _report(result);
       if (!result.isOk) outcome = result;
@@ -247,8 +340,13 @@ class MixSettingsCoordinator {
   Future<MixSettingsOutcome> _commit(
     MixSettingsSnapshot candidate,
     int generation,
-    String device,
-  ) async {
+    String device, {
+    Map<int, double>? midiReleased,
+    MixSettingsSnapshot? priorDurable,
+  }) async {
+    final durableCurrent = priorDurable ?? durableSnapshot;
+    final nextReleased = midiReleased ?? _midiReleasedLevels;
+    final durableCandidate = _projectMidi(candidate, nextReleased);
     final current = _repository.mixSettingsSnapshot;
     if (device.isEmpty &&
         (candidate.inputSetup != current.inputSetup ||
@@ -269,8 +367,8 @@ class MixSettingsCoordinator {
       );
     }
     final persistent =
-        candidate.copyWith(trackSolos: const {}) !=
-        current.copyWith(trackSolos: const {});
+        durableCandidate.copyWith(trackSolos: const {}) !=
+        durableCurrent.copyWith(trackSolos: const {});
     String? checkpoint;
     if (persistent) {
       try {
@@ -286,7 +384,7 @@ class MixSettingsCoordinator {
       }
       // No audio or confirmed state changes before this atomic durable write.
       try {
-        await _persistence.write(device, candidate);
+        await _persistence.write(device, durableCandidate);
       } on Object catch (error) {
         return _rollback(
           device,
@@ -318,6 +416,11 @@ class MixSettingsCoordinator {
       );
       return persistent ? _rollback(device, checkpoint, failure) : failure;
     }
+    final acceptedReleased = Map<int, double>.of(nextReleased);
+    _midiReleasedLevels
+      ..clear()
+      ..addAll(acceptedReleased);
+    _midiProjectionGeneration = _repository.sessionRevision;
     return _applied;
   }
 

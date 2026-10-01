@@ -13,6 +13,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
@@ -64,7 +65,6 @@ class App extends StatefulWidget {
     required this.sessionRepository,
     required this.performanceRepository,
     required this.exportDirectory,
-    this.simulatedControllerSource,
     this.pedalRepository,
     this.displayCount,
     this.waveformWindowOpenDelay = Duration.zero,
@@ -113,14 +113,8 @@ class App extends StatefulWidget {
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
 
-  /// The shared controller repository (MIDI → looper actions).
+  /// Owns controller sources and forwards exact console inputs.
   final ControllerRepository controllerRepository;
-
-  /// The push seam behind "Simulate input" (#519), registered in
-  /// [controllerRepository]'s sources. Handed to [ControlCubit] so a mapping
-  /// can prove itself with no controller attached. `null` (the default) in a
-  /// test that wires no simulation — the affordance is then inert.
-  final SimulatedControllerSource? simulatedControllerSource;
 
   /// The MIDI input device repository (owns the foot-controller lifecycle). It
   /// borrows the long-lived native MIDI source from [controllerRepository] and
@@ -178,6 +172,7 @@ class App extends StatefulWidget {
 class _AppState extends State<App> {
   late final PedalRepository _pedal;
   late final MixSettingsCoordinator _mixSettings;
+  late final FxChainPersistence _fxPersistence;
   late final MixSettingsPersistence _mixPersistence;
   StreamSubscription<MixSettingsOutcome>? _mixFailureSubscription;
   PowerKeySource? _powerKeySource;
@@ -189,6 +184,7 @@ class _AppState extends State<App> {
     _pedal = widget.pedalRepository ?? PedalRepository(NoopPedalLink());
     _mixPersistence = SettingsMixPersistence(widget.settings);
     _mixSettings = widget.mixSettings;
+    _fxPersistence = FxChainPersistence(looper: widget.repository);
     _mixFailureSubscription = _mixSettings.failures.listen(_showMixFailure);
     _powerKeySource =
         widget.powerKeySource ??
@@ -246,6 +242,7 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.midiDeviceRepository),
         RepositoryProvider.value(value: widget.settings),
         RepositoryProvider.value(value: _mixSettings),
+        RepositoryProvider.value(value: _fxPersistence),
         RepositoryProvider<MixSettingsPersistence>.value(
           value: _mixPersistence,
         ),
@@ -293,14 +290,13 @@ class _AppState extends State<App> {
           // route — pushed on the root navigator, above the looper page — can
           // drive routing edits through the bloc, mirroring the in-view routing
           // controls. The TracksCubit below is hoisted for the same reason.
-          // No `controller:` — MIDI stays on the page LooperBloc, which
-          // injects the power-off take lock. A second subscriber here would
-          // fire Clear/Record twice and bypass that lock.
+          // Remote and console controls are interpreted by ControlCubit.
           BlocProvider(
             create: (context) {
               final bloc = LooperBloc(
                 repository: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),
+                fxPersistence: context.read<FxChainPersistence>(),
                 settings: context.read<SettingsRepository>(),
               );
               // Boot-restore the persisted mode (B5c) — dispatched as an
@@ -461,6 +457,7 @@ class _AppState extends State<App> {
                 repository: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),
+                fxPersistence: context.read<FxChainPersistence>(),
               );
               unawaited(cubit.load());
               return cubit;
@@ -523,14 +520,16 @@ class _AppState extends State<App> {
               repository: context.read<MidiDeviceRepository>(),
             ),
           ),
-          // Above ControlCubit so take-start can read isUiUp. flushMappings
+          // Above ControlCubit so take-start can read isUiUp. MIDI flush
           // cannot context.read a descendant — capture the instance below.
           BlocProvider(
             lazy: false,
             create: (context) => PowerOffCubit(
-              flush: () {
+              flush: () async {
+                final monitor = context.read<MonitorCubit>();
+                final looper = context.read<LooperBloc>();
                 try {
-                  context.read<MonitorCubit>().flushPersistence();
+                  await monitor.flushPersistence();
                 } on Object catch (error, stack) {
                   AppLog.error(
                     'power-off monitor flush failed',
@@ -539,7 +538,7 @@ class _AppState extends State<App> {
                   );
                 }
                 try {
-                  _control?.flushMappings();
+                  await _control?.flushMidiConfiguration();
                 } on Object catch (error, stack) {
                   AppLog.error(
                     'power-off mappings flush failed',
@@ -548,7 +547,9 @@ class _AppState extends State<App> {
                   );
                 }
                 try {
-                  context.read<LooperBloc>().add(const LooperPersistFlush());
+                  final receipt = Completer<void>();
+                  looper.add(LooperPersistFlush(receipt: receipt));
+                  await receipt.future;
                 } on Object catch (error, stack) {
                   AppLog.error(
                     'power-off looper flush failed',
@@ -574,21 +575,13 @@ class _AppState extends State<App> {
               final cubit = ControlCubit(
                 looper: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),
+                fxPersistence: context.read<FxChainPersistence>(),
                 pedal: context.read<PedalRepository>(),
                 settings: context.read<SettingsRepository>(),
                 performance: context.read<PerformanceRepository>(),
-                // Both of these were missing, and external MIDI mapping had
-                // therefore never worked in a shipped build: without
-                // `controller` nothing subscribes to the binding events and
-                // `learnControllerBinding` returns on its first line, so Add
-                // sweep / Add switch picked a target and then did nothing at
-                // all; without `midiDevices` a controller coming back re-armed
-                // nothing. Both repositories were already built and provided
-                // app-wide — they were simply never handed to the one cubit
-                // that owns controller intent.
+                // One owner interprets console intent and selected-device MIDI.
                 controller: context.read<ControllerRepository>(),
                 midiDevices: context.read<MidiDeviceRepository>(),
-                simulatedSource: widget.simulatedControllerSource,
                 takeLocked: () => context.read<PowerOffCubit>().state.isUiUp,
               );
               _control = cubit;

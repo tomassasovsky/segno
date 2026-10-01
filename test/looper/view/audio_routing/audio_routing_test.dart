@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
@@ -67,6 +68,7 @@ void main() {
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
+    when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -129,6 +131,7 @@ void main() {
     outputs = OutputsCubit(repository: repository, settings: settings);
     addTearDown(() => unawaited(outputs.close()));
     monitors = MonitorCubit(
+      fxPersistence: FxChainPersistence(looper: repository),
       repository: repository,
       settings: settings,
       mixSettings: testMixSettings(repository, settings: settings),

@@ -1,3 +1,5 @@
+import 'dart:ffi';
+
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:midi_client/midi_client.dart';
@@ -15,7 +17,6 @@ void main() {
     late MidiControllerSource source;
 
     MidiControllerSource build({
-      Duration debounce = const Duration(milliseconds: 30),
       List<MidiDevice> devices = const [],
       int openResult = 0,
     }) {
@@ -25,9 +26,9 @@ void main() {
       );
       source = MidiControllerSource(
         client: MidiClient(bindings: bindings),
-        debounce: debounce,
       );
       addTearDown(source.dispose);
+      source.open('test-device');
       return source;
     }
 
@@ -138,8 +139,7 @@ void main() {
           ..pushForTest(0xF8, 0, 0) // timing clock
           ..pushForTest(0xFE, 0, 0) // active sensing
           ..pushForTest(0xA0, 60, 10) // polyphonic aftertouch
-          ..pushForTest(0xE0, 0, 64) // pitch bend
-          ..pushForTest(0xC0, 5, 0); // program change
+          ..pushForTest(0xE0, 0, 64); // pitch bend
         await pumpEventQueue();
 
         expect(received, isEmpty);
@@ -149,74 +149,50 @@ void main() {
       });
     });
 
-    group('debounce', () {
-      test('collapses sub-window repeats of the same trigger', () async {
-        build();
-        final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
-
-        source
-          ..pushForTest(_cc, 80, 127) // emit (tsUs 0)
-          ..pushForTest(_cc, 80, 127, tsUs: 10000) // +10ms -> suppressed
-          ..pushForTest(_cc, 80, 0, tsUs: 20000) // +20ms -> suppressed
-          ..pushForTest(_cc, 80, 127, tsUs: 40000); // +40ms -> emit
-        await pumpEventQueue();
-
-        expect(received.map((e) => e.value), [127, 127]);
-        await sub.cancel();
-      });
-
-      test('debounces each trigger independently', () async {
-        build();
-        final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
-
-        source
-          ..pushForTest(_cc, 80, 127) // CC80 emit (tsUs 0)
-          ..pushForTest(_cc, 81, 127, tsUs: 5000) // CC81 emit (other trigger)
-          ..pushForTest(_cc, 80, 127, tsUs: 10000); // CC80 +10ms -> suppressed
-        await pumpEventQueue();
-
-        expect(received.map((e) => e.id), [80, 81]);
-        await sub.cancel();
-      });
-
-      test('leading-edge: a continuous bounce cannot keep resetting', () async {
-        build();
-        final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
-
-        // Five messages 10ms apart: the window is measured from the first
-        // *emit* (t=0), so t=40ms passes despite the steady stream between.
-        for (var t = 0; t <= 40000; t += 10000) {
-          source.pushForTest(_cc, 80, 127, tsUs: t);
-        }
-        await pumpEventQueue();
-
-        expect(received.length, 2); // t=0 and t=40000
-        await sub.cancel();
-      });
+    test('rapid same-source press and release are both delivered', () async {
+      build();
+      final received = <MidiInputMessage>[];
+      final sub = source.messages.listen(received.add);
+      source
+        ..pushForTest(_noteOn, 60, 127, tsUs: 1000000)
+        ..pushForTest(_noteOff, 60, 0, tsUs: 1101000)
+        ..pushForTest(0xCF, 8, 0);
+      await pumpEventQueue();
+      expect(received.map((m) => m.input.value), [127, 0, 127]);
+      expect(received.take(2).map((m) => m.timestampMicros), [
+        1000000,
+        1101000,
+      ]);
+      expect(received.last.input.kind, ControllerSourceKind.midiProgram);
+      expect(received.last.input.midiChannel, 15);
+      expect(received.every((m) => m.session == source.session), isTrue);
+      await sub.cancel();
     });
 
-    group('activity tap', () {
-      test('blinks on every recognized message, even debounced ones', () async {
+    test(
+      'old native callback cannot enter a switched or reconnected port',
+      () async {
         build();
-        final inputs = <RawControllerInput>[];
-        final activity = <RawControllerInput>[];
-        final inputSub = source.inputs.listen(inputs.add);
-        final activitySub = source.activity.listen(activity.add);
-
+        final oldSession = source.session;
+        final oldCallback = bindings.lastOpenedCb!
+            .asFunction<void Function(int, int, int, int)>();
+        final received = <MidiInputMessage>[];
+        final sub = source.messages.listen(received.add);
+        oldCallback(0x90, 60, 127, 1);
         source
-          ..pushForTest(_cc, 80, 127) // tsUs 0
-          ..pushForTest(_cc, 80, 127, tsUs: 10000); // debounced out of inputs
+          ..open('other-device')
+          ..pushForTest(0x90, 62, 127);
         await pumpEventQueue();
-
-        expect(inputs.length, 1, reason: 'second is debounced');
-        expect(activity.length, 2, reason: 'activity is the raw pre-map tap');
-        await inputSub.cancel();
-        await activitySub.cancel();
-      });
-    });
+        expect(received.map((m) => m.input.id), [62]);
+        expect(received.single.session.device, 'other-device');
+        expect(received.single.session, isNot(oldSession));
+        received.clear();
+        source.open('test-device');
+        await pumpEventQueue();
+        expect(received, isEmpty);
+        await sub.cancel();
+      },
+    );
 
     group('device control', () {
       test('enumerate delegates to the client', () {

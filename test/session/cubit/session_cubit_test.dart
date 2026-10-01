@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/session/session.dart';
@@ -105,6 +106,7 @@ void main() {
   });
 
   SessionCubit build() => SessionCubit(
+    fxPersistence: FxChainPersistence(looper: looper),
     repository: repository,
     looper: looper,
     performance: performance,
@@ -1104,6 +1106,7 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
+          fxPersistence: FxChainPersistence(looper: looper),
           repository: repository,
           looper: looper,
           performance: performance,
@@ -1151,6 +1154,7 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
+          fxPersistence: FxChainPersistence(looper: looper),
           repository: repository,
           looper: looper,
           performance: performance,
@@ -1184,6 +1188,7 @@ void main() {
       ).thenAnswer((_) async => _session);
 
       final cubit = SessionCubit(
+        fxPersistence: FxChainPersistence(looper: looper),
         repository: repository,
         looper: looper,
         performance: performance,

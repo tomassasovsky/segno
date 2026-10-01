@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as dev;
 
 import 'package:bloc/bloc.dart';
@@ -8,18 +9,20 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
-import 'package:segno/common/fx_chain_persistence.dart';
 import 'package:segno/control/binding/binding_scope.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
-import 'package:segno/control/binding/controller_learn.dart';
 import 'package:segno/control/binding/external_control_writer.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/fx_chain_lookup.dart';
+import 'package:segno/control/binding/midi_edit.dart';
+import 'package:segno/control/binding/midi_learn.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_binding_set.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
@@ -29,6 +32,7 @@ import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
+part 'control_midi.dart';
 part 'control_state.dart';
 
 /// The press/long-press state machine every gestural footswitch shares.
@@ -140,11 +144,6 @@ class ControlCubit extends Cubit<ControlState> {
   /// itself disappears (B1). Both are optional — a build or test with no MIDI
   /// seam simply never receives external control.
   ///
-  /// [simulatedSource] is the push seam that lets a mapping prove itself with
-  /// no controller attached (#519): the same source the repository carries in
-  /// its `sources` list, so a synthetic sweep/press enters exactly where a real
-  /// CC would. [simulateTick] / [simulateSweepLeg] pace that synthetic sweep.
-  ///
   /// [takeLocked] suppresses Rec / overdub / perf-arm while the power-off
   /// route is up, so a take cannot start behind the dialog.
   ControlCubit({
@@ -153,13 +152,11 @@ class ControlCubit extends Cubit<ControlState> {
     required SettingsRepository settings,
     required PerformanceRepository performance,
     required MixSettingsCoordinator mixSettings,
+    required FxChainPersistence fxPersistence,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
-    SimulatedControllerSource? simulatedSource,
+    Duration Function()? midiClock,
     Duration learnTimeout = const Duration(seconds: 15),
-    Duration mappingsWriteDebounce = const Duration(milliseconds: 400),
-    Duration simulateTick = const Duration(milliseconds: 60),
-    Duration simulateSweepLeg = const Duration(milliseconds: 1500),
     PerformanceChains Function() currentChains = _noChains,
     bool Function() takeLocked = _neverLocked,
   }) : _looper = looper,
@@ -167,21 +164,65 @@ class ControlCubit extends Cubit<ControlState> {
        _settings = settings,
        _performance = performance,
        _mixSettings = mixSettings,
-       _controller = controller,
-       _simulatedSource = simulatedSource,
+       _fxPersistence = fxPersistence,
+       _midiDevices = midiDevices,
+       _midiClock = midiClock,
        _learnTimeout = learnTimeout,
-       _mappingsWriteDebounce = mappingsWriteDebounce,
-       _simulateTick = simulateTick,
-       _simulateSweepLeg = simulateSweepLeg,
        _currentChains = currentChains,
        _takeLocked = takeLocked,
        super(const ControlState()) {
+    _fxPersistence.onOrdinaryWrite = _onOrdinaryFxWrite;
+    _mixSettings.onOrdinaryTrackLevel = _onOrdinaryTrackLevel;
+    _midiSession = _looper.sessionRevision;
+    _midiCapture = midiDevices?.session;
     _looperSub = _looper.looperState.listen(_onLooperState);
     _eventsSub = _pedal.events.listen(_handleEvent);
     _statusSub = _pedal.statusChanges.listen(_onLinkStatus);
     _perfStatusSub = _performance.captureStatus.listen(_onPerformanceStatus);
     _bindingSub = controller?.bindingEvents.listen(_onControllerBindingEvent);
     _midiSub = midiDevices?.connections.listen(_onMidiConnection);
+    _midiMessageSub = midiDevices?.messages.listen(_onMidiInput);
+  }
+
+  final MidiDeviceRepository? _midiDevices;
+  final Duration Function()? _midiClock;
+  final _midiStopwatch = Stopwatch()..start();
+  Duration _midiReadTime = Duration.zero;
+  late final _midiDecoder = MidiDecoder(
+    clock: () => _midiReadTime,
+  );
+  late final _midiLearnDecoder = MidiDecoder(
+    clock: () => _midiReadTime,
+  );
+  late final _midiSignalDecoder = MidiDecoder(
+    clock: () => _midiReadTime,
+  );
+  late final _midiEngine = MidiMappingEngine(
+    read: _readMidiValue,
+    step: _midiStep,
+  );
+  StreamSubscription<MidiInputMessage>? _midiMessageSub;
+  MidiInputSession? _midiCapture;
+  int _midiIngressRevision = 0;
+  int _midiSession = -1;
+  int _nextMidiId = 1;
+  Timer? _midiLearnTimer;
+  Timer? _midiLevelTimer;
+  Map<MidiSource, MidiControlEvent> _midiLevels = {};
+  Object? _midiRetryEligibility;
+  Future<void> _midiWrites = Future<void>.value();
+  int _midiIntentSequence = 0;
+  final _midiReleasedValues = <Object, double>{};
+  final _midiHolderKeys = <(String, int, int), Object>{};
+  final _midiTargets = <(String, int, int), Object>{};
+  final _midiActions =
+      <(String, int, int), ({ControlAction action, List<int> channels})>{};
+
+  void _reportMidiError(Object error, StackTrace trace) =>
+      addError(error, trace);
+
+  void _publishMidi(ControlState next) {
+    if (!isClosed) emit(next);
   }
 
   final _externalContacts = <PedalCtrlInput, bool>{};
@@ -192,9 +233,9 @@ class ControlCubit extends Cubit<ControlState> {
   final _externalTokens = <PedalCtrlInput, Object>{};
   final _externalActions = <PedalCtrlInput, Object>{};
   final _activationHolders =
-      <FxBindingTarget, Map<MappingTrigger, ({bool value, int order})>>{};
+      <FxBindingTarget, Map<Object, ({bool value, int order})>>{};
   final _parameterHolders =
-      <ControlValueTarget, Map<MappingTrigger, ({double value, int order})>>{};
+      <ControlValueTarget, Map<Object, ({double value, int order})>>{};
   final _activationBase = <FxBindingTarget, bool>{};
   var _activationOrder = 0;
   Future<void> _externalTail = Future<void>.value();
@@ -625,6 +666,7 @@ class ControlCubit extends Cubit<ControlState> {
                 order: ++_activationOrder,
               );
             }
+            _syncMidiDurableFx();
           }
 
           void recordAdmission(Set<FxAddress> admitted) {
@@ -648,6 +690,7 @@ class ControlCubit extends Cubit<ControlState> {
                 );
               }
             }
+            _syncMidiDurableFx();
           }
 
           var accepted = _looper.writeExternalFx(
@@ -701,6 +744,7 @@ class ControlCubit extends Cubit<ControlState> {
                 _externalPowerReleases[input]?.remove(target);
               }
             }
+            _syncMidiDurableFx();
             applied = true;
             if (nextOn != null) _externalOn[input] = nextOn;
             for (final address in accepted) {
@@ -708,6 +752,7 @@ class ControlCubit extends Cubit<ControlState> {
               await saveFxOwner(
                 settings: _settings,
                 looper: _looper,
+                projection: _fxPersistence,
                 address: address,
               );
             }
@@ -718,9 +763,12 @@ class ControlCubit extends Cubit<ControlState> {
               case FxParamTarget():
                 break;
               case TrackVolumeTarget(:final channel):
-                var outcome = await _mixSettings.setTrackVolume(
+                var outcome = await _mixSettings.setMidiTrackVolume(
                   entry.value,
                   channel: channel,
+                  releasedValue: held == false
+                      ? _survivingMidiReleased(entry.key, excluding: trigger)
+                      : null,
                 );
                 if (!outcome.isOk && held == false && !cancelled()) {
                   // Wait for the existing exclusive owner, once. This is an
@@ -728,9 +776,13 @@ class ControlCubit extends Cubit<ControlState> {
                   await _mixSettings.runExclusive(() async {});
                   if (cancelled()) return;
                   resolveSurvivors();
-                  outcome = await _mixSettings.setTrackVolume(
+                  outcome = await _mixSettings.setMidiTrackVolume(
                     parameters[entry.key]!,
                     channel: channel,
+                    releasedValue: _survivingMidiReleased(
+                      entry.key,
+                      excluding: trigger,
+                    ),
                   );
                 }
                 if (outcome.isOk && !cancelled()) {
@@ -763,6 +815,7 @@ class ControlCubit extends Cubit<ControlState> {
               _externalPowerReleases.values.any((v) => v.isNotEmpty)) {
             _externalReleaseEligibility = _releaseEligibility;
           }
+          _syncMidiDurableFx();
           _pushProjected();
         })
         .catchError((Object error, StackTrace trace) {
@@ -816,7 +869,7 @@ class ControlCubit extends Cubit<ControlState> {
 
   bool? _survivingActivation(
     FxBindingTarget target, {
-    MappingTrigger? excluding,
+    Object? excluding,
   }) {
     ({bool value, int order})? latest;
     for (final entry in (_activationHolders[target] ?? {}).entries) {
@@ -830,7 +883,7 @@ class ControlCubit extends Cubit<ControlState> {
 
   double? _survivingParameter(
     ControlValueTarget target, {
-    MappingTrigger? excluding,
+    Object? excluding,
   }) {
     ({double value, int order})? latest;
     for (final entry in (_parameterHolders[target] ?? {}).entries) {
@@ -853,30 +906,15 @@ class ControlCubit extends Cubit<ControlState> {
   final SettingsRepository _settings;
   final PerformanceRepository _performance;
   final MixSettingsCoordinator _mixSettings;
-  final ControllerRepository? _controller;
-
-  /// The seam a synthetic controller event is pushed through (#519). The same
-  /// object the repository carries in its `sources` list, so a simulated input
-  /// is indistinguishable from a real one downstream. Null in a build/test with
-  /// no simulation wired — [simulateMapping] and [simulateStatusRow] are then
-  /// inert.
-  final SimulatedControllerSource? _simulatedSource;
+  final FxChainPersistence _fxPersistence;
   final Duration _learnTimeout;
-  final Duration _mappingsWriteDebounce;
-
-  /// The cadence a simulated sweep advances on, and how long each LO→HI (and
-  /// HI→LO) leg takes — the pen's "slow enough to watch". Injected like the
-  /// repository's own smoothing durations, so tests drive the sweep under a
-  /// fake clock instead of sleeping.
-  final Duration _simulateTick;
-  final Duration _simulateSweepLeg;
   final PerformanceChains Function() _currentChains;
   final bool Function() _takeLocked;
-
   late final StreamSubscription<LooperState> _looperSub;
   late final StreamSubscription<PedalEvent> _eventsSub;
   late final StreamSubscription<PedalLinkStatus> _statusSub;
   late final StreamSubscription<PerformanceCaptureStatus> _perfStatusSub;
+
   StreamSubscription<ControllerDispatchEvent>? _bindingSub;
   StreamSubscription<MidiConnection>? _midiSub;
 
@@ -942,69 +980,14 @@ class ControlCubit extends Cubit<ControlState> {
   // unique for the lifetime of a press. Kept in lockstep with
   // `state.heldMomentary`, which is the same key set.
   final _heldRestore =
-      <PedalBindingKey, ({FxBindingTarget target, bool prior, int session})>{};
+      <
+        PedalBindingKey,
+        ({FxBindingTarget target, bool prior, int session, Object holder})
+      >{};
+  final _bindingDecisions = <Object, Future<void>>{};
   final _pendingRestore = <PedalBindingKey>{};
   Future<void>? _restoreWait;
   bool _closing = false;
-
-  // The mid-gesture restore values for MOMENTARY bindings held from an
-  // assignable control: one entry per TARGET, carrying the state the first
-  // press found and the set of controls currently holding it.
-  //
-  // Reference-counted rather than one slot per control, because two switches
-  // can be mapped to one chain. A per-control capture would have the second
-  // press record the state the FIRST press just enabled, and its release would
-  // then write `true` back with no foot on either switch — a stuck momentary.
-  // A per-target slot alone would let the first release end the second's hold.
-  // Holding the first press's capture until the LAST control lets go is the
-  // only reading with no stranded state and no early release.
-  //
-  // Kept apart from `_heldRestore` because their release-all triggers differ: a
-  // controller momentary survives a mode change (it is not mode-gated)
-  // but must release when its source unplugs, which the pedal's own held
-  // presses have no reason to care about.
-  final _heldControllerRestore =
-      <
-        String,
-        ({FxBindingTarget target, bool prior, Set<MappingTrigger> holders})
-      >{};
-
-  // The learn capture's timeout. A capture that nobody ever feeds must not
-  // leave the MIDI stream swallowed forever — the repository suppresses ALL
-  // events while learning.
-  Timer? _learnTimer;
-
-  // A simulation in flight (#519): the control its synthetic events target, the
-  // values still to push (one per [_simulateTick]), and the ticker draining
-  // them. One at a time — a new simulation drains the last so a switch's
-  // release edge is never stranded, leaving a momentary enabled with no foot
-  // on it (the same B1 hazard the release-all rule guards).
-  MappingTrigger? _simulateTrigger;
-  final List<int> _simulateQueue = [];
-  Timer? _simulateTimer;
-
-  // Which capture is current. Every `learnNext` future resolves — including
-  // the null a SUPERSEDED one gets when the next capture replaces it — so a
-  // callback has to prove it still speaks for the capture in flight. Without
-  // that proof a stale null tore down the live capture's state and timeout
-  // while the repository went on swallowing every controller event.
-  int _learnGeneration = 0;
-
-  // The mapping blob's pending write. A LO/HI knob reports continuously while
-  // it is dragged, so the STATE and the repository follow every frame (the
-  // sound has to track the finger) while the settings write is coalesced —
-  // otherwise one drag costs ~60 JSON encodes and store writes a second.
-  // Flushed by `close()`, so a quit mid-drag still persists.
-  Timer? _mappingsWriteTimer;
-  String? _pendingMappingsBlob;
-
-  // Every controller binding's target, decoded ONCE per mapping-set change.
-  // The dispatch path runs per smoothing tick, and re-parsing a canonical-JSON
-  // string that only changes on an edit is pure waste on the hot path. A target
-  // that does not decode is absent here, which reads as the same no-op a stale
-  // one gets.
-  final _controllerValueTargets = <String, ControlValueTarget>{};
-  final _controllerSwitchTargets = <String, FxBindingTarget>{};
 
   // Whether the Clear footswitch is currently held down. Lights the Clear
   // LED (the `clearFadeActive` frame bit) for as long as it is pressed.
@@ -1060,9 +1043,6 @@ class ControlCubit extends Cubit<ControlState> {
     final storedBindings = PedalBindingSet.decode(
       await _settings.loadPedalBindings() ?? '',
     );
-    final storedControllerBindings = ControllerBindingSet.decode(
-      await _settings.loadControllerMappings() ?? '',
-    );
     // bootDefaultFromToken, not fromToken: a stored `'fx'` (hand-edited or
     // corrupted — no build writes it) falls back to record rather than booting
     // the dead FX surface (R12).
@@ -1082,20 +1062,15 @@ class ControlCubit extends Cubit<ControlState> {
       addError(error, stackTrace);
     }
     if (isClosed) return;
-    // The repository resolves inputs against the set, so it has to learn the
-    // restored mappings too — otherwise external control stays dead until the
-    // user happens to edit a row.
-    _controller?.setBindings(storedControllerBindings);
-    _cacheControllerTargets(storedControllerBindings);
     emit(
       state.copyWith(
         defaultMode: defaultMode,
         pedalSetup: setup,
         pedalSetupUnavailable: setupUnavailable,
         globalBindings: storedBindings,
-        controllerBindings: storedControllerBindings,
       ),
     );
+    await _loadMidiConfiguration();
     setMode(defaultMode);
   }
 
@@ -1685,24 +1660,40 @@ class ControlCubit extends Cubit<ControlState> {
     return accepted;
   }
 
-  /// Applies one Track-chain flag and persists the envelope, skipping a no-op
-  /// so a panic over already-off chains costs no settings writes.
+  /// Applies explicit Track-chain intent and persists its confirmed envelope.
   ///
   /// Reads the repository's remembered intent rather than the polled
   /// [LooperState]: chain-enabled is set synchronously here (no engine
   /// round-trip), so two fast stomps must not both see the same pre-poll
   /// value. The LEDs still follow the polled snapshot, exactly like mute.
   bool _setTrackChain(int channel, {required bool enabled}) {
-    if (_looper.trackChainEnabled(channel) == enabled) return false;
-    if (!_looper
+    final target = FxChainTarget(
+      FxAddress(stage: FxStage.track, index: channel),
+    );
+    if (_looper.trackChainEnabled(channel) == enabled) {
+      final hasHeldIntent =
+          (_activationHolders[target]?.keys ?? const <Object>[]).any(
+            (key) => key is! (Symbol, Object),
+          );
+      if (!hasHeldIntent) return false;
+    } else if (!_looper
         .setTrackChainEnabled(channel: channel, enabled: enabled)
         .isOk) {
       return false;
     }
+    _fxPersistence.ordinaryChain(
+      FxAddress(stage: FxStage.track, index: channel),
+      enabled: enabled,
+    );
     // The same envelope `LooperBloc` writes for the on-screen path — a cubit
     // never calls a bloc, so both call the shared helper instead of one
     // routing through the other.
-    persistTrackFxChain(settings: _settings, looper: _looper, channel: channel);
+    persistTrackFxChain(
+      settings: _settings,
+      looper: _looper,
+      projection: _fxPersistence,
+      channel: channel,
+    );
     return true;
   }
 
@@ -1804,8 +1795,11 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// An encoder detent turn: accumulates into the master output gain.
   void encoderTurned(int delta) {
-    _masterGain = (_masterGain + delta * _encoderStep).clamp(0.0, 1.0);
-    _looper.setMasterGain(_masterGain);
+    final value = (_masterGain + delta * _encoderStep).clamp(0.0, 1.0);
+    if (_looper.setMasterGain(value).isOk) {
+      _masterGain = value;
+      _onOrdinaryFxWrite(const MasterGainTarget(), value);
+    }
     // Push a fresh frame so the pedal ring reflects the new gain (the volume
     // meter is driven by the frame value, not a local echo).
     _pushProjected();
@@ -2099,6 +2093,8 @@ class ControlCubit extends Cubit<ControlState> {
 
   FutureOr<bool> _runCommand(ControlCommand command, int selectedChannel) {
     switch (command) {
+      case ControlCommand.tapTempo:
+        return _looper.tapTempo().isOk;
       case ControlCommand.recordPlay:
         return _recAdvance(selectedChannel);
       case ControlCommand.stop:
@@ -2472,6 +2468,10 @@ class ControlCubit extends Cubit<ControlState> {
   void _tryRestoreBinding(PedalBindingKey key) {
     final held = _heldRestore[key];
     if (held == null) return;
+    if (_bindingDecisions.containsKey(held.holder)) {
+      _pendingRestore.add(key);
+      return;
+    }
     // A loaded session can reuse the same chain address. Never replay the old
     // session's saved power into it merely because the string still resolves.
     if (held.session != _looper.sessionRevision) {
@@ -2485,13 +2485,64 @@ class ControlCubit extends Cubit<ControlState> {
       _finishBindingRestore(key);
       return;
     }
-    if (current != held.prior &&
-        !_looper.setBindingEnabled(held.target, enabled: held.prior)) {
+    // Built-in B1 restores captured prior even after another writer. The
+    // accepted restore becomes fresh ordinary intent for MIDI cleanup.
+    final restored = held.prior;
+    if (current != restored &&
+        !_looper.setBindingEnabled(held.target, enabled: restored)) {
       _pendingRestore.add(key);
       _waitForRestoreReadiness();
       return;
     }
-    _finishBindingRestore(key);
+    _confirmBindingDecision(key, held.holder, restoring: true);
+  }
+
+  void _confirmBindingDecision(
+    PedalBindingKey key,
+    Object holder, {
+    required bool restoring,
+  }) {
+    if (_closing || isClosed) return;
+    final held = _heldRestore[key];
+    if (held == null || held.holder != holder) return;
+    final pending = _fxPersistence.beginPending();
+    final decision = () async {
+      try {
+        final result = await _looper.settleFxRecipes(
+          waitForCallback: true,
+          cancelled: () =>
+              _closing || isClosed || held.session != _looper.sessionRevision,
+        );
+        if (_closing || isClosed) return;
+        if (_heldRestore[key]?.holder != holder) return;
+        if (held.session != _looper.sessionRevision || !result.isOk) {
+          if (!restoring || held.session != _looper.sessionRevision) {
+            _finishBindingRestore(key);
+          } else {
+            _pendingRestore.add(key);
+          }
+        } else if (restoring) {
+          _onOrdinaryFxWrite(held.target, held.prior ? 1 : 0);
+          _finishBindingRestore(key);
+        } else {
+          (_activationHolders[held.target] ??= {})[holder] = (
+            value: true,
+            order: ++_activationOrder,
+          );
+          _syncMidiDurableFx();
+        }
+      } on Object catch (error, stackTrace) {
+        if (!_closing && !isClosed) addError(error, stackTrace);
+      } finally {
+        unawaited(_bindingDecisions.remove(holder));
+        _fxPersistence.finishPending(pending);
+      }
+      if (!restoring && _pendingRestore.contains(key)) {
+        _tryRestoreBinding(key);
+      }
+    }();
+    _bindingDecisions[holder] = decision;
+    unawaited(decision);
   }
 
   void _waitForRestoreReadiness() {
@@ -2520,7 +2571,11 @@ class ControlCubit extends Cubit<ControlState> {
 
   void _finishBindingRestore(PedalBindingKey key) {
     _pendingRestore.remove(key);
-    _heldRestore.remove(key);
+    final held = _heldRestore.remove(key);
+    if (held != null) {
+      _activationHolders[held.target]?.remove(held.holder);
+      _syncMidiDurableFx();
+    }
     emit(state.copyWith(heldMomentary: {...state.heldMomentary}..remove(key)));
   }
 
@@ -2545,6 +2600,7 @@ class ControlCubit extends Cubit<ControlState> {
       case BindingBehavior.toggle:
         _log('binding toggle ${binding.key.button.name} -> ${!prior}');
         if (!_looper.setBindingEnabled(target, enabled: !prior)) return false;
+        _fxPersistence.ordinaryTarget(target, enabled: !prior);
       case BindingBehavior.momentary:
         if (_heldRestore.containsKey(binding.key)) return false;
         _log('binding momentary ${binding.key.button.name} (was $prior)');
@@ -2556,11 +2612,14 @@ class ControlCubit extends Cubit<ControlState> {
         if (!prior && !_looper.setBindingEnabled(target, enabled: true)) {
           return false;
         }
+        final holder = Object();
         _heldRestore[binding.key] = (
+          holder: holder,
           target: target,
           prior: prior,
           session: _looper.sessionRevision,
         );
+        _confirmBindingDecision(binding.key, holder, restoring: false);
         emit(
           state.copyWith(heldMomentary: {...state.heldMomentary, binding.key}),
         );
@@ -2605,605 +2664,11 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   // ---------------------------------------------------------------------------
-  // External MIDI control (part 7): mappings, learn, dispatch, release-all
+  // Console capture remains on the shared repository ingress.
   // ---------------------------------------------------------------------------
 
-  /// Replaces the external-MIDI mapping set, applies it to the repository, and
-  /// persists it to the GLOBAL `controller.mappings` blob (R19 — no session
-  /// carries a copy).
-  ///
-  /// Releases every held MIDI momentary FIRST, on the same rule the pedal remap
-  /// obeys: the binding a foot is holding may not survive the edit, and a
-  /// target left enabled with nothing able to release it is exactly the wedge
-  /// (B1) the release-all rule exists to prevent.
-  Future<void> setControllerBindings(ControllerBindingSet next) async {
-    if (next == state.controllerBindings) return;
-    // A capture relearning a row this edit removes has nothing left to render
-    // it: its row is gone, and the add-row only shows a capture that is not
-    // relearning anything. Ending it here is what keeps the repository from
-    // swallowing every controller event behind a UI that shows nothing.
-    // Before the emit below, since cancelling emits on its own.
-    final learn = state.controllerLearn;
-    final relearning = learn?.replacingKey;
-    if (relearning != null &&
-        !next.bindings.any((binding) => binding.key == relearning)) {
-      _log('midi learn cancelled: the row it was relearning was removed');
-      cancelControllerLearn();
-    }
-    _releaseControllerMomentariesMissingFrom(next);
-    _controller?.setBindings(next);
-    _cacheControllerTargets(next);
-    emit(state.copyWith(controllerBindings: next));
-    _scheduleMappingsWrite(next.encode());
-  }
-
-  /// Releases the held momentaries [next] no longer carries — the edit half of
-  /// the release-all rule (B1).
-  ///
-  /// Scoped to the holds the edit actually strands: a control whose mapping is
-  /// gone, whose target moved, or which is no longer momentary at all. A
-  /// mapping that survived the edit keeps its hold, because an unrelated row's
-  /// range says nothing about the switch under someone's foot — and a LO/HI
-  /// drag runs this once per pointer frame, so releasing everything here would
-  /// drop a held chain mid-song the moment any knob moved.
-  void _releaseControllerMomentariesMissingFrom(ControllerBindingSet next) {
-    if (_heldControllerRestore.isEmpty) return;
-    final live = <(MappingTrigger, String)>{
-      for (final binding in next.bindings)
-        if (binding is DiscreteBinding &&
-            binding.behavior == BindingBehavior.momentary)
-          binding.key,
-    };
-    for (final entry in _heldControllerRestore.entries.toList()) {
-      for (final trigger in entry.value.holders.toList()) {
-        if (!live.contains((trigger, entry.key))) {
-          _applyControllerSwitch(
-            entry.key,
-            trigger,
-            BindingBehavior.momentary,
-            pressed: false,
-          );
-        }
-      }
-    }
-  }
-
-  /// Decodes every binding's target once, for the dispatch path to look up.
-  void _cacheControllerTargets(ControllerBindingSet bindings) {
-    _controllerValueTargets.clear();
-    _controllerSwitchTargets.clear();
-    for (final binding in bindings.bindings) {
-      switch (binding) {
-        case ContinuousBinding():
-          final target = ControlValueTarget.tryParse(binding.target);
-          if (target != null) _controllerValueTargets[binding.target] = target;
-        case DiscreteBinding():
-          final target = FxBindingTarget.tryParse(binding.target);
-          if (target != null) _controllerSwitchTargets[binding.target] = target;
-      }
-    }
-  }
-
-  /// Coalesces the settings write for [blob] (see [_mappingsWriteTimer]).
-  ///
-  /// A zero debounce writes straight through and arms no timer at all — what
-  /// tests pass so a pumped frame does not have to outlive a pending write.
-  void _scheduleMappingsWrite(String blob) {
-    _pendingMappingsBlob = blob;
-    _mappingsWriteTimer?.cancel();
-    if (_mappingsWriteDebounce <= Duration.zero) {
-      _flushMappingsWrite();
-      return;
-    }
-    _mappingsWriteTimer = Timer(_mappingsWriteDebounce, _flushMappingsWrite);
-  }
-
-  void _flushMappingsWrite() {
-    _mappingsWriteTimer?.cancel();
-    _mappingsWriteTimer = null;
-    final blob = _pendingMappingsBlob;
-    if (blob == null) return;
-    _pendingMappingsBlob = null;
-    unawaited(_settings.saveControllerMappings(blob));
-  }
-
-  /// Commits a pending mappings write now. Called on a clean halt so a
-  /// debounce that was still armed at press is not lost.
-  void flushMappings() => _flushMappingsWrite();
-
-  /// Replaces one mapping in place (an edited range, threshold, behavior or
-  /// target), preserving its row position.
-  Future<void> updateControllerBinding(
-    ControllerBinding binding,
-    ControllerBinding next,
-  ) => setControllerBindings(state.controllerBindings.replace(binding, next));
-
-  /// Removes one mapping.
-  Future<void> removeControllerBinding(ControllerBinding binding) =>
-      setControllerBindings(state.controllerBindings.without(binding));
-
-  /// Starts a MIDI-learn capture for [target].
-  ///
-  /// [continuous] picks the trigger shape a NEW mapping takes; when
-  /// [replacing] is given the shape and ranges of that mapping are carried
-  /// over instead, so relearning which control drives a parameter never resets
-  /// the travel the user dialed in.
-  ///
-  /// The capture ends in one of four ways: a control moves and binds; a control
-  /// moves onto a CC that is already mapped, which parks the capture on
-  /// [ControllerLearn.awaitingConfirm] until [confirmControllerLearn]; the user
-  /// cancels; or the learn timeout elapses. The repository swallows ALL
-  /// controller input while a capture is pending, which is why every one of
-  /// those paths ends it.
-  void learnControllerBinding({
-    required String target,
-    bool continuous = true,
-    ControllerBinding? replacing,
-  }) {
-    final controller = _controller;
-    if (controller == null) return;
-    // A pending capture SWALLOWS every controller input, the release edge of a
-    // held momentary included — so a foot still on a switch when a learn starts
-    // would never be released, and the target would stay enabled with nothing
-    // able to turn it off. Release first: the same B1 rule every other
-    // stranding path obeys.
-    releaseAllControllerMomentary();
-    _learnTimer?.cancel();
-    _learnTimer = Timer(_learnTimeout, cancelControllerLearn);
-    emit(
-      state.copyWith(
-        controllerLearn: ControllerLearn(
-          target: target,
-          // A relearn keeps the shape it already has; only a NEW mapping is
-          // free to take the caller's.
-          continuous: switch (replacing) {
-            ContinuousBinding() => true,
-            DiscreteBinding() => false,
-            null => continuous,
-          },
-          replacingKey: replacing?.key,
-        ),
-      ),
-    );
-    final generation = ++_learnGeneration;
-    unawaited(
-      controller.learnNext().then(
-        (input) => _onLearnCaptured(generation, input),
-      ),
-    );
-  }
-
-  /// Confirms replacing the existing mapping(s) on the captured control (R28).
-  /// A no-op unless a capture is parked on the confirmation.
-  Future<void> confirmControllerLearn() async {
-    final learn = state.controllerLearn;
-    final captured = learn?.captured;
-    if (learn == null || captured == null) return;
-    await _applyLearn(learn, captured, replaceExisting: true);
-  }
-
-  /// Ends a capture without binding anything — the row's cancel action, the
-  /// timeout, and the "keep what I had" half of the replace confirmation.
-  void cancelControllerLearn() {
-    _learnTimer?.cancel();
-    _learnTimer = null;
-    // Retire the capture BEFORE cancelling it, so the null completion this
-    // triggers cannot act on whatever comes next.
-    _learnGeneration++;
-    _controller?.cancelLearn();
-    if (isClosed || state.controllerLearn == null) return;
-    emit(state.copyWith(clearControllerLearn: true));
-  }
-
-  /// The mapping [key] names in the LIVE set, or `null` when the row it
-  /// pointed at has since been removed.
-  ControllerBinding? _liveBinding((MappingTrigger, String)? key) {
-    if (key == null) return null;
-    return state.controllerBindings.bindings
-        .where((binding) => binding.key == key)
-        .firstOrNull;
-  }
-
-  void _onLearnCaptured(int generation, RawControllerInput? input) {
-    // A superseded or cancelled capture completes with null too, and its
-    // callback must not touch the capture that replaced it — nor cancel the
-    // timeout that is the only thing rescuing a capture nobody feeds.
-    if (isClosed || generation != _learnGeneration) return;
-    final learn = state.controllerLearn;
-    if (learn == null) return;
-    _learnTimer?.cancel();
-    _learnTimer = null;
-    if (input == null) {
-      emit(state.copyWith(clearControllerLearn: true));
-      return;
-    }
-    // The CHANNEL-scoped identity: the same CC number on two channels is two
-    // controls, so the capture records which one it heard (B8).
-    final trigger = input.channelTrigger;
-    // Exempt the row being relearned as it stands NOW: against a stale value,
-    // re-teaching a row the control it already has would read as a conflict
-    // with itself.
-    if (state.controllerBindings.isTriggerBound(
-      trigger,
-      except: _liveBinding(learn.replacingKey),
-    )) {
-      _log('midi learn caught an already-mapped control: $trigger');
-      emit(state.copyWith(controllerLearn: learn.withCaptured(trigger)));
-      return;
-    }
-    unawaited(_applyLearn(learn, trigger, replaceExisting: false));
-  }
-
-  Future<void> _applyLearn(
-    ControllerLearn learn,
-    MappingTrigger trigger, {
-    required bool replaceExisting,
-  }) async {
-    // Resolve the row being relearned from the LIVE set: its knobs and its
-    // Remove button stay usable while a capture listens, so it may have been
-    // edited or deleted outright since the capture started. Rebuilding from
-    // what is there now is what keeps a relearn from resurrecting a removed
-    // mapping — `replace` would silently fall back to adding one — or from
-    // writing back the ranges the user just dialed away.
-    final replacing = _liveBinding(learn.replacingKey);
-    if (learn.replacingKey != null && replacing == null) {
-      _log('midi learn dropped: the row it was relearning is gone');
-      emit(state.copyWith(clearControllerLearn: true));
-      return;
-    }
-    final next = switch (replacing) {
-      ContinuousBinding(:final lo, :final hi) => ContinuousBinding(
-        trigger: trigger,
-        target: learn.target,
-        lo: lo,
-        hi: hi,
-      ),
-      DiscreteBinding(:final threshold, :final behavior) => DiscreteBinding(
-        trigger: trigger,
-        target: learn.target,
-        threshold: threshold,
-        behavior: behavior,
-      ),
-      null =>
-        learn.continuous
-            ? ContinuousBinding(trigger: trigger, target: learn.target)
-            : DiscreteBinding(trigger: trigger, target: learn.target),
-    };
-    var bindings = state.controllerBindings;
-    if (replaceExisting) {
-      bindings = bindings.withoutTrigger(trigger, except: replacing);
-    }
-    bindings = replacing == null
-        ? bindings.withBinding(next)
-        : bindings.replace(replacing, next);
-    _log('midi learn bound $trigger -> ${learn.target}');
-    emit(state.copyWith(clearControllerLearn: true));
-    await setControllerBindings(bindings);
-  }
-
-  /// Applies one resolved external-MIDI binding event.
-  ///
-  /// The SAME enforcement point the pedal's own bindings pass through (VGV):
-  /// no second control-surface interpreter grows inside a repository package,
-  /// so a discrete CC means here exactly what a footswitch binding means.
-  ///
-  /// Unlike a pedal binding, external control is NOT gated on FX mode: a
-  /// mapping the user made explicitly, on hardware whose only job is that
-  /// mapping, has no contextual default it could be shadowing.
   void _onControllerBindingEvent(ControllerDispatchEvent event) {
-    switch (event) {
-      case ControllerConsoleEvent(:final input):
-        _onConsoleEvent(input);
-      case ControllerValueEvent(:final target, :final value):
-        _applyControllerValue(target, value);
-      case ControllerSwitchEvent(
-        :final target,
-        :final trigger,
-        :final behavior,
-        :final pressed,
-      ):
-        _applyControllerSwitch(target, trigger, behavior, pressed: pressed);
-    }
-  }
-
-  /// Writes a continuous binding's value. Last-writer-wins against the
-  /// on-screen controls and against any other mapping on the same target — the
-  /// CC simply writes, exactly as a knob drag does.
-  void _applyControllerValue(String target, double value) {
-    final decoded = _controllerValueTargets[target];
-    if (decoded == null) return; // undecodable string: inert, never a guess
-    if (!_looper.writeValueTarget(decoded, value)) return;
-    if (decoded is MasterGainTarget) {
-      // Keep the accumulator the encoder and the pedal's ring meter read in
-      // step with what MIDI just wrote, or the next detent turn would jump
-      // back to the value the encoder last set.
-      _masterGain = value.clamp(0.0, 1.0);
-      _pushProjected();
-    }
-  }
-
-  void _applyControllerSwitch(
-    String target,
-    MappingTrigger trigger,
-    BindingBehavior behavior, {
-    required bool pressed,
-    bool retryRelease = true,
-  }) {
-    final decoded =
-        _controllerSwitchTargets[target] ??
-        _heldControllerRestore[target]?.target;
-    final prior = decoded == null ? null : _looper.bindingEnabled(decoded);
-    if (decoded == null || prior == null) {
-      // Stale mapping: a no-op, like a stale pedal binding (R25). Its row is
-      // where the user learns it is broken, not a mid-song stomp.
-      // A target that went stale WHILE held still has to be put back: the
-      // capture is the only record of what it was before the press.
-      final captured = _heldControllerRestore.remove(target);
-      if (captured == null) return;
-      _looper.setBindingEnabled(captured.target, enabled: captured.prior);
-      _pushProjected();
-      return;
-    }
-    switch (behavior) {
-      case BindingBehavior.toggle:
-        // Latching: only the ON edge acts, so the control's release does not
-        // undo the stomp it just made.
-        if (!pressed) return;
-        _log('midi toggle -> ${!prior}');
-        _looper.setBindingEnabled(decoded, enabled: !prior);
-      case BindingBehavior.momentary:
-        final entry = _heldControllerRestore[target];
-        if (pressed) {
-          // A refused native write does not acquire hold priority.
-          if (!prior && !_looper.setBindingEnabled(decoded, enabled: true)) {
-            return;
-          }
-          if (entry == null) {
-            _heldControllerRestore[target] = (
-              target: decoded,
-              prior: _activationBase[decoded] ?? prior,
-              holders: {trigger},
-            );
-          } else {
-            entry.holders.add(trigger);
-          }
-          _activationBase.putIfAbsent(decoded, () => prior);
-          (_activationHolders[decoded] ??= {})[trigger] = (
-            value: true,
-            order: ++_activationOrder,
-          );
-        } else {
-          if (entry == null || !entry.holders.contains(trigger)) return;
-          final surviving = _survivingActivation(decoded, excluding: trigger);
-          final value = surviving ?? entry.prior;
-          if (prior != value &&
-              !_looper.setBindingEnabled(decoded, enabled: value)) {
-            if (retryRelease) {
-              final session = _looper.sessionRevision;
-              final holderOrder = _activationHolders[decoded]?[trigger]?.order;
-              unawaited(() async {
-                bool cancelled() =>
-                    _closing || isClosed || _looper.sessionRevision != session;
-                await _looper.settleFxRecipes(
-                  waitForCallback: true,
-                  cancelled: cancelled,
-                );
-                if (cancelled() ||
-                    _activationHolders[decoded]?[trigger]?.order !=
-                        holderOrder ||
-                    !identical(
-                      _heldControllerRestore[target]?.holders,
-                      entry.holders,
-                    )) {
-                  return;
-                }
-                _applyControllerSwitch(
-                  target,
-                  trigger,
-                  behavior,
-                  pressed: false,
-                  retryRelease: false,
-                );
-              }());
-            }
-            return;
-          }
-          _activationHolders[decoded]?.remove(trigger);
-          if (_activationHolders[decoded]?.isEmpty ?? true) {
-            _activationBase.remove(decoded);
-          }
-          entry.holders.remove(trigger);
-          if (entry.holders.isEmpty) _heldControllerRestore.remove(target);
-        }
-    }
-    _pushProjected();
-  }
-
-  /// Restores every MIDI-held momentary to the state its press captured — the
-  /// external-control half of the ONE release-all rule (B1).
-  ///
-  /// Reached from the start of a learn capture, which swallows the release
-  /// edge. A source disconnect releases only its controls through the
-  /// repository's normal OFF events. A mapping EDIT
-  /// releases only what it strands — see
-  /// [_releaseControllerMomentariesMissingFrom].
-  ///
-  /// A held momentary whose device unplugs will never see its OFF edge, so
-  /// without this the target would stay enabled with no control able to
-  /// release it. CONTINUOUS bindings are deliberately
-  /// the opposite: an unplug mid-song leaves the value exactly where the last
-  /// sweep put it, because snapping a filter back to a stored value the moment
-  /// a cable wobbles is the louder failure.
-  void releaseAllControllerMomentary() {
-    for (final entry in _heldControllerRestore.entries.toList()) {
-      for (final trigger in entry.value.holders.toList()) {
-        _applyControllerSwitch(
-          entry.key,
-          trigger,
-          BindingBehavior.momentary,
-          pressed: false,
-        );
-      }
-    }
-  }
-
-  void _onMidiConnection(MidiConnection connection) {
-    if (connection.status == MidiConnectionStatus.connected) return;
-    _controller?.releaseSwitches(const {
-      ControllerSourceKind.midiNote,
-      ControllerSourceKind.midiCc,
-    });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Simulate input (#519): a mapping proves itself with no controller attached
-  // ---------------------------------------------------------------------------
-
-  /// Runs [binding]'s synthetic sequence through the real pipeline: a
-  /// [ContinuousBinding] sweeps LO→HI→LO, a [DiscreteBinding] presses and
-  /// releases. The events enter through [_simulatedSource], so the binding's
-  /// OWN range / curve / threshold / behaviour apply downstream exactly as they
-  /// would to a real pedal — this method never pre-applies any of that; the
-  /// repository owns the math.
-  ///
-  /// Resolved against the LIVE set by [binding]'s key: the row's calibration
-  /// stays editable while a simulation could be requested, so what runs is the
-  /// range that is there NOW, not a stale snapshot.
-  void simulateMapping(ControllerBinding binding) {
-    if (binding.trigger.kind.isConsoleCtrl) return;
-    final live = _liveBinding(binding.key) ?? binding;
-    final values = switch (live) {
-      ContinuousBinding() => _sweepValues,
-      DiscreteBinding() => _switchValues,
-    };
-    _startSimulation(live.trigger, values);
-  }
-
-  /// The global "Simulate input" affordance: routes a synthetic event where a
-  /// real one would land — a listening learn capture first, else the open row
-  /// [openKey], else nothing (the button renders dimmed with no route).
-  void simulateStatusRow((MappingTrigger, String)? openKey) {
-    if (state.controllerLearn != null) {
-      // A representative move the pending capture binds, exactly as a real one
-      // would — an expression control (mod wheel). Straight to the source, not
-      // the paced ticker: a capture ends on the first input it accepts.
-      _simulatedSource?.push(
-        const RawControllerInput(
-          kind: ControllerSourceKind.midiCc,
-          id: 1,
-          value: 127,
-        ),
-      );
-      return;
-    }
-    final open = _liveBinding(openKey);
-    if (open != null) simulateMapping(open);
-  }
-
-  /// CC values a sweep pushes: 0 → 127, a brief dwell at 127, then 127 → 0, one
-  /// per [_simulateTick], each leg spanning [_simulateSweepLeg]. The endpoints
-  /// are exact (0 and 127) so the bound value reaches both edges of its range;
-  /// the dwell lets the smoothing ramp settle AT the top before the descent, so
-  /// the target is seen to reach HI rather than only turn around near it.
-  List<int> get _sweepValues {
-    final n = _sweepSteps;
-    int cc(int i) => (127 * i / n).round();
-    return [
-      for (var i = 0; i <= n; i++) cc(i), // LO → HI
-      for (var i = 0; i < _sweepDwell; i++) 127, // settle at HI
-      for (var i = n - 1; i >= 0; i--) cc(i), // HI → LO
-    ];
-  }
-
-  /// How many extra ticks a sweep holds at HI before descending — enough for
-  /// the smoothing ramp to land on the endpoint even when the tick and the ramp
-  /// run at the same cadence.
-  static const int _sweepDwell = 2;
-
-  /// A switch's press then release, with a couple of held ticks between so a
-  /// momentary is visibly held before it lets go (a toggle ignores the release
-  /// edge, so the same sequence flips it once). Above then below any threshold:
-  /// 127 is on for every threshold `<= 127`, 0 is off for every threshold.
-  List<int> get _switchValues => const [127, 127, 127, 0];
-
-  /// How many ticks a sweep leg takes — at least one, mirroring the
-  /// repository's own smoothing-step flooring so a leg shorter than a tick
-  /// still lands on the endpoint.
-  int get _sweepSteps {
-    final steps = _simulateTick.inMicroseconds <= 0
-        ? 1
-        : (_simulateSweepLeg.inMicroseconds / _simulateTick.inMicroseconds)
-              .round();
-    return steps < 1 ? 1 : steps;
-  }
-
-  void _startSimulation(MappingTrigger trigger, List<int> values) {
-    // Finish any prior sequence first (a switch mid-hold, a sweep mid-ramp), so
-    // replacing it cannot strand a held momentary.
-    _drainSimulation();
-    _simulateTrigger = trigger;
-    _simulateQueue
-      ..clear()
-      ..addAll(values);
-    // Push the first now so the target moves without waiting a tick.
-    _tickSimulation();
-    if (_simulateQueue.isEmpty) {
-      _simulateTrigger = null;
-      return;
-    }
-    _simulateTimer = Timer.periodic(_simulateTick, (_) => _tickSimulation());
-  }
-
-  void _tickSimulation() {
-    final trigger = _simulateTrigger;
-    if (trigger == null) return;
-    if (_simulateQueue.isEmpty) {
-      _simulateTimer?.cancel();
-      _simulateTimer = null;
-      _simulateTrigger = null;
-      return;
-    }
-    _pushSimulated(trigger, _simulateQueue.removeAt(0));
-  }
-
-  /// Pushes whatever a running simulation has left immediately, then clears
-  /// it — so a switch's release edge always fires when a NEW simulation cuts
-  /// the ticker short, rather than stranding a momentary the prior press
-  /// enabled. Safe only while the cubit is alive to receive those pushed
-  /// events; teardown uses [_cancelSimulation] instead.
-  void _drainSimulation() {
-    _simulateTimer?.cancel();
-    _simulateTimer = null;
-    final trigger = _simulateTrigger;
-    if (trigger == null) return;
-    while (_simulateQueue.isNotEmpty) {
-      _pushSimulated(trigger, _simulateQueue.removeAt(0));
-    }
-    _simulateTrigger = null;
-  }
-
-  /// Stops a running simulation without pushing what is left — teardown, where
-  /// the binding-event subscription is about to be cancelled and a drained
-  /// event would never be delivered anyway (the app is going away).
-  void _cancelSimulation() {
-    _simulateTimer?.cancel();
-    _simulateTimer = null;
-    _simulateTrigger = null;
-    _simulateQueue.clear();
-  }
-
-  void _pushSimulated(MappingTrigger trigger, int value) {
-    _simulatedSource?.push(
-      RawControllerInput(
-        kind: trigger.kind,
-        id: trigger.id,
-        value: value,
-        // Omni triggers carry no channel; a real message still lands on one,
-        // so the synthetic one does too (channel 0, the default a capture
-        // records).
-        midiChannel: trigger.midiChannel ?? 0,
-      ),
-    );
+    if (event is ControllerConsoleEvent) _onConsoleEvent(event.input);
   }
 
   /// What each BOUND track switch's own target currently reads, by channel.
@@ -3277,6 +2742,7 @@ class ControlCubit extends Cubit<ControlState> {
     }
     _looperState = looperState;
     _retryExternalReleases();
+    _checkMidiSessionAndCleanup();
     _reduce(looperState);
     _pendingRestore.toList().forEach(_tryRestoreBinding);
     _pushProjected();
@@ -3295,10 +2761,6 @@ class ControlCubit extends Cubit<ControlState> {
     _clearHeld = false;
     _clearPressToken = null;
     _invalidateGestures();
-    _controller?.releaseSwitches(const {
-      ControllerSourceKind.consoleSwitch,
-      ControllerSourceKind.consoleExpression,
-    });
   }
 
   /// Projects and pushes the current LED frame. The repository drops a frame
@@ -3480,18 +2942,10 @@ class ControlCubit extends Cubit<ControlState> {
   @override
   Future<void> close() async {
     _retireAllExternal();
+    _retireMidi();
+    _midiLearnTimer?.cancel();
+    _midiLevelTimer?.cancel();
     _closing = true;
-    _learnTimer?.cancel();
-    // Stop any simulation in flight — its ticker must not outlive the cubit.
-    _cancelSimulation();
-    // A capture outlives this cubit otherwise: the controller repository is
-    // app-scoped, and while it is learning it swallows EVERY input — including
-    // the transport events another bloc consumes — with the timeout that would
-    // have rescued it already cancelled above.
-    _controller?.cancelLearn();
-    // Commit whatever the debounce was still holding, so a quit mid-edit does
-    // not lose the mapping the user just made.
-    _flushMappingsWrite();
     _undoGesture.cancel();
     _modeGesture.cancel();
     _bankGesture.cancel();
@@ -3509,7 +2963,15 @@ class ControlCubit extends Cubit<ControlState> {
     await _perfStatusSub.cancel();
     await _bindingSub?.cancel();
     await _midiSub?.cancel();
+    await _midiMessageSub?.cancel();
+    await _midiWrites;
     await _externalTail;
+    await Future.wait(_bindingDecisions.values.toList());
+    await _restoreWait;
+    _heldRestore.clear();
+    _pendingRestore.clear();
+    _fxPersistence.onOrdinaryWrite = null;
+    _mixSettings.onOrdinaryTrackLevel = null;
     return super.close();
   }
 }

@@ -5,10 +5,13 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
@@ -33,6 +36,13 @@ const _param = FxParamTarget(
 );
 
 class _RefusingEngine extends PumpedNativeEngine {
+  int taps = 0;
+  @override
+  EngineResult tapTempo() {
+    taps++;
+    return super.tapTempo();
+  }
+
   bool refuseRecipes = false;
   int refused = 0;
 
@@ -60,12 +70,40 @@ class _RefusingEngine extends PumpedNativeEngine {
 
 class _Store extends FakeKeyValueStore {
   bool failSetup = false;
+  bool failMidi = false;
+  Completer<void>? fxGate;
+  Completer<void>? monitorModeGate;
+  Completer<void>? monitorFxGate;
   @override
   Future<void> setString(String key, String value) async {
+    if (key.startsWith('track_fx_chain.')) await fxGate?.future;
+    if (key == 'monitor_input_mode.0') await monitorModeGate?.future;
+    if (key == 'monitor_fx.0') await monitorFxGate?.future;
+    if (key == 'midi.configuration' && failMidi) {
+      throw StateError('MIDI storage refused');
+    }
     if (key == 'pedal.setup' && failSetup) {
       throw StateError('setup storage refused');
     }
     await super.setString(key, value);
+  }
+}
+
+class _Midi extends MidiDeviceRepository {
+  _Midi(SettingsRepository settings)
+    : super(source: null, settings: settings, pollInterval: Duration.zero);
+  final inputs = StreamController<MidiInputMessage>.broadcast();
+  @override
+  MidiInputSession get session => const MidiInputSession('test-midi', 1);
+  @override
+  Stream<MidiInputMessage> get messages => inputs.stream;
+  void push(RawControllerInput input, {int? timestampMicros}) => inputs.add(
+    MidiInputMessage(session, input, timestampMicros: timestampMicros),
+  );
+  @override
+  Future<void> dispose() async {
+    await inputs.close();
+    await super.dispose();
   }
 }
 
@@ -76,7 +114,11 @@ class _Rig {
     this.looper,
     ExternalJackSetup setup, {
     bool initialOn = false,
+    String? initialMidiRaw,
   }) {
+    if (initialMidiRaw != null) {
+      store.values['midi.configuration'] = initialMidiRaw;
+    }
     store.values['pedal.setup'] = const PedalSetup()
         .copyWith(
           external: ExternalPedalSetup(jacks: {PedalCtrlJack.ctrl1: setup})
@@ -87,21 +129,26 @@ class _Rig {
         )
         .encode();
     settings = SettingsRepository(store: store);
+    midi = _Midi(settings);
     mix = testMixSettings(looper, settings: settings);
     pedal = PedalRepository(link, clock: () => clock.elapsed);
     controller = ControllerRepository(
-      sources: [ConsoleCtrlSource(pedal), midi],
+      sources: [ConsoleCtrlSource(pedal)],
     );
     performance = PerformanceRepository(
       engine: engine,
       exportsRoot: () async => Directory.systemTemp.path,
     );
+    fx = FxChainPersistence(looper: looper);
     cubit = ControlCubit(
       looper: looper,
       pedal: pedal,
       settings: settings,
       performance: performance,
       mixSettings: mix,
+      fxPersistence: fx,
+      midiDevices: midi,
+      midiClock: () => clock.elapsed,
       controller: controller,
     );
     link.hello();
@@ -113,13 +160,71 @@ class _Rig {
   final LooperRepository looper;
   final store = _Store();
   final link = FakePedalLink();
-  final midi = SimulatedControllerSource();
+  late final _Midi midi;
   late final SettingsRepository settings;
   late final MixSettingsCoordinator mix;
   late final PedalRepository pedal;
   late final ControllerRepository controller;
   late final PerformanceRepository performance;
   late final ControlCubit cubit;
+  late final FxChainPersistence fx;
+
+  void bindMidi({
+    int id = 21,
+    String? target,
+    double low = 0,
+    double high = 1,
+    List<MidiControl>? controls,
+    MidiProtocol protocol = MidiProtocol.standard,
+    MidiBehavior behavior = MidiBehavior.momentary,
+  }) {
+    final owner = Object();
+    cubit.beginMidiEdit(device: 'test-midi', owner: owner);
+    unawaited(
+      cubit
+          .saveMidiMapping(
+            MidiMapping(
+              id: 'draft',
+              source: MidiSource(
+                device: 'test-midi',
+                protocol: protocol,
+                kind: ControllerSourceKind.midiCc,
+                number: id,
+              ),
+              behavior: behavior,
+              controls:
+                  controls ??
+                  [
+                    MidiParameterControl(
+                      key: target ?? _chain.canonicalString(),
+                      low: low,
+                      high: high,
+                    ),
+                  ],
+            ),
+            owner: owner,
+            create: true,
+          )
+          .then((result) {
+            expect(result.saved, isTrue);
+            cubit.endMidiEdit(owner);
+          }),
+    );
+    clock.flushMicrotasks();
+    settle();
+  }
+
+  void midiValue(int value, {int id = 21}) {
+    midi.push(
+      RawControllerInput(
+        kind: ControllerSourceKind.midiCc,
+        id: id,
+        value: value,
+      ),
+    );
+    clock.flushMicrotasks();
+    settle();
+  }
 
   void sample(
     int value, {
@@ -143,6 +248,7 @@ class _Rig {
     unawaited(cubit.close());
     settle();
     unawaited(controller.dispose());
+    unawaited(midi.dispose());
     unawaited(mix.close());
     unawaited(pedal.dispose());
     performance.dispose();
@@ -190,10 +296,18 @@ void main() {
     ExternalJackSetup setup,
     void Function(_Rig) body, {
     bool initialOn = false,
+    String? initialMidiRaw,
   }) {
     test(name, () {
       fakeAsync((clock) {
-        final rig = _Rig(clock, engine, looper, setup, initialOn: initialOn);
+        final rig = _Rig(
+          clock,
+          engine,
+          looper,
+          setup,
+          initialOn: initialOn,
+          initialMidiRaw: initialMidiRaw,
+        );
         try {
           body(rig);
         } finally {
@@ -213,6 +327,420 @@ void main() {
         parameters: parameters,
       ),
     ),
+  );
+
+  check(
+    'malformed settings survive refused reset and recover on receipt',
+    ExternalJackSetup.empty,
+    (r) {
+      expect(r.cubit.state.midiUnavailable, isTrue);
+      r.store.failMidi = true;
+      unawaited(r.cubit.resetMidiConfiguration());
+      r
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(r.cubit.state.midiUnavailable, isTrue);
+      expect(r.store.values['midi.configuration'], 'broken raw');
+      r.store.failMidi = false;
+      unawaited(r.cubit.resetMidiConfiguration());
+      r
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(r.cubit.state.midiUnavailable, isFalse);
+      expect(r.cubit.state.midiPersistenceUncertain, isFalse);
+      expect(r.cubit.state.midiMappings, MidiMappingSet.empty);
+    },
+    initialMidiRaw: 'broken raw',
+  );
+
+  check(
+    'unassigned CCs do nothing and mapped contacts dispatch once',
+    ExternalJackSetup.empty,
+    (r) {
+      for (var id = 80; id <= 86; id++) {
+        r.midiValue(127, id: id);
+      }
+      expect(engine.taps, 0);
+      r
+        ..bindMidi(
+          controls: [
+            MidiActionControl(key: 'command:tap-tempo'),
+          ],
+        )
+        ..midiValue(127)
+        ..midiValue(127);
+      expect(engine.taps, 1);
+      r
+        ..midiValue(0)
+        ..midiValue(127);
+      expect(engine.taps, 2);
+    },
+  );
+
+  check(
+    'failed Remote Off remains paused until deliberate confirmed resume',
+    ExternalJackSetup.empty,
+    (r) {
+      r
+        ..bindMidi(
+          controls: [
+            MidiActionControl(key: 'command:tap-tempo'),
+          ],
+        )
+        ..store.failMidi = true;
+      unawaited(r.cubit.setMidiControlEnabled(enabled: false));
+      r
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(r.cubit.state.midiControlEnabled, isTrue);
+      expect(r.cubit.state.midiRemotePaused, isTrue);
+      expect(r.cubit.state.midiSaveError, isNotNull);
+      r.midiValue(127);
+      expect(engine.taps, 0);
+      r.store.failMidi = false;
+      unawaited(r.cubit.setMidiControlEnabled(enabled: true));
+      r
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(r.cubit.state.midiRemotePaused, isFalse);
+      expect(engine.taps, 0);
+      r.midiValue(127);
+      expect(engine.taps, 1);
+    },
+  );
+
+  check(
+    'old editor cannot resume new editor and Learn never dispatches',
+    ExternalJackSetup.empty,
+    (r) {
+      r.bindMidi(
+        controls: [
+          MidiActionControl(key: 'command:tap-tempo'),
+        ],
+      );
+      final first = Object();
+      final second = Object();
+      r
+        ..cubit.beginMidiEdit(device: 'test-midi', owner: first)
+        ..cubit.beginMidiEdit(device: 'test-midi', owner: second)
+        ..cubit.endMidiEdit(first)
+        ..cubit.startMidiLearn(MidiProtocol.standard, owner: second)
+        ..midiValue(127);
+      expect(engine.taps, 0);
+      expect(r.cubit.state.midiEdit!.owner, same(second));
+      expect(r.cubit.state.midiEdit!.learn!.reading!.source.number, 21);
+      r
+        ..cubit.endMidiEdit(second)
+        ..midiValue(127);
+      expect(engine.taps, 1);
+    },
+  );
+
+  check(
+    'External retirement restores surviving MIDI live and durable endpoints',
+    button(
+      [],
+      parameters: [
+        ExternalParameter(
+          target: const TrackVolumeTarget(0),
+          active: .6,
+          inactive: .3,
+          condition: ExternalValueCondition.heldReleased,
+        ),
+      ],
+    ),
+    (r) {
+      r
+        ..bindMidi(
+          target: const TrackVolumeTarget(0).canonicalString(),
+          low: .2,
+          high: .8,
+        )
+        ..midiValue(127);
+      expect(r.mix.durableSnapshot.trackLevels[0], .2);
+      r
+        ..sample(255)
+        ..settle();
+      expect(r.mix.durableSnapshot.trackLevels[0], .6);
+      r
+        ..link.emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.none,
+            value: 0,
+          ),
+        )
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(.8, .0001));
+      expect(r.mix.durableSnapshot.trackLevels[0], closeTo(.2, .0001));
+    },
+  );
+
+  check(
+    'accepted reset and hardware encoder survive older MIDI release',
+    ExternalJackSetup.empty,
+    (r) {
+      r
+        ..bindMidi(
+          target: const TrackVolumeTarget(0).canonicalString(),
+          low: .2,
+          high: .8,
+        )
+        ..midiValue(127);
+      unawaited(r.mix.resetMixer());
+      r
+        ..clock.flushMicrotasks()
+        ..settle()
+        ..midiValue(0);
+      expect(looper.mixSettingsSnapshot.trackLevels[0] ?? 1, 1);
+      r
+        ..bindMidi(
+          id: 22,
+          target: const MasterGainTarget().canonicalString(),
+          low: .2,
+          high: .8,
+        )
+        ..midiValue(127, id: 22)
+        ..cubit.encoderTurned(1);
+      final hardware = looper.masterGain;
+      r.midiValue(0, id: 22);
+      expect(looper.masterGain, hardware);
+    },
+  );
+
+  check(
+    'built-in toggle and equal restore supersede older MIDI power hold',
+    ExternalJackSetup.empty,
+    (r) {
+      r
+        ..bindMidi()
+        ..midiValue(127)
+        ..cubit.toggleTrackChain(0)
+        ..settle()
+        ..cubit.toggleTrackChain(0)
+        ..settle()
+        ..midiValue(0);
+      expect(looper.trackChainEnabled(0), isTrue);
+      r
+        ..midiValue(127)
+        ..cubit.restoreAllTrackChains()
+        ..settle()
+        ..midiValue(0);
+      expect(looper.trackChainEnabled(0), isTrue);
+    },
+  );
+
+  for (final behavior in [MidiBehavior.continuous, MidiBehavior.toggle]) {
+    check(
+      '$behavior retirement preserves accepted sound over older UI value',
+      ExternalJackSetup.empty,
+      (r) {
+        unawaited(r.mix.setTrackVolume(.3));
+        r
+          ..clock.flushMicrotasks()
+          ..settle()
+          ..bindMidi(
+            target: const TrackVolumeTarget(0).canonicalString(),
+            high: .8,
+            protocol: behavior == MidiBehavior.continuous
+                ? MidiProtocol.relative
+                : MidiProtocol.standard,
+            behavior: behavior,
+          )
+          ..midiValue(behavior == MidiBehavior.continuous ? 50 : 127);
+        final accepted = looper.mixSettingsSnapshot.trackLevels[0]!;
+        expect(accepted, greaterThan(.3));
+        unawaited(r.cubit.setMidiControlEnabled(enabled: false));
+        r
+          ..clock.flushMicrotasks()
+          ..settle();
+        expect(looper.mixSettingsSnapshot.trackLevels[0], accepted);
+        expect(r.mix.durableSnapshot.trackLevels[0], accepted);
+      },
+    );
+  }
+
+  for (final gap in [99, 101]) {
+    check(
+      'CC14 uses ${gap}ms native capture interval while dispatch is blocked',
+      ExternalJackSetup.empty,
+      (r) {
+        r
+          ..bindMidi()
+          ..bindMidi(
+            id: 1,
+            target: const MasterGainTarget().canonicalString(),
+            protocol: MidiProtocol.cc14,
+            behavior: MidiBehavior.continuous,
+          )
+          ..store.fxGate = Completer<void>()
+          ..midiValue(127);
+        void cc(int id, int value, int micros) {
+          r
+            ..midi.push(
+              RawControllerInput(
+                kind: ControllerSourceKind.midiCc,
+                id: id,
+                value: value,
+              ),
+              timestampMicros: micros,
+            )
+            ..clock.flushMicrotasks();
+        }
+
+        cc(1, 127, 1000000);
+        cc(33, 127, 1000000 + gap * 1000);
+        cc(1, 0, 2000000);
+        cc(33, 0, 2000001);
+        r
+          ..clock.elapse(const Duration(milliseconds: 500))
+          ..store.fxGate!.complete()
+          ..clock.flushMicrotasks()
+          ..settle();
+        expect(looper.masterGain, gap == 99 ? 0 : 1);
+      },
+    );
+  }
+
+  check(
+    'built-in captured-prior restore becomes fresh shared intent',
+    ExternalJackSetup.empty,
+    (r) {
+      unawaited(
+        r.cubit.setGlobalBindings(
+          PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+              target: _chain.canonicalString(),
+              behavior: BindingBehavior.momentary,
+            ),
+          ]),
+        ),
+      );
+      r
+        ..clock.flushMicrotasks()
+        ..cubit.setMode(InteractionMode.fx)
+        ..link.press(PedalButton.track1, down: true)
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(looper.trackChainEnabled(0), isTrue);
+      r
+        ..bindMidi()
+        ..midiValue(127)
+        ..link.press(PedalButton.track1, down: false)
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(looper.trackChainEnabled(0), isFalse);
+      r.midiValue(0);
+      expect(looper.trackChainEnabled(0), isFalse);
+    },
+  );
+
+  check(
+    'delayed monitor metadata save cannot resurrect a released MIDI snapshot',
+    ExternalJackSetup.empty,
+    (r) {
+      const address = FxAddress(stage: FxStage.input);
+      const target = FxParamTarget(
+        address: address,
+        slotId: 'monitor-drive',
+        param: 0,
+      );
+      expect(
+        looper.setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.drive, slotId: 'monitor-drive'),
+          ],
+        ),
+        EngineResult.ok,
+      );
+      r.settle();
+      final monitor = MonitorCubit(
+        repository: looper,
+        settings: r.settings,
+        mixSettings: r.mix,
+        fxPersistence: r.fx,
+      );
+      r
+        ..bindMidi(target: target.canonicalString(), low: .2, high: .8)
+        ..midiValue(127)
+        ..store.monitorModeGate = Completer<void>();
+      var saved = false;
+      unawaited(monitor.syncFromRepository().then((_) => saved = true));
+      r
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(saved, isFalse);
+      r
+        ..midiValue(0)
+        ..store.monitorModeGate!.complete()
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(saved, isTrue);
+      final envelope = decodeFxChain(r.store.values['monitor_fx.0'] as String?);
+      expect(
+        (envelope.entries.single as BuiltInEffect).params.first,
+        closeTo(.2, .0001),
+      );
+      unawaited(monitor.close());
+      r.clock.flushMicrotasks();
+    },
+  );
+
+  check(
+    'shutdown waits for track and monitor toggle storage',
+    ExternalJackSetup.empty,
+    (r) {
+      r
+        ..store.fxGate = Completer<void>()
+        ..cubit.toggleTrackChain(0)
+        ..settle();
+      var done = false;
+      unawaited(r.cubit.flushMidiConfiguration().then((_) => done = true));
+      r.clock.flushMicrotasks();
+      expect(done, isFalse);
+      r
+        ..store.fxGate!.complete()
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(done, isTrue);
+      expect(
+        looper.setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.drive, slotId: 'monitor-drive'),
+          ],
+        ),
+        EngineResult.ok,
+      );
+      r.settle();
+      final monitor = MonitorCubit(
+        repository: looper,
+        settings: r.settings,
+        mixSettings: r.mix,
+        fxPersistence: r.fx,
+      );
+      unawaited(monitor.syncFromRepository());
+      r
+        ..clock.flushMicrotasks()
+        ..settle()
+        ..store.monitorFxGate = Completer<void>();
+      monitor.setChainEnabled(0, enabled: false);
+      r.settle();
+      done = false;
+      unawaited(monitor.flushPersistence().then((_) => done = true));
+      r.clock.flushMicrotasks();
+      expect(done, isFalse);
+      r
+        ..store.monitorFxGate!.complete()
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(done, isTrue);
+      unawaited(monitor.close());
+      r.clock.flushMicrotasks();
+    },
   );
 
   check(
@@ -320,8 +848,11 @@ void main() {
         closeTo(54 / 255, .0001),
       );
       final calibration = Object();
-      r.cubit.beginExternalCalibration(PedalCtrlJack.ctrl1, owner: calibration);
       r
+        ..cubit.beginExternalCalibration(
+          PedalCtrlJack.ctrl1,
+          owner: calibration,
+        )
         ..sample(0, kind: PedalCtrlKind.expression)
         ..settle();
       expect(
@@ -354,21 +885,7 @@ void main() {
       ),
     ]),
     (r) {
-      unawaited(
-        r.cubit.setControllerBindings(
-          ControllerBindingSet([
-            DiscreteBinding(
-              trigger: const MappingTrigger(
-                kind: ControllerSourceKind.midiCc,
-                id: 21,
-              ),
-              target: _chain.canonicalString(),
-              behavior: BindingBehavior.momentary,
-            ),
-          ]),
-        ),
-      );
-      r.clock.flushMicrotasks();
+      r.bindMidi();
       void midi(int value) {
         r
           ..midi.push(
@@ -423,8 +940,8 @@ void main() {
       final old = Object();
       r.cubit.beginExternalCalibration(PedalCtrlJack.ctrl1, owner: old);
       final next = Object();
-      r.cubit.beginExternalCalibration(PedalCtrlJack.ctrl1, owner: next);
       r
+        ..cubit.beginExternalCalibration(PedalCtrlJack.ctrl1, owner: next)
         ..cubit.endExternalCalibration(old)
         ..sample(0, kind: PedalCtrlKind.expression)
         ..sample(255, kind: PedalCtrlKind.expression)
@@ -618,8 +1135,9 @@ void main() {
         ..sample(255)
         ..settle();
       engine.refuseRecipes = true;
-      r.sample(0, kind: PedalCtrlKind.none);
-      r.clock.flushMicrotasks();
+      r
+        ..sample(0, kind: PedalCtrlKind.none)
+        ..clock.flushMicrotasks();
       expect(engine.refused, 2);
       r.clock.elapse(const Duration(milliseconds: 100));
       expect(
@@ -656,22 +1174,8 @@ void main() {
       ),
     ]),
     (r) {
-      unawaited(
-        r.cubit.setControllerBindings(
-          ControllerBindingSet([
-            DiscreteBinding(
-              trigger: const MappingTrigger(
-                kind: ControllerSourceKind.midiCc,
-                id: 21,
-              ),
-              target: _chain.canonicalString(),
-              behavior: BindingBehavior.momentary,
-            ),
-          ]),
-        ),
-      );
-      r.clock.flushMicrotasks();
       r
+        ..bindMidi()
         ..sample(255)
         ..settle();
       expect(
@@ -682,26 +1186,28 @@ void main() {
         ),
         EngineResult.ok,
       );
-      r.sample(0);
-      r.midi.push(
-        const RawControllerInput(
-          kind: ControllerSourceKind.midiCc,
-          id: 21,
-          value: 127,
-        ),
-      );
-      r.clock.flushMicrotasks();
-      r.settle();
+      r
+        ..sample(0)
+        ..midi.push(
+          const RawControllerInput(
+            kind: ControllerSourceKind.midiCc,
+            id: 21,
+            value: 127,
+          ),
+        )
+        ..clock.flushMicrotasks()
+        ..settle();
       expect(looper.trackChainEnabled(0), isTrue);
-      r.midi.push(
-        const RawControllerInput(
-          kind: ControllerSourceKind.midiCc,
-          id: 21,
-          value: 0,
-        ),
-      );
-      r.clock.flushMicrotasks();
-      r.settle();
+      r
+        ..midi.push(
+          const RawControllerInput(
+            kind: ControllerSourceKind.midiCc,
+            id: 21,
+            value: 0,
+          ),
+        )
+        ..clock.flushMicrotasks()
+        ..settle();
       expect(looper.trackChainEnabled(0), isFalse);
     },
   );
@@ -729,8 +1235,8 @@ void main() {
           ),
         ),
       );
-      r.clock.flushMicrotasks();
       r
+        ..clock.flushMicrotasks()
         ..sample(255)
         ..settle()
         ..sample(255, jack: PedalCtrlJack.ctrl2)
@@ -881,30 +1387,17 @@ void main() {
     'MIDI release retry cannot retire a newer accepted press on same trigger',
     ExternalJackSetup.empty,
     (r) {
-      unawaited(
-        r.cubit.setControllerBindings(
-          ControllerBindingSet([
-            DiscreteBinding(
-              trigger: const MappingTrigger(
-                kind: ControllerSourceKind.midiCc,
-                id: 27,
-              ),
-              target: _chain.canonicalString(),
-              behavior: BindingBehavior.momentary,
-            ),
-          ]),
-        ),
-      );
-      r.clock.flushMicrotasks();
+      r.bindMidi(id: 27);
       void midi(int value) {
-        r.midi.push(
-          RawControllerInput(
-            kind: ControllerSourceKind.midiCc,
-            id: 27,
-            value: value,
-          ),
-        );
-        r.clock.flushMicrotasks();
+        r
+          ..midi.push(
+            RawControllerInput(
+              kind: ControllerSourceKind.midiCc,
+              id: 27,
+              value: value,
+            ),
+          )
+          ..clock.flushMicrotasks();
       }
 
       midi(127);

@@ -1,35 +1,33 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
-import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
-import 'package:segno/common/fx_chain_persistence.dart';
 import 'package:segno/common/write_debouncer.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
 
-/// Drives the multi-track looper transport from UI and controller events, and
+/// Drives the multi-track looper transport from UI events and
 /// mirrors the repository's [LooperState] stream as the bloc state.
 ///
 /// Commands are forwarded to the repository; the resulting engine state flows
 /// back through the stream, keeping the repository the single source of truth.
-/// When a [ControllerRepository] is supplied, its hardware-agnostic events are
-/// translated into the same looper actions.
+/// Hardware assignments are interpreted by the shared control layer.
 class LooperBloc extends Bloc<LooperEvent, LooperState> {
-  /// Creates a [LooperBloc] backed by [repository], optionally fed by
-  /// [controller] (a MIDI foot controller).
+  /// Creates a [LooperBloc] backed by [repository].
   LooperBloc({
     required LooperRepository repository,
     required MixSettingsCoordinator mixSettings,
-    ControllerRepository? controller,
+    required FxChainPersistence fxPersistence,
     SettingsRepository? settings,
     Duration fxPersistDebounce = const Duration(milliseconds: 300),
     bool Function() takeLocked = _neverLocked,
   }) : _repository = repository,
        _mixSettings = mixSettings,
+       _fxPersistence = fxPersistence,
        _settings = settings,
        _takeLocked = takeLocked,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
@@ -265,6 +263,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         value: event.value,
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinaryParameterAt(
+        FxAddress(stage: FxStage.loop, index: event.channel, lane: event.lane),
+        event.index,
+        event.param,
+        event.value,
+      );
       // Re-save the whole chain (the engine call above was granular and did not
       // reset DSP; persistence stores the chain as one encoded string) — and
       // DEBOUNCED, because this is the knob-drag path: one pointer move used
@@ -309,6 +313,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         enabled: event.enabled,
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinarySlotAt(
+        FxAddress(stage: FxStage.loop, index: event.channel, lane: event.lane),
+        event.index,
+        enabled: event.enabled,
+      );
       _persistLaneChain(event.channel, event.lane);
     });
     on<LooperLaneChainEnabledToggled>((event, _) {
@@ -318,6 +327,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         enabled: event.enabled,
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinaryChain(
+        FxAddress(stage: FxStage.loop, index: event.channel, lane: event.lane),
+        enabled: event.enabled,
+      );
       _persistLaneChain(event.channel, event.lane);
     });
     on<LooperLaneChainResyncedFromInput>((event, _) {
@@ -432,6 +445,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
               value: event.value,
             );
       if (!result.isOk) return;
+      _fxPersistence.ordinaryParameterAt(
+        event.address,
+        event.index,
+        event.param,
+        event.value,
+      );
       // Debounced: the engine write above is per-move, this is per-drag.
       _schedulePersistBusChain(event.address);
     });
@@ -502,6 +521,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         () => saveTrackFxChain(
           settings: _settings,
           looper: _repository,
+          projection: _fxPersistence,
           channel: event.channel,
         ),
       );
@@ -513,6 +533,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         enabled: event.enabled,
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinarySlotAt(
+        FxAddress(stage: FxStage.track, index: event.channel),
+        event.index,
+        enabled: event.enabled,
+      );
       _persistTrackChain(event.channel);
     });
     on<LooperTrackChainEnabledToggled>((event, _) {
@@ -521,6 +546,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         enabled: event.enabled,
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinaryChain(
+        FxAddress(stage: FxStage.track, index: event.channel),
+        enabled: event.enabled,
+      );
       _persistTrackChain(event.channel);
     });
     on<LooperTrackChainToggled>((event, _) {
@@ -532,6 +561,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         enabled: !_repository.trackChainEnabled(event.channel),
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinaryChain(
+        FxAddress(stage: FxStage.track, index: event.channel),
+        enabled: _repository.trackChainEnabled(event.channel),
+      );
       _persistTrackChain(event.channel);
     });
     on<LooperOutputEffectsChanged>((event, _) {
@@ -554,6 +587,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         () => saveTrackFxChain(
           settings: _settings,
           looper: _repository,
+          projection: _fxPersistence,
           channel: event.channel,
         ),
       );
@@ -602,6 +636,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         enabled: event.enabled,
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinarySlotAt(
+        const FxAddress(stage: FxStage.allTracks),
+        event.index,
+        enabled: event.enabled,
+      );
       _persistAllTracksChain();
     });
     on<LooperAllTracksChainEnabledToggled>((event, _) {
@@ -609,6 +648,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         enabled: event.enabled,
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinaryChain(
+        const FxAddress(stage: FxStage.allTracks),
+        enabled: event.enabled,
+      );
       _persistAllTracksChain();
     });
     on<LooperAllTracksEffectParamChanged>((event, _) {
@@ -620,6 +663,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         value: event.value,
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinaryParameterAt(
+        const FxAddress(stage: FxStage.allTracks),
+        event.index,
+        event.param,
+        event.value,
+      );
       _persistAllTracksChain();
     });
     on<LooperOutputEffectEnabledToggled>((event, _) {
@@ -629,6 +678,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         enabled: event.enabled,
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinarySlotAt(
+        FxAddress(stage: FxStage.output, index: event.bus),
+        event.index,
+        enabled: event.enabled,
+      );
       _persistAfterFx((#output, event.bus), () => _saveOutputChain(event.bus));
     });
     on<LooperOutputChainEnabledToggled>((event, _) {
@@ -637,6 +691,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         enabled: event.enabled,
       );
       if (!result.isOk) return;
+      _fxPersistence.ordinaryChain(
+        FxAddress(stage: FxStage.output, index: event.bus),
+        enabled: event.enabled,
+      );
       _persistAfterFx((#output, event.bus), () => _saveOutputChain(event.bus));
     });
     on<LooperLanePluginEditorOpened>((event, _) {
@@ -820,7 +878,19 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
     });
     on<LooperSessionLoaded>((_, _) => _resyncSessionChains());
-    on<LooperPersistFlush>((_, _) => _fxPersist.flush());
+    on<LooperPersistFlush>((event, _) async {
+      try {
+        _fxPersist.flush();
+        await _fxPersistence.flush();
+        event.receipt?.complete();
+      } on Object catch (error, stackTrace) {
+        if (event.receipt case final receipt?) {
+          receipt.completeError(error, stackTrace);
+        } else {
+          addError(error, stackTrace);
+        }
+      }
+    });
 
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
@@ -828,7 +898,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     _fxReplaySubscription = _repository.fxReplayConfirmed.listen(
       _onFxReplayConfirmed,
     );
-    _controllerSubscription = controller?.events.listen(_onControllerEvent);
     // Persist chains the repository mutates on its own — the record-time
     // snapshot-copy of a monitor chain onto the take's lanes (F3). The bloc
     // stays the single settings writer for chains.
@@ -844,6 +913,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   final LooperRepository _repository;
   final MixSettingsCoordinator _mixSettings;
+  final FxChainPersistence _fxPersistence;
   final SettingsRepository? _settings;
   final bool Function() _takeLocked;
 
@@ -869,7 +939,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   >
   _pendingFxSaves = {};
   final Set<Object> _savingFxKeys = {};
-  StreamSubscription<ControllerEvent>? _controllerSubscription;
 
   /// The inbound editor-sync poll cadence (D-SYNC: ≤10 Hz).
   static const Duration _editorPollInterval = Duration(milliseconds: 100);
@@ -910,9 +979,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       save: save,
     );
     if (_repository.fxRecipesSettled) {
-      unawaited(_savePendingFx(key, sessionRevision));
+      unawaited(_fxPersistence.trackSave(_savePendingFx(key, sessionRevision)));
     } else {
-      unawaited(_waitAndPersistFx(key, sessionRevision));
+      unawaited(
+        _fxPersistence.trackSave(_waitAndPersistFx(key, sessionRevision)),
+      );
     }
   }
 
@@ -950,7 +1021,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
           next.sessionRevision == _repository.sessionRevision &&
           !isClosed &&
           _repository.fxRecipesSettled) {
-        unawaited(_savePendingFx(key, next.sessionRevision));
+        unawaited(
+          _fxPersistence.trackSave(_savePendingFx(key, next.sessionRevision)),
+        );
       }
     }
   }
@@ -965,7 +1038,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     }
     for (final entry in _pendingFxSaves.entries.toList()) {
       if (entry.value.sessionRevision == replay.sessionRevision) {
-        unawaited(_savePendingFx(entry.key, replay.sessionRevision));
+        unawaited(
+          _fxPersistence.trackSave(
+            _savePendingFx(entry.key, replay.sessionRevision),
+          ),
+        );
       }
     }
   }
@@ -1049,16 +1126,25 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// record-time snapshot copy). Reads the repository's enriched chain so a
   /// persisted plugin entry keeps its resolved name.
   void _persistLaneChain(int channel, int lane) {
-    unawaited(_saveLaneChain(channel, lane));
+    unawaited(_fxPersistence.trackSave(_saveLaneChain(channel, lane)));
   }
 
-  Future<void> _saveLaneChain(int channel, int lane) async {
-    await _settings?.saveLaneEffects(
-      channel,
-      lane,
-      _encodedLaneChain(channel, lane),
-    );
-  }
+  Future<void> _saveLaneChain(int channel, int lane) =>
+      _fxPersistence.trackSave(() async {
+        final session = _repository.sessionRevision;
+        await _fxPersistence.settlePending();
+        if (session != _repository.sessionRevision) return;
+        await _settings?.saveLaneEffects(
+          channel,
+          lane,
+          encodeFxChain(
+            _fxPersistence.project(
+              FxAddress(stage: FxStage.loop, index: channel, lane: lane),
+              decodeFxChain(_encodedLaneChain(channel, lane)),
+            ),
+          ),
+        );
+      }());
 
   /// Coalesced twin of [_persistLaneChain], for the paths a knob drag drives.
   /// Keyed per lane, so dragging one lane's knob never delays another's write.
@@ -1126,6 +1212,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       : saveTrackFxChain(
           settings: _settings,
           looper: _repository,
+          projection: _fxPersistence,
           channel: address.index,
         );
 
@@ -1146,6 +1233,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   void _persistTrackChain(int channel) => persistTrackFxChain(
     settings: _settings,
     looper: _repository,
+    projection: _fxPersistence,
     channel: channel,
   );
 
@@ -1190,8 +1278,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     final lanes = _repository.allLaneChains();
     final tracks = _repository.allTrackChains();
     // The engine's track count, read fresh rather than from this bloc's
-    // state (only as current as the last poll tick) — same reasoning as
-    // [_cancelPendingArms].
+    // state (only as current as the last poll tick).
     final channels = _repository.state.tracks.length;
     for (var channel = 0; channel < channels; channel++) {
       for (var lane = 0; lane < kMaxLanes; lane++) {
@@ -1224,34 +1311,33 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   /// Persists output destination [bus]'s chain envelope.
   void _persistOutputChain(int bus) {
-    unawaited(_saveOutputChain(bus));
+    unawaited(_fxPersistence.trackSave(_saveOutputChain(bus)));
   }
 
   Future<void> _saveOutputChain(int bus) async {
-    await _settings?.saveOutputFxChain(
-      bus,
-      encodeFxChain(
-        FxChainEnvelope(
-          chainEnabled: _repository.outputChainEnabled(bus),
-          entries: _repository.outputEffects(bus),
-        ),
-      ),
+    final settings = _settings;
+    if (settings == null) return;
+    await saveFxOwner(
+      settings: settings,
+      looper: _repository,
+      projection: _fxPersistence,
+      address: FxAddress(stage: FxStage.output, index: bus),
     );
   }
 
   /// Persists the All tracks recorded-mix chain envelope.
   void _persistAllTracksChain() {
-    unawaited(_saveAllTracksChain());
+    unawaited(_fxPersistence.trackSave(_saveAllTracksChain()));
   }
 
   Future<void> _saveAllTracksChain() async {
-    await _settings?.saveAllTracksFxChain(
-      encodeFxChain(
-        FxChainEnvelope(
-          chainEnabled: _repository.allTracksChainEnabled,
-          entries: _repository.allTracksEffects,
-        ),
-      ),
+    final settings = _settings;
+    if (settings == null) return;
+    await saveFxOwner(
+      settings: settings,
+      looper: _repository,
+      projection: _fxPersistence,
+      address: const FxAddress(stage: FxStage.allTracks),
     );
   }
 
@@ -1264,86 +1350,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       }
       return false;
     });
-  }
-
-  void _onControllerEvent(ControllerEvent event) {
-    switch (event.action) {
-      case LooperAction.recordOverdub:
-        add(LooperRecordPressed(event.channel));
-      case LooperAction.stop:
-        add(LooperStopPressed(event.channel));
-      case LooperAction.play:
-        add(LooperPlayPressed(event.channel));
-      case LooperAction.clear:
-        add(LooperClearPressed(event.channel));
-      case LooperAction.undo:
-        add(LooperUndoPressed(event.channel));
-      case LooperAction.playAll:
-        add(const LooperPlayAllPressed());
-      case LooperAction.stopAll:
-        add(const LooperStopAllPressed());
-      case LooperAction.tapTempo:
-        _repository.tapTempo();
-      case LooperAction.toggleMetronome:
-        _toggleMetronome();
-      case LooperAction.cancelArm:
-        _cancelPendingArms();
-    }
-  }
-
-  /// Toggles the click between silent and audible (D20's `toggleMetronome`
-  /// action). A pedal/controller press has only one gesture to spend, so this
-  /// collapses the 4-value [ClickMode] to a simple on/off toggle — off vs.
-  /// [ClickMode.rec] — rather than trying to remember which of the three
-  /// audible modes was last selected; picking a *specific* mode is what the
-  /// tempo settings page (backed by `TempoCubit`) is for. Documented
-  /// simplification (A5): a controller press always lands on
-  /// [ClickMode.rec], never restoring [ClickMode.recFirst] /
-  /// [ClickMode.playRec].
-  ///
-  /// Persisted like every other bloc-driven mutation in this file (compare
-  /// [LooperTrackRecordTimingChanged]): safe to do here without a second
-  /// cache to
-  /// keep in sync, because the tempo settings UI reads the *live* click mode
-  /// from [TransportState] rather than from a cached cubit value — see
-  /// `TempoSettingsSection`'s class doc.
-  void _toggleMetronome() {
-    final off = state.transport.clickMode == ClickMode.off;
-    final next = off ? ClickMode.rec : ClickMode.off;
-    _repository.setClickMode(next);
-    unawaited(_settings?.saveClickMode(next.code));
-  }
-
-  /// Cancels every track's pending quantized/signal-triggered record arm
-  /// (D20's global `cancelArm` action).
-  ///
-  /// There is no standalone disarm entry point in the engine's public API:
-  /// `le_cancel_arm` (`engine_commands.c`) is file-private, invoked only as a
-  /// side effect of a second `RECORD` press on the SAME armed channel
-  /// (`engine_commands.c:699-751` — "second press before the boundary
-  /// cancels the pending action"). Re-pressing record on every pending track
-  /// reuses that existing toggle behavior instead of adding a new native
-  /// export/FFI passthrough for a single-purpose disarm call.
-  ///
-  /// Reads [LooperRepository.state] — a fresh synchronous engine
-  /// snapshot — rather than this bloc's own [state], which is only as
-  /// current as the last ~16 ms poll tick (`LooperRepository`'s snapshot
-  /// timer). That narrows, but cannot fully close, a TOCTOU race inherent
-  /// to any command that acts on a read of async engine state: if a
-  /// pending arm's boundary fires natively between this read and the
-  /// `record()` FFI call landing, the engine's own `armed[channel]`
-  /// staleness check (`engine_commands.c`) clears `armed` first and falls
-  /// through to arming a FRESH action instead of cancelling — so a cancel
-  /// press landing right at a boundary can rarely re-arm instead of
-  /// cancel. Accepted as-is (not a native-engine fix, out of scope for this
-  /// UI-layer PR): the window is now on the order of one synchronous call's
-  /// latency rather than a full poll interval, the failure is
-  /// self-correcting (a second cancel press works), and it never leaves a
-  /// track worse off than "still armed."
-  void _cancelPendingArms() {
-    for (final track in _repository.state.tracks) {
-      if (track.pending) _repository.record(channel: track.channel);
-    }
   }
 
   @override
@@ -1363,7 +1369,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     _pendingFxSaves.clear();
     unawaited(_subscription.cancel());
     unawaited(_fxReplaySubscription.cancel());
-    unawaited(_controllerSubscription?.cancel());
     return super.close();
   }
 }

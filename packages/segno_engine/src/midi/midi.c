@@ -79,8 +79,13 @@ le_midi_kind le_midi_parse(uint8_t status, uint8_t data1, uint8_t data2,
         p.value = (uint8_t)(data2 & 0x7Fu);
         p.kind = LE_MIDI_CC;
         break;
+      case 0xC0u: /* Program Change: data2 is not part of this message. */
+        p.number = (uint8_t)(data1 & 0x7Fu);
+        p.value = 127;
+        p.kind = LE_MIDI_PROGRAM;
+        break;
       default:
-        /* 0xA0 aftertouch, 0xC0 program change, 0xD0 channel pressure,
+        /* 0xA0 aftertouch, 0xD0 channel pressure,
          * 0xE0 pitch bend, 0xF0 system/real-time/SysEx: all ignored. */
         p.kind = LE_MIDI_IGNORE;
         break;
@@ -175,6 +180,9 @@ int32_t le_midi_close(le_midi* m) {
     m->backend->close(m); /* idempotent: no-op when no state is set */
   }
   m->backend_state = NULL;
+  /* The producer is quiescent: no old ring entry may reach a later port. */
+  atomic_store_explicit(&m->head, 0, memory_order_relaxed);
+  atomic_store_explicit(&m->tail, 0, memory_order_relaxed);
   atomic_store_explicit(&m->is_open, 0, memory_order_release);
   return LE_OK;
 }

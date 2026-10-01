@@ -8,6 +8,7 @@ class _InMemoryStore implements KeyValueStore {
   String? failNextReadKey;
   String? failAfterWriteKey;
   String? failOnSetValue;
+  String? discardNextWriteKey;
 
   @override
   Future<int?> getInt(String key) async => values[key] as int?;
@@ -26,6 +27,10 @@ class _InMemoryStore implements KeyValueStore {
 
   @override
   Future<void> setString(String key, String value) async {
+    if (discardNextWriteKey == key) {
+      discardNextWriteKey = null;
+      return;
+    }
     if (value == failOnSetValue) {
       throw StateError('checkpoint restoration refused');
     }
@@ -881,18 +886,139 @@ void main() {
     });
   });
 
-  group('controller mappings', () {
-    test('returns null when nothing is stored', () async {
-      expect(await repository.loadControllerMappings(), isNull);
+  group('MIDI configuration', () {
+    test('is absent until explicitly saved', () async {
+      expect(await repository.loadMidiConfiguration(), isNull);
     });
 
-    test('round-trips the opaque blob under the global key', () async {
-      const blob = '[{"bind":"continuous","kind":"midiCc","id":11}]';
-      await repository.saveControllerMappings(blob);
-
-      expect(await repository.loadControllerMappings(), blob);
-      expect(store.values['controller.mappings'], blob);
+    test('round-trips the opaque current setup', () async {
+      const encoded = '{"modePress":"mute","recordHold":"none"}';
+      await repository.saveMidiConfiguration(encoded);
+      expect(await repository.loadMidiConfiguration(), encoded);
     });
+
+    test(
+      'before-write refusal preserves checkpoint and permits same-value repair',
+      () async {
+        const prior = '{"version":1,"enabled":true,"mappings":[]}';
+        await repository.saveMidiConfiguration(prior);
+        store.failNextKey = 'midi.configuration';
+        await expectLater(
+          repository.saveMidiConfiguration(prior),
+          throwsA(
+            isA<MidiSettingsSaveException>().having(
+              (e) => e.checkpointRestored,
+              'restored',
+              isTrue,
+            ),
+          ),
+        );
+        expect(await repository.loadMidiConfiguration(), prior);
+        await repository.saveMidiConfiguration(prior);
+        expect(await repository.loadMidiConfiguration(), prior);
+      },
+    );
+
+    test('silent dropped write cannot report confirmed success', () async {
+      const prior = '{"version":1,"enabled":true,"mappings":[]}';
+      await repository.saveMidiConfiguration(prior);
+      store.discardNextWriteKey = 'midi.configuration';
+      await expectLater(
+        repository.saveMidiConfiguration(
+          '{"version":1,"enabled":false,"mappings":[]}',
+        ),
+        throwsA(
+          isA<MidiSettingsSaveException>().having(
+            (e) => e.checkpointRestored,
+            'restored',
+            isTrue,
+          ),
+        ),
+      );
+      expect(await repository.loadMidiConfiguration(), prior);
+    });
+
+    test('write-then-throw restores the exact prior setup', () async {
+      const prior = '{"custom":"prior bytes"}';
+      await repository.saveMidiConfiguration(prior);
+      store.failAfterWriteKey = 'midi.configuration';
+
+      await expectLater(
+        repository.saveMidiConfiguration('{"modePress":"fx"}'),
+        throwsA(
+          isA<MidiSettingsSaveException>()
+              .having((error) => error.cause, 'cause', isA<StateError>())
+              .having((error) => error.checkpointRestored, 'restored', isTrue),
+        ),
+      );
+      expect(await repository.loadMidiConfiguration(), prior);
+    });
+
+    test('write-then-throw preserves an absent setup key', () async {
+      store.failAfterWriteKey = 'midi.configuration';
+
+      await expectLater(
+        repository.saveMidiConfiguration('{"modePress":"fx"}'),
+        throwsA(
+          isA<MidiSettingsSaveException>().having(
+            (error) => error.checkpointRestored,
+            'restored',
+            isTrue,
+          ),
+        ),
+      );
+      expect(await repository.loadMidiConfiguration(), isNull);
+      expect(store.values.containsKey('midi.configuration'), isFalse);
+    });
+
+    test('checkpoint read refusal does not attempt a setup write', () async {
+      const prior = '{"custom":"prior bytes"}';
+      await repository.saveMidiConfiguration(prior);
+      store.failNextReadKey = 'midi.configuration';
+
+      await expectLater(
+        repository.saveMidiConfiguration('{"modePress":"fx"}'),
+        throwsA(
+          isA<MidiSettingsSaveException>()
+              .having((error) => error.cause, 'cause', isA<StateError>())
+              .having(
+                (error) => error.checkpointRestored,
+                'checkpoint confirmed',
+                isFalse,
+              ),
+        ),
+      );
+      expect(await repository.loadMidiConfiguration(), prior);
+    });
+
+    test(
+      'rollback refusal reports the original and recovery failures',
+      () async {
+        const prior = '{"custom":"prior bytes"}';
+        await repository.saveMidiConfiguration(prior);
+        store
+          ..failAfterWriteKey = 'midi.configuration'
+          ..failOnSetValue = prior;
+
+        await expectLater(
+          repository.saveMidiConfiguration('{"modePress":"fx"}'),
+          throwsA(
+            isA<MidiSettingsSaveException>()
+                .having((error) => error.cause, 'cause', isA<StateError>())
+                .having(
+                  (error) => error.restoreFailure,
+                  'restore failure',
+                  isA<StateError>(),
+                )
+                .having(
+                  (error) => error.checkpointRestored,
+                  'restored',
+                  isFalse,
+                ),
+          ),
+        );
+      },
+    );
   });
 
   group('pedal setup', () {
