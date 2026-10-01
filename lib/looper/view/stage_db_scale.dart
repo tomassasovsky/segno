@@ -14,11 +14,27 @@ import 'package:segno/theme/theme.dart';
 class StageDbScale extends StatelessWidget {
   /// Creates a [StageDbScale]. [trailing] puts the marks on the run's right
   /// side, left-aligned against the last column.
-  const StageDbScale({required this.trailing, super.key});
+  ///
+  /// [topInset] and [bottomInset] default to the Track view's column, whose
+  /// meter this scale was drawn for. The Mixer's strip puts its meter
+  /// somewhere else in the same height, so it passes its own — the scale has
+  /// to line up with the meter beside it, whichever view is showing.
+  const StageDbScale({
+    required this.trailing,
+    this.topInset = TrackColumn.meterTopInset,
+    this.bottomInset = TrackColumn.meterBottomInset,
+    super.key,
+  });
 
   /// Whether this scale sits after the run (marks left-aligned) rather than
   /// before it (right-aligned).
   final bool trailing;
+
+  /// The gap above the meter the marks span.
+  final double topInset;
+
+  /// The gap below it.
+  final double bottomInset;
 
   /// The scale's width — the pen's 38.
   static const double width = 38;
@@ -43,10 +59,7 @@ class StageDbScale extends StatelessWidget {
       child: SizedBox(
         width: width,
         child: Padding(
-          padding: const EdgeInsets.only(
-            top: TrackColumn.meterTopInset,
-            bottom: TrackColumn.meterBottomInset,
-          ),
+          padding: EdgeInsets.only(top: topInset, bottom: bottomInset),
           child: LayoutBuilder(
             builder: (context, constraints) {
               final span = constraints.maxHeight;

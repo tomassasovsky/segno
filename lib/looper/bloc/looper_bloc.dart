@@ -498,10 +498,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     });
     on<LooperTrackSoloToggled>((event, _) {
       unawaited(
-        _mixSettings.setTrackSolo(
-          channel: event.channel,
-          solo: event.solo,
-        ),
+        _mixSettings.toggleTrackSolo(channel: event.channel),
       );
     });
     on<LooperSoloCleared>((_, _) {

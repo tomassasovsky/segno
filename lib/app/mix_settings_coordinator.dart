@@ -78,7 +78,9 @@ enum _Control {
   outputMono,
   outputBalance,
   reset,
-  solo,
+  soloOn,
+  soloOff,
+  soloToggle,
   clearSolo,
 }
 
@@ -156,11 +158,34 @@ class MixSettingsCoordinator {
       _queuedGeneration = generation;
       _queuedDevice = device;
     }
+    var queuedTarget = target;
+    var queuedEdit = edit;
+    if (target.$1 == _Control.clearSolo) {
+      _pending.removeWhere((key, _) => _soloControl(key.$1));
+    } else if (_soloControl(target.$1)) {
+      final previous = _pending.keys
+          .where((key) => key.$2 == target.$2 && _soloControl(key.$1))
+          .firstOrNull;
+      if (previous != null) _pending.remove(previous);
+      if (target.$1 == _Control.soloToggle) {
+        if (previous?.$1 == _Control.soloToggle) {
+          // Two unsubmitted presses cancel, without retaining a closure chain.
+          return _draining ?? Future.value(_applied);
+        }
+        final control = switch (previous?.$1) {
+          _Control.soloOn => _Control.soloOff,
+          _Control.soloOff => _Control.soloOn,
+          _ => _Control.soloToggle,
+        };
+        queuedTarget = (control, target.$2, 0);
+        queuedEdit = _soloEdit(control, target.$2);
+      }
+    }
     // Reinsertion preserves the ordering of overlapping controls (Reset then
     // fader, or a track fader then its lane fader) without retaining old moves.
     _pending
-      ..remove(target)
-      ..[target] = edit;
+      ..remove(queuedTarget)
+      ..[queuedTarget] = queuedEdit;
     return _draining ??= _drain().whenComplete(() => _draining = null);
   }
 
@@ -170,10 +195,15 @@ class MixSettingsCoordinator {
   Future<MixSettingsOutcome> _drain() async {
     var outcome = _applied;
     while (_pending.isNotEmpty) {
-      final edits = _pending.values.toList();
+      // Temporary audibility never joins a durable write that can fail.
+      // Keep each contiguous group ordered within this same publication owner.
+      final temporary = _temporaryControl(_pending.keys.first.$1);
+      final targets = _pending.keys
+          .takeWhile((key) => _temporaryControl(key.$1) == temporary)
+          .toList();
+      final edits = [for (final target in targets) _pending.remove(target)!];
       final generation = _queuedGeneration!;
       final device = _queuedDevice!;
-      _pending.clear();
       final settled = _repository.mixSettingsSettled
           ? EngineResult.ok
           : await _repository.settleMixSettings();
@@ -626,12 +656,39 @@ class MixSettingsCoordinator {
   }) {
     if (!_track(channel)) return _reject();
     return _submit(
-      (_Control.solo, channel, 0),
-      (value) => value.copyWith(
-        trackSolos: {...value.trackSolos, channel: solo},
-      ),
+      (solo ? _Control.soloOn : _Control.soloOff, channel, 0),
+      _soloEdit(solo ? _Control.soloOn : _Control.soloOff, channel),
     );
   }
+
+  /// Toggles against ordered shared intent, including unsubmitted presses.
+  Future<MixSettingsOutcome> toggleTrackSolo({required int channel}) {
+    if (!_track(channel)) return _reject();
+    return _submit(
+      (_Control.soloToggle, channel, 0),
+      _soloEdit(_Control.soloToggle, channel),
+    );
+  }
+
+  static bool _soloControl(_Control control) =>
+      control == _Control.soloOn ||
+      control == _Control.soloOff ||
+      control == _Control.soloToggle;
+
+  static bool _temporaryControl(_Control control) =>
+      _soloControl(control) || control == _Control.clearSolo;
+
+  static _Edit _soloEdit(_Control control, int channel) =>
+      (value) => value.copyWith(
+        trackSolos: {
+          ...value.trackSolos,
+          channel: switch (control) {
+            _Control.soloOn => true,
+            _Control.soloOff => false,
+            _ => !(value.trackSolos[channel] ?? false),
+          },
+        },
+      );
 
   /// Clears the temporary Solo set in the same ordered control stream.
   Future<MixSettingsOutcome> clearSolo() => _submit((

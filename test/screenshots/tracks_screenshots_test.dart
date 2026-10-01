@@ -288,6 +288,77 @@ void main() {
   );
 
   testWidgets(
+    'the Mixer view (MAIN VIEWS / Mixer)',
+    (tester) async {
+      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
+      for (var i = 0; i < names.length; i++) {
+        await tracks.rename(i, names[i]);
+      }
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            // Panned left, a touch under unity, both sides metering.
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 96000,
+              volume: 0.8,
+              pan: -0.4,
+              solo: true,
+              peakL: 0.9,
+              peakR: 0.55,
+            ),
+            // Soloed, above unity.
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 96000,
+              volume: 1.4,
+              solo: true,
+              peakL: 0.62,
+              peakR: 0.68,
+            ),
+            // Muted playback keeps its fader level but meters no signal.
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              lengthFrames: 96000,
+              muted: true,
+            ),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('stage_view_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('stage_view_mixer')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_mixer_window.png'),
+      );
+      // The same scene must keep the shared meter scale aligned when the
+      // desktop window is smaller than the appliance panel.
+      tester.view.physicalSize = const Size(800, 600);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_mixer_compact_window.png'),
+      );
+    },
+    skip: !hasScreenshotFonts,
+  );
+
+  testWidgets(
     'console main window with the device-lost banner (STAGE / device-lost)',
     (tester) async {
       // The one standing loss condition: the pinned interface is gone, so the

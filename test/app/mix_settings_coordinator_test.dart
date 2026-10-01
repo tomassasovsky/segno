@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -40,7 +41,7 @@ class _Persistence implements MixSettingsPersistence {
   }
 }
 
-EngineSnapshot _rig() => const EngineSnapshot(
+EngineSnapshot _rig({int trackCount = 1}) => EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
   bufferFrames: 128,
@@ -54,15 +55,16 @@ EngineSnapshot _rig() => const EngineSnapshot(
   latencyState: engine.LatencyState.idle,
   measuredLatencyMs: -1,
   tracks: [
-    TrackSnapshot(
-      state: TrackState.empty,
-      volume: 1,
-      muted: false,
-      lengthFrames: 0,
-      undoDepth: 0,
-      rms: 0,
-      peak: 0,
-    ),
+    for (var channel = 0; channel < trackCount; channel++)
+      const TrackSnapshot(
+        state: TrackState.empty,
+        volume: 1,
+        muted: false,
+        lengthFrames: 0,
+        undoDepth: 0,
+        rms: 0,
+        peak: 0,
+      ),
   ],
 );
 
@@ -369,6 +371,204 @@ void main() {
     expect((await coordinator.setTrackPan(.2)).isOk, isTrue);
   });
 
+  test(
+    'queued temporary Solo survives a neighboring persistent refusal',
+    () async {
+      persistence.writeGate = Completer<void>();
+      final first = coordinator.setTrackPan(.2);
+      await _turn();
+      final persistent = coordinator.setTrackVolume(.4);
+      final solo = coordinator.setTrackSolo(channel: 0, solo: true);
+      persistence.refuseWrite = true;
+      persistence.writeGate!.complete();
+      await Future.wait([first, persistent, solo]);
+      expect(repository.trackPan(0), 0);
+      expect(repository.state.track.volume, 1);
+      expect(repository.trackSoloed(0), isTrue);
+      expect(audio.trackSolo[0], isTrue);
+      expect(persistence.durable, 'exact prior durable value');
+      expect(persistence.candidates, hasLength(2));
+    },
+  );
+
+  for (final presses in [2, 3, 1000]) {
+    test('queued Solo reduces $presses presses while storage awaits', () async {
+      persistence.writeGate = Completer<void>();
+      final first = coordinator.setTrackPan(.2);
+      await _turn();
+      for (var press = 0; press < presses; press++) {
+        unawaited(coordinator.toggleTrackSolo(channel: 0));
+      }
+      persistence.writeGate!.complete();
+      await first;
+      expect(repository.trackSoloed(0), presses.isOdd);
+      expect(persistence.candidates, hasLength(1));
+      expect(
+        audio.calls.where((call) => call == 'setMix').length,
+        presses.isOdd ? 2 : 1,
+      );
+    });
+  }
+
+  test(
+    'Solo toggle waits for callback then inverts its confirmed result',
+    () async {
+      audio
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      final first = coordinator.toggleTrackSolo(channel: 0);
+      await _turn();
+      expect(repository.trackSoloed(0), isFalse);
+      final second = coordinator.toggleTrackSolo(channel: 0);
+      audio
+        ..publishMixCommands = true
+        ..publishMix()
+        ..commandsAreSettled = true;
+      await Future.wait([first, second]);
+      expect(repository.trackSoloed(0), isFalse);
+      expect(persistence.candidates, isEmpty);
+      expect(audio.calls.where((call) => call == 'setMix'), hasLength(2));
+    },
+  );
+
+  test(
+    'queued explicit Solo, toggle and Clear Solo preserve their order',
+    () async {
+      persistence.writeGate = Completer<void>();
+      final first = coordinator.setTrackPan(.2);
+      await _turn();
+      unawaited(coordinator.setTrackSolo(channel: 0, solo: true));
+      unawaited(coordinator.toggleTrackSolo(channel: 0)); // false
+      unawaited(coordinator.toggleTrackSolo(channel: 1));
+      unawaited(coordinator.clearSolo()); // cancels both preceding edits
+      unawaited(coordinator.toggleTrackSolo(channel: 1)); // true after clear
+      unawaited(coordinator.setTrackSolo(channel: 2, solo: false));
+      unawaited(coordinator.toggleTrackSolo(channel: 2)); // true
+      unawaited(coordinator.toggleTrackSolo(channel: 3));
+      unawaited(coordinator.setTrackSolo(channel: 3, solo: false));
+      persistence.writeGate!.complete();
+      await first;
+      expect(
+        [
+          for (var channel = 0; channel < 4; channel++)
+            repository.trackSoloed(channel),
+        ],
+        [false, true, true, false],
+      );
+      expect(persistence.candidates, hasLength(1));
+    },
+  );
+
+  test(
+    'reset publishes all eight gains and pans atomically, '
+    'preserving other facts',
+    () async {
+      audio.nextSnapshot = _rig(trackCount: 8);
+      final seed = MixSettingsSnapshot(
+        trackPans: {
+          for (var channel = 0; channel < 8; channel++)
+            channel: -.7 + channel / 10,
+        },
+        laneLevels: {
+          for (var channel = 0; channel < 8; channel++)
+            (channel, 0): .2 + channel / 10,
+          (7, 7): .4,
+        },
+        trackSolos: const {1: true, 6: true},
+        laneOutputs: const {(7, 7): 12},
+        inputSetup: InputSetup(trimDb: const {0: -6}, pan: const {0: -.25}),
+        monitorLevels: const {0: .6},
+        outputSetup: const OutputSetup(
+          buses: {0: OutputBus(level: .7, muted: true)},
+        ),
+      );
+      expect(repository.applyMixSettings(seed), EngineResult.ok);
+      expect(repository.record(), EngineResult.ok);
+      final sourceImages = Map.of(audio.sourceImages);
+      expect(sourceImages[(0, 0)]!.pan, -.25);
+      final pcm = Float32List.fromList([.125, -.375, .5]);
+      audio
+        ..importLayer(0, 0, 0, pcm)
+        ..laneMute[(0, 0)] = true
+        ..laneFxParam[(0, 0, 0, 0)] = .35
+        ..calls.clear()
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      final reset = coordinator.resetMixer();
+      await _turn();
+      expect(repository.mixSettingsSnapshot, seed);
+      expect(persistence.candidates, hasLength(1));
+      for (var channel = 0; channel < 8; channel++) {
+        expect(audio.pendingMix!.lanes[(channel, 0)]!.gain, 1);
+        expect(audio.pendingMix!.lanes[(channel, 0)]!.pan, 0);
+      }
+      expect(audio.pendingMix!.lanes[(7, 7)]!.gain, 1);
+      audio
+        ..publishMix()
+        ..commandsAreSettled = true;
+      expect((await reset).isOk, isTrue);
+      for (var channel = 0; channel < 8; channel++) {
+        expect(repository.trackPan(channel), 0);
+        expect(audio.liveMix[(channel, 0)]!.gain, 1);
+      }
+      final after = repository.mixSettingsSnapshot;
+      expect(after.trackSolos, {1: true, 6: true});
+      expect(after.laneOutputs, {(7, 7): 12});
+      expect(after.inputSetup, seed.inputSetup);
+      expect(after.outputSetup, seed.outputSetup);
+      expect(after.monitorLevels, {0: .6});
+      expect(audio.sourceImages, sourceImages);
+      expect(audio.lanePan[(0, 0)], -.25);
+      expect(audio.laneMute[(0, 0)], isTrue);
+      expect(audio.laneFxParam[(0, 0, 0, 0)], .35);
+      expect(audio.importedLayers[(0, 0, 0)], orderedEquals(pcm));
+      expect(audio.calls, ['setMix']);
+      expect(persistence.candidates.single.trackPans, isEmpty);
+      expect(persistence.candidates.single.laneLevels, isEmpty);
+    },
+  );
+
+  for (final refusal in [
+    'storage after write',
+    'native admission',
+    'callback',
+  ]) {
+    test(
+      'reset $refusal refusal retains exact mix and durable checkpoint',
+      () async {
+        final seed = MixSettingsSnapshot(
+          trackPans: const {0: -.5, 7: .7},
+          laneLevels: const {(0, 0): .2, (7, 7): .8},
+          trackSolos: const {1: true},
+        );
+        expect(repository.applyMixSettings(seed), EngineResult.ok);
+        audio.calls.clear();
+        if (refusal == 'storage after write') {
+          persistence.throwAfterWrite = true;
+        }
+        if (refusal == 'native admission') {
+          audio.mixResult = EngineResult.notReady;
+        }
+        if (refusal == 'callback') {
+          audio
+            ..publishMixCommands = false
+            ..commandsAreSettled = false;
+        }
+        final reset = coordinator.resetMixer();
+        await _turn();
+        if (refusal == 'callback') {
+          audio
+            ..pendingMix = null
+            ..commandsAreSettled = true;
+        }
+        expect((await reset).isOk, isFalse);
+        expect(repository.mixSettingsSnapshot, seed);
+        expect(persistence.durable, 'exact prior durable value');
+        expect(persistence.restores, 1);
+      },
+    );
+  }
+
   test('temporary Solo works when durable storage refuses writes', () async {
     persistence.refuseWrite = true;
     expect(
@@ -454,6 +654,31 @@ void main() {
     expect((await coordinator.setTrackPan(.4)).isOk, isTrue);
     expect(repository.trackPan(0), .4);
   });
+
+  test(
+    'session replacement during reset never publishes the old reset',
+    () async {
+      expect(
+        repository.applyMixSettings(
+          MixSettingsSnapshot(
+            trackPans: const {0: -.5, 7: .7},
+            laneLevels: const {(0, 0): .2, (7, 7): .8},
+          ),
+        ),
+        EngineResult.ok,
+      );
+      persistence.writeGate = Completer<void>();
+      final reset = coordinator.resetMixer();
+      await _turn();
+      await repository.applySession(const SessionRig(trackPans: {0: -.2}));
+      audio.calls.clear();
+      persistence.writeGate!.complete();
+      expect((await reset).status, MixSettingsStatus.superseded);
+      expect(audio.calls, isNot(contains('setMix')));
+      expect(repository.trackPan(0), -.2);
+      expect(persistence.durable, 'exact prior durable value');
+    },
+  );
 
   test('session replacement during storage fences the stale edit', () async {
     persistence.writeGate = Completer<void>();

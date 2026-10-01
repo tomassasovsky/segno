@@ -1526,3 +1526,44 @@ review closed thirteen findings, and the app, domain, native, coverage and
 actual desktop checks pass. Current evidence is recorded in
 `docs/reviews/design-routing-surfaces-restack/README.md`; historical checks do
 not certify this reconstruction. Remote CI and the human merge gate remain.
+
+## Slice 3d — visual Mixer integration (#1016 part 3d)
+
+The main display offers Mixer alongside Tracks and Wave, through the existing
+view menu. It keeps the active bank's four columns and the shared selected
+track. Ordinary Tracks retains its single whole-track meter; Mixer displays
+real left/right peaks with an overlaid gain control, pan, Mute, multi-track
+Solo and existing track-FX bypass. The shared dBFS scales follow the measured
+meters when the window resizes. Gain travel and its caption use the separate
+-60 to +6.02 dB gain range, with silence at the lower endpoint.
+
+Touch and encoder edits remain local drafts until committed. Cancel, a changed
+target or session, or an external edit ends the draft. Double tap restores
+unity gain or centered pan. Reset asks for confirmation, then changes gain and
+pan on all eight tracks in one shared transaction; it preserves mute, Solo,
+effects and recorded audio. Hold Solo clears the temporary Solo set.
+
+Solo presses resolve against ordered shared intent, including rapid presses
+before the displayed snapshot catches up. Temporary Solo changes remain
+separate from neighboring durable writes, so a failed volume save cannot
+discard them. Reset retains the existing durable-first publication and exact
+rollback boundary.
+
+This reconstruction builds on verified routing head c7dc3e9f and preserves the
+original Mixer parent 2bca71f. Original slice checks do not certify the new
+candidate. Independent reviews are clean. The final app result combines 2,381
+aggregate passes with one successful stale-golden replay, plus six existing
+skips; app coverage is 93.27%. Strict analysis and the actual 637-file Bloc
+scan pass. Full and compact visuals, actual app controls and the saved Pen
+note are verified. See `docs/reviews/design-mixer-restack/README.md` for proof
+and limitations. Publication and current-head CI remain separate gates; the
+human merge gate remains.
+
+### Explicit remaining owners
+
+FX editing is completed with the actual editor in slice 3f. Until then the
+existing button changes bypass only. Backing and click auxiliary controls
+belong to the media integration: click level has an owner, but click pan and
+backing playback are not represented as working controls here. The foot
+Mixer belongs to the shared performance action model in M3/M4; this visual
+surface does not invent a fourth firmware mode or change the UART protocol.
