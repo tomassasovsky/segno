@@ -1639,43 +1639,7 @@
     "midiLearnBehavior": "Behavior",
     "midiLearnStale": "Missing target",
     "midiLearnStaleDetail": "What this mapping pointed at no longer exists. It does nothing until you point it somewhere else or remove it.",
-    "midiNoControlSource": "Nothing is connected to listen to. Plug in a MIDI controller, or a pedal into a CTRL jack.",
-    "midiCtrlIdle": "CTRL jacks: nothing has reported yet. Move a pedal and its value shows here.",
-    "midiCtrlPercent": "{percent}%",
-    "@midiCtrlPercent": {
-        "description": "An expression pedal's live position, as a percentage of its travel.",
-        "placeholders": {
-            "percent": {
-                "type": "int"
-            }
-        }
-    },
-    "midiCtrlTapToCalibrate": "Tap to calibrate",
-    "midiCtrlCalibrated": "cal",
-    "midiCtrlCalibrateHint": "Sweep the pedal from heel to toe a couple of times, then tap Done. That is where its ends are from now on.",
-    "midiCtrlCalibrateSeen": "Raw {raw}% · reached {min}%–{max}%",
-    "@midiCtrlCalibrateSeen": {
-        "description": "Live line while calibrating an expression pedal: where it is now, and the lowest and highest it has reached, all as raw percent of the board's scale.",
-        "placeholders": {
-            "raw": {
-                "type": "int"
-            },
-            "min": {
-                "type": "int"
-            },
-            "max": {
-                "type": "int"
-            }
-        }
-    },
-    "midiCtrlCalibrateWaiting": "Waiting for the pedal to move.",
-    "midiCtrlCalibrateSaving": "Saving…",
-    "midiCtrlCalibrateLoadError": "Saved pedal calibration could not be loaded. Calibrate the pedal again.",
-    "midiCtrlCalibrateSaveError": "Calibration could not be saved. Tap Done to try again.",
-    "midiCtrlCalibrateResetError": "Calibration could not be reset. Try again.",
-    "midiCtrlCalibrateDone": "Done",
-    "midiCtrlCalibrateCancel": "Cancel",
-    "midiCtrlCalibrateReset": "Reset to automatic",
+    "midiNoControlSource": "No MIDI input is connected. Connect a MIDI controller to learn a mapping.",
     "consoleCtrlRingSwitchControl": "CTRL {jack} · footswitch B",
     "@consoleCtrlRingSwitchControl": {
         "description": "The second switch of a two-switch pedal on a CTRL jack's ring (the B of a BOSS FS-6).",
@@ -1686,8 +1650,6 @@
         }
     },
     "midiLearnDeviceMissing": "No MIDI input is connected, so the mappings driven by MIDI are idle. Connect the controller, or relearn a row on whatever you are using now.",
-    "pedalCtrlSwitchDown": "pressed",
-    "pedalCtrlSwitchUp": "released",
     "consoleCtrlSwitchControl": "CTRL {jack} · footswitch",
     "@consoleCtrlSwitchControl": {
         "description": "How a footswitch in one of the console's CTRL jacks is named in a mapping row.",
@@ -5006,5 +4968,272 @@
                 "type": "int"
             }
         }
+    },
+    "externalPedalsTitle": "External pedals",
+    "@externalPedalsTitle": {
+        "description": "The subview of Pedals that sets up what is plugged into the two CTRL jacks."
+    },
+    "externalPedalsSub": "What is plugged into CTRL 1 and CTRL 2, and what it does",
+    "@externalPedalsSub": {
+        "description": "Subtitle of the row that opens External pedals."
+    },
+    "externalJackCtrl1": "CTRL 1",
+    "@externalJackCtrl1": {
+        "description": "The first external control jack, named as the socket is silkscreened."
+    },
+    "externalJackCtrl2": "CTRL 2",
+    "@externalJackCtrl2": {
+        "description": "The second external control jack."
+    },
+    "externalTypeExpression": "Expression",
+    "@externalTypeExpression": {
+        "description": "A continuous pedal on a potentiometer."
+    },
+    "externalTypeSingle": "Single switch",
+    "@externalTypeSingle": {
+        "description": "One switch on the jack."
+    },
+    "externalTypeDual": "Dual switch",
+    "@externalTypeDual": {
+        "description": "Two switches on one ring-tip-sleeve jack."
+    },
+    "externalButton": "Button {number}",
+    "@externalButton": {
+        "description": "Names one switch on the external pedal, numbered from the left as the artwork shows them.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "externalSwitchType": "Switch type",
+    "@externalSwitchType": {
+        "description": "Label of the choice between a momentary and a latching switch."
+    },
+    "externalHardwareMomentary": "Momentary",
+    "@externalHardwareMomentary": {
+        "description": "A switch that closes while held and opens on release."
+    },
+    "externalHardwareLatching": "Latching",
+    "@externalHardwareLatching": {
+        "description": "A switch that flips and stays."
+    },
+    "externalOnChange": "On change",
+    "@externalOnChange": {
+        "description": "The one gesture a latching switch has: its contact changed state."
+    },
+    "externalHoldNote": "Holding runs only the Hold action.",
+    "@externalHoldNote": {
+        "description": "Says that a hold does not also run the press, on a momentary switch that has both."
+    },
+    "externalPressNote": "With no Hold, the Press runs the moment the contact closes.",
+    "@externalPressNote": {
+        "description": "Says why a press with no hold beside it fires immediately."
+    },
+    "externalChangeNote": "Each change of contact runs the action once. A latching switch cannot report how long a foot stayed on it, so it has no hold.",
+    "@externalChangeNote": {
+        "description": "Explains what a latching switch can and cannot do."
+    },
+    "externalContact": "Contact",
+    "@externalContact": {
+        "description": "Accessible name of the dot that shows an external switch's received contact state."
+    },
+    "expressionPosition": "Pedal position",
+    "@expressionPosition": {
+        "description": "Label of the readout showing where the expression pedal is in its taught travel."
+    },
+    "expressionHeel": "Heel",
+    "@expressionHeel": {
+        "description": "The end of an expression pedal's travel with the foot back."
+    },
+    "expressionToe": "Toe",
+    "@expressionToe": {
+        "description": "The end of an expression pedal's travel with the foot forward."
+    },
+    "expressionNoReading": "\u2014",
+    "@expressionNoReading": {
+        "description": "Shown in place of a position when the jack has reported none."
+    },
+    "expressionNotConnected": "Not connected",
+    "@expressionNotConnected": {
+        "description": "Status shown when nothing on a CTRL jack has reported a position."
+    },
+    "expressionCalibrationNeeded": "Calibration needed",
+    "@expressionCalibrationNeeded": {
+        "description": "Status shown when a connected expression pedal has not been taught its travel."
+    },
+    "expressionCalibrate": "Calibrate",
+    "@expressionCalibrate": {
+        "description": "Button that opens the travel-teaching view."
+    },
+    "expressionCalibrateTitle": "Calibrate",
+    "@expressionCalibrateTitle": {
+        "description": "Title of the travel-teaching view."
+    },
+    "expressionTeachTravel": "Teach the pedal's travel",
+    "@expressionTeachTravel": {
+        "description": "Heading of the travel-teaching panel."
+    },
+    "expressionHeelDown": "Heel down",
+    "@expressionHeelDown": {
+        "description": "Heading of the first calibration capture."
+    },
+    "expressionToeDown": "Toe down",
+    "@expressionToeDown": {
+        "description": "Heading of the second calibration capture."
+    },
+    "expressionSetEnd": "Set {end}",
+    "@expressionSetEnd": {
+        "description": "Button that captures one end of the travel. {end} is the lowercase end name.",
+        "placeholders": {
+            "end": {
+                "type": "String"
+            }
+        }
+    },
+    "expressionSetAgain": "Set again",
+    "@expressionSetAgain": {
+        "description": "Button that re-captures an end already captured."
+    },
+    "expressionCalibrateHint": "Move to each end, then set its position.",
+    "@expressionCalibrateHint": {
+        "description": "Instruction shown while teaching an expression pedal's travel."
+    },
+    "expressionCalibrateSpanHint": "Move through more of the pedal's travel.",
+    "@expressionCalibrateSpanHint": {
+        "description": "Shown when the two captured ends are too close together to divide by."
+    },
+    "expressionUseCalibration": "Use calibration",
+    "@expressionUseCalibration": {
+        "description": "Button that stages a captured travel into the draft."
+    },
+    "expressionControls": "Controls",
+    "@expressionControls": {
+        "description": "Heading of the list of what an expression pedal sweeps."
+    },
+    "expressionAddControl": "Add control",
+    "@expressionAddControl": {
+        "description": "Button that starts choosing something for the pedal to sweep."
+    },
+    "expressionEmpty": "Give this pedal something to control.",
+    "@expressionEmpty": {
+        "description": "Shown when an expression pedal sweeps nothing yet."
+    },
+    "expressionRange": "Pedal range",
+    "@expressionRange": {
+        "description": "Heading of the two endpoints of the selected control."
+    },
+    "expressionUnavailable": "Unavailable",
+    "@expressionUnavailable": {
+        "description": "Shown in place of a value when the control a mapping names is gone from the rig."
+    },
+    "expressionUnavailableNote": "This control is no longer available.",
+    "@expressionUnavailableNote": {
+        "description": "Shown in place of the range heading when the selected control is gone."
+    },
+    "expressionChangeControl": "Change control",
+    "@expressionChangeControl": {
+        "description": "Button that repoints the selected mapping at something else."
+    },
+    "expressionRemoveControl": "Remove",
+    "@expressionRemoveControl": {
+        "description": "Button that drops the selected mapping."
+    },
+    "expressionChooseDestination": "Choose a destination",
+    "@expressionChooseDestination": {
+        "description": "Title of the destination picker."
+    },
+    "expressionChooseControl": "Choose a control",
+    "@expressionChooseControl": {
+        "description": "Title of the control picker."
+    },
+    "expressionControlVolume": "Volume",
+    "@expressionControlVolume": {
+        "description": "The name of a track's own fader where the destination is already named."
+    },
+    "expressionControlGain": "Gain",
+    "@expressionControlGain": {
+        "description": "The name of the master output's level where the destination is already named."
+    },
+    "expressionNoControls": "Nothing here can be swept yet.",
+    "@expressionNoControls": {
+        "description": "Shown when a destination offers no continuous control."
+    },
+    "externalActivationChain": "Every effect",
+    "@externalActivationChain": {
+        "description": "An activation on a whole chain rather than one effect in it."
+    },
+    "externalActivationRow": "{name} · Activation",
+    "@externalActivationRow": {
+        "description": "Names an activation in the control picker.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "externalPanelActions": "Actions",
+    "@externalPanelActions": {
+        "description": "Tab showing a button's Press, Hold or On change."
+    },
+    "externalPanelControls": "Controls",
+    "@externalPanelControls": {
+        "description": "Tab showing the effects and parameters a button drives."
+    },
+    "externalControlsEmpty": "Choose what this button controls.",
+    "@externalControlsEmpty": {
+        "description": "Shown when a button drives no effects or parameters."
+    },
+    "externalActiveWhen": "Active when",
+    "@externalActiveWhen": {
+        "description": "Heading of an effect activation's condition."
+    },
+    "externalConditionOn": "On",
+    "@externalConditionOn": {
+        "description": "Condition: while the button is on."
+    },
+    "externalConditionOff": "Off",
+    "@externalConditionOff": {
+        "description": "Condition: while the button is off."
+    },
+    "externalConditionHeld": "Held",
+    "@externalConditionHeld": {
+        "description": "Condition: while a foot is on the button."
+    },
+    "externalConditionReleased": "Released",
+    "@externalConditionReleased": {
+        "description": "Condition: while no foot is on the button."
+    },
+    "externalConditionLatchingNote": "Held and Released need a momentary switch.",
+    "@externalConditionLatchingNote": {
+        "description": "Why two conditions are unavailable on a latching switch."
+    },
+    "externalConditionToggleNote": "Each press toggles On / Off.",
+    "@externalConditionToggleNote": {
+        "description": "Explains the On and Off conditions."
+    },
+    "externalConditionHeldNote": "Active while your foot is down.",
+    "@externalConditionHeldNote": {
+        "description": "Explains the Held condition."
+    },
+    "externalConditionReleasedNote": "Active while your foot is up.",
+    "@externalConditionReleasedNote": {
+        "description": "Explains the Released condition."
+    },
+    "externalButtonValues": "Button values",
+    "@externalButtonValues": {
+        "description": "Heading of a parameter's two values."
+    },
+    "externalValueOnOff": "On / Off",
+    "@externalValueOnOff": {
+        "description": "Value behavior: each press toggles between the two values."
+    },
+    "externalValueHeldReleased": "Held / Released",
+    "@externalValueHeldReleased": {
+        "description": "Value behavior: one value while held, the other when released."
+    },
+    "controllerConsoleMappingsUnavailable": "These saved CTRL mappings are unavailable. Set up the jacks in External pedals.",
+    "@controllerConsoleMappingsUnavailable": {
+        "description": "The retired generic CTRL rows are visible only for removal; External pedals is their only configuration owner."
     }
 }

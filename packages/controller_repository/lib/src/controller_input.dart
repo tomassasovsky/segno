@@ -107,8 +107,24 @@ class MappingTrigger extends Equatable {
       '${midiChannel == null ? '' : '@$midiChannel'})';
 }
 
+/// A physical sample or a source-lifetime boundary.
+sealed class ControllerSourceEvent extends Equatable {
+  const ControllerSourceEvent();
+}
+
+/// A source is no longer available; this is not a physical release action.
+final class ControllerSourceUnavailable extends ControllerSourceEvent {
+  /// Identifies the source whose pending work must be retired.
+  const ControllerSourceUnavailable(this.trigger);
+
+  /// The unavailable physical identity.
+  final MappingTrigger trigger;
+  @override
+  List<Object?> get props => [trigger];
+}
+
 /// A single raw input from a controller source.
-class RawControllerInput extends Equatable {
+class RawControllerInput extends ControllerSourceEvent {
   /// Creates a [RawControllerInput].
   const RawControllerInput({
     required this.kind,
@@ -123,7 +139,7 @@ class RawControllerInput extends Equatable {
   /// The control number: MIDI note or CC number.
   final int id;
 
-  /// The momentary value: note velocity or CC value.
+  /// MIDI velocity/CC (`0..127`) or an exact console sample (`0..255`).
   final int value;
 
   /// The MIDI channel this message arrived on (`0..15`).
