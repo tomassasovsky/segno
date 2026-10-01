@@ -1,5 +1,24 @@
 # MIDI source review
 
+## Published CI correction
+
+The original review below remains the application/native review. After
+publication at `1c7c07ebbce9ed87130e9484d259aed05cc7f616`, an independent
+review covered the complete test-only MIDI coverage correction and its
+production call paths, including all five quality perspectives. It resolved
+one timing-fixture finding and has no unresolved actionable findings.
+No original assertion, threshold or exclusion was removed or weakened.
+
+Current test SHA-256:
+`c8308f8f386493607bde8d6eec63f65755833d7918941868baaeb7143b797672`.
+The current 134-path fingerprint is
+`755a00187a8e6064d218fd552e9581513249d160c9108d3dcf145dc255c3f936`.
+The manifest retains the previous fingerprint for the original review below.
+All other reviewed source, asset and Pen bytes are unchanged. Runtime results
+and remaining CI requirements are in [verification](verification.md).
+
+## Original application/native review
+
 Base and current Git HEAD: `1ef7fb30abd328b86ac481ec71e72c9bbc59e83c`. This is a working-tree review; a later commit requires the coordinator to bind the resulting commit to these reviewed bytes. Exact intended-path hashes and scope are in [the source review](source-review.md#reviewed-file-binding).
 
 One independent source reviewer performed the VGV, architecture, test-quality, simplicity and readiness roles sequentially. These are five review lenses, not five independent reviewers. No delegation, product edits, test execution or UI automation was performed by this reviewer. The coordinator and separate adversarial reviewer supplied execution evidence.

@@ -19,8 +19,9 @@ The 134 changed source, test, asset and Pen paths are bound in
 [source.json](source.json), based on `1ef7fb30abd328b86ac481ec71e72c9bbc59e83c`.
 The original MIDI format, model and wiring commits remain in the ancestry.
 
-- [Verification](verification.md): 2,433 application tests and nine package
-  suites pass, including all configured coverage floors.
+- [Verification](verification.md): 2,306 ordinary application tests pass with
+  screenshot/native-only tests excluded or skipped, meeting the 90% floor.
+  The earlier author-side run and nine package suites are recorded separately.
 - [Adversarial review](adversarial-review.md): 48 pure behavior and 18 runtime
   probes pass, with a failing timestamp-loss negative control.
 - [Source review](source-review.md) and five quality perspectives: one

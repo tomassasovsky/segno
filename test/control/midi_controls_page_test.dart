@@ -88,9 +88,11 @@ void main() {
   late StreamController<MidiInputMessage> messages;
   late _Store store;
   late ControlCubit control;
+  var captureMicros = 0;
   late SettingsTrayCubit tray;
 
   setUp(() {
+    captureMicros = 0;
     looper = _MockLooper();
     devices = _MockMidiDevices();
     looperStates = StreamController<LooperState>.broadcast();
@@ -107,6 +109,10 @@ void main() {
     when(() => looper.sessionRevision).thenReturn(1);
     when(() => looper.trackEffects(any())).thenReturn(const []);
     when(() => looper.allTrackChains()).thenReturn(const {});
+    when(() => looper.allMonitors()).thenReturn(const {});
+    when(() => looper.allLaneChains()).thenReturn(const {});
+    when(() => looper.allTracksEffects).thenReturn(const []);
+    when(() => looper.allTracksChainEnabled).thenReturn(true);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
     when(() => devices.connection).thenReturn(_connection);
@@ -203,6 +209,46 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> tap(WidgetTester tester, String key) async {
+    final target = find.byKey(Key(key));
+    await tester.ensureVisible(target);
+    await tester.tap(target);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> receive(
+    WidgetTester tester,
+    ControllerSourceKind kind,
+    int number,
+    int value, {
+    int channel = 0,
+    MidiInputSession session = const MidiInputSession('usb', 1),
+  }) async {
+    messages.add(
+      MidiInputMessage(
+        session,
+        RawControllerInput(
+          kind: kind,
+          id: number,
+          value: value,
+          midiChannel: channel,
+        ),
+        timestampMicros: captureMicros += 1000,
+      ),
+    );
+    // Capture time, not wall-clock test speed, defines compound freshness.
+    await tester.pump(const Duration(milliseconds: 1));
+  }
+
+  Future<void> pickTrackVolume(WidgetTester tester, int channel) async {
+    await tap(tester, 'expression_kind_recordedTrack');
+    await tap(tester, 'expression_destination_track:$channel');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(TrackVolumeTarget(channel))}',
+    );
+  }
+
   testWidgets('Add chooses an explicit format before Learn begins', (
     tester,
   ) async {
@@ -230,6 +276,334 @@ void main() {
     expect(control.state.midiMappings.byId('m1'), _mapping());
   });
 
+  for (final scenario in [
+    (
+      name: 'CC',
+      protocol: MidiProtocol.standard,
+      kind: ControllerSourceKind.midiCc,
+      number: 23,
+      parameter: null,
+      bank: null,
+      prefix: <(int, int)>[],
+      value: 64,
+    ),
+    (
+      name: 'Note',
+      protocol: MidiProtocol.standard,
+      kind: ControllerSourceKind.midiNote,
+      number: 60,
+      parameter: null,
+      bank: null,
+      prefix: <(int, int)>[],
+      value: 100,
+    ),
+    (
+      name: 'Program',
+      protocol: MidiProtocol.standard,
+      kind: ControllerSourceKind.midiProgram,
+      number: 12,
+      parameter: null,
+      bank: null,
+      prefix: <(int, int)>[],
+      value: 0,
+    ),
+    (
+      name: '14-bit CC',
+      protocol: MidiProtocol.cc14,
+      kind: ControllerSourceKind.midiCc,
+      number: 1,
+      parameter: null,
+      bank: null,
+      prefix: [(1, 64)],
+      value: 7,
+    ),
+    (
+      name: 'NRPN',
+      protocol: MidiProtocol.nrpn,
+      kind: ControllerSourceKind.midiCc,
+      number: 6,
+      parameter: 130,
+      bank: null,
+      prefix: [(99, 1), (98, 2), (6, 64)],
+      value: 7,
+    ),
+    (
+      name: 'Bank Program',
+      protocol: MidiProtocol.bankProgram,
+      kind: ControllerSourceKind.midiProgram,
+      number: 12,
+      parameter: null,
+      bank: 130,
+      prefix: [(0, 1), (32, 2)],
+      value: 0,
+    ),
+    (
+      name: 'Relative CC',
+      protocol: MidiProtocol.relative,
+      kind: ControllerSourceKind.midiCc,
+      number: 23,
+      parameter: null,
+      bank: null,
+      prefix: <(int, int)>[],
+      value: 65,
+    ),
+  ]) {
+    testWidgets('${scenario.name} learns, chooses a target and saves', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tap(tester, 'midi_add_mapping');
+      await tap(tester, 'midi_format_${scenario.protocol.name}');
+      expect(find.byKey(const Key('midi_listening')), findsOneWidget);
+      for (final (number, value) in scenario.prefix) {
+        await receive(
+          tester,
+          ControllerSourceKind.midiCc,
+          number,
+          value,
+          channel: 3,
+        );
+      }
+      await receive(
+        tester,
+        scenario.kind,
+        switch (scenario.protocol) {
+          MidiProtocol.cc14 => 33,
+          MidiProtocol.nrpn => 38,
+          _ => scenario.number,
+        },
+        scenario.value,
+        channel: 3,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_received')), findsOneWidget);
+      expect(control.state.midiMappings.mappings, isEmpty);
+      await tap(tester, 'midi_add_control');
+      await pickTrackVolume(tester, 2);
+      await tap(tester, 'midi_save');
+      final saved = control.state.midiMappings.mappings.single;
+      expect(
+        saved.source,
+        MidiSource(
+          device: 'usb',
+          kind: scenario.kind,
+          number: scenario.number,
+          channel: 3,
+          protocol: scenario.protocol,
+          parameter: scenario.parameter,
+          bank: scenario.bank,
+        ),
+      );
+      expect(
+        saved.controls.single,
+        MidiParameterControl(
+          key: const TrackVolumeTarget(2).canonicalString(),
+          low: 0,
+          high: 1,
+        ),
+      );
+      final persisted =
+          jsonDecode(
+                (await store.getString('midi.configuration'))!,
+              )
+              as Map<String, dynamic>;
+      expect(persisted['mappings'], [saved.toJson()]);
+      expect(control.state.midiEdit, isNull);
+      expect(find.byKey(Key('midi_row_edit_${saved.id}')), findsOneWidget);
+    });
+  }
+
+  testWidgets('Cancel discards a learned source and multiple targets', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tap(tester, 'midi_add_mapping');
+    await tap(tester, 'midi_format_standard');
+    await receive(tester, ControllerSourceKind.midiCc, 23, 64);
+    await tap(tester, 'midi_add_control');
+    await pickTrackVolume(tester, 0);
+    await tap(tester, 'midi_add_control');
+    await pickTrackVolume(tester, 1);
+    expect(find.byType(LoopSlider), findsNWidgets(4));
+    await tap(tester, 'midi_cancel');
+    expect(control.state.midiMappings.mappings, isEmpty);
+    expect(control.state.midiEdit, isNull);
+    expect(await store.getString('midi.configuration'), isNull);
+  });
+
+  testWidgets('channel edits can be cancelled then saved as All or exact', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_channel');
+    await tap(tester, 'midi_channel_omni');
+    expect(control.state.midiMappings.byId('m1')!.source.channel, 0);
+    await tap(tester, 'midi_cancel');
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_channel');
+    await tap(tester, 'midi_channel_omni');
+    await tap(tester, 'midi_save');
+    expect(control.state.midiMappings.byId('m1')!.source.channel, isNull);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_channel');
+    await tap(tester, 'midi_channel_15');
+    await tap(tester, 'midi_save');
+    expect(control.state.midiMappings.byId('m1')!.source.channel, 15);
+  });
+
+  testWidgets('disabled source stays reserved and opens its existing mapping', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    await tap(tester, 'midi_row_enable_m1');
+    expect(control.state.midiMappings.byId('m1')!.enabled, isFalse);
+    await tap(tester, 'midi_add_mapping');
+    await tap(tester, 'midi_format_standard');
+    await receive(tester, ControllerSourceKind.midiCc, 21, 90);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('midi_conflict')), findsOneWidget);
+    await tap(tester, 'midi_edit_existing');
+    expect(find.byKey(const Key('midi_delete')), findsOneWidget);
+    await tap(tester, 'midi_save');
+    expect(control.state.midiMappings.mappings, hasLength(1));
+    expect(control.state.midiMappings.byId('m1')!.enabled, isFalse);
+  });
+
+  testWidgets('failed disable and delete preserve mapping until retry saves', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    final original = await store.getString('midi.configuration');
+    store.refuse = true;
+    await tap(tester, 'midi_row_enable_m1');
+    expect(control.state.midiMappings.byId('m1')!.enabled, isTrue);
+    expect(await store.getString('midi.configuration'), original);
+    store.refuse = false;
+    await tap(tester, 'midi_row_enable_m1');
+    expect(control.state.midiMappings.byId('m1')!.enabled, isFalse);
+    await tap(tester, 'midi_row_edit_m1');
+    store.refuse = true;
+    await tap(tester, 'midi_delete');
+    expect(control.state.midiMappings.byId('m1'), isNotNull);
+    expect(find.byKey(const Key('midi_editor_notice')), findsOneWidget);
+    store.refuse = false;
+    await tap(tester, 'midi_delete');
+    expect(control.state.midiMappings.byId('m1'), isNull);
+    expect(find.byKey(const Key('midi_no_mappings')), findsOneWidget);
+  });
+
+  testWidgets('Resume On after refused Off keeps confirmed enabled state', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    store.refuse = true;
+    await tap(tester, 'midi_control_enabled');
+    expect(control.state.midiRemotePaused, isTrue);
+    store.refuse = false;
+    await tap(tester, 'midi_resume_on');
+    expect(control.state.midiControlEnabled, isTrue);
+    expect(control.state.midiRemotePaused, isFalse);
+    expect(control.state.midiMappings.byId('m1'), _mapping());
+  });
+
+  testWidgets('Learn ignores stale captures and cancel keeps original source', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_learn');
+    await receive(
+      tester,
+      ControllerSourceKind.midiCc,
+      99,
+      64,
+      session: const MidiInputSession('usb', 0),
+    );
+    expect(control.state.midiEdit!.learn!.isListening, isTrue);
+    await tap(tester, 'midi_cancel_learn');
+    await receive(tester, ControllerSourceKind.midiCc, 22, 64);
+    expect(find.byKey(const Key('midi_received')), findsNothing);
+    await tap(tester, 'midi_save');
+    expect(control.state.midiMappings.byId('m1')!.source, _source);
+  });
+
+  testWidgets('Learn timeout allows a fresh successful attempt', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tap(tester, 'midi_add_mapping');
+    await tap(tester, 'midi_format_standard');
+    await tester.pump(const Duration(seconds: 16));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('midi_listening')), findsNothing);
+    expect(find.byKey(const Key('midi_editor_notice')), findsOneWidget);
+    await tap(tester, 'midi_learn');
+    await receive(tester, ControllerSourceKind.midiNote, 61, 100);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('midi_received')), findsOneWidget);
+    await tap(tester, 'midi_cancel');
+    expect(control.state.midiEdit, isNull);
+  });
+
+  testWidgets('repair replaces a missing target only on Save, keeping range', (
+    tester,
+  ) async {
+    final missing = MidiMapping(
+      id: 'm1',
+      source: _source,
+      behavior: MidiBehavior.continuous,
+      controls: [
+        MidiParameterControl(key: 'retired:parameter', low: 0.3, high: 0.7),
+      ],
+    );
+    await pump(tester, savedMapping: missing);
+    expect(find.byKey(const Key('midi_row_warning_m1')), findsOneWidget);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_control_change_retired:parameter');
+    await pickTrackVolume(tester, 3);
+    expect(find.byKey(const Key('midi_editor_notice')), findsOneWidget);
+    expect(control.state.midiMappings.byId('m1'), missing);
+    await tap(tester, 'midi_save');
+    expect(
+      control.state.midiMappings.byId('m1')!.controls.single,
+      MidiParameterControl(
+        key: const TrackVolumeTarget(3).canonicalString(),
+        low: 0.3,
+        high: 0.7,
+      ),
+    );
+    expect(find.byKey(const Key('midi_row_warning_m1')), findsNothing);
+  });
+
+  testWidgets('action mapping exposes button edges and refuses knob formats', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_knob_false');
+    await tap(tester, 'midi_behavior_toggle');
+    await tap(tester, 'midi_add_control');
+    await tap(tester, 'midi_performance_actions');
+    await tap(tester, 'pedal_choice_group_transport');
+    await tap(tester, 'pedal_choice_command:undo');
+    await tap(tester, 'midi_trigger_command:undo_release');
+    await tap(tester, 'midi_knob_true');
+    expect(find.byKey(const Key('midi_editor_notice')), findsOneWidget);
+    await tap(tester, 'midi_format');
+    await tap(tester, 'midi_format_cc14');
+    expect(control.state.midiEdit!.learn, isNull);
+    expect(find.byKey(const Key('midi_editor_notice')), findsOneWidget);
+    await tap(tester, 'midi_save');
+    final saved = control.state.midiMappings.byId('m1')!;
+    expect(saved.behavior, MidiBehavior.toggle);
+    expect(saved.source, _source);
+    expect(
+      saved.controls.whereType<MidiActionControl>().single.trigger,
+      MidiEdge.release,
+    );
+  });
+
   testWidgets('pending Save locks route and editing until receipt', (
     tester,
   ) async {
@@ -248,6 +622,126 @@ void main() {
     gate.complete();
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('midi_no_mappings')), findsNothing);
+  });
+
+  testWidgets('Back unwinds pickers without saving or learning out of sight', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    await tap(tester, 'midi_add_mapping');
+    await tap(tester, 'loop_settings_back');
+    expect(control.state.midiEdit, isNull);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_channel');
+    await tap(tester, 'loop_settings_back');
+    await tap(tester, 'midi_format');
+    await tap(tester, 'loop_settings_back');
+    await tap(tester, 'midi_learn');
+    await tap(tester, 'midi_add_control');
+    expect(control.state.midiEdit!.learn, isNull);
+    await receive(tester, ControllerSourceKind.midiCc, 29, 100);
+    await tap(tester, 'expression_kind_recordedTrack');
+    await tap(tester, 'expression_destination_track:1');
+    await tap(tester, 'loop_settings_back');
+    expect(
+      find.byKey(const Key('expression_destination_track:1')),
+      findsOneWidget,
+    );
+    await tap(tester, 'loop_settings_back');
+    expect(find.byKey(const Key('midi_source_name')), findsOneWidget);
+    await tap(tester, 'loop_settings_back');
+    expect(control.state.midiEdit, isNull);
+    expect(control.state.midiMappings.byId('m1'), _mapping());
+  });
+
+  testWidgets('closing action choices preserves the saved target and range', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_add_control');
+    await tap(tester, 'midi_performance_actions');
+    await tap(tester, 'pedal_choice_close');
+    await tap(tester, 'loop_settings_back');
+    await tap(tester, 'midi_save');
+    expect(control.state.midiMappings.byId('m1'), _mapping());
+  });
+
+  testWidgets('device selection discards only the unfinished mapping draft', (
+    tester,
+  ) async {
+    const second = MidiConnection(
+      devices: [
+        MidiDevice(id: 'usb', name: 'USB controller'),
+        MidiDevice(id: 'pads', name: 'Drum pads'),
+      ],
+      selectedId: 'usb',
+      selectedName: 'USB controller',
+      status: MidiConnectionStatus.connected,
+    );
+    when(() => devices.connection).thenReturn(second);
+    await pump(tester, seeded: true);
+    await tap(tester, 'midi_device_pads');
+    verify(() => devices.select('pads')).called(1);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_channel');
+    await tap(tester, 'midi_channel_omni');
+    when(() => devices.session).thenReturn(const MidiInputSession('pads', 2));
+    connections.add(
+      second.copyWith(selectedId: 'pads', selectedName: 'Drum pads'),
+    );
+    await tester.pumpAndSettle();
+    expect(control.state.midiEdit, isNull);
+    expect(find.byKey(const Key('midi_no_mappings')), findsOneWidget);
+    expect(control.state.midiMappings.byId('m1'), _mapping());
+    expect(find.byKey(const Key('midi_source_name')), findsNothing);
+  });
+
+  for (final status in [
+    MidiConnectionStatus.connecting,
+    MidiConnectionStatus.error,
+    MidiConnectionStatus.deviceGone,
+  ]) {
+    testWidgets(
+      '$status retains missing controller mappings and disables Learn',
+      (
+        tester,
+      ) async {
+        final unavailable = MidiConnection(
+          selectedId: 'usb',
+          selectedName: 'USB controller',
+          status: status,
+        );
+        when(() => devices.connection).thenReturn(unavailable);
+        await pump(tester, seeded: true);
+        expect(find.byKey(const Key('midi_device_usb')), findsOneWidget);
+        expect(find.byKey(const Key('midi_row_warning_m1')), findsOneWidget);
+        await tap(tester, 'midi_row_edit_m1');
+        expect(
+          tester
+              .widget<LoopOutlinedButton>(find.byKey(const Key('midi_learn')))
+              .onTap,
+          isNull,
+        );
+        await tap(tester, 'midi_cancel');
+        expect(control.state.midiMappings.byId('m1'), _mapping());
+      },
+    );
+  }
+
+  testWidgets('no controller prevents adding an unaddressable mapping', (
+    tester,
+  ) async {
+    when(() => devices.connection).thenReturn(const MidiConnection());
+    await pump(tester);
+    expect(find.byKey(const Key('midi_no_devices')), findsOneWidget);
+    expect(
+      tester
+          .widget<LoopOutlinedButton>(find.byKey(const Key('midi_add_mapping')))
+          .onTap,
+      isNull,
+    );
+    expect(control.state.midiEdit, isNull);
   });
 
   testWidgets('failed remote Off offers separate Retry Off and Resume On', (

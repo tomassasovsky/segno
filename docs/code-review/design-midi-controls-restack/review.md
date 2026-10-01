@@ -1,5 +1,19 @@
 # MIDI bug-focused review
 
+## Current correction binding
+
+The reviewed test-only correction builds on published head
+`1c7c07ebbce9ed87130e9484d259aed05cc7f616`. Its independent source and five-role
+review is clean; the single timing-fixture finding was fixed with deterministic
+capture timestamps. All application/native bytes below are unchanged.
+The effective manifest fingerprint is
+`755a00187a8e6064d218fd552e9581513249d160c9108d3dcf145dc255c3f936`.
+The ordinary app run passes 2,306 tests and 90.0039% coverage, with static gates
+clean. The original 89.07% CI failure remains recorded; new published-head CI
+must pass before readiness. See [verification](../../reviews/design-midi-controls-restack/verification.md).
+
+## Original application/native review
+
 Base and current Git HEAD: `1ef7fb30abd328b86ac481ec71e72c9bbc59e83c`. Reviewed the intended working diff and untracked product files, then all repair and fixture deltas. Exact hashes, fingerprint and the complete scope are in [the source report](../../reviews/design-midi-controls-restack/source-review.md#reviewed-file-binding). A later commit must be bound to these bytes.
 
 One independent reviewer performed source inspection and the five quality roles sequentially; this is not five independent reviewers. No tests, product edits, delegation or UI automation were performed by that reviewer. Root and the independent adversary supplied execution evidence.

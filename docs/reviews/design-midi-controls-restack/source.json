@@ -1,7 +1,7 @@
 {
   "base": "1ef7fb30abd328b86ac481ec71e72c9bbc59e83c",
   "originalSeed": "3876f578132716156a80ed7f25fb67ff5c3bc4d6",
-  "fingerprint": "3cb49b9c0e522f35d7275b5b58a6a30095a4f8350c161796bb48f3806c2be705",
+  "fingerprint": "755a00187a8e6064d218fd552e9581513249d160c9108d3dcf145dc255c3f936",
   "files": {
     "lib/app/fx_chain_persistence.dart": "671ba63e6bb8ff6746b2436bb2dda5deb4ed5b7dd5e510768fd11e1f035e7f6c",
     "lib/app/mix_settings_coordinator.dart": "dd05927b943fe0fadd0f615d630e8d315421273d5b2eff94590f5379c935212d",
@@ -96,7 +96,7 @@
     "test/control/external_dispatch_test.dart": "55afebe346a28fcc65082e4a08e99c054bb31ea46d2e6c1800a921f78369b77b",
     "test/control/external_expression_page_test.dart": "7d7fe9269cf8cc120d067887d03c54668fe156d21b48bc3552de9161138cb1d0",
     "test/control/external_pedal_page_test.dart": "b86b6761a3b7b5e53a7a48f3f9182a6b162c4700491d14e7860482ccff75e4dd",
-    "test/control/midi_controls_page_test.dart": "326a97283a7cf362ae208f0fed99520006c4e92c8d96a085856699ab778f3e2a",
+    "test/control/midi_controls_page_test.dart": "c8308f8f386493607bde8d6eec63f65755833d7918941868baaeb7143b797672",
     "test/control/pedal_setup_page_test.dart": "0e3604bb4975547ac0b9499e60fc9854820fe4942324da70a20f1cf5719a5f58",
     "test/fuzz/control_sequence_fuzz_test.dart": "8377ed6c718a18b9133c0cbe2b8f9bf448c202e29cf6c762d913607655037e71",
     "test/looper/bloc/looper_bloc_test.dart": "02596a58fe3c93b8919221e9e02460974edc4e6ead93e05183539de964a60da3",
@@ -137,5 +137,13 @@
     "test/session/session_fx_roundtrip_test.dart": "6f58fd188413fb29cadc2ed09bdbaf49310caa3d4bbc2b70b5479d41e79cae71",
     "test/session/session_layers_roundtrip_test.dart": "b88a04ca217d79bdd0cb28bec090068ac9b6dc824d6289763ae187287231b5cb",
     "test/session/session_mapping_test.dart": "b19ba283837d0e79af4fc0712b15b267dcf4a574d67a3e165ea70dbd8988315e"
+  },
+  "previousFingerprint": "3cb49b9c0e522f35d7275b5b58a6a30095a4f8350c161796bb48f3806c2be705",
+  "amendment": {
+    "base": "1c7c07ebbce9ed87130e9484d259aed05cc7f616",
+    "scope": [
+      "test/control/midi_controls_page_test.dart"
+    ],
+    "reason": "Native-free behavioral CI coverage; unchanged application and native code."
   }
 }
