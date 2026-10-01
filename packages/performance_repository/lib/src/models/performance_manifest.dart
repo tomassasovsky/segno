@@ -259,6 +259,7 @@ class PerformanceArmSnapshot {
     this.tracks = const [],
     this.monitors = const [],
     this.trackChains = const [],
+    this.outputChains = const [],
     this.outputEffects = const [],
     this.outputChainEnabled = true,
     this.fxStagesVersion = currentFxStagesVersion,
@@ -320,6 +321,10 @@ class PerformanceArmSnapshot {
         for (final c in (json['trackChains'] as List<dynamic>? ?? const []))
           PerformanceTrackChain.fromJson(c as Map<String, dynamic>),
       ],
+      outputChains: [
+        for (final c in (json['outputChains'] as List<dynamic>? ?? const []))
+          PerformanceOutputChain.fromJson(c as Map<String, dynamic>),
+      ],
       outputEffects: [
         for (final e in (json['outputEffects'] as List<dynamic>? ?? const []))
           TrackEffect.fromJson(e as Map<String, dynamic>),
@@ -348,6 +353,7 @@ class PerformanceArmSnapshot {
     tracks: tracks,
     monitors: monitors,
     trackChains: trackChains,
+    outputChains: outputChains,
     outputEffects: outputEffects,
     outputChainEnabled: outputChainEnabled,
     fxStagesVersion: fxStagesVersion,
@@ -431,6 +437,10 @@ class PerformanceArmSnapshot {
   /// no bus FX.
   final List<PerformanceTrackChain> trackChains;
 
+  /// Configured destination chains observed before arm. The captured chain
+  /// below is authoritative for replay, including edits while arm was pending.
+  final List<PerformanceOutputChain> outputChains;
+
   /// The captured destination's output chain, frozen at arm, in order.
   final List<TrackEffect> outputEffects;
 
@@ -471,6 +481,8 @@ class PerformanceArmSnapshot {
       'monitors': monitors,
       if (trackChains.isNotEmpty)
         'trackChains': [for (final c in trackChains) c.toJson()],
+      if (outputChains.isNotEmpty)
+        'outputChains': [for (final c in outputChains) c.toJson()],
       if (outputEffects.isNotEmpty)
         'outputEffects': [for (final e in outputEffects) e.toJson()],
       if (!outputChainEnabled) 'outputChainEnabled': false,

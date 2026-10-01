@@ -33,6 +33,20 @@ Follow-tempo/pitch processing remains explicitly unavailable until its engine
 slice. Physical encoder routing remains in the controller slice; desktop focus
 checks do not establish UART or appliance behavior. No deployment is implied.
 
+## October 2026 FX surface reconstruction (#1016)
+
+Effects now uses the accepted destination/library/editor flow on the verified
+mix, routing and Pre/Post stack. Adding a single or rack opens its confirmed
+new instance directly. Structural edits retain stable identities, reject full
+destinations and cannot complete against a replacement session. Saved presets
+retain rack identity and create independent instances. The obsolete Signal
+surface and its unused cache controls are removed.
+
+Native, package and app checks plus independent source and visual reviews are
+recorded in the [verification record](reviews/design-fx-surfaces-restack/README.md).
+Exact factory parameter/DSP completion remains M6 work; physical appliance
+validation and the human merge gate remain separate. No deployment is implied.
+
 ## September 2026 appliance integration
 
 The console link, CTRL jacks, and appliance delivery stack (#984, #986, #990)

@@ -74,7 +74,8 @@ void main() {
     when(
       () => looper.trackEffects(any()),
     ).thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
-    when(() => looper.masterEffects).thenAnswer((_) => masterChain);
+    when(() => looper.outputEffects(0)).thenAnswer((_) => masterChain);
+    when(() => looper.allTracksEffects).thenReturn(const []);
 
     when(
       () => looper.monitorChainEnabled(any()),
@@ -93,9 +94,12 @@ void main() {
       (i) => chainEnabled['track:${i.positionalArguments[0]}'] ?? true,
     );
     when(
-      () => looper.masterChainEnvelope(),
-    ).thenAnswer(
-      (_) => FxChainEnvelope(chainEnabled: chainEnabled['master'] ?? true),
+      () => looper.outputChainEnabled(any()),
+    ).thenAnswer((_) => chainEnabled['output'] ?? true);
+    // One destination, so an address past it is a malformed one.
+    when(() => looper.state).thenReturn(const LooperState(outputBusCount: 1));
+    when(() => looper.allTracksChainEnabled).thenAnswer(
+      (_) => chainEnabled['allTracks'] ?? true,
     );
 
     when(
@@ -118,7 +122,8 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => looper.setMasterChainEnabled(enabled: any(named: 'enabled')),
+      () =>
+          looper.setOutputChainEnabled(bus: 0, enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
       () => looper.setTrackEffectEnabled(
@@ -143,7 +148,8 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => looper.setMasterEffectEnabled(
+      () => looper.setOutputEffectEnabled(
+        bus: 0,
         index: any(named: 'index'),
         enabled: any(named: 'enabled'),
       ),
@@ -176,7 +182,7 @@ void main() {
         );
         expect(
           looper.bindingEnabled(
-            const FxChainTarget(FxAddress(stage: FxStage.master)),
+            const FxChainTarget(FxAddress(stage: FxStage.output)),
           ),
           isTrue,
         );
@@ -313,7 +319,8 @@ void main() {
         );
         expect(
           looper.bindingEnabled(
-            const FxChainTarget(FxAddress(stage: FxStage.master, index: 1)),
+            // Destination 1 on a rig whose device has one destination.
+            const FxChainTarget(FxAddress(stage: FxStage.output, index: 1)),
           ),
           isNull,
         );

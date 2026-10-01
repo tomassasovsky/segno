@@ -155,8 +155,6 @@ class _SettingsPageState extends State<SettingsPage> {
     final l10n = context.l10n;
     final waveformEnabled = context.watch<WaveformWindowCubit>().state.enabled;
     final highContrast = context.watch<HighContrastCubit>().state;
-    final tracks = context.watch<TracksCubit>().state;
-    final showIndicators = tracks.showIndicators;
     // The default mode is a looper-wide behavior default, owned by the shared
     // control overlay (the InteractionMode's home), not a view preference.
     final defaultMode = context.watch<ControlCubit>().state.defaultMode;
@@ -182,16 +180,6 @@ class _SettingsPageState extends State<SettingsPage> {
         value: highContrast,
         onChanged: (on) =>
             unawaited(context.read<HighContrastCubit>().setEnabled(value: on)),
-      ),
-      const SizedBox(height: 12),
-      SetupToggleRow(
-        toggleKey: const Key('settings_trackIndicators_switch'),
-        title: l10n.trackIndicatorsTitle,
-        subtitle: l10n.trackIndicatorsSubtitle,
-        value: showIndicators,
-        onChanged: (on) => unawaited(
-          context.read<TracksCubit>().setShowIndicators(value: on),
-        ),
       ),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.looperGroupLabel),
@@ -328,6 +316,13 @@ class _SettingsRail extends StatelessWidget {
                 label: l10n.settingsSectionRouting,
                 selected: false,
                 onTap: () => unawaited(openAudioRouting()),
+              ),
+              // Effects, on the same rule (slice 3f).
+              _RailTab(
+                key: const Key('settings_tab_fx'),
+                label: l10n.fxTitle,
+                selected: false,
+                onTap: () => unawaited(openFx()),
               ),
             ],
           ],

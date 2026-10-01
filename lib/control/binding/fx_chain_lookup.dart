@@ -38,9 +38,16 @@ extension FxChainLookup on LooperRepository {
         allTrackChains().containsKey(address.index)
             ? trackEffects(address.index)
             : null,
-      // There is exactly one Master insert and it always exists; a non-zero
-      // index is a malformed address rather than a second one.
-      FxStage.master => address.index == 0 ? masterEffects : null,
+      // There is exactly one All tracks chain and it always exists; a
+      // non-zero index is a malformed address rather than a second one.
+      FxStage.allTracks => address.index == 0 ? allTracksEffects : null,
+      // A destination exists because the open device has its jacks, not
+      // because something was put on it: an empty destination still names a
+      // real, stompable chain, the way a configured monitor does.
+      FxStage.output =>
+        address.index < state.outputBusCount
+            ? outputEffects(address.index)
+            : null,
     };
   }
 }

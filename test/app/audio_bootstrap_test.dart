@@ -675,7 +675,8 @@ void main() {
           ),
         ),
       );
-      await settings.saveMasterFxChain(
+      await settings.saveOutputFxChain(
+        0,
         encodeFxChain(
           FxChainEnvelope(
             entries: [BuiltInEffect(type: TrackEffectType.reverb)],
@@ -722,7 +723,8 @@ void main() {
       await settings.saveAudioConfig(
         const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
-      await settings.saveMasterFxChain(
+      await settings.saveOutputFxChain(
+        0,
         '{"chainEnabled":true,"entries":['
         '{"type":1,"channels":{"input":"sideways"}}]}',
       );
@@ -748,7 +750,7 @@ void main() {
 
       expect(result.started, isFalse);
       expect(engine.stopCalls, greaterThan(0));
-      expect(repository.masterEffects, isEmpty);
+      expect(repository.outputEffects(0), isEmpty);
     });
 
     test('restores a saved multi-lane setup on launch', () async {
@@ -1212,7 +1214,7 @@ void main() {
           ]),
         )
         ..add(
-          LooperMasterEffectsChanged([
+          LooperOutputEffectsChanged(0, [
             BuiltInEffect(type: TrackEffectType.drive),
           ]),
         );
@@ -1291,9 +1293,11 @@ void main() {
               entries: [BuiltInEffect(type: TrackEffectType.reverb)],
             ),
           },
-          masterChain: FxChainEnvelope(
-            entries: [BuiltInEffect(type: TrackEffectType.delay)],
-          ),
+          outputChains: {
+            0: FxChainEnvelope(
+              entries: [BuiltInEffect(type: TrackEffectType.delay)],
+            ),
+          },
           monitors: [
             SessionRigMonitor(
               input: 0,
@@ -1372,7 +1376,7 @@ void main() {
       expect(rebooted.laneFx.containsKey((0, 0, 0)), isFalse);
       expect(rebooted.trackFx.containsKey((0, 0)), isFalse);
       expect(
-        decodeFxChain(await settings.loadMasterFxChain()).entries,
+        decodeFxChain(await settings.loadOutputFxChain(0)).entries,
         isEmpty,
       );
     });

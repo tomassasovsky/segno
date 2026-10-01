@@ -298,7 +298,7 @@ void main() {
   }
 
   group('SYSTEM / display', () {
-    testWidgets('the three view settings are switches, never on/off words', (
+    testWidgets('the view settings are switches, never on/off words', (
       tester,
     ) async {
       await pump(tester);
@@ -306,7 +306,6 @@ void main() {
       for (final key in const [
         Key('system_waveform_switch'),
         Key('system_high_contrast_switch'),
-        Key('system_track_indicators_switch'),
       ]) {
         expect(find.byKey(key), findsOneWidget, reason: '$key');
       }

@@ -35,7 +35,7 @@ void main() {
       laneChains: chains.laneChains,
       monitors: chains.monitors,
       trackChains: chains.trackChains,
-      masterChain: chains.masterChain,
+      outputChains: chains.outputChains,
     ),
     laneStems: const {},
   );
@@ -100,10 +100,11 @@ void main() {
           effects: [BuiltInEffect(type: TrackEffectType.delay)],
         )
         ..setTrackChainEnabled(channel: 1, enabled: false)
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.filter)],
         )
-        ..setMasterChainEnabled(enabled: false)
+        ..setOutputChainEnabled(bus: 0, enabled: false)
         ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
 
       final first = chainsFromLooper(looper);
@@ -128,12 +129,15 @@ void main() {
         [for (final c in second.trackChains) (c.channel, c.encoded)],
         [for (final c in first.trackChains) (c.channel, c.encoded)],
       );
-      expect(second.masterChain, first.masterChain);
+      expect(
+        [for (final c in second.outputChains) (c.bus, c.encoded)],
+        [for (final c in first.outputChains) (c.bus, c.encoded)],
+      );
 
       // And the flags themselves survived, not just the bytes.
       expect(looper.laneChainEnabled(0, 0), isFalse);
       expect(looper.trackChainEnabled(1), isFalse);
-      expect(looper.masterChainEnabled, isFalse);
+      expect(looper.outputChainEnabled(0), isFalse);
     },
   );
 

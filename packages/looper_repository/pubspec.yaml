@@ -13,6 +13,8 @@ dependencies:
   equatable: ^2.0.7
   flutter:
     sdk: flutter
+  fx_catalogue:
+    path: ../fx_catalogue
   meta: ^1.16.0
   segno_engine:
     path: ../segno_engine

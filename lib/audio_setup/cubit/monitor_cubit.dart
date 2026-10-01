@@ -555,6 +555,78 @@ class MonitorCubit extends Cubit<MonitorState> {
     ]);
   }
 
+  /// Replaces monitor [input]'s chain with [effects].
+  ///
+  /// The structural write every rack surface goes through: rename, reorder and
+  /// removal all rewrite the chain rather than edit one slot, because a rack is
+  /// several entries that move together.
+  void setEffects(int input, List<TrackEffect> effects) =>
+      _pushEffects(input, effects);
+
+  /// Replaces a modal editor's chain and reports the matching callback result.
+  // An exact mutation acknowledgment controls navigation; projected state
+  // cannot identify which accepted recipe the callback applied.
+  // ignore: prefer_void_public_cubit_methods
+  Future<bool> setEffectsConfirmed(
+    int input,
+    List<TrackEffect> effects, {
+    bool Function()? cancelled,
+    int? expectedMixGeneration,
+  }) async {
+    if ((cancelled?.call() ?? false) ||
+        (expectedMixGeneration != null &&
+            expectedMixGeneration != _repository.mixGeneration)) {
+      return false;
+    }
+    final result = _pushEffects(input, effects);
+    if (!result.isOk) return false;
+    final generation = _repository.mixGeneration;
+    final session = _repository.sessionRevision;
+    final applied = await _repository.settleFxRecipes(
+      waitForCallback: true,
+      cancelled: () => isClosed || (cancelled?.call() ?? false),
+    );
+    return applied.isOk &&
+        !isClosed &&
+        !(cancelled?.call() ?? false) &&
+        _repository.mixGeneration == generation &&
+        _repository.sessionRevision == session;
+  }
+
+  /// Appends one library choice against the repository's current input chain.
+  /// A lagging UI projection must not turn a full chain into a successful
+  /// clamped write that silently drops the new instance.
+  // An exact mutation acknowledgment controls navigation; projected state
+  // cannot identify which accepted recipe the callback applied.
+  // ignore: prefer_void_public_cubit_methods
+  Future<bool> appendEffectsConfirmed(
+    int input,
+    List<TrackEffect> entries, {
+    bool Function()? cancelled,
+    int? expectedMixGeneration,
+  }) {
+    final current = _repository.monitorEffects(input);
+    if (entries.isEmpty || current.length + entries.length > kTrackEffectMax) {
+      return Future<bool>.value(false);
+    }
+    return setEffectsConfirmed(
+      input,
+      [...current, ...entries],
+      cancelled: cancelled,
+      expectedMixGeneration: expectedMixGeneration,
+    );
+  }
+
+  /// Appends [entries] to monitor [input]'s chain in one write.
+  ///
+  /// One write rather than a loop of [addEffect], because a rack is one thing
+  /// the player chose: adding its pedals one at a time would push the chain to
+  /// the engine once per pedal and let a half-built rack be heard on the way.
+  void appendEffects(int input, List<TrackEffect> entries) {
+    if (entries.isEmpty) return;
+    _pushEffects(input, [...state.forInput(input).effects, ...entries]);
+  }
+
   /// Appends a hosted plugin (identified by [ref]) to monitor [input]'s chain,
   /// Pre — see [addEffect]. The repository loads it through the slot ABI on
   /// the next chain apply.
@@ -698,9 +770,27 @@ class MonitorCubit extends Cubit<MonitorState> {
     _schedulePersist(input);
   }
 
+  /// Sets entry [index] of monitor [input]'s chain to [channels].
+  ///
+  /// By identity at the repository boundary, like placement: channel handling
+  /// belongs to the INSTANCE, and an index is what a reorder changes.
+  void setEffectChannels(int input, int index, FxChannels channels) {
+    final effects = state.forInput(input).effects;
+    if (index < 0 || index >= effects.length) return;
+    final slotId = effects[index].slotId;
+    if (slotId == null) return;
+    final result = _repository.setMonitorEffectChannels(
+      input: input,
+      slotId: slotId,
+      channels: channels,
+    );
+    if (!result.isOk) return;
+    _emitInputEffects(input);
+    unawaited(_persistAppliedFx(input));
+  }
+
   /// Enables/disables monitor [input]'s chain entry [index] without losing its
-  /// type or parameters (R16; click-free ramp engine-side) — the input-stage
-  /// half of the universal per-slot power control.
+  /// type or parameters (R16; click-free ramp engine-side).
   void setEffectEnabled(int input, int index, {required bool enabled}) {
     final monitor = state.forInput(input);
     if (index < 0 || index >= monitor.effects.length) return;
@@ -790,7 +880,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     emit(state.withInput(next));
   }
 
-  void _pushEffects(int input, List<TrackEffect> rawEffects) {
+  EngineResult _pushEffects(int input, List<TrackEffect> rawEffects) {
     // A structural edit reseats the input's slots, so cancel any editor-sync
     // poll keyed by a now-stale chain index (a reorder would otherwise rebind
     // the poll to a different plugin).
@@ -805,7 +895,7 @@ class MonitorCubit extends Cubit<MonitorState> {
       input: input,
       effects: effects,
     );
-    if (!result.isOk) return;
+    if (!result.isOk) return result;
     emit(state.withInput(state.forInput(input).copyWith(effects: effects)));
     // The repository enriches plugin entries with their enumerated params
     // while applying the chain. Re-read those before the confirmed write.
@@ -814,6 +904,7 @@ class MonitorCubit extends Cubit<MonitorState> {
       emit(state.withInput(state.forInput(input).copyWith(effects: applied)));
     }
     unawaited(_persistAppliedFx(input));
+    return result;
   }
 
   Future<void> _persistAppliedFx(int input) async {
