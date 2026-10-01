@@ -14,6 +14,12 @@ const _allowed = <String, String>{
   // simulator from the thing it simulates.
   'lib/pedal/view/pedal_plate.dart': 'pedal faceplate — hardware replica',
 
+  // Accepted Layout A reproduces the Fusion pedal's metal body, rubber pad
+  // and nameplate. These are artwork materials; surrounding controls, text,
+  // LEDs and encoder focus continue to use the app's theme tokens.
+  'lib/control/view/pedal_setup/pedal_hardware_face.dart':
+      'Fusion pedal artwork — hardware replica',
+
   // Gate decision on #499: the prototype is a 1920x1080 appliance view with no
   // title bar, so there is no design to adopt here — only one to invent.
   'lib/window/window_chrome.dart': 'desktop window chrome — no DS counterpart',

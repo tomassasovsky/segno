@@ -16,6 +16,40 @@ import '../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+class _PedalSetupStore extends FakeKeyValueStore {
+  bool refuseSetup = false;
+  bool failAfterSetupWrite = false;
+  String? refuseSetupValue;
+  Completer<void>? setupReadGate;
+  Completer<void>? setupReadSampled;
+
+  @override
+  Future<String?> getString(String key) async {
+    final value = await super.getString(key);
+    if (key == 'pedal.setup' && setupReadGate != null) {
+      final sampled = setupReadSampled;
+      if (sampled != null && !sampled.isCompleted) sampled.complete();
+      await setupReadGate!.future;
+    }
+    return value;
+  }
+
+  @override
+  Future<void> setString(String key, String value) async {
+    if (refuseSetup && key == 'pedal.setup') {
+      throw Exception('pedal setup storage refused');
+    }
+    if (key == 'pedal.setup' && value == refuseSetupValue) {
+      throw StateError('pedal setup checkpoint restoration refused');
+    }
+    await super.setString(key, value);
+    if (failAfterSetupWrite && key == 'pedal.setup') {
+      failAfterSetupWrite = false;
+      throw StateError('pedal setup write failed after storage');
+    }
+  }
+}
+
 /// A real [PerformanceRepository] that additionally logs when
 /// [persistLiveLanes] runs, into a shared [log] list — proves the D-CLEAR
 /// ordering (persist-before-clear) without mocking file I/O, since the
@@ -110,6 +144,7 @@ void main() {
     late _MockLooperRepository looper;
     late StreamController<LooperState> looperStates;
     late SettingsRepository settings;
+    late _PedalSetupStore setupStore;
     late FakePedalLink transport;
     late PedalRepository pedal;
     late PerformanceRepository performance;
@@ -151,7 +186,8 @@ void main() {
         ),
       ).thenAnswer((_) async => EngineResult.ok);
       looperStates = StreamController<LooperState>.broadcast(sync: true);
-      settings = SettingsRepository(store: FakeKeyValueStore());
+      setupStore = _PedalSetupStore();
+      settings = SettingsRepository(store: setupStore);
       transport = FakePedalLink();
       pedal = PedalRepository(transport);
       transport.hello();
@@ -581,14 +617,7 @@ void main() {
       );
     });
 
-    // #632: the MODE switch's second style — a Record ↔ Mute tap cycle with
-    // FX behind the hold that arms performance recording under the default
-    // style. The default style's behaviour (three-stop cycle, MODE hold =
-    // performance record) stays pinned by the 'mode' and 'FX mode' groups
-    // above/below.
-    group('mode switch style (#632)', () {
-      /// Presses and releases [button] on the wire, letting the decoded event
-      /// reach the cubit.
+    group('Pedal setup Press and Hold', () {
       Future<void> stomp(PedalButton button) async {
         transport
           ..press(button, down: true)
@@ -596,9 +625,6 @@ void main() {
         await pumpEventQueue();
       }
 
-      /// Holds [button] past the 800 ms long-press threshold, then releases.
-      /// Real delays (not fake_async) — the wire events reach the cubit
-      /// through the repository's stream, which a fake clock cannot pump.
       Future<void> hold(PedalButton button) async {
         transport.press(button, down: true);
         await pumpEventQueue();
@@ -607,261 +633,380 @@ void main() {
         await pumpEventQueue();
       }
 
-      test('defaults to cycleThree — existing rigs see no change', () {
-        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
+      test('fresh setup keeps Mute Press and the working FX Hold', () {
+        expect(cubit.state.pedalSetup.modePress, InteractionMode.mute);
+        expect(cubit.state.pedalSetup.modeHold, InteractionMode.fx);
       });
 
-      test(
-        'holdFx: a pedal MODE tap cycles Record <-> Mute and never lands '
-        'on FX',
-        () async {
-          await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-          await stomp(PedalButton.mode);
-          expect(cubit.state.mode, InteractionMode.mute);
-          await stomp(PedalButton.mode);
-          expect(cubit.state.mode, InteractionMode.record);
-          await stomp(PedalButton.mode);
-          expect(cubit.state.mode, InteractionMode.mute);
-        },
-      );
-
-      test(
-        'holdFx: toggleMode (keyboard M / on-screen chip) still cycles all '
-        'three modes — the setting governs the pedal only, so FX stays '
-        'reachable with no pedal plugged in',
-        () async {
-          await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-          cubit.toggleMode();
-          expect(cubit.state.mode, InteractionMode.mute);
-          cubit.toggleMode();
-          expect(cubit.state.mode, InteractionMode.fx);
-          cubit.toggleMode();
-          expect(cubit.state.mode, InteractionMode.record);
-        },
-      );
-
-      test('holdFx: a MODE hold enters FX and a second hold returns to '
-          'record', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        await hold(PedalButton.mode);
-        expect(cubit.state.mode, InteractionMode.fx);
-        await hold(PedalButton.mode);
-        expect(cubit.state.mode, InteractionMode.record);
-      });
-
-      test('holdFx: a second hold returns to MUTE when FX was entered from '
-          'mute — the return mode is wherever the foot was', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        await stomp(PedalButton.mode); // record -> mute
-        expect(cubit.state.mode, InteractionMode.mute);
-        await hold(PedalButton.mode); // mute -> fx
-        expect(cubit.state.mode, InteractionMode.fx);
-        await hold(PedalButton.mode); // fx -> back to mute, not record
-        expect(cubit.state.mode, InteractionMode.mute);
-      });
-
-      test('holdFx: a MODE tap while in FX also returns to the entered-from '
-          'mode — a stray tap can never strand the foot', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        await stomp(PedalButton.mode); // record -> mute
-        await hold(PedalButton.mode); // mute -> fx
-        await stomp(PedalButton.mode); // fx -> back to mute
-        expect(cubit.state.mode, InteractionMode.mute);
-      });
-
-      test('holdFx: the mode and its LED frame flip AT the hold threshold, '
-          'not at release', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-
-        // Press and stay held: below the threshold nothing flips — the LEDs
-        // keep showing the mode the foot is still in.
+      test('Press waits for release when MODE has a Hold', () async {
         transport.press(PedalButton.mode, down: true);
         await pumpEventQueue();
         expect(cubit.state.mode, InteractionMode.record);
-        expect(
-          transport.lastFrame?.mode,
-          PedalMode.rec,
-        );
-
-        // Past the threshold, foot STILL down: the mode has flipped and the
-        // pushed frame already carries FX.
-        await Future<void>.delayed(const Duration(milliseconds: 850));
-        expect(cubit.state.mode, InteractionMode.fx);
-        expect(
-          transport.lastFrame?.mode,
-          PedalMode.fx,
-        );
-
-        // The release is silent — the hold retired the tap action.
         transport.press(PedalButton.mode, down: false);
         await pumpEventQueue();
-        expect(cubit.state.mode, InteractionMode.fx);
+        expect(cubit.state.mode, InteractionMode.mute);
       });
 
-      test('holdFx: the MODE hold no longer arms performance recording — the '
-          'hold is the FX door instead', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        await hold(PedalButton.mode);
-        expect(cubit.state.mode, InteractionMode.fx);
-        expect(performance.armedDirectory, isNull);
-      });
-
-      // #677: with the MODE hold gone to the FX door, BANK carries the
-      // recording hold under holdFx — and stays a plain press under
-      // cycleThree, where the MODE hold still arms.
-      test('cycleThree: a BANK hold stays a plain press-time bank toggle '
-          'and never arms recording — regression pin', () async {
-        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
-        // The toggle fires ON the press, before any threshold could elapse —
-        // no gesture is armed under this style.
-        transport.press(PedalButton.bank, down: true);
-        await pumpEventQueue();
-        expect(cubit.state.activeBank, 1);
-        expect(cubit.state.cursor, ControlState.tracksPerBank);
-        // Held past the threshold: the hold means nothing and the release
-        // adds nothing.
-        await Future<void>.delayed(const Duration(milliseconds: 850));
-        transport.press(PedalButton.bank, down: false);
-        await pumpEventQueue();
-        expect(cubit.state.activeBank, 1);
-        expect(performance.armedDirectory, isNull);
-      });
-
-      test('holdFx: a BANK tap still toggles the bank — moved to the '
-          'release, the price of telling a tap from a hold', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        transport.press(PedalButton.bank, down: true);
-        await pumpEventQueue();
-        // Below the threshold nothing has happened yet.
-        expect(cubit.state.activeBank, 0);
-        transport.press(PedalButton.bank, down: false);
-        await pumpEventQueue();
-        expect(cubit.state.activeBank, 1);
-        expect(cubit.state.cursor, ControlState.tracksPerBank);
-        expect(performance.armedDirectory, isNull);
-      });
-
-      test('holdFx: a BANK hold arms performance recording and does NOT '
-          'toggle the bank — the pedal path the MODE hold gave up', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        final armed = awaitStatus(performance, PerformanceCaptureStatus.armed);
-        await hold(PedalButton.bank);
-        await armed;
-        expect(performance.armedDirectory, isNotNull);
-        expect(cubit.state.activeBank, 0); // the hold retired the tap
-        expect(cubit.state.cursor, 0);
-        expect(cubit.state.mode, InteractionMode.record); // untouched
-      });
-
-      test('holdFx: a second BANK hold disarms again', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        final armed = awaitStatus(performance, PerformanceCaptureStatus.armed);
-        await hold(PedalButton.bank);
-        await armed;
-        expect(performance.armedDirectory, isNotNull);
-
-        // Past disarm's double-press guard window (D-GUARD) — the fake clock
-        // does not advance with the real 850 ms long-press delay.
-        clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
-
-        // `done`, not the first non-armed status: disarm passes through
-        // `finalizing` and only clears the directory at the end of it.
-        final disarmed = awaitStatus(
-          performance,
-          PerformanceCaptureStatus.done,
+      test('MODE without Hold acts on contact', () async {
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.copyWith(clearModeHold: true),
         );
-        await hold(PedalButton.bank);
-        await disarmed;
-        expect(performance.armedDirectory, isNull);
+        transport.press(PedalButton.mode, down: true);
+        await pumpEventQueue();
+        expect(cubit.state.mode, InteractionMode.mute);
       });
 
-      test('holdFx: the frame pushed through a BANK-hold arm carries the '
-          'armed light and still shows bank A', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        await pumpEventQueue();
-        transport.sent.clear();
+      test(
+        'MODE Hold fires at threshold, with no second Press on release',
+        () async {
+          transport.press(PedalButton.mode, down: true);
+          await pumpEventQueue();
+          expect(cubit.state.mode, InteractionMode.record);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          expect(cubit.state.mode, InteractionMode.fx);
+          expect(transport.lastFrame?.mode, PedalMode.fx);
+          transport.press(PedalButton.mode, down: false);
+          await pumpEventQueue();
+          expect(cubit.state.mode, InteractionMode.fx);
+          expect(performance.armedDirectory, isNull);
+        },
+      );
 
-        final armed = awaitStatus(performance, PerformanceCaptureStatus.armed);
-        // Press and stay held: below the threshold nothing is pushed for the
-        // bank and nothing is armed.
-        transport.press(PedalButton.bank, down: true);
-        await pumpEventQueue();
-        expect(performance.armedDirectory, isNull);
-
-        // Past the threshold, foot STILL down: the arm has landed and the
-        // pushed frame already carries it — commit-at-threshold, like the
-        // MODE hold's own FX flip.
-        await Future<void>.delayed(const Duration(milliseconds: 850));
-        await armed;
-        await pumpEventQueue();
-        final frame = transport.lastFrame;
-        expect(frame?.performanceArmed, isTrue);
-        expect(frame?.activeBank, 0);
-
-        // The release is silent — the hold retired the bank toggle.
-        transport.press(PedalButton.bank, down: false);
-        await pumpEventQueue();
-        expect(cubit.state.activeBank, 0);
-        expect(
-          transport.lastFrame?.performanceArmed,
-          isTrue,
-        );
-      });
-
-      test('a style change clears the FX return latch — a mute latched under '
-          'an earlier holdFx spell is not read after a round-trip', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        await stomp(PedalButton.mode); // record -> mute
-        await hold(PedalButton.mode); // mute -> fx (latch = mute)
-        await hold(PedalButton.mode); // fx -> mute (latch still = mute)
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.cycleThree);
-        cubit.toggleMode(); // mute -> fx, the three-way cycle, no latch
-        expect(cubit.state.mode, InteractionMode.fx);
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        // The hold out of FX honours the record FALLBACK, not the mute the
-        // earlier holdFx spell latched: the style change dropped it.
-        await hold(PedalButton.mode);
-        expect(cubit.state.mode, InteractionMode.record);
-      });
-
-      test('holdFx: FX entered from the keyboard/chip (toggleMode) still '
-          'exits to the mode it was entered from — the latch rides setMode, '
-          'the one entry point, not only the hold', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        await hold(PedalButton.mode); // record -> fx (an earlier hold session)
-        await hold(PedalButton.mode); // fx -> record
-        await stomp(PedalButton.mode); // record -> mute; perform here
-        cubit.toggleMode(); // keyboard M: mute -> fx
-        expect(cubit.state.mode, InteractionMode.fx);
-        // The pedal TAP out of FX lands in MUTE — the mode the M key left —
-        // not the record the earlier hold session latched.
+      test('MODE Hold returns from FX to the mode that entered it', () async {
         await stomp(PedalButton.mode);
         expect(cubit.state.mode, InteractionMode.mute);
-        // And the pedal HOLD out honours the same latch.
-        cubit.toggleMode(); // mute -> fx again
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.fx);
         await hold(PedalButton.mode);
         expect(cubit.state.mode, InteractionMode.mute);
       });
 
-      test('setModeSwitchStyle persists the token', () async {
-        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.holdFx);
-        expect(
-          await settings.loadModeSwitchStyle(),
-          ModeSwitchStyle.holdFx.token,
+      test('BANK tap pages on release while Hold remains the physical '
+          'performance-recording path', () async {
+        transport.press(PedalButton.bank, down: true);
+        await pumpEventQueue();
+        expect(cubit.state.activeBank, 0);
+        transport.press(PedalButton.bank, down: false);
+        await pumpEventQueue();
+        expect(cubit.state.activeBank, 1);
+        expect(performance.armedDirectory, isNull);
+
+        final armed = awaitStatus(performance, PerformanceCaptureStatus.armed);
+        await hold(PedalButton.bank);
+        await armed;
+        expect(cubit.state.activeBank, 1, reason: 'Hold retires the page tap');
+        expect(performance.armedDirectory, isNotNull);
+      });
+
+      test(
+        'Record/Play remains immediate and its Hold undoes the take',
+        () async {
+          transport.press(PedalButton.recPlay, down: true);
+          await pumpEventQueue();
+          verify(() => looper.record()).called(1);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          verify(() => looper.undo()).called(1);
+          transport.press(PedalButton.recPlay, down: false);
+          await pumpEventQueue();
+        },
+      );
+
+      test('Record Hold follows the new selection before it fires', () async {
+        transport.press(PedalButton.recPlay, down: true);
+        await pumpEventQueue();
+        cubit.selectTrack(2);
+        await Future<void>.delayed(const Duration(milliseconds: 850));
+        verify(() => looper.undo(channel: 2)).called(1);
+        verifyNever(() => looper.undo());
+        transport.press(PedalButton.recPlay, down: false);
+        await pumpEventQueue();
+      });
+
+      test('Record Hold remains available in Mute mode', () async {
+        cubit.setMode(InteractionMode.mute);
+        transport.press(PedalButton.recPlay, down: true);
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 850));
+        verify(() => looper.undo()).called(1);
+        transport.press(PedalButton.recPlay, down: false);
+        await pumpEventQueue();
+      });
+
+      test('a Track Hold can clear its contact-selected track', () async {
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.copyWith(trackHold: TrackHold.clearTrack),
         );
+        await hold(PedalButton.track3);
+        expect(cubit.state.cursor, 2);
+        verify(() => looper.clear(channel: 2)).called(1);
       });
 
-      test('load restores the persisted style', () async {
-        await settings.saveModeSwitchStyle(ModeSwitchStyle.holdFx.token);
-        await cubit.load();
-        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.holdFx);
+      test(
+        'Track Hold follows the current bank position until it fires',
+        () async {
+          await cubit.setPedalSetup(
+            cubit.state.pedalSetup.copyWith(trackHold: TrackHold.clearTrack),
+          );
+          transport.press(PedalButton.track1, down: true);
+          await pumpEventQueue();
+          cubit.browseBank(1);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          verify(() => looper.clear(channel: 4)).called(1);
+          verifyNever(() => looper.clear());
+          transport.press(PedalButton.track1, down: false);
+          await pumpEventQueue();
+        },
+      );
+
+      test(
+        'Arm overdub Hold does not start a take on an empty track',
+        () async {
+          await hold(PedalButton.track2);
+          verifyNever(() => looper.record(channel: 1));
+        },
+      );
+
+      test(
+        'Arm overdub Hold starts only when the track has loop content',
+        () async {
+          setEngine(
+            _tracksWith(const [
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          transport.press(PedalButton.track2, down: true);
+          await pumpEventQueue();
+          verifyNever(() => looper.record(channel: 1));
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          verify(() => looper.record(channel: 1)).called(1);
+          transport.press(PedalButton.track2, down: false);
+          await pumpEventQueue();
+        },
+      );
+
+      test(
+        'Arm overdub Hold leaves a take started during the hold recording',
+        () async {
+          setEngine(
+            _tracksWith(const [
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          transport.press(PedalButton.track2, down: true);
+          await pumpEventQueue();
+          // The native callback can begin an overdub before the repository's
+          // next UI poll. Only the fresh repository pull sees it yet.
+          when(() => looper.state).thenReturn(
+            _stateWith(
+              _tracksWith(const [
+                Track(
+                  channel: 1,
+                  state: TrackState.recording,
+                  lengthFrames: 48000,
+                ),
+              ]),
+            ),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          verifyNever(() => looper.record(channel: 1));
+          transport.press(PedalButton.track2, down: false);
+          await pumpEventQueue();
+        },
+      );
+
+      test(
+        'Arm overdub Hold leaves an existing quantized arm pending',
+        () async {
+          setEngine(
+            _tracksWith(const [
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          transport.press(PedalButton.track2, down: true);
+          await pumpEventQueue();
+          when(() => looper.state).thenReturn(
+            _stateWith(
+              _tracksWith(const [
+                Track(
+                  channel: 1,
+                  state: TrackState.playing,
+                  lengthFrames: 48000,
+                  pending: true,
+                ),
+              ]),
+            ),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          verifyNever(() => looper.record(channel: 1));
+          transport.press(PedalButton.track2, down: false);
+          await pumpEventQueue();
+        },
+      );
+
+      test('configured Track Hold does not run in Mute mode', () async {
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.copyWith(trackHold: TrackHold.clearTrack),
+        );
+        cubit.setMode(InteractionMode.mute);
+        await hold(PedalButton.track2);
+        verifyNever(() => looper.clear(channel: 1));
       });
 
-      test('an unknown stored token falls back to cycleThree', () async {
-        await settings.saveModeSwitchStyle('sideways');
+      test('setup Save is durable before new gestures become live', () async {
+        final next = cubit.state.pedalSetup.copyWith(
+          modePress: InteractionMode.fx,
+          trackHold: TrackHold.clearTrack,
+        );
+        await cubit.setPedalSetup(next);
+        expect(cubit.state.pedalSetup, next);
+        expect(await settings.loadPedalSetup(), next.encode());
         await cubit.load();
-        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
+        expect(cubit.state.pedalSetup, next);
+      });
+
+      test(
+        'Save waits for an older boot read before publishing its setup',
+        () async {
+          const old = PedalSetup();
+          const next = PedalSetup(modePress: InteractionMode.fx);
+          await settings.savePedalSetup(old.encode());
+          setupStore
+            ..setupReadGate = Completer<void>()
+            ..setupReadSampled = Completer<void>();
+          final loading = cubit.load();
+          await setupStore.setupReadSampled!.future;
+          final saving = cubit.setPedalSetup(next);
+          await pumpEventQueue();
+          setupStore.setupReadGate!.complete();
+          await loading;
+          await saving;
+          expect(cubit.state.pedalSetup, next);
+          expect(await settings.loadPedalSetup(), next.encode());
+        },
+      );
+
+      test(
+        'storage refusal keeps the prior live setup and its gestures',
+        () async {
+          final prior = cubit.state.pedalSetup;
+          setupStore.refuseSetup = true;
+          await expectLater(
+            cubit.setPedalSetup(prior.copyWith(modePress: InteractionMode.fx)),
+            throwsException,
+          );
+          expect(cubit.state.pedalSetup, prior);
+          expect(await settings.loadPedalSetup(), isNull);
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.mute);
+        },
+      );
+
+      test(
+        'write-then-throw restores the saved setup without changing gestures',
+        () async {
+          final prior = cubit.state.pedalSetup;
+          await settings.savePedalSetup(prior.encode());
+          setupStore.failAfterSetupWrite = true;
+
+          await expectLater(
+            cubit.setPedalSetup(prior.copyWith(modePress: InteractionMode.fx)),
+            throwsA(
+              isA<PedalSetupSaveException>().having(
+                (error) => error.checkpointRestored,
+                'restored',
+                isTrue,
+              ),
+            ),
+          );
+          expect(cubit.state.pedalSetup, prior);
+          expect(await settings.loadPedalSetup(), prior.encode());
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.mute);
+        },
+      );
+
+      test(
+        'failed checkpoint restore remains visible until same-value Save '
+        'repairs storage',
+        () async {
+          final prior = cubit.state.pedalSetup;
+          await settings.savePedalSetup(prior.encode());
+          setupStore
+            ..failAfterSetupWrite = true
+            ..refuseSetupValue = prior.encode();
+
+          await expectLater(
+            cubit.setPedalSetup(prior.copyWith(modePress: InteractionMode.fx)),
+            throwsA(
+              isA<PedalSetupSaveException>().having(
+                (error) => error.checkpointRestored,
+                'checkpoint restored',
+                isFalse,
+              ),
+            ),
+          );
+          expect(cubit.state.pedalSetup, prior);
+          expect(cubit.state.pedalSetupPersistenceUncertain, isTrue);
+          expect(await settings.loadPedalSetup(), isNot(prior.encode()));
+
+          setupStore.refuseSetupValue = null;
+          await cubit.setPedalSetup(prior);
+          expect(cubit.state.pedalSetupPersistenceUncertain, isFalse);
+          expect(await settings.loadPedalSetup(), prior.encode());
+        },
+      );
+
+      test(
+        'an explicitly malformed saved action is inert until deliberate Save',
+        () async {
+          await settings.savePedalSetup('{"modePress":"sideways"}');
+          await cubit.load();
+          expect(cubit.state.pedalSetupUnavailable, isTrue);
+          expect(cubit.state.pedalSetup, const PedalSetup());
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.record);
+
+          await cubit.setPedalSetup(const PedalSetup());
+          expect(cubit.state.pedalSetupUnavailable, isFalse);
+          expect(await settings.loadPedalSetup(), const PedalSetup().encode());
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.mute);
+        },
+      );
+
+      test(
+        'a malformed Track Hold cannot become default Arm overdub',
+        () async {
+          await settings.savePedalSetup(
+            '{"trackHold":"future-unknown-action"}',
+          );
+          await cubit.load();
+          expect(cubit.state.pedalSetupUnavailable, isTrue);
+          setEngine(
+            _tracksWith(const [
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+
+          transport.press(PedalButton.track2, down: true);
+          await pumpEventQueue();
+          clearInteractions(looper);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          verifyNever(() => looper.record(channel: 1));
+          transport.press(PedalButton.track2, down: false);
+          await pumpEventQueue();
+        },
+      );
+
+      test('Save retires the previous pending gesture', () async {
+        transport.press(PedalButton.mode, down: true);
+        await pumpEventQueue();
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.copyWith(modePress: InteractionMode.fx),
+        );
+        transport.press(PedalButton.mode, down: false);
+        await pumpEventQueue();
+        expect(cubit.state.mode, InteractionMode.record);
       });
     });
 
@@ -1069,23 +1214,15 @@ void main() {
         verify(() => looper.setMasterGain(any())).called(1);
       });
 
-      test(
-        'MODE long-press still arms performance recording (unchanged)',
-        () async {
-          final armed = awaitStatus(
-            performance,
-            PerformanceCaptureStatus.armed,
-          );
-          await hold(PedalButton.mode);
-          await armed;
-          expect(performance.armedDirectory, isNotNull);
-          expect(cubit.state.mode, InteractionMode.fx); // not a mode cycle
-        },
-      );
-
-      test('a MODE tap cycles out of FX back to record', () async {
-        await stomp(PedalButton.mode);
+      test('MODE Hold exits the FX door without arming performance', () async {
+        await hold(PedalButton.mode);
         expect(cubit.state.mode, InteractionMode.record);
+        expect(performance.armedDirectory, isNull);
+      });
+
+      test('a MODE Press from FX enters its assigned Mute mode', () async {
+        await stomp(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.mute);
       });
 
       test('toggleTrackChain ignores out-of-range channels', () {
@@ -1927,14 +2064,18 @@ void main() {
       });
 
       test('Bank toggles the active bank and moves the cursor', () async {
-        transport.press(PedalButton.bank, down: true);
+        transport
+          ..press(PedalButton.bank, down: true)
+          ..press(PedalButton.bank, down: false);
         await pumpEventQueue();
         expect(cubit.state.activeBank, 1);
         expect(cubit.state.cursor, 4);
       });
 
       test('a track press targets the visible bank base', () async {
-        transport.press(PedalButton.bank, down: true); // -> bank B
+        transport
+          ..press(PedalButton.bank, down: true)
+          ..press(PedalButton.bank, down: false); // -> bank B
         await pumpEventQueue();
         transport.press(PedalButton.track3, down: true);
         await pumpEventQueue();
@@ -2026,78 +2167,61 @@ void main() {
         });
       });
 
-      group('mode press timing (D-PEDAL)', () {
-        test('tap toggles mode and does NOT arm/disarm performance '
-            'recording', () async {
-          expect(cubit.state.mode, InteractionMode.record);
+      group('MODE and Bank gesture timing', () {
+        test('MODE tap enters Mute and never arms performance', () async {
           transport
-            ..press(PedalButton.mode, down: true) // press
-            ..press(PedalButton.mode, down: false); // quick release == tap
+            ..press(PedalButton.mode, down: true)
+            ..press(PedalButton.mode, down: false);
           await pumpEventQueue();
-
           expect(cubit.state.mode, InteractionMode.mute);
           expect(performance.armedDirectory, isNull);
         });
 
+        test('MODE Hold enters FX at 800 ms and does not run Press', () async {
+          transport.press(PedalButton.mode, down: true);
+          await pumpEventQueue();
+          expect(cubit.state.mode, InteractionMode.record);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          expect(cubit.state.mode, InteractionMode.fx);
+          transport.press(PedalButton.mode, down: false);
+          await pumpEventQueue();
+          expect(cubit.state.mode, InteractionMode.fx);
+          expect(performance.armedDirectory, isNull);
+        });
+
         test(
-          'long-press arms performance recording and does NOT flip mode',
+          'Bank Hold arms then disarms performance without paging',
           () async {
             final armed = awaitStatus(
               performance,
               PerformanceCaptureStatus.armed,
             );
-            transport.press(PedalButton.mode, down: true);
-            // Default long-press threshold is 800 ms.
+            transport.press(PedalButton.bank, down: true);
             await Future<void>.delayed(const Duration(milliseconds: 850));
-            transport.press(PedalButton.mode, down: false);
+            transport.press(PedalButton.bank, down: false);
             await armed;
-
-            expect(cubit.state.mode, InteractionMode.record); // unchanged
+            expect(cubit.state.activeBank, 0);
             expect(performance.armedDirectory, isNotNull);
-          },
-        );
 
-        test('a long-press then a second long-press disarms again', () async {
-          final armed = awaitStatus(
-            performance,
-            PerformanceCaptureStatus.armed,
-          );
-          transport.press(PedalButton.mode, down: true);
-          await Future<void>.delayed(const Duration(milliseconds: 850));
-          transport.press(PedalButton.mode, down: false);
-          await armed;
-          expect(performance.armedDirectory, isNotNull);
-
-          // Past disarm's double-press guard window (D-GUARD) — the fake
-          // clock does not advance with the real 850ms long-press delay
-          // above, so it must be moved explicitly for the second long-press
-          // to actually disarm rather than be guarded.
-          clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
-
-          // `done`, not the first non-armed status: disarm passes through
-          // `finalizing` and only clears the directory at the end of it.
-          final disarmed = awaitStatus(
-            performance,
-            PerformanceCaptureStatus.done,
-          );
-          transport.press(PedalButton.mode, down: true);
-          await Future<void>.delayed(const Duration(milliseconds: 850));
-          transport.press(PedalButton.mode, down: false);
-          await disarmed;
-
-          expect(performance.armedDirectory, isNull);
-        });
-
-        test(
-          'a release with no matching press does not cycle the mode',
-          () async {
-            transport.press(PedalButton.mode, down: false); // release only
-            await pumpEventQueue();
-
-            expect(cubit.state.mode, InteractionMode.record); // unchanged
+            clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+            final done = awaitStatus(
+              performance,
+              PerformanceCaptureStatus.done,
+            );
+            transport.press(PedalButton.bank, down: true);
+            await Future<void>.delayed(const Duration(milliseconds: 850));
+            transport.press(PedalButton.bank, down: false);
+            await done;
+            expect(cubit.state.activeBank, 0);
             expect(performance.armedDirectory, isNull);
           },
         );
+
+        test('unmatched MODE release cannot run Press', () async {
+          transport.press(PedalButton.mode, down: false);
+          await pumpEventQueue();
+          expect(cubit.state.mode, InteractionMode.record);
+        });
       });
     });
 
@@ -2604,7 +2728,7 @@ void main() {
         });
 
         test(
-          'MODE still cycles the mode and Bank still switches banks',
+          'MODE keeps its configured pair and Bank still switches banks',
           () async {
             await cubit.setGlobalBindings(
               PedalBindingSet([bind(PedalButton.mode), bind(PedalButton.bank)]),
@@ -2615,7 +2739,7 @@ void main() {
             expect(chainEnabled.containsKey(3), isFalse);
 
             await stomp(PedalButton.mode);
-            expect(cubit.state.mode, InteractionMode.record);
+            expect(cubit.state.mode, InteractionMode.mute);
           },
         );
       });
@@ -2644,21 +2768,19 @@ void main() {
           expect(chainEnabled.containsKey(1), isFalse);
         });
 
-        test('MODE long-press still arms performance recording', () async {
-          await cubit.setGlobalBindings(
-            PedalBindingSet([bind(PedalButton.mode)]),
-          );
-          final armed = awaitStatus(
-            performance,
-            PerformanceCaptureStatus.armed,
-          );
-          await press(PedalButton.mode);
-          await Future<void>.delayed(const Duration(milliseconds: 850));
-          await release(PedalButton.mode);
-          await armed;
-
-          expect(performance.armedDirectory, isNotNull);
-        });
+        test(
+          'MODE Hold still exits FX despite an attempted remap',
+          () async {
+            await cubit.setGlobalBindings(
+              PedalBindingSet([bind(PedalButton.mode)]),
+            );
+            await press(PedalButton.mode);
+            await Future<void>.delayed(const Duration(milliseconds: 850));
+            await release(PedalButton.mode);
+            expect(cubit.state.mode, InteractionMode.record);
+            expect(performance.armedDirectory, isNull);
+          },
+        );
       });
 
       group('momentary (B1)', () {

@@ -428,13 +428,12 @@ void main() {
           ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa) // parkAll
           ..settle(fa)
-          // Two taps back to rec: the cycle's middle stop is FX, which leaves
-          // a capture alone (nothing is capturing here anyway).
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
+          // The configured MODE Press returns from Mute to Record.
           ..run(const [_Tap(PedalButton.mode)], fa) // -> rec (cursor 0)
           ..settle(fa)
           ..run(const [_Tap(PedalButton.undo)], fa) // t0 -> empty, redo-able
           ..settle(fa);
+        expect(h.control.state.mode, InteractionMode.record);
         expect(h.looper.tracks[0].state, TrackState.empty);
         expect(h.looper.tracks[1].state, TrackState.stopped);
 
@@ -463,11 +462,10 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.recording);
         expect(h.control.state.mode, InteractionMode.mute);
 
-        // It keeps ACCUMULATING through mute mode, and through FX on the way
-        // back round — every stop on the cycle leaves a live take alone.
+        // It keeps accumulating through Mute. A second MODE tap returns to
+        // Record under the configured Press action without ending the take.
         h
           ..run(const [_Pump(100, 0.5)], fa)
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
           ..run(const [_Tap(PedalButton.mode)], fa) // -> rec
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.recording);
@@ -497,7 +495,6 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
 
         h
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
           ..run(const [_Tap(PedalButton.mode)], fa) // -> rec
           ..run(const [_Tap(PedalButton.recPlay)], fa) // punch out
           ..settle(fa);

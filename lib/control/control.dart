@@ -28,6 +28,8 @@
 library;
 
 export 'binding/binding_labels.dart';
+export 'binding/control_action.dart';
+export 'binding/control_action_labels.dart';
 export 'binding/control_value_resolver.dart';
 export 'binding/control_value_target.dart';
 export 'binding/controller_learn.dart';
@@ -36,7 +38,7 @@ export 'binding/fx_binding_target.dart';
 export 'binding/fx_chain_lookup.dart';
 export 'binding/pedal_binding.dart';
 export 'binding/pedal_binding_set.dart';
+export 'binding/pedal_setup.dart';
 export 'control_projection.dart';
 export 'cubit/control_cubit.dart';
 export 'invariants.dart';
-export 'mode_switch_style.dart';

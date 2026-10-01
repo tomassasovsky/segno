@@ -2557,3 +2557,21 @@ This slice establishes binding and gesture behavior. The accepted Layout A
 setup, Custom mode entry, LED palette and shared external/MIDI action pickers
 remain the next dependent slices. Tests do not establish physical pedal timing
 or appliance behavior.
+
+
+## Pedal setup reconstruction — October 1, 2026
+
+PR #1028 is rebuilt on the reviewed assignments slice. Track controls now use
+the accepted hardware map and durable Save/Cancel behavior; malformed saved
+actions stay inactive until a reviewed replacement is saved. Independent
+probes repaired startup/save races, uncertain storage, pending overdub
+cancellation and active-capture interference. The native desktop journey and
+2,310 application tests pass; the configured coverage floor and static checks
+pass. See [the scoped evidence](../reviews/design-pedal-setup-restack/README.md).
+
+Custom editing is deliberately unavailable until PR #1030 supplies dispatch,
+including the accepted Mode Hold = Custom default. Bank Hold retains a working
+performance-recording path meanwhile. The repository Pen is older than the
+accepted working design; scoped notes are saved, and full synchronization
+remains part of final acceptance. Physical validation and the human merge gate
+are unchanged.
