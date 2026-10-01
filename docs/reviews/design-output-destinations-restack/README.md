@@ -108,3 +108,15 @@ Physical port identity, perceived audio, callback latency and appliance behavior
 still require hardware verification. The final app-shell review follows the
 routing surfaces; backend sample checks do not prove a new UI flow. No merge or
 deployment is authorized by this report.
+
+
+## CI diagnostic correction
+
+The first published CI run correctly rejected eight analyzer diagnostics that
+the local command reported with exit code zero. The earlier local static
+pass was therefore insufficient. The gate now uses `dart analyze --fatal-infos`
+and requires an explicit zero-diagnostic summary. The corrections add missing
+API documentation, wrap a comment, order a fake constructor, add braces and
+a cascade, and specify `on Object` without narrowing the capture cleanup
+handler's error coverage. Audio processing is unchanged. The corrected head
+requires independent delta review and a fresh remote CI run.
