@@ -933,15 +933,39 @@ typedef struct le_track {
   le_loop_clock free_clock;
   uint64_t free_iteration;
 
-  /* One Shot (B4, Sheeran manual §5.9.4): "plays just once and then stops"
-   * instead of looping. A SETTING (like a_length_preset_bars above),
-   * untouched by handle_clear/UNDO_TO_EMPTY — see LE_CMD_SET_ONE_SHOT's doc,
-   * segno_engine_api.h, for the full mode-gating rationale. Consumed only by
-   * advance_track_clock_frame's free_clock wrap check (engine_process.c);
-   * dormant (read but inert) outside Free/Song for the same reason
-   * free_clock itself is — there is no per-track wrap event to hook in
-   * Multi/Sync/Band. */
+  /* One Shot: a setting in every mode, untouched by clear/undo-to-empty.
+   * Independent modes stop at their own wrap; shared modes use the track's
+   * playback lap without changing the musical capture clock. */
   _Atomic int32_t a_one_shot;
+  /* Musical quantization division override (accepted design, slice 2b): -1
+   * inherits the global a_quantize_div, else a le_grid_div. Control writes,
+   * the audio thread reads it live (le_live_subdiv_ratio). Configure resets
+   * it; clear does not (a setting, like a_one_shot). */
+  _Atomic int32_t a_quantize_div_override;
+  /* Overdub feedback override (slice 2b): the bits of a float; a negative
+   * value inherits the global a_overdub_fb_bits. Same lifetime as the
+   * division override above. */
+  _Atomic uint32_t a_overdub_fb_bits;
+  /* Audio-thread-local feedback actually applied at the write head: ramps
+   * toward the effective coefficient one od_step per frame so a live change
+   * never steps the retained layer (mix_tracks_frame). */
+  float fb_cur;
+  /* Frames this track has been sounding (PLAYING or OVERDUBBING) on the
+   * shared clock, audio-thread-local (slice 2b, Once): counted by
+   * le_shared_clock_one_shots and reset while the track is not sounding, so
+   * a take finalized or launched mid-lap plays at least one full lap before
+   * Once stops it at a lap end. */
+  uint64_t sounding_frames;
+  /* Audio-thread playback origin on the shared clock, in full-track frames.
+   * Only a launch after an automatic Once end changes it; ordinary captures
+   * and history recovery retain their established shared phase. */
+  int32_t playback_offset;
+  /* Automatic-end marker: an explicit launch starts at frame zero. It also
+   * prevents a sibling's launch from automatically unparking this track. */
+  int once_ended;
+  /* Enabling Once during existing playback ends the current pass, even when
+   * that pass began less than a full lap ago. */
+  int once_current_pass;
 } le_track;
 
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
@@ -1217,7 +1241,9 @@ struct le_engine {
   _Atomic int32_t a_click_mode;         /* le_click_mode; default 0 = off */
   _Atomic uint32_t a_click_mask;        /* output bitmask; default 0 = unrouted */
   _Atomic uint32_t a_click_volume_bits; /* float bits, 0..LE_MAX_GAIN; def. 1 */
-  _Atomic int32_t a_count_in_bars;      /* measures of count-in; 0 = off */
+  /* Callback-published exclusive recording-start choice: positive = count-in
+   * measures, 0 = neither, -1 = sound start. One load reports a coherent pair. */
+  _Atomic int32_t a_record_start;
   _Atomic int32_t a_counting_in;        /* 0/1: a count-in is in progress */
   _Atomic int32_t a_count_in_beats_left; /* countdown beats remaining; 0 idle */
 
@@ -1235,6 +1261,12 @@ struct le_engine {
    * Recovery waits until their actual clock policy is known. */
   uint32_t clock_commands_posted;
   _Atomic uint32_t a_clock_commands_applied;
+  /* All accepted commands: control owns posted, callback owns applied.
+   * Published is released only after the block's snapshot values are stored,
+   * so session capture cannot mistake dequeued for applied/published. */
+  uint64_t commands_posted;
+  uint64_t commands_applied;
+  _Atomic uint64_t a_commands_published;
 
   /* Primary track (B3, D18, published — see le_snapshot's trailing block).
    * -1 = none (default). A SETTING seeded once in le_engine_create and
@@ -1463,6 +1495,16 @@ struct le_engine {
    * at the next loop top. Arming creates no undo layer (layers are captured
    * per pass on the audio thread), so cancelling is a plain disarm. */
   int quantize; /* global default */
+  /* The control thread's mirror of a_quantize_div.
+   *
+   * The gate above is a plain control-side int the setter writes at once,
+   * while the DIVISION reaches the audio thread through the ring. Publishing
+   * one of each in the same snapshot let a reader see the gate move without
+   * its division — a session saved in that window recorded "quantize on, no
+   * division", which is a different record timing from the one chosen. The
+   * audio thread keeps reading a_quantize_div; this is what the snapshot
+   * publishes, so both halves come from one thread at one instant. */
+  int quantize_div;
   /* Per-track quantize override: -1 inherit the global default, 0 force off,
    * 1 force on. The effective value drives le_engine_record's arm decision. */
   int track_quantize[LE_MAX_TRACKS];
@@ -1494,7 +1536,7 @@ struct le_engine {
    * machinery with a per-track trigger type (see le_track.pending_trigger). */
   int auto_record;
 
-  /* Control-side mirror of the count-in setting (the published a_count_in_bars
+  /* Control-side mirror of the count-in setting (the published a_record_start
    * only updates when the audio thread drains the ring, so the D9 auto-record
    * mutual exclusion and le_engine_record's precedence check read this plain
    * control-thread int instead of racing the atomic). */
@@ -1718,6 +1760,13 @@ static inline int le_mode_span_fits(int32_t mode, int32_t base, int32_t len) {
   if (len >= base) return len % base == 0;
   if (mode == LE_LOOPER_MODE_MULTI) return 0;
   return base % len == 0 && (base / len == 2 || base / len == 4);
+}
+
+/* Comparisons reject non-finite values without accepting a partial pair. */
+static inline int le_restored_tempo_valid(float bpm, int32_t source) {
+  if (source == LE_TEMPO_SOURCE_NONE) return bpm == 0.0f;
+  return source >= LE_TEMPO_SOURCE_MANUAL && source <= LE_TEMPO_SOURCE_DERIVED &&
+         bpm >= 30.0f && bpm <= 300.0f;
 }
 
 /* The track a looper-mode switch measures the other spans against (accepted

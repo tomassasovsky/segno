@@ -183,9 +183,16 @@ class LooperRepository {
   /// successful (re)start so it survives device changes and reconnects.
   bool _quantize = false;
 
-  /// Per-track quantize overrides (absent => inherit the global default).
+  /// Per-track record timing overrides (absent => follow the default).
   /// Remembered and re-applied on every successful (re)start.
-  final Map<int, bool> _trackQuantize = {};
+  final Map<int, RecordTiming> _trackRecordTiming = {};
+
+  /// The default overdub decay in percent and the per-track overrides
+  /// (absent => follow the default). Remembered and re-applied on every
+  /// successful (re)start; the engine takes them as feedback coefficients
+  /// ([feedbackOfDecay]).
+  int _overdubDecay = 0;
+  final Map<int, int> _trackOverdubDecay = {};
 
   /// Per-track forced loop multiples (absent => auto). The global rec/dub and
   /// auto-record (sound-activated) flags. All re-applied on every (re)start.
@@ -220,26 +227,12 @@ class LooperRepository {
   /// resumes analysing behind a face nobody is looking at.
   int _tunerInput = -1;
 
-  /// The tempo grid (A1) + click/count-in (A2) desired state, re-applied to
-  /// the engine on every successful (re)start. Unlike [_quantize] above, this
-  /// re-apply is a narrower safety net than a source of truth: the native
-  /// engine's own tempo-grid settings are seeded once in `le_engine_create`
-  /// and are NOT reset by `le_engine_configure` (which runs on every start),
-  /// so a live device (one `le_engine*`, reused across `stop`/`startEngine`)
-  /// keeps a tapped or loop-derived tempo across a reconnect natively — these
-  /// fields only matter for re-establishing state on a genuinely fresh engine
-  /// instance (e.g. after a full app restart), not a within-session reconnect.
-  ///
-  /// [_tempoBpm] only remembers an EXPLICIT [setTempo] call, never a tapped or
-  /// loop-derived tempo (those are the engine's own runtime state, not an
-  /// argument this repository was given) — this field is deliberately a
-  /// narrower "what to push on a fresh engine" shadow, not a mirror of what's
-  /// currently live; do not treat `0`/unset here as evidence the engine has
-  /// lost a tapped or derived tempo. `0` means "never explicitly set"; unlike
-  /// the other fields below, `0` is NOT re-applied (see [startEngine]), since
-  /// the engine clamps [TempoControl.setTempo] to `30..300` rather than
-  /// treating `0` as "unset".
+  /// Musical settings retained across device restarts and restored sessions.
+  /// Explicit edits and session recall update the desired tempo. Stopping the
+  /// engine captures its final tapped/derived tempo and source for reconnect.
+  /// Live session saves use the engine's settled snapshot as one clock record.
   double _tempoBpm = 0;
+  TempoSource _tempoSource = TempoSource.none;
   int _tsNum = 4;
   int _tsDen = 4;
   bool _syncTempo = true;
@@ -275,12 +268,76 @@ class LooperRepository {
   /// (`engine.c`'s per-track init loop, run from `le_engine_configure`).
   final Map<int, int> _trackLengthPreset = {};
 
-  /// Per-track One Shot flags (song-mode-spec.md §2, B5c; absent => `false`).
-  /// Remembered and re-applied on every successful (re)start, mirroring
-  /// [_trackLengthPreset] — the native engine resets every track's
-  /// `a_one_shot` to `false` in `le_engine_configure`, run on every (re)start
-  /// (unlike [_looperMode] above, which persists across it).
+  /// Playback default and explicit track overrides, independent of audio.
+  /// An absent override follows the default, including after reconnect.
+  int _sessionRevision = 0;
+
+  /// Changes when session recall takes ownership from startup preferences.
+  int get sessionRevision => _sessionRevision;
+
+  int _recordStartRevision = 0;
+
+  /// Changes when the count-in or sound-triggered start choice is accepted.
+  int get recordStartRevision => _recordStartRevision;
+
+  bool _defaultOneShot = false;
   final Map<int, bool> _trackOneShot = {};
+
+  /// Future recording presets, including empty tracks.
+  Map<int, int> get trackLengthPresetOverrides =>
+      Map.unmodifiable(_trackLengthPreset);
+
+  /// Musical settings for session capture and settings editors. Uses the
+  /// latest published live tempo, while desired settings survive a stopped
+  /// device and do not require another native snapshot per stream event.
+  TransportState get sessionTransport {
+    final live = _last?.transport;
+    final useLiveTempo = _intendRunning && live != null && live.tempoBpm > 0;
+    return TransportState(
+      isRunning: _intendRunning,
+      loopBars: live?.loopBars ?? 0,
+      tempoBpm: useLiveTempo ? live.tempoBpm : _tempoBpm,
+      tempoSource: useLiveTempo ? live.tempoSource : _tempoSource,
+      tsNum: _tsNum,
+      tsDen: _tsDen,
+      syncTempo: _syncTempo,
+      quantizeDiv: _quantizeDiv,
+      clickMode: _clickMode,
+      clickMask: _clickMask,
+      clickVolume: _clickVolume,
+      countInBars: _countInBars,
+      recDub: _recDub,
+      autoRecord: _autoRecord,
+      quantize: _quantize,
+      recordTiming: defaultRecordTiming,
+      overdubDecay: _overdubDecay,
+      defaultOneShot: _defaultOneShot,
+      defaultMultiple: _defaultMultiple,
+      looperMode: _looperMode,
+      primaryTrack: live?.primaryTrack ?? _pendingCrown ?? -1,
+    );
+  }
+
+  /// Shared playback default: true plays each pass once, false loops.
+  bool get defaultOneShot => _defaultOneShot;
+
+  /// Explicit playback overrides, including custom Loop values.
+  Map<int, bool> get trackOneShotOverrides => Map.unmodifiable(_trackOneShot);
+
+  /// Explicit record timing overrides, including values equal to the default.
+  Map<int, RecordTiming> get trackRecordTimingOverrides =>
+      Map.unmodifiable(_trackRecordTiming);
+
+  /// Explicit overdub decay overrides, independent of recorded audio.
+  Map<int, int> get trackOverdubDecayOverrides =>
+      Map.unmodifiable(_trackOverdubDecay);
+
+  /// Current desired recording timing, including while the device is stopped.
+  RecordTiming get defaultRecordTiming =>
+      RecordTiming.of(quantize: _quantize, division: _quantizeDiv);
+
+  /// Current desired overdub decay, including while the device is stopped.
+  int get defaultOverdubDecay => _overdubDecay;
 
   /// Per-track active lane count (absent => 1). Remembered and re-applied on
   /// every successful (re)start.
@@ -850,7 +907,11 @@ class LooperRepository {
       clickMode: s.clickMode,
       clickMask: s.clickMask,
       clickVolume: s.clickVolume,
-      countInBars: s.countInBars,
+      // The repository's own re-apply cache, like the record start settings
+      // below: the engine's mirror reads 0 while it is stopped (nothing is
+      // pushed to a stopped engine) and lands a block late while it runs,
+      // and the cubits that own the setting follow this value.
+      countInBars: _countInBars,
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
       looperMode: s.looperMode,
@@ -861,6 +922,20 @@ class LooperRepository {
       primaryTrack: resolvedPrimaryTrack(s.primaryTrack, s.tracks),
       outputPeak: s.outputPeak,
       recDub: _recDub,
+      // The record start and decay defaults are the repository's own
+      // re-apply caches (what a stopped engine would be given on start);
+      // the caches mirror the engine's count-in and Sound start exclusion
+      // ([setCountIn], [setAutoRecord]), so they read right while the
+      // engine is stopped and in the mock flavour, which reports neither.
+      quantize: _quantize,
+      autoRecord: _autoRecord,
+      overdubDecay: _overdubDecay,
+      defaultOneShot: _defaultOneShot,
+      defaultMultiple: _defaultMultiple,
+      recordTiming: RecordTiming.of(
+        quantize: _quantize,
+        division: _quantizeDiv,
+      ),
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -879,8 +954,10 @@ class LooperRepository {
           pendingTrigger: ArmTrigger.fromCode(s.tracks[i].pendingTrigger),
           positionFrames: s.tracks[i].positionFrames,
           lengthPresetBars: s.tracks[i].lengthPresetBars,
-          quantizeOverride: _trackQuantize[i],
-          oneShot: s.tracks[i].oneShot,
+          recordTimingOverride: _trackRecordTiming[i],
+          overdubDecayOverride: _trackOverdubDecay[i],
+          oneShot: _trackOneShot[i] ?? _defaultOneShot,
+          oneShotOverride: _trackOneShot[i],
           multiple: s.tracks[i].multiple,
           inputMask: s.tracks[i].inputMask,
           outputMask: s.tracks[i].outputMask,
@@ -966,14 +1043,12 @@ class LooperRepository {
       // A fresh start resets the engine's quantize flag and monitor masks;
       // re-apply the desired state so it survives device changes / reconnects.
       _engine.setQuantize(enabled: _quantize);
-      _trackQuantize.forEach(
-        (channel, enabled) =>
-            _engine.setTrackQuantize(channel: channel, enabled: enabled),
-      );
+      _trackRecordTiming.forEach(_pushTrackRecordTiming);
       _engine
         ..setRecDub(enabled: _recDub)
         ..setAutoRecord(enabled: _autoRecord)
         ..setDefaultMultiple(multiple: _defaultMultiple)
+        ..setOverdubFeedback(feedbackOfDecay(_overdubDecay))
         ..setMasterGain(_masterGain)
         // Master peak limiter on by default: a fresh start resets it to off, so
         // re-assert the cached state here (like the rest) to guard the summed
@@ -998,7 +1073,9 @@ class LooperRepository {
       // would clamp up to 30 BPM and falsely leave the grid on; the mode has
       // no such sentinel (`multi` IS the default), so it is always pushed,
       // like sync/quantize/click above.
-      if (_tempoBpm > 0) _engine.setTempo(_tempoBpm);
+      if (_tempoBpm > 0) {
+        _engine.restoreTempo(bpm: _tempoBpm, source: _tempoSource);
+      }
       _engine
         ..setTimeSignature(_tsNum, _tsDen)
         ..setSyncTempo(on: _syncTempo)
@@ -1028,9 +1105,22 @@ class LooperRepository {
         (channel, bars) =>
             _engine.setTrackLengthPreset(channel: channel, bars: bars),
       );
-      _trackOneShot.forEach(
-        (channel, oneShot) =>
-            _engine.setOneShot(channel: channel, oneShot: oneShot),
+      _trackOneShot.forEach((channel, oneShot) {
+        _engine.setOneShot(channel: channel, oneShot: oneShot);
+      });
+      if (_defaultOneShot) {
+        final tracks = _engine.snapshot().tracks;
+        for (var channel = 0; channel < tracks.length; channel++) {
+          if (!_trackOneShot.containsKey(channel)) {
+            _engine.setOneShot(channel: channel, oneShot: true);
+          }
+        }
+      }
+      _trackOverdubDecay.forEach(
+        (channel, percent) => _engine.setTrackOverdubFeedback(
+          channel: channel,
+          feedback: feedbackOfDecay(percent),
+        ),
       );
       // Re-apply per-lane state: counts first (so added lanes are allocated),
       // then routing / mix / effects per lane.
@@ -1278,6 +1368,13 @@ class LooperRepository {
   /// Closes the audio device. A deliberate stop also cancels any in-flight
   /// reconnect supervision so the engine is not reopened behind the user.
   EngineResult stopEngine() {
+    if (_intendRunning) {
+      final snapshot = _engine.snapshot();
+      if (snapshot.tempoBpm > 0) {
+        _tempoBpm = snapshot.tempoBpm;
+        _tempoSource = snapshot.tempoSource;
+      }
+    }
     _intendRunning = false;
     _stopReconnectPolling();
     // The engine tears down all plugin slots on stop; drop our stale handles so
@@ -1924,6 +2021,23 @@ class LooperRepository {
     Duration clearPollInterval = const Duration(milliseconds: 8),
     int clearPollAttempts = 64,
   }) async {
+    if (rig.loopBars < 0 || rig.loopBars > 0x7fffffff ~/ 15) {
+      throw StateError('session grid cannot be restored');
+    }
+    if (!rig.tempoBpm.isFinite ||
+        (rig.tempoSource == TempoSource.none
+            ? rig.tempoBpm != 0
+            : rig.tempoSource == TempoSource.external ||
+                  rig.tempoBpm < 30 ||
+                  rig.tempoBpm > 300)) {
+      throw StateError('session tempo cannot be restored');
+    }
+    _sessionRevision++;
+    // Own the settings before the first await. Callers may reuse their maps.
+    final recordTimingOverrides = Map.of(rig.trackRecordTimingOverrides);
+    final overdubDecayOverrides = Map.of(rig.trackOverdubDecayOverrides);
+    final oneShotOverrides = Map.of(rig.trackOneShotOverrides);
+    final lengthPresetOverrides = Map.of(rig.trackLengthPresetOverrides);
     final trackCount = _engine.snapshot().tracks.length;
     for (var channel = 0; channel < trackCount; channel++) {
       // Destructive on purpose: a session load replaces the rig wholesale, so
@@ -1965,6 +2079,10 @@ class LooperRepository {
     // One Shot must be explicitly turned off below or a prior session/live
     // flag would bleed into the freshly loaded one.
     _trackOneShot.clear();
+    // Same for the record timing and decay overrides (slice 2b): per-track
+    // settings that survive `clear`, reset below and re-armed from the rig.
+    _trackRecordTiming.clear();
+    _trackOverdubDecay.clear();
     // The crown dies with the last take: the clear awaited below empties
     // every track, and the engine uncrowns itself on that (its own rule, not
     // a call from here). A crown requested while stopped for a rig that is
@@ -2001,9 +2119,39 @@ class LooperRepository {
           // a_one_shot survives `clear` by design too (see above) — reset
           // every track to off here; the rig loop below re-arms it for any
           // track this session actually marks One Shot.
-          ..setOneShot(channel: channel, oneShot: false);
+          ..setOneShot(channel: channel, oneShot: false)
+          // The record timing and decay overrides survive `clear` the same
+          // way: back to inherit here, re-armed from the rig below.
+          ..setTrackQuantize(channel: channel, enabled: null)
+          ..setTrackQuantizeDiv(channel: channel, div: null)
+          ..setTrackOverdubFeedback(channel: channel, feedback: null);
       }
     }
+
+    // Musical settings belong to the session, not the connected interface.
+    // Restore them before imported audio establishes the new shared clock.
+    _requireSessionSetting(setTimeSignature(rig.tsNum, rig.tsDen));
+    _tempoBpm = rig.tempoBpm;
+    _tempoSource = rig.tempoSource;
+    if (_intendRunning) {
+      _requireSessionSetting(
+        _engine.restoreTempo(bpm: rig.tempoBpm, source: rig.tempoSource),
+      );
+    }
+    _requireSessionSetting(setSyncTempo(on: rig.syncTempo));
+    _requireSessionSetting(setRecordTiming(rig.recordTiming));
+    if (!rig.recordTiming.quantize) {
+      _requireSessionSetting(setQuantizeDiv(rig.quantizeDiv));
+    }
+    _requireSessionSetting(setOverdubDecay(rig.overdubDecay));
+    _requireSessionSetting(setDefaultOneShot(oneShot: rig.defaultOneShot));
+    _requireSessionSetting(setDefaultMultiple(multiple: rig.defaultMultiple));
+    _requireSessionSetting(setRecDub(enabled: rig.recDub));
+    _requireSessionSetting(setAutoRecord(enabled: rig.autoRecord));
+    _requireSessionSetting(setCountIn(rig.countInBars));
+    _requireSessionSetting(setClickMode(rig.clickMode));
+    _requireSessionSetting(setClickOutput(rig.clickMask));
+    _requireSessionSetting(setClickVolume(rig.clickVolume));
 
     // Session-level mode + crown (B5c), applied here — before any content is
     // imported below — so the mode lands on an empty rig with nothing to
@@ -2016,7 +2164,11 @@ class LooperRepository {
     // only when the rig actually defines one — a rig without a crown gets the
     // engine's own: its lowest recorded track, once the import commits.
     setLooperMode(rig.looperMode);
-    // Bounded to `trackCount` — same rationale as `rig.oneShotChannels` below:
+    // The session's own defaults (slice 2b), before the per-track overrides
+    // land with the tracks below: a track whose override is null follows
+    // these, so restoring the overrides without them would leave that track
+    // on whatever the app was last set to.
+    // Bounded to `trackCount` — same bound as the per-track settings below:
     // a manifest saved on a build with more physical tracks than this engine
     // must not push an out-of-range channel, nor hold one as a pending crown
     // this engine can never actually apply.
@@ -2086,11 +2238,13 @@ class LooperRepository {
         );
       }
     }
-    // An empty session (or a legacy save carrying a ghost grid with no
-    // tracks) establishes no master: the cleared engine stays free to define
+    // An empty session establishes no master: the engine stays free to define
     // a fresh loop length.
     if (rig.tracks.isNotEmpty && rig.baseLengthFrames > 0) {
-      final committed = _engine.commitSession(rig.baseLengthFrames);
+      final committed = _engine.commitSession(
+        rig.baseLengthFrames,
+        loopBars: rig.loopBars,
+      );
       if (!committed.isOk) {
         throw StateError('failed to start the session: ${committed.name}');
       }
@@ -2120,37 +2274,38 @@ class LooperRepository {
         setLaneVolume(lane.volume, channel: track.channel, lane: lane.lane);
         setLaneMute(muted: lane.muted, channel: track.channel, lane: lane.lane);
       }
-      // Length preset (A6): inert for the audio just imported (it only
-      // governs a future defining recording), but must round-trip so a track
-      // re-recorded after a load still honors the preset it was saved with.
-      if (track.lengthPresetBars != 0) {
-        setTrackLengthPreset(
-          channel: track.channel,
-          bars: track.lengthPresetBars,
-        );
-      }
-      // One Shot (B5c): only push when the rig actually marks it — the
-      // running-engine reset loop above already turned every track off, so a
-      // track this rig leaves at the default `false` needs no further call.
-      if (track.oneShot) {
-        setOneShot(channel: track.channel, oneShot: true);
-      }
     }
 
-    // One Shot, session-level set (post-B5c independent review fix): the
-    // per-track restore just above only runs for a channel that also has a
-    // [SessionRigTrack] entry, i.e. content — a channel armed with One Shot
-    // but never recorded onto has no such entry (see
-    // `SessionRepository._capture`'s doc) and would otherwise stay off
-    // forever after this load. [rig.oneShotChannels] is the content-independent
-    // source of truth (every armed channel, captured unconditionally), so
-    // restore from it too; harmless overlap with the per-track loop above for
-    // a content-bearing channel since [setOneShot] is idempotent. Bounded to
-    // `trackCount` — a manifest saved on a build with more physical tracks
-    // than this engine must not push an out-of-range channel.
-    for (final channel in rig.oneShotChannels) {
-      if (channel < 0 || channel >= trackCount) continue;
-      setOneShot(channel: channel, oneShot: true);
+    // Settings have one content-independent owner. Empty tracks and custom
+    // values equal to defaults restore through the same maps as recorded ones.
+    // Before device startup there is no native track array yet, but the eight
+    // product tracks still own settings that must be replayed on first start.
+    final settingsTrackCount = _intendRunning ? trackCount : 8;
+    for (var channel = 0; channel < settingsTrackCount; channel++) {
+      _requireSessionSetting(
+        setTrackLengthPreset(
+          channel: channel,
+          bars: lengthPresetOverrides[channel] ?? 0,
+        ),
+      );
+      _requireSessionSetting(
+        setOneShot(
+          channel: channel,
+          oneShot: oneShotOverrides[channel],
+        ),
+      );
+      _requireSessionSetting(
+        setTrackRecordTiming(
+          channel: channel,
+          timing: recordTimingOverrides[channel],
+        ),
+      );
+      _requireSessionSetting(
+        setTrackOverdubDecay(
+          channel: channel,
+          percent: overdubDecayOverrides[channel],
+        ),
+      );
     }
 
     // Chains: reset every remembered chain the rig does not define, then
@@ -2202,7 +2357,7 @@ class LooperRepository {
     }
     rig.trackChains.forEach((channel, chain) {
       // Bounded to `trackCount`, same rationale as `rig.primaryTrack` /
-      // `rig.oneShotChannels` above: a manifest saved on a build with more
+      // the per-track settings above: a manifest saved on a build with more
       // physical tracks than this engine must not poison the re-apply cache
       // with a channel this engine can never own (the native call rejects it,
       // but the cache would replay it on every restart and re-save it).
@@ -2266,6 +2421,10 @@ class LooperRepository {
   /// whether the engine settled within [attempts].
   Future<bool> _awaitCleared(Duration interval, int attempts) async {
     for (var attempt = 0; attempt < attempts; attempt++) {
+      if (_intendRunning && !_engine.commandsSettled) {
+        await Future<void>.delayed(interval);
+        continue;
+      }
       final snapshot = _engine.snapshot();
       final cleared =
           snapshot.masterLengthFrames == 0 &&
@@ -2731,7 +2890,8 @@ class LooperRepository {
   /// route masks are preserved — re-enabling restores them. Default-on: only
   /// off entries are remembered, and they are re-applied on every (re)start.
   ///
-  /// Re-projects, for the reason [setTrackQuantize] does: the gate lives in the
+  /// Re-projects, for the reason [setTrackRecordTiming] does: the gate
+  /// lives in the
   /// map below and a stopped engine's snapshot cannot report it, so nothing
   /// else would tell a surface it had changed. A session load writes these with
   /// no user gesture to hang a re-read off.
@@ -2833,28 +2993,80 @@ class LooperRepository {
     return _engine.setRecordOffset(_recordOffset);
   }
 
-  /// Overrides quantize for track [channel]: `null` inherits the global
-  /// default, `false` forces it off, `true` forces it on. Remembered and
-  /// re-applied on every (re)start.
+  /// Sets track [channel]'s record timing override (accepted design, Length
+  /// & quantize): `null` follows the default ([setRecordTiming]), else the
+  /// timing this track's own record and overdub requests wait for — the
+  /// engine's per-track quantize gate and division, set together. Remembered
+  /// and re-applied on every (re)start.
   ///
-  /// Re-projects, because the override is in no engine snapshot: it lives only
-  /// in the map below, so nothing else would tell a surface that it had
-  /// changed. That matters beyond the tap that sets it — a session load writes
-  /// these with no user gesture to hang a re-read off, and the console's Tracks
-  /// face would otherwise go on showing the outgoing session's overrides.
-  EngineResult setTrackQuantize({
+  /// Re-projects, because the override is projected from the cache below:
+  /// nothing else would tell a surface that it had changed. That matters
+  /// beyond the tap that sets it — a session load writes these with no user
+  /// gesture to hang a re-read off, and the console's Tracks face would
+  /// otherwise go on showing the outgoing session's overrides.
+  EngineResult setTrackRecordTiming({
     required int channel,
-    required bool? enabled,
+    required RecordTiming? timing,
   }) {
-    if (enabled == null) {
-      _trackQuantize.remove(channel);
+    if (channel < 0 || channel >= 8) return EngineResult.invalid;
+    if (_intendRunning) {
+      final result = _pushTrackRecordTiming(channel, timing);
+      if (!result.isOk) return result;
+    }
+    if (timing == null) {
+      _trackRecordTiming.remove(channel);
     } else {
-      _trackQuantize[channel] = enabled;
+      _trackRecordTiming[channel] = timing;
     }
     _reproject();
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setTrackQuantize(channel: channel, enabled: enabled);
+    return EngineResult.ok;
   }
+
+  /// The engine's two per-track knobs for one timing: the division first,
+  /// so a gate that opens finds its division already set.
+  EngineResult _pushTrackRecordTiming(int channel, RecordTiming? timing) {
+    final div = _engine.setTrackQuantizeDiv(
+      channel: channel,
+      div: timing?.division,
+    );
+    if (!div.isOk) return div;
+    final gate = _engine.setTrackQuantize(
+      channel: channel,
+      enabled: timing?.quantize,
+    );
+    return gate.isOk ? div : gate;
+  }
+
+  /// Sets track [channel]'s overdub decay override in percent (`0..100`;
+  /// accepted design, Playback & overdub): `null` follows the default
+  /// ([setOverdubDecay]). Live: the engine ramps a change during a pass at
+  /// the write head. Remembered and re-applied on every (re)start;
+  /// re-projects for the reason [setTrackRecordTiming] does.
+  EngineResult setTrackOverdubDecay({
+    required int channel,
+    required int? percent,
+  }) {
+    if (channel < 0 || channel >= 8) return EngineResult.invalid;
+    final clamped = percent?.clamp(0, 100);
+    if (_intendRunning) {
+      final result = _engine.setTrackOverdubFeedback(
+        channel: channel,
+        feedback: clamped == null ? null : feedbackOfDecay(clamped),
+      );
+      if (!result.isOk) return result;
+    }
+    if (clamped == null) {
+      _trackOverdubDecay.remove(channel);
+    } else {
+      _trackOverdubDecay[channel] = clamped;
+    }
+    _reproject();
+    return EngineResult.ok;
+  }
+
+  /// The engine's feedback coefficient for a decay in percent: each overdub
+  /// pass keeps `1 - percent / 100` of the existing layer.
+  static double feedbackOfDecay(int percent) => 1 - percent.clamp(0, 100) / 100;
 
   /// Cancels track [channel]'s pending record arm, whatever armed it — the
   /// quantized loop-top arm, the signal-triggered one, or a Band section
@@ -4120,20 +4332,29 @@ class LooperRepository {
   /// Sets the global default loop length for inheriting tracks (`0` = auto).
   /// Remembered and re-applied on every (re)start.
   EngineResult setDefaultMultiple({required int multiple}) {
+    if (_intendRunning) {
+      final result = _engine.setDefaultMultiple(
+        multiple: multiple < 0 ? 0 : multiple,
+      );
+      if (!result.isOk) return result;
+    }
     _defaultMultiple = multiple < 0 ? 0 : multiple;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setDefaultMultiple(multiple: _defaultMultiple);
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Sets the global rec/dub second-press mode. Remembered and re-applied on
   /// every (re)start.
   EngineResult setRecDub({required bool enabled}) {
+    if (_intendRunning) {
+      final result = _engine.setRecDub(enabled: enabled);
+      if (!result.isOk) return result;
+    }
     _recDub = enabled;
     // Projected as `TransportState.recDub`: the queued take-end cue reads it,
     // so it lands on the next frame, not the next poll.
     _reproject();
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setRecDub(enabled: enabled);
+    return EngineResult.ok;
   }
 
   /// Sets the global master output gain (`0..1`, clamped by the engine).
@@ -4160,11 +4381,53 @@ class LooperRepository {
   double get limiterCeiling => _limiterCeiling;
 
   /// Enables global sound-activated recording. Remembered and re-applied on
-  /// every (re)start.
+  /// every (re)start. Turning it on clears the count-in, as the engine does
+  /// (D9): the two ways of starting a defining take exclude each other, and
+  /// the restart replay must not resurrect the one the engine dropped.
   EngineResult setAutoRecord({required bool enabled}) {
+    if (_intendRunning) {
+      final result = _engine.setAutoRecord(enabled: enabled);
+      if (!result.isOk) return result;
+    }
     _autoRecord = enabled;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setAutoRecord(enabled: enabled);
+    if (enabled) _countInBars = 0;
+    _recordStartRevision++;
+    _reproject();
+    return EngineResult.ok;
+  }
+
+  /// Sets the default record timing (accepted design, Length & quantize):
+  /// the engine's quantize gate and musical division, set together. Tracks
+  /// follow it unless they carry an override ([setTrackRecordTiming]).
+  /// Remembered and re-applied on every (re)start; re-projects so the
+  /// published default moves with the call.
+  EngineResult setRecordTiming(RecordTiming timing) {
+    if (_intendRunning) {
+      if (timing.quantize) {
+        final division = _engine.setQuantizeDiv(timing.division);
+        if (!division.isOk) return division;
+      }
+      final gate = _engine.setQuantize(enabled: timing.quantize);
+      if (!gate.isOk) return gate;
+    }
+    _quantize = timing.quantize;
+    if (timing.quantize) _quantizeDiv = timing.division;
+    _reproject();
+    return EngineResult.ok;
+  }
+
+  /// Sets the default overdub decay in percent (`0..100`; accepted design,
+  /// Playback & overdub). Tracks follow it unless they carry an override
+  /// ([setTrackOverdubDecay]). Remembered and re-applied on every (re)start;
+  /// re-projects so the published default moves with the call.
+  EngineResult setOverdubDecay(int percent) {
+    if (_intendRunning) {
+      final result = _engine.setOverdubFeedback(feedbackOfDecay(percent));
+      if (!result.isOk) return result;
+    }
+    _overdubDecay = percent.clamp(0, 100);
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Enables or disables quantized recording (captures snap to the loop grid).
@@ -4172,9 +4435,13 @@ class LooperRepository {
   /// start (device change, reconnect) resets the engine's flag — so it survives
   /// restarts. Applied to the live engine only while running.
   EngineResult setQuantize({required bool enabled}) {
+    if (_intendRunning) {
+      final result = _engine.setQuantize(enabled: enabled);
+      if (!result.isOk) return result;
+    }
     _quantize = enabled;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setQuantize(enabled: enabled);
+    _reproject();
+    return EngineResult.ok;
   }
 
   // ---- tempo grid (A1) + click/count-in (A2) passthroughs ----
@@ -4186,15 +4453,17 @@ class LooperRepository {
   // setter in this file; while stopped the call still reports
   // [EngineResult.ok] and is applied on the next start.
 
-  /// Sets the tempo in denominator-note beats per minute. Remembered and
-  /// re-applied on every (re)start; see [_tempoBpm]'s doc for why a device
-  /// reconnect only restores an explicitly-set tempo, never a tapped or
-  /// loop-derived one. Ignored by the engine while the tempo is locked (D6 —
-  /// see [TempoControl]'s class doc).
+  /// Sets the tempo in denominator-note beats per minute. Accepted edits are
+  /// remembered for restart; the live engine owns any timing-lock decision.
   EngineResult setTempo(double bpm) {
+    if (_intendRunning) {
+      final result = _engine.setTempo(bpm);
+      if (!result.isOk) return result;
+    }
     _tempoBpm = bpm;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setTempo(bpm);
+    _tempoSource = TempoSource.manual;
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Sets the time signature to [num]/[den] (only the 17 Sheeran-verified
@@ -4202,49 +4471,67 @@ class LooperRepository {
   /// applying). Remembered and re-applied on every (re)start. Ignored by the
   /// engine while the tempo is locked.
   EngineResult setTimeSignature(int num, int den) {
+    if (_intendRunning) {
+      final result = _engine.setTimeSignature(num, den);
+      if (!result.isOk) return result;
+    }
     _tsNum = num;
     _tsDen = den;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setTimeSignature(num, den);
+    _reproject();
+    return EngineResult.ok;
   }
 
-  /// Registers a tempo tap; two taps within the engine's window set the tempo
-  /// from their interval. A momentary action, not remembered state — never
-  /// re-applied on restart (there is nothing to replay: the resulting tempo,
-  /// if any, is not this repository's to remember — see [_tempoBpm]'s doc).
+  /// Registers a tempo tap. The engine owns its resulting BPM and source;
+  /// settled session capture and device stop retain those values.
   EngineResult tapTempo() => _engine.tapTempo();
 
   /// Enables/disables loop↔grid sync (default on). Remembered and re-applied
   /// on every (re)start.
   EngineResult setSyncTempo({required bool on}) {
+    if (_intendRunning) {
+      final result = _engine.setSyncTempo(on: on);
+      if (!result.isOk) return result;
+    }
     _syncTempo = on;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setSyncTempo(on: on);
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Sets the musical quantization granularity (the arming grid consumed by
   /// A3 — distinct from [setQuantize]'s loop-top record quantize). Remembered
   /// and re-applied on every (re)start.
   EngineResult setQuantizeDiv(GridDivision div) {
+    if (_intendRunning) {
+      final result = _engine.setQuantizeDiv(div);
+      if (!result.isOk) return result;
+    }
     _quantizeDiv = div;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setQuantizeDiv(div);
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Sets the click's audibility mode (WHEN it sounds; WHERE is
   /// [setClickOutput]). Remembered and re-applied on every (re)start.
   EngineResult setClickMode(ClickMode mode) {
+    if (_intendRunning) {
+      final result = _engine.setClickMode(mode);
+      if (!result.isOk) return result;
+    }
     _clickMode = mode;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setClickMode(mode);
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Routes the click to the output channels set in [mask]. Remembered and
   /// re-applied on every (re)start.
   EngineResult setClickOutput(int mask) {
+    if (_intendRunning) {
+      final result = _engine.setClickOutput(mask);
+      if (!result.isOk) return result;
+    }
     _clickMask = mask;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setClickOutput(mask);
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Sets the click [volume] (`0..LE_MAX_GAIN`, the click's only gain stage —
@@ -4253,17 +4540,28 @@ class LooperRepository {
   /// part of this package's public surface). Remembered and re-applied on
   /// every (re)start.
   EngineResult setClickVolume(double volume) {
+    if (_intendRunning) {
+      final result = _engine.setClickVolume(volume);
+      if (!result.isOk) return result;
+    }
     _clickVolume = volume;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setClickVolume(volume);
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Sets the count-in length in measures (`0` = off). Remembered and
-  /// re-applied on every (re)start.
+  /// re-applied on every (re)start. A count-in clears Sound start, as the
+  /// engine does (D9) — see [setAutoRecord].
   EngineResult setCountIn(int bars) {
+    if (_intendRunning) {
+      final result = _engine.setCountIn(bars < 0 ? 0 : bars);
+      if (!result.isOk) return result;
+    }
     _countInBars = bars < 0 ? 0 : bars;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setCountIn(_countInBars);
+    if (_countInBars > 0) _autoRecord = false;
+    _recordStartRevision++;
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Sets track [channel]'s length preset (A6, D17): `0` = AUTO, or `1..64`
@@ -4369,17 +4667,65 @@ class LooperRepository {
     return _engine.crownPrimary(channel: channel);
   }
 
-  /// Sets track [channel]'s One Shot flag (song-mode-spec.md §2, B5c):
-  /// `true` = plays once then stops. Remembered and re-applied on every
-  /// (re)start, like [setTrackLengthPreset] — see [_trackOneShot]'s doc.
-  EngineResult setOneShot({required int channel, required bool oneShot}) {
-    if (oneShot) {
-      _trackOneShot[channel] = true;
-    } else {
-      _trackOneShot.remove(channel);
+  /// Sets a playback override. `null` removes only this override, making
+  /// the track follow [defaultOneShot] again. Audio and history are unchanged.
+  EngineResult setOneShot({required int channel, required bool? oneShot}) {
+    if (channel < 0 || channel >= 8) return EngineResult.invalid;
+    if (_intendRunning) {
+      final result = _engine.setOneShot(
+        channel: channel,
+        oneShot: oneShot ?? _defaultOneShot,
+      );
+      if (!result.isOk) return result;
     }
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setOneShot(channel: channel, oneShot: oneShot);
+    if (oneShot == null) {
+      _trackOneShot.remove(channel);
+    } else {
+      _trackOneShot[channel] = oneShot;
+    }
+    _reproject();
+    return EngineResult.ok;
+  }
+
+  /// Changes the playback default for tracks which inherit it. Custom Loop
+  /// and Once choices remain custom, even if they equal the new default.
+  EngineResult setDefaultOneShot({required bool oneShot}) {
+    if (_intendRunning) {
+      final tracks = _engine.snapshot().tracks;
+      var mask = 0;
+      for (var channel = 0; channel < tracks.length; channel++) {
+        if (!_trackOneShot.containsKey(channel)) mask |= 1 << channel;
+      }
+      if (mask != 0) {
+        final result = _engine.setOneShotMask(channels: mask, oneShot: oneShot);
+        if (!result.isOk) return result;
+      }
+    }
+    _defaultOneShot = oneShot;
+    _reproject();
+    return EngineResult.ok;
+  }
+
+  /// Assigns one playback choice to all visible engine tracks atomically.
+  EngineResult setAllOneShot({required bool oneShot}) {
+    final tracks = state.tracks;
+    if (tracks.isEmpty) return EngineResult.ok;
+    final mask = tracks.fold(0, (mask, track) => mask | (1 << track.channel));
+    if (_intendRunning) {
+      final result = _engine.setOneShotMask(channels: mask, oneShot: oneShot);
+      if (!result.isOk) return result;
+    }
+    for (final track in tracks) {
+      _trackOneShot[track.channel] = oneShot;
+    }
+    _reproject();
+    return EngineResult.ok;
+  }
+
+  void _requireSessionSetting(EngineResult result) {
+    if (!result.isOk) {
+      throw StateError('session setting could not be restored: ${result.name}');
+    }
   }
 
   /// Releases the repository and the underlying engine.

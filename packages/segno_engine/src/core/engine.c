@@ -353,6 +353,13 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_i32(&tr->a_one_shot, 0); /* B4: per-track setting, resets like the
                                     * length preset above (not by clear —
                                     * see le_engine_set_one_shot's doc) */
+    store_i32(&tr->a_quantize_div_override, -1); /* slice 2b: inherit */
+    store_f32(&tr->a_overdub_fb_bits, -1.0f);    /* slice 2b: inherit */
+    tr->fb_cur = 1.0f;
+    tr->sounding_frames = 0;
+    tr->playback_offset = 0;
+    tr->once_ended = 0;
+    tr->once_current_pass = 0;
     tr->length_preset_target_frames = 0;
     tr->pending_record = 0;
     tr->pending_trigger = 0;
@@ -442,6 +449,14 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_primary_track, -1);
   engine->clock_commands_posted = 0;
   atomic_store_explicit(&engine->a_clock_commands_applied, 0, memory_order_relaxed);
+  engine->commands_posted = 0;
+  engine->commands_applied = 0;
+  atomic_store_explicit(&engine->a_commands_published, 0, memory_order_relaxed);
+  /* Configure discarded the queue: accepted-but-unapplied recording-start
+   * edits must not survive only in control-side record decisions. */
+  const int32_t record_start = load_i32(&engine->a_record_start);
+  engine->count_in_bars = record_start > 0 ? record_start : 0;
+  engine->auto_record = record_start < 0;
 
   engine->sample_rate = sample_rate;
   engine->in_channels = input_channels;
@@ -828,6 +843,7 @@ le_engine* le_engine_create(void) {
   store_i32(&engine->a_ts_den, 4);
   store_i32(&engine->a_sync_tempo, 1);
   store_i32(&engine->a_quantize_div, LE_GRID_DIV_OFF);
+  engine->quantize_div = LE_GRID_DIV_OFF; /* the snapshot's half of the pair */
   store_i32(&engine->a_tempo_source, LE_TEMPO_SOURCE_NONE);
   engine->grid_prev_beat = -1;
   /* Click + count-in SETTINGS (A2): same seeded-once persistence as the tempo
@@ -836,7 +852,7 @@ le_engine* le_engine_create(void) {
   store_i32(&engine->a_click_mode, LE_CLICK_OFF);
   atomic_store_explicit(&engine->a_click_mask, 0u, memory_order_relaxed);
   store_f32(&engine->a_click_volume_bits, 1.0f);
-  store_i32(&engine->a_count_in_bars, 0);
+  store_i32(&engine->a_record_start, 0);
   /* Looper mode SETTING (B2a, D4): same seeded-once persistence as the
    * tempo/click settings above. MULTI (0) is both the enum's zero value and
    * calloc's zero-fill, so this store is redundant against the allocation —
@@ -1114,8 +1130,18 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (!atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
+  /* Keep these coupled settings' control decisions consistent even through
+   * the raw public entry point. Preserve SET_COUNT_IN's consumer clamping. */
+  if (code == LE_CMD_SET_COUNT_IN) {
+    if (arg_i < 0) arg_i = 0;
+    if (arg_i > LE_COUNT_IN_MAX_BARS) arg_i = LE_COUNT_IN_MAX_BARS;
+    return le_engine_set_count_in(engine, arg_i);
+  }
+  if (code == LE_CMD_SET_AUTO_RECORD) {
+    return le_engine_set_auto_record(engine, arg_i);
+  }
   const le_command cmd = {.code = code, .arg_i = arg_i, .arg_f = arg_f};
-  return le_ring_push(&engine->ring, cmd) ? LE_OK : LE_ERR_INVALID;
+  return le_push_cmd(engine, cmd);
 }
 
 int32_t le_engine_measure_latency(le_engine* engine) {
@@ -1129,7 +1155,16 @@ int32_t le_push_cmd(le_engine* engine, le_command cmd) {
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
-  return le_ring_push(&engine->ring, cmd) ? LE_OK : LE_ERR_INVALID;
+  if (!le_ring_push(&engine->ring, cmd)) return LE_ERR_INVALID;
+  engine->commands_posted++;
+  return LE_OK;
+}
+
+int32_t le_engine_commands_settled(le_engine* engine) {
+  if (engine == NULL ||
+      !atomic_load_explicit(&engine->a_configured, memory_order_acquire)) return 0;
+  return engine->commands_posted ==
+         atomic_load_explicit(&engine->a_commands_published, memory_order_acquire);
 }
 
 int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i, float arg_f) {
@@ -1142,4 +1177,3 @@ int32_t le_engine_begin_latency_for_test(le_engine* engine) {
    * detection can be driven without opening a device. */
   return le_push(engine, LE_CMD_MEASURE_LATENCY, 0, 0.0f);
 }
-

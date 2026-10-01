@@ -98,7 +98,11 @@ void main() {
     engine.pump(frames: 0);
 
     final dir = '${tempDir.path}/take';
-    final saved = await session.save(dir, chains: chainsFromLooper(looper));
+    final saved = await session.save(
+      dir,
+      chains: chainsFromLooper(looper),
+      settings: settingsFromLooper(looper),
+    );
     expect(saved.laneChains, isNotEmpty);
     // BOTH monitors are captured: the FX chain on input 0 AND the dry monitor
     // on input 1 (the regression would have saved only input 0).

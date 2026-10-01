@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -32,7 +33,9 @@ void main() {
       );
     final dir = '${tempDir.path}/sess';
 
-    final session = await repoFor(engine).save(dir);
+    final session = await repoFor(
+      engine,
+    ).save(dir, settings: const SessionSettings());
 
     expect(File('$dir/${Session.manifestName}').existsSync(), isTrue);
     expect(File('$dir/track0_lane0_L0.wav').existsSync(), isTrue);
@@ -49,11 +52,160 @@ void main() {
       ..layerInFlightPolls = 2; // the punch-tail/drain window, then settled
     final dir = '${tempDir.path}/sess';
 
-    final session = await repoFor(engine).save(dir);
+    final session = await repoFor(
+      engine,
+    ).save(dir, settings: const SessionSettings());
 
     expect(session.tracks, hasLength(1)); // captured AFTER the settle
     expect(engine.layerInFlightPolls, 0); // the wait actually consumed polls
   });
+
+  test(
+    'save freezes caller overrides before waiting for audio to settle',
+    () async {
+      final engine = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        ..layerInFlightPolls = 1;
+      final timings = {0: RecordTiming.bar};
+      final decays = {0: 25};
+      final playback = {0: false};
+      final presets = {0: 4};
+      final dir = '${tempDir.path}/detached';
+      final pending = repoFor(engine).save(
+        dir,
+        settings: SessionSettings(
+          trackRecordTimingOverrides: timings,
+          trackOverdubDecayOverrides: decays,
+          trackOneShotOverrides: playback,
+          trackLengthPresetOverrides: presets,
+        ),
+      );
+      // The save is waiting for the in-flight layer; these edits belong to the
+      // caller's next save, not the request already accepted above.
+      expect(engine.layerInFlightPolls, 0);
+      timings[0] = RecordTiming.sixteenth;
+      decays.clear();
+      playback[0] = true;
+      presets[0] = 8;
+      final saved = await pending;
+      final read = (await repoFor(engine).read(dir)).session;
+      for (final session in [saved, read]) {
+        expect(session.trackRecordTimingOverrides, {0: RecordTiming.bar});
+        expect(session.trackOverdubDecayOverrides, {0: 25});
+        expect(session.trackOneShotOverrides, {0: false});
+        expect(session.trackLengthPresetOverrides, {0: 4});
+      }
+      expect(
+        () => saved.trackOneShotOverrides[0] = true,
+        throwsUnsupportedError,
+      );
+    },
+  );
+
+  test(
+    'save waits for commands and captures one newer tempo-grid report',
+    () async {
+      final engine = _CommandSettlementEngine()
+        ..pendingCommands = true
+        ..tempoBpm = 90
+        ..tempoSource = TempoSource.manual
+        ..reportedLoopBars = 2
+        ..seedTrack(0, Float32List.fromList([1, 2, 3, 4]));
+      final dir = '${tempDir.path}/queued';
+      final pending = repoFor(engine).save(
+        dir,
+        settings: const SessionSettings(
+          tempoBpm: 120,
+          tempoSource: TempoSource.derived,
+          loopBars: 4,
+          looperMode: LooperMode.song,
+          primaryTrack: 1,
+          trackOneShotOverrides: {0: false},
+        ),
+      );
+      expect(engine.commandChecks, 1);
+      expect(engine.snapshotTempos, [90]);
+      expect(engine.exports, 0);
+      expect(Directory(dir).existsSync(), isFalse);
+      // A callback has now applied the queued command and published its report.
+      engine
+        ..tempoBpm = 156
+        ..tempoSource = TempoSource.tapped
+        ..reportedLoopBars = 7
+        ..tsNum = 7
+        ..tsDen = 8
+        ..looperMode = LooperMode.sync
+        ..primaryTrack = 0
+        ..pendingCommands = false;
+      final saved = await pending;
+      expect(engine.commandChecks, 2);
+      expect(engine.snapshotTempos, [90, 156, 156]);
+      expect(engine.exports, greaterThan(0));
+      final read = (await repoFor(engine).read(dir)).session;
+      for (final session in [saved, read]) {
+        expect(session.tempoBpm, 156);
+        expect(session.tempoSource, TempoSource.tapped);
+        expect(session.loopBars, 7);
+        expect(session.tsNum, 7);
+        expect(session.tsDen, 8);
+        expect(session.looperMode, LooperMode.sync);
+        expect(session.primaryTrack, 0);
+        expect(session.trackOneShotOverrides, {0: false});
+      }
+    },
+  );
+
+  test('save waits for a layer published by the settling command', () async {
+    final engine = _LayerAtSettlementEngine()
+      ..seedTrack(0, Float32List.fromList([1, 2, 3, 4]));
+    final saved = await repoFor(engine).save(
+      '${tempDir.path}/settled-layer',
+      settings: const SessionSettings(),
+    );
+    expect(saved.tracks, hasLength(1));
+    expect(engine.commandChecks, 2);
+    expect(engine.capturedInFlight, isFalse);
+  });
+
+  test('save times out without writing when commands never settle', () async {
+    final engine = _CommandSettlementEngine()
+      ..pendingCommands = true
+      ..seedTrack(0, Float32List.fromList([1, 2, 3, 4]));
+    final dir = '${tempDir.path}/unsettled';
+    await expectLater(
+      repoFor(engine).save(dir, settings: const SessionSettings()),
+      throwsStateError,
+    );
+    expect(engine.commandChecks, 4);
+    expect(engine.exports, 0);
+    expect(Directory(dir).existsSync(), isFalse);
+  });
+
+  test(
+    'offline save bypasses command settlement and retains the intended grid',
+    () async {
+      final engine = _CommandSettlementEngine()
+        ..reportsRunning = false
+        ..pendingCommands = true
+        ..tempoBpm = 90
+        ..tempoSource = TempoSource.tapped
+        ..reportedLoopBars = 7;
+      final dir = '${tempDir.path}/offline';
+      final saved = await repoFor(engine).save(
+        dir,
+        settings: const SessionSettings(
+          tempoBpm: 128,
+          tempoSource: TempoSource.manual,
+          loopBars: 3,
+        ),
+      );
+      expect(engine.commandChecks, 1);
+      expect(saved.tempoBpm, 128);
+      expect(saved.tempoSource, TempoSource.manual);
+      expect(saved.loopBars, 3);
+      expect((await repoFor(engine).read(dir)).session, saved);
+    },
+  );
 
   test('save throws when an overdub layer never settles', () async {
     final engine = FakeSessionEngine()
@@ -61,7 +213,10 @@ void main() {
       ..layerInFlightPolls = 1 << 30; // never settles within the attempts
     final dir = '${tempDir.path}/sess';
 
-    await expectLater(repoFor(engine).save(dir), throwsStateError);
+    await expectLater(
+      repoFor(engine).save(dir, settings: const SessionSettings()),
+      throwsStateError,
+    );
   });
 
   test(
@@ -74,7 +229,9 @@ void main() {
       final engine = FakeSessionEngine()..masterLength = 48000;
       final dir = '${tempDir.path}/sess';
 
-      final session = await repoFor(engine).save(dir);
+      final session = await repoFor(
+        engine,
+      ).save(dir, settings: const SessionSettings());
       expect(session.baseLengthFrames, 0);
       expect(session.tracks, isEmpty);
 
@@ -108,7 +265,9 @@ void main() {
           ),
         ],
       );
-      final session = await repoFor(source).save(dir, chains: chains);
+      final session = await repoFor(
+        source,
+      ).save(dir, settings: const SessionSettings(), chains: chains);
       expect(session.laneChains, chains.laneChains);
       expect(session.monitors, chains.monitors);
 
@@ -137,7 +296,9 @@ void main() {
         ],
         masterChain: '{"chainEnabled":true,"entries":[{"t":7}]}',
       );
-      final session = await repoFor(source).save(dir, chains: chains);
+      final session = await repoFor(
+        source,
+      ).save(dir, settings: const SessionSettings(), chains: chains);
       expect(session.trackChains, chains.trackChains);
       expect(session.masterChain, chains.masterChain);
 
@@ -154,7 +315,7 @@ void main() {
         ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
       final dir = '${tempDir.path}/no-bus-fx';
 
-      await repoFor(source).save(dir);
+      await repoFor(source).save(dir, settings: const SessionSettings());
 
       final bundle = await repoFor(FakeSessionEngine()).read(dir);
       expect(bundle.session.trackChains, isEmpty);
@@ -177,7 +338,9 @@ void main() {
           r'"target":"{\"stage\":\"track\",\"index\":5}",'
           '"behavior":"momentary"}]';
 
-      final session = await repoFor(source).save(dir, pedalBindings: encoded);
+      final session = await repoFor(
+        source,
+      ).save(dir, settings: const SessionSettings(), pedalBindings: encoded);
       expect(session.pedalBindings, encoded);
 
       final bundle = await repoFor(FakeSessionEngine()).read(dir);
@@ -193,7 +356,7 @@ void main() {
         ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
       final dir = '${tempDir.path}/no-pedal-bindings';
 
-      await repoFor(source).save(dir);
+      await repoFor(source).save(dir, settings: const SessionSettings());
 
       final bundle = await repoFor(FakeSessionEngine()).read(dir);
       expect(bundle.session.pedalBindings, '');
@@ -201,43 +364,145 @@ void main() {
   );
 
   test(
-    'save threads the engine snapshot tempo grid + click + count-in into '
-    'the v4 manifest, read decodes it back',
+    'save reads desired musical settings independently of audio capture',
     () async {
-      final source = FakeSessionEngine()
-        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
-        ..tempoBpm = 96.0
+      final source = _CommandSettlementEngine()
+        ..tempoBpm = 96
         ..tempoSource = TempoSource.tapped
+        ..reportedLoopBars = 5
         ..tsNum = 7
         ..tsDen = 8
-        ..quantizeDiv = GridDivision.quarter
-        ..clickMode = ClickMode.playRec
-        ..clickMask = 0x1
-        ..clickVolume = 0.4
-        ..countInBars = 3;
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      const settings = SessionSettings(
+        tempoBpm: 110,
+        tempoSource: TempoSource.manual,
+        tsNum: 3,
+        syncTempo: false,
+        quantizeDiv: GridDivision.quarter,
+        loopBars: 2,
+        recordTiming: RecordTiming.quarter,
+        overdubDecay: 25,
+        defaultOneShot: true,
+        trackRecordTimingOverrides: {
+          0: RecordTiming.eighth,
+          2: RecordTiming.quarter,
+        },
+        trackOverdubDecayOverrides: {0: 40, 2: 25},
+        trackOneShotOverrides: {0: true, 2: false},
+        trackLengthPresetOverrides: {0: 4, 2: 8},
+        clickMode: ClickMode.playRec,
+        clickMask: 0x1,
+        clickVolume: 0.4,
+        countInBars: 3,
+        recDub: true,
+        defaultMultiple: 2,
+      );
       final dir = '${tempDir.path}/tempo';
-
-      final session = await repoFor(source).save(dir);
-      expect(session.tempoBpm, 96.0);
+      final session = await repoFor(source).save(dir, settings: settings);
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session, session);
+      expect(session.recordTiming, RecordTiming.quarter);
+      expect(session.overdubDecay, 25);
+      expect(session.defaultOneShot, isTrue);
+      expect(session.trackRecordTimingOverrides, {
+        0: RecordTiming.eighth,
+        2: RecordTiming.quarter,
+      });
+      expect(session.trackOverdubDecayOverrides, {0: 40, 2: 25});
+      expect(session.trackOneShotOverrides, {0: true, 2: false});
+      expect(session.trackLengthPresetOverrides, {0: 4, 2: 8});
+      expect(session.tracks.single.channel, 0);
+      expect(session.tempoBpm, 96);
       expect(session.tempoSource, TempoSource.tapped);
       expect(session.tsNum, 7);
       expect(session.tsDen, 8);
+      expect(session.syncTempo, isFalse);
       expect(session.quantizeDiv, GridDivision.quarter);
+      expect(session.loopBars, 5);
       expect(session.clickMode, ClickMode.playRec);
       expect(session.clickOutputMask, 0x1);
       expect(session.clickVolume, 0.4);
       expect(session.countInBars, 3);
+      expect(session.recDub, isTrue);
+      expect(session.autoRecord, isFalse);
+      expect(session.defaultMultiple, 2);
+    },
+  );
 
-      final bundle = await repoFor(FakeSessionEngine()).read(dir);
-      expect(bundle.session.tempoBpm, 96.0);
-      expect(bundle.session.tempoSource, TempoSource.tapped);
-      expect(bundle.session.tsNum, 7);
-      expect(bundle.session.tsDen, 8);
-      expect(bundle.session.quantizeDiv, GridDivision.quarter);
-      expect(bundle.session.clickMode, ClickMode.playRec);
-      expect(bundle.session.clickOutputMask, 0x1);
-      expect(bundle.session.clickVolume, 0.4);
-      expect(bundle.session.countInBars, 3);
+  test(
+    'stopped capture retains desired settings and empty-track overrides',
+    () async {
+      final engine = MockAudioEngine();
+      expect(engine.snapshot().isRunning, isFalse);
+      const settings = SessionSettings(
+        tempoBpm: 123,
+        tempoSource: TempoSource.manual,
+        tsNum: 3,
+        tsDen: 8,
+        quantizeDiv: GridDivision.sixteenth,
+        recordTiming: RecordTiming.bar,
+        overdubDecay: 50,
+        defaultOneShot: true,
+        trackRecordTimingOverrides: {1: RecordTiming.bar},
+        trackOverdubDecayOverrides: {1: 50, 2: 0},
+        trackOneShotOverrides: {1: false, 2: true},
+        trackLengthPresetOverrides: {1: 8},
+        autoRecord: true,
+        looperMode: LooperMode.free,
+      );
+      final dir = '${tempDir.path}/stopped';
+      final saved = await repoFor(engine).save(dir, settings: settings);
+      final read = (await repoFor(engine).read(dir)).session;
+      expect(read, saved);
+      expect(read.tracks, isEmpty);
+      expect(read.tempoBpm, 123);
+      expect(read.tempoSource, TempoSource.manual);
+      expect(read.tsNum, 3);
+      expect(read.tsDen, 8);
+      expect(read.quantizeDiv, GridDivision.sixteenth);
+      expect(read.recordTiming, RecordTiming.bar);
+      expect(read.overdubDecay, 50);
+      expect(read.defaultOneShot, isTrue);
+      expect(read.trackRecordTimingOverrides, {1: RecordTiming.bar});
+      expect(read.trackOverdubDecayOverrides, {1: 50, 2: 0});
+      expect(read.trackOneShotOverrides, {1: false, 2: true});
+      expect(read.trackLengthPresetOverrides, {1: 8});
+      expect(read.autoRecord, isTrue);
+      expect(read.looperMode, LooperMode.free);
+      final otherRate = repoFor(FakeSessionEngine(sampleRate: 44100));
+      expect((await otherRate.read(dir)).session, saved);
+    },
+  );
+
+  test(
+    'saving Use default removes previously saved explicit overrides',
+    () async {
+      final engine = FakeSessionEngine();
+      final repo = repoFor(engine);
+      final dir = '${tempDir.path}/inherit';
+      await repo.save(
+        dir,
+        settings: const SessionSettings(
+          trackRecordTimingOverrides: {0: RecordTiming.immediately},
+          trackOverdubDecayOverrides: {0: 0},
+          trackOneShotOverrides: {0: false},
+          trackLengthPresetOverrides: {0: 4},
+        ),
+      );
+      final explicit = (await repo.read(dir)).session;
+      expect(explicit.trackRecordTimingOverrides, {
+        0: RecordTiming.immediately,
+      });
+      expect(explicit.trackOverdubDecayOverrides, {0: 0});
+      expect(explicit.trackOneShotOverrides, {0: false});
+      expect(explicit.trackLengthPresetOverrides, {0: 4});
+
+      await repo.save(dir, settings: const SessionSettings());
+      final inherited = (await repo.read(dir)).session;
+      expect(inherited.trackRecordTimingOverrides, isEmpty);
+      expect(inherited.trackOverdubDecayOverrides, isEmpty);
+      expect(inherited.trackOneShotOverrides, isEmpty);
+      expect(inherited.trackLengthPresetOverrides, isEmpty);
     },
   );
 
@@ -255,7 +520,13 @@ void main() {
         ..tempoSource = TempoSource.derived;
       final dir = '${tempDir.path}/dead-tempo';
 
-      final session = await repoFor(engine).save(dir);
+      final session = await repoFor(engine).save(
+        dir,
+        settings: const SessionSettings(
+          tempoBpm: 140,
+          tempoSource: TempoSource.derived,
+        ),
+      );
       expect(session.tracks, isEmpty);
       expect(session.baseLengthFrames, 0);
       expect(session.tempoBpm, 140.0);
@@ -270,7 +541,9 @@ void main() {
         ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
       final dir = '${tempDir.path}/nofx';
 
-      final session = await repoFor(source).save(dir);
+      final session = await repoFor(
+        source,
+      ).save(dir, settings: const SessionSettings());
       expect(session.laneChains, isEmpty);
       expect(session.monitors, isEmpty);
     },
@@ -287,7 +560,7 @@ void main() {
         muted: true,
       );
     final dir = '${tempDir.path}/s';
-    await repoFor(source).save(dir);
+    await repoFor(source).save(dir, settings: const SessionSettings());
 
     final bundle = await repoFor(FakeSessionEngine()).read(dir);
 
@@ -317,7 +590,7 @@ void main() {
         inputChannel: 1,
       );
     final dir = '${tempDir.path}/multilane';
-    await repoFor(source).save(dir);
+    await repoFor(source).save(dir, settings: const SessionSettings());
 
     final bundle = await repoFor(FakeSessionEngine()).read(dir);
     final track = bundle.session.tracks.single;
@@ -352,7 +625,9 @@ void main() {
         );
       }
       final dir = '${tempDir.path}/free8';
-      await repoFor(source).save(dir);
+      await repoFor(
+        source,
+      ).save(dir, settings: const SessionSettings(looperMode: LooperMode.free));
 
       final bundle = await repoFor(FakeSessionEngine()).read(dir);
 
@@ -373,77 +648,75 @@ void main() {
   );
 
   test(
-    'save then read round-trips looperMode, primaryTrack, and per-track '
-    'oneShot (B5c)',
+    'save preserves mode, crown, and playback choices for every track',
     () async {
       final source = FakeSessionEngine()
-        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
-        ..seedTrack(1, Float32List.fromList([2, 2, 2, 2]))
         ..looperMode = LooperMode.sync
         ..primaryTrack = 1
-        ..oneShot[0] = true;
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        ..seedTrack(1, Float32List.fromList([2, 2, 2, 2]));
       final dir = '${tempDir.path}/mode';
-      await repoFor(source).save(dir);
-
+      await repoFor(source).save(
+        dir,
+        settings: const SessionSettings(
+          looperMode: LooperMode.sync,
+          primaryTrack: 1,
+          defaultOneShot: true,
+          trackOneShotOverrides: {0: true, 1: false, 2: false},
+        ),
+      );
       final bundle = await repoFor(FakeSessionEngine()).read(dir);
-
       expect(bundle.session.looperMode, LooperMode.sync);
       expect(bundle.session.primaryTrack, 1);
-      final track0 = bundle.session.tracks.firstWhere((t) => t.channel == 0);
-      final track1 = bundle.session.tracks.firstWhere((t) => t.channel == 1);
-      expect(track0.oneShot, isTrue);
-      expect(track1.oneShot, isFalse);
-      // Session-level mirror also carries channel 0, matching the per-track
-      // flag for a content-bearing channel.
-      expect(bundle.session.oneShotChannels, contains(0));
-      expect(bundle.session.oneShotChannels, isNot(contains(1)));
+      expect(bundle.session.defaultOneShot, isTrue);
+      expect(bundle.session.trackOneShotOverrides, {
+        0: true,
+        1: false,
+        2: false,
+      });
+      expect(bundle.session.tracks.map((track) => track.channel), [0, 1]);
     },
   );
 
   test(
-    'save then read round-trips a One Shot flag pre-armed on a channel with '
-    'NO content (independent review of #295): SessionTrack.oneShot has no '
-    'home for a content-less channel (_capture only builds a SessionTrack '
-    'for a channel with lanes), so it must round-trip through the '
-    'session-level Session.oneShotChannels instead',
+    'a tempo-bearing session preserves an intentionally absent grid',
     () async {
-      final source = FakeSessionEngine()
-        // Channel 1 is left empty on purpose — never seeded — while its One
-        // Shot flag is armed, mirroring a user pre-arming Settings > One
-        // Shot before ever recording onto the track.
-        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
-        ..oneShot[0] = true
-        ..oneShot[1] = true;
-      final dir = '${tempDir.path}/oneShotEmpty';
-      await repoFor(source).save(dir);
-
-      final bundle = await repoFor(FakeSessionEngine()).read(dir);
-
-      // Channel 1 never got a SessionTrack at all (no content) — the old,
-      // pre-fix gap.
-      expect(bundle.session.tracks.any((t) => t.channel == 1), isFalse);
-      // But its flag survived through the content-independent session-level
-      // set, alongside channel 0's (which also has content).
-      expect(bundle.session.oneShotChannels, containsAll([0, 1]));
+      final engine = FakeSessionEngine()
+        ..tempoBpm = 120
+        ..tempoSource = TempoSource.manual
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/no-musical-grid';
+      await repoFor(engine).save(
+        dir,
+        settings: const SessionSettings(
+          tempoBpm: 120,
+          tempoSource: TempoSource.manual,
+          syncTempo: false,
+        ),
+      );
+      final session = (await repoFor(engine).read(dir)).session;
+      expect(session.baseLengthFrames, 4);
+      expect(session.tempoBpm, 120);
+      expect(session.loopBars, 0);
+      expect(session.syncTempo, isFalse);
     },
   );
 
   test(
-    'save then read defaults looperMode/primaryTrack/oneShot when the '
-    'engine reports the tempo-free/grid-off values (no data loss for a '
-    'plain Multi session)',
+    'default musical choices round-trip for a plain Multi session',
     () async {
       final source = FakeSessionEngine()
         ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
       final dir = '${tempDir.path}/plain';
-      await repoFor(source).save(dir);
-
-      final bundle = await repoFor(FakeSessionEngine()).read(dir);
-
-      expect(bundle.session.looperMode, LooperMode.multi);
-      expect(bundle.session.primaryTrack, -1);
-      expect(bundle.session.tracks.single.oneShot, isFalse);
-      expect(bundle.session.oneShotChannels, isEmpty);
+      await repoFor(source).save(dir, settings: const SessionSettings());
+      final session = (await repoFor(source).read(dir)).session;
+      expect(session.looperMode, LooperMode.multi);
+      expect(session.primaryTrack, -1);
+      expect(session.defaultOneShot, isFalse);
+      expect(session.trackOneShotOverrides, isEmpty);
+      expect(session.trackRecordTimingOverrides, isEmpty);
+      expect(session.trackOverdubDecayOverrides, isEmpty);
+      expect(session.trackLengthPresetOverrides, isEmpty);
     },
   );
 
@@ -456,7 +729,7 @@ void main() {
       final source = FakeSessionEngine()
         ..seedLayers(0, [undo0, live, redo0], undoDepth: 1, redoDepth: 1);
       final dir = '${tempDir.path}/layers';
-      await repoFor(source).save(dir);
+      await repoFor(source).save(dir, settings: const SessionSettings());
 
       // One WAV per layer.
       expect(File('$dir/track0_lane0_L0.wav').existsSync(), isTrue);
@@ -487,13 +760,13 @@ void main() {
         undoDepth: 1,
         redoDepth: 1,
       ),
-    ).save(dir);
+    ).save(dir, settings: const SessionSettings());
     expect(File('$dir/track0_lane0_L2.wav').existsSync(), isTrue);
 
     // Re-save the same bundle with a single-layer (no-history) track.
     await repoFor(
       FakeSessionEngine()..seedTrack(0, Float32List.fromList([9, 9, 9, 9])),
-    ).save(dir);
+    ).save(dir, settings: const SessionSettings());
 
     expect(File('$dir/track0_lane0_L0.wav').existsSync(), isTrue);
     expect(File('$dir/track0_lane0_L1.wav').existsSync(), isFalse);
@@ -574,6 +847,58 @@ void main() {
     expect(File('$dir/track1_lane0_L0.wav').existsSync(), isFalse);
   });
 
+  test('read rejects an invalid restored bar grid', () async {
+    final dir = '${tempDir.path}/invalid-grid';
+    Directory(dir).createSync();
+    for (final bars in [-1, 0x7fffffff]) {
+      final manifest = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: const [],
+        loopBars: bars,
+      );
+      File(
+        '$dir/${Session.manifestName}',
+      ).writeAsStringSync(jsonEncode(manifest.toJson()));
+      await expectLater(
+        repoFor(FakeSessionEngine()).read(dir),
+        throwsFormatException,
+      );
+    }
+  });
+
+  test(
+    'read rejects invalid or unsupported tempo before returning a rig',
+    () async {
+      final dir = '${tempDir.path}/invalid-tempo';
+      Directory(dir).createSync();
+      final file = File('$dir/${Session.manifestName}');
+      for (final (bpm, source) in [
+        (120.0, TempoSource.none),
+        (0.0, TempoSource.manual),
+        (29.0, TempoSource.tapped),
+        (301.0, TempoSource.derived),
+        (120.0, TempoSource.external),
+      ]) {
+        final manifest = Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 0,
+          tracks: const [],
+          tempoBpm: bpm,
+          tempoSource: source,
+        );
+        file.writeAsStringSync(jsonEncode(manifest.toJson()));
+        await expectLater(
+          repoFor(FakeSessionEngine()).read(dir),
+          throwsFormatException,
+          reason: '$bpm / $source',
+        );
+      }
+    },
+  );
+
   test('read throws when the bundle is missing', () async {
     final engine = FakeSessionEngine();
     await expectLater(
@@ -586,7 +911,7 @@ void main() {
     final source = FakeSessionEngine(sampleRate: 44100)
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
     final dir = '${tempDir.path}/sr';
-    await repoFor(source).save(dir);
+    await repoFor(source).save(dir, settings: const SessionSettings());
 
     final target = FakeSessionEngine(); // 48000 Hz
     await expectLater(
@@ -599,7 +924,7 @@ void main() {
     final source = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([0.1, -0.2, 0.3, -0.4]));
     final dir = '${tempDir.path}/mono';
-    await repoFor(source).save(dir);
+    await repoFor(source).save(dir, settings: const SessionSettings());
 
     final bundle = await repoFor(FakeSessionEngine()).read(dir);
 
@@ -607,4 +932,78 @@ void main() {
       Float32List.fromList([0.1, -0.2, 0.3, -0.4]),
     ]);
   });
+}
+
+class _CommandSettlementEngine extends FakeSessionEngine {
+  bool pendingCommands = false;
+  bool reportsRunning = true;
+  int reportedLoopBars = 0;
+  int commandChecks = 0;
+  int exports = 0;
+  final List<double> snapshotTempos = [];
+
+  @override
+  bool get commandsSettled {
+    commandChecks++;
+    return !pendingCommands;
+  }
+
+  @override
+  EngineSnapshot snapshot() {
+    final source = super.snapshot();
+    snapshotTempos.add(source.tempoBpm);
+    return EngineSnapshot(
+      isRunning: reportsRunning,
+      sampleRate: source.sampleRate,
+      bufferFrames: source.bufferFrames,
+      framesProcessed: source.framesProcessed,
+      xrunCount: source.xrunCount,
+      inputRms: source.inputRms,
+      inputPeak: source.inputPeak,
+      outputRms: source.outputRms,
+      latencyState: source.latencyState,
+      measuredLatencyMs: source.measuredLatencyMs,
+      masterLengthFrames: source.masterLengthFrames,
+      tracks: source.tracks,
+      tempoBpm: source.tempoBpm,
+      tempoSource: source.tempoSource,
+      tsNum: source.tsNum,
+      tsDen: source.tsDen,
+      loopBars: reportedLoopBars,
+      looperMode: source.looperMode,
+      primaryTrack: source.primaryTrack,
+    );
+  }
+
+  @override
+  Float32List exportLayer(int channel, int lane, int ordinal) {
+    exports++;
+    return super.exportLayer(channel, lane, ordinal);
+  }
+}
+
+class _LayerAtSettlementEngine extends FakeSessionEngine {
+  int commandChecks = 0;
+  bool capturedInFlight = false;
+  bool _lastLayerInFlight = false;
+
+  @override
+  bool get commandsSettled {
+    commandChecks++;
+    if (commandChecks == 1) layerInFlightPolls = 1;
+    return true;
+  }
+
+  @override
+  EngineSnapshot snapshot() {
+    final value = super.snapshot();
+    _lastLayerInFlight = value.tracks.first.layerInFlight;
+    return value;
+  }
+
+  @override
+  Float32List exportLayer(int channel, int lane, int ordinal) {
+    capturedInFlight |= _lastLayerInFlight;
+    return super.exportLayer(channel, lane, ordinal);
+  }
 }

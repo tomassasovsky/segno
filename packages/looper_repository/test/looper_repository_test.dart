@@ -1990,27 +1990,35 @@ void main() {
       expect(engine.finalizedTakes, [3, 3]);
     });
 
-    test('per-track quantize overrides are deferred then re-applied', () {
+    test('per-track record timing overrides are deferred then re-applied as '
+        'the engine gate and division', () {
       final repo = buildRepo()
-        ..setTrackQuantize(channel: 1, enabled: true)
-        ..setTrackQuantize(channel: 2, enabled: false);
+        ..setTrackRecordTiming(channel: 1, timing: RecordTiming.quarter)
+        ..setTrackRecordTiming(channel: 2, timing: RecordTiming.immediately)
+        ..setTrackRecordTiming(channel: 3, timing: RecordTiming.loopStart);
       expect(engine.trackQuantize, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
       expect(engine.trackQuantize[1], isTrue);
+      expect(engine.trackQuantizeDiv[1], GridDivision.quarter);
       expect(engine.trackQuantize[2], isFalse);
+      expect(engine.trackQuantizeDiv[2], GridDivision.off);
+      expect(engine.trackQuantize[3], isTrue);
+      expect(engine.trackQuantizeDiv[3], GridDivision.off);
     });
 
     test(
-      'clearing a per-track override (null) inherits the global default',
+      'clearing a per-track record timing (null) follows the default again',
       () {
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
-          ..setTrackQuantize(channel: 1, enabled: true);
+          ..setTrackRecordTiming(channel: 1, timing: RecordTiming.bar);
         expect(engine.trackQuantize[1], isTrue);
+        expect(engine.trackQuantizeDiv[1], GridDivision.bar);
 
-        repo.setTrackQuantize(channel: 1, enabled: null);
+        repo.setTrackRecordTiming(channel: 1, timing: null);
         expect(engine.trackQuantize[1], isNull);
+        expect(engine.trackQuantizeDiv[1], isNull);
 
         // A later restart does not re-apply the cleared override.
         engine.trackQuantize.clear();
@@ -2018,6 +2026,77 @@ void main() {
         expect(engine.trackQuantize.containsKey(1), isFalse);
       },
     );
+
+    test('the default record timing sets the gate and division together, '
+        'division first, and is projected', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      engine.calls.clear();
+      expect(repo.setRecordTiming(RecordTiming.eighth), EngineResult.ok);
+      expect(engine.lastQuantizeDiv, GridDivision.eighth);
+      expect(engine.lastQuantize, isTrue);
+      expect(
+        engine.calls.indexOf('setQuantizeDiv'),
+        lessThan(engine.calls.indexOf('setQuantize')),
+      );
+      expect(repo.state.transport.quantize, isTrue);
+      expect(repo.state.transport.recordTiming, RecordTiming.eighth);
+
+      repo.setRecordTiming(RecordTiming.immediately);
+      expect(engine.lastQuantize, isFalse);
+      expect(repo.state.transport.recordTiming, RecordTiming.immediately);
+
+      // Re-applied on a restart.
+      repo
+        ..setRecordTiming(RecordTiming.loopStart)
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastQuantize, isTrue);
+      expect(engine.lastQuantizeDiv, GridDivision.off);
+    });
+
+    test('overdub decay reaches the engine as feedback, per track and by '
+        'default, and is re-applied', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
+      final repo = buildRepo()
+        ..setOverdubDecay(25)
+        ..setTrackOverdubDecay(channel: 1, percent: 100)
+        ..setTrackOverdubDecay(channel: 2, percent: 0);
+      expect(engine.lastOverdubFeedback, isNull); // not running yet
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastOverdubFeedback, closeTo(0.75, 1e-9));
+      expect(engine.trackOverdubFeedback[1], closeTo(0, 1e-9));
+      expect(engine.trackOverdubFeedback[2], closeTo(1, 1e-9));
+      expect(repo.state.transport.overdubDecay, 25);
+      expect(repo.state.tracks[1].overdubDecayOverride, 100);
+      expect(repo.state.tracks[0].overdubDecayOverride, isNull);
+
+      repo.setTrackOverdubDecay(channel: 1, percent: null);
+      expect(engine.trackOverdubFeedback[1], isNull);
+      expect(repo.state.tracks[1].overdubDecayOverride, isNull);
+
+      // Out-of-range values clamp.
+      repo.setOverdubDecay(140);
+      expect(engine.lastOverdubFeedback, closeTo(0, 1e-9));
+      expect(repo.state.transport.overdubDecay, 100);
+      expect(LooperRepository.feedbackOfDecay(25), closeTo(0.75, 1e-9));
+    });
+
+    test('count-in and Sound start exclude each other in the remembered '
+        'settings, as they do in the engine', () {
+      final repo = buildRepo()
+        ..setAutoRecord(enabled: true)
+        ..setCountIn(2)
+        ..startEngine(const EngineConfig());
+      expect(engine.lastAutoRecord, isFalse); // the count-in won
+      expect(engine.lastCountIn, 2);
+
+      repo
+        ..setAutoRecord(enabled: true)
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastAutoRecord, isTrue);
+      expect(engine.lastCountIn, 0); // and Sound start won this time
+    });
 
     test('a per-track override is projected onto the track it names', () async {
       // The engine takes the override and never reports it back, so the
@@ -2048,21 +2127,25 @@ void main() {
         ],
       );
       final repo = buildRepo()..startEngine(const EngineConfig());
-      expect(repo.state.tracks.first.quantizeOverride, isNull);
+      expect(repo.state.tracks.first.recordTimingOverride, isNull);
 
       final emitted = repo.looperState.firstWhere(
-        (state) => state.tracks.first.quantizeOverride != null,
+        (state) => state.tracks.first.recordTimingOverride != null,
       );
-      repo.setTrackQuantize(channel: 0, enabled: false);
+      repo.setTrackRecordTiming(channel: 0, timing: RecordTiming.immediately);
 
-      expect((await emitted).tracks.first.quantizeOverride, isFalse);
+      expect(
+        (await emitted).tracks.first.recordTimingOverride,
+        RecordTiming.immediately,
+      );
       expect(repo.state.tracks.first.quantizeOverride, isFalse);
 
-      repo.setTrackQuantize(channel: 0, enabled: true);
+      repo.setTrackRecordTiming(channel: 0, timing: RecordTiming.half);
+      expect(repo.state.tracks.first.recordTimingOverride, RecordTiming.half);
       expect(repo.state.tracks.first.quantizeOverride, isTrue);
 
-      repo.setTrackQuantize(channel: 0, enabled: null);
-      expect(repo.state.tracks.first.quantizeOverride, isNull);
+      repo.setTrackRecordTiming(channel: 0, timing: null);
+      expect(repo.state.tracks.first.recordTimingOverride, isNull);
     });
 
     test('rec/dub is projected, and lands on the next frame', () async {
@@ -5083,7 +5166,7 @@ void main() {
       expect(engine.lastTempoBpm, isNull); // not running yet
 
       repo.startEngine(const EngineConfig());
-      expect(engine.lastTempoBpm, 140);
+      expect(engine.tempoRestores, [(bpm: 140.0, source: TempoSource.manual)]);
     });
 
     test('setTempo applies immediately while running', () {
@@ -5114,7 +5197,7 @@ void main() {
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.lastTempoBpm, 128);
+      expect(engine.tempoRestores, [(bpm: 128.0, source: TempoSource.manual)]);
     });
 
     test('setTimeSignature is deferred until running, then re-applied', () {
@@ -5396,7 +5479,7 @@ void main() {
       expect(engine.trackOneShot[2], isTrue);
     });
 
-    test('setOneShot(false) clears a remembered flag', () {
+    test('setOneShot(false) retains an explicit Loop override', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setOneShot(channel: 1, oneShot: true);
@@ -5405,12 +5488,12 @@ void main() {
       repo.setOneShot(channel: 1, oneShot: false);
       expect(engine.trackOneShot[1], isFalse);
 
-      // A restart no longer replays the cleared flag.
+      // A restart retains the custom Loop choice.
       engine.trackOneShot.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.trackOneShot, isEmpty);
+      expect(engine.trackOneShot[1], isFalse);
     });
 
     test(
@@ -5490,7 +5573,10 @@ void main() {
         expect(transport.clickMode, ClickMode.playRec);
         expect(transport.clickMask, 0x3);
         expect(transport.clickVolume, closeTo(0.8, 1e-9));
-        expect(transport.countInBars, 2);
+        // The count-in is the repository's own held value (slice 2b), not
+        // the engine's mirror: nothing was set here, so it reads off even
+        // though the snapshot says 2.
+        expect(transport.countInBars, 0);
         expect(transport.countingIn, isTrue);
         expect(transport.countInBeatsLeft, 3);
         expect(transport.looperMode, LooperMode.band);
@@ -5610,12 +5696,8 @@ void main() {
       bool muted = false,
       int outputMask = 0x3,
       int inputChannel = 0,
-      int lengthPresetBars = 0,
-      bool oneShot = false,
     }) => SessionRigTrack(
       channel: channel,
-      lengthPresetBars: lengthPresetBars,
-      oneShot: oneShot,
       lanes: [
         SessionRigLane(
           lane: 0,
@@ -5806,11 +5888,11 @@ void main() {
         await repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
+            trackLengthPresetOverrides: const {0: 8},
             tracks: [
               rigTrack(
                 0,
                 Float32List.fromList([1, 1, 1, 1]),
-                lengthPresetBars: 8,
               ),
             ],
           ),
@@ -5868,8 +5950,9 @@ void main() {
         await repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
+            trackOneShotOverrides: const {0: true},
             tracks: [
-              rigTrack(0, Float32List.fromList([1, 1, 1, 1]), oneShot: true),
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
           ),
           clearPollInterval: Duration.zero,
@@ -5881,7 +5964,7 @@ void main() {
 
     test(
       'restores a One Shot flag pre-armed on a CONTENT-LESS channel via '
-      'rig.oneShotChannels (independent review of #295): channel 1 has no '
+      'the override map: channel 1 has no '
       'SessionRigTrack (no content), so only the session-level set can '
       'restore it — a plain per-track restore would silently drop it',
       () async {
@@ -5895,7 +5978,7 @@ void main() {
             tracks: [
               rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
-            oneShotChannels: const {1},
+            trackOneShotOverrides: const {1: true},
           ),
           clearPollInterval: Duration.zero,
         );
@@ -5913,7 +5996,7 @@ void main() {
     );
 
     test(
-      'ignores an out-of-range channel in rig.oneShotChannels rather than '
+      'ignores an out-of-range playback override rather than '
       'pushing an invalid channel to the engine (a manifest saved on a '
       'build with more physical tracks than this engine)',
       () async {
@@ -5927,7 +6010,7 @@ void main() {
             tracks: [
               rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
-            oneShotChannels: const {7},
+            trackOneShotOverrides: const {7: true},
           ),
           clearPollInterval: Duration.zero,
         );

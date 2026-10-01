@@ -249,13 +249,14 @@ typedef enum le_command_code {
   LE_CMD_SET_CLICK_OUTPUT = 22,  /* click output routing. trackmask arm:
                                   * channel unused, mask = output bitmask
                                   * (default 0 = no outputs). */
-  LE_CMD_COMMIT_SESSION = 23,    /* arg_i = base loop length in frames: publish
-                                  * the master loop and start imported tracks */
+  LE_CMD_COMMIT_SESSION = 23,    /* session arm: base_frames and loop_bars;
+                                  * publish grid and start imported tracks */
   LE_CMD_SET_CLICK_VOLUME = 24,  /* arg_f = 0..LE_MAX_GAIN (the click's ONLY
                                   * gain stage — master gain never applies). */
   LE_CMD_SET_COUNT_IN = 25,      /* arg_i = count-in length in measures
                                   * (0 = off, up to LE_COUNT_IN_MAX_BARS).
-                                  * 0 also cancels an in-progress count-in. */
+                                  * Cancels an in-progress count-in; positive
+                                  * bars disable sound start and its arms. */
   /* ---- multi-lane recording (a track owns an array of lanes) ----
    * Each lane records one hardware input into its own clean mono buffer; all
    * lanes of a track share one transport and one undo span. The lane *count* is
@@ -372,18 +373,9 @@ typedef enum le_command_code {
    * finalize + section-transport behavior. */
   LE_CMD_CROWN_PRIMARY = 46, /* arg_i = channel */
 
-  /* ---- One Shot (B4, Sheeran manual §5.9.4) ----
-   * A per-track flag: "plays just once and then stops" instead of looping.
-   * Settable on any channel in any mode (mirrors LE_CMD_CROWN_PRIMARY's D18
-   * pattern — a persistent per-track designation, not gated by the D4 mode
-   * lock or by mode itself), but only behaviorally active where the engine
-   * has a per-track transport wrap to hook: FREE and SONG (both driven by
-   * each track's own free_clock — see advance_track_clock_frame,
-   * engine_process.c). Inert in Multi/Sync/Band, where a track's own "lap"
-   * is a derived point on the SHARED master clock, not an independent
-   * per-track event this flag can observe without much larger transport
-   * surgery the manual's Song-specific tool does not call for (deliberately
-   * out of B4's scope — see the header doc above le_engine_set_one_shot). */
+  /* One Shot: a per-track setting in every mode. Finishes the current
+   * playback pass; explicit launch after automatic end starts at frame zero
+   * without moving the shared musical clock. See le_engine_set_one_shot. */
   LE_CMD_SET_ONE_SHOT = 47, /* arg_i = channel, arg_f = 0/1 */
 
   /* ---- MIDI clock (Phase C/E, D15) ----
@@ -468,6 +460,15 @@ typedef enum le_command_code {
    * immediately (LE_CMD_REDO_FROM_EMPTY). LE_EVT_TAKE_CANCELLED carries the
    * finalized length back so the control thread can file the redo entry. */
   LE_CMD_CANCEL_TAKE = 57,
+  /* Exact musical tempo restoration on a stopped rig. arg_i = tempo source,
+   * arg_f = BPM (0 only with NONE). Rechecked by the callback. */
+  LE_CMD_RESTORE_TEMPO = 58,
+  /* One queued command updates a subset of tracks together. arg_i = track
+   * bitmask, arg_f = 0/1; uses the same pass semantics as SET_ONE_SHOT. */
+  LE_CMD_SET_ONE_SHOT_MASK = 59,
+  /* arg_i = sound-start enabled (0/1). Enabling cancels count-in;
+   * disabling cancels pending signal-triggered recording arms. */
+  LE_CMD_SET_AUTO_RECORD = 60,
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -706,8 +707,8 @@ typedef struct le_track_snapshot {
    * a division track). Only ever nonzero in Sync/Band mode on a non-primary
    * track. See le_sync_quantize_active (engine_private.h) for how it's set. */
   int32_t sync_divisor;
-  /* Trailing (B4, One Shot): 0/1, default 0. Settable in any mode; only
-   * behaviorally active in Free/Song — see LE_CMD_SET_ONE_SHOT's doc. */
+  /* Trailing (B4, One Shot): 0/1, default 0. Live in every mode; see
+   * le_engine_set_one_shot for playback and relaunch semantics. */
   int32_t one_shot;
   /* Trailing (#819): the monotonic per-track id of the currently-SETTLED take
    * — the take the RECORD_END that last finalized this track logged, published
@@ -741,6 +742,15 @@ typedef struct le_track_snapshot {
    * at the primary's loop top; -1 while nothing is pending. The stage names
    * the boundary from this rather than guessing from the settings. */
   int32_t pending_trigger;
+  /* ---- per-track record timing and decay overrides (accepted design,
+   * slice 2b; trailing). What the engine holds, so a surface and a session
+   * capture read the setting back rather than what was last sent. */
+  int32_t quantize_override; /* -1 inherit, 0 forced off, 1 forced on
+                              * (le_engine_set_track_quantize) */
+  int32_t quantize_div_override; /* -1 inherit, else le_grid_div
+                                  * (le_engine_set_track_quantize_div) */
+  float overdub_feedback_override; /* negative = inherit, else 0..1
+                                    * (le_engine_set_track_overdub_feedback) */
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1097,6 +1107,13 @@ typedef struct le_snapshot {
    * no single track does, so the stage footer meters this rather than the
    * per-track peaks. Sibling of output_rms above. */
   float output_peak;
+  /* ---- record start settings (accepted design, slice 2b; trailing).
+   * Quantize is the control-side gate; auto_record and count_in_bars are
+   * decoded together from the callback's applied recording-start choice.
+   * le_engine_set_count_in and le_engine_set_auto_record exclude each other. */
+  int32_t quantize;    /* 0/1: the global loop-grid record quantize gate */
+  int32_t auto_record; /* 0/1: sound-activated record start */
+  float overdub_feedback; /* the global coefficient, 0..1 (default 1) */
   /* NOTE: the audio-callback telemetry (#722) is deliberately NOT here — see
    * le_callback_telemetry and le_engine_get_callback_telemetry. */
 } le_snapshot;
@@ -1598,6 +1615,19 @@ LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled);
 LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
                                                int32_t channel, int32_t mode);
 
+/* Sets track [channel]'s musical quantization division override (accepted
+ * design, slice 2b): a negative [div] inherits the global default
+ * (le_engine_set_quantize_div); 0 = the loop top only; 1..5 = bar .. 1/16
+ * note (le_grid_div). Read live wherever the global division is read, so a
+ * pending arm on this track fires on this track's own boundaries and a change
+ * while armed re-evaluates on the next boundary of the new division. Only
+ * meaningful while the track's quantize gate is effectively on
+ * (le_engine_set_quantize / le_engine_set_track_quantize): the gate decides
+ * whether a press waits at all, the division decides for what. */
+LE_EXPORT int32_t le_engine_set_track_quantize_div(le_engine* engine,
+                                                   int32_t channel,
+                                                   int32_t div);
+
 /* Cancels track [channel]'s pending record arm, whatever armed it — the
  * quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
  * section toggle. No-op (LE_OK) when the track is not armed.
@@ -1666,6 +1696,16 @@ LE_EXPORT int32_t le_engine_finalize_take(le_engine* engine, int32_t channel);
 /* Sets the tempo in denominator-note beats per minute, clamped to 30..300.
  * Sets tempo_source = manual; ignored while the tempo is locked. */
 LE_EXPORT int32_t le_engine_set_tempo(le_engine* engine, float bpm);
+/* Restores a session's exact musical tempo and its source while stopped.
+ * NONE requires BPM 0; MANUAL/TAPPED/DERIVED require finite BPM in 30..300.
+ * EXTERNAL is live clock state and cannot be restored by a session.
+ * Invalid arguments return LE_ERR_INVALID; unconfigured engines return
+ * LE_ERR_NOT_RUNNING. Sounding/capturing/armed tracks or unacknowledged
+ * transport changes return LE_ERR_NOT_READY without posting. The callback
+ * rechecks transport before applying. Post after clear settlement and before
+ * the new session's mode/crown/import commands. No audio or loop span changes. */
+LE_EXPORT int32_t le_engine_restore_tempo(le_engine* engine, float bpm,
+                                          int32_t source);
 
 /* Sets the time signature. Only the 17 Sheeran signatures are valid — x/4 for
  * num 2..7 and x/8 for num 5..15 — anything else returns LE_ERR_INVALID
@@ -1768,30 +1808,35 @@ LE_EXPORT int32_t le_engine_crown_primary(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
                                            int32_t channel);
 
-/* ---- One Shot (B4, Sheeran manual §5.9.4) ----
+/* ---- One Shot (B4, Sheeran manual §5.9.4; every mode since slice 2b) ----
  * "A track plays just once and then stops" — the manual's tool for a
  * non-looping section (an intro/outro, or a one-off sample bed), "particularly
- * useful for playing backing tracks". A per-track boolean; the manual does
- * not gate it by mode, but segno's engine currently has a natural per-track
- * transport-wrap hook ONLY in Free and Song mode (each track ticks its own
- * free_clock there — see le_track's doc, engine_private.h); in Multi/Sync/
- * Band a track's own "lap" is a derived point on the ONE shared master
- * clock, and giving it an independent per-track stop-after-one-lap would
- * mean much larger transport surgery (and raises un-spec'd questions, e.g.
- * how a one-shot interacts with a Sync/Band division's multiple/divisor)
- * that the manual's Song-specific tool does not call for. Deliberate,
- * documented scope line: the FLAG itself is settable and persists in ANY
- * mode (mirrors LE_CMD_CROWN_PRIMARY's D18 pattern), but the STOP-instead-
- * of-loop behavior only fires in Free/Song — see
- * advance_track_clock_frame's doc, engine_process.c. Applies at the natural
- * wrap point (le_loop_clock_tick's boundary return on that track's OWN
- * clock), reusing handle_stop's exact PLAYING/OVERDUBBING -> STOPPED
- * transition (pending mutes land the same way a manual Stop press would;
- * an overdub in flight ends its capture and drains/retires normally). */
+ * useful for playing backing tracks". A per-track boolean, available in all
+ * five looper modes (accepted design, Playback & overdub): the track plays
+ * to the end of its own lap and stops itself, without stopping other tracks
+ * or the shared clock. What "its own lap" means per mode:
+ *   - Free/Song: one full turn of the track's OWN clock (le_loop_clock_tick's
+ *     boundary return on free_clock; advance_track_clock_frame);
+ *   - Multi/Sync/Band: the track's lap is a derived point on the ONE shared
+ *     master clock — a k-multiple ends when the master wraps back to the
+ *     track's first segment, a Sync/Band division every base/n frames, a
+ *     plain 1x take at the master wrap (le_shared_clock_one_shots). A fresh
+ *     take already set to Once plays a complete lap before stopping. An
+ *     explicit launch after automatic end instead starts that track's audio
+ *     at frame zero and plays exactly one pass, even while siblings play.
+ *     Its playback origin changes; the shared musical capture clock does not.
+ *     Recovery retains shared phase and does not perform this relaunch.
+ * Enabling Once during a pass finishes that pass. A record or overdub
+ * request queued for the lap end on a Once track wins over the stop: the
+ * new pass runs, and Once ends the track at that pass's end. The stop reuses
+ * handle_stop's exact PLAYING/OVERDUBBING -> STOPPED transition (pending
+ * mutes land the same way a manual Stop press would; an overdub in flight
+ * ends its capture and drains/retires normally) and logs a synthetic STOP.
+ * A sibling's launch never automatically resumes an ended Once track. */
 
 /* Sets track [channel]'s One Shot flag (0/1). Rejects only an out-of-range
- * channel; accepted in every looper mode, though inert outside Free/Song
- * (see the class doc above). A SETTING, not content: like
+ * channel; accepted and live in every looper mode (see the class doc
+ * above). A SETTING, not content: like
  * a_length_preset_bars and target_multiple, it is untouched by clear /
  * undo-to-empty / mode switches — handle_clear's per-track reset
  * (engine_process.c) deliberately does not include it, the same "cleared
@@ -1801,6 +1846,15 @@ LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
  * to re-flag it. */
 LE_EXPORT int32_t le_engine_set_one_shot(le_engine* engine, int32_t channel,
                                          int32_t enabled);
+
+/* Updates all selected One Shot flags with one queued command. Bit c in
+ * channels selects track c. A zero mask or any bit outside track_count is
+ * invalid. A full command ring refuses the entire update without changing
+ * any track; accepted updates land together before the next audio block.
+ * Per-track default/override provenance remains the caller's responsibility. */
+LE_EXPORT int32_t le_engine_set_one_shot_mask(le_engine* engine,
+                                              uint32_t channels,
+                                              int32_t enabled);
 
 /* ---- MIDI clock (Phase C/E, decision D15) ----
  * The tri-state le_clock_mode (off / send / receive). This part (C1)
@@ -1853,7 +1907,10 @@ LE_EXPORT int32_t le_engine_set_click_volume(le_engine* engine, float volume);
  * behave exactly as without count-in (quantize governs — D9). Mutually
  * exclusive with sound-activated recording: enabling count-in disables
  * auto-record (and cancels its threshold arms), and enabling auto-record
- * clears the count-in — count-in wins when both are somehow set at once. */
+ * clears the count-in. Each setter posts one command; an unconfigured engine
+ * returns LE_ERR_NOT_RUNNING and a full ring returns LE_ERR_INVALID without
+ * changing either setting or pending arms. Snapshots publish the applied pair
+ * together after processing; accepted control decisions take effect at once. */
 LE_EXPORT int32_t le_engine_set_count_in(le_engine* engine, int32_t bars);
 
 /* Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
@@ -1959,9 +2016,22 @@ LE_EXPORT int32_t le_engine_set_limiter(le_engine* engine, int32_t enabled,
 LE_EXPORT int32_t le_engine_set_overdub_feedback(le_engine* engine,
                                                  float feedback);
 
+/* Sets track [channel]'s overdub feedback override (accepted design, slice
+ * 2b): a negative [feedback] inherits the global coefficient
+ * (le_engine_set_overdub_feedback); otherwise the value is clamped to [0,1]
+ * and used for this track's overdub passes. Live: a change during a pass
+ * reaches the write head through a ~10 ms ramp, never a step, so the
+ * retained layer has no level seam. Like the global coefficient, only
+ * overdub passes apply it; playback never decays. */
+LE_EXPORT int32_t le_engine_set_track_overdub_feedback(le_engine* engine,
+                                                       int32_t channel,
+                                                       float feedback);
+
 /* Enables sound-activated recording: a record press on an empty track waits and
  * begins capturing the first frame the input level crosses the threshold. A
- * second press before then cancels. Disabling cancels tracks still waiting. */
+ * second press before then cancels. Disabling cancels tracks still waiting.
+ * Enabling clears and cancels count-in. Queue/configuration refusal leaves
+ * both settings and pending arms unchanged; see le_engine_set_count_in. */
 LE_EXPORT int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled);
 
 /* Sets chain entry [index] (0..LE_FX_MAX-1) on lane [lane] of track [channel] to
@@ -2608,10 +2678,24 @@ LE_EXPORT int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
 
 /* Establishes the master loop at `base_frames` and starts every imported track
  * (EMPTY with a loaded length) playing at its whole-loop multiple
- * (length / base_frames). Posts a command; returns LE_OK or an le_result error.
+ * (length / base_frames). Restores exactly `loop_bars` musical bars over that
+ * span; zero keeps the loop grid-free even when a tempo is known. The caller
+ * restores tempo/source/signature before this commit. Does not infer bars
+ * from BPM or change audio length. Requires base_frames > 0 and loop_bars in
+ * 0..INT32_MAX/15 (the largest supported signature has 15 beats). Posts one
+ * command; returns LE_OK or an le_result error.
  */
 LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
-                                           int32_t base_frames);
+                                           int32_t base_frames,
+                                           int32_t loop_bars);
+
+/* Read-only control-thread query: 1 when every successfully queued command
+ * has been consumed (including rejected/no-op outcomes) and the callback has
+ * published its resulting snapshot values; 0 while pending, unconfigured or
+ * null. Acquire this before taking the snapshot for a running-session save.
+ * Does not wait or drain. Direct atomic setters need no command settlement;
+ * active capture and pending overdub layers still require their own checks. */
+LE_EXPORT int32_t le_engine_commands_settled(le_engine* engine);
 
 /* ---- native USB MIDI input (foot-pedal control) ---- *
  *

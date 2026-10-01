@@ -383,6 +383,41 @@ void main() {
       expect(engine.trackLengthPreset.containsKey(0), isFalse);
     });
 
+    test(
+      'restores default Once and preserves explicit Loop overrides',
+      () async {
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+        );
+        await settings.saveDefaultOneShot(oneShot: true);
+        await settings.saveTrackOneShot(1, oneShot: false);
+        engine.nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+        );
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isTrue);
+        expect(repository.defaultOneShot, isTrue);
+        expect(repository.state.tracks[0].oneShotOverride, isNull);
+        expect(repository.state.tracks[1].oneShotOverride, isFalse);
+        expect(engine.trackOneShot, {0: true, 1: false});
+      },
+    );
+
     test('restores saved per-lane effects on launch', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(

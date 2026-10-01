@@ -950,19 +950,74 @@ void main() {
     });
   });
 
-  group('track quantize override', () {
-    test('defaults to null (inherit) when unset', () async {
-      expect(await repository.loadTrackQuantize(0), isNull);
+  group('track record timing override', () {
+    test('defaults to null (follow the default) when unset', () async {
+      expect(await repository.loadTrackRecordTiming(0), isNull);
     });
 
-    test('round-trips force-on, force-off, and inherit', () async {
-      await repository.saveTrackQuantize(0, enabled: true);
-      await repository.saveTrackQuantize(1, enabled: false);
-      expect(await repository.loadTrackQuantize(0), isTrue);
-      expect(await repository.loadTrackQuantize(1), isFalse);
+    test('round-trips a code and the follow-the-default value', () async {
+      await repository.saveTrackRecordTiming(0, 4);
+      await repository.saveTrackRecordTiming(1, 0);
+      expect(await repository.loadTrackRecordTiming(0), 4);
+      expect(await repository.loadTrackRecordTiming(1), 0);
 
-      await repository.saveTrackQuantize(0, enabled: null);
-      expect(await repository.loadTrackQuantize(0), isNull);
+      await repository.saveTrackRecordTiming(0, null);
+      expect(await repository.loadTrackRecordTiming(0), isNull);
+    });
+  });
+
+  group('overdub decay', () {
+    test('defaults to 0 and round-trips, by default and per track', () async {
+      expect(await repository.loadOverdubDecay(), 0);
+      expect(await repository.loadTrackOverdubDecay(0), isNull);
+      await repository.saveOverdubDecay(25);
+      await repository.saveTrackOverdubDecay(0, 100);
+      expect(await repository.loadOverdubDecay(), 25);
+      expect(await repository.loadTrackOverdubDecay(0), 100);
+      await repository.saveTrackOverdubDecay(0, null);
+      expect(await repository.loadTrackOverdubDecay(0), isNull);
+    });
+
+    test('retains an explicit value equal to the default', () async {
+      await repository.saveOverdubDecay(25);
+      await repository.saveTrackOverdubDecay(0, 25);
+      await repository.saveTrackOverdubDecay(1, 0);
+      await repository.saveOverdubDecay(70);
+      expect(await repository.loadTrackOverdubDecay(0), 25);
+      expect(await repository.loadTrackOverdubDecay(1), 0);
+      expect(await repository.loadTrackOverdubDecay(2), isNull);
+    });
+  });
+
+  group('playback choice', () {
+    test('defaults to Loop with all tracks following the default', () async {
+      expect(await repository.loadDefaultOneShot(), isFalse);
+      expect(await repository.loadTrackOneShot(0), isNull);
+    });
+
+    test(
+      'preserves explicit Loop and Once independently of the default',
+      () async {
+        await repository.saveTrackOneShot(0, oneShot: false);
+        await repository.saveTrackOneShot(1, oneShot: true);
+        await repository.saveDefaultOneShot(oneShot: true);
+        expect(await repository.loadDefaultOneShot(), isTrue);
+        expect(await repository.loadTrackOneShot(0), isFalse);
+        expect(await repository.loadTrackOneShot(1), isTrue);
+        expect(await repository.loadTrackOneShot(2), isNull);
+
+        await repository.saveDefaultOneShot(oneShot: false);
+        expect(await repository.loadDefaultOneShot(), isFalse);
+        expect(await repository.loadTrackOneShot(1), isTrue);
+      },
+    );
+
+    test('Use default removes either explicit playback choice', () async {
+      for (final oneShot in [false, true]) {
+        await repository.saveTrackOneShot(0, oneShot: oneShot);
+        await repository.saveTrackOneShot(0, oneShot: null);
+        expect(await repository.loadTrackOneShot(0), isNull);
+      }
     });
   });
 

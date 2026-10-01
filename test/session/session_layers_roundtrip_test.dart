@@ -108,7 +108,11 @@ void main() {
   }
 
   Future<void> saveThenLoad(String dir) async {
-    await session.save(dir, chains: chainsFromLooper(looper));
+    await session.save(
+      dir,
+      chains: chainsFromLooper(looper),
+      settings: settingsFromLooper(looper),
+    );
     // Wipe to an empty rig so a failed load would be visible, then load back.
     await looper.applySession(const SessionRig(), clearPollInterval: poll);
     engine.pump(frames: 0);

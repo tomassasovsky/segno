@@ -25,6 +25,134 @@ void main() {
       ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
       : null;
 
+  test('queued tempo and Once publish only after the callback settles', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    engine
+      ..start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 48000,
+        ),
+      )
+      ..pump(frames: 0);
+    expect(engine.commandsSettled, isTrue);
+    expect(engine.setTempo(97.5), EngineResult.ok);
+    expect(engine.setOneShotMask(channels: 5, oneShot: true), EngineResult.ok);
+    expect(engine.commandsSettled, isFalse);
+    engine.pump(frames: 0);
+    expect(engine.commandsSettled, isTrue);
+    final snapshot = engine.snapshot();
+    expect(snapshot.tempoBpm, 97.5);
+    expect(snapshot.tracks[0].oneShot, isTrue);
+    expect(snapshot.tracks[1].oneShot, isFalse);
+    expect(snapshot.tracks[2].oneShot, isTrue);
+    expect(
+      engine.setOneShotMask(channels: 0, oneShot: false),
+      EngineResult.invalid,
+    );
+    expect(
+      engine.setOneShotMask(channels: 256, oneShot: false),
+      EngineResult.invalid,
+    );
+  }, skip: skip);
+
+  test('pumped snapshot preserves the native recording defaults', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    engine
+      ..start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 48000,
+        ),
+      )
+      ..setQuantize(enabled: true)
+      ..setAutoRecord(enabled: true)
+      ..setOverdubFeedback(0.75)
+      ..pump(frames: 0);
+    final snapshot = engine.snapshot();
+    expect(snapshot.quantize, isTrue);
+    expect(snapshot.autoRecord, isTrue);
+    expect(snapshot.overdubFeedback, 0.75);
+  }, skip: skip);
+
+  test('session tempo restores exact source and an unset grid through FFI', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    engine.start(
+      const EngineConfig(
+        sampleRate: 48000,
+        inputChannels: 1,
+        outputChannels: 1,
+        maxLoopFrames: 48000,
+      ),
+    );
+    for (final source in [
+      TempoSource.manual,
+      TempoSource.tapped,
+      TempoSource.derived,
+    ]) {
+      expect(engine.restoreTempo(bpm: 97.5, source: source), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().tempoBpm, 97.5);
+      expect(engine.snapshot().tempoSource, source);
+    }
+    expect(
+      engine.restoreTempo(bpm: 0, source: TempoSource.none),
+      EngineResult.ok,
+    );
+    engine.pump(frames: 0);
+    expect(engine.snapshot().tempoBpm, 0);
+    expect(engine.snapshot().tempoSource, TempoSource.none);
+  }, skip: skip);
+
+  test('session tempo rejects invalid and pending capture without changes', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    engine.start(
+      const EngineConfig(
+        sampleRate: 48000,
+        inputChannels: 1,
+        outputChannels: 1,
+        maxLoopFrames: 48000,
+      ),
+    );
+    for (final bpm in [double.nan, double.infinity, -1.0, 301.0]) {
+      expect(
+        engine.restoreTempo(bpm: bpm, source: TempoSource.manual),
+        EngineResult.invalid,
+      );
+    }
+    expect(
+      engine.restoreTempo(bpm: 120, source: TempoSource.external),
+      EngineResult.invalid,
+    );
+    expect(engine.record(), EngineResult.ok);
+    expect(
+      engine.restoreTempo(bpm: 97.5, source: TempoSource.tapped),
+      EngineResult.notReady,
+    );
+    engine.pump(frames: 32, input: 0.5);
+    expect(
+      engine.restoreTempo(bpm: 0, source: TempoSource.none),
+      EngineResult.notReady,
+    );
+    expect(engine.snapshot().tracks.first.state, TrackState.recording);
+  }, skip: skip);
+
+  test('session tempo checks a disposed handle', () {
+    final engine = PumpedNativeEngine()..dispose();
+    expect(
+      () => engine.restoreTempo(bpm: 0, source: TempoSource.none),
+      throwsA(isA<EngineException>()),
+    );
+  }, skip: skip);
+
   test('records, plays, undoes, and redoes a loop with no audio device', () {
     final engine = PumpedNativeEngine();
     addTearDown(engine.dispose);
@@ -51,6 +179,7 @@ void main() {
     expect(s.tracks.first.state, TrackState.playing);
     expect(s.tracks.first.lengthFrames, 256);
     expect(s.masterLengthFrames, 256);
+    expect(s.primaryTrack, 0);
 
     expect(engine.record(), EngineResult.ok); // punch in
     engine.pump(frames: 256, input: 0.25); // one full pass
@@ -132,7 +261,7 @@ void main() {
     final lane1 = Float32List.fromList(List<double>.filled(64, -0.25));
     expect(engine.importTrackLane(0, 0, lane0), EngineResult.ok);
     expect(engine.importTrackLane(0, 1, lane1), EngineResult.ok);
-    expect(engine.commitSession(64), EngineResult.ok);
+    expect(engine.commitSession(64, loopBars: 0), EngineResult.ok);
     engine.pump(frames: 0);
 
     final s = engine.snapshot();
@@ -240,7 +369,7 @@ void main() {
     expect(engine.importLayer(0, 0, 1, l1), EngineResult.ok);
     expect(engine.importLayer(0, 0, 2, l2), EngineResult.ok);
     expect(engine.finalizeLayers(0, 1, 1), EngineResult.ok);
-    expect(engine.commitSession(256), EngineResult.ok);
+    expect(engine.commitSession(256, loopBars: 0), EngineResult.ok);
     engine.pump(frames: 0);
 
     s = engine.snapshot();

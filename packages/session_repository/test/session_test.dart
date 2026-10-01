@@ -14,8 +14,6 @@ void main() {
         channel: 0,
         multiple: 1,
         lengthFrames: 96000,
-        lengthPresetBars: 4,
-        oneShot: true,
         lanes: [
           SessionLane(
             lane: 0,
@@ -84,16 +82,24 @@ void main() {
     tsNum: 6,
     tsDen: 8,
     quantizeDiv: GridDivision.eighth,
+    loopBars: 5,
+    recordTiming: RecordTiming.eighth,
+    overdubDecay: 25,
     clickMode: ClickMode.rec,
     clickOutputMask: 0x3,
     clickVolume: 0.75,
     countInBars: 2,
     looperMode: LooperMode.band,
     primaryTrack: 1,
-    // Channel 2 has NO SessionTrack entry (content-less) — its One Shot flag
-    // only round-trips through this session-level set, alongside channel 0's
-    // (which also has a per-track `oneShot: true` above; both should agree).
-    oneShotChannels: [0, 2],
+    defaultOneShot: true,
+    trackOneShotOverrides: {0: true, 2: false},
+    trackRecordTimingOverrides: {0: RecordTiming.bar, 2: RecordTiming.eighth},
+    trackOverdubDecayOverrides: {0: 30, 2: 25},
+    trackLengthPresetOverrides: {0: 4, 2: 8},
+    syncTempo: false,
+    recDub: true,
+    autoRecord: true,
+    defaultMultiple: 3,
     // The pedal remap (schema v6) — opaque here exactly like the chain
     // strings above; a binding-set shape stands in for the real
     // `PedalBindingSet.encode()` output the control layer produces.
@@ -108,10 +114,10 @@ void main() {
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
-    test('serializes the manifest version (v7)', () {
+    test('serializes the manifest version (v8)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 7);
+      expect(json['version'], 8);
       expect(json['baseLengthFrames'], 96000);
     });
 
@@ -332,47 +338,98 @@ void main() {
       expect(json['tsNum'], 6);
       expect(json['tsDen'], 8);
       expect(json['quantizeDiv'], 'eighth');
+      expect(json['loopBars'], 5);
       expect(json['clickMode'], 'rec');
       expect(json['clickOutputMask'], 0x3);
       expect(json['clickVolume'], 0.75);
       expect(json['countInBars'], 2);
       expect(json['looperMode'], 'band');
       expect(json['primaryTrack'], 1);
-      expect(json['oneShotChannels'], [0, 2]);
-      final track0 = (json['tracks'] as List).first as Map<String, dynamic>;
-      expect(track0['lengthPresetBars'], 4);
-      expect(track0['oneShot'], isTrue);
+      expect(json['defaultOneShot'], isTrue);
+      expect(json['trackOneShotOverrides'], {'0': true, '2': false});
+      expect(json['trackLengthPresetOverrides'], {'0': 4, '2': 8});
     });
 
-    test(
-      'v4 round-trips every new field (tempo/signature/quantize/click/ '
-      'count-in, looperMode/primaryTrack, per-track '
-      'lengthPresetBars/oneShot, and the session-level oneShotChannels set)',
-      () {
-        final json = jsonDecode(jsonEncode(session.toJson()));
-        final loaded = Session.fromJson(json as Map<String, dynamic>);
-        expect(loaded.tempoBpm, 128.5);
-        expect(loaded.tempoSource, TempoSource.manual);
-        expect(loaded.tsNum, 6);
-        expect(loaded.tsDen, 8);
-        expect(loaded.quantizeDiv, GridDivision.eighth);
-        expect(loaded.clickMode, ClickMode.rec);
-        expect(loaded.clickOutputMask, 0x3);
-        expect(loaded.clickVolume, 0.75);
-        expect(loaded.countInBars, 2);
-        expect(loaded.looperMode, LooperMode.band);
-        expect(loaded.primaryTrack, 1);
-        expect(loaded.tracks[0].lengthPresetBars, 4);
-        expect(loaded.tracks[0].oneShot, isTrue);
-        // AUTO (0) / off round-trip too — not just non-default values.
-        expect(loaded.tracks[1].lengthPresetBars, 0);
-        expect(loaded.tracks[1].oneShot, isFalse);
-        // Channel 2's flag has no SessionTrack to live on (no content) — it
-        // only survives through this session-level set.
-        expect(loaded.oneShotChannels, [0, 2]);
-        expect(loaded, session);
-      },
-    );
+    test('round-trips settings independently of recorded tracks', () {
+      final loaded = Session.fromJson(
+        jsonDecode(jsonEncode(session.toJson())) as Map<String, dynamic>,
+      );
+      expect(loaded, session);
+      expect(loaded.defaultOneShot, isTrue);
+      expect(loaded.trackOneShotOverrides, {0: true, 2: false});
+      expect(loaded.trackRecordTimingOverrides, {
+        0: RecordTiming.bar,
+        2: RecordTiming.eighth,
+      });
+      expect(loaded.trackOverdubDecayOverrides, {0: 30, 2: 25});
+      expect(loaded.trackLengthPresetOverrides, {0: 4, 2: 8});
+      expect(loaded.trackOneShotOverrides.containsKey(1), isFalse);
+      expect(loaded.tracks.map((track) => track.channel), [0, 1]);
+      expect(loaded.syncTempo, isFalse);
+      expect(loaded.recDub, isTrue);
+      expect(loaded.autoRecord, isTrue);
+      expect(loaded.defaultMultiple, 3);
+    });
+
+    test('all-empty sessions retain explicit defaults and Use default', () {
+      const empty = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+        recordTiming: RecordTiming.bar,
+        overdubDecay: 25,
+        trackRecordTimingOverrides: {0: RecordTiming.bar},
+        trackOverdubDecayOverrides: {0: 25, 1: 0},
+        trackOneShotOverrides: {0: false, 1: true},
+        trackLengthPresetOverrides: {0: 4},
+      );
+      final loaded = Session.fromJson(
+        jsonDecode(jsonEncode(empty.toJson())) as Map<String, dynamic>,
+      );
+      expect(loaded.tracks, isEmpty);
+      expect(loaded.trackRecordTimingOverrides, {0: RecordTiming.bar});
+      expect(loaded.trackOverdubDecayOverrides, {0: 25, 1: 0});
+      expect(loaded.trackOneShotOverrides, {0: false, 1: true});
+      expect(loaded.trackLengthPresetOverrides, {0: 4});
+      expect(loaded, empty);
+      expect(loaded.hashCode, empty.hashCode);
+    });
+
+    test('equality distinguishes each setting from its default', () {
+      final variants = <String, Object>{
+        'loopBars': 0,
+        'recordTiming': 'bar',
+        'overdubDecay': 60,
+        'defaultOneShot': false,
+        'syncTempo': true,
+        'recDub': false,
+        'autoRecord': false,
+        'defaultMultiple': 2,
+        'trackRecordTimingOverrides': {'0': 'bar'},
+        'trackOverdubDecayOverrides': {'0': 30},
+        'trackOneShotOverrides': {'0': true},
+        'trackLengthPresetOverrides': {'0': 4},
+      };
+      for (final entry in variants.entries) {
+        final changed = Session.fromJson(
+          session.toJson()..[entry.key] = entry.value,
+        );
+        expect(changed, isNot(session), reason: entry.key);
+      }
+    });
+
+    test('override map equality and hashing ignore insertion order', () {
+      final reordered = Session.fromJson(
+        session.toJson()
+          ..['trackOneShotOverrides'] = {'2': false, '0': true}
+          ..['trackRecordTimingOverrides'] = {'2': 'eighth', '0': 'bar'}
+          ..['trackOverdubDecayOverrides'] = {'2': 25, '0': 30}
+          ..['trackLengthPresetOverrides'] = {'2': 8, '0': 4},
+      );
+      expect(reordered, session);
+      expect(reordered.hashCode, session.hashCode);
+    });
 
     test(
       'a v3 manifest (no tempo grid fields at all) loads with every new '
@@ -415,8 +472,8 @@ void main() {
         expect(loaded.clickOutputMask, 0);
         expect(loaded.clickVolume, 1);
         expect(loaded.countInBars, 0);
-        expect(loaded.tracks.single.lengthPresetBars, 0);
-        expect(loaded.oneShotChannels, isEmpty);
+        expect(loaded.trackLengthPresetOverrides, isEmpty);
+        expect(loaded.trackOneShotOverrides, isEmpty);
         // The rest of the v3 manifest still loads intact.
         expect(loaded.baseLengthFrames, 96000);
         expect(loaded.tracks.single.lanes.single.volume, 1.0);
@@ -442,29 +499,6 @@ void main() {
 
         final loaded = Session.fromJson(json);
         expect(loaded, session);
-      },
-    );
-
-    test(
-      'reads looperMode, primaryTrack, per-track oneShot, and the '
-      'session-level oneShotChannels set when present (B5c + independent '
-      'review of #295) — unlike the still-future C/D fields above, these '
-      'ARE understood by this code',
-      () {
-        final json = session.toJson();
-        json['looperMode'] = 'sync';
-        json['primaryTrack'] = 0;
-        json['oneShotChannels'] = [3];
-        final track0 = (json['tracks'] as List).first as Map<String, dynamic>;
-        track0['oneShot'] = true;
-
-        final loaded = Session.fromJson(json);
-        expect(loaded.looperMode, LooperMode.sync);
-        expect(loaded.primaryTrack, 0);
-        expect(loaded.tracks[0].oneShot, isTrue);
-        // Track 1 (not touched above) still defaults to off.
-        expect(loaded.tracks[1].oneShot, isFalse);
-        expect(loaded.oneShotChannels, [3]);
       },
     );
 
@@ -605,11 +639,11 @@ void main() {
     });
 
     test(
-      'rejects a hypothetical v8 manifest (an extra unknown field does not '
+      'rejects a newer manifest (an extra unknown field does not '
       'change the outcome) via the existing version-gate check',
       () {
         final json = session.toJson()
-          ..['version'] = 8
+          ..['version'] = Session.formatVersion + 1
           // A field a hypothetical future schema might add — proves the
           // rejection is purely the version-number gate, not incidentally
           // triggered by an unparseable shape.
@@ -620,7 +654,7 @@ void main() {
           () => Session.fromJson(json),
           throwsA(
             isA<SessionUnsupportedVersion>()
-                .having((e) => e.version, 'version', 8)
+                .having((e) => e.version, 'version', Session.formatVersion + 1)
                 .having((e) => e.supported, 'supported', Session.formatVersion),
           ),
         );

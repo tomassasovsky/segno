@@ -31,6 +31,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(const SessionRig());
     registerFallbackValue(const SessionChains());
+    registerFallbackValue(const SessionSettings());
   });
 
   setUp(() {
@@ -43,6 +44,14 @@ void main() {
     when(looper.allTrackChains).thenReturn(const {});
     when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
     when(looper.allMonitors).thenReturn(const {});
+    when(() => looper.sessionTransport).thenReturn(const TransportState());
+    when(() => looper.defaultRecordTiming).thenReturn(RecordTiming.immediately);
+    when(() => looper.defaultOverdubDecay).thenReturn(0);
+    when(() => looper.defaultOneShot).thenReturn(false);
+    when(() => looper.trackRecordTimingOverrides).thenReturn(const {});
+    when(() => looper.trackOverdubDecayOverrides).thenReturn(const {});
+    when(() => looper.trackOneShotOverrides).thenReturn(const {});
+    when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
     // loadNamed's auto-disarm-before-load orchestration; a no-op success by
     // default since nothing is armed in these tests.
     when(
@@ -180,9 +189,69 @@ void main() {
       ).thenAnswer((inv) async => '/root/${inv.positionalArguments.first}');
       when(repository.listSessions).thenAnswer((_) async => list);
       when(
-        () => repository.save(any(), chains: any(named: 'chains')),
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+        ),
       ).thenAnswer((_) async => _session);
     }
+
+    test('Save As and Save capture the current desired settings', () async {
+      stubCatalog();
+      when(() => looper.sessionTransport).thenReturn(
+        const TransportState(
+          tempoBpm: 109,
+          tempoSource: TempoSource.manual,
+          tsNum: 3,
+          tsDen: 8,
+        ),
+      );
+      when(() => looper.defaultOneShot).thenReturn(true);
+      when(() => looper.trackOneShotOverrides).thenReturn(const {2: false});
+      when(
+        () => looper.trackRecordTimingOverrides,
+      ).thenReturn(const {2: RecordTiming.bar});
+      when(() => looper.trackOverdubDecayOverrides).thenReturn(const {2: 35});
+      final cubit = build();
+      addTearDown(cubit.close);
+      await cubit.saveAs('New');
+      final first =
+          verify(
+                () => repository.save(
+                  '/root/New',
+                  chains: any(named: 'chains'),
+                  settings: captureAny(named: 'settings'),
+                ),
+              ).captured.single
+              as SessionSettings;
+      expect(first.tempoBpm, 109);
+      expect(first.tempoSource, TempoSource.manual);
+      expect(first.tsNum, 3);
+      expect(first.tsDen, 8);
+      expect(first.defaultOneShot, isTrue);
+      expect(first.trackOneShotOverrides, {2: false});
+      expect(first.trackRecordTimingOverrides, {2: RecordTiming.bar});
+      expect(first.trackOverdubDecayOverrides, {2: 35});
+
+      when(() => looper.trackOneShotOverrides).thenReturn(const {});
+      when(() => looper.trackRecordTimingOverrides).thenReturn(const {});
+      when(() => looper.trackOverdubDecayOverrides).thenReturn(const {});
+      await cubit.save();
+      final second =
+          verify(
+                () => repository.save(
+                  '/root/New',
+                  chains: any(named: 'chains'),
+                  settings: captureAny(named: 'settings'),
+                ),
+              ).captured.single
+              as SessionSettings;
+      expect(second.defaultOneShot, isTrue);
+      expect(second.trackOneShotOverrides, isEmpty);
+      expect(second.trackRecordTimingOverrides, isEmpty);
+      expect(second.trackOverdubDecayOverrides, isEmpty);
+    });
 
     blocTest<SessionCubit, SessionState>(
       'saveAs writes a new named session, sets it current, and refreshes',
@@ -202,7 +271,11 @@ void main() {
             .having((s) => s.sessions, 'sessions', summaries),
       ],
       verify: (_) => verify(
-        () => repository.save('/root/New', chains: any(named: 'chains')),
+        () => repository.save(
+          '/root/New',
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+        ),
       ).called(1),
     );
 
@@ -222,7 +295,11 @@ void main() {
             .having((s) => s.error, 'error', SessionError.nameCollision),
       ],
       verify: (_) => verifyNever(
-        () => repository.save(any(), chains: any(named: 'chains')),
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+        ),
       ),
     );
 
@@ -242,7 +319,11 @@ void main() {
             .having((s) => s.currentSessionName, 'current', 'Open'),
       ],
       verify: (_) => verify(
-        () => repository.save('/root/Open', chains: any(named: 'chains')),
+        () => repository.save(
+          '/root/Open',
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+        ),
       ).called(1),
     );
 
@@ -257,7 +338,11 @@ void main() {
             .having((s) => s.currentSessionName, 'current', isNull),
       ],
       verify: (_) => verifyNever(
-        () => repository.save(any(), chains: any(named: 'chains')),
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+        ),
       ),
     );
 
@@ -438,7 +523,11 @@ void main() {
             .having((s) => s.error, 'error', SessionError.unknown),
       ],
       verify: (_) => verifyNever(
-        () => repository.save(any(), chains: any(named: 'chains')),
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+        ),
       ),
     );
 
@@ -460,7 +549,11 @@ void main() {
           () => repository.bundlePath(any()),
         ).thenAnswer((_) async => '/root/Open');
         when(
-          () => repository.save(any(), chains: any(named: 'chains')),
+          () => repository.save(
+            any(),
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+          ),
         ).thenAnswer((_) async => _session);
         // A write-back re-lists so an open Sessions dialog's date column
         // shows the save it just made.
@@ -667,6 +760,7 @@ void main() {
         () => repository.save(
           any(),
           chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
           pedalBindings: any(named: 'pedalBindings'),
         ),
       ).thenAnswer((_) async => _session);
@@ -686,6 +780,7 @@ void main() {
         () => repository.save(
           any(),
           chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
           pedalBindings: 'the-remap-in-force',
         ),
       ).called(1);

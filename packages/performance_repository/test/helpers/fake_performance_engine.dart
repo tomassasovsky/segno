@@ -100,6 +100,9 @@ class FakePerformanceEngine implements AudioEngine {
   CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
 
   @override
+  bool get commandsSettled => true;
+
+  @override
   EngineSnapshot snapshot() => EngineSnapshot(
     isRunning: true,
     sampleRate: sampleRate,
@@ -184,7 +187,8 @@ class FakePerformanceEngine implements AudioEngine {
       EngineResult.ok;
 
   @override
-  EngineResult commitSession(int baseFrames) => EngineResult.ok;
+  EngineResult commitSession(int baseFrames, {required int loopBars}) =>
+      EngineResult.ok;
 
   @override
   EngineResult perfArm(String captureDir) {
@@ -328,6 +332,16 @@ class FakePerformanceEngine implements AudioEngine {
     required bool? enabled,
   }) => EngineResult.ok;
   @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) => EngineResult.ok;
+  @override
   EngineResult setTrackMultiple({
     required int channel,
     required int multiple,
@@ -340,6 +354,12 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult setMasterGain(double gain) => EngineResult.ok;
   @override
   EngineResult setAutoRecord({required bool enabled}) => EngineResult.ok;
+  @override
+  EngineResult restoreTempo({
+    required double bpm,
+    required TempoSource source,
+  }) => EngineResult.ok;
+
   @override
   EngineResult setTempo(double bpm) => EngineResult.ok;
   @override
@@ -372,6 +392,12 @@ class FakePerformanceEngine implements AudioEngine {
   @override
   EngineResult setOneShot({required int channel, required bool oneShot}) =>
       EngineResult.ok;
+
+  @override
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) {
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       EngineResult.ok;

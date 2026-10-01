@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -49,58 +51,90 @@ class RecordOptionsCubit extends Cubit<RecordOptions> {
     required SettingsRepository settings,
   }) : _repository = repository,
        _settings = settings,
-       super(const RecordOptions());
+       super(const RecordOptions()) {
+    _subscription = _repository.looperState.listen(_onLooperState);
+  }
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
+  late final StreamSubscription<LooperState> _subscription;
+  int _userEditRevision = 0;
+
+  void _onLooperState(LooperState looper) {
+    emit(
+      RecordOptions(
+        recDub: looper.transport.recDub,
+        autoRecord: looper.transport.autoRecord,
+        defaultMultiple: looper.transport.defaultMultiple,
+      ),
+    );
+  }
+
+  void _syncFromRepository() => _onLooperState(
+    LooperState(transport: _repository.sessionTransport),
+  );
+
+  @override
+  Future<void> close() async {
+    await _subscription.cancel();
+    await super.close();
+  }
 
   /// Restores the persisted options and applies them to the repository.
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
+    final sessionRevision = _repository.sessionRevision;
+    final userEditRevision = _userEditRevision;
     final recDub = await _settings.loadRecDub();
-    final autoRecord = await _settings.loadAutoRecord();
     final defaultMultiple = await _settings.loadDefaultMultiple();
-    _repository
-      ..setRecDub(enabled: recDub)
-      ..setAutoRecord(enabled: autoRecord)
-      ..setDefaultMultiple(multiple: defaultMultiple);
-    if (!isClosed) {
-      emit(
-        RecordOptions(
-          recDub: recDub,
-          autoRecord: autoRecord,
-          defaultMultiple: defaultMultiple,
-        ),
-      );
+    if (isClosed) return;
+    if (sessionRevision != _repository.sessionRevision ||
+        userEditRevision != _userEditRevision) {
+      _syncFromRepository();
+      return;
     }
+    var restored = state;
+    if (_repository.setRecDub(enabled: recDub).isOk) {
+      restored = restored.copyWith(recDub: recDub);
+    }
+    if (_repository.setDefaultMultiple(multiple: defaultMultiple).isOk) {
+      restored = restored.copyWith(defaultMultiple: defaultMultiple);
+    }
+    emit(restored);
   }
 
   /// Sets and persists the rec/dub second-press mode, applying it now.
   Future<void> setRecDub({required bool value}) async {
-    if (value != state.recDub) {
-      emit(state.copyWith(recDub: value));
-      _repository.setRecDub(enabled: value);
-    }
+    _userEditRevision++;
+    if (!_repository.setRecDub(enabled: value).isOk) return;
+    emit(state.copyWith(recDub: value));
+
     await _settings.saveRecDub(value: value);
   }
 
-  /// Sets and persists sound-activated recording, applying it now.
+  /// Sets and persists sound-activated recording, applying it now. Turning
+  /// it on clears the count-in (the engine's rule, D9), persisted here too
+  /// so a restart does not bring the count-in back over it.
   Future<void> setAutoRecord({required bool value}) async {
-    if (value != state.autoRecord) {
-      emit(state.copyWith(autoRecord: value));
-      _repository.setAutoRecord(enabled: value);
-    }
-    await _settings.saveAutoRecord(value: value);
+    _userEditRevision++;
+    if (!_repository.setAutoRecord(enabled: value).isOk) return;
+    emit(state.copyWith(autoRecord: value));
+
+    await Future.wait([
+      _settings.saveAutoRecord(value: value),
+      if (value) _settings.saveCountInBars(0),
+    ]);
   }
 
   /// Sets and persists the global default loop length, applying it now.
   Future<void> setDefaultMultiple(int multiple) async {
-    if (multiple != state.defaultMultiple) {
-      emit(state.copyWith(defaultMultiple: multiple));
-      _repository.setDefaultMultiple(multiple: multiple);
-    }
-    await _settings.saveDefaultMultiple(multiple);
+    final clamped = multiple < 0 ? 0 : multiple;
+    _userEditRevision++;
+    if (!_repository.setDefaultMultiple(multiple: clamped).isOk) return;
+    emit(state.copyWith(defaultMultiple: clamped));
+
+    await _settings.saveDefaultMultiple(clamped);
   }
 }

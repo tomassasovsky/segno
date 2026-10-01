@@ -191,6 +191,9 @@ class MockAudioEngine implements AudioEngine {
   CallbackTelemetry nextCallbackTelemetry = CallbackTelemetry.empty;
 
   @override
+  bool get commandsSettled => true;
+
+  @override
   EngineSnapshot snapshot() {
     if (_running) {
       final buffer = _activeConfig?.bufferFrames ?? 128;
@@ -541,6 +544,18 @@ class MockAudioEngine implements AudioEngine {
   }) => _requireRunning();
 
   @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) => _requireRunning();
+
+  @override
   EngineResult cancelArm({required int channel}) => _requireRunning();
 
   @override
@@ -590,6 +605,26 @@ class MockAudioEngine implements AudioEngine {
     if (!result.isOk) return result;
     _tempoBpm = bpm.clamp(_minTempoBpm, _maxTempoBpm);
     _tempoSource = TempoSource.manual;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult restoreTempo({
+    required double bpm,
+    required TempoSource source,
+  }) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (!bpm.isFinite ||
+        source == TempoSource.external ||
+        (source == TempoSource.none
+            ? bpm != 0
+            : bpm < _minTempoBpm || bpm > _maxTempoBpm)) {
+      return EngineResult.invalid;
+    }
+    _tempoBpm = bpm;
+    _tempoSource = source;
+    _lastTapAt = null;
     return EngineResult.ok;
   }
 
@@ -718,6 +753,19 @@ class MockAudioEngine implements AudioEngine {
     if (!result.isOk) return result;
     if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     _tracks[channel].oneShot = oneShot;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (channels <= 0 || channels >= (1 << LE_MAX_TRACKS)) {
+      return EngineResult.invalid;
+    }
+    for (var channel = 0; channel < LE_MAX_TRACKS; channel++) {
+      if ((channels & (1 << channel)) != 0) _tracks[channel].oneShot = oneShot;
+    }
     return EngineResult.ok;
   }
 
@@ -1062,7 +1110,8 @@ class MockAudioEngine implements AudioEngine {
       _requireRunning();
 
   @override
-  EngineResult commitSession(int baseFrames) => _requireRunning();
+  EngineResult commitSession(int baseFrames, {required int loopBars}) =>
+      _requireRunning();
 
   /// The `captureDir` passed to the most recent [perfArm] call, for test
   /// assertions. `null` until the first arm.

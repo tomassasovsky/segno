@@ -132,6 +132,12 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  bool get commandsSettled {
+    _checkAlive();
+    return _bindings.le_engine_commands_settled(_engine) != 0;
+  }
+
+  @override
   EngineSnapshot snapshot() {
     _checkAlive();
     _bindings.le_engine_get_snapshot(_engine, _snapshotPtr);
@@ -883,10 +889,10 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult commitSession(int baseFrames) {
+  EngineResult commitSession(int baseFrames, {required int loopBars}) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_commit_session(_engine, baseFrames),
+      _bindings.le_engine_commit_session(_engine, baseFrames, loopBars),
     );
   }
 
@@ -1040,6 +1046,36 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_quantize_div(
+        _engine,
+        channel,
+        div == null ? -1 : div.code,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_overdub_feedback(
+        _engine,
+        channel,
+        feedback ?? -1.0,
+      ),
+    );
+  }
+
+  @override
   EngineResult setAutoRecord({required bool enabled}) {
     _checkAlive();
     return EngineResult.fromCode(
@@ -1053,6 +1089,17 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult setTempo(double bpm) {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_engine_set_tempo(_engine, bpm));
+  }
+
+  @override
+  EngineResult restoreTempo({
+    required double bpm,
+    required TempoSource source,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_restore_tempo(_engine, bpm, source.index),
+    );
   }
 
   @override
@@ -1157,6 +1204,14 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     return EngineResult.fromCode(
       _bindings.le_engine_set_one_shot(_engine, channel, oneShot ? 1 : 0),
+    );
+  }
+
+  @override
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_one_shot_mask(_engine, channels, oneShot ? 1 : 0),
     );
   }
 
@@ -1782,6 +1837,16 @@ class PumpedNativeEngine extends NativeAudioEngine {
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
       looperMode: s.looperMode,
+      inputClipMask: s.inputClipMask,
+      inputCondMask: s.inputCondMask,
+      tunerHz: s.tunerHz,
+      tunerConfidence: s.tunerConfidence,
+      tunerInput: s.tunerInput,
+      perfStopped: s.perfStopped,
+      primaryTrack: s.primaryTrack,
+      quantize: s.quantize,
+      autoRecord: s.autoRecord,
+      overdubFeedback: s.overdubFeedback,
       tracks: s.tracks,
     );
   }

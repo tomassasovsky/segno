@@ -449,13 +449,24 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         index: event.index,
       );
     });
-    on<LooperTrackQuantizeChanged>((event, _) {
-      _repository.setTrackQuantize(
+    on<LooperTrackRecordTimingChanged>((event, _) {
+      final result = _repository.setTrackRecordTiming(
         channel: event.channel,
-        enabled: event.enabled,
+        timing: event.timing,
       );
+      if (!result.isOk) return;
       unawaited(
-        _settings?.saveTrackQuantize(event.channel, enabled: event.enabled),
+        _settings?.saveTrackRecordTiming(event.channel, event.timing?.code),
+      );
+    });
+    on<LooperTrackOverdubDecayChanged>((event, _) {
+      final result = _repository.setTrackOverdubDecay(
+        channel: event.channel,
+        percent: event.percent,
+      );
+      if (!result.isOk) return;
+      unawaited(
+        _settings?.saveTrackOverdubDecay(event.channel, event.percent),
       );
     });
     on<LooperTrackMultipleChanged>((event, _) {
@@ -476,15 +487,24 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveTrackLengthPreset(event.channel, event.bars),
       );
     });
-    on<LooperOneShotToggled>(
-      (event, _) => _repository.setOneShot(
+    on<LooperOneShotToggled>((event, _) {
+      final result = _repository.setOneShot(
         channel: event.channel,
         oneShot: event.oneShot,
-      ),
-    );
+      );
+      if (result.isOk) {
+        unawaited(
+          _settings?.saveTrackOneShot(event.channel, oneShot: event.oneShot),
+        );
+      }
+    });
     on<LooperAllOneShotToggled>((event, _) {
+      final result = _repository.setAllOneShot(oneShot: event.oneShot);
+      if (!result.isOk) return;
       for (final track in _repository.state.tracks) {
-        _repository.setOneShot(channel: track.channel, oneShot: event.oneShot);
+        unawaited(
+          _settings?.saveTrackOneShot(track.channel, oneShot: event.oneShot),
+        );
       }
     });
     on<LooperCrownPrimaryPressed>(
@@ -813,7 +833,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// [ClickMode.playRec].
   ///
   /// Persisted like every other bloc-driven mutation in this file (compare
-  /// [LooperTrackQuantizeChanged]): safe to do here without a second cache to
+  /// [LooperTrackRecordTimingChanged]): safe to do here without a second
+  /// cache to
   /// keep in sync, because the tempo settings UI reads the *live* click mode
   /// from [TransportState] rather than from a cached cubit value — see
   /// `TempoSettingsSection`'s class doc.
