@@ -54,7 +54,7 @@ void main() {
       expect(payload[18], 255);
     });
 
-    test('Custom is mode byte 3 in the unchanged 19-byte STATE', () {
+    test('Custom is mode byte 3 in the 51-byte STATE', () {
       final frame = PedalStateFrame.blank().copyWith(
         mode: PedalMode.custom,
         activeBank: 1,
@@ -71,7 +71,7 @@ void main() {
         ],
       );
       final payload = PedalLinkCodec.encodeStatePayload(frame);
-      expect(payload, hasLength(19));
+      expect(payload, hasLength(51));
       expect(payload[1], 3);
       expect(payload[4], 1);
       expect(payload[5], 5);

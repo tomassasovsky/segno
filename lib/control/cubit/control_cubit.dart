@@ -234,6 +234,8 @@ class ControlCubit extends Cubit<ControlState> {
   final _customLastActions =
       <PedalBindingKey, ({ControlAction action, List<int> channels})>{};
   final _customActiveKeys = <PedalButton, PedalBindingKey>{};
+  final _customDispatchTokens = <PedalButton, Object>{};
+  final _acceptedContacts = <PedalButton>{};
   int _customActionSession = -1;
   final _displayBoundTargets =
       <
@@ -346,6 +348,7 @@ class ControlCubit extends Cubit<ControlState> {
   // Whether the Clear footswitch is currently held down. Lights the Clear
   // LED (the `clearFadeActive` frame bit) for as long as it is pressed.
   bool _clearHeld = false;
+  Object? _clearPressToken;
 
   // Mirrors `PerformanceRepository.captureStatus` so the pedal frame can
   // render the armed LED without re-deriving it from the raw status stream on
@@ -713,25 +716,24 @@ class ControlCubit extends Cubit<ControlState> {
   /// muted track is first unmuted and brought back: overdub if its loop still
   /// runs, plain resume if it was parked (the engine unparks the rest of the
   /// loop with it — starting anything resumes everything).
-  void _recAdvance(int channel) {
+  bool _recAdvance(int channel) {
     final track = _trackAt(channel);
     if (track != null && track.muted) {
-      _looper.setMute(muted: false, channel: channel);
+      if (!_looper.setMute(muted: false, channel: channel).isOk) return false;
       if (track.state == TrackState.stopped) {
-        _looper.play(channel: channel); // parked -> resume, no overdub
+        return _looper.play(channel: channel).isOk; // parked -> resume
       } else {
-        _looper.record(channel: channel); // running -> unmute + overdub
+        return _looper.record(channel: channel).isOk;
       }
-      return;
     }
     // The engine's cycling record() walks empty -> record, capturing -> play
     // (finalize), playing -> overdub.
-    _looper.record(channel: channel);
+    return _looper.record(channel: channel).isOk;
   }
 
   /// Mute mode Rec/Play: resume while parked; while running, expand to the
   /// whole content set (a no-op when everything audible is already in).
-  void _muteRecPlay() {
+  bool _muteRecPlay() {
     if (isParked(_l)) {
       final resume = state.parkedResume.isNotEmpty
           ? state.parkedResume
@@ -739,7 +741,7 @@ class ControlCubit extends Cubit<ControlState> {
               for (final track in _tracks)
                 if (_playable(track)) track.channel,
             };
-      if (resume.isEmpty) return; // nothing recorded yet
+      if (resume.isEmpty) return false; // nothing recorded yet
       // The engine unparks the ENTIRE loop on the first play (starting
       // anything resumes everything), so a deselected member must be muted
       // BEFORE any play rides the ring: it comes back running-but-silent —
@@ -756,15 +758,15 @@ class ControlCubit extends Cubit<ControlState> {
           _looper.setMute(muted: true, channel: track.channel);
         }
       }
+      var accepted = false;
       for (final channel in resume) {
-        _looper
-          ..setMute(muted: false, channel: channel)
-          ..play(channel: channel);
+        _looper.setMute(muted: false, channel: channel);
+        accepted = _looper.play(channel: channel).isOk || accepted;
       }
       // Consumed: the resumed tracks are now sounding, so the derived armed
       // set carries them from here.
       emit(state.copyWith(parkedResume: const <int>{}));
-      return;
+      return accepted;
     }
     // Running: expand to every content track unless the full audible set is
     // already in the mix (then the press is a no-op).
@@ -776,12 +778,13 @@ class ControlCubit extends Cubit<ControlState> {
     final anyAudible = _tracks.any(
       (t) => armed.contains(t.channel) && !t.muted && isSounding(t),
     );
-    if (anyAudible && armed.containsAll(all)) return;
+    if (anyAudible && armed.containsAll(all)) return false;
+    var accepted = false;
     for (final channel in all) {
-      _looper
-        ..setMute(muted: false, channel: channel)
-        ..play(channel: channel);
+      _looper.setMute(muted: false, channel: channel);
+      accepted = _looper.play(channel: channel).isOk || accepted;
     }
+    return accepted;
   }
 
   // ---------------------------------------------------------------------------
@@ -807,32 +810,41 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Rec mode: mute the cursor track (finalizing a capture first). Muting the
   /// only audible loop parks the whole transport.
-  void _recStop(int channel) {
+  bool _recStop(int channel) {
     final track = _trackAt(channel);
-    if (track == null) return;
-    if (track.isCapturing) _looper.record(channel: channel); // finalize first
-    _looper.setMute(muted: true, channel: channel);
+    if (track == null) return false;
+    if (track.isCapturing && !_looper.record(channel: channel).isOk) {
+      return false;
+    }
+    if (!_looper.setMute(muted: true, channel: channel).isOk) return false;
     if (track.state == TrackState.playing && _isLastAudibleTrack(channel)) {
       for (final t in _tracks) {
         _looper.stopTrack(channel: t.channel);
       }
     }
+    return true;
   }
 
   /// Parks the play transport: freezes EVERY running content track (muted
   /// ones too — mute silences, park freezes) and latches what Rec/Play brings
   /// back at INTENT time, before engine truth catches up with the stops.
   void parkAll() {
+    _parkAllAccepted();
+  }
+
+  bool _parkAllAccepted() {
     final running = _running();
-    if (running.isEmpty) return; // already parked: keep the resume set
+    if (running.isEmpty) return false; // already parked: keep resume set
     emit(
       state.copyWith(
         parkedResume: {...running}..removeWhere(state.excluded.contains),
       ),
     );
+    var accepted = false;
     for (final channel in running) {
-      _looper.stopTrack(channel: channel);
+      accepted = _looper.stopTrack(channel: channel).isOk || accepted;
     }
+    return accepted;
   }
 
   // ---------------------------------------------------------------------------
@@ -959,11 +971,13 @@ class ControlCubit extends Cubit<ControlState> {
   /// FX dock can disable a chain and then empty it — which is exactly the
   /// silent-dry state this restore exists to undo. A "restore all" that could
   /// not reach it would leave the only pedal-side cure unreachable.
-  void _sweepTrackChains({required bool enabled}) {
+  bool _sweepTrackChains({required bool enabled}) {
+    var accepted = false;
     for (var channel = 0; channel < _channelCount; channel++) {
       if (!enabled && _looper.trackEffects(channel).isEmpty) continue;
-      _setTrackChain(channel, enabled: enabled);
+      accepted = _setTrackChain(channel, enabled: enabled) || accepted;
     }
+    return accepted;
   }
 
   /// Applies one Track-chain flag and persists the envelope, skipping a no-op
@@ -973,13 +987,18 @@ class ControlCubit extends Cubit<ControlState> {
   /// [LooperState]: chain-enabled is set synchronously here (no engine
   /// round-trip), so two fast stomps must not both see the same pre-poll
   /// value. The LEDs still follow the polled snapshot, exactly like mute.
-  void _setTrackChain(int channel, {required bool enabled}) {
-    if (_looper.trackChainEnabled(channel) == enabled) return;
-    _looper.setTrackChainEnabled(channel: channel, enabled: enabled);
+  bool _setTrackChain(int channel, {required bool enabled}) {
+    if (_looper.trackChainEnabled(channel) == enabled) return false;
+    if (!_looper
+        .setTrackChainEnabled(channel: channel, enabled: enabled)
+        .isOk) {
+      return false;
+    }
     // The same envelope `LooperBloc` writes for the on-screen path — a cubit
     // never calls a bloc, so both call the shared helper instead of one
     // routing through the other.
     persistTrackFxChain(settings: _settings, looper: _looper, channel: channel);
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -999,6 +1018,10 @@ class ControlCubit extends Cubit<ControlState> {
   /// entirely rather than the persisted-then-cleared PCM the repository
   /// itself already knows how to skip.
   Future<void> clearAll() async {
+    await _clearAllAccepted();
+  }
+
+  Future<bool> _clearAllAccepted() async {
     if (_performanceArmed) await _performance.persistLiveLanes();
     // Whether any track we cleared held content: only a content clear leaves a
     // restore point behind (an undone-to-empty redo-only track's does not), so
@@ -1012,7 +1035,7 @@ class ControlCubit extends Cubit<ControlState> {
     }
     // One grouped edit (accepted design, slice 2): the repository remembers
     // the group, so the next Undo on any member restores every member.
-    _looper.clearAll(cleared);
+    if (!_looper.clearAll(cleared).isOk) return false;
     for (final track in _tracks) {
       if (!cleared.contains(track.channel)) continue;
       _looper.setMute(muted: false, channel: track.channel);
@@ -1027,7 +1050,7 @@ class ControlCubit extends Cubit<ControlState> {
     // while it ran. The engine clear still happens — it is what the user asked
     // for and the looper outlives this cubit — but the overlay state and the
     // LED frame belong to a console that is no longer there.
-    if (isClosed) return;
+    if (isClosed) return cleared.isNotEmpty;
     emit(
       state.copyWith(
         mode: InteractionMode.record,
@@ -1045,6 +1068,7 @@ class ControlCubit extends Cubit<ControlState> {
     // The clear may be a state no-op (already home) while the held-LED bit
     // still needs to reach the wire.
     _pushProjected();
+    return cleared.isNotEmpty;
   }
 
   /// Whole-rig recovery from a clear-all: undoes every track that still holds
@@ -1090,8 +1114,11 @@ class ControlCubit extends Cubit<ControlState> {
     switch (event) {
       case ButtonPressed(:final button):
         _onPress(button);
+        _pushProjected();
       case ButtonReleased(:final button):
         if (!_pressedButtons.remove(button)) break;
+        _acceptedContacts.remove(button);
+        if (button == PedalButton.clear) _clearPressToken = null;
         if (button == PedalButton.clear) _onClearRelease();
         if (_takeLocked()) {
           _systemGesture(button)?.cancel();
@@ -1127,8 +1154,9 @@ class ControlCubit extends Cubit<ControlState> {
 
   void _onPress(PedalButton button) {
     if (_takeLocked()) return;
-    if (!_pressedButtons.add(button)) return;
     if (_pendingRestore.any((key) => key.button == button)) return;
+    if (!_pressedButtons.add(button)) return;
+    _customDispatchTokens.remove(button);
     _log(
       'press ${button.name}  [mode=${state.mode.name} '
       'cursor=${state.cursor}]',
@@ -1156,7 +1184,9 @@ class ControlCubit extends Cubit<ControlState> {
         if (binding.hasHold) {
           _armBoundHold(binding);
         } else {
-          _pressBinding(binding);
+          if (_pressBinding(binding) && button == PedalButton.stop) {
+            _acceptedContacts.add(button);
+          }
         }
         // Stop keeps its restore-all HOLD even when bound: a remap overrides
         // contextual defaults but never the long-press system gestures, and
@@ -1171,18 +1201,29 @@ class ControlCubit extends Cubit<ControlState> {
         // INERT in FX mode until the #219 toggle-undo contract exists: an
         // undo that silently means "the last overdub" while the foot is in a
         // chain-editing mode is the surprise this matrix exists to prevent.
-        if (!fx) _armUndo();
+        if (!fx) {
+          _armUndo();
+          _acceptedContacts.add(button);
+        }
       case PedalButton.recPlay:
-        recPlay(); // inert in FX mode (A4)
+        final accepted = switch (state.mode) {
+          InteractionMode.record => !_takeLocked() && _recAdvance(state.cursor),
+          InteractionMode.mute => !_takeLocked() && _muteRecPlay(),
+          InteractionMode.fx || InteractionMode.custom => false,
+        };
+        if (accepted) _acceptedContacts.add(button);
         _armRecordHold();
       case PedalButton.stop:
         // FX mode splits Stop into tap = panic / long-press = restore, so the
         // action waits for the release; the other modes act on the press, as
         // they always have.
         if (fx) {
-          _armStop();
+          if (_armStop()) _acceptedContacts.add(button);
         } else {
-          stop();
+          final accepted = state.mode == InteractionMode.record
+              ? _recStop(state.cursor)
+              : _parkAllAccepted();
+          if (accepted) _acceptedContacts.add(button);
         }
       case PedalButton.mode:
         _armMode();
@@ -1234,10 +1275,62 @@ class ControlCubit extends Cubit<ControlState> {
       bank: PedalBindingKey.isBankKeyed(button) ? bank : null,
     );
     final channels = List<int>.unmodifiable(_channelsForAction(action));
-    _customLastActions[key] = (action: action, channels: channels);
-    _customActiveKeys[button] = key;
     _log('action ${action.key}');
-    _runAction(action, channels);
+    final session = _looper.sessionRevision;
+    final setup = state.pedalSetup;
+    final token = Object();
+    _customDispatchTokens[button] = token;
+    final admitted = _runAction(action, channels);
+    if (admitted is Future<bool>) {
+      unawaited(
+        admitted.then(
+          (accepted) => _completeCustomAction(
+            button,
+            key,
+            action,
+            channels,
+            session: session,
+            setup: setup,
+            token: token,
+            accepted: accepted,
+          ),
+          onError: addError,
+        ),
+      );
+    } else {
+      _completeCustomAction(
+        button,
+        key,
+        action,
+        channels,
+        session: session,
+        setup: setup,
+        token: token,
+        accepted: admitted,
+      );
+    }
+  }
+
+  void _completeCustomAction(
+    PedalButton button,
+    PedalBindingKey key,
+    ControlAction action,
+    List<int> channels, {
+    required int session,
+    required PedalSetup setup,
+    required Object token,
+    required bool accepted,
+  }) {
+    if (!accepted ||
+        isClosed ||
+        state.mode != InteractionMode.custom ||
+        state.pedalSetup != setup ||
+        _looper.sessionRevision != session ||
+        !identical(_customDispatchTokens[button], token)) {
+      return;
+    }
+    _customLastActions[key] = (action: action, channels: channels);
+    if (_pressedButtons.contains(button)) _customActiveKeys[button] = key;
     _pushProjected();
   }
 
@@ -1261,66 +1354,85 @@ class ControlCubit extends Cubit<ControlState> {
   };
 
   /// One dispatcher for the current supported catalogue actions.
-  void _runAction(ControlAction action, List<int> channels) {
+  FutureOr<bool> _runAction(ControlAction action, List<int> channels) {
     switch (action) {
       case UnavailableAction():
-        return;
+        return false;
       case ModeAction(:final mode):
         _enterPedalMode(mode);
+        return true;
       case CommandAction(:final command):
-        _runCommand(command, channels.isEmpty ? state.cursor : channels.first);
+        return _runCommand(
+          command,
+          channels.isEmpty ? state.cursor : channels.first,
+        );
       case TrackPedalAction():
         final channel = channels.single;
         selectTrack(channel);
-        _recAdvance(channel);
+        return _recAdvance(channel);
       case SelectTrackAction():
         selectTrack(channels.single);
+        return true;
       case TrackOperationAction(:final operation):
         if (operation == TrackOperation.solo && channels.length > 1) {
-          unawaited(_mixSettings.toggleTrackSolos(channels.toSet()));
-          return;
+          return _mixSettings
+              .toggleTrackSolos(channels.toSet())
+              .then(
+                (outcome) => outcome.isOk,
+              );
         }
+        var accepted = false;
         for (final channel in channels) {
-          _runTrackOperation(operation, channel);
+          final result = _runTrackOperation(operation, channel);
+          if (result is Future<bool>) return result;
+          accepted = result || accepted;
         }
+        return accepted;
     }
   }
 
-  void _runCommand(ControlCommand command, int selectedChannel) {
+  FutureOr<bool> _runCommand(ControlCommand command, int selectedChannel) {
     switch (command) {
       case ControlCommand.recordPlay:
-        _recAdvance(selectedChannel);
+        return _recAdvance(selectedChannel);
       case ControlCommand.stop:
-        _recStop(selectedChannel);
+        return _recStop(selectedChannel);
       case ControlCommand.undo:
-        undo(selectedChannel);
+        return _looper.undo(channel: selectedChannel).isOk;
       case ControlCommand.redo:
-        redo(selectedChannel);
+        return _looper.redo(channel: selectedChannel).isOk;
       case ControlCommand.clearAll:
-        unawaited(clearAll());
+        return _clearAllAccepted();
       case ControlCommand.cutSound:
-        _looper.cutSound();
+        return _looper.cutSound().isOk;
       case ControlCommand.recordPerformance:
-        togglePerformanceRecord();
+        return _togglePerformanceRecordAccepted();
       case ControlCommand.nextBank:
         toggleBankWithCursor();
+        return true;
     }
   }
 
-  void _runTrackOperation(TrackOperation operation, int channel) {
+  FutureOr<bool> _runTrackOperation(TrackOperation operation, int channel) {
     final track = _trackAt(channel);
     switch (operation) {
       case TrackOperation.mute:
-        if (track == null) return;
-        _looper.setMute(muted: !_looper.trackMuted(channel), channel: channel);
+        if (track == null) return false;
+        return _looper
+            .setMute(muted: !_looper.trackMuted(channel), channel: channel)
+            .isOk;
       case TrackOperation.solo:
-        unawaited(_mixSettings.toggleTrackSolo(channel: channel));
+        return _mixSettings
+            .toggleTrackSolo(channel: channel)
+            .then(
+              (outcome) => outcome.isOk,
+            );
       case TrackOperation.clear:
-        _looper.clear(channel: channel);
+        return _looper.clear(channel: channel).isOk;
       case TrackOperation.undo:
-        undo(channel);
+        return _looper.undo(channel: channel).isOk;
       case TrackOperation.redo:
-        redo(channel);
+        return _looper.redo(channel: channel).isOk;
     }
   }
 
@@ -1336,7 +1448,11 @@ class ControlCubit extends Cubit<ControlState> {
       _bindingGestures.putIfAbsent(binding.key.button, _HoldGesture.new),
       onHold: () {
         if (state.mode == InteractionMode.fx) {
-          _pressBinding(binding, hold: true);
+          if (_pressBinding(binding, hold: true) &&
+              binding.key.button == PedalButton.stop) {
+            _acceptedContacts.add(PedalButton.stop);
+            _pushProjected();
+          }
         }
       },
       onTap: () {
@@ -1361,9 +1477,26 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   void _onClear() {
-    // Light the Clear LED while the footswitch is held (cleared on release).
-    _clearHeld = true;
-    unawaited(clearAll());
+    final token = Object();
+    _clearPressToken = token;
+    unawaited(_clearAndLightAcceptedContact(token));
+  }
+
+  Future<void> _clearAndLightAcceptedContact(Object token) async {
+    try {
+      final accepted = await _clearAllAccepted();
+      if (!accepted ||
+          isClosed ||
+          !identical(_clearPressToken, token) ||
+          !_pressedButtons.contains(PedalButton.clear)) {
+        return;
+      }
+      _clearHeld = true;
+      _acceptedContacts.add(PedalButton.clear);
+      _pushProjected();
+    } on Object catch (error, stackTrace) {
+      addError(error, stackTrace);
+    }
   }
 
   /// Clear footswitch released: darken the Clear LED (the clear itself
@@ -1380,7 +1513,10 @@ class ControlCubit extends Cubit<ControlState> {
       _undoGesture,
       onHold: () {
         _log('redo ch=$channel  (long-press)');
-        redo(channel);
+        if (!_looper.redo(channel: channel).isOk) {
+          _acceptedContacts.remove(PedalButton.undo);
+          _pushProjected();
+        }
       },
       onTap: () {
         _log('undo ch=$channel  (tap)');
@@ -1403,10 +1539,11 @@ class ControlCubit extends Cubit<ControlState> {
   ///
   /// The hold therefore reads as panic-then-restore, which lands on the same
   /// end state the restore promises on its own: every chain on.
-  void _armStop() {
+  bool _armStop() {
     _log('fx panic (press)');
-    panicTrackChains();
+    final accepted = _sweepTrackChains(enabled: false);
     _armStopRestore();
+    return accepted;
   }
 
   /// Arms the Stop restore-all hold on its own, without the panic.
@@ -1426,7 +1563,13 @@ class ControlCubit extends Cubit<ControlState> {
         // silent rewrite of every chain would be invisible.
         if (state.mode != InteractionMode.fx) return;
         _log('fx chains restored (long-press)');
-        restoreAllTrackChains();
+        final accepted = _sweepTrackChains(enabled: true);
+        if (accepted && _pressedButtons.contains(PedalButton.stop)) {
+          _acceptedContacts.add(PedalButton.stop);
+        } else {
+          _acceptedContacts.remove(PedalButton.stop);
+        }
+        _pushProjected();
       },
     );
   }
@@ -1443,11 +1586,15 @@ class ControlCubit extends Cubit<ControlState> {
   /// guard covers a rapid re-press identically here, so it is not
   /// duplicated in this cubit.
   void togglePerformanceRecord() {
-    if (_takeLocked()) return;
+    unawaited(_togglePerformanceRecordAccepted());
+  }
+
+  Future<bool> _togglePerformanceRecordAccepted() async {
+    if (_takeLocked()) return false;
     if (_performanceArmed) {
-      unawaited(_performance.disarm());
+      return (await _performance.disarm()).isOk;
     } else {
-      unawaited(_performance.arm(chains: _currentChains()));
+      return (await _performance.arm(chains: _currentChains())).isOk;
     }
   }
 
@@ -1586,6 +1733,10 @@ class ControlCubit extends Cubit<ControlState> {
       gesture.cancel();
     }
     _customActiveKeys.clear();
+    _customDispatchTokens.clear();
+    _acceptedContacts.clear();
+    _clearHeld = false;
+    _clearPressToken = null;
     _displayBoundTargets.clear();
     releaseAllMomentary();
     _pushProjected();
@@ -1670,8 +1821,8 @@ class ControlCubit extends Cubit<ControlState> {
   /// chain/slot the rig no longer has — is a NO-OP (R25). It writes nothing
   /// and lights nothing; the assignment screen is where the user learns it is
   /// broken, not a mid-song stomp that silently bypasses the wrong thing.
-  void _pressBinding(PedalBinding binding, {bool hold = false}) {
-    if (_takeLocked()) return;
+  bool _pressBinding(PedalBinding binding, {bool hold = false}) {
+    if (_takeLocked()) return false;
     final target = _scoped(
       hold ? binding.decodeHoldTarget() : binding.decodeTarget(),
       hold ? binding.holdScope : binding.scope,
@@ -1679,14 +1830,14 @@ class ControlCubit extends Cubit<ControlState> {
     final prior = target == null ? null : _looper.bindingEnabled(target);
     if (target == null || prior == null) {
       _log('binding on ${binding.key.button.name} is stale — no-op');
-      return;
+      return false;
     }
     switch (hold ? binding.holdBehavior : binding.behavior) {
       case BindingBehavior.toggle:
         _log('binding toggle ${binding.key.button.name} -> ${!prior}');
-        if (!_looper.setBindingEnabled(target, enabled: !prior)) return;
+        if (!_looper.setBindingEnabled(target, enabled: !prior)) return false;
       case BindingBehavior.momentary:
-        if (_heldRestore.containsKey(binding.key)) return;
+        if (_heldRestore.containsKey(binding.key)) return false;
         _log('binding momentary ${binding.key.button.name} (was $prior)');
         // Capture on the FIRST press only. A repeated press with no release
         // between them — a dropped NoteOff, or the on-screen plate re-emitting
@@ -1694,7 +1845,7 @@ class ControlCubit extends Cubit<ControlState> {
         // enabled, and the eventual release would restore `true` and strand
         // the target on: the stuck momentary (B1) with no foot on the switch.
         if (!prior && !_looper.setBindingEnabled(target, enabled: true)) {
-          return;
+          return false;
         }
         _heldRestore[binding.key] = (
           target: target,
@@ -1713,6 +1864,7 @@ class ControlCubit extends Cubit<ControlState> {
       cursor: state.cursor,
     );
     _pushProjected();
+    return true;
   }
 
   FxBindingTarget? _scoped(FxBindingTarget? target, BindingScope scope) {
@@ -2372,8 +2524,11 @@ class ControlCubit extends Cubit<ControlState> {
     // never coming, so a held momentary would leave its target enabled
     // forever (B1). Restore now. A reconnect needs nothing from here: the
     // repository answers the board's hello with the current frame.
-    _invalidateGestures();
     _pressedButtons.clear();
+    _acceptedContacts.clear();
+    _clearHeld = false;
+    _clearPressToken = null;
+    _invalidateGestures();
     _controller?.releaseSwitches(const {
       ControllerSourceKind.consoleSwitch,
       ControllerSourceKind.consoleExpression,
@@ -2389,6 +2544,7 @@ class ControlCubit extends Cubit<ControlState> {
     // no LooperState, so gating on a null `_looperState` left the LEDs dark
     // until some audio activity happened to push a state.
     final looperState = _l;
+    final customFunctions = _customFunctionStates(looperState);
     final frame = projectFrame(
       looperState,
       state,
@@ -2396,7 +2552,9 @@ class ControlCubit extends Cubit<ControlState> {
       performanceArmed: _performanceArmed,
       masterGain: _masterGain,
       boundChains: _boundChains(),
-      customFunctions: _customFunctionStates(looperState),
+      customFunctions: customFunctions,
+      physicalCustomStates: _physicalCustomStates(looperState, customFunctions),
+      acceptedContacts: _acceptedContacts,
     );
     _pedal.pushState(frame);
   }
@@ -2407,6 +2565,7 @@ class ControlCubit extends Cubit<ControlState> {
     _customActionSession = session;
     _customLastActions.clear();
     _customActiveKeys.clear();
+    _customDispatchTokens.clear();
   }
 
   Map<int, bool> _customFunctionStates(LooperState looper) {
@@ -2417,29 +2576,55 @@ class ControlCubit extends Cubit<ControlState> {
     final result = <int, bool>{};
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++) {
       final button = kTrackSwitches[channel % ControlState.tracksPerBank];
-      final key = PedalBindingKey(button: button, bank: channel ~/ 4);
-      final pair = state.pedalSetup.customFor(button, bank: channel ~/ 4);
-      final last = _customLastActions[key];
-      final completed =
-          last != null &&
-          (last.action == pair.press || last.action == pair.hold);
-      final action = completed ? last.action : pair.press ?? pair.hold;
-      if (action == null || action is UnavailableAction) continue;
-      final contact =
-          _customActiveKeys[button] == key && _pressedButtons.contains(button);
-      // A completed contact retains its fired target. Once released,
-      // selected-scope feedback follows the cursor the NEXT stomp will use.
-      final channels = completed && contact
-          ? last.channels
-          : _channelsForAction(action);
-      result[channel] = _customActionIsActive(
-        action,
-        channels,
+      result[channel] = _customFunctionFor(
+        button,
+        channel ~/ ControlState.tracksPerBank,
         looper,
-        contact: contact,
       );
     }
     return result;
+  }
+
+  Map<PedalButton, bool> _physicalCustomStates(
+    LooperState looper,
+    Map<int, bool> logical,
+  ) {
+    if (state.mode != InteractionMode.custom || state.pedalSetupUnavailable) {
+      return const {};
+    }
+    return {
+      for (final button in PedalButton.values)
+        if (button != PedalButton.mode && button != PedalButton.bank)
+          button: PedalBindingKey.isBankKeyed(button)
+              ? logical[state.bankBaseChannel + _trackIndex(button)] ?? false
+              : _customFunctionFor(button, state.activeBank, looper),
+    };
+  }
+
+  bool _customFunctionFor(PedalButton button, int bank, LooperState looper) {
+    final key = PedalBindingKey(
+      button: button,
+      bank: PedalBindingKey.isBankKeyed(button) ? bank : null,
+    );
+    final pair = state.pedalSetup.customFor(button, bank: bank);
+    final last = _customLastActions[key];
+    final completed =
+        last != null && (last.action == pair.press || last.action == pair.hold);
+    final action = completed ? last.action : pair.press ?? pair.hold;
+    if (action == null || action is UnavailableAction) return false;
+    final contact =
+        _customActiveKeys[button] == key && _pressedButtons.contains(button);
+    // A completed contact retains its fired target. After release,
+    // selected-scope feedback follows the cursor the next stomp will use.
+    final channels = completed && contact
+        ? last.channels
+        : _channelsForAction(action);
+    return _customActionIsActive(
+      action,
+      channels,
+      looper,
+      contact: contact,
+    );
   }
 
   bool _customActionIsActive(

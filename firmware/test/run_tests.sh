@@ -22,3 +22,9 @@ trap 'rm -rf "$OUT"' EXIT
   "$ROOT/firmware/test/test_console_ctrl.cpp" "$OUT/pedal_link.o" \
   -o "$OUT/console_ctrl"
 "$OUT/console_ctrl"
+
+"$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
+  -I "$ROOT/firmware/test/stubs" \
+  "$ROOT/firmware/test/test_console_pill.cpp" "$OUT/pedal_link.o" \
+  -o "$OUT/console_pill"
+"$OUT/console_pill"

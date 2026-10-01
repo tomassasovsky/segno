@@ -15,6 +15,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -59,6 +60,7 @@ void main() {
   late _ControlledStore store;
   late ControlCubit control;
   late TracksCubit tracks;
+  late PedalRepository pedal;
 
   setUp(() {
     looper = _MockLooperRepository();
@@ -100,10 +102,13 @@ void main() {
     addTearDown(performance.dispose);
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
+    pedal = PedalRepository(NoopPedalLink());
+    final pedalCubit = PedalCubit(pedal: pedal);
+    addTearDown(() => unawaited(pedalCubit.close()));
     control = ControlCubit(
       looper: looper,
       mixSettings: mixSettings,
-      pedal: PedalRepository(NoopPedalLink()),
+      pedal: pedal,
       settings: settings,
       performance: performance,
     );
@@ -129,6 +134,7 @@ void main() {
           child: MultiBlocProvider(
             providers: [
               BlocProvider.value(value: control),
+              BlocProvider.value(value: pedalCubit),
               BlocProvider.value(value: tracks),
             ],
             child: PedalSetupPage(onStage: onStage),
@@ -524,6 +530,90 @@ void main() {
     });
   });
 
+  testWidgets('map follows published LEDs independently of edit selection', (
+    tester,
+  ) async {
+    await pump(tester);
+    final colors = List<PedalColor>.filled(10, const PedalColor(40, 160, 220));
+    for (final button in PedalButton.values) {
+      pedal.pushState(
+        PedalStateFrame.blank().copyWith(
+          pedalColors: colors,
+          activeButtonMask: 1 << button.index,
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final other in PedalButton.values) {
+        final cap = tester.widget<PedalSetupCap>(
+          find.byKey(Key('pedal_setup_cap_${other.name}')),
+        );
+        expect(
+          cap.ledActive,
+          other == button,
+          reason: '${button.name} -> ${other.name}',
+        );
+        expect(cap.ledColor, colors[other.index]);
+      }
+    }
+    // Editing another pedal does not publish a command or light its LED.
+    await tester.tap(find.byKey(const Key('pedal_setup_cap_track2')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<PedalSetupCap>(
+            find.byKey(const Key('pedal_setup_cap_track2')),
+          )
+          .ledActive,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<PedalSetupCap>(
+            find.byKey(const Key('pedal_setup_cap_track2')),
+          )
+          .selected,
+      isTrue,
+    );
+
+    await tester.tap(find.byKey(const Key('pedal_setup_context_custom')));
+    await tester.pumpAndSettle();
+    pedal.pushState(PedalStateFrame.blank().copyWith(activeButtonMask: 0x3ff));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_cap_bank')));
+    await tester.pumpAndSettle();
+    for (var i = 1; i <= 4; i++) {
+      expect(
+        tester
+            .widget<PedalSetupCap>(
+              find.byKey(Key('pedal_setup_cap_track$i')),
+            )
+            .ledActive,
+        isFalse,
+        reason: 'Draft bank B is not live bank A',
+      );
+    }
+    expect(
+      tester
+          .widget<PedalSetupCap>(
+            find.byKey(const Key('pedal_setup_cap_stop')),
+          )
+          .ledActive,
+      isTrue,
+    );
+    pedal.goodbye();
+    await tester.pumpAndSettle();
+    for (final button in PedalButton.values) {
+      expect(
+        tester
+            .widget<PedalSetupCap>(
+              find.byKey(Key('pedal_setup_cap_${button.name}')),
+            )
+            .ledActive,
+        isFalse,
+      );
+    }
+  });
+
   testWidgets('one track selects all four hardware pedals', (tester) async {
     await pump(tester);
     await tester.tap(find.byKey(const Key('pedal_setup_cap_track2')));
@@ -553,6 +643,7 @@ void main() {
         home: Scaffold(
           body: FittedBox(
             child: PedalSetupMap(
+              frame: null,
               selected: const {},
               editable: const {},
               onSelect: (_) {},

@@ -43,6 +43,23 @@ void main() {
       await cubit.close();
     });
 
+    test('mirrors the canonical frame before and after subscription', () async {
+      final before = PedalStateFrame.blank().copyWith(activeButtonMask: 1);
+      pedal.pushState(before);
+      final cubit = PedalCubit(pedal: pedal);
+      expect(cubit.state.frame, before);
+      final next = before.copyWith(activeButtonMask: 512);
+      pedal.pushState(next);
+      await pumpEventQueue();
+      expect(cubit.state.frame, next);
+      expect(cubit.state.status, PedalLinkStatus.disconnected);
+      pedal.goodbye();
+      await pumpEventQueue();
+      expect(cubit.state.frame!.isGoodbye, isTrue);
+      expect(cubit.state.frame!.activeButtonMask, 0);
+      await cubit.close();
+    });
+
     test('close sends a goodbye frame and releases the link', () async {
       final cubit = PedalCubit(pedal: pedal);
       link.hello();

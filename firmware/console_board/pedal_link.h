@@ -28,7 +28,9 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 6: mode value 3 is CUSTOM, with the same STATE shape. 5: CTRL kind NONE --
+/* 8: ten RGB hues and a ten-bit physical activity mask (STATE51).
+ * 7 is the separate Song/hardware branch (STATE21), not this format.
+ * 6: mode value 3 is CUSTOM, with the same STATE shape. 5: CTRL kind NONE --
  * the board can now say a jack is EMPTY (a plug pulled
  * out, or the tip-normal contact on a switched jack), instead of reporting an
  * unplugged jack as a pedal at full toe. 4: CTRL (0x04) grew a contact byte
@@ -37,7 +39,7 @@ extern "C" {
  * stopped tracking the loop. The board is flashed over SWD independently of
  * the app, so the two can drift; this is what makes that visible instead of
  * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 6u
+#define PEDAL_LINK_PROTOCOL_VERSION 8u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -51,8 +53,8 @@ extern "C" {
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
 
-#define PEDAL_LINK_STATE_LEN 19u
-#define PEDAL_LINK_MAX_PAYLOAD 32u
+#define PEDAL_LINK_STATE_LEN 51u
+#define PEDAL_LINK_MAX_PAYLOAD PEDAL_LINK_STATE_LEN
 #define PEDAL_LINK_MAX_FRAME (4u + PEDAL_LINK_MAX_PAYLOAD)
 
 /* Liveness, both directions, derived from one cadence. The board sends HELLO
@@ -146,7 +148,11 @@ enum { PEDAL_LED_OFF = 0, PEDAL_LED_GREEN, PEDAL_LED_RED, PEDAL_LED_BLUE, PEDAL_
  *   6..13  track_leds[0..7]
  *   14..17 loop_length_micros, uint32 little-endian
  *   18     master_gain, 0..255
+ *   19..48 ten RGB triples in PEDAL_BTN order
+ *   49..50 active_button_mask LE16; bits10..15 reserved zero
  */
+typedef struct pedal_color { uint8_t r, g, b; } pedal_color;
+
 typedef struct pedal_state {
   uint8_t clear_fade;
   uint8_t goodbye;
@@ -160,6 +166,8 @@ typedef struct pedal_state {
   uint8_t track_leds[PEDAL_TRACK_COUNT];
   uint32_t loop_length_micros;
   uint8_t master_gain;
+  pedal_color pedal_colors[PEDAL_BTN_COUNT];
+  uint16_t active_button_mask;
 } pedal_state;
 
 /* Frame a payload. `out` must hold PEDAL_LINK_MAX_FRAME bytes. Returns the

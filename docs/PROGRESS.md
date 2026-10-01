@@ -954,3 +954,17 @@ unresolved findings. The stacked PR still needs remote CI and its human merge
 gate; recording timing and later implementation slices remain in progress.
 Details and validation boundaries are in
 `docs/reviews/design-edits-restack/review.md` and `validation.md`.
+
+## Physical pedal state integration — October 1, 2026
+
+PR #1031 now uses one authoritative ten-pedal activity/color frame through the
+app, setup map and current Pico 2 renderer. UART v8 / STATE51 avoids the separate
+published v6/v7 hardware formats; intermediate #1029/#1030 must not be installed
+alone. Ten eight-pixel indicators and the forty-pixel ring preserve the sourced
+optical/current limits. No legacy protocol fallback or device flash.
+
+Full app: 2,346 passing, six existing skips, 91.126% coverage. Pedal package:
+213 passing, 97.743%. Firmware fixtures, actual sketch tests and Pico 2 compile
+pass. Independent source/five-role review and a separate adversary are clean.
+[Validation and limits](reviews/design-pedal-led-restack/README.md) bind the exact
+candidate. Palette editing is the next slice; hardware acceptance remains open.

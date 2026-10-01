@@ -228,7 +228,7 @@ void main() {
       expect(frame.clearFadeActive, isFalse);
     });
 
-    test('the mode indicator distinguishes all three modes on the wire', () {
+    test('the mode indicator distinguishes all four modes on the wire', () {
       final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
       // From the frame alone — its MODE field plus the trackLeds meaning it
       // selects — the live mode is identifiable (SC-1).
@@ -236,6 +236,7 @@ void main() {
         InteractionMode.record: PedalMode.rec,
         InteractionMode.mute: PedalMode.play,
         InteractionMode.fx: PedalMode.fx,
+        InteractionMode.custom: PedalMode.custom,
       };
       for (final entry in modes.entries) {
         expect(
@@ -244,7 +245,66 @@ void main() {
           reason: '${entry.key.name} must project its own wire mode',
         );
       }
-      expect(modes.values.toSet(), hasLength(3)); // no two modes collide
+      expect(modes.values.toSet(), hasLength(4)); // no two modes collide
+    });
+
+    test('physical ten-button state is separate from logical track LEDs', () {
+      final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
+      final frame = projectFrame(
+        looper,
+        const ControlState(),
+        acceptedContacts: const {PedalButton.stop, PedalButton.undo},
+      );
+      expect(frame.trackLeds[0], PedalTrackLed.red);
+      expect(frame.isLit(PedalButton.track1), isTrue);
+      expect(frame.isLit(PedalButton.stop), isTrue);
+      expect(frame.isLit(PedalButton.undo), isTrue);
+      expect(frame.isLit(PedalButton.mode), isFalse);
+      expect(frame.isLit(PedalButton.bank), isFalse);
+
+      final fx = projectFrame(
+        looper,
+        const ControlState(mode: InteractionMode.fx),
+        acceptedContacts: const {
+          PedalButton.recPlay,
+          PedalButton.undo,
+          PedalButton.clear,
+        },
+      );
+      expect(fx.isLit(PedalButton.mode), isTrue);
+      expect(fx.isLit(PedalButton.recPlay), isFalse);
+      expect(fx.isLit(PedalButton.undo), isFalse);
+      expect(fx.isLit(PedalButton.clear), isFalse);
+    });
+
+    test('Custom physical transport state and RGB do not recolor activity', () {
+      final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
+      final setup = const PedalSetup().withCustom(
+        PedalButton.stop,
+        bank: 0,
+        pair: const ControlGesturePair(
+          press: CommandAction(ControlCommand.recordPerformance),
+        ),
+      );
+      final colors = List<PedalColor>.filled(
+        PedalButton.values.length,
+        PedalColor.defaultColor,
+      )..[PedalButton.stop.index] = const PedalColor(3, 19, 212);
+      final frame = projectFrame(
+        looper,
+        ControlState(mode: InteractionMode.custom, pedalSetup: setup),
+        physicalCustomStates: const {PedalButton.stop: true},
+        pedalColors: colors,
+      );
+      expect(frame.isLit(PedalButton.stop), isTrue);
+      expect(frame.colorFor(PedalButton.stop), const PedalColor(3, 19, 212));
+      expect(frame.isLit(PedalButton.undo), isFalse);
+      expect(frame.globalColor, GlobalColor.off);
+      expect(frame.trackLeds[0], PedalTrackLed.off);
+      expect(frame.isLit(PedalButton.mode), isTrue); // fixed Exit
+
+      final stopped = frame.copyWith(isGoodbye: true);
+      expect(stopped.isLit(PedalButton.stop), isFalse);
     });
 
     test('global color: recording red, overdub amber, playing green', () {

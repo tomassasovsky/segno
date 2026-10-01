@@ -28,9 +28,11 @@ class PedalCubit extends Cubit<PedalState> {
         PedalState(
           status: pedal.status,
           firmwareVersion: pedal.firmwareVersion,
+          frame: pedal.lastFrame,
         ),
       ) {
     _statusSub = _pedal.statusChanges.listen(_onStatus);
+    _frameSub = _pedal.frames.listen(_onFrame);
     _eventsSub = _pedal.events.listen(_onEvent);
     _initialLoad = _loadCalibrations();
   }
@@ -39,6 +41,7 @@ class PedalCubit extends Cubit<PedalState> {
   final SettingsRepository? _settings;
   late final StreamSubscription<PedalLinkStatus> _statusSub;
   late final StreamSubscription<PedalEvent> _eventsSub;
+  late final StreamSubscription<PedalStateFrame> _frameSub;
   late final Future<void> _initialLoad;
   Future<void>? _pendingWrite;
   bool _closing = false;
@@ -76,6 +79,10 @@ class PedalCubit extends Cubit<PedalState> {
         calibrationError: () => failed ? PedalCalibrationError.load : null,
       ),
     );
+  }
+
+  void _onFrame(PedalStateFrame frame) {
+    if (!_inactive) emit(state.copyWith(frame: frame));
   }
 
   void _onStatus(PedalLinkStatus status) {
@@ -245,6 +252,7 @@ class PedalCubit extends Cubit<PedalState> {
     }
     await _statusSub.cancel();
     await _eventsSub.cancel();
+    await _frameSub.cancel();
     // Darken the console on shutdown, then release the link — this cubit is
     // the pedal repository's lifecycle owner.
     _pedal.goodbye();

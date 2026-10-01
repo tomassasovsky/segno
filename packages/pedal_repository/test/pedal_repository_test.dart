@@ -55,6 +55,28 @@ void main() {
       expect(events, const [EncoderDelta(1), EncoderDelta(-2)]);
     });
 
+    test('publishes frames without hardware and holds goodbye', () async {
+      final frames = <PedalStateFrame>[];
+      final subscription = repo.frames.listen(frames.add);
+      expect(repo.lastFrame, isNull);
+      final frame = PedalStateFrame.blank().copyWith(activeButtonMask: 256);
+      repo
+        ..pushState(frame)
+        ..pushState(frame.copyWith());
+      await pumpEventQueue();
+      expect(repo.lastFrame, frame);
+      expect(frames, [frame]);
+      expect(link.sent, isEmpty);
+      repo
+        ..goodbye()
+        ..pushState(frame);
+      await pumpEventQueue();
+      expect(frames, hasLength(2));
+      expect(repo.lastFrame!.isGoodbye, isTrue);
+      expect(frames.last, repo.lastFrame);
+      await subscription.cancel();
+    });
+
     test('pushState goes out as a link message', () async {
       link.hello();
       await pumpEventQueue();
@@ -77,6 +99,33 @@ void main() {
         ..pushState(frame.copyWith(globalColor: GlobalColor.green));
       expect(link.sent, hasLength(2));
     });
+
+    test(
+      'hue-only and activity-only changes send; equal snapshots deduplicate',
+      () async {
+        link.hello();
+        await pumpEventQueue();
+        final colors = List<PedalColor>.of(defaultPedalColors);
+        final initial = PedalStateFrame.blank().copyWith(pedalColors: colors);
+        repo.pushState(initial);
+        colors[9] = const PedalColor(128, 165, 255);
+        final hue = initial.copyWith(pedalColors: colors);
+        repo
+          ..pushState(hue)
+          ..pushState(hue.copyWith());
+        final active = hue.copyWith(activeButtonMask: 512);
+        repo
+          ..pushState(active)
+          ..pushState(active.copyWith());
+        expect(link.sent, [
+          StateMessage(initial),
+          StateMessage(hue),
+          StateMessage(active),
+        ]);
+        expect(initial.colorFor(PedalButton.bank), PedalColor.defaultColor);
+        expect(link.lastFrame!.isLit(PedalButton.bank), isTrue);
+      },
+    );
 
     test('goodbye darkens the board and holds the mark', () async {
       final events = <PedalEvent>[];
@@ -210,6 +259,7 @@ void main() {
     });
 
     for (final protocol in [
+      6,
       PedalLinkCodec.protocolVersion - 1,
       PedalLinkCodec.protocolVersion,
       PedalLinkCodec.protocolVersion + 1,

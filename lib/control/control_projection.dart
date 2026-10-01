@@ -124,6 +124,9 @@ PedalStateFrame projectFrame(
   double masterGain = 1.0,
   Map<int, bool?> boundChains = const {},
   Map<int, bool> customFunctions = const {},
+  Map<PedalButton, bool> physicalCustomStates = const {},
+  Set<PedalButton> acceptedContacts = const {},
+  List<PedalColor> pedalColors = defaultPedalColors,
 }) {
   final leds = <PedalTrackLed>[
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
@@ -156,6 +159,15 @@ PedalStateFrame projectFrame(
       : anyPlaying
       ? GlobalColor.green
       : GlobalColor.off;
+  final activeButtonMask = _physicalButtonMask(
+    overlay,
+    leds,
+    global: global,
+    performanceArmed: performanceArmed,
+    clearFadeActive: clearFadeActive,
+    physicalCustomStates: physicalCustomStates,
+    acceptedContacts: acceptedContacts,
+  );
   final sampleRate = looper.status.sampleRate;
   // The engine keeps the master grid alive after undo-to-empty (redo needs
   // it), but a pedal with no loops anywhere must not keep its ring lit —
@@ -186,6 +198,8 @@ PedalStateFrame projectFrame(
     clearFadeActive: clearFadeActive,
     performanceArmed: performanceArmed,
     masterGain: masterGain,
+    pedalColors: pedalColors,
+    activeButtonMask: activeButtonMask,
   );
   // The control-surface invariant spec runs on every projection in debug
   // builds — the same predicates the sequence fuzzer checks. assert() only:
@@ -198,9 +212,53 @@ PedalStateFrame projectFrame(
         frame: frame,
         boundChains: boundChains,
         customFunctions: customFunctions,
+        physicalCustomStates: physicalCustomStates,
       ),
     ),
     'control-surface invariants must hold at projection time',
   );
   return frame;
+}
+
+int _physicalButtonMask(
+  ControlState overlay,
+  List<PedalTrackLed> trackLeds, {
+  required GlobalColor global,
+  required bool performanceArmed,
+  required bool clearFadeActive,
+  required Map<PedalButton, bool> physicalCustomStates,
+  required Set<PedalButton> acceptedContacts,
+}) {
+  var mask = 0;
+  for (final button in PedalButton.values) {
+    final lit = switch (button) {
+      PedalButton.mode => overlay.mode != InteractionMode.record,
+      PedalButton.bank => overlay.activeBank == 1,
+      _ when overlay.mode == InteractionMode.custom =>
+        physicalCustomStates[button] ?? false,
+      PedalButton.track1 ||
+      PedalButton.track2 ||
+      PedalButton.track3 ||
+      PedalButton.track4 =>
+        trackLeds[overlay.bankBaseChannel +
+                button.index -
+                PedalButton.track1.index] !=
+            PedalTrackLed.off,
+      PedalButton.recPlay =>
+        overlay.mode != InteractionMode.fx &&
+            (global == GlobalColor.red ||
+                global == GlobalColor.amber ||
+                global == GlobalColor.green ||
+                performanceArmed ||
+                acceptedContacts.contains(button)),
+      PedalButton.undo =>
+        overlay.mode != InteractionMode.fx && acceptedContacts.contains(button),
+      PedalButton.stop => acceptedContacts.contains(button),
+      PedalButton.clear =>
+        overlay.mode != InteractionMode.fx &&
+            (clearFadeActive || acceptedContacts.contains(button)),
+    };
+    if (lit) mask |= 1 << button.index;
+  }
+  return mask;
 }

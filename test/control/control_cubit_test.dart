@@ -1204,6 +1204,157 @@ void main() {
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.off);
       });
 
+      test('refused Custom Record/Play never lights its contact', () async {
+        await assign(
+          PedalButton.stop,
+          const ControlGesturePair(
+            press: CommandAction(ControlCommand.recordPlay),
+          ),
+        );
+        when(
+          () => looper.record(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.notReady);
+
+        transport.press(PedalButton.stop, down: true);
+        await pumpEventQueue();
+
+        verify(
+          () => looper.record(channel: any(named: 'channel')),
+        ).called(1);
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        transport.press(PedalButton.stop, down: false);
+        await pumpEventQueue();
+      });
+
+      test('refused Custom Clear All keeps its contact dark', () async {
+        await assign(
+          PedalButton.stop,
+          const ControlGesturePair(
+            press: CommandAction(ControlCommand.clearAll),
+          ),
+        );
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        when(() => looper.clearAll(any())).thenReturn(EngineResult.notReady);
+
+        transport.press(PedalButton.stop, down: true);
+        await pumpEventQueue();
+
+        verify(() => looper.clearAll([0])).called(1);
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        transport.press(PedalButton.stop, down: false);
+        await pumpEventQueue();
+      });
+
+      test(
+        'normal Stop lights only on admission and clears on link loss',
+        () async {
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          cubit.setMode(InteractionMode.record);
+          when(
+            () => looper.setMute(
+              muted: any(named: 'muted'),
+              channel: any(named: 'channel'),
+            ),
+          ).thenReturn(EngineResult.notReady);
+          transport.press(PedalButton.stop, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+          transport.press(PedalButton.stop, down: false);
+          await pumpEventQueue();
+
+          when(
+            () => looper.setMute(
+              muted: any(named: 'muted'),
+              channel: any(named: 'channel'),
+            ),
+          ).thenReturn(EngineResult.ok);
+          transport.press(PedalButton.stop, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
+
+          transport.emit(
+            const HelloMessage(
+              protocolVersion: PedalLinkCodec.protocolVersion + 1,
+              firmwareMajor: 1,
+              firmwareMinor: 0,
+            ),
+          );
+          await pumpEventQueue();
+          transport.hello();
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        },
+      );
+
+      test('Mute Stop refusal leaves its contact dark', () async {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        cubit.setMode(InteractionMode.mute);
+        when(
+          () => looper.stopTrack(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.notReady);
+        transport.press(PedalButton.stop, down: true);
+        await pumpEventQueue();
+        verify(
+          () => looper.stopTrack(channel: any(named: 'channel')),
+        ).called(1);
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        transport.press(PedalButton.stop, down: false);
+        await pumpEventQueue();
+      });
+
+      test('FX Stop contact follows accepted panic admission', () async {
+        trackChains[0] = [BuiltInEffect(type: TrackEffectType.drive)];
+        cubit.setMode(InteractionMode.fx);
+        transport.press(PedalButton.stop, down: true);
+        await pumpEventQueue();
+        verify(
+          () => looper.setTrackChainEnabled(channel: 0, enabled: false),
+        ).called(1);
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
+        transport.press(PedalButton.stop, down: false);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+
+        chainEnabled.clear();
+        when(
+          () => looper.setTrackChainEnabled(channel: 0, enabled: false),
+        ).thenReturn(EngineResult.notReady);
+        transport.press(PedalButton.stop, down: true);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        transport.press(PedalButton.stop, down: false);
+        await pumpEventQueue();
+      });
+
+      test(
+        'FX Stop Hold lights an accepted restore after idle panic',
+        () async {
+          chainEnabled[0] = false;
+          cubit.setMode(InteractionMode.fx);
+          transport.press(PedalButton.stop, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
+          transport.press(PedalButton.stop, down: false);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        },
+      );
+
       test('Hold LED follows fired function, not unrelated Press', () async {
         await assign(
           PedalButton.track1,
@@ -1229,6 +1380,57 @@ void main() {
         await pumpEventQueue();
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
       });
+
+      test(
+        'shared Custom transport light follows its live target on both banks',
+        () async {
+          await assign(
+            PedalButton.stop,
+            const ControlGesturePair(
+              press: TrackOperationAction(
+                operation: TrackOperation.mute,
+                scope: FixedTrackScope(0),
+              ),
+            ),
+          );
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+          transport.press(PedalButton.stop, down: true);
+          await pumpEventQueue();
+          setEngine(_tracksWith(const [Track(muted: true)]));
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
+          transport.press(PedalButton.stop, down: false);
+          await pumpEventQueue();
+          cubit.browseBank(1);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
+          expect(transport.lastFrame?.isLit(PedalButton.bank), isTrue);
+        },
+      );
+      test(
+        'Custom transport selected light retargets after contact ends',
+        () async {
+          await assign(
+            PedalButton.stop,
+            const ControlGesturePair(
+              press: TrackOperationAction(
+                operation: TrackOperation.mute,
+                scope: SelectedTrackScope(),
+              ),
+            ),
+          );
+          transport.press(PedalButton.stop, down: true);
+          await pumpEventQueue();
+          setEngine(_tracksWith(const [Track(muted: true)]));
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
+          transport.press(PedalButton.stop, down: false);
+          await pumpEventQueue();
+          cubit.selectTrack(1);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        },
+      );
     });
 
     // The FX-mode button matrix: every one of the ten controls is defined,
@@ -3339,6 +3541,23 @@ void main() {
     });
 
     group('frame projection (frames out via PedalRepository)', () {
+      test('normal Undo lights only for accepted physical contact', () async {
+        setEngine(_emptyTracks());
+        transport.press(PedalButton.undo, down: true);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.undo), isTrue);
+        transport.press(PedalButton.undo, down: false);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
+
+        takeIsLocked = true;
+        transport.press(PedalButton.undo, down: true);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
+        transport.press(PedalButton.undo, down: false);
+        await pumpEventQueue();
+      });
+
       test('pushes an encoded frame to the pedal link', () async {
         transport.sent.clear();
 
@@ -3417,7 +3636,11 @@ void main() {
 
       test('Clear LED lights while the footswitch is held and darkens on '
           'release', () async {
-        setEngine(_emptyTracks());
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
         transport.sent.clear();
 
         // Press: the Clear LED bit is set.
@@ -3435,6 +3658,16 @@ void main() {
           transport.lastFrame?.clearFadeActive,
           isFalse,
         );
+      });
+
+      test('Clear on an empty rig leaves its LED dark', () async {
+        setEngine(_emptyTracks());
+        transport.press(PedalButton.clear, down: true);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.clearFadeActive, isFalse);
+        expect(transport.lastFrame?.isLit(PedalButton.clear), isFalse);
+        transport.press(PedalButton.clear, down: false);
+        await pumpEventQueue();
       });
 
       test(
