@@ -324,6 +324,12 @@ class _SettingsRail extends StatelessWidget {
                 selected: false,
                 onTap: () => unawaited(openFx()),
               ),
+              _RailTab(
+                key: const Key('settings_tab_pedals'),
+                label: l10n.pedalSetupTitle,
+                selected: false,
+                onTap: () => unawaited(openPedalSetup()),
+              ),
             ],
           ],
         ],

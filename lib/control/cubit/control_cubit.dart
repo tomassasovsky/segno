@@ -17,8 +17,8 @@ import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_binding_set.dart';
+import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/control_projection.dart';
-import 'package:segno/control/mode_switch_style.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -218,14 +218,8 @@ class ControlCubit extends Cubit<ControlState> {
   static const double _encoderStep = 1 / 64;
   double _masterGain = 1;
 
-  // The ONE hold threshold every gesture below arms with — undo/redo, the
-  // MODE hold (performance record, or the FX door under
-  // ModeSwitchStyle.holdFx), the BANK hold that style adds (#677), and the
-  // Stop restore all share it — read at
-  // press time so a settings change lands on the next stomp. Persisted as
-  // `pedal.long_press_ms`; 800 ms until the user tunes it. The #632 FX hold
-  // deliberately introduces no second constant: one plate, one meaning of
-  // "held", whatever the hold does on that switch.
+  // One threshold for Undo, Mode, Record/Play, track holds, Stop restore and
+  // assigned FX holds. Read at press time; the fresh default is 800 ms.
   Duration _longPress = const Duration(milliseconds: 800);
   final _pressedButtons = <PedalButton>{};
   final _bindingGestures = <PedalButton, _HoldGesture>{};
@@ -246,30 +240,16 @@ class ControlCubit extends Cubit<ControlState> {
   // not retarget the action the foot already committed to.
   final _undoGesture = _HoldGesture();
 
-  // MODE: tap = cycle the interaction mode, long-press = arm/disarm
-  // performance recording (D-PEDAL) — or, under ModeSwitchStyle.holdFx, the
-  // FX door (#632). No spare footswitch/pin exists on the physical pedal, so
-  // the gesture rides the existing MODE button rather than a new one —
-  // mirrors the undo/redo split above.
+  // MODE uses the configured Press/Hold pair.
   final _modeGesture = _HoldGesture();
-
-  // BANK: armed only under ModeSwitchStyle.holdFx, where tap = toggle the
-  // visible bank (moved to the release, as every tap sharing a switch with a
-  // hold) and long-press = arm/disarm performance recording (D-PEDAL) — the
-  // pedal path the MODE hold gives up to the FX door (#677). Under
-  // cycleThree this gesture is never armed: BANK stays the plain press-time
-  // toggle it has always been.
+  // Until Custom transport dispatch lands, Bank retains the working
+  // alternate performance-recording Hold beside its page-switch tap.
   final _bankGesture = _HoldGesture();
+  final _recordHoldGesture = _HoldGesture();
+  final _trackHoldGestures = <PedalButton, _HoldGesture>{};
 
-  // Where leaving FX under ModeSwitchStyle.holdFx returns to: the mode the
-  // rig was in when FX was entered (record or mute — never fx by
-  // construction). Read only while `state.mode == fx`; latched by
-  // `setMode`'s FX entry — the ONE entry point, so every door (the pedal
-  // hold, the keyboard's M, the on-screen chip) records where it came from —
-  // and RESET to the record fallback whenever the style changes
-  // (`setModeSwitchStyle`), so a latch captured under the other style's
-  // rules is never read. A cubit field rather than ControlState, like the
-  // momentary restore values: a mid-gesture latch no surface renders.
+  // The current FX door returns to the mode that entered it. Every entry
+  // through setMode updates this latch.
   InteractionMode _fxReturn = InteractionMode.record;
 
   // The FX-mode Stop long-press (restore every Track chain). The panic half
@@ -413,9 +393,18 @@ class ControlCubit extends Cubit<ControlState> {
     final defaultMode = InteractionMode.bootDefaultFromToken(
       await _settings.loadDefaultInteractionMode(),
     );
-    final modeSwitchStyle = ModeSwitchStyle.fromToken(
-      await _settings.loadModeSwitchStyle(),
-    );
+    var setup = state.pedalSetup;
+    var setupUnavailable = false;
+    try {
+      final encodedSetup = await _settings.loadPedalSetup();
+      setup = encodedSetup == null
+          ? const PedalSetup()
+          : PedalSetup.decode(encodedSetup);
+    } on FormatException catch (error, stackTrace) {
+      // A corrupt explicit action must not become a default live command.
+      setupUnavailable = true;
+      addError(error, stackTrace);
+    }
     if (isClosed) return;
     // The repository resolves inputs against the set, so it has to learn the
     // restored mappings too — otherwise external control stays dead until the
@@ -425,7 +414,8 @@ class ControlCubit extends Cubit<ControlState> {
     emit(
       state.copyWith(
         defaultMode: defaultMode,
-        modeSwitchStyle: modeSwitchStyle,
+        pedalSetup: setup,
+        pedalSetupUnavailable: setupUnavailable,
         globalBindings: storedBindings,
         controllerBindings: storedControllerBindings,
       ),
@@ -476,37 +466,50 @@ class ControlCubit extends Cubit<ControlState> {
   // Mode
   // ---------------------------------------------------------------------------
 
-  /// Cycles Record -> Mute -> FX -> Record — the keyboard's `M` and the
-  /// on-screen mode chip, under EVERY [ModeSwitchStyle].
+  /// Cycles Record -> Mute -> FX -> Record for the keyboard and mode chip.
   ///
   /// A three-stop cycle, not a toggle: FX mode joins the same MODE footswitch
   /// rather than claiming a switch the hardware does not have. Side effects
   /// fire for the LANDED mode only — cycling PAST a mode never runs its entry
   /// work (A5), which falls out of [setMode] being the single entry point.
   ///
-  /// Deliberately NOT style-gated: the #632 setting governs the PEDAL's MODE
-  /// switch ([_pedalModeTap]), whose hold is the surfaces' FX door under
-  /// [ModeSwitchStyle.holdFx]. The keyboard and the chip have no hold
-  /// equivalent, so a two-way cycle here would leave FX unreachable the
-  /// moment the pedal is unplugged.
+  /// This stays independent of the pedal's own configured Press/Hold pair.
   void toggleMode() => setMode(switch (state.mode) {
     InteractionMode.record => InteractionMode.mute,
     InteractionMode.mute => InteractionMode.fx,
     InteractionMode.fx => InteractionMode.record,
   });
 
-  /// Sets and persists how the pedal's MODE footswitch reaches the three
-  /// interaction modes (#632), effective on the next press. Leaves the live
-  /// mode where it is — the style says how the switch MOVES between modes,
-  /// never which one the rig is in — but drops the FX return latch: whatever
-  /// [_fxReturn] held was captured under the OTHER style's rules, and the
-  /// record fallback is the only value a fresh style can honestly promise.
-  Future<void> setModeSwitchStyle(ModeSwitchStyle style) async {
-    if (style == state.modeSwitchStyle) return;
+  /// Saves the built-in pedal setup before making it live. A storage refusal
+  /// leaves both the current gestures and the confirmed setup untouched.
+  Future<void> setPedalSetup(PedalSetup setup) async {
+    // The boot read may already hold an older checkpoint. Settle it first so
+    // it cannot publish that checkpoint after this Save completes.
+    await load();
+    if (isClosed) return;
+    if (setup == state.pedalSetup &&
+        !state.pedalSetupPersistenceUncertain &&
+        !state.pedalSetupUnavailable) {
+      return;
+    }
+    try {
+      await _settings.savePedalSetup(setup.encode());
+    } on PedalSetupSaveException catch (error) {
+      if (!isClosed && !error.checkpointRestored) {
+        emit(state.copyWith(pedalSetupPersistenceUncertain: true));
+      }
+      rethrow;
+    }
+    if (isClosed) return;
     _invalidateGestures();
     _fxReturn = InteractionMode.record;
-    emit(state.copyWith(modeSwitchStyle: style));
-    await _settings.saveModeSwitchStyle(style.token);
+    emit(
+      state.copyWith(
+        pedalSetup: setup,
+        pedalSetupPersistenceUncertain: false,
+        pedalSetupUnavailable: false,
+      ),
+    );
   }
 
   /// Applies [next] with its entry side effects; a no-op when already there.
@@ -569,11 +572,7 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
       case InteractionMode.fx:
-        // Latch the pre-entry mode at the ONE entry point, so EVERY FX door
-        // — the pedal hold, the keyboard's M, the on-screen chip — records
-        // where it came from and a later holdFx exit returns there. Never fx
-        // by construction: the no-op guard above already returned when the
-        // rig was in FX.
+        // Every FX entry records its return mode for the current pedal door.
         _fxReturn = state.mode;
         // Cancel arms BEFORE the emit so the projection that rides it already
         // describes the post-entry intent (the engine's own state follows one
@@ -1083,8 +1082,9 @@ class ControlCubit extends Cubit<ControlState> {
     PedalButton.undo => _undoGesture,
     PedalButton.mode => _modeGesture,
     PedalButton.bank => _bankGesture,
+    PedalButton.recPlay => _recordHoldGesture,
     PedalButton.stop => _stopGesture,
-    _ => null,
+    _ => _trackHoldGestures[button],
   };
 
   void _onPress(PedalButton button) {
@@ -1124,6 +1124,7 @@ class ControlCubit extends Cubit<ControlState> {
         if (!fx) _armUndo();
       case PedalButton.recPlay:
         recPlay(); // inert in FX mode (A4)
+        _armRecordHold();
       case PedalButton.stop:
         // FX mode splits Stop into tap = panic / long-press = restore, so the
         // action waits for the release; the other modes act on the press, as
@@ -1145,7 +1146,9 @@ class ControlCubit extends Cubit<ControlState> {
       case PedalButton.track2:
       case PedalButton.track3:
       case PedalButton.track4:
-        trackPressed(state.bankBaseChannel + _trackIndex(button));
+        final channel = state.bankBaseChannel + _trackIndex(button);
+        trackPressed(channel);
+        _armTrackHold(button);
     }
   }
 
@@ -1276,99 +1279,84 @@ class ControlCubit extends Cubit<ControlState> {
     _pushProjected();
   }
 
-  /// Arms the MODE press/hold gesture — the PEDAL's mode switch, the one
-  /// surface the #632 style governs.
-  ///
-  /// The hold rides the SAME `_longPress` threshold as undo/redo and the Stop
-  /// restore (see the field's doc), and both halves of the gesture follow the
-  /// rig's [ModeSwitchStyle], read at press time like the threshold itself:
-  ///
-  /// - [ModeSwitchStyle.cycleThree]: tap = the full [toggleMode] cycle; hold
-  ///   = arm/disarm performance recording (D-PEDAL), unchanged.
-  /// - [ModeSwitchStyle.holdFx] (#632): tap = [_pedalModeTap]'s Record ↔
-  ///   Mute cycle; hold = the FX door ([_toggleFxHold]). One switch cannot
-  ///   carry both holds, so under this style the recording hold moves to
-  ///   BANK ([_armBank], #677) — the foot keeps a path to the arm, on top
-  ///   of the other surfaces (the toolbar and the keyboard's `A`).
-  ///
-  /// Either way the hold fires AT the threshold ([_HoldGesture] runs
-  /// `onHold` from its timer), so under holdFx the mode — and the LED frame
-  /// the emit projects — flips the moment the hold commits, keeps showing
-  /// the prior mode until then, and the release stays silent.
+  /// Arms the configured MODE pair. A pair with a Hold defers Press until
+  /// release; Hold fires at the common threshold and retires that Press.
   void _armMode() {
-    final holdFx = state.modeSwitchStyle == ModeSwitchStyle.holdFx;
-    _armGesture(
-      _modeGesture,
-      onHold: () {
-        if (holdFx) {
-          _log('fx mode toggled (long-press)');
-          _toggleFxHold();
-        } else {
-          _log('performance record toggled (long-press)');
-          togglePerformanceRecord();
-        }
-      },
-      onTap: () {
-        _log('mode toggled (tap)');
-        if (holdFx) {
-          _pedalModeTap();
-        } else {
-          toggleMode();
-        }
-      },
-    );
-  }
-
-  /// The pedal MODE tap under [ModeSwitchStyle.holdFx]: Record <-> Mute, and
-  /// a tap while IN FX leaves to the mode FX was entered from — so a stray
-  /// tap can never strand the foot in a mode the tap cycle cannot exit.
-  ///
-  /// Pedal-only on purpose: every other surface keeps [toggleMode]'s
-  /// three-stop cycle, because only the pedal has the hold that makes FX
-  /// reachable without it.
-  void _pedalModeTap() => setMode(switch (state.mode) {
-    InteractionMode.record => InteractionMode.mute,
-    InteractionMode.mute => InteractionMode.record,
-    InteractionMode.fx => _fxReturn,
-  });
-
-  /// The MODE hold under [ModeSwitchStyle.holdFx]: enters FX, and the next
-  /// hold puts back the mode FX was entered from — not always record, but
-  /// wherever the rig was when it entered. The latch itself is written by
-  /// [setMode]'s FX entry, so this holds no latching of its own and an entry
-  /// through any other door returns just as correctly.
-  void _toggleFxHold() => setMode(
-    state.mode == InteractionMode.fx ? _fxReturn : InteractionMode.fx,
-  );
-
-  /// The BANK press — a gesture only under [ModeSwitchStyle.holdFx] (#677).
-  ///
-  /// Under [ModeSwitchStyle.cycleThree] BANK stays exactly what it has
-  /// always been: [toggleBankWithCursor] fires on the press itself, the hold
-  /// means nothing, and the release is inert — no gesture is armed at all.
-  ///
-  /// Under holdFx the MODE hold is the FX door, which left performance
-  /// recording with no pedal path — so the hold moves here, to the one
-  /// transport switch with a free hold. Same `_longPress` threshold as every
-  /// other gesture, style read at press time like [_armMode]'s: hold =
-  /// [togglePerformanceRecord] (all the repository arm/disarm gates apply
-  /// unchanged), tap = the bank toggle, which this style moves to the
-  /// release — the price of telling a tap from a hold. The hold fires AT the
-  /// threshold and retires the tap, so the release after it stays silent.
-  void _armBank() {
-    if (state.modeSwitchStyle != ModeSwitchStyle.holdFx) {
-      toggleBankWithCursor();
+    if (state.pedalSetupUnavailable) return;
+    final setup = state.pedalSetup;
+    final hold = setup.modeHold;
+    if (hold == null) {
+      _enterPedalMode(setup.modePress);
       return;
     }
     _armGesture(
+      _modeGesture,
+      onHold: () => _enterPedalMode(hold),
+      onTap: () => _enterPedalMode(setup.modePress),
+    );
+  }
+
+  void _enterPedalMode(InteractionMode mode) => setMode(
+    state.mode == mode
+        ? mode == InteractionMode.fx
+              ? _fxReturn
+              : InteractionMode.record
+        : mode,
+  );
+
+  /// Keeps physical performance arm/disarm reachable while the accepted
+  /// Custom Bank action is not yet available. A Hold retires the page tap.
+  void _armBank() {
+    _armGesture(
       _bankGesture,
+      onHold: togglePerformanceRecord,
+      onTap: toggleBankWithCursor,
+    );
+  }
+
+  /// Record/Play keeps its immediate contact action; Hold adds Undo on the
+  /// selected channel when the threshold fires.
+  void _armRecordHold() {
+    if (state.pedalSetupUnavailable ||
+        state.mode == InteractionMode.fx ||
+        state.pedalSetup.recordHold == RecordHold.none) {
+      return;
+    }
+    _armGesture(
+      _recordHoldGesture,
+      onHold: () => undo(state.cursor),
+    );
+  }
+
+  /// Track selection/transport remains immediate; Hold follows the current
+  /// bank position until the threshold fires.
+  void _armTrackHold(PedalButton button) {
+    if (state.pedalSetupUnavailable || state.mode != InteractionMode.record) {
+      return;
+    }
+    final hold = state.pedalSetup.trackHold;
+    if (hold == TrackHold.none) return;
+    _armGesture(
+      _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
       onHold: () {
-        _log('performance record toggled (bank long-press)');
-        togglePerformanceRecord();
-      },
-      onTap: () {
-        _log('bank toggled (tap)');
-        toggleBankWithCursor();
+        final channel = state.bankBaseChannel + _trackIndex(button);
+        switch (hold) {
+          case TrackHold.none:
+            return;
+          case TrackHold.armOverdub:
+            // This directional action must use a fresh capture fact. A take
+            // can begin in the native callback before the next UI poll.
+            final tracks = _looper.state.tracks;
+            if (channel >= 0 &&
+                channel < tracks.length &&
+                tracks[channel].hasContent &&
+                !tracks[channel].pending &&
+                !tracks[channel].isCapturing) {
+              _looper.record(channel: channel);
+            }
+          case TrackHold.clearTrack:
+            _looper.clear(channel: channel);
+        }
       },
     );
   }
@@ -1409,6 +1397,10 @@ class ControlCubit extends Cubit<ControlState> {
     _undoGesture.cancel();
     _modeGesture.cancel();
     _bankGesture.cancel();
+    _recordHoldGesture.cancel();
+    for (final gesture in _trackHoldGestures.values) {
+      gesture.cancel();
+    }
     _stopGesture.cancel();
     for (final gesture in _bindingGestures.values) {
       gesture.cancel();
@@ -2295,6 +2287,10 @@ class ControlCubit extends Cubit<ControlState> {
     _undoGesture.cancel();
     _modeGesture.cancel();
     _bankGesture.cancel();
+    _recordHoldGesture.cancel();
+    for (final gesture in _trackHoldGestures.values) {
+      gesture.cancel();
+    }
     _stopGesture.cancel();
     for (final gesture in _bindingGestures.values) {
       gesture.cancel();

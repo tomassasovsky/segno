@@ -5,6 +5,9 @@ import 'package:settings_repository/settings_repository.dart';
 class _InMemoryStore implements KeyValueStore {
   final Map<String, Object> values = {};
   String? failNextKey;
+  String? failNextReadKey;
+  String? failAfterWriteKey;
+  String? failOnSetValue;
 
   @override
   Future<int?> getInt(String key) async => values[key] as int?;
@@ -13,15 +16,28 @@ class _InMemoryStore implements KeyValueStore {
   Future<void> setInt(String key, int value) async => values[key] = value;
 
   @override
-  Future<String?> getString(String key) async => values[key] as String?;
+  Future<String?> getString(String key) async {
+    if (failNextReadKey == key) {
+      failNextReadKey = null;
+      throw StateError('storage read failed');
+    }
+    return values[key] as String?;
+  }
 
   @override
   Future<void> setString(String key, String value) async {
+    if (value == failOnSetValue) {
+      throw StateError('checkpoint restoration refused');
+    }
     if (failNextKey == key) {
       failNextKey = null;
       throw StateError('storage write failed');
     }
     values[key] = value;
+    if (failAfterWriteKey == key) {
+      failAfterWriteKey = null;
+      throw StateError('storage reported failure after writing');
+    }
   }
 
   @override
@@ -879,18 +895,98 @@ void main() {
     });
   });
 
-  group('mode switch style', () {
+  group('pedal setup', () {
+    test('is absent until explicitly saved', () async {
+      expect(await repository.loadPedalSetup(), isNull);
+    });
+
+    test('round-trips the opaque current setup', () async {
+      const encoded = '{"modePress":"mute","recordHold":"none"}';
+      await repository.savePedalSetup(encoded);
+      expect(await repository.loadPedalSetup(), encoded);
+    });
+
+    test('write-then-throw restores the exact prior setup', () async {
+      const prior = '{"custom":"prior bytes"}';
+      await repository.savePedalSetup(prior);
+      store.failAfterWriteKey = 'pedal.setup';
+
+      await expectLater(
+        repository.savePedalSetup('{"modePress":"fx"}'),
+        throwsA(
+          isA<PedalSetupSaveException>()
+              .having((error) => error.cause, 'cause', isA<StateError>())
+              .having((error) => error.checkpointRestored, 'restored', isTrue),
+        ),
+      );
+      expect(await repository.loadPedalSetup(), prior);
+    });
+
+    test('write-then-throw preserves an absent setup key', () async {
+      store.failAfterWriteKey = 'pedal.setup';
+
+      await expectLater(
+        repository.savePedalSetup('{"modePress":"fx"}'),
+        throwsA(
+          isA<PedalSetupSaveException>().having(
+            (error) => error.checkpointRestored,
+            'restored',
+            isTrue,
+          ),
+        ),
+      );
+      expect(await repository.loadPedalSetup(), isNull);
+      expect(store.values.containsKey('pedal.setup'), isFalse);
+    });
+
+    test('checkpoint read refusal does not attempt a setup write', () async {
+      const prior = '{"custom":"prior bytes"}';
+      await repository.savePedalSetup(prior);
+      store.failNextReadKey = 'pedal.setup';
+
+      await expectLater(
+        repository.savePedalSetup('{"modePress":"fx"}'),
+        throwsA(
+          isA<PedalSetupSaveException>()
+              .having((error) => error.cause, 'cause', isA<StateError>())
+              .having(
+                (error) => error.checkpointRestored,
+                'checkpoint confirmed',
+                isFalse,
+              ),
+        ),
+      );
+      expect(await repository.loadPedalSetup(), prior);
+    });
+
     test(
-      'defaults to null when unset (the original three-mode cycle)',
+      'rollback refusal reports the original and recovery failures',
       () async {
-        expect(await repository.loadModeSwitchStyle(), isNull);
+        const prior = '{"custom":"prior bytes"}';
+        await repository.savePedalSetup(prior);
+        store
+          ..failAfterWriteKey = 'pedal.setup'
+          ..failOnSetValue = prior;
+
+        await expectLater(
+          repository.savePedalSetup('{"modePress":"fx"}'),
+          throwsA(
+            isA<PedalSetupSaveException>()
+                .having((error) => error.cause, 'cause', isA<StateError>())
+                .having(
+                  (error) => error.restoreFailure,
+                  'restore failure',
+                  isA<StateError>(),
+                )
+                .having(
+                  (error) => error.checkpointRestored,
+                  'restored',
+                  isFalse,
+                ),
+          ),
+        );
       },
     );
-
-    test('round-trips a saved token', () async {
-      await repository.saveModeSwitchStyle('holdFx');
-      expect(await repository.loadModeSwitchStyle(), 'holdFx');
-    });
   });
 
   group('pedal timing', () {

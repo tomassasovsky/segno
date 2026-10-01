@@ -15,6 +15,31 @@ enum AudioBackend {
   asio,
 }
 
+/// A pedal setup Save that did not complete durably.
+final class PedalSetupSaveException implements Exception {
+  /// Keeps the original storage failure and any checkpoint-restore failure.
+  const PedalSetupSaveException({
+    required this.cause,
+    required this.checkpointRestored,
+    this.restoreFailure,
+  });
+
+  /// The failure that interrupted the requested Save.
+  final Object cause;
+
+  /// A second failure while restoring the exact previous stored value.
+  final Object? restoreFailure;
+
+  /// Whether the previous stored value was confirmed after the failed Save.
+  final bool checkpointRestored;
+
+  @override
+  String toString() => restoreFailure == null
+      ? 'Pedal setup Save failed: $cause'
+      : 'Pedal setup Save failed: $cause; checkpoint restoration failed: '
+            '$restoreFailure';
+}
+
 /// A persisted audio device configuration, used to auto-start the engine on
 /// launch with the user's last-used options.
 @immutable
@@ -415,18 +440,64 @@ class SettingsRepository {
   Future<void> savePedalLongPressMs(int ms) =>
       _store.setInt(_pedalLongPressMsKey, ms);
 
-  static const String _modeSwitchStyleKey = 'pedal.mode_switch_style';
+  static const String _pedalSetupKey = 'pedal.setup';
 
-  /// Loads the persisted MODE-footswitch style token (an opaque token, e.g.
-  /// `'cycleThree'` / `'holdFx'`), or `null` if unset. The presentation layer
-  /// maps the token to its style enum; unset (and unknown) tokens resolve to
-  /// the original three-mode tap cycle, so existing rigs see no change.
-  Future<String?> loadModeSwitchStyle() =>
-      _store.getString(_modeSwitchStyleKey);
+  /// Loads the persisted built-in footswitch setup blob, or `null` if unset.
+  ///
+  /// Opaque here on purpose: the setup names actions in a vocabulary the
+  /// presentation layer owns, and a repository that could read it would be a
+  /// second place able to decide what a footswitch means.
+  Future<String?> loadPedalSetup() async {
+    await _serializedWrite;
+    return _store.getString(_pedalSetupKey);
+  }
 
-  /// Saves the MODE-footswitch [style] token.
-  Future<void> saveModeSwitchStyle(String style) =>
-      _store.setString(_modeSwitchStyleKey, style);
+  /// Saves the built-in footswitch setup blob, restoring the exact prior value
+  /// if a store reports failure after writing.
+  Future<void> savePedalSetup(String encoded) => _serialize(() async {
+    final String? checkpoint;
+    try {
+      checkpoint = await _store.getString(_pedalSetupKey);
+    } on Object catch (readError, readStackTrace) {
+      Error.throwWithStackTrace(
+        PedalSetupSaveException(
+          cause: readError,
+          checkpointRestored: false,
+        ),
+        readStackTrace,
+      );
+    }
+    try {
+      await _store.setString(_pedalSetupKey, encoded);
+      if (await _store.getString(_pedalSetupKey) != encoded) {
+        throw Exception('pedal setup write was not retained');
+      }
+    } on Object catch (saveError, saveStackTrace) {
+      try {
+        if (checkpoint == null) {
+          await _store.remove(_pedalSetupKey);
+        } else {
+          await _store.setString(_pedalSetupKey, checkpoint);
+        }
+        if (await _store.getString(_pedalSetupKey) != checkpoint) {
+          throw Exception('pedal setup checkpoint was not restored');
+        }
+      } on Object catch (restoreError, restoreStackTrace) {
+        Error.throwWithStackTrace(
+          PedalSetupSaveException(
+            cause: saveError,
+            checkpointRestored: false,
+            restoreFailure: restoreError,
+          ),
+          restoreStackTrace,
+        );
+      }
+      Error.throwWithStackTrace(
+        PedalSetupSaveException(cause: saveError, checkpointRestored: true),
+        saveStackTrace,
+      );
+    }
+  });
 
   static String _ctrlCalibrationKey(int jack) => 'pedal.ctrl_calibration.$jack';
 
