@@ -88,6 +88,20 @@ extension ControlValueResolver on LooperRepository {
     MasterGainTarget() => true,
   };
 
+  /// The value [target] holds now (normalized `0..1`), or `null` when it does
+  /// not resolve.
+  ///
+  /// What a newly added button parameter starts from on BOTH of its values, so
+  /// adding the mapping invents no sound change.
+  double? readValueTarget(ControlValueTarget target) => switch (target) {
+    FxParamTarget(:final param) => _paramSlot(target)?.effect.params[param],
+    TrackVolumeTarget(:final channel) =>
+      channel >= 0 && channel < state.tracks.length
+          ? state.tracks[channel].volume
+          : null,
+    MasterGainTarget() => masterGain,
+  };
+
   /// Writes [value] (normalized `0..1`) to [target]. A no-op returning `false`
   /// when the target does not resolve, so a caller can skip the work a no-op
   /// would not need.

@@ -6,7 +6,7 @@ import 'package:controller_repository/src/controller_input.dart';
 /// combine sources behind one abstraction.
 abstract interface class ControllerSource {
   /// A broadcast stream of raw inputs from this source.
-  Stream<RawControllerInput> get inputs;
+  Stream<ControllerSourceEvent> get inputs;
 
   /// Releases the source.
   Future<void> dispose();

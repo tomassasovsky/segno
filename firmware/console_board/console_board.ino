@@ -388,17 +388,16 @@ static void pollCtrlRing(uint8_t jack, unsigned long now) {
   }
 }
 
-// A switch reported closed cannot stay closed with nothing on the contact:
-// let go of it, so whatever it held down is released before the row goes.
-static void ctrlReleaseSwitch(uint8_t jack, uint8_t contact) {
+// A lost source is not a physical release gesture. Reset contact state
+// silently; the whole-jack NONE frame retires application obligations.
+static void ctrlResetSwitch(uint8_t jack, uint8_t contact) {
   g_ctrlSwitchRaw[jack][contact] = false;
-  if (!g_ctrlSwitchClosed[jack][contact]) return;
   g_ctrlSwitchClosed[jack][contact] = false;
-  sendCtrl(jack, contact, PEDAL_CTRL_KIND_SWITCH, 0);
+  g_ctrlSwitchSinceMs[jack][contact] = 0;
 }
 
 static void ctrlDetach(uint8_t jack) {
-  for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) ctrlReleaseSwitch(jack, c);
+  for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) ctrlResetSwitch(jack, c);
   if (g_ctrlKind[jack] != CTRL_NONE) {
     sendCtrl(jack, PEDAL_CTRL_TIP, PEDAL_CTRL_KIND_NONE, 0);
   }
@@ -432,7 +431,9 @@ static void pollCtrl() {
         g_ctrlQuietUntilMs[j] = now + CTRL_SETTLE_MS;
       }
     }
-    if (!g_ctrlPresent[j]) continue;
+    // During presence debounce a pulled plug must not manufacture an 8 ms
+    // switch-open edge before the 50 ms lifetime boundary can be confirmed.
+    if (!presentRaw || !g_ctrlPresent[j]) continue;
 
     const uint16_t raw = ctrlSample(CTRL_PIN[j]);
     const uint16_t prev = g_ctrlRaw[j];
@@ -456,13 +457,13 @@ static void pollCtrl() {
     // time. The reclassification checks below still run once it is settled,
     // so swapping a pedal into this jack is still noticed.
     const bool known = g_ctrlKind[j] == CTRL_SWITCH;
-    if (known) {
+    if (known && !mid) {
       pollCtrlSwitch(j, PEDAL_CTRL_TIP, raw < CTRL_LOW, now);
       pollCtrlRing(j, now);
     }
     if ((long)(now - g_ctrlQuietUntilMs[j]) < 0) continue;
 
-    if (!known) pollCtrlRing(j, now);
+    if (!known && !mid) pollCtrlRing(j, now);
 
     // Mid-scale that HOLDS is a pot. A single mid-scale sample is a plug
     // passing through, and on a switch jack that used to be enough to
@@ -472,15 +473,15 @@ static void pollCtrl() {
       g_ctrlRailSinceMs[j] = 0;
       if (g_ctrlKind[j] != CTRL_EXPRESSION &&
           now - g_ctrlMidSinceMs[j] >= CTRL_SETTLE_MS) {
+        // Reclassification retires BOTH switch contacts before the first
+        // expression sample, including a jack identified by its ring alone.
+        if (g_ctrlKind[j] == CTRL_SWITCH) ctrlDetach(j);
+        else {
+          for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) ctrlResetSwitch(j, c);
+        }
         g_ctrlKind[j] = CTRL_EXPRESSION;
         g_ctrlHaveSent[j] = false;
         g_ctrlJumped[j] = false;
-        // A pot has no switch on either contact -- its ring is the supply and
-        // its tip is the wiper -- so let go of anything the plug's brush past
-        // those contacts was read as, rather than leave it held down.
-        for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) {
-          ctrlReleaseSwitch(j, c);
-        }
       }
     } else {
       g_ctrlMidSinceMs[j] = 0;
@@ -521,7 +522,7 @@ static void pollCtrl() {
     // 10k holding it at the rail. A jack that was NONE becomes a switch on
     // its first press, not on the plug's arrival: an open jack and an open
     // switch read the same, so there is nothing to say until it moves.
-    if (known) continue;  // polled above, before the settle gate
+    if (known || mid) continue;  // mid-scale is a classification candidate
     if (g_ctrlKind[j] == CTRL_NONE && raw >= CTRL_LOW) continue;
     if (g_ctrlKind[j] != CTRL_SWITCH && raw < CTRL_LOW) g_ctrlKind[j] = CTRL_SWITCH;
     if (g_ctrlKind[j] == CTRL_UNKNOWN) g_ctrlKind[j] = CTRL_SWITCH;

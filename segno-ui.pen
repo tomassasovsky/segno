@@ -301446,6 +301446,500 @@
           "fontWeight": "normal"
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "UbmA9",
+      "x": 36824,
+      "y": -1512,
+      "name": "Native implementation / External pedals / M3.8",
+      "width": 6048,
+      "height": 5136,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "bWkDM",
+          "name": "External pedals native reference heading",
+          "fill": "#F1F2F4",
+          "content": "External pedals · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "SJEO5",
+          "name": "External reference scope",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Single switch, dual switch and expression use one setup. Separate Press and Hold; multiple controls with On / Off or Held / Released; directed heel-to-toe calibration. Native renders at 1920 × 1080. Hardware validation remains separate.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "fZEwa",
+          "name": "External reference row 1",
+          "width": "fill_container",
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "caahf",
+              "name": "Pedals · External entry reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "G6gKV",
+                  "name": "Pedals · External entry caption",
+                  "fill": "#F1F2F4",
+                  "content": "Pedals · External entry",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "o2wRj",
+                  "name": "Pedals · External entry native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/pedal_setup_tracks.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "KFEJv",
+              "name": "Single switch reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "cwt9i",
+                  "name": "Single switch caption",
+                  "fill": "#F1F2F4",
+                  "content": "Single switch",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "yXwcH",
+                  "name": "Single switch native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_single.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "PYX3t",
+              "name": "Dual switch · independent buttons reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "IXMPd",
+                  "name": "Dual switch · independent buttons caption",
+                  "fill": "#F1F2F4",
+                  "content": "Dual switch · independent buttons",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "rj9FP",
+                  "name": "Dual switch · independent buttons native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_dual.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bWJKl",
+          "name": "External reference row 2",
+          "width": "fill_container",
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "KdeJS",
+              "name": "Latching contact reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "p9iHZE",
+                  "name": "Latching contact caption",
+                  "fill": "#F1F2F4",
+                  "content": "Latching contact",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "ju5Uk",
+                  "name": "Latching contact native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_latching.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "yz0hA",
+              "name": "Button · mapped controls reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "XYkMR",
+                  "name": "Button · mapped controls caption",
+                  "fill": "#F1F2F4",
+                  "content": "Button · mapped controls",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "wGr4u",
+                  "name": "Button · mapped controls native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_controls.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "PhDBO",
+              "name": "Button · parameter values reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "wDh3x",
+                  "name": "Button · parameter values caption",
+                  "fill": "#F1F2F4",
+                  "content": "Button · parameter values",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "DAXn4",
+                  "name": "Button · parameter values native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_controls_parameter.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "I732qO",
+          "name": "External reference row 3",
+          "width": "fill_container",
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "On6w7",
+              "name": "Choose a mapped control reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "zOv5C",
+                  "name": "Choose a mapped control caption",
+                  "fill": "#F1F2F4",
+                  "content": "Choose a mapped control",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "k7r2Q",
+                  "name": "Choose a mapped control native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_controls_pick.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Chgfk",
+              "name": "Expression · calibrated position reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "QiD6p",
+                  "name": "Expression · calibrated position caption",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · calibrated position",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "FgdL3",
+                  "name": "Expression · calibrated position native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_expression.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "pYDWS",
+              "name": "Expression · no mappings reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "HrnOY",
+                  "name": "Expression · no mappings caption",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · no mappings",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "M0yNW",
+                  "name": "Expression · no mappings native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_expression_empty.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "n36ZY",
+          "name": "External reference row 4",
+          "width": "fill_container",
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Ad4ow",
+              "name": "Expression · calibration reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "jTLgT",
+                  "name": "Expression · calibration caption",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · calibration",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "O6BQpg",
+                  "name": "Expression · calibration native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_expression_calibrate.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "inMX9",
+              "name": "Expression · destination reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "q2j40",
+                  "name": "Expression · destination caption",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · destination",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "GTysD",
+                  "name": "Expression · destination native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_expression_destinations.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "O1ilax",
+              "name": "Expression · control picker reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "FAMHP",
+                  "name": "Expression · control picker caption",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · control picker",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "EcQHY",
+                  "name": "Expression · control picker native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_expression_controls.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {

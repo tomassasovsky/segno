@@ -23,9 +23,6 @@ const double kFxStageBreak = 72;
 /// The artwork frame inside a card, at the pen's fixed height.
 const double kFxCardArtHeight = 138;
 
-/// The asset path for a rack artwork slug, in the catalogue package.
-String fxRackArtAsset(String slug) => 'assets/images/footswitch/$slug.png';
-
 /// One destination's chain, drawn as the pen's horizontal strip: a card per
 /// RACK (or per standalone single effect) in processing order, plain lines
 /// between consecutive cards, and a break where the Pre run hands over to the
@@ -289,7 +286,7 @@ class FxRackArt extends StatelessWidget {
         child: slug == null
             ? _fallback(surface)
             : Image.asset(
-                fxRackArtAsset(slug),
+                fxFootswitchAsset(slug),
                 package: FxCatalogueLoader.package,
                 fit: BoxFit.contain,
                 errorBuilder: (_, _, _) => _fallback(surface),
