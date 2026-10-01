@@ -6,7 +6,7 @@ import 'package:segno_engine/segno_engine.dart' as engine;
 
 import 'helpers/fake_audio_engine.dart';
 
-engine.EngineSnapshot emptyTracks() => const engine.EngineSnapshot(
+engine.EngineSnapshot emptyTracks([int count = 3]) => engine.EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
   bufferFrames: 128,
@@ -18,15 +18,36 @@ engine.EngineSnapshot emptyTracks() => const engine.EngineSnapshot(
   latencyState: engine.LatencyState.idle,
   measuredLatencyMs: -1,
   tracks: [
-    engine.TrackSnapshot.empty(),
-    engine.TrackSnapshot.empty(),
-    engine.TrackSnapshot.empty(),
+    for (var channel = 0; channel < count; channel++)
+      const engine.TrackSnapshot.empty(),
   ],
 );
 
 class RejectingEngine extends FakeAudioEngine {
   bool rejectDivision = false;
   bool rejectOnce = false;
+  bool rejectLengths = false;
+  bool dropMode = false;
+
+  @override
+  EngineResult setTrackLengthPresets(List<int> bars) =>
+      rejectLengths ? EngineResult.invalid : super.setTrackLengthPresets(bars);
+
+  @override
+  EngineResult setTrackLengthPreset({
+    required int channel,
+    required int bars,
+  }) => rejectLengths
+      ? EngineResult.invalid
+      : super.setTrackLengthPreset(channel: channel, bars: bars);
+
+  @override
+  EngineResult setLooperModeWithPresets(LooperMode mode, List<int> bars) =>
+      rejectLengths
+      ? EngineResult.invalid
+      : dropMode
+      ? EngineResult.ok
+      : super.setLooperModeWithPresets(mode, bars);
 
   @override
   EngineResult setQuantizeDiv(GridDivision div) =>
@@ -60,6 +81,326 @@ void main() {
     await repository.dispose();
     await ticker.close();
   });
+
+  test('length inheritance retains explicit Auto and equal custom values', () {
+    repository
+      ..setLooperMode(LooperMode.free)
+      ..setDefaultLengthPreset(4)
+      ..setTrackLengthPreset(channel: 0, bars: 0)
+      ..setTrackLengthPreset(channel: 1, bars: 4)
+      ..startEngine(const EngineConfig());
+    expect(audio.trackLengthPreset, {0: 0, 1: 4, 2: 4});
+    repository.setDefaultLengthPreset(8);
+    expect(audio.trackLengthPreset, {0: 0, 1: 4, 2: 8});
+    expect(repository.state.tracks[0].lengthPresetOverride, 0);
+    expect(repository.state.tracks[2].lengthPresetOverride, isNull);
+    repository.setTrackLengthPreset(channel: 1, bars: null);
+    expect(audio.trackLengthPreset[1], 8);
+    expect(repository.trackLengthPresetOverrides, {0: 0});
+    repository.stopEngine();
+    audio.trackLengthPreset.clear();
+    repository.startEngine(const EngineConfig());
+    expect(audio.trackLengthPreset, {0: 0, 1: 8, 2: 8});
+  });
+
+  test('Multi shares default and restores dormant independent overrides', () {
+    repository
+      ..setDefaultLengthPreset(4)
+      ..setTrackLengthPreset(channel: 0, bars: 8)
+      ..setTrackLengthPreset(channel: 1, bars: 0)
+      ..startEngine(const EngineConfig());
+    expect(audio.trackLengthPreset, {0: 4, 1: 4, 2: 4});
+    repository.setDefaultLengthPreset(16);
+    expect(audio.trackLengthPreset, {0: 16, 1: 16, 2: 16});
+    repository.setLooperMode(LooperMode.free);
+    expect(audio.trackLengthPreset, {0: 8, 1: 0, 2: 16});
+    repository.setLooperMode(LooperMode.multi);
+    expect(audio.trackLengthPreset, {0: 16, 1: 16, 2: 16});
+    expect(repository.trackLengthPresetOverrides, {0: 8, 1: 0});
+  });
+
+  test('length and mode refusal preserve every desired and native value', () {
+    repository
+      ..setDefaultLengthPreset(4)
+      ..setTrackLengthPreset(channel: 0, bars: 8)
+      ..startEngine(const EngineConfig());
+    audio.rejectLengths = true;
+    expect(repository.setDefaultLengthPreset(16), EngineResult.invalid);
+    expect(
+      repository.setTrackLengthPreset(channel: 0, bars: null),
+      EngineResult.invalid,
+    );
+    expect(repository.setLooperMode(LooperMode.free), EngineResult.invalid);
+    expect(repository.sessionTransport.defaultLengthPresetBars, 4);
+    expect(repository.sessionTransport.looperMode, LooperMode.multi);
+    expect(repository.trackLengthPresetOverrides, {0: 8});
+    expect(audio.trackLengthPreset, {0: 4, 1: 4, 2: 4});
+  });
+
+  for (final action in [
+    'default',
+    'track',
+    'mode',
+    'invalid track',
+    'invalid overrides',
+  ]) {
+    test(
+      'immediate $action refusal emits once without changing settings',
+      () async {
+        repository
+          ..setDefaultLengthPreset(4)
+          ..setTrackLengthPreset(channel: 0, bars: 8)
+          ..startEngine(const EngineConfig());
+        final failures = <EngineResult>[];
+        final subscription = repository.lengthSettingsFailures.listen(
+          failures.add,
+        );
+        addTearDown(subscription.cancel);
+        audio.rejectLengths = true;
+        final result = switch (action) {
+          'default' => repository.setDefaultLengthPreset(16),
+          'track' => repository.setTrackLengthPreset(channel: 0, bars: null),
+          'mode' => repository.setLooperMode(LooperMode.free),
+          'invalid track' => repository.setTrackLengthPreset(
+            channel: 8,
+            bars: 4,
+          ),
+          _ => repository.setLengthSettings(defaultBars: 16, overrides: {8: 4}),
+        };
+        expect(result, EngineResult.invalid);
+        await Future<void>.delayed(Duration.zero);
+        expect(failures, [EngineResult.invalid]);
+        expect(repository.sessionTransport.defaultLengthPresetBars, 4);
+        expect(repository.sessionTransport.looperMode, LooperMode.multi);
+        expect(repository.trackLengthPresetOverrides, {0: 8});
+        expect(audio.publishedLengths, {0: 4, 1: 4, 2: 4});
+        expect(repository.lengthSettingsSettled, isTrue);
+      },
+    );
+  }
+
+  test(
+    'busy refusal does not poison the first pending length request',
+    () async {
+      repository
+        ..setDefaultLengthPreset(4)
+        ..startEngine(const EngineConfig());
+      final failures = <EngineResult>[];
+      final subscription = repository.lengthSettingsFailures.listen(
+        failures.add,
+      );
+      addTearDown(subscription.cancel);
+      audio.commandsAreSettled = false;
+      expect(repository.setDefaultLengthPreset(8), EngineResult.ok);
+      final first = repository.settleLengthSettings();
+      expect(repository.setLooperMode(LooperMode.free), EngineResult.notReady);
+      await Future<void>.delayed(Duration.zero);
+      expect(failures, [EngineResult.notReady]);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 4);
+      expect(repository.lengthSettingsSettled, isFalse);
+      audio.commandsAreSettled = true;
+      expect(await first, EngineResult.ok);
+      expect(await repository.settleLengthSettings(), EngineResult.ok);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 8);
+      expect(repository.sessionTransport.looperMode, LooperMode.multi);
+      expect(repository.trackLengthPresetOverrides, isEmpty);
+      expect(failures, [EngineResult.notReady]);
+    },
+  );
+
+  test('cancelled length request does not emit failure feedback', () async {
+    repository.startEngine(const EngineConfig());
+    final failures = <EngineResult>[];
+    final subscription = repository.lengthSettingsFailures.listen(failures.add);
+    addTearDown(subscription.cancel);
+    audio.commandsAreSettled = false;
+    repository.setDefaultLengthPreset(8);
+    final pending = repository.settleLengthSettings();
+    repository.stopEngine();
+    expect(await pending, EngineResult.notReady);
+    expect(failures, isEmpty);
+  });
+
+  test(
+    'callback mode rejection reconciles without compensating preset writes',
+    () async {
+      repository
+        ..setDefaultLengthPreset(4)
+        ..setTrackLengthPreset(channel: 0, bars: 8)
+        ..startEngine(const EngineConfig());
+      audio
+        ..dropMode = true
+        ..commandsAreSettled = false;
+      repository.setLooperMode(LooperMode.free);
+      expect(repository.settledLooperMode, isNull);
+      audio.calls.clear();
+      audio.commandsAreSettled = true;
+      expect(await repository.settleLengthSettings(), EngineResult.invalid);
+      for (var poll = 0; poll < 12; poll++) {
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(repository.settledLooperMode, LooperMode.multi);
+      expect(audio.trackLengthPreset, {0: 4, 1: 4, 2: 4});
+      expect(audio.calls, isNot(contains('setTrackLengthPresets')));
+      expect(audio.calls, isNot(contains('setTrackLengthPreset')));
+    },
+  );
+
+  test(
+    'empty session recalls length default and explicit Auto independently',
+    () async {
+      repository.startEngine(const EngineConfig());
+      await repository.applySession(
+        const SessionRig(
+          looperMode: LooperMode.free,
+          defaultLengthPresetBars: 4,
+          trackLengthPresetOverrides: {0: 0, 1: 4},
+        ),
+        clearPollInterval: Duration.zero,
+      );
+      expect(repository.sessionTransport.defaultLengthPresetBars, 4);
+      expect(repository.trackLengthPresetOverrides, {0: 0, 1: 4});
+      expect(audio.trackLengthPreset, {0: 0, 1: 4, 2: 4});
+      repository.setDefaultLengthPreset(8);
+      expect(audio.trackLengthPreset, {0: 0, 1: 4, 2: 8});
+    },
+  );
+
+  test(
+    'settlement refuses unpublished same-mode default and override changes',
+    () async {
+      repository
+        ..setLooperMode(LooperMode.free)
+        ..setDefaultLengthPreset(4)
+        ..startEngine(const EngineConfig());
+      audio
+        ..commandsAreSettled = false
+        ..publishLengthCommands = false;
+      expect(repository.setDefaultLengthPreset(8), EngineResult.ok);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 4);
+      expect(
+        repository.setTrackLengthPreset(channel: 0, bars: 0),
+        EngineResult.notReady,
+      );
+      audio.commandsAreSettled = true;
+      expect(await repository.settleLengthSettings(), EngineResult.invalid);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 4);
+      audio.commandsAreSettled = false;
+      expect(
+        repository.setTrackLengthPreset(channel: 0, bars: 0),
+        EngineResult.ok,
+      );
+      expect(repository.trackLengthPresetOverrides, isEmpty);
+      audio.commandsAreSettled = true;
+      expect(await repository.settleLengthSettings(), EngineResult.invalid);
+      expect(repository.trackLengthPresetOverrides, isEmpty);
+    },
+  );
+
+  test(
+    'confirmed vector publishes without a ticker and owns input map',
+    () async {
+      repository.startEngine(const EngineConfig());
+      audio.commandsAreSettled = false;
+      final overrides = {0: 0, 1: 4};
+      expect(
+        repository.setLengthSettings(defaultBars: 8, overrides: overrides),
+        EngineResult.ok,
+      );
+      overrides[0] = 16;
+      expect(repository.trackLengthPresetOverrides, isEmpty);
+      audio.commandsAreSettled = true;
+      expect(await repository.settleLengthSettings(), EngineResult.ok);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 8);
+      expect(repository.trackLengthPresetOverrides, {0: 0, 1: 4});
+    },
+  );
+
+  test('session replacement cancels an older length waiter', () async {
+    repository.startEngine(const EngineConfig());
+    audio.commandsAreSettled = false;
+    repository.setDefaultLengthPreset(8);
+    final previous = repository.settleLengthSettings();
+    audio.commandsAreSettled = true;
+    await repository.applySession(
+      const SessionRig(defaultLengthPresetBars: 4),
+      clearPollInterval: Duration.zero,
+    );
+    expect(await previous, EngineResult.notReady);
+    expect(repository.sessionTransport.defaultLengthPresetBars, 4);
+  });
+
+  test(
+    'startup replay refusal keeps saved choice and stops the engine',
+    () async {
+      repository
+        ..setDefaultLengthPreset(8)
+        ..setTrackLengthPreset(channel: 0, bars: 0);
+      audio.rejectLengths = true;
+      expect(
+        repository.startEngine(const EngineConfig()),
+        EngineResult.invalid,
+      );
+      expect(repository.sessionTransport.isRunning, isFalse);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 8);
+      expect(repository.trackLengthPresetOverrides, {0: 0});
+      audio
+        ..rejectLengths = false
+        ..commandsAreSettled = false
+        ..publishLengthCommands = false;
+      final failures = repository.lengthSettingsFailures.first;
+      expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+      audio.commandsAreSettled = true;
+      expect(await repository.settleLengthSettings(), EngineResult.invalid);
+      expect(await failures, EngineResult.invalid);
+      expect(repository.sessionTransport.isRunning, isFalse);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 8);
+    },
+  );
+
+  test(
+    'settlement timeout stops pending work and restart replays '
+    'confirmed choice',
+    () async {
+      repository
+        ..setDefaultLengthPreset(4)
+        ..startEngine(const EngineConfig());
+      audio
+        ..commandsAreSettled = false
+        ..publishLengthCommands = false;
+      repository.setDefaultLengthPreset(8);
+      final failures = repository.lengthSettingsFailures.first;
+      expect(
+        await repository.settleLengthSettings(
+          pollInterval: Duration.zero,
+          attempts: 1,
+        ),
+        EngineResult.notReady,
+      );
+      expect(await failures, EngineResult.notReady);
+      expect(repository.sessionTransport.isRunning, isFalse);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 4);
+      audio
+        ..commandsAreSettled = true
+        ..publishLengthCommands = true;
+      expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+      expect(audio.publishedLengths, {0: 4, 1: 4, 2: 4});
+      expect(await repository.settleLengthSettings(), EngineResult.ok);
+    },
+  );
+
+  test(
+    'dispose cancels a waiting length request before native access',
+    () async {
+      repository.startEngine(const EngineConfig());
+      audio.commandsAreSettled = false;
+      repository.setDefaultLengthPreset(8);
+      final wait = repository.settleLengthSettings();
+      await repository.dispose();
+      expect(await wait, EngineResult.notReady);
+    },
+  );
 
   test('custom Loop and Once survive defaults and reconnect', () {
     repository
@@ -223,14 +564,13 @@ void main() {
     },
   );
 
-  test('refused Once default or group leaves every track unchanged', () {
+  test('refused Once default leaves every track unchanged', () {
     repository
       ..startEngine(const EngineConfig())
       ..setDefaultOneShot(oneShot: false)
       ..setOneShot(channel: 1, oneShot: true);
     audio.rejectOnce = true;
     expect(repository.setDefaultOneShot(oneShot: true), EngineResult.invalid);
-    expect(repository.setAllOneShot(oneShot: false), EngineResult.invalid);
     expect(repository.defaultOneShot, isFalse);
     expect(repository.trackOneShotOverrides, {1: true});
     expect(audio.trackOneShot, {0: false, 1: true, 2: false});
@@ -335,6 +675,7 @@ void main() {
     audio.nextSnapshot = const engine.EngineSnapshot.initial();
     await repository.applySession(
       const SessionRig(
+        looperMode: LooperMode.free,
         trackRecordTimingOverrides: {
           0: RecordTiming.quarter,
           7: RecordTiming.bar,
@@ -355,6 +696,7 @@ void main() {
     expect(audio.trackOverdubFeedback, isEmpty);
     expect(audio.trackOneShot, isEmpty);
     expect(audio.trackLengthPreset, isEmpty);
+    audio.nextSnapshot = emptyTracks(8);
     repository.startEngine(const EngineConfig());
     expect(audio.trackQuantizeDiv[7], GridDivision.bar);
     expect(audio.trackOverdubFeedback[7], 0);

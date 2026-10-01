@@ -1172,6 +1172,29 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  @override
+  EngineResult setTrackLengthPresets(List<int> bars) {
+    _checkAlive();
+    if (bars.isEmpty ||
+        bars.length > LE_MAX_TRACKS ||
+        bars.any((value) => value < 0 || value > LE_LENGTH_PRESET_MAX_BARS)) {
+      return EngineResult.invalid;
+    }
+    final values = calloc<Int32>(bars.length);
+    try {
+      values.asTypedList(bars.length).setAll(0, bars);
+      return EngineResult.fromCode(
+        _bindings.le_engine_set_track_length_presets(
+          _engine,
+          values,
+          bars.length,
+        ),
+      );
+    } finally {
+      calloc.free(values);
+    }
+  }
+
   // ---- looper mode (LooperModeControl, B2a) ----
 
   @override
@@ -1189,6 +1212,30 @@ class NativeAudioEngine implements AudioEngine {
     return EngineResult.fromCode(
       _bindings.le_engine_set_looper_mode(_engine, mode.code),
     );
+  }
+
+  @override
+  EngineResult setLooperModeWithPresets(LooperMode mode, List<int> bars) {
+    _checkAlive();
+    if (bars.isEmpty ||
+        bars.length > LE_MAX_TRACKS ||
+        bars.any((value) => value < 0 || value > LE_LENGTH_PRESET_MAX_BARS)) {
+      return EngineResult.invalid;
+    }
+    final values = calloc<Int32>(bars.length);
+    try {
+      values.asTypedList(bars.length).setAll(0, bars);
+      return EngineResult.fromCode(
+        _bindings.le_engine_set_looper_mode_with_presets(
+          _engine,
+          mode.code,
+          values,
+          bars.length,
+        ),
+      );
+    } finally {
+      calloc.free(values);
+    }
   }
 
   @override

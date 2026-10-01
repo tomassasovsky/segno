@@ -45,6 +45,8 @@ void main() {
     when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
     when(looper.allMonitors).thenReturn(const {});
     when(() => looper.sessionTransport).thenReturn(const TransportState());
+    when(() => looper.lengthSettingsSettled).thenReturn(true);
+    when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.defaultRecordTiming).thenReturn(RecordTiming.immediately);
     when(() => looper.defaultOverdubDecay).thenReturn(0);
     when(() => looper.defaultOneShot).thenReturn(false);
@@ -64,6 +66,106 @@ void main() {
     looper: looper,
     performance: performance,
     exportDirectory: () async => '/tmp/x',
+  );
+
+  for (final accepted in [true, false]) {
+    test(
+      'session save waits for length confirmation accepted=$accepted',
+      () async {
+        final settled = Completer<EngineResult>();
+        when(() => looper.lengthSettingsSettled).thenReturn(false);
+        when(
+          () => looper.settleLengthSettings(),
+        ).thenAnswer((_) => settled.future);
+        when(repository.listSessions).thenAnswer((_) async => []);
+        when(
+          () => repository.bundlePath('pending'),
+        ).thenAnswer((_) async => '/tmp/pending');
+        when(
+          () => repository.save(
+            any(),
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+          ),
+        ).thenAnswer((_) async => _session);
+        final cubit = build();
+        addTearDown(cubit.close);
+        final save = cubit.saveAs('pending');
+        await Future<void>.delayed(Duration.zero);
+        verifyNever(
+          () => repository.save(
+            any(),
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+          ),
+        );
+        when(
+          () => looper.sessionTransport,
+        ).thenReturn(const TransportState(defaultLengthPresetBars: 8));
+        settled.complete(accepted ? EngineResult.ok : EngineResult.invalid);
+        await save;
+        expect(
+          cubit.state.status,
+          accepted ? SessionStatus.success : SessionStatus.failure,
+        );
+        if (accepted) {
+          final settings =
+              verify(
+                    () => repository.save(
+                      '/tmp/pending',
+                      chains: any(named: 'chains'),
+                      settings: captureAny(named: 'settings'),
+                      pedalBindings: any(named: 'pedalBindings'),
+                    ),
+                  ).captured.single
+                  as SessionSettings;
+          expect(settings.defaultLengthPresetBars, 8);
+        } else {
+          verifyNever(
+            () => repository.save(
+              any(),
+              chains: any(named: 'chains'),
+              settings: any(named: 'settings'),
+              pedalBindings: any(named: 'pedalBindings'),
+            ),
+          );
+        }
+      },
+    );
+  }
+
+  test(
+    'session replacement supersedes pending save after successful settlement',
+    () async {
+      final settled = Completer<EngineResult>();
+      when(() => looper.lengthSettingsSettled).thenReturn(false);
+      when(
+        () => looper.settleLengthSettings(),
+      ).thenAnswer((_) => settled.future);
+      when(repository.listSessions).thenAnswer((_) async => []);
+      when(
+        () => repository.bundlePath('pending'),
+      ).thenAnswer((_) async => '/tmp/pending');
+      final cubit = build();
+      addTearDown(cubit.close);
+      final save = cubit.saveAs('pending');
+      await Future<void>.delayed(Duration.zero);
+      verify(() => looper.settleLengthSettings()).called(1);
+      when(() => looper.sessionRevision).thenReturn(1);
+      settled.complete(EngineResult.ok);
+      await save;
+      expect(cubit.state.status, SessionStatus.failure);
+      verifyNever(
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+          pedalBindings: any(named: 'pedalBindings'),
+        ),
+      );
+    },
   );
 
   group('SessionCubit exports', () {

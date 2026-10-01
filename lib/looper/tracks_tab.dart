@@ -7,9 +7,6 @@ enum TracksTab {
   /// What each track is called.
   names,
 
-  /// Each track's defining-recording length: auto, or a bar preset.
-  lengths,
-
   /// What each track records, where it is heard, and whether it quantizes.
   routing,
 }

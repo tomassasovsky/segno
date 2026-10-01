@@ -57,6 +57,7 @@ void main() {
           ..setRecordTiming(RecordTiming.eighth)
           ..setOverdubDecay(30)
           ..setDefaultOneShot(oneShot: true)
+          ..setDefaultLengthPreset(8)
           ..setDefaultMultiple(multiple: 3)
           ..setRecDub(enabled: true)
           ..setClickMode(ClickMode.rec)
@@ -86,6 +87,7 @@ void main() {
         expect(rig.recordTiming, RecordTiming.eighth);
         expect(rig.overdubDecay, 30);
         expect(rig.defaultOneShot, isTrue);
+        expect(rig.defaultLengthPresetBars, 8);
         expect(rig.defaultMultiple, 3);
         expect(rig.recDub, isTrue);
         expect(rig.autoRecord, isFalse);
@@ -104,7 +106,7 @@ void main() {
           ..setTrackRecordTiming(channel: 0, timing: null)
           ..setTrackOverdubDecay(channel: 0, percent: null)
           ..setOneShot(channel: 0, oneShot: null)
-          ..setTrackLengthPreset(channel: 0, bars: 0)
+          ..setTrackLengthPreset(channel: 0, bars: null)
           ..setAutoRecord(enabled: true);
         final inherited = settingsFromLooper(looper);
         expect(inherited.trackRecordTimingOverrides, isEmpty);

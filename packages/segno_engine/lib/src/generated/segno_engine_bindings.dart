@@ -2014,7 +2014,7 @@ class SegnoEngineBindings {
   /// Sets the looper mode (le_looper_mode, 0..4). Values outside the enum
   /// return LE_ERR_INVALID without posting. Refused with LE_ERR_INVALID while
   /// the gate above reads CAPTURING, QUEUED or SPANS; with PLAYING every
-  /// playing track is stopped ahead of the switch in the same ring order; a
+  /// playing track is stopped in the same command after callback revalidation; a
   /// no-op (LE_OK) for the current mode. Landing on the audio thread, a switch
   /// over recorded audio re-clocks the takes for the target: the shared master
   /// is established from the shortest take for MULTI or the primary for
@@ -2039,6 +2039,48 @@ class SegnoEngineBindings {
       >('le_engine_set_looper_mode');
   late final _le_engine_set_looper_mode = _le_engine_set_looper_modePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Atomically switches mode and replaces every track's future length preset.
+  /// bars/count obey le_engine_set_track_length_presets. One queued command
+  /// rechecks the mode gate before stopping playback, switching mode or applying
+  /// any preset. A refused callback gate leaves all three unchanged; successful
+  /// enqueue alone is not proof of application. The current mode changes presets
+  /// only, without stopping playback. Existing PCM and history are untouched.
+  int le_engine_set_looper_mode_with_presets(
+    ffi.Pointer<le_engine> engine,
+    int mode,
+    ffi.Pointer<ffi.Int32> bars,
+    int count,
+  ) {
+    return _le_engine_set_looper_mode_with_presets(
+      engine,
+      mode,
+      bars,
+      count,
+    );
+  }
+
+  late final _le_engine_set_looper_mode_with_presetsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_looper_mode_with_presets');
+  late final _le_engine_set_looper_mode_with_presets =
+      _le_engine_set_looper_mode_with_presetsPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              int,
+              ffi.Pointer<ffi.Int32>,
+              int,
+            )
+          >();
 
   /// Crowns [channel] the primary track — the explicit timing handoff (D18).
   /// Rejects only an out-of-range channel; accepted in every looper mode (the
@@ -2357,6 +2399,40 @@ class SegnoEngineBindings {
   late final _le_engine_set_track_length_preset =
       _le_engine_set_track_length_presetPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Replaces all configured tracks' future length presets in one command.
+  /// count must equal the configured track count and each bars entry must be
+  /// 0..LE_LENGTH_PRESET_MAX_BARS and pass the single-track capacity rule above.
+  /// The caller array is copied before return. Invalid/unconfigured/full-queue
+  /// requests change nothing. The callback rechecks all capacity constraints
+  /// before applying any entry; existing PCM and capture targets are unchanged.
+  int le_engine_set_track_length_presets(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<ffi.Int32> bars,
+    int count,
+  ) {
+    return _le_engine_set_track_length_presets(
+      engine,
+      bars,
+      count,
+    );
+  }
+
+  late final _le_engine_set_track_length_presetsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_track_length_presets');
+  late final _le_engine_set_track_length_presets =
+      _le_engine_set_track_length_presetsPtr
+          .asFunction<
+            int Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Int32>, int)
+          >();
 
   /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
   /// with a record press continues into overdub instead of playback. A stop press
@@ -4879,6 +4955,9 @@ enum le_command_code {
   /// disabling cancels pending signal-triggered recording arms.
   LE_CMD_SET_AUTO_RECORD(60),
 
+  /// Named bounded payload: all configured tracks' future length presets.
+  LE_CMD_SET_LENGTH_PRESETS(61),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100),
@@ -4962,6 +5041,7 @@ enum le_command_code {
     58 => LE_CMD_RESTORE_TEMPO,
     59 => LE_CMD_SET_ONE_SHOT_MASK,
     60 => LE_CMD_SET_AUTO_RECORD,
+    61 => LE_CMD_SET_LENGTH_PRESETS,
     100 => LE_EVT_LAYER_RETIRED,
     101 => LE_EVT_TAKE_CANCELLED,
     102 => LE_EVT_CLEAR_FROZEN,

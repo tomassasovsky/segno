@@ -15,11 +15,19 @@ void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
   late StreamController<LooperState> looperStates;
+  late int confirmedLength;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    confirmedLength = 0;
     when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.sessionTransport).thenAnswer(
+      (_) => TransportState(defaultLengthPresetBars: confirmedLength),
+    );
+    when(
+      () => repository.settleLengthSettings(),
+    ).thenAnswer((_) async => EngineResult.ok);
     when(
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
@@ -29,6 +37,10 @@ void main() {
     when(
       () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
+    when(() => repository.setDefaultLengthPreset(any())).thenAnswer((call) {
+      confirmedLength = call.positionalArguments.single as int;
+      return EngineResult.ok;
+    });
     looperStates = StreamController<LooperState>.broadcast();
     when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
   });
@@ -92,6 +104,58 @@ void main() {
         expect(await settings.loadDefaultMultiple(), 2);
       },
     );
+    blocTest<RecordOptionsCubit, RecordOptions>(
+      'setDefaultLengthBars emits, persists and applies the clamped default',
+      build: build,
+      act: (cubit) => cubit.setDefaultLengthBars(80),
+      expect: () => [const RecordOptions(defaultLengthBars: 64)],
+      verify: (_) async {
+        expect(await settings.loadDefaultLengthPreset(), 64);
+        verify(() => repository.setDefaultLengthPreset(64)).called(1);
+      },
+    );
+
+    blocTest<RecordOptionsCubit, RecordOptions>(
+      'late length refusal keeps the displayed and saved default',
+      setUp: () => when(
+        () => repository.settleLengthSettings(),
+      ).thenAnswer((_) async => EngineResult.invalid),
+      build: build,
+      act: (cubit) => cubit.setDefaultLengthBars(8),
+      expect: () => <RecordOptions>[],
+      verify: (_) async => expect(await settings.loadDefaultLengthPreset(), 0),
+    );
+
+    test(
+      'an accepted length still persists after a rejected tap and RecDub edit',
+      () async {
+        final pending = Completer<EngineResult>();
+        when(() => repository.setDefaultLengthPreset(any())).thenAnswer((
+          call,
+        ) {
+          final bars = call.positionalArguments.single as int;
+          return bars == 8 ? EngineResult.ok : EngineResult.notReady;
+        });
+        when(
+          () => repository.settleLengthSettings(),
+        ).thenAnswer((_) => pending.future);
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        final accepted = cubit.setDefaultLengthBars(8);
+        await cubit.setDefaultLengthBars(12);
+        await cubit.setRecDub(value: true);
+        confirmedLength = 8;
+        pending.complete(EngineResult.ok);
+        await accepted;
+
+        expect(cubit.state.defaultLengthBars, 8);
+        expect(cubit.state.recDub, isTrue);
+        expect(await settings.loadDefaultLengthPreset(), 8);
+        expect(await settings.loadRecDub(), isTrue);
+      },
+    );
+
     blocTest<RecordOptionsCubit, RecordOptions>(
       'turning Sound start on persists the count-in as off (the engine '
       'clears it, D9)',

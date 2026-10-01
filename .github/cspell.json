@@ -949,6 +949,11 @@
     "lista",
     "pinouts",
     "SMPS",
-    "stty"
+    "stty",
+    "Arimo",
+    "NRPN",
+    "overbroad",
+    "unclipped",
+    "unpair"
   ]
 }

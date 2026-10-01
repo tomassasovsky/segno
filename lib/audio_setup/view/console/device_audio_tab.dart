@@ -9,6 +9,7 @@ import 'package:looper_repository/looper_repository.dart'
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
+import 'package:segno/audio_setup/view/console/click_output_card.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -152,6 +153,9 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
                 // kind that is not there.
                 if (state.loopback.available)
                   ConsoleProse(l10n.loopbackNote(state.loopback)),
+                // The click's routing and level live with the outputs they
+                // are a fact about; WHEN it sounds is the Loop domain's.
+                const ClickOutputCard(),
               ],
             ),
             // Windows runs ASIO exclusively, so the driver it opens is a

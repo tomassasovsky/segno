@@ -773,7 +773,9 @@ void main() {
           final repo = buildRepo();
           engine.nextLooperModeGate = LooperModeGate.spans;
           expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.open);
+          engine.nextLooperModeGate = LooperModeGate.open;
           repo.startEngine(const EngineConfig());
+          engine.nextLooperModeGate = LooperModeGate.spans;
           expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.spans);
         },
       );
@@ -798,11 +800,15 @@ void main() {
           addTearDown(repo.dispose);
           final sub = repo.looperState.listen((_) {});
           addTearDown(sub.cancel);
+          engine
+            ..commandsAreSettled = false
+            ..publishModeCommands = false;
           expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
           // The fake keeps reporting Multi: after enough polls of the running
           // engine the request is taken as dropped on the audio thread.
           engine.nextSnapshot = _playingAt(0);
           expect(repo.settledLooperMode, isNull);
+          engine.commandsAreSettled = true;
           for (var i = 1; i <= 12; i++) {
             ticker.add(null);
             await Future<void>.delayed(Duration.zero);
@@ -820,6 +826,7 @@ void main() {
         final repo = buildRepo();
         addTearDown(repo.dispose);
         expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
+        engine.commandsAreSettled = false;
         repo.startEngine(const EngineConfig());
         final sub = repo.looperState.listen((_) {});
         addTearDown(sub.cancel);
@@ -5366,7 +5373,10 @@ void main() {
     test(
       'setTrackLengthPreset is deferred until running, then re-applied',
       () {
-        final repo = buildRepo()..setTrackLengthPreset(channel: 1, bars: 4);
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..setLooperMode(LooperMode.free)
+          ..setTrackLengthPreset(channel: 1, bars: 4);
         expect(engine.trackLengthPreset, isEmpty); // not running yet
 
         repo.startEngine(const EngineConfig());
@@ -5375,19 +5385,23 @@ void main() {
     );
 
     test('setTrackLengthPreset applies immediately while running', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
       buildRepo()
+        ..setLooperMode(LooperMode.free)
         ..startEngine(const EngineConfig())
         ..setTrackLengthPreset(channel: 2, bars: 8);
       expect(engine.trackLengthPreset[2], 8);
     });
 
-    test('setTrackLengthPreset(0) clears a remembered preset (AUTO)', () {
+    test('null length override resumes the default across restart', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
       final repo = buildRepo()
+        ..setLooperMode(LooperMode.free)
         ..startEngine(const EngineConfig())
         ..setTrackLengthPreset(channel: 1, bars: 4);
       expect(engine.trackLengthPreset[1], 4);
 
-      repo.setTrackLengthPreset(channel: 1, bars: 0);
+      repo.setTrackLengthPreset(channel: 1, bars: null);
       expect(engine.trackLengthPreset[1], 0);
 
       // A restart no longer replays the cleared preset.
@@ -5395,13 +5409,16 @@ void main() {
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.trackLengthPreset, isEmpty);
+      expect(engine.trackLengthPreset[1], 0);
+      expect(repo.trackLengthPresetOverrides, isEmpty);
     });
 
     test(
       'per-track length presets re-apply on every restart (device change)',
       () {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
         final repo = buildRepo()
+          ..setLooperMode(LooperMode.free)
           ..startEngine(const EngineConfig())
           ..setTrackLengthPreset(channel: 1, bars: 3);
         expect(engine.trackLengthPreset[1], 3);
@@ -5849,6 +5866,7 @@ void main() {
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
           // A live/prior session left track 0 at a 4-bar preset.
+          ..setLooperMode(LooperMode.free)
           ..setTrackLengthPreset(channel: 0, bars: 4);
         addTearDown(repo.dispose);
         expect(engine.trackLengthPreset[0], 4);
@@ -5873,7 +5891,7 @@ void main() {
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.trackLengthPreset.containsKey(0), isFalse);
+        expect(engine.trackLengthPreset[0], 0);
       },
     );
 
@@ -5888,6 +5906,7 @@ void main() {
         await repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
+            looperMode: LooperMode.free,
             trackLengthPresetOverrides: const {0: 8},
             tracks: [
               rigTrack(
@@ -6828,20 +6847,26 @@ void main() {
       reconnectTicker: reconnectTicker.stream,
     );
 
-    EngineSnapshot runningSnapshot({required bool devicePresent}) =>
-        EngineSnapshot(
-          isRunning: true,
-          devicePresent: devicePresent,
-          sampleRate: 48000,
-          bufferFrames: 128,
-          framesProcessed: 0,
-          xrunCount: 0,
-          inputRms: 0,
-          inputPeak: 0,
-          outputRms: 0,
-          latencyState: le.LatencyState.idle,
-          measuredLatencyMs: -1,
-        );
+    EngineSnapshot runningSnapshot({
+      required bool devicePresent,
+      int trackCount = 0,
+    }) => EngineSnapshot(
+      isRunning: true,
+      devicePresent: devicePresent,
+      sampleRate: 48000,
+      bufferFrames: 128,
+      framesProcessed: 0,
+      xrunCount: 0,
+      inputRms: 0,
+      inputPeak: 0,
+      outputRms: 0,
+      latencyState: le.LatencyState.idle,
+      measuredLatencyMs: -1,
+      tracks: [
+        for (var channel = 0; channel < trackCount; channel++)
+          const TrackSnapshot.empty(),
+      ],
+    );
 
     const pinned = le.AudioDevice(
       id: 'out-1',
@@ -6864,6 +6889,57 @@ void main() {
 
     int startCount() => engine.calls.where((c) => c == 'start').length;
     int stopCount() => engine.calls.where((c) => c == 'stop').length;
+
+    for (final modeRequest in [false, true]) {
+      test('reconnect cancels pending settings and replays confirmed rig '
+          'modeRequest=$modeRequest', () async {
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 3,
+        );
+        final repo = buildSupervised()
+          ..setLooperMode(LooperMode.free)
+          ..setLengthSettings(defaultBars: 4, overrides: {0: 8})
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        addTearDown(repo.dispose);
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..commandsAreSettled = false
+          ..publishLengthCommands = false
+          ..publishModeCommands = false;
+        expect(
+          modeRequest
+              ? repo.setLooperMode(LooperMode.multi)
+              : repo.setDefaultLengthPreset(12),
+          EngineResult.ok,
+        );
+        final abandoned = repo.settleLengthSettings();
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 3,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..devices = const [pinned]
+          ..publishLengthCommands = true
+          ..publishModeCommands = true;
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(await abandoned, EngineResult.notReady);
+        expect(repo.sessionTransport.isRunning, isTrue);
+        engine.commandsAreSettled = true;
+        expect(await repo.settleLengthSettings(), EngineResult.ok);
+        expect(repo.sessionTransport.looperMode, LooperMode.free);
+        expect(repo.sessionTransport.defaultLengthPresetBars, 4);
+        expect(repo.trackLengthPresetOverrides, {0: 8});
+        expect(engine.publishedLengths, {0: 8, 1: 4, 2: 4});
+        expect(startCount(), 2);
+        expect(stopCount(), 1);
+      });
+    }
 
     test('reopens a pinned device when it reappears', () async {
       engine.nextSnapshot = runningSnapshot(devicePresent: true);

@@ -35,6 +35,7 @@ class TransportState extends Equatable {
     this.autoRecord = false,
     this.overdubDecay = 0,
     this.defaultOneShot = false,
+    this.defaultLengthPresetBars = 0,
     this.defaultMultiple = 0,
     this.recordTiming = RecordTiming.immediately,
   });
@@ -137,6 +138,9 @@ class TransportState extends Equatable {
   /// Shared playback choice for tracks without their own override.
   final bool defaultOneShot;
 
+  /// Default length for future recordings: zero is Auto, otherwise bars.
+  final int defaultLengthPresetBars;
+
   /// Shared future recording length; zero means Auto.
   final int defaultMultiple;
 
@@ -181,6 +185,7 @@ class TransportState extends Equatable {
     autoRecord,
     overdubDecay,
     defaultOneShot,
+    defaultLengthPresetBars,
     defaultMultiple,
     recordTiming,
   ];

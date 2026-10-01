@@ -966,6 +966,27 @@ void main() {
     });
   });
 
+  group('length defaults and overrides', () {
+    test('the default length preset round-trips', () async {
+      expect(await repository.loadDefaultLengthPreset(), 0);
+      await repository.saveDefaultLengthPreset(8);
+      expect(await repository.loadDefaultLengthPreset(), 8);
+    });
+
+    test(
+      'a length override distinguishes inheritance, Auto and bars',
+      () async {
+        expect(await repository.loadTrackLengthPreset(0), isNull);
+        await repository.saveTrackLengthPreset(0, 0);
+        await repository.saveTrackLengthPreset(1, 16);
+        expect(await repository.loadTrackLengthPreset(0), 0);
+        expect(await repository.loadTrackLengthPreset(1), 16);
+        await repository.saveTrackLengthPreset(0, null);
+        expect(await repository.loadTrackLengthPreset(0), isNull);
+      },
+    );
+  });
+
   group('overdub decay', () {
     test('defaults to 0 and round-trips, by default and per track', () async {
       expect(await repository.loadOverdubDecay(), 0);
@@ -1043,17 +1064,6 @@ void main() {
     });
   });
 
-  group('sync tempo', () {
-    test('defaults to on when unset', () async {
-      expect(await repository.loadSyncTempo(), isTrue);
-    });
-
-    test('round-trips a saved preference', () async {
-      await repository.saveSyncTempo(value: false);
-      expect(await repository.loadSyncTempo(), isFalse);
-    });
-  });
-
   group('quantize div', () {
     test('defaults to 0 (off) when unset', () async {
       expect(await repository.loadQuantizeDiv(), 0);
@@ -1122,8 +1132,9 @@ void main() {
   });
 
   group('track length preset', () {
-    test('defaults to 0 (AUTO) and round-trips a fixed value', () async {
-      expect(await repository.loadTrackLengthPreset(0), 0);
+    test('defaults to null (follow the default) and round-trips a fixed '
+        'value', () async {
+      expect(await repository.loadTrackLengthPreset(0), isNull);
       await repository.saveTrackLengthPreset(0, 8);
       expect(await repository.loadTrackLengthPreset(0), 8);
     });
@@ -1133,7 +1144,7 @@ void main() {
       await repository.saveTrackLengthPreset(1, 16);
       expect(await repository.loadTrackLengthPreset(0), 4);
       expect(await repository.loadTrackLengthPreset(1), 16);
-      expect(await repository.loadTrackLengthPreset(2), 0);
+      expect(await repository.loadTrackLengthPreset(2), isNull);
     });
   });
 

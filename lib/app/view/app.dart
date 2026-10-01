@@ -356,7 +356,7 @@ class _AppState extends State<App> {
             // Restore defaults at startup, before a session can be recalled.
             lazy: false,
             create: (context) {
-              final cubit = QuantizeCubit(
+              final cubit = RecordTimingCubit(
                 repository: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
               );

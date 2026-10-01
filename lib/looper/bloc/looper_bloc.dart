@@ -469,22 +469,20 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveTrackOverdubDecay(event.channel, event.percent),
       );
     });
-    on<LooperTrackMultipleChanged>((event, _) {
-      _repository.setTrackMultiple(
-        channel: event.channel,
-        multiple: event.multiple,
-      );
-      unawaited(
-        _settings?.saveTrackMultiple(event.channel, event.multiple),
-      );
-    });
-    on<LooperTrackLengthPresetChanged>((event, _) {
-      _repository.setTrackLengthPreset(
+    on<LooperTrackLengthPresetChanged>((event, _) async {
+      final sessionRevision = _repository.sessionRevision;
+      final result = _repository.setTrackLengthPreset(
         channel: event.channel,
         bars: event.bars,
       );
-      unawaited(
-        _settings?.saveTrackLengthPreset(event.channel, event.bars),
+      if (!result.isOk) return;
+      final settled = await _repository.settleLengthSettings();
+      if (!settled.isOk || sessionRevision != _repository.sessionRevision) {
+        return;
+      }
+      await _settings?.saveTrackLengthPreset(
+        event.channel,
+        _repository.trackLengthPresetOverrides[event.channel],
       );
     });
     on<LooperOneShotToggled>((event, _) {
@@ -495,15 +493,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       if (result.isOk) {
         unawaited(
           _settings?.saveTrackOneShot(event.channel, oneShot: event.oneShot),
-        );
-      }
-    });
-    on<LooperAllOneShotToggled>((event, _) {
-      final result = _repository.setAllOneShot(oneShot: event.oneShot);
-      if (!result.isOk) return;
-      for (final track in _repository.state.tracks) {
-        unawaited(
-          _settings?.saveTrackOneShot(track.channel, oneShot: event.oneShot),
         );
       }
     });

@@ -26,16 +26,19 @@ class _MockControlCubit extends MockCubit<ControlState>
     implements ControlCubit {}
 
 void main() {
+  setUpAll(() => registerFallbackValue(RecordTiming.immediately));
+
   late AudioSetupCubit cubit;
   late MidiSetupCubit midi;
   late PedalCubit pedal;
   late MonitorCubit monitor;
-  late QuantizeCubit quantize;
+  late RecordTimingCubit quantize;
   late RecordOptionsCubit recordOptions;
   // The MIDI-learn section (part 7) reads the mapping set off ControlCubit and
   // enumerates its targets from the looper repository.
   late ControlCubit control;
   late TracksCubit tracks;
+  late TempoCubit tempo;
   late LooperRepository looper;
 
   setUpAll(() => registerFallbackValue(MonitorMode.off));
@@ -70,6 +73,9 @@ void main() {
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setRecordTiming(any()),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
@@ -78,6 +84,8 @@ void main() {
     when(
       () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
+    when(() => repository.setClickOutput(any())).thenReturn(EngineResult.ok);
+    when(() => repository.setClickVolume(any())).thenReturn(EngineResult.ok);
     control = _MockControlCubit();
     when(() => control.state).thenReturn(const ControlState());
     whenListen(
@@ -102,11 +110,12 @@ void main() {
     when(repository.masterChainEnvelope).thenReturn(const FxChainEnvelope());
     final settings = SettingsRepository(store: FakeKeyValueStore());
     monitor = MonitorCubit(repository: repository, settings: settings);
-    quantize = QuantizeCubit(repository: repository, settings: settings);
+    quantize = RecordTimingCubit(repository: repository, settings: settings);
     recordOptions = RecordOptionsCubit(
       repository: repository,
       settings: settings,
     );
+    tempo = TempoCubit(repository: repository, settings: settings);
   });
 
   void seed(AudioSetupState state) {
@@ -125,10 +134,11 @@ void main() {
         BlocProvider<MidiSetupCubit>.value(value: midi),
         BlocProvider<PedalCubit>.value(value: pedal),
         BlocProvider<MonitorCubit>.value(value: monitor),
-        BlocProvider<QuantizeCubit>.value(value: quantize),
+        BlocProvider<RecordTimingCubit>.value(value: quantize),
         BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
         BlocProvider<ControlCubit>.value(value: control),
         BlocProvider<TracksCubit>.value(value: tracks),
+        BlocProvider<TempoCubit>.value(value: tempo),
       ],
       child: RepositoryProvider<LooperRepository>.value(
         value: looper,
@@ -193,6 +203,30 @@ void main() {
     expect(find.text('128 frames'), findsOneWidget);
     expect(find.text('9.50 ms'), findsOneWidget);
     expect(find.text('456 frames'), findsOneWidget);
+  });
+
+  testWidgets('the click routing and level sit under the output device', (
+    tester,
+  ) async {
+    // WHEN the click sounds is a Loop setting; where it goes and how loud are
+    // facts about the outputs, so they stay on this page beside the device.
+    seed(runningState);
+    await pumpSection(tester);
+
+    final picker = find.byKey(const Key('audioSettings_playbackDevice_picker'));
+    final section = find.byKey(const Key('audioSettings_clickOutput_section'));
+    expect(section, findsOneWidget);
+    expect(
+      tester.getTopLeft(section).dy,
+      greaterThan(tester.getBottomLeft(picker).dy),
+    );
+
+    final chip = find.byKey(const Key('audioSettings_clickOutput_1'));
+    await tester.ensureVisible(chip);
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+    expect(tempo.state.clickOutputMask, 0x2);
+    verify(() => looper.setClickOutput(0x2)).called(1);
   });
 
   testWidgets('a setup option card is a focusable, selectable button (a11y)', (
@@ -301,14 +335,14 @@ void main() {
   ) async {
     seed(runningState);
     await pumpSection(tester);
-    expect(quantize.state, isFalse);
+    expect(quantize.state.quantize, isFalse);
 
     final toggle = find.byKey(const Key('audioSettings_quantize_switch'));
     await tester.ensureVisible(toggle);
     await tester.tap(toggle);
     await tester.pumpAndSettle();
 
-    expect(quantize.state, isTrue);
+    expect(quantize.state.quantize, isTrue);
   });
 
   testWidgets('the rec/dub and sound-activated toggles forward to the cubit', (

@@ -5,7 +5,18 @@ import 'package:segno_engine/segno_engine.dart';
 /// A controllable in-memory [AudioEngine] for repository tests.
 class FakeAudioEngine implements AudioEngine {
   /// Snapshot returned by [snapshot] (mutate between ticks in tests).
-  EngineSnapshot nextSnapshot = const EngineSnapshot.initial();
+  EngineSnapshot _nextSnapshot = const EngineSnapshot.initial();
+  EngineSnapshot get nextSnapshot => _nextSnapshot;
+  set nextSnapshot(EngineSnapshot value) {
+    _nextSnapshot = value;
+    publishedMode = null;
+  }
+
+  LooperMode? publishedMode;
+  bool commandsAreSettled = true;
+  bool publishLengthCommands = true;
+  bool publishModeCommands = true;
+  final Map<int, int> publishedLengths = {};
 
   /// Device name reported by [deviceName].
   String deviceNameValue = 'Fake Device';
@@ -44,12 +55,12 @@ class FakeAudioEngine implements AudioEngine {
   int snapshotCalls = 0;
 
   @override
-  bool get commandsSettled => true;
+  bool get commandsSettled => commandsAreSettled;
 
   @override
   EngineSnapshot snapshot() {
     snapshotCalls++;
-    return nextSnapshot;
+    return _LengthSnapshot(nextSnapshot, publishedLengths, publishedMode);
   }
 
   @override
@@ -453,6 +464,17 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult setTrackLengthPreset({required int channel, required int bars}) {
     trackLengthPreset[channel] = bars;
     calls.add('setTrackLengthPreset');
+    if (publishLengthCommands) publishedLengths[channel] = bars;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackLengthPresets(List<int> bars) {
+    calls.add('setTrackLengthPresets');
+    for (var channel = 0; channel < bars.length; channel++) {
+      trackLengthPreset[channel] = bars[channel];
+      if (publishLengthCommands) publishedLengths[channel] = bars[channel];
+    }
     return EngineResult.ok;
   }
 
@@ -479,6 +501,14 @@ class FakeAudioEngine implements AudioEngine {
       LooperModeGate.spans => EngineResult.invalid,
       LooperModeGate.open || LooperModeGate.playing => EngineResult.ok,
     };
+  }
+
+  @override
+  EngineResult setLooperModeWithPresets(LooperMode mode, List<int> bars) {
+    final result = setLooperMode(mode);
+    if (!result.isOk) return result;
+    if (publishModeCommands) publishedMode = mode;
+    return setTrackLengthPresets(bars);
   }
 
   /// The last channel passed to [crownPrimary].
@@ -1316,4 +1346,98 @@ class FakeAudioEngine implements AudioEngine {
   /// What [volumeFreeBytes] reports; `null` models a platform that cannot
   /// answer.
   int? freeBytes = 1 << 40;
+}
+
+class _LengthSnapshot extends EngineSnapshot {
+  _LengthSnapshot(
+    EngineSnapshot source,
+    Map<int, int> lengths,
+    LooperMode? mode,
+  ) : super(
+        isRunning: source.isRunning,
+        sampleRate: source.sampleRate,
+        bufferFrames: source.bufferFrames,
+        framesProcessed: source.framesProcessed,
+        xrunCount: source.xrunCount,
+        inputRms: source.inputRms,
+        inputPeak: source.inputPeak,
+        outputRms: source.outputRms,
+        latencyState: source.latencyState,
+        measuredLatencyMs: source.measuredLatencyMs,
+        outputPeak: source.outputPeak,
+        devicePresent: source.devicePresent,
+        inputChannels: source.inputChannels,
+        outputChannels: source.outputChannels,
+        excludedInputMask: source.excludedInputMask,
+        inputClipMask: source.inputClipMask,
+        inputCondMask: source.inputCondMask,
+        masterLengthFrames: source.masterLengthFrames,
+        masterPositionFrames: source.masterPositionFrames,
+        recordOffsetFrames: source.recordOffsetFrames,
+        fxAddedLatencyFrames: source.fxAddedLatencyFrames,
+        masterGain: source.masterGain,
+        tunerHz: source.tunerHz,
+        tunerConfidence: source.tunerConfidence,
+        tunerInput: source.tunerInput,
+        activeBackend: source.activeBackend,
+        outputEnabledMask: source.outputEnabledMask,
+        isPerfArmed: source.isPerfArmed,
+        perfFrames: source.perfFrames,
+        perfOverruns: source.perfOverruns,
+        perfZeroFilledFrames: source.perfZeroFilledFrames,
+        perfStopped: source.perfStopped,
+        tempoBpm: source.tempoBpm,
+        tempoSource: source.tempoSource,
+        tsNum: source.tsNum,
+        tsDen: source.tsDen,
+        syncTempo: source.syncTempo,
+        quantizeDiv: source.quantizeDiv,
+        loopBars: source.loopBars,
+        currentBeat: source.currentBeat,
+        clickMode: source.clickMode,
+        clickMask: source.clickMask,
+        clickVolume: source.clickVolume,
+        countInBars: source.countInBars,
+        countingIn: source.countingIn,
+        countInBeatsLeft: source.countInBeatsLeft,
+        looperMode: mode ?? source.looperMode,
+        primaryTrack: source.primaryTrack,
+        quantize: source.quantize,
+        autoRecord: source.autoRecord,
+        overdubFeedback: source.overdubFeedback,
+        tracks: [
+          for (var channel = 0; channel < source.tracks.length; channel++)
+            _LengthTrack(source.tracks[channel], lengths[channel]),
+        ],
+      );
+}
+
+class _LengthTrack extends TrackSnapshot {
+  _LengthTrack(TrackSnapshot source, int? bars)
+    : super(
+        state: source.state,
+        volume: source.volume,
+        muted: source.muted,
+        lengthFrames: source.lengthFrames,
+        undoDepth: source.undoDepth,
+        rms: source.rms,
+        peak: source.peak,
+        clearRestore: source.clearRestore,
+        redoDepth: source.redoDepth,
+        multiple: source.multiple,
+        inputMask: source.inputMask,
+        outputMask: source.outputMask,
+        layerInFlight: source.layerInFlight,
+        pending: source.pending,
+        lengthPresetBars: bars ?? source.lengthPresetBars,
+        oneShot: source.oneShot,
+        settledTakeId: source.settledTakeId,
+        restoreState: source.restoreState,
+        positionFrames: source.positionFrames,
+        pendingTrigger: source.pendingTrigger,
+        quantizeOverride: source.quantizeOverride,
+        quantizeDivOverride: source.quantizeDivOverride,
+        overdubFeedbackOverride: source.overdubFeedbackOverride,
+        lanes: source.lanes,
+      );
 }

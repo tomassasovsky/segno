@@ -113,29 +113,16 @@ final class LooperTrackOverdubDecayChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, percent];
 }
 
-/// Track [channel]'s forced loop multiple changed (`0` = auto-round-up).
-final class LooperTrackMultipleChanged extends LooperChannelEvent {
-  /// Creates a [LooperTrackMultipleChanged].
-  const LooperTrackMultipleChanged(super.channel, this.multiple);
-
-  /// The forced loop length in whole base loops, or `0` for auto.
-  final int multiple;
-
-  @override
-  List<Object?> get props => [channel, multiple];
-}
-
-/// Track [channel]'s length preset changed (A6, D17; `0` = AUTO).
-///
-/// Governs the DEFINING (first/master) recording only — orthogonal to
-/// [LooperTrackMultipleChanged], which governs a non-defining track once a
-/// master already exists.
+/// Track [channel]'s length preset override changed (A6, D17): `null`
+/// follows the default, `0` is an explicit Auto, else a fixed bar count.
+/// Existing audio is unchanged; the preset applies to a future recording.
 final class LooperTrackLengthPresetChanged extends LooperChannelEvent {
   /// Creates a [LooperTrackLengthPresetChanged].
   const LooperTrackLengthPresetChanged(super.channel, this.bars);
 
-  /// The fixed bar count, or `0` for AUTO.
-  final int bars;
+  /// The fixed bar count, `0` for an explicit Auto, or `null` to follow the
+  /// default.
+  final int? bars;
 
   @override
   List<Object?> get props => [channel, bars];
@@ -153,24 +140,6 @@ final class LooperOneShotToggled extends LooperChannelEvent {
 
   @override
   List<Object?> get props => [channel, oneShot];
-}
-
-/// Every track's one-shot flag was set to [oneShot] at once — the rig-wide
-/// switch on the console's Mode face.
-///
-/// One event rather than the UI fanning out a [LooperOneShotToggled] per
-/// track: the rig-wide rule is then written down once, where it can be tested
-/// without a widget, and a half-applied sweep cannot be observed between two
-/// dispatches.
-final class LooperAllOneShotToggled extends LooperEvent {
-  /// Creates a [LooperAllOneShotToggled].
-  const LooperAllOneShotToggled({required this.oneShot});
-
-  /// The new flag, applied to every track.
-  final bool oneShot;
-
-  @override
-  List<Object?> get props => [oneShot];
 }
 
 /// [channel] was crowned the primary track (Sync/Band, D18;

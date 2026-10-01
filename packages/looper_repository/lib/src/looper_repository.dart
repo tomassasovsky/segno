@@ -58,6 +58,22 @@ class RecoveryRefusal {
   final EngineResult result;
 }
 
+class _PendingLengthSettings {
+  _PendingLengthSettings({
+    required this.defaultBars,
+    required this.overrides,
+    required this.mode,
+    required this.bars,
+    required this.startup,
+  });
+  final int defaultBars;
+  final Map<int, int> overrides;
+  final LooperMode mode;
+  final List<int> bars;
+  final bool startup;
+  final completed = Completer<EngineResult>();
+}
+
 /// Builds the production [AudioEngine] backed by the native segno engine.
 ///
 /// Lets the composition root obtain an engine without naming or importing the
@@ -262,11 +278,156 @@ class LooperRepository {
   /// the rig, and an empty rig has no crown.
   int? _pendingCrown;
 
-  /// Per-track length presets (A6, D17; absent => AUTO). Remembered and
-  /// re-applied on every successful (re)start, mirroring [_trackMultiple] —
-  /// a fresh engine start resets every track's preset to AUTO
-  /// (`engine.c`'s per-track init loop, run from `le_engine_configure`).
+  /// Future-recording length: absent track overrides inherit the default;
+  /// explicit zero is Custom Auto. Multi shares the default while retaining
+  /// independent-mode overrides without applying them.
+  int _defaultLengthPreset = 0;
   final Map<int, int> _trackLengthPreset = {};
+
+  static int _clampPresetBars(int bars) => bars.clamp(0, 64);
+
+  int _effectiveLengthPreset(int channel) => _looperMode == LooperMode.multi
+      ? _defaultLengthPreset
+      : _trackLengthPreset[channel] ?? _defaultLengthPreset;
+
+  List<int> _lengthPresetsFor(
+    LooperMode mode, {
+    int? defaultBars,
+    Map<int, int>? overrides,
+  }) {
+    final inherited = defaultBars ?? _defaultLengthPreset;
+    final custom = overrides ?? _trackLengthPreset;
+    final count = _engine.snapshot().tracks.length;
+    return [
+      for (var channel = 0; channel < count; channel++)
+        if (mode == LooperMode.multi)
+          inherited
+        else
+          custom[channel] ?? inherited,
+    ];
+  }
+
+  _PendingLengthSettings? _pendingLengthSettings;
+  EngineResult _lastLengthResult = EngineResult.ok;
+  final _lengthSettingsFailures = StreamController<EngineResult>.broadcast();
+
+  /// Refused length or mode requests, including immediate validation/queue
+  /// refusal and a failed startup replay. Supersession and cancellation are
+  /// quiet.
+  Stream<EngineResult> get lengthSettingsFailures =>
+      _lengthSettingsFailures.stream;
+
+  EngineResult _reportLengthSettingsFailure(EngineResult result) {
+    if (!_lengthSettingsFailures.isClosed) {
+      _lengthSettingsFailures.add(result);
+    }
+    return result;
+  }
+
+  /// Whether the latest length request has reached a published result.
+  bool get lengthSettingsSettled => _pendingLengthSettings == null;
+
+  void _cancelLengthSettings() {
+    final pending = _pendingLengthSettings;
+    _pendingLengthSettings = null;
+    if (pending != null) {
+      _lastLengthResult = EngineResult.notReady;
+      pending.completed.complete(EngineResult.notReady);
+    }
+  }
+
+  EngineResult _requestLengthSettings({
+    required int defaultBars,
+    required Map<int, int> overrides,
+    required LooperMode mode,
+    bool changeMode = false,
+    bool startup = false,
+  }) {
+    if (_pendingLengthSettings != null) {
+      return _reportLengthSettingsFailure(EngineResult.notReady);
+    }
+    if (!_intendRunning) {
+      _defaultLengthPreset = defaultBars;
+      _trackLengthPreset
+        ..clear()
+        ..addAll(overrides);
+      _looperMode = mode;
+      _lastLengthResult = EngineResult.ok;
+      _reproject();
+      return EngineResult.ok;
+    }
+    final bars = _lengthPresetsFor(
+      mode,
+      defaultBars: defaultBars,
+      overrides: overrides,
+    );
+    final result = changeMode
+        ? _engine.setLooperModeWithPresets(mode, bars)
+        : _engine.setTrackLengthPresets(bars);
+    if (!result.isOk) return _reportLengthSettingsFailure(result);
+    _pendingLengthSettings = _PendingLengthSettings(
+      defaultBars: defaultBars,
+      overrides: Map.of(overrides),
+      mode: mode,
+      bars: bars,
+      startup: startup,
+    );
+    _reproject();
+    return _pendingLengthSettings == null ? _lastLengthResult : EngineResult.ok;
+  }
+
+  bool _settlePendingLengthSettings() {
+    final pending = _pendingLengthSettings;
+    // Read the publication fence BEFORE the snapshot: an old snapshot read
+    // before the callback publishes must not reject a successful command.
+    if (pending == null || !_engine.commandsSettled) return false;
+    final snapshot = _engine.snapshot();
+    var matches =
+        snapshot.looperMode == pending.mode &&
+        snapshot.tracks.length == pending.bars.length;
+    for (var channel = 0; matches && channel < pending.bars.length; channel++) {
+      matches =
+          snapshot.tracks[channel].lengthPresetBars == pending.bars[channel];
+    }
+    _pendingLengthSettings = null;
+    _lastLengthResult = matches ? EngineResult.ok : EngineResult.invalid;
+    if (matches) {
+      _defaultLengthPreset = pending.defaultBars;
+      _trackLengthPreset
+        ..clear()
+        ..addAll(pending.overrides);
+      _looperMode = pending.mode;
+    } else {
+      if (pending.startup) stopEngine();
+      _reportLengthSettingsFailure(_lastLengthResult);
+    }
+    pending.completed.complete(_lastLengthResult);
+    return true;
+  }
+
+  /// Waits for a bounded length transaction to be published. Only a confirmed
+  /// vector/mode returns OK. Timeout, stop, session replacement, and disposal
+  /// return notReady; preferences must not persist an unconfirmed request.
+  Future<EngineResult> settleLengthSettings({
+    Duration pollInterval = const Duration(milliseconds: 10),
+    int attempts = 50,
+  }) async {
+    final pending = _pendingLengthSettings;
+    if (pending == null) return _lastLengthResult;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      if (pending.completed.isCompleted) return pending.completed.future;
+      if (_settlePendingLengthSettings()) _reproject();
+      if (pending.completed.isCompleted) return pending.completed.future;
+      await Future<void>.delayed(pollInterval);
+    }
+    if (pending.completed.isCompleted) return pending.completed.future;
+    // An enqueued command cannot be withdrawn. Stop before returning a timeout
+    // so it cannot apply later behind the confirmed choice.
+    stopEngine();
+    _reportLengthSettingsFailure(EngineResult.notReady);
+    _reproject();
+    return EngineResult.notReady;
+  }
 
   /// Playback default and explicit track overrides, independent of audio.
   /// An absent override follows the default, including after reconnect.
@@ -312,6 +473,7 @@ class LooperRepository {
       recordTiming: defaultRecordTiming,
       overdubDecay: _overdubDecay,
       defaultOneShot: _defaultOneShot,
+      defaultLengthPresetBars: _defaultLengthPreset,
       defaultMultiple: _defaultMultiple,
       looperMode: _looperMode,
       primaryTrack: live?.primaryTrack ?? _pendingCrown ?? -1,
@@ -753,6 +915,7 @@ class LooperRepository {
   }
 
   void _poll() {
+    final lengthSettled = _settlePendingLengthSettings();
     final snapshot = _engine.snapshot();
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
@@ -766,11 +929,9 @@ class LooperRepository {
     }
     _settlePendingClearUndos();
     final next = _project(snapshot);
-    final modeWasPending = _requestedLooperMode != null;
-    _rememberLooperMode(next, snapshot.looperMode, poll: true);
-    final modeSettled = modeWasPending && _requestedLooperMode == null;
+    _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (next == _last && !modeSettled) return;
+    if (next == _last && !lengthSettled) return;
     _last = next;
     _forgetEmptyWaveforms(next);
     // Before listeners see it: `auto` monitors resolve against the arm state
@@ -785,13 +946,12 @@ class LooperRepository {
   /// param the UI drives — reflects on the next frame rather than waiting for
   /// the next poll tick (which would make a dragged knob feel a tick behind).
   void _reproject() {
+    final lengthSettled = _settlePendingLengthSettings();
     final snapshot = _engine.snapshot();
     final next = _project(snapshot);
-    final modeWasPending = _requestedLooperMode != null;
-    _rememberLooperMode(next, snapshot.looperMode, poll: false);
-    final modeSettled = modeWasPending && _requestedLooperMode == null;
+    _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (next == _last && !modeSettled) return;
+    if (next == _last && !lengthSettled) return;
     _last = next;
     _forgetEmptyWaveforms(next);
     _reconcileAutoMonitors();
@@ -870,7 +1030,10 @@ class LooperRepository {
     // startEngine — NOT a raw _engine.start — so the remembered rig (lanes,
     // monitors, mix, effects, output gate, hosted plugins) is re-applied to the
     // freshly-configured engine. A raw start comes back at engine defaults,
-    // silently dropping the live rig on every reconnect.
+    // silently dropping the live rig on every reconnect. The new configure
+    // discards queued commands, so cancel their waiter before replaying the
+    // confirmed settings without disarming reconnect supervision.
+    _cancelLengthSettings();
     _engine.stop();
     if (startEngine(config).isOk) {
       _stopReconnectPolling();
@@ -931,6 +1094,7 @@ class LooperRepository {
       autoRecord: _autoRecord,
       overdubDecay: _overdubDecay,
       defaultOneShot: _defaultOneShot,
+      defaultLengthPresetBars: _defaultLengthPreset,
       defaultMultiple: _defaultMultiple,
       recordTiming: RecordTiming.of(
         quantize: _quantize,
@@ -953,7 +1117,8 @@ class LooperRepository {
           pending: s.tracks[i].pending,
           pendingTrigger: ArmTrigger.fromCode(s.tracks[i].pendingTrigger),
           positionFrames: s.tracks[i].positionFrames,
-          lengthPresetBars: s.tracks[i].lengthPresetBars,
+          lengthPresetBars: _effectiveLengthPreset(i),
+          lengthPresetOverride: _trackLengthPreset[i],
           recordTimingOverride: _trackRecordTiming[i],
           overdubDecayOverride: _trackOverdubDecay[i],
           oneShot: _trackOneShot[i] ?? _defaultOneShot,
@@ -1083,13 +1248,18 @@ class LooperRepository {
         ..setClickMode(_clickMode)
         ..setClickOutput(_clickMask)
         ..setClickVolume(_clickVolume)
-        ..setCountIn(_countInBars)
-        ..setLooperMode(_looperMode);
-      // The replay rides the ring like a call: armed as a request so the first
-      // report after the start (still the engine's default) does not overwrite
-      // the remembered mode before the replay has landed.
-      _requestedLooperMode = _looperMode;
-      _requestReports = 0;
+        ..setCountIn(_countInBars);
+      final lengthResult = _requestLengthSettings(
+        defaultBars: _defaultLengthPreset,
+        overrides: Map.of(_trackLengthPreset),
+        mode: _looperMode,
+        changeMode: true,
+        startup: true,
+      );
+      if (!lengthResult.isOk) {
+        stopEngine();
+        return lengthResult;
+      }
       // A crown requested while stopped lands now, once. The engine owns the
       // crown from here (see [_pendingCrown]).
       final pendingCrown = _pendingCrown;
@@ -1100,10 +1270,6 @@ class LooperRepository {
       _trackMultiple.forEach(
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
-      );
-      _trackLengthPreset.forEach(
-        (channel, bars) =>
-            _engine.setTrackLengthPreset(channel: channel, bars: bars),
       );
       _trackOneShot.forEach((channel, oneShot) {
         _engine.setOneShot(channel: channel, oneShot: oneShot);
@@ -1368,6 +1534,7 @@ class LooperRepository {
   /// Closes the audio device. A deliberate stop also cancels any in-flight
   /// reconnect supervision so the engine is not reopened behind the user.
   EngineResult stopEngine() {
+    _cancelLengthSettings();
     if (_intendRunning) {
       final snapshot = _engine.snapshot();
       if (snapshot.tempoBpm > 0) {
@@ -2032,7 +2199,8 @@ class LooperRepository {
                   rig.tempoBpm > 300)) {
       throw StateError('session tempo cannot be restored');
     }
-    _sessionRevision++;
+    final revision = ++_sessionRevision;
+    _cancelLengthSettings();
     // Own the settings before the first await. Callers may reuse their maps.
     final recordTimingOverrides = Map.of(rig.trackRecordTimingOverrides);
     final overdubDecayOverrides = Map.of(rig.trackOverdubDecayOverrides);
@@ -2067,12 +2235,8 @@ class LooperRepository {
       setLaneChainEnabled(channel: key.$1, lane: key.$2, enabled: true);
     }
     _laneChainMeta.clear();
-    // Same wholesale-replace reasoning for length presets (A6): `clear`
-    // deliberately leaves a_length_preset_bars untouched (so a manual
-    // clear+re-record keeps the user's preset), which means a session load
-    // must scrub it itself or a track this session declares AUTO would keep
-    // whatever preset a PRIOR session/live session left armed.
-    _trackLengthPreset.clear();
+    // Length presets survive clear; the session replaces their complete
+    // default/override choice together with mode before importing content.
     // Same reasoning for One Shot (B4/B5c): `clear` deliberately leaves
     // a_one_shot untouched (it is a per-track SETTING, not content — see
     // `le_engine_set_one_shot`'s doc), so a track this session does not mark
@@ -2090,6 +2254,9 @@ class LooperRepository {
     _pendingCrown = null;
     if (!await _awaitCleared(clearPollInterval, clearPollAttempts)) {
       throw StateError('engine did not clear before applying the session');
+    }
+    if (revision != _sessionRevision || _controller.isClosed) {
+      throw StateError('session replacement was superseded');
     }
 
     // Countermand the live engine's leftover lane count/routing. `clear` above
@@ -2111,11 +2278,6 @@ class LooperRepository {
           ..setLaneVolume(1, channel: channel)
           ..setLaneMute(muted: false, channel: channel)
           ..setLaneCount(channel: channel, count: 1)
-          // a_length_preset_bars survives `clear` by design (see above) — a
-          // session load resets every track to AUTO here, same as the lane
-          // config it sits alongside; the rig loop below re-arms a nonzero
-          // preset for any track this session actually defines one for.
-          ..setTrackLengthPreset(channel: channel, bars: 0)
           // a_one_shot survives `clear` by design too (see above) — reset
           // every track to off here; the rig loop below re-arms it for any
           // track this session actually marks One Shot.
@@ -2163,7 +2325,27 @@ class LooperRepository {
     // content (D18) so its ordering here is only for symmetry; it is pushed
     // only when the rig actually defines one — a rig without a crown gets the
     // engine's own: its lowest recorded track, once the import commits.
-    setLooperMode(rig.looperMode);
+    _requireSessionSetting(
+      _requestLengthSettings(
+        defaultBars: _clampPresetBars(rig.defaultLengthPresetBars),
+        overrides: {
+          for (final entry in lengthPresetOverrides.entries)
+            if (entry.key >= 0 && entry.key < (_intendRunning ? trackCount : 8))
+              entry.key: _clampPresetBars(entry.value),
+        },
+        mode: rig.looperMode,
+        changeMode: true,
+      ),
+    );
+    _requireSessionSetting(
+      await settleLengthSettings(
+        pollInterval: clearPollInterval,
+        attempts: clearPollAttempts,
+      ),
+    );
+    if (revision != _sessionRevision || _controller.isClosed) {
+      throw StateError('session replacement was superseded');
+    }
     // The session's own defaults (slice 2b), before the per-track overrides
     // land with the tracks below: a track whose override is null follows
     // these, so restoring the overrides without them would leave that track
@@ -2282,12 +2464,6 @@ class LooperRepository {
     // product tracks still own settings that must be replayed on first start.
     final settingsTrackCount = _intendRunning ? trackCount : 8;
     for (var channel = 0; channel < settingsTrackCount; channel++) {
-      _requireSessionSetting(
-        setTrackLengthPreset(
-          channel: channel,
-          bars: lengthPresetOverrides[channel] ?? 0,
-        ),
-      );
       _requireSessionSetting(
         setOneShot(
           channel: channel,
@@ -4564,86 +4740,82 @@ class LooperRepository {
     return EngineResult.ok;
   }
 
-  /// Sets track [channel]'s length preset (A6, D17): `0` = AUTO, or `1..64`
-  /// to fix the DEFINING recording to [bars] bars — see
-  /// [TempoControl.setTrackLengthPreset]'s class doc for the full preset ×
-  /// click-mode matrix. Remembered and re-applied on every (re)start, like
-  /// [setTrackMultiple]. A change on an already-recorded track is inert
-  /// until the track is cleared and re-recorded.
-  EngineResult setTrackLengthPreset({required int channel, required int bars}) {
-    if (bars <= 0) {
-      _trackLengthPreset.remove(channel);
-    } else {
-      _trackLengthPreset[channel] = bars;
+  /// Sets one future-recording length override. Null inherits the default;
+  /// zero is explicit Auto. Multi retains the override for independent modes.
+  /// Existing audio is not resized. Refusal leaves the override unchanged.
+  EngineResult setTrackLengthPreset({
+    required int channel,
+    required int? bars,
+  }) {
+    if (channel < 0 ||
+        channel >= 8 ||
+        (_intendRunning && channel >= _engine.snapshot().tracks.length)) {
+      return _reportLengthSettingsFailure(EngineResult.invalid);
     }
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setTrackLengthPreset(
-      channel: channel,
-      bars: bars <= 0 ? 0 : bars,
+    final overrides = Map.of(_trackLengthPreset);
+    if (bars == null) {
+      overrides.remove(channel);
+    } else {
+      overrides[channel] = _clampPresetBars(bars);
+    }
+    return _requestLengthSettings(
+      defaultBars: _defaultLengthPreset,
+      overrides: overrides,
+      mode: _looperMode,
     );
   }
+
+  /// Applies a complete saved length choice in one transaction, including
+  /// empty tracks. Used by startup preferences before individual live edits.
+  EngineResult setLengthSettings({
+    required int defaultBars,
+    required Map<int, int> overrides,
+  }) {
+    if (overrides.keys.any((channel) => channel < 0 || channel >= 8)) {
+      return _reportLengthSettingsFailure(EngineResult.invalid);
+    }
+    return _requestLengthSettings(
+      defaultBars: _clampPresetBars(defaultBars),
+      overrides: {
+        for (final entry in overrides.entries)
+          entry.key: _clampPresetBars(entry.value),
+      },
+      mode: _looperMode,
+    );
+  }
+
+  /// Changes the inherited future-recording length; Multi shares it across
+  /// all tracks. The confirmed choice changes only after callback publication.
+  EngineResult setDefaultLengthPreset(int bars) => _requestLengthSettings(
+    defaultBars: _clampPresetBars(bars),
+    overrides: Map.of(_trackLengthPreset),
+    mode: _looperMode,
+  );
 
   /// The mode safe to persist: an offline choice or a confirmed engine mode.
   /// Returns null while a running engine has not yet confirmed a request.
   /// Enqueueing a command alone does not mean the audio thread accepted it.
   LooperMode? get settledLooperMode =>
-      !_intendRunning || _requestedLooperMode == null ? _looperMode : null;
+      !_intendRunning || _pendingLengthSettings == null ? _looperMode : null;
 
   /// Requests a compatible looper mode and remembers it for engine restart.
   /// Running-engine requests are reconciled with reports before persistence;
   /// choices made while the engine is closed are remembered immediately.
-  EngineResult setLooperMode(LooperMode mode) {
-    if (_intendRunning) {
-      final result = _engine.setLooperMode(mode);
-      if (!result.isOk) return result; // refused: the setting stays
-      // Remembered now (a restart right behind the call re-applies the
-      // intent) and confirmed by the reports: see [_rememberLooperMode].
-      _requestedLooperMode = mode;
-      _requestReports = 0;
-    }
-    _looperMode = mode;
-    return EngineResult.ok;
-  }
+  EngineResult setLooperMode(LooperMode mode) => _requestLengthSettings(
+    defaultBars: _defaultLengthPreset,
+    overrides: Map.of(_trackLengthPreset),
+    mode: mode,
+    changeMode: true,
+  );
 
-  /// A mode the engine accepted but has not yet reported, with how many
-  /// reports have come in since. The switch lands within one audio block,
-  /// so a request still unreported after the grace period was dropped on the
-  /// audio thread (a record press landed in the same block, which the gate
-  /// could not see); the remembered mode then follows the report.
-  LooperMode? _requestedLooperMode;
-  int _requestReports = 0;
-
-  /// Polls that may report a request unconfirmed before it is dropped
-  /// (about 200 ms at the default interval). The ring drains on the audio
-  /// callback, and a device's first callback after a start can come well
-  /// after the first polls; a switch the audio thread refused keeps
-  /// reporting the old mode for good, so dropping late costs nothing.
-  static const int _requestReportLimit = 12;
-
-  /// Keeps [_looperMode] equal to what the engine runs: a reported change
-  /// (the switch landing, a session load) is taken as is; a request the
-  /// reports never confirm is dropped in favour of the reported mode.
-  void _rememberLooperMode(
-    LooperState next,
-    LooperMode reported, {
-    required bool poll,
-  }) {
-    if (!_intendRunning || !next.status.isConnected) return;
-    final requested = _requestedLooperMode;
-    if (requested == null) {
-      _looperMode = reported;
+  /// Outside a pending transaction the published mode owns the live rig.
+  void _rememberLooperMode(LooperState next, LooperMode reported) {
+    if (!_intendRunning ||
+        !next.status.isConnected ||
+        _pendingLengthSettings != null) {
       return;
     }
-    if (reported == requested) {
-      _requestedLooperMode = null;
-      return;
-    }
-    // Only polls count as reports: a local edit re-projects within the same
-    // block the request is still travelling in.
-    if (poll && ++_requestReports >= _requestReportLimit) {
-      _requestedLooperMode = null;
-      _looperMode = reported;
-    }
+    _looperMode = reported;
   }
 
   /// What [setLooperMode] would do with [mode] right now (accepted design,
@@ -4706,22 +4878,6 @@ class LooperRepository {
     return EngineResult.ok;
   }
 
-  /// Assigns one playback choice to all visible engine tracks atomically.
-  EngineResult setAllOneShot({required bool oneShot}) {
-    final tracks = state.tracks;
-    if (tracks.isEmpty) return EngineResult.ok;
-    final mask = tracks.fold(0, (mask, track) => mask | (1 << track.channel));
-    if (_intendRunning) {
-      final result = _engine.setOneShotMask(channels: mask, oneShot: oneShot);
-      if (!result.isOk) return result;
-    }
-    for (final track in tracks) {
-      _trackOneShot[track.channel] = oneShot;
-    }
-    _reproject();
-    return EngineResult.ok;
-  }
-
   void _requireSessionSetting(EngineResult result) {
     if (!result.isOk) {
       throw StateError('session setting could not be restored: ${result.name}');
@@ -4730,6 +4886,7 @@ class LooperRepository {
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
+    _cancelLengthSettings();
     await _stopPollingAndClose();
     _engine.dispose();
   }
@@ -4746,6 +4903,7 @@ class LooperRepository {
     await _monitorParamChanges.close();
     await _rigReplaced.close();
     await _recoveryRefusals.close();
+    await _lengthSettingsFailures.close();
     await _controller.close();
   }
 }

@@ -6,7 +6,6 @@ import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -41,14 +40,6 @@ class _MockTransportClockCubit extends MockCubit<TransportClockState>
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
-Future<void> _loadFont(String family, List<String> paths) async {
-  final loader = FontLoader(family);
-  for (final p in paths) {
-    loader.addFont(File(p).readAsBytes().then((b) => ByteData.view(b.buffer)));
-  }
-  await loader.load();
-}
-
 /// Manual generator for the console main-window decal (the artwork on the 16"
 /// panel in the Fusion "Segno console (populated)" doc). Renders [TracksView]
 /// exactly as the physical console shows it and captures a 1920x1080 golden.
@@ -73,11 +64,11 @@ void main() {
       '$fontDir/Roboto-Medium.ttf',
       '$fontDir/Roboto-Bold.ttf',
     ];
-    await _loadFont('Roboto', robotoTtfs);
+    await loadScreenshotFont('Roboto', robotoTtfs);
     // Material icon glyphs (e.g. the FX entry-run's arrow_right_alt) — the app
     // bundles this font at runtime; the golden harness must load it too, or
     // every `Icon` renders as .notdef tofu.
-    await _loadFont('MaterialIcons', [
+    await loadScreenshotFont('MaterialIcons', [
       '$fontDir/MaterialIcons-Regular.otf',
     ]);
     // TracksView wraps itself in LooperScreenTheme, which renders text in the
@@ -85,18 +76,23 @@ void main() {
     // absent under `flutter test`). Register the loaded Roboto glyphs under
     // those family names so the labels render instead of Ahem tofu.
     for (final family in ['Helvetica', 'Arial', 'sans-serif']) {
-      await _loadFont(family, robotoTtfs);
+      await loadScreenshotFont(family, robotoTtfs);
     }
-    await _loadFont('Inter', [
+    await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
       'assets/fonts/Inter-Medium.ttf',
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
-    await _loadFont('JetBrains Mono', [
+    await loadScreenshotFont('JetBrains Mono', [
       'assets/fonts/JetBrainsMono-Regular.ttf',
       'assets/fonts/JetBrainsMono-Medium.ttf',
       'assets/fonts/JetBrainsMono-SemiBold.ttf',
+    ]);
+    // The top bar's settings gear is a package font, which the harness does
+    // not bundle: without this load it is a tofu box in every tracks golden.
+    await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
+      packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
     ]);
   });
 

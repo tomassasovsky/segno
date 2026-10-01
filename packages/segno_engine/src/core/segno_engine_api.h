@@ -469,6 +469,8 @@ typedef enum le_command_code {
   /* arg_i = sound-start enabled (0/1). Enabling cancels count-in;
    * disabling cancels pending signal-triggered recording arms. */
   LE_CMD_SET_AUTO_RECORD = 60,
+  /* Named bounded payload: all configured tracks' future length presets. */
+  LE_CMD_SET_LENGTH_PRESETS = 61,
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -1764,7 +1766,7 @@ LE_EXPORT int32_t le_engine_looper_mode_gate(le_engine* engine, int32_t mode);
 /* Sets the looper mode (le_looper_mode, 0..4). Values outside the enum
  * return LE_ERR_INVALID without posting. Refused with LE_ERR_INVALID while
  * the gate above reads CAPTURING, QUEUED or SPANS; with PLAYING every
- * playing track is stopped ahead of the switch in the same ring order; a
+ * playing track is stopped in the same command after callback revalidation; a
  * no-op (LE_OK) for the current mode. Landing on the audio thread, a switch
  * over recorded audio re-clocks the takes for the target: the shared master
  * is established from the shortest take for MULTI or the primary for
@@ -1772,6 +1774,15 @@ LE_EXPORT int32_t le_engine_looper_mode_gate(le_engine* engine, int32_t mode);
  * is re-derived from its unchanged length. Content, layers, history, mutes
  * and lane settings are untouched. */
 LE_EXPORT int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode);
+
+/* Atomically switches mode and replaces every track's future length preset.
+ * bars/count obey le_engine_set_track_length_presets. One queued command
+ * rechecks the mode gate before stopping playback, switching mode or applying
+ * any preset. A refused callback gate leaves all three unchanged; successful
+ * enqueue alone is not proof of application. The current mode changes presets
+ * only, without stopping playback. Existing PCM and history are untouched. */
+LE_EXPORT int32_t le_engine_set_looper_mode_with_presets(
+    le_engine* engine, int32_t mode, const int32_t* bars, int32_t count);
 
 /* ---- primary track / Sync + Band (B3/B3b, decisions D16/D18) ----
  * Sync: one primary track; every other track's DEFINING recording is
@@ -1972,6 +1983,15 @@ LE_EXPORT int32_t le_engine_set_default_multiple(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_track_length_preset(le_engine* engine,
                                                      int32_t channel,
                                                      int32_t bars);
+
+/* Replaces all configured tracks' future length presets in one command.
+ * count must equal the configured track count and each bars entry must be
+ * 0..LE_LENGTH_PRESET_MAX_BARS and pass the single-track capacity rule above.
+ * The caller array is copied before return. Invalid/unconfigured/full-queue
+ * requests change nothing. The callback rechecks all capacity constraints
+ * before applying any entry; existing PCM and capture targets are unchanged. */
+LE_EXPORT int32_t le_engine_set_track_length_presets(
+    le_engine* engine, const int32_t* bars, int32_t count);
 
 /* Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
  * with a record press continues into overdub instead of playback. A stop press

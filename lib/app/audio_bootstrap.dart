@@ -145,6 +145,17 @@ Future<AutoStartResult> tryAutoStartEngine({
       recoveryConfig: attemptedPin ? config : null,
     );
   }
+  // A successful enqueue is not a callback confirmation. Finish the engine's
+  // initial mode/length replay before applying saved choices.
+  final startupLength = await repository.settleLengthSettings();
+  if (!startupLength.isOk) {
+    AppLog.error(
+      'audio auto-start: initial length replay refused '
+      'result=${startupLength.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
   if (consolePinned) {
     await settings.saveAudioConfig(
       StoredAudioConfig(
@@ -195,6 +206,30 @@ Future<AutoStartResult> tryAutoStartEngine({
     // that owns it may not have loaded before the first overdub pass.
     ..setOverdubDecay(await settings.loadOverdubDecay());
 
+  // Submit the saved default and every explicit track override together.
+  // Separate setters would race each other while the first vector waits for
+  // callback publication, and an explicit Auto override (zero) must survive.
+  final lengthOverrides = <int, int>{};
+  for (final track in repository.state.tracks) {
+    final preset = await settings.loadTrackLengthPreset(track.channel);
+    if (preset != null) lengthOverrides[track.channel] = preset;
+  }
+  final lengthRequest = repository.setLengthSettings(
+    defaultBars: await settings.loadDefaultLengthPreset(),
+    overrides: lengthOverrides,
+  );
+  final lengthResult = lengthRequest.isOk
+      ? await repository.settleLengthSettings()
+      : lengthRequest;
+  if (!lengthResult.isOk) {
+    AppLog.error(
+      'audio auto-start: saved length replay refused '
+      'result=${lengthResult.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
+
   // Restore per-track transport overrides and every lane's routing / mix /
   // effects so saved multi-lane setups are reapplied on launch (mirroring the
   // latency-offset restore above).
@@ -216,13 +251,6 @@ Future<AutoStartResult> tryAutoStartEngine({
     final multiple = await settings.loadTrackMultiple(track.channel);
     if (multiple > 0) {
       repository.setTrackMultiple(channel: track.channel, multiple: multiple);
-    }
-    final lengthPreset = await settings.loadTrackLengthPreset(track.channel);
-    if (lengthPreset > 0) {
-      repository.setTrackLengthPreset(
-        channel: track.channel,
-        bars: lengthPreset,
-      );
     }
     // Restore the saved lane count first so the engine allocates the added
     // lanes before they are configured below.
@@ -415,6 +443,15 @@ Future<bool> _firstRunAutoStart({
   }
   if (!result.isOk) {
     AppLog.error('audio first-run: open failed result=${result.name}');
+    return false;
+  }
+  final startupLength = await repository.settleLengthSettings();
+  if (!startupLength.isOk) {
+    AppLog.error(
+      'audio first-run: initial length replay refused '
+      'result=${startupLength.name}',
+    );
+    repository.stopEngine();
     return false;
   }
   final status = repository.state.status;

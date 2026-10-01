@@ -31,16 +31,6 @@ const (double, double) kTempoRange = (30, 300);
 /// of them is two pickers that can drift into offering different lengths.
 const List<int> kCountInBarOptions = [0, 1, 2, 4];
 
-/// What each [GridDivision] is called. One table, both surfaces.
-Map<GridDivision, String> quantizeDivisionLabels(AppLocalizations l10n) => {
-  GridDivision.off: l10n.quantizeDivOffLabel,
-  GridDivision.bar: l10n.quantizeDivBarLabel,
-  GridDivision.half: l10n.quantizeDivHalfLabel,
-  GridDivision.quarter: l10n.quantizeDivQuarterLabel,
-  GridDivision.eighth: l10n.quantizeDivEighthLabel,
-  GridDivision.sixteenth: l10n.quantizeDivSixteenthLabel,
-};
-
 /// What each [ClickMode] is called. One table, both surfaces.
 Map<ClickMode, String> clickModeLabels(AppLocalizations l10n) => {
   ClickMode.off: l10n.clickModeOffLabel,
@@ -89,8 +79,6 @@ class TempoSettings extends Equatable {
     this.bpm = 0,
     this.tsNum = 4,
     this.tsDen = 4,
-    this.syncTempo = true,
-    this.quantizeDiv = GridDivision.off,
     this.clickMode = ClickMode.off,
     this.clickOutputMask = 0,
     this.clickVolume = 1,
@@ -105,12 +93,6 @@ class TempoSettings extends Equatable {
 
   /// Time-signature denominator (`4` or `8`).
   final int tsDen;
-
-  /// Whether loop↔grid sync is on.
-  final bool syncTempo;
-
-  /// Musical quantization granularity.
-  final GridDivision quantizeDiv;
 
   /// Click audibility mode.
   final ClickMode clickMode;
@@ -129,8 +111,6 @@ class TempoSettings extends Equatable {
     double? bpm,
     int? tsNum,
     int? tsDen,
-    bool? syncTempo,
-    GridDivision? quantizeDiv,
     ClickMode? clickMode,
     int? clickOutputMask,
     double? clickVolume,
@@ -139,8 +119,6 @@ class TempoSettings extends Equatable {
     bpm: bpm ?? this.bpm,
     tsNum: tsNum ?? this.tsNum,
     tsDen: tsDen ?? this.tsDen,
-    syncTempo: syncTempo ?? this.syncTempo,
-    quantizeDiv: quantizeDiv ?? this.quantizeDiv,
     clickMode: clickMode ?? this.clickMode,
     clickOutputMask: clickOutputMask ?? this.clickOutputMask,
     clickVolume: clickVolume ?? this.clickVolume,
@@ -152,8 +130,6 @@ class TempoSettings extends Equatable {
     bpm,
     tsNum,
     tsDen,
-    syncTempo,
-    quantizeDiv,
     clickMode,
     clickOutputMask,
     clickVolume,
@@ -164,7 +140,7 @@ class TempoSettings extends Equatable {
 /// Owns the tempo grid, click, and count-in settings (plan A5): loads the
 /// persisted intent on [load], applies each setter to the [LooperRepository]
 /// (the live engine) AND persists it via [SettingsRepository] — mirroring
-/// `QuantizeCubit`'s single-writer shape (`quantize_cubit.dart`), extended to
+/// the record timing cubit's single-writer shape, extended to
 /// the full A1/A2 field set (pattern for the multi-field shape:
 /// `RecordOptionsCubit`).
 ///
@@ -200,8 +176,6 @@ class TempoCubit extends Cubit<TempoSettings> {
         bpm: transport.tempoBpm,
         tsNum: transport.tsNum,
         tsDen: transport.tsDen,
-        syncTempo: transport.syncTempo,
-        quantizeDiv: transport.quantizeDiv,
         clickMode: transport.clickMode,
         clickOutputMask: transport.clickMask,
         clickVolume: transport.clickVolume,
@@ -226,10 +200,6 @@ class TempoCubit extends Cubit<TempoSettings> {
     final recordStartRevision = _repository.recordStartRevision;
     final bpm = await _settings.loadTempoBpm();
     final (tsNum, tsDen) = await _settings.loadTimeSignature();
-    final syncTempo = await _settings.loadSyncTempo();
-    final quantizeDiv = GridDivision.fromCode(
-      await _settings.loadQuantizeDiv(),
-    );
     final clickMode = ClickMode.fromCode(await _settings.loadClickMode());
     final clickOutputMask = await _settings.loadClickOutputMask();
     final clickVolume = await _settings.loadClickVolume();
@@ -248,12 +218,6 @@ class TempoCubit extends Cubit<TempoSettings> {
     }
     if (_repository.setTimeSignature(tsNum, tsDen).isOk) {
       restored = restored.copyWith(tsNum: tsNum, tsDen: tsDen);
-    }
-    if (_repository.setSyncTempo(on: syncTempo).isOk) {
-      restored = restored.copyWith(syncTempo: syncTempo);
-    }
-    if (_repository.setQuantizeDiv(quantizeDiv).isOk) {
-      restored = restored.copyWith(quantizeDiv: quantizeDiv);
     }
     if (_repository.setClickMode(clickMode).isOk) {
       restored = restored.copyWith(clickMode: clickMode);
@@ -313,26 +277,6 @@ class TempoCubit extends Cubit<TempoSettings> {
     emit(state.copyWith(tsNum: num, tsDen: den));
 
     await _settings.saveTimeSignature(num, den);
-  }
-
-  /// Sets and persists loop↔grid sync, applying it now. Unconditional
-  /// repository call — see [setTempo]'s doc.
-  Future<void> setSyncTempo({required bool value}) async {
-    _userEditRevision++;
-    if (!_repository.setSyncTempo(on: value).isOk) return;
-    emit(state.copyWith(syncTempo: value));
-
-    await _settings.saveSyncTempo(value: value);
-  }
-
-  /// Sets and persists the musical quantization granularity, applying it
-  /// now. Unconditional repository call — see [setTempo]'s doc.
-  Future<void> setQuantizeDiv(GridDivision div) async {
-    _userEditRevision++;
-    if (!_repository.setQuantizeDiv(div).isOk) return;
-    emit(state.copyWith(quantizeDiv: div));
-
-    await _settings.saveQuantizeDiv(div.code);
   }
 
   /// Sets and persists the click audibility mode, applying it now.

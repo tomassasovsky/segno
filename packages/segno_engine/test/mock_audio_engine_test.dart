@@ -641,6 +641,58 @@ void main() {
         },
       );
 
+      test('setTrackLengthPreset rejects an out-of-range channel', () {
+        engine.start(engine.defaultConfig);
+        final outOfRange = engine.snapshot().tracks.length;
+        expect(
+          engine.setTrackLengthPreset(channel: outOfRange, bars: 4),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setTrackLengthPreset(channel: -1, bars: 4),
+          EngineResult.invalid,
+        );
+      });
+
+      test(
+        'preset vector validates all values before changing tracks or mode',
+        () {
+          engine.start(engine.defaultConfig);
+          final count = engine.snapshot().tracks.length;
+          expect(
+            engine.setTrackLengthPresets(List.filled(count, 4)),
+            EngineResult.ok,
+          );
+          final invalid = List.filled(count, 8)..[count - 1] = 65;
+          expect(
+            engine.setLooperModeWithPresets(LooperMode.free, invalid),
+            EngineResult.invalid,
+          );
+          expect(engine.snapshot().looperMode, LooperMode.multi);
+          expect(
+            engine.snapshot().tracks.every(
+              (track) => track.lengthPresetBars == 4,
+            ),
+            isTrue,
+          );
+          expect(engine.setTrackLengthPresets([8]), EngineResult.invalid);
+          expect(
+            engine.setLooperModeWithPresets(
+              LooperMode.free,
+              List.filled(count, 8),
+            ),
+            EngineResult.ok,
+          );
+          expect(engine.snapshot().looperMode, LooperMode.free);
+          expect(
+            engine.snapshot().tracks.every(
+              (track) => track.lengthPresetBars == 8,
+            ),
+            isTrue,
+          );
+        },
+      );
+
       test('setTrackLengthPreset is per-track', () {
         engine
           ..start(engine.defaultConfig)

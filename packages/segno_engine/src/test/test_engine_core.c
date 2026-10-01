@@ -19138,6 +19138,247 @@ static le_engine* fm_make_free_engine(int sr) {
   return e;
 }
 
+static void test_mode_switch_uses_one_queue_slot(void) {
+  printf("test_mode_switch_uses_one_queue_slot\n");
+  le_engine* e = fm_make_free_engine(1000);
+  fm_record_track_value(e, 0, 500, 0.25f);
+  fm_record_track_value(e, 1, 750, 0.75f);
+  float before[750], after[750];
+  CHECK(le_engine_export_track_lane(e, 1, 0, before, 750) == 750);
+  for (int i = 0; i < LE_RING_CAPACITY - 2; ++i) {
+    CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK);
+  }
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SONG) == LE_OK);
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_ERR_INVALID);
+  tg_advance(e, 1);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_SONG);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(le_engine_export_track_lane(e, 1, 0, after, 750) == 750);
+  CHECK(memcmp(before, after, sizeof(before)) == 0);
+  CHECK(le_engine_commands_settled(e) == 1);
+  le_engine_destroy(e);
+}
+
+static void test_length_presets_batch_validates_and_copies(void) {
+  printf("test_length_presets_batch_validates_and_copies\n");
+  int32_t bars[LE_MAX_TRACKS] = {0};
+  CHECK(le_engine_set_track_length_presets(NULL, bars, LE_MAX_TRACKS) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_looper_mode_with_presets(NULL, LE_LOOPER_MODE_FREE,
+                                              bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) ==
+        LE_ERR_NOT_RUNNING);
+  CHECK(le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_FREE,
+                                              bars, LE_MAX_TRACKS) == LE_ERR_NOT_RUNNING);
+  CHECK(le_engine_configure(e, 1000, 1, 1, 20000) == LE_OK);
+  CHECK(le_engine_set_track_length_presets(e, NULL, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_length_presets(e, bars, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS - 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS + 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_looper_mode_with_presets(e, -1, bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  CHECK(le_engine_set_looper_mode_with_presets(e, 5, bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  bars[LE_MAX_TRACKS - 1] = -1;
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  bars[LE_MAX_TRACKS - 1] = 65;
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  bars[LE_MAX_TRACKS - 1] = 3; /* 3 * 4 beats * 2000 frames > 20000 cap */
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_ERR_CAPACITY);
+  CHECK(le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_FREE,
+                                              bars, LE_MAX_TRACKS) == LE_ERR_CAPACITY);
+  CHECK(le_engine_commands_settled(e) == 1); /* every refusal posted nothing */
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) bars[c] = c % 3;
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_OK);
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) bars[c] = 64; /* caller may reuse it */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) CHECK(s.tracks[c].length_preset_bars == 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) CHECK(s.tracks[c].length_preset_bars == c % 3);
+  le_engine_destroy(e);
+  e = tg_make_engine_cap(1000, 512000); /* exactly 64 bars at 30 BPM */
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) CHECK(s.tracks[c].length_preset_bars == 64);
+  le_engine_destroy(e);
+}
+
+static void test_length_presets_batch_queue_atomicity(void) {
+  printf("test_length_presets_batch_queue_atomicity\n");
+  for (int mode_edit = 0; mode_edit < 2; ++mode_edit) {
+    for (int free_slots = 0; free_slots < 2; ++free_slots) {
+      le_engine* e = fm_make_free_engine(1000);
+      fm_record_track_value(e, 0, 500, 0.25f);
+      fm_record_track_value(e, 1, 750, 0.75f);
+      float original[750], recovered[750];
+      CHECK(le_engine_export_track_lane(e, 1, 0, original, 750) == 750);
+      int32_t bars[LE_MAX_TRACKS];
+      for (int c = 0; c < LE_MAX_TRACKS; ++c) bars[c] = c % 3;
+      for (int n = 0; n < LE_RING_CAPACITY - 1 - free_slots; ++n) {
+        CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK);
+      }
+      const uint32_t clock_before = e->clock_commands_posted;
+      const int result = mode_edit
+          ? le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_SONG,
+                                                   bars, LE_MAX_TRACKS)
+          : le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS);
+      CHECK(result == (free_slots ? LE_OK : LE_ERR_INVALID));
+      if (!free_slots) CHECK(e->clock_commands_posted == clock_before);
+      CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_ERR_INVALID);
+      tg_advance(e, 1);
+      le_snapshot s;
+      le_engine_get_snapshot(e, &s);
+      CHECK(s.looper_mode == (mode_edit && free_slots ? LE_LOOPER_MODE_SONG
+                                                     : LE_LOOPER_MODE_FREE));
+      for (int c = 0; c < LE_MAX_TRACKS; ++c) {
+        CHECK(s.tracks[c].length_preset_bars == (free_slots ? c % 3 : 0));
+      }
+      for (int c = 0; c < 2; ++c) {
+        CHECK(s.tracks[c].state == (mode_edit && free_slots ? LE_TRACK_STOPPED
+                                                           : LE_TRACK_PLAYING));
+      }
+      CHECK(s.tracks[0].length_frames == 500);
+      CHECK(s.tracks[1].length_frames == 750);
+      CHECK(le_engine_export_track_lane(e, 1, 0, recovered, 750) == 750);
+      CHECK(memcmp(original, recovered, sizeof(original)) == 0);
+      CHECK(le_engine_commands_settled(e) == 1);
+      CHECK(e->clock_commands_posted == atomic_load_explicit(&e->a_clock_commands_applied, memory_order_acquire));
+      le_engine_destroy(e);
+    }
+  }
+}
+
+static void test_mode_presets_recheck_before_stopping(void) {
+  printf("test_mode_presets_recheck_before_stopping\n");
+  const int modes[] = {LE_LOOPER_MODE_SYNC, LE_LOOPER_MODE_BAND};
+  for (int m = 0; m < 2; ++m) {
+    le_engine* e = fm_make_free_engine(1000);
+    fm_record_track_value(e, 0, 500, 0.25f);
+    fm_record_track_value(e, 1, 1500, 0.5f);
+    int32_t bars[LE_MAX_TRACKS];
+    for (int c = 0; c < LE_MAX_TRACKS; ++c) bars[c] = 1;
+    CHECK(le_engine_crown_primary(e, 1) == LE_OK);
+    CHECK(le_engine_looper_mode_gate(e, modes[m]) == LE_MODE_GATE_PLAYING);
+    CHECK(le_engine_set_looper_mode_with_presets(e, modes[m], bars,
+                                                LE_MAX_TRACKS) == LE_OK);
+    tg_advance(e, 1); /* queued crown makes 500/1500 an unsupported third */
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.primary_track == 1);
+    CHECK(s.looper_mode == LE_LOOPER_MODE_FREE);
+    CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+    for (int c = 0; c < LE_MAX_TRACKS; ++c) CHECK(s.tracks[c].length_preset_bars == 0);
+    CHECK(le_engine_commands_settled(e) == 1);
+    CHECK(e->clock_commands_posted == atomic_load_explicit(&e->a_clock_commands_applied, memory_order_acquire));
+    le_engine_destroy(e);
+  }
+  for (int count_in = 0; count_in < 2; ++count_in) {
+    le_engine* e = tg_make_engine(1000);
+    int32_t bars[LE_MAX_TRACKS] = {1};
+    if (count_in) {
+      CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+      CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+    }
+    CHECK(le_engine_record(e, 0) == LE_OK); /* not yet published */
+    CHECK(le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_FREE,
+                                                bars, LE_MAX_TRACKS) == LE_OK);
+    tg_advance(e, 1);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+    CHECK(s.counting_in == count_in);
+    CHECK(s.tracks[0].state == (count_in ? LE_TRACK_EMPTY : LE_TRACK_RECORDING));
+    for (int c = 0; c < LE_MAX_TRACKS; ++c) CHECK(s.tracks[c].length_preset_bars == 0);
+    CHECK(le_engine_commands_settled(e) == 1);
+    le_engine_destroy(e);
+  }
+}
+
+static void test_length_presets_recheck_capacity_and_preserve_capture(void) {
+  printf("test_length_presets_recheck_capacity_and_preserve_capture\n");
+  for (int mode_edit = 0; mode_edit < 2; ++mode_edit) {
+    le_engine* e = tg_make_engine(1000);
+    int32_t bars[LE_MAX_TRACKS];
+    for (int c = 0; c < LE_MAX_TRACKS; ++c) bars[c] = 2;
+    CHECK(le_engine_set_time_signature(e, 7, 4) == LE_OK);
+    CHECK((mode_edit
+        ? le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_FREE,
+                                                 bars, LE_MAX_TRACKS)
+        : le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS)) == LE_OK);
+    tg_advance(e, 1); /* 2 bars at 7/4 and 30 BPM exceed the 20000-frame cap */
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.ts_num == 7);
+    CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+    for (int c = 0; c < LE_MAX_TRACKS; ++c) CHECK(s.tracks[c].length_preset_bars == 0);
+    CHECK(le_engine_commands_settled(e) == 1);
+    le_engine_destroy(e);
+  }
+  le_engine* e = tg_make_engine(1000);
+  int32_t bars[LE_MAX_TRACKS] = {1};
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_FREE,
+                                              bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  tg_advance(e, 1);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 1);
+  CHECK(s.tracks[0].length_preset_bars == 0);
+  le_engine_destroy(e);
+}
+
+static void test_preset_edits_preserve_current_capture_and_mode_only_presets(void) {
+  printf("test_preset_edits_preserve_current_capture_and_mode_only_presets\n");
+  le_engine* e = tg_make_engine(1000);
+  int32_t bars[LE_MAX_TRACKS] = {1};
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(e->tracks[0].length_preset_target_frames == 2000); /* 4 * 0.5 s */
+  bars[0] = 2;
+  CHECK(le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_FREE,
+                                              bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_OK);
+  tg_advance(e, 1);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].length_preset_bars == 2);
+  CHECK(e->tracks[0].length_preset_target_frames == 2000); /* latched take unchanged */
+  tg_advance(e, 2010);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_frames == 2000); /* not the new 4000-frame preset */
+  le_engine_destroy(e);
+
+  e = fm_make_free_engine(1000);
+  fm_record_track_value(e, 0, 500, 0.25f);
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) bars[c] = c % 3;
+  CHECK(le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_FREE,
+                                              bars, LE_MAX_TRACKS) == LE_OK);
+  memset(bars, 0, sizeof(bars)); /* the combined mode/preset payload is copied too */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* same-mode edit does not stop */
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) CHECK(s.tracks[c].length_preset_bars == c % 3);
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SONG) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(le_push(e, LE_CMD_SET_LOOPER_MODE, LE_LOOPER_MODE_FREE, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_FREE);
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) CHECK(s.tracks[c].length_preset_bars == c % 3);
+  le_engine_destroy(e);
+}
+
 static void test_free_mode_defining_recording_sets_own_clock_not_master(void) {
   printf("test_free_mode_defining_recording_sets_own_clock_not_master\n");
   le_engine* e = fm_make_free_engine(1000);
@@ -22294,6 +22535,11 @@ static void test_group_history_gate_projects_order_without_consuming(void) {
       le_engine* e = fm_make_free_engine(1000);
       fm_record_track_value(e, 0, 500, 0.25f);
       fm_record_track_value(e, 1, 750, 0.75f);
+      /* Recovery must preserve the captured PCM exactly, including the seam
+       * fold's platform-dependent rounding of these constant inputs. */
+      float original0[500], original1[750];
+      CHECK(le_engine_export_track_lane(e, 0, 0, original0, 500) == 500);
+      CHECK(le_engine_export_track_lane(e, 1, 0, original1, 750) == 750);
       CHECK(le_engine_undo(e, 0) == LE_OK);
       CHECK(le_engine_undo(e, 1) == LE_OK);
       tg_advance(e, 1);
@@ -22329,9 +22575,9 @@ static void test_group_history_gate_projects_order_without_consuming(void) {
       CHECK(snapshot.master_length_frames == 0);
       float pcm[750];
       CHECK(le_engine_export_track_lane(e, 0, 0, pcm, 750) == 500);
-      for (int frame = 0; frame < 500; ++frame) CHECK(pcm[frame] == 0.25f);
+      CHECK(memcmp(pcm, original0, sizeof(original0)) == 0);
       CHECK(le_engine_export_track_lane(e, 1, 0, pcm, 750) == 750);
-      for (int frame = 0; frame < 750; ++frame) CHECK(pcm[frame] == 0.75f);
+      CHECK(memcmp(pcm, original1, sizeof(original1)) == 0);
       le_engine_destroy(e);
     }
   }
@@ -28789,6 +29035,13 @@ int main(void) {
   test_looper_mode_switch_accepted_when_empty();
   test_looper_mode_switch_with_playing_content_stops_first();
   test_looper_mode_switch_refused_while_capturing();
+  test_preset_edits_preserve_current_capture_and_mode_only_presets();
+  test_mode_switch_uses_one_queue_slot();
+  test_length_presets_batch_validates_and_copies();
+  test_length_presets_batch_queue_atomicity();
+  test_mode_presets_recheck_before_stopping();
+  test_length_presets_recheck_capacity_and_preserve_capture();
+
   test_free_mode_defining_recording_sets_own_clock_not_master();
   test_free_mode_independent_lengths_prime_wraps();
   test_free_mode_one_capturer_handoff_finalizes_to_own_length();
