@@ -1307,5 +1307,11 @@ final class LooperSessionLoaded extends LooperEvent {
 /// cubit teardown.
 final class LooperPersistFlush extends LooperEvent {
   /// Creates a [LooperPersistFlush].
-  const LooperPersistFlush();
+  const LooperPersistFlush({this.receipt});
+
+  /// Completes after admitted recipes and queued settings writes settle.
+  final Completer<void>? receipt;
+
+  @override
+  List<Object?> get props => [receipt];
 }

@@ -208,6 +208,9 @@ enum ControlCommand {
   /// Arm or finish a performance recording.
   recordPerformance('command:record-performance'),
 
+  /// Set the tempo from successive taps.
+  tapTempo('command:tap-tempo'),
+
   /// Switch the track bank A / B.
   nextBank('bank:next');
 

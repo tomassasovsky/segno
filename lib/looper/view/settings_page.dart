@@ -330,6 +330,12 @@ class _SettingsRail extends StatelessWidget {
                 selected: false,
                 onTap: () => unawaited(openPedalSetup()),
               ),
+              _RailTab(
+                key: const Key('settings_tab_midi'),
+                label: l10n.midiControlsTitle,
+                selected: false,
+                onTap: () => unawaited(openMidiControls()),
+              ),
             ],
           ],
         ],

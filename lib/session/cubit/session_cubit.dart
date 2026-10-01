@@ -2,6 +2,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
@@ -41,6 +42,7 @@ class SessionCubit extends Cubit<SessionState> {
     required LooperRepository looper,
     required PerformanceRepository performance,
     required MixSettingsCoordinator mixSettings,
+    required FxChainPersistence fxPersistence,
     required MixSettingsPersistence mixPersistence,
     required Future<String> Function() exportDirectory,
     String Function() currentPedalBindings = _noBindings,
@@ -50,6 +52,7 @@ class SessionCubit extends Cubit<SessionState> {
        _looper = looper,
        _performance = performance,
        _mixSettings = mixSettings,
+       _fxPersistence = fxPersistence,
        _mixPersistence = mixPersistence,
        _exportDirectory = exportDirectory,
        _currentPedalBindings = currentPedalBindings,
@@ -73,6 +76,7 @@ class SessionCubit extends Cubit<SessionState> {
   final LooperRepository _looper;
   final PerformanceRepository _performance;
   final MixSettingsCoordinator _mixSettings;
+  final FxChainPersistence _fxPersistence;
   final MixSettingsPersistence _mixPersistence;
   final Future<String> Function() _exportDirectory;
   final String Function() _currentPedalBindings;
@@ -198,10 +202,12 @@ class SessionCubit extends Cubit<SessionState> {
     if (!mixOutcome.isOk || !stillOwned()) {
       throw StateError('mix edit did not settle before session save');
     }
+    await _fxPersistence.settlePending();
+    if (!stillOwned()) throw StateError('session changed before snapshot');
     await _repository.save(
       directory,
-      chains: chainsFromLooper(_looper),
-      settings: settingsFromLooper(_looper),
+      chains: chainsFromLooper(_looper, projection: _fxPersistence),
+      settings: settingsFromLooper(_looper, mix: _mixSettings.durableSnapshot),
       pedalBindings: _currentPedalBindings(),
       captureStillValid: stillOwned,
     );

@@ -112,6 +112,157 @@ void main() {
     await ticker.close();
   });
 
+  test(
+    'momentary level saves authored Released across unrelated mix edits',
+    () async {
+      expect((await coordinator.setTrackVolume(.47)).isOk, isTrue);
+      expect(
+        (await coordinator.setMidiTrackVolume(
+          .8,
+          channel: 0,
+          releasedValue: .2,
+        )).isOk,
+        isTrue,
+      );
+      expect(repository.mixSettingsSnapshot.trackLevels[0], .8);
+      expect(coordinator.durableSnapshot.trackLevels[0], .2);
+      expect(persistence.candidates.last.trackLevels[0], .2);
+      expect((await coordinator.setTrackPan(.3)).isOk, isTrue);
+      expect(persistence.candidates.last.trackLevels[0], .2);
+      expect(repository.mixSettingsSnapshot.trackLevels[0], .8);
+      expect(
+        (await coordinator.setMidiTrackVolume(.2, channel: 0)).isOk,
+        isTrue,
+      );
+      expect(coordinator.durableSnapshot.trackLevels[0], .2);
+    },
+  );
+
+  test(
+    'refused press never installs low and refused cleanup retains low',
+    () async {
+      persistence.refuseWrite = true;
+      expect(
+        (await coordinator.setMidiTrackVolume(
+          .8,
+          channel: 0,
+          releasedValue: .2,
+        )).isOk,
+        isFalse,
+      );
+      expect(coordinator.durableSnapshot.trackLevels[0] ?? 1, 1);
+      persistence.refuseWrite = false;
+      expect(
+        (await coordinator.setMidiTrackVolume(
+          .8,
+          channel: 0,
+          releasedValue: .2,
+        )).isOk,
+        isTrue,
+      );
+      persistence.refuseWrite = true;
+      expect(
+        (await coordinator.setMidiTrackVolume(.6, channel: 0)).isOk,
+        isFalse,
+      );
+      expect(repository.mixSettingsSnapshot.trackLevels[0], .8);
+      expect(coordinator.durableSnapshot.trackLevels[0], .2);
+    },
+  );
+
+  test(
+    'equal explicit ordinary level supersedes temporary durable low',
+    () async {
+      expect(
+        (await coordinator.setMidiTrackVolume(
+          .8,
+          channel: 0,
+          releasedValue: .2,
+        )).isOk,
+        isTrue,
+      );
+      final edits = <double>[];
+      coordinator.onOrdinaryTrackLevel = (_, value) => edits.add(value);
+      expect((await coordinator.setTrackVolume(.8)).isOk, isTrue);
+      expect(edits, [.8]);
+      expect(coordinator.durableSnapshot.trackLevels[0], .8);
+      expect(persistence.candidates.last.trackLevels[0], .8);
+    },
+  );
+
+  test('accepted mixer reset supersedes held track levels at unity', () async {
+    expect(
+      (await coordinator.setMidiTrackVolume(
+        .8,
+        channel: 0,
+        releasedValue: .2,
+      )).isOk,
+      isTrue,
+    );
+    final accepted = <double>[];
+    coordinator.onOrdinaryTrackLevel = (_, value) => accepted.add(value);
+    expect((await coordinator.resetMixer()).isOk, isTrue);
+    expect(accepted, [1]);
+    expect(coordinator.durableSnapshot.trackLevels[0] ?? 1, 1);
+    expect(persistence.candidates.last.trackLevels[0] ?? 1, 1);
+  });
+
+  test('refused mixer reset preserves accepted held contribution', () async {
+    expect(
+      (await coordinator.setMidiTrackVolume(
+        .8,
+        channel: 0,
+        releasedValue: .2,
+      )).isOk,
+      isTrue,
+    );
+    final accepted = <double>[];
+    coordinator.onOrdinaryTrackLevel = (_, value) => accepted.add(value);
+    persistence.refuseWrite = true;
+    expect((await coordinator.resetMixer()).isOk, isFalse);
+    expect(accepted, isEmpty);
+    expect(repository.mixSettingsSnapshot.trackLevels[0], .8);
+    expect(coordinator.durableSnapshot.trackLevels[0], .2);
+  });
+
+  for (final switchDevice in [false, true]) {
+    test(
+      'queued MIDI cannot cross '
+      '${switchDevice ? 'device' : 'session'} replacement',
+      () async {
+        final gate = Completer<void>();
+        final replacement = coordinator.runExclusive(() async {
+          await gate.future;
+          if (switchDevice) {
+            repository.stopEngine();
+            device = 'rig B';
+            repository.startEngine(const EngineConfig());
+          } else {
+            await repository.applySession(
+              const SessionRig(trackLevels: {0: .4}),
+            );
+          }
+          audio.calls.clear();
+        });
+        await _turn();
+        final oldMessage = coordinator.setMidiTrackVolume(
+          .8,
+          channel: 0,
+          releasedValue: .2,
+        );
+        gate.complete();
+        await replacement;
+        expect((await oldMessage).status, MixSettingsStatus.superseded);
+        expect(audio.calls, isNot(contains('setMix')));
+        expect(persistence.candidates, isEmpty);
+        expect(
+          coordinator.durableSnapshot.trackLevels[0] ?? 1,
+          switchDevice ? 1 : .4,
+        );
+      },
+    );
+  }
+
   test('retains the final same-target and distinct-target values', () async {
     audio
       ..publishMixCommands = false

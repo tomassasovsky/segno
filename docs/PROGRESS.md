@@ -8,6 +8,21 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 MIDI reconstruction (#1026)
+
+MIDI setup now selects explicit message formats, learns stable sources and
+edits multiple action or value targets through the shared control owner.
+Save/Cancel, source overlap, missing-target repair, pause/retry and session
+replacement preserve confirmed state. Pending effect writes and momentary
+restoration join the session/shutdown persistence barrier. Obsolete MIDI
+bindings and the old editor are removed.
+
+The [verification record](reviews/design-midi-controls-restack/README.md)
+records 2,433 passing application tests, nine package suites, native checks,
+coverage, independent review and adversarial probes. Native renders are saved
+in Pen. The broader shared target catalogue remains the next M3 slice;
+physical MIDI validation, published-head CI and human merge stay separate.
+
 ## October 2026 external pedal reconstruction (#1026)
 
 Single, Dual and Expression now share a confirmed External setup and the
@@ -21,7 +36,8 @@ binds the final source, 2,467 passing app tests, five package suites, coverage,
 firmware and 54 independent adversarial probes. Source and five quality-role
 reviews have no unresolved actionable finding. Native render references are
 saved in Pen. Published-head CI and human merge remain separate gates; physical
-pedal validation is not established by the desktop checks. MIDI setup is next.
+pedal validation is not established by the desktop checks. The MIDI slice above
+builds on this verified dispatch foundation.
 
 ## September 2026 design-stack reconstruction (#1058)
 

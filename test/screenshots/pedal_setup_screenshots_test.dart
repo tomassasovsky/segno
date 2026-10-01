@@ -12,6 +12,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -61,6 +62,7 @@ void main() {
 
   setUp(() {
     looper = _MockLooperRepository();
+    when(() => looper.sessionRevision).thenReturn(0);
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     when(() => looper.state).thenReturn(
@@ -102,6 +104,7 @@ void main() {
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
     final control = ControlCubit(
+      fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
       pedal: pedal,

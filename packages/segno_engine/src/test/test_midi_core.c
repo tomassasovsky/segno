@@ -89,10 +89,18 @@ static void test_parse_note_on_and_off(void) {
   CHECK(p.channel == 3 && p.number == 64 && p.value == 40);
 }
 
+static void test_parse_program_change(void) {
+  printf("test_parse_program_change\n");
+  le_midi_parsed p;
+  CHECK(le_midi_parse(0xC0, 0, 99, &p) == LE_MIDI_PROGRAM);
+  CHECK(p.channel == 0 && p.number == 0 && p.value == 127);
+  CHECK(le_midi_parse(0xCF, 127, 0, &p) == LE_MIDI_PROGRAM);
+  CHECK(p.channel == 15 && p.number == 127 && p.value == 127);
+}
+
 static void test_parse_ignores_non_note_cc(void) {
   printf("test_parse_ignores_non_note_cc\n");
   CHECK(le_midi_parse(0xA0, 60, 10, NULL) == LE_MIDI_IGNORE); /* aftertouch */
-  CHECK(le_midi_parse(0xC0, 5, 0, NULL) == LE_MIDI_IGNORE);   /* program */
   CHECK(le_midi_parse(0xD0, 64, 0, NULL) == LE_MIDI_IGNORE);  /* chan press */
   CHECK(le_midi_parse(0xE0, 0, 64, NULL) == LE_MIDI_IGNORE);  /* pitch bend */
   CHECK(le_midi_parse(0xF0, 0, 0, NULL) == LE_MIDI_IGNORE);   /* SysEx start */
@@ -195,8 +203,10 @@ static void test_close_nulls_callback_before_teardown(void) {
   /* close() must null the callback; a drain afterwards delivers nothing, so a
    * message queued before close can never reach freed Dart state. */
   CHECK(le_midi_close(m) == LE_OK);
+  le_midi_set_cb_for_test(m, cap_cb);
   le_midi_drain(m);
   CHECK(g_cap_count == 0);
+  /* A later capture callback must not receive the prior lifetime's ring. */
   /* close is idempotent. */
   CHECK(le_midi_close(m) == LE_OK);
   le_midi_destroy(m);
@@ -591,6 +601,7 @@ static void test_clock_null_and_degenerate_args_are_safe(void) {
 int main(void) {
   test_parse_control_change();
   test_parse_note_on_and_off();
+  test_parse_program_change();
   test_parse_ignores_non_note_cc();
   test_ring_push_filters_non_note_cc();
   test_drain_delivers_in_fifo_order();

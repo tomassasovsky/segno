@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno_engine/segno_engine.dart' as le;
 import 'package:settings_repository/settings_repository.dart';
@@ -44,6 +45,7 @@ void main() {
     repository = LooperRepository(engine: engine, ticker: ticker.stream);
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = LooperBloc(
+      fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
       settings: settings,

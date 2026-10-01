@@ -767,6 +767,9 @@ void main() {
         when(() => source.activity).thenAnswer(
           (_) => const Stream<RawControllerInput>.empty(),
         );
+        when(() => source.messages).thenAnswer(
+          (_) => const Stream<MidiInputMessage>.empty(),
+        );
         when(() => source.open(any())).thenReturn(0);
         when(source.close).thenReturn(0);
 
@@ -775,7 +778,6 @@ void main() {
           settings: settings,
           pollInterval: Duration.zero,
         );
-        addTearDown(midi.dispose);
         // Pin the controller present before the app builds, so the shell's
         // MidiSetupCubit subscribes to a healthy connection.
         await midi.select('fcb1010');
@@ -821,6 +823,11 @@ void main() {
 
         // Drain the toast timers so none outlives the test.
         await tester.pump(const Duration(seconds: 10));
+        // Let the page cancel its subscriptions before the borrowed device
+        // repository's teardown waits for its connection stream to close.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        await midi.dispose();
       },
     );
 

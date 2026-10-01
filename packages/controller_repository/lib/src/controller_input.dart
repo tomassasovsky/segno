@@ -1,5 +1,39 @@
 import 'package:equatable/equatable.dart';
 
+/// One opened lifetime of a selected musical MIDI device.
+class MidiInputSession extends Equatable {
+  /// Captures device identity and its monotonically increasing open epoch.
+  const MidiInputSession(this.device, this.epoch);
+
+  /// Stable device identity, never its display name.
+  final String device;
+
+  /// A new epoch is assigned on every open, including reconnects.
+  final int epoch;
+
+  @override
+  List<Object?> get props => [device, epoch];
+}
+
+/// A raw musical message stamped by its capture callback before queuing.
+class MidiInputMessage extends Equatable {
+  /// Creates a captured message.
+  const MidiInputMessage(this.session, this.input, {this.timestampMicros});
+
+  /// Native monotonic capture time, before ring and Dart listener delivery.
+  /// Fixture messages may omit it and use the consumer's injected clock.
+  final int? timestampMicros;
+
+  /// The exact opened device lifetime that captured this message.
+  final MidiInputSession session;
+
+  /// Complete, un-debounced channel message.
+  final RawControllerInput input;
+
+  @override
+  List<Object?> get props => [session, input, timestampMicros];
+}
+
 /// The kind of hardware input that produced a [RawControllerInput].
 enum ControllerSourceKind {
   /// A MIDI Note On/Off message.
@@ -7,6 +41,9 @@ enum ControllerSourceKind {
 
   /// A MIDI Control Change message.
   midiCc,
+
+  /// A MIDI Program Change message.
+  midiProgram,
 
   /// A footswitch in one of the console's CTRL jacks. [RawControllerInput.id]
   /// is the jack, `0` or `1`.

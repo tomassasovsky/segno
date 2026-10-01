@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,6 +32,26 @@ void main() {
         markHold: Duration.zero,
       );
     }
+
+    test('halt waits for a delayed confirmed MIDI settings flush', () async {
+      final receipt = Completer<void>();
+      final cubit = PowerOffCubit(
+        flush: () async {
+          log.add('flush');
+          await receipt.future;
+          log.add('saved');
+        },
+        pedalGoodbye: () => log.add('pedal'),
+        powerOff: () async => log.add('powerOff'),
+        markHold: Duration.zero,
+      )..press(empty);
+      await Future<void>.delayed(Duration.zero);
+      expect(log, ['flush']);
+      receipt.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(log, ['flush', 'saved', 'pedal', 'powerOff']);
+      await cubit.close();
+    });
 
     blocTest<PowerOffCubit, PowerOffState>(
       'Keep playing leaves loops/session unchanged and does not halt',

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart' show MockAudioEngine;
 import 'package:session_repository/session_repository.dart';
@@ -107,9 +108,15 @@ void main() {
         ..setOutputChainEnabled(bus: 0, enabled: false)
         ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
 
-      final first = chainsFromLooper(looper);
+      final first = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
       await load(bundleOf(first));
-      final second = chainsFromLooper(looper);
+      final second = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       // Mint-once, part 2: the ids that survived the reload are the SAME ones
       // — a re-mint per load would silently dangle every stored binding.

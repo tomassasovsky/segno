@@ -301940,6 +301940,424 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "A8w1J",
+      "x": 43032,
+      "y": -1512,
+      "name": "Native implementation / MIDI controls / M3.9",
+      "width": 6048,
+      "height": 5136,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "xFTCE",
+          "name": "MIDI native reference heading",
+          "fill": "#F1F2F4",
+          "content": "MIDI controls · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "POk6G",
+          "name": "MIDI reference scope",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Shared controller setup. Explicit message format before Learn; multiple controls with ranges or Off / On activation; missing-target repair and deliberate reset. Stage exits both entry paths. Native renders at 1920 × 1080. Hardware validation remains separate.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "sOpb8",
+          "name": "MIDI reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Algbq",
+              "name": "Connected mappings reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "HyVXU",
+                  "name": "Connected mappings label",
+                  "fill": "#F1F2F4",
+                  "content": "Connected mappings",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "en2pA",
+                  "name": "Connected mappings native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_connected.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "LC72g",
+              "name": "Continuous ranges reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "sJF9K",
+                  "name": "Continuous ranges label",
+                  "fill": "#F1F2F4",
+                  "content": "Continuous ranges",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "uy5OK",
+                  "name": "Continuous ranges native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_continuous.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "tPFaR",
+              "name": "Button activation and values reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "tee99",
+                  "name": "Button activation and values label",
+                  "fill": "#F1F2F4",
+                  "content": "Button activation and values",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "cuOjO",
+                  "name": "Button activation and values native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_momentary.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "iW2B9",
+          "name": "MIDI reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Y0IQt",
+              "name": "Message format reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "ETi4n",
+                  "name": "Message format label",
+                  "fill": "#F1F2F4",
+                  "content": "Message format",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "R4W5kb",
+                  "name": "Message format native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_formats.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "cz9n1",
+              "name": "Learn listening reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "nMrlN",
+                  "name": "Learn listening label",
+                  "fill": "#F1F2F4",
+                  "content": "Learn listening",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "zXbNO",
+                  "name": "Learn listening native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_listening.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "uvBBi",
+              "name": "Missing target repair reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "grnH5",
+                  "name": "Missing target repair label",
+                  "fill": "#F1F2F4",
+                  "content": "Missing target repair",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "ZjoK6",
+                  "name": "Missing target repair native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_missing.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "e31iP",
+          "name": "MIDI reference row 3",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "EVa2W",
+              "name": "Failed Off recovery reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "G91z4",
+                  "name": "Failed Off recovery label",
+                  "fill": "#F1F2F4",
+                  "content": "Failed Off recovery",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "MnFLD",
+                  "name": "Failed Off recovery native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_paused.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "igWac",
+              "name": "Unreadable configuration reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "iyjh0",
+                  "name": "Unreadable configuration label",
+                  "fill": "#F1F2F4",
+                  "content": "Unreadable configuration",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "s0uez",
+                  "name": "Unreadable configuration native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_unavailable.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "nYq9J",
+              "name": "Disconnected controller reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "w4jfV",
+                  "name": "Disconnected controller label",
+                  "fill": "#F1F2F4",
+                  "content": "Disconnected controller",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "v8wZOX",
+                  "name": "Disconnected controller native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_disconnected.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "THPel",
+          "name": "MIDI reference row 4",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Z0PpJ",
+              "name": "Control tray entry reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "P7cqk1",
+                  "name": "Control tray entry label",
+                  "fill": "#F1F2F4",
+                  "content": "Control tray entry",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "R9LQC",
+                  "name": "Control tray entry native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/control_center_control_midi.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {

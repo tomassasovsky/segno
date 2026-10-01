@@ -3,6 +3,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -55,6 +56,30 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
     final monitorVolumes = <int, double>{};
+    final monitorChains = <int, List<TrackEffect>>{};
+    final monitorChainFlags = <int, bool>{};
+    when(repository.allMonitors).thenAnswer(
+      (_) => {
+        for (final input in {...monitorChains.keys, ...monitorChainFlags.keys})
+          input: InputMonitor(
+            input: input,
+            effects: monitorChains[input] ?? const [],
+            chainEnabled: monitorChainFlags[input] ?? true,
+          ),
+      },
+    );
+    when(() => repository.monitorEffects(any())).thenAnswer((call) {
+      final input = call.positionalArguments.first as int;
+      return monitorChains[input] ??
+          repository.allMonitors()[input]?.effects ??
+          const [];
+    });
+    when(() => repository.monitorChainEnabled(any())).thenAnswer((call) {
+      final input = call.positionalArguments.first as int;
+      return monitorChainFlags[input] ??
+          repository.allMonitors()[input]?.chainEnabled ??
+          true;
+    });
     var currentMix = MixSettingsSnapshot();
     MixSettingsSnapshot? pendingMix;
     when(() => repository.mixGeneration).thenReturn(0);
@@ -155,7 +180,12 @@ void main() {
         input: any(named: 'input'),
         effects: any(named: 'effects'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorChains[call.namedArguments[#input] as int] = List.of(
+        call.namedArguments[#effects] as List<TrackEffect>,
+      );
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorEffects(
         input: any(named: 'input'),
@@ -163,13 +193,24 @@ void main() {
         chainEnabled: any(named: 'chainEnabled'),
         allowUnavailable: true,
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      final input = call.namedArguments[#input] as int;
+      monitorChains[input] = List.of(
+        call.namedArguments[#effects] as List<TrackEffect>,
+      );
+      monitorChainFlags[input] = call.namedArguments[#chainEnabled] as bool;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorChainEnabled(
         input: any(named: 'input'),
         enabled: any(named: 'enabled'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorChainFlags[call.namedArguments[#input] as int] =
+          call.namedArguments[#enabled] as bool;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorEffectParam(
         input: any(named: 'input'),
@@ -177,7 +218,18 @@ void main() {
         param: any(named: 'param'),
         value: any(named: 'value'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      final input = call.namedArguments[#input] as int;
+      final index = call.namedArguments[#index] as int;
+      final parameter = call.namedArguments[#param] as int;
+      final chain = List.of(repository.monitorEffects(input));
+      final effect = chain[index] as BuiltInEffect;
+      final params = List.of(effect.params);
+      params[parameter] = call.namedArguments[#value] as double;
+      chain[index] = effect.copyWith(params: params);
+      monitorChains[input] = chain;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorPluginParam(
         input: any(named: 'input'),
@@ -210,12 +262,12 @@ void main() {
         index: any(named: 'index'),
       ),
     ).thenReturn(true);
-    when(() => repository.monitorEffects(any())).thenReturn(const []);
   });
 
   /// Writes through with no debounce, so a test's assertion does not have to
   /// outlive a pending write. The debounce itself is covered in its own group.
   MonitorCubit build() => MonitorCubit(
+    fxPersistence: FxChainPersistence(looper: repository),
     mixSettings: testMixSettings(repository, settings: settings),
     repository: repository,
     settings: settings,
@@ -1639,6 +1691,7 @@ void main() {
     });
 
     MonitorCubit buildDebounced() => MonitorCubit(
+      fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository, settings: settings),
       repository: repository,
       settings: settings,
@@ -1700,7 +1753,7 @@ void main() {
         cubit.setEffectParam(0, 0, 0, 0.42);
         expect(store.stringWrites, writesBeforeDrag);
 
-        cubit.flushPersistence();
+        await cubit.flushPersistence();
         await pumpEventQueue();
 
         final persisted = decodeFxChain(await settings.loadMonitorEffects(0));

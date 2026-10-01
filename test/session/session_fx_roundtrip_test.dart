@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart'
     show FxFingerprint, PumpedNativeEngine;
@@ -108,7 +109,10 @@ void main() {
     final dir = '${tempDir.path}/take';
     final saved = await session.save(
       dir,
-      chains: chainsFromLooper(looper),
+      chains: chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      ),
       settings: settingsFromLooper(looper),
     );
     expect(saved.laneChains, isNotEmpty);

@@ -10,6 +10,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -718,8 +719,13 @@ class _Harness {
       ),
     );
     final settings = SettingsRepository(store: FakeKeyValueStore());
+    final fxPersistence = FxChainPersistence(looper: repo);
     final mixSettings = testMixSettings(repo);
-    bloc = LooperBloc(repository: repo, mixSettings: mixSettings);
+    bloc = LooperBloc(
+      fxPersistence: fxPersistence,
+      repository: repo,
+      mixSettings: mixSettings,
+    );
     sim = FakePedalLink();
     pedalRepo = PedalRepository(sim);
     sim.hello();
@@ -732,6 +738,7 @@ class _Harness {
       exportsRoot: () async => tempDir.path,
     );
     control = ControlCubit(
+      fxPersistence: fxPersistence,
       looper: repo,
       mixSettings: mixSettings,
       pedal: pedalRepo,

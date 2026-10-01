@@ -1,4 +1,3 @@
-import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -197,70 +196,5 @@ void main() {
         expect(valueTargetLabel(l10n, names, looper, laneless), contains('#0'));
       },
     );
-  });
-
-  group('controlLabel', () {
-    test('names a CC and a note by number and 1-based channel', () {
-      expect(
-        controlLabel(
-          l10n,
-          const MappingTrigger(
-            kind: ControllerSourceKind.midiCc,
-            id: 11,
-            midiChannel: 0,
-          ),
-        ),
-        l10n.midiLearnCcControl(11, 1),
-      );
-      expect(
-        controlLabel(
-          l10n,
-          const MappingTrigger(
-            kind: ControllerSourceKind.midiNote,
-            id: 60,
-            midiChannel: 15,
-          ),
-        ),
-        l10n.midiLearnNoteControl(60, 16),
-      );
-    });
-
-    test('a CTRL jack is named by jack, and its ring as the second switch', () {
-      expect(
-        controlLabel(
-          l10n,
-          const MappingTrigger(kind: ControllerSourceKind.consoleSwitch, id: 0),
-        ),
-        l10n.consoleCtrlSwitchControl(1),
-      );
-      expect(
-        controlLabel(
-          l10n,
-          const MappingTrigger(
-            kind: ControllerSourceKind.consoleExpression,
-            id: 1,
-          ),
-        ),
-        l10n.consoleCtrlExpressionControl(2),
-      );
-      // The B of a two-switch pedal, on CTRL 2's ring.
-      expect(
-        controlLabel(
-          l10n,
-          const MappingTrigger(kind: ControllerSourceKind.consoleSwitch, id: 3),
-        ),
-        l10n.consoleCtrlRingSwitchControl(2),
-      );
-    });
-
-    test('an omni trigger reads as channel 1', () {
-      expect(
-        controlLabel(
-          l10n,
-          const MappingTrigger(kind: ControllerSourceKind.midiCc, id: 11),
-        ),
-        l10n.midiLearnCcControl(11, 1),
-      );
-    });
   });
 }
