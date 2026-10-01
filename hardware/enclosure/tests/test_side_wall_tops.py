@@ -137,9 +137,9 @@ class SideWallTopsTest(unittest.TestCase):
             self.assertNotIn('lengüeta', text)
             self.assertNotIn('pestaña de asiento', text)
 
-    def test_beam_pad_runs_the_full_length_between_the_ear_reliefs(self):
-        # Without the seat flanges there is nothing to notch the pad around: it
-        # stops only at the ear reliefs, like the foot.
+    def test_beam_pad_runs_the_full_length(self):
+        # Without the seat flanges there is nothing to notch the pad around, and
+        # without the wall ears (#1090) nothing to relieve it for.
         import cadquery as cq
         solid = enclosure._beam_solid()
         tilt = math.radians(enclosure.BEAM_TILT)
@@ -148,7 +148,7 @@ class SideWallTopsTest(unittest.TestCase):
                 and f.normalAt().dot(normal) > 0.99999]
         pad = max(pads, key=lambda f: f.Area())
         self.assertAlmostEqual(pad.BoundingBox().xlen,
-                               enclosure.BEAM_LEN - 2 * enclosure._BEAM_REL, places=3)
+                               enclosure.BEAM_LEN, places=3)
         self.assertFalse(hasattr(enclosure, 'BEAM_PAD_X0'))
 
 

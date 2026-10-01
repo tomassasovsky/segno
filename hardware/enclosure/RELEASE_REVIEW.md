@@ -61,21 +61,24 @@ board (the tip sits on a 10k pull-up, the ring on its 1k bias), but TN opens
 last as a plug goes in, which is the "ignore a plug until it is seated"
 behaviour the netlist describes.
 
-**Beam ears unbolted** (owner call 2026-09-30): no M4 through the side walls,
-so no screw heads show there. The ears still locate the beam across the width
-and stop either wall bowing inward past 0.5 mm; the FE model never counted the
-ties, so the numbers below are unchanged.
+**No beam ears** (owner calls 2026-09-30): first unbolted, then removed. The
+beam is a plain two-fold C, 839.8 mm, square ends about 3 mm short of each side
+wall: the 0.5 mm the ears left could close under the shop's ±0.20 / ±0.50 and
+both coatings. The floor bolts locate it; nothing touches the side walls.
 
 ### #1019 decision package
 
-Nonlinear shell FE (`_stomp_fea_beam.py`, re-run on this revision with its seven
-beam bolts), 1 kN on the worst pedal station:
+Nonlinear shell FE (`_stomp_fea_beam.py`, re-run on this revision: seven beam
+bolts, beam ends free since the ears went), 1 kN on the worst pedal station:
 
 | Case | Floor peak | Deflection | Util. vs yield | Worst station |
 |---|---|---|---|---|
 | no beam | 95 MPa | 3.28 mm | 1.00 | BANK |
-| beam, 7 bolts, slotted (as drawn) | 139 MPa | 2.98 mm | 1.46 | CLEAR |
-| beam, 7 bolts, plain holes | 175 MPa | 2.89 mm | 1.85 | CLEAR |
+| beam, 7 bolts, slotted (as drawn) | 112 MPa | 3.09 mm | 1.17 | BANK |
+| beam, 7 bolts, plain holes | 148 MPa | 3.01 mm | 1.56 | BANK |
+
+With the ears (beam ends on the side walls) the slotted case read 139 MPa /
+2.98 mm: the wall supports fed load back into the floor near the walls.
 
 All stay under the RC-600 calibration point (util 2.00, a shipping product run
 through the same model). The beam costs 0.46 of floor margin and raises the

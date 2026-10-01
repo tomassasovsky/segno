@@ -484,11 +484,11 @@ class ManufacturingFitTest(unittest.TestCase):
             self.assertAlmostEqual(base.BoundingBox().zmin,0.0,places=5)
             self.assertAlmostEqual(lid.BoundingBox().ymin,-5.0108425,places=4)
             self.assertLess(abs(lid.BoundingBox().zmin),.001)
-            # the support beam is the only part with the steel bend radii: four
-            # inside (1.6) and four outside (3.2) -- the two long folds and the
-            # two wall ears
-            beam_solids = [s for s in solids if len(self._cylinder_axes(s,1.6)) == 4
-                           and len(self._cylinder_axes(s,3.2)) == 4]
+            # the support beam is the only part with the steel bend radii: two
+            # inside (1.6) and two outside (3.2) -- its two long folds (no wall
+            # ears since #1090)
+            beam_solids = [s for s in solids if len(self._cylinder_axes(s,1.6)) == 2
+                           and len(self._cylinder_axes(s,3.2)) == 2]
             self.assertEqual(len(beam_solids),1)
             self._assert_remaining_seats(solids,base,lid)
             self._assert_front_shim_seats(shims,base,lid)

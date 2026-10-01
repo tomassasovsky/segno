@@ -1,5 +1,18 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
+## Beam without ears, ±0.20 openings - 2026-10-01 (#1090)
+
+Same clone, saved.
+
+- `faceplate_support_beam` and `beam_felt`: `ISSUE_1090_NO_EAR_SLOTS` deleted,
+  bodies swapped for the earless `out/segno_beam.step` (97,850.45 mm3) and its
+  felt (12,402.0 mm3), and both occurrences moved to x 3.1 mm (BEAM_U0, was 0.6).
+  Set the move in its OWN script call: done in the same call as `updateBody`
+  the transform silently reverts on recompute. The beam spans u 3.1..842.9 and
+  touches only the floor it sits on.
+- `base`: fuse Ø12.50, MIDI Ø15.70, PD/CTRL Ø24.20 in CUT (+18.41 mm3, exact);
+  formed base re-exported.
+
 ## Ring and knob down the slope, PD diagonal - 2026-09-30 (#1090)
 
 Same clone, saved.

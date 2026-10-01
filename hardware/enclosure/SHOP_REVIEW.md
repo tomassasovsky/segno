@@ -17,8 +17,8 @@ What changed since the 2026-09-15 drafts, as far as the shops are concerned:
   panel. The two CTRL jacks sit in D-size flange plates (D punch + M3 pair).
 - The floor gained Ø3.6 holes for the power boards and the earth stud moved to
   the centre of its free span. Neither changes a process step.
-- The beam's ears are unbolted (owner call 2026-09-30): no hole in the ears or
-  in the side walls.
+- The beam has no wall ears (owner call 2026-09-30): a plain C with two long
+  folds, 839.8 mm, square ends about 3 mm short of each side wall.
 - Dinacut drills (owner call 2026-09-30): the nine front stations on lid and
   body are Ø1.0 laser pilots, drilled out to Ø2.5 / Ø4.5 after folding and
   before welding. There is no post-weld drilling step and no provider to pick.

@@ -1577,11 +1577,13 @@ BEAM_T     = 1.6                   # beam sheet thickness (cold-rolled steel), N
 # each wall's INNER face BA90/2 - RI inboard of that edge -- 0.0892 mm.
 # So the clear span is not the 846.0 of the flat.
 BEAM_WALL_GAP = FP_W - 2*(BA90/2.0 - RI)   # 845.8216 clear, wall inner face to wall inner face
-BEAM_LEN   = 844.8                 # overall, ear OUTER face to ear OUTER face. A round cut
-                                   # length for an 845 mm part; the fit clearance falls out
-                                   # of it rather than the other way round.
+BEAM_LEN   = 839.8                 # overall, end face to end face: ~3 mm short of each side wall
+                                   # (#1090, owner call: no wall ears). The length is a flat
+                                   # laser dimension, not one across a fold, so ±0.30 on it and
+                                   # ±0.50 on the walls' fold stack plus both coatings still
+                                   # leave ~2 mm a side; the beam drops in without forcing.
 BEAM_U0    = (FP_W - BEAM_LEN)/2.0 # 0.6: the beam is centred, so both ends get the same air
-BEAM_END_CLR = (BEAM_WALL_GAP - BEAM_LEN)/2.0      # 0.511 each side
+BEAM_END_CLR = (BEAM_WALL_GAP - BEAM_LEN)/2.0      # 3.01 each side
 
 # --- cable windows -----------------------------------------------------------
 # The seven posts left 71 mm gaps between them, so every cable in the front half
@@ -1602,18 +1604,13 @@ BEAM_LED_U   = (30.0, FP_W - 30.0) # LED strip feed, one per side. Outboard of t
 BEAM_WEB_MIN = 8.0                 # floor on the web left above/below any window, and on the
                                    # web left between two windows
 
-# --- wall ears ---------------------------------------------------------------
-# Each end turns a 90 deg EAR rearward that lies against the side wall's inner
-# face, 0.5 mm off it. The ear folds REARWARD because the foot and the pad both
-# run forward of the web -- an ear folded forward would land in their end faces.
-# The ears are NOT bolted (owner call 2026-09-30, #1090: no screw heads on the
-# side walls). They locate the beam across the width and stop either side wall
-# bowing inward past 0.5 mm. Structurally the beam never needed them: the C
-# section's 109 mm end overhangs past the outermost floor bolts deflect 0.06 mm
-# at 1 kN and see 58 MPa.
-BEAM_EAR_V   = 18.0                # ear depth, rearward from the web's REAR face
-BEAM_EAR_H   = 30.0                # ear height
-BEAM_EAR_Z0  = 6.0                 # ear bottom, above the base floor TOP
+# --- no wall ears (#1090) ----------------------------------------------------
+# The beam used to turn a 90 deg ear back onto each side wall, first bolted
+# through the wall, then unbolted 0.5 mm off it. Neither carried load (the FE
+# never counted them: the stomp goes pad -> web -> 7 floor bolts -> floor), the
+# floor bolts already locate the beam, and at the shop's ±0.20 / ±0.50 the 0.5 mm
+# could close to interference. So the beam is a plain C, cut square at both ends
+# BEAM_END_CLR short of the walls; the lid beside the walls rests on the wall tops.
 # Formed geometry, fitted cap contact and support beneath the base determine the
 # assembled stiffness. Felt separates the painted steel pad from the painted
 # aluminium lid.
@@ -1695,22 +1692,7 @@ BEAM_PAD_F   = BEAM_PAD_OUT - BEAM_DD_PAD                   # flat flap lengths,
 BEAM_WEB_F   = BEAM_WEB_OUT - BEAM_DD_PAD - BEAM_DD_FOOT
 BEAM_FOOT_F  = BEAM_FOOT_OUT - BEAM_DD_FOOT
 _BEAM_FOOT_VP = _BEAM_VP - BEAM_FOOTL/2.0                   # foot-bolt depth (forward of the web)
-# The wall EARS fold 90 deg about a VERTICAL line at each end of the web, so
-# they develop with the same deduction the foot does. Their outer mold length is
-# measured from the outer corner -- where the web's FRONT face meets the ear's
-# outer face -- to the ear's free edge, which is BEAM_EAR_V behind the web's rear
-# face. The web's own outer length along the console is BEAM_LEN, corner to
-# corner, and it loses a deduction at each end.
-BEAM_EAR_OUT = BEAM_T + BEAM_EAR_V
-BEAM_EAR_F   = BEAM_EAR_OUT - BEAM_DD_FOOT
-BEAM_WEB_XF  = BEAM_LEN - 2*BEAM_DD_FOOT           # web band length in the flat
-# An ear fold crosses the pad's and the foot's bend lines, so both flanges are
-# RELIEVED at the ends -- without it the fold tears. Measured in the flat from
-# the ear's bend line; it has to clear the bend's deformation zone, Ri + t.
-BEAM_EAR_RELIEF = 3.5
-assert BEAM_EAR_RELIEF >= BEAM_RI + BEAM_T, "the ear relief does not clear its own bend"
-_BEAM_REL = BEAM_DD_FOOT + BEAM_EAR_RELIEF         # folded: how far the pad and foot
-                                                   # stop short of each wall face
+BEAM_WEB_XF  = BEAM_LEN                            # no fold crosses the length: flat = folded
 
 
 def beam_bolt_u():
@@ -2051,22 +2033,12 @@ def _check(strict_board_mount=True):
     body_front_y = math.cos(math.radians(SLOPE_ANGLE)) * body_front - 2.093
     assert body_front_y - _BEAM_REAR_Y > 1.0, (
         f"BEAM/PANEL: only {body_front_y - _BEAM_REAR_Y:.3f} mm clearance")
-    # 2c. the beam fits BETWEEN the side walls, and its wall EARS reach rearward
-    # into clear air. The ears fold rearward (the foot and pad both run forward),
-    # so they are the only beam metal behind the web -- and the 16in module body
-    # is behind the web too, which is why the ears have to stay out of its u band.
-    assert 0.4 <= BEAM_END_CLR <= 1.0, (
+    # 2c. the beam fits BETWEEN the side walls with room to spare: no ears, and
+    # an end gap that survives the shop's tolerances and both coatings (#1090).
+    assert 2.0 <= BEAM_END_CLR <= 4.0, (
         f"BEAM_LEN {BEAM_LEN} leaves {BEAM_END_CLR:.3f} mm at each end of the "
-        f"{BEAM_WALL_GAP:.4f} clear span -- too tight to paint or too loose to locate")
-    _body_u0 = SCREEN_16_U - S16_BODY_W/2.0
-    _body_u1 = SCREEN_16_U + S16_BODY_W/2.0
-    for _eu in (BEAM_U0 + BEAM_T, FP_W - BEAM_U0 - BEAM_T):
-        assert _eu < _body_u0 - 2.0 or _eu > _body_u1 + 2.0, (
-            f"BEAM ear at u={_eu:.1f} folds rearward into the 16in module body "
-            f"(u {_body_u0:.0f}..{_body_u1:.0f})")
-    assert BEAM_EAR_Z0 >= RI, "BEAM ear bottom sits inside the floor/wall fold radius"
-    assert BEAM_EAR_Z0 + BEAM_EAR_H < BEAM_H, (
-        f"BEAM ear ({BEAM_EAR_Z0}..{BEAM_EAR_Z0+BEAM_EAR_H}) is taller than the web ({BEAM_H:.1f})")
+        f"{BEAM_WALL_GAP:.4f} clear span")
+    assert BEAM_END_CLR - 0.30/2.0 - 0.50 - 2*COAT_MAX > 1.0, "BEAM end gap closes under tolerance"
     # 2d. cable windows. One per front-row pedal plus one per side for the LED
     # feed; the web has to survive them. Checked in u against each other and the
     # fixings, and in z against the web's own height.
@@ -2084,9 +2056,9 @@ def _check(strict_board_mount=True):
             f"BEAM cable windows at u={ua:.0f} and u={ub:.0f} leave "
             f"{(ub-wb/2.0)-(ua+wa/2.0):.1f} mm of web between them")
     assert _wins[0][0] - _wins[0][1]/2.0 >= BEAM_U0 + BEAM_T + BEAM_WEB_MIN, \
-        "the left LED window runs into the beam's end ear"
+        "the left LED window runs into the beam's end"
     assert _wins[-1][0] + _wins[-1][1]/2.0 <= FP_W - BEAM_U0 - BEAM_T - BEAM_WEB_MIN, \
-        "the right LED window runs into the beam's end ear"
+        "the right LED window runs into the beam's end"
     for _bu in beam_bolt_u():                      # no window over a fixing
         for _wu, _ww in _wins:
             assert abs(_bu - _wu) > _ww/2.0 + D_M4, (
@@ -3733,19 +3705,16 @@ def dxf_beam(path):
     off.
 
     The pad->web fold is 90 + BEAM_TILT deg so the pad beds FLUSH on the sloped
-    underside; the foot->web fold is 90; each end turns a rearward EAR onto its
-    side wall, also 90, about a vertical line. Both flanges are RELIEVED at the
-    ends so those ear folds do not tear. The web carries a cable window on every
-    front-row pedal centreline plus one per side for the LED strip feed. Flat
-    DEVELOPED with beam_deduct (K 0.33, Ri = T) on all four folds.
+    underside; the foot->web fold is 90. Both ends are cut square, BEAM_END_CLR
+    short of the side walls (no wall ears since #1090). The web carries a cable
+    window on every front-row pedal centreline plus one per side for the LED
+    strip feed. Flat DEVELOPED with beam_deduct (K 0.33, Ri = T) on both folds.
     """
     doc = _doc(); msp = doc.modelspace()
     pad, web, foot = BEAM_PAD, BEAM_H, BEAM_FOOTL
     pad_f, web_f, foot_f = BEAM_PAD_F, BEAM_WEB_F, BEAM_FOOT_F
     Wd = pad_f + web_f + foot_f
-    ear, rel = BEAM_EAR_F, BEAM_EAR_RELIEF
-    x_w0, x_w1 = ear, ear + BEAM_WEB_XF               # the two ear bend lines
-    x_a, x_b = x_w0 + rel, x_w1 - rel                 # where the pad and foot start/stop
+    x_w0, x_w1 = 0.0, BEAM_LEN                        # the two square ends
     y_p, y_f = pad_f, pad_f + web_f                   # the two long bend lines
 
     def _z2y(z):
@@ -3754,39 +3723,30 @@ def dxf_beam(path):
 
     def _u2x(u):
         """Console u -> flat X (the web band and both flanges share this)."""
-        return x_w0 + (u - BEAM_U0 - BEAM_DD_FOOT)
+        return u - BEAM_U0
 
-    y_e0, y_e1 = _z2y(BEAM_EAR_Z0 + BEAM_EAR_H), _z2y(BEAM_EAR_Z0)
-    _poly(msp, [(x_a, 0), (x_b, 0), (x_b, y_p),
-                (x_w1, y_p), (x_w1, y_e0), (x_w1 + ear, y_e0),
-                (x_w1 + ear, y_e1), (x_w1, y_e1), (x_w1, y_f),
-                (x_b, y_f), (x_b, Wd), (x_a, Wd), (x_a, y_f),
-                (x_w0, y_f), (x_w0, y_e1), (0.0, y_e1),
-                (0.0, y_e0), (x_w0, y_e0), (x_w0, y_p), (x_a, y_p)], "CUT")
-    _poly(msp, [(x_a, y_p), (x_b, y_p)], "BEND", closed=False)   # pad -> web (fold 90 + tilt)
-    _poly(msp, [(x_a, y_f), (x_b, y_f)], "BEND", closed=False)   # web -> foot (fold 90)
-    _poly(msp, [(x_w0, y_e0), (x_w0, y_e1)], "BEND", closed=False)   # left ear (fold 90)
-    _poly(msp, [(x_w1, y_e0), (x_w1, y_e1)], "BEND", closed=False)   # right ear (fold 90)
+    _poly(msp, [(x_w0, 0), (x_w1, 0), (x_w1, Wd), (x_w0, Wd)], "CUT")
+    _poly(msp, [(x_w0, y_p), (x_w1, y_p)], "BEND", closed=False)   # pad -> web (fold 90 + tilt)
+    _poly(msp, [(x_w0, y_f), (x_w1, y_f)], "BEND", closed=False)   # web -> foot (fold 90)
     for bu in beam_bolt_u():                          # 7 M4 in the foot, slotted in DEPTH
         _rrect(msp, _u2x(bu) - D_M4/2.0, Wd - foot/2.0 - (D_M4 + BEAM_BOLT_SLOT)/2.0,
                D_M4, D_M4 + BEAM_BOLT_SLOT, r=D_M4/2.0)
     for wu in beam_cable_u():                         # cable windows through the web
         _rrect(msp, _u2x(wu) - BEAM_CABLE_W/2.0, _z2y(BEAM_H/2.0) - BEAM_CABLE_H/2.0,
                BEAM_CABLE_W, BEAM_CABLE_H, r=BEAM_CABLE_R)
-    _note(msp, x_a, Wd+6,
+    _note(msp, x_w0, Wd+6,
           f"Segno VIGA DE APOYO DE LA TAPA (segno_beam)  ACERO LAMINADO EN FRÍO de {BEAM_T:.1f} mm "
-          f"(NO es el aluminio del gabinete)  CANT. 1  plegado en C de {BEAM_LEN:.1f} mm entre caras exteriores de orejas; "
+          f"(NO es el aluminio del gabinete)  CANT. 1  plegado en C de {BEAM_LEN:.1f} mm de largo, extremos rectos, SIN OREJAS; "
           f"medidas EXTERIORES apoyo {BEAM_PAD_OUT:.2f} / alma {BEAM_WEB_OUT:.2f} / pie {BEAM_FOOT_OUT:.2f} / "
-          f"oreja {BEAM_EAR_OUT:.2f} mm (interiores {pad:.0f} / {web:.1f} / {foot:.0f} / {BEAM_EAR_V:.0f}); "
+          f"(interiores {pad:.0f} / {web:.1f} / {foot:.0f}); "
           f"plegado del apoyo {90+BEAM_TILT:.1f}° (asienta al ras sobre la pendiente de {BEAM_TILT:.1f}°), "
-          f"plegados del pie y de las dos orejas 90°; las orejas pliegan HACIA ATRÁS y llevan alivio de {rel:.1f} mm "
-          f"en apoyo y pie. El pie se abulona al piso del cuerpo ({len(beam_bolt_u())} M4 en agujeros ovalados de "
-          f"{D_M4 + BEAM_BOLT_SLOT:.1f} mm en profundidad: el ovalado deja que la chapa del piso trabaje). Las orejas "
-          f"NO llevan agujero ni tornillo: apoyan contra las paredes laterales y ubican la viga. Fieltro sobre el apoyo; holgura perpendicular nominal SIN PINTAR "
+          f"plegado del pie 90°. El pie se abulona al piso del cuerpo ({len(beam_bolt_u())} M4 en agujeros ovalados de "
+          f"{D_M4 + BEAM_BOLT_SLOT:.1f} mm en profundidad: el ovalado deja que la chapa del piso trabaje). Los extremos quedan "
+          f"{BEAM_END_CLR:.1f} mm separados de cada pared lateral. Fieltro sobre el apoyo; holgura perpendicular nominal SIN PINTAR "
           f"{BEAM_BARE_GAP:.1f} mm, medir nuevamente después de pintar con todos los asientos de tapa pintados. "
           f"Medir la holgura final montada y ajustar el fieltro sin levantar la tapa de sus asientos; deducción "
           f"aplicada (K {KF}, Ri {BEAM_RI:.1f}): {BEAM_DD_PAD:.2f} mm en el plegado del apoyo, {BEAM_DD_FOOT:.2f} mm "
-          f"en el del pie y en cada oreja; desarrollo {Wd:.2f} x {x_w1 + ear:.2f} mm")
+          f"en el del pie; desarrollo {Wd:.2f} x {BEAM_LEN:.2f} mm")
     _save(doc, path); return {}
 
 # ===========================================================================
@@ -5958,7 +5918,7 @@ def build_screen16_stand_steps():
 
 
 def _beam_solid():
-    """The full-width faceplate support beam: a formed C with two wall ears.
+    """The full-width faceplate support beam: a formed C, square ends.
 
     Local frame: x runs along the console width and is 0 at the beam's LEFT
     OUTER face, y is depth with 0 at the foot's free (front) edge, z is up from
@@ -5966,9 +5926,9 @@ def _beam_solid():
 
     The C profile is the one the seven posts used -- foot, web, tilted pad, both
     inside bend radii modelled, mold-line intersections filleted so the sheet
-    keeps its thickness. What is new is that it runs wall to wall, that the web
-    is holed for cables, that the foot's fixings are slotted in depth, and that
-    each end turns a rearward EAR onto the side wall.
+    keeps its thickness. What is new is that it runs nearly wall to wall, that
+    the web is holed for cables and that the foot's fixings are slotted in depth.
+    Both ends are cut square (no wall ears since #1090).
     """
     import cadquery as cq
     a = math.radians(BEAM_TILT)
@@ -5985,38 +5945,7 @@ def _beam_solid():
                            abs(v.Center().z-z) < 1e-6 for y, z in corners)]
         assert len(vertices) == 2, "beam bend corners missing"
         wire = wire.fillet2D(radius, vertices)
-    # The web runs the full outer width; the ears sit on its two ends.
     body = cq.Workplane("YZ").add(wire).toPending().extrude(BEAM_LEN)
-    # --- bend relief: the pad and the foot stop short of each end ------------
-    # An ear folds about a vertical line that crosses both long bend lines, so
-    # both flanges are cut back. Everything forward of the web's front face goes.
-    for x0 in (-1.0, BEAM_LEN - _BEAM_REL):
-        body = body.cut(cq.Workplane("XY")
-                        .box(_BEAM_REL + 1.0, f, 4*h, centered=False)
-                        .translate((x0, 0.0, -h)))
-    # --- wall ears: each end folds a plate REARWARD onto its side wall --------
-    # Rearward because the foot and the pad both run forward of the web. Drawn as
-    # a real L in PLAN with its own concentric radii, so the ear is a bend and not
-    # a butted plate: Fusion can then convert the import to native sheet metal and
-    # unfold it, which is the independent check on the development below.
-    run = 8*(BEAM_RI + t)               # web leg, long enough to carry the fillet
-    for x_out, sgn in ((0.0, +1.0), (BEAM_LEN, -1.0)):
-        x_in = x_out + sgn*t            # ear's inside face
-        x_far = x_out + sgn*run
-        outer = (x_out, f)              # the two outer planes meet here
-        inner = (x_in, f + t)
-        plan = [(x_far, f), outer, (x_out, f + BEAM_EAR_OUT),
-                (x_in, f + BEAM_EAR_OUT), inner, (x_far, f + t)]
-        w = cq.Workplane("XY").polyline(plan).close().val()
-        for radius, corner in ((BEAM_RI, inner), (BEAM_RI + t, outer)):
-            vs = [v for v in w.Vertices()
-                  if abs(v.Center().x - corner[0]) < 1e-6
-                  and abs(v.Center().y - corner[1]) < 1e-6]
-            assert len(vs) == 1, "beam ear bend corner missing"
-            w = w.fillet2D(radius, vs)
-        body = body.union(cq.Workplane("XY").add(w).toPending()
-                          .extrude(BEAM_EAR_H).translate((0, 0, BEAM_EAR_Z0)))
-        # No hole: the ears are unbolted locators (#1090).
     # --- seven M4 to the floor, slotted in DEPTH (v) ------------------------
     # See BEAM_BOLT_SLOT: pinning the bottom plate at each bolt is what costs it
     # margin, and a slot in v hands most of that back.
@@ -6866,18 +6795,10 @@ def _bend_tables():
         (1, "pestaña frontal", "y", ffl,        lid_w, 90.0 - SLOPE_ANGLE,        DN_AWAY, RI, DD_LIP),
         (2, "solapa trasera",  "y", ffl + FP_V + LID_FRONT_EXTRA, BASE_OUTER_W, SLOPE_ANGLE + TRANS_ANGLE, DN_AWAY, RI, DD_LAP),
     ]
-    # The two EARS fold FIRST: they are small flaps at the ends of the web band,
-    # and both long bend lines stop short of them, so the C's tooling never has
-    # to reach past a standing ear. Folded the other way round, an ear would have
-    # to be reached with the C already closed around it. The ears also fold the
-    # OPPOSITE way to the pad and the foot -- the C opens forward, the ears turn
-    # back onto the side walls.
-    _beam_flange_len = BEAM_WEB_XF - 2*BEAM_EAR_RELIEF
+    # Two folds, both full length: the C has no ears since #1090.
     tabs["segno_beam"] = [
-        (1, "oreja izquierda", "x", BEAM_EAR_F,                 BEAM_EAR_H, 90.0, DN_AWAY, BEAM_RI, BEAM_DD_FOOT),
-        (2, "oreja derecha",   "x", BEAM_EAR_F + BEAM_WEB_XF,   BEAM_EAR_H, 90.0, DN_AWAY, BEAM_RI, BEAM_DD_FOOT),
-        (3, "apoyo -> alma",   "y", BEAM_PAD_F,              _beam_flange_len, 90.0 + BEAM_TILT, UP_TOWARD, BEAM_RI, BEAM_DD_PAD),
-        (4, "alma -> pie",     "y", BEAM_PAD_F + BEAM_WEB_F, _beam_flange_len, 90.0,             UP_TOWARD, BEAM_RI, BEAM_DD_FOOT),
+        (1, "apoyo -> alma",   "y", BEAM_PAD_F,              BEAM_LEN, 90.0 + BEAM_TILT, UP_TOWARD, BEAM_RI, BEAM_DD_PAD),
+        (2, "alma -> pie",     "y", BEAM_PAD_F + BEAM_WEB_F, BEAM_LEN, 90.0,             UP_TOWARD, BEAM_RI, BEAM_DD_FOOT),
     ]
     return tabs
 
@@ -6885,8 +6806,8 @@ BEND_TABLES = _bend_tables()
 
 
 def _beam_flange_len_mm():
-    """Length of the beam's two long bend lines -- the web band less its two ear reliefs."""
-    return BEAM_WEB_XF - 2*BEAM_EAR_RELIEF
+    """Length of the beam's two long bend lines: the full beam (no ears since #1090)."""
+    return BEAM_LEN
 
 # Per-part footnote printed under the bend table. The beam has its own T/Ri
 # (1.6 mm steel) and is developed with beam_deduct -- its sheet states the
@@ -6932,11 +6853,8 @@ BEND_FOOTNOTES = {
                        "El propietario debe comprobar el encaje impreso y la sujeción."),
     "segno_beam": (f"ACERO LAMINADO EN FRÍO de 1.6 mm, no el aluminio de 2.0 mm del gabinete. Ri {BEAM_T:.1f} mm (1.0 x T). "
                    f"Deducción aplicada con K {KF} y Ri {BEAM_RI:.1f} mm (= T): {BEAM_DD_PAD:.2f} mm en apoyo->alma (102.5°), "
-                   f"{BEAM_DD_FOOT:.2f} mm en alma->pie y en cada oreja; verificar la longitud desarrollada contra el herramental propio antes de cortar. "
-                   f"LAS FILAS ESTÁN EN ORDEN DE PLEGADO: las dos orejas PRIMERO, con la chapa aún plana; después el apoyo y el pie, "
-                   f"cuyas líneas de plegado terminan {BEAM_EAR_RELIEF:.1f} mm antes de cada oreja (alivio de plegado) para que el herramental "
-                   f"de {_beam_flange_len_mm():.0f} mm no tenga que pasar por encima de una oreja ya levantada. Las orejas pliegan HACIA EL LADO "
-                   f"OPUESTO al apoyo y al pie. "
+                   f"{BEAM_DD_FOOT:.2f} mm en alma->pie; verificar la longitud desarrollada contra el herramental propio antes de cortar. "
+                   f"Dos plegados a lo largo de {_beam_flange_len_mm():.1f} mm, extremos rectos sin orejas. "
                    f"El plegado del apoyo es AGUDO (incluido {90.0 - BEAM_TILT:.1f}°): punzón de 30° y matriz aguda, no el juego de 88°."),
 }
 

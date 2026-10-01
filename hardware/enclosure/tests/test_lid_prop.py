@@ -121,15 +121,14 @@ class SupportBeam(unittest.TestCase):
         fixings = len(enclosure.beam_bolt_u())              # the ears are unbolted (#1090)
         self.assertEqual(radii.get(enclosure.BEAM_CABLE_R), 4*windows)
         self.assertEqual(radii.get(round(enclosure.D_M4/2.0, 3)), 2*fixings)
-        self.assertEqual(radii.get(enclosure.BEAM_RI), 4)                    # 2 long folds
-        self.assertEqual(radii.get(enclosure.BEAM_RI + enclosure.BEAM_T), 4)  # + 2 ears
+        self.assertEqual(radii.get(enclosure.BEAM_RI), 2)                    # 2 long folds
+        self.assertEqual(radii.get(enclosure.BEAM_RI + enclosure.BEAM_T), 2)  # no ears (#1090)
 
     def test_the_development_composes_the_way_the_standard_rule_says(self):
         """Cross-check the per-flap deductions against the one-bend-at-a-time
         form: total flat = sum of outer mould lengths - BD per bend, where BD is
-        twice what beam_deduct() returns for one flap. The four folds are two
-        different angles and one of them (the ears) is a direction the posts
-        never had."""
+        twice what beam_deduct() returns for one flap. Two folds, two different
+        angles; nothing folds along the length since the ears went (#1090)."""
         bd90 = 2*enclosure.beam_deduct(90.0)
         bd_pad = 2*enclosure.beam_deduct(90.0 + enclosure.BEAM_TILT)
         across = (enclosure.BEAM_PAD_OUT + enclosure.BEAM_WEB_OUT
@@ -138,11 +137,10 @@ class SupportBeam(unittest.TestCase):
             across,
             enclosure.BEAM_PAD_F + enclosure.BEAM_WEB_F + enclosure.BEAM_FOOT_F,
             places=9)
-        along = (enclosure.BEAM_LEN + 2*enclosure.BEAM_EAR_OUT) - 2*bd90
-        self.assertAlmostEqual(
-            along, enclosure.BEAM_WEB_XF + 2*enclosure.BEAM_EAR_F, places=9)
+        along = enclosure.BEAM_LEN
+        self.assertAlmostEqual(along, enclosure.BEAM_WEB_XF, places=9)
         # and the blank is the size the shop sheet quotes
-        self.assertAlmostEqual(along, 877.885, places=3)
+        self.assertAlmostEqual(along, 839.8, places=3)
         self.assertAlmostEqual(across, 75.461, places=3)
 
     def test_it_is_one_valid_solid_of_the_size_the_shell_leaves(self):
@@ -151,16 +149,17 @@ class SupportBeam(unittest.TestCase):
         box = solid.BoundingBox()
         self.assertAlmostEqual(box.xlen, enclosure.BEAM_LEN, places=6)
         self.assertAlmostEqual(box.zmin, 0.0, places=6)
-        # foot forward of the web, ear behind it: y runs 0 .. foot + t + ear
+        # foot forward of the web, nothing behind it: y runs 0 .. foot + t
         self.assertAlmostEqual(box.ymax,
-                               enclosure.BEAM_FOOTL + enclosure.BEAM_T
-                               + enclosure.BEAM_EAR_V, places=6)
+                               enclosure.BEAM_FOOTL + enclosure.BEAM_T, places=6)
+        # and it stops well short of both side walls (#1090)
+        self.assertGreater(enclosure.BEAM_END_CLR, 2.0)
 
     def test_the_section_is_strong_enough_that_the_steel_grade_is_free(self):
         """No grade is called out on the drawing, and this is why.
 
-        The beam's own worst case is its end overhang: 119.0 mm of C section
-        past the outermost bolt, with the wall tie ignored. A 1 kN stomp landing
+        The beam's own worst case is its end overhang: 116.5 mm of C section
+        past the outermost bolt, free at the end (no wall ears). A 1 kN stomp landing
         on the very tip reads 85 MPa. The softest cold-rolled mild steel a shop
         stocks yields around 140, so any of them carries it, and E is 210 GPa
         for all of them so stiffness does not depend on the choice either.
@@ -187,7 +186,7 @@ class SupportBeam(unittest.TestCase):
         self.assertAlmostEqual(area, 122.2, places=1)
         self.assertAlmostEqual(second, 33097, delta=50)
         overhang = min(enclosure.beam_bolt_u()) - enclosure.BEAM_U0
-        self.assertAlmostEqual(overhang, 119.0, places=1)
+        self.assertAlmostEqual(overhang, 116.5, places=1)
         tip = 1000.0*overhang*fibre/second
         self.assertLess(tip, 100.0)          # 85.4 as drawn, against a 140 floor
         self.assertLess(1000.0*overhang**3/(3*210000.0*second), 0.1)
@@ -210,8 +209,8 @@ class SupportBeam(unittest.TestCase):
         # outline + 7 foot slots (one per pedal gap, #1088) + 10 cable windows;
         # the ears are unbolted (#1090), so they carry no slot
         self.assertEqual(len(cuts), 1 + 7 + 10)
-        # pad, foot and one bend line per ear
-        self.assertEqual(len(bends), 4)
+        # pad and foot: the only folds
+        self.assertEqual(len(bends), 2)
 
     def test_no_screw_goes_through_the_side_walls(self):
         """Owner call (#1090): the beam's ears are unbolted, so the side walls
@@ -225,7 +224,7 @@ class SupportBeam(unittest.TestCase):
                        for e in ezdxf.readfile(path).modelspace()
                        if e.dxftype() == 'CIRCLE' and e.dxf.layer == 'CUT']
         v0 = enclosure._BEAM_REAR_Y
-        v1 = v0 + enclosure.BEAM_EAR_V
+        v1 = v0 + 18.0                     # where the old ears sat
         wall_x1 = enclosure.W - 2*enclosure.T
         in_walls = [(x, y) for x, y in circles
                     if (x < 0.0 or x > wall_x1) and v0 - 1.0 <= y <= v1 + 1.0]

@@ -18,6 +18,7 @@ BW, BD, T, E, NU, FY = 846.0, 419.0, 2.0, 68900.0, 0.33, 95.0
 E_ST, VB, ZB = 210000.0, 148.997, 22.3      # steel, beam line, neutral axis height
 EI_HAT = 1.37e10                            # 1.6 mm hat, 40 wide x 42 tall
 BOLTS = None
+WALL_ENDS = False   # True reproduces the eared beam of #1019
 
 
 def bolt_us():
@@ -78,14 +79,17 @@ def case(pedal, mode, EI=EI_HAT):
                 ops.element('zeroLength', s.next_tag, base + i, s.nid(i, j),
                             '-mat', *([97] * len(dirs)), '-dir', *dirs)
                 s.next_tag += 1
-            # the beam's ends land on the side walls
-            ops.uniaxialMaterial('Elastic', 96, wall_k())
-            for i in (0, s.nx):
-                g = 400000 + i
-                ops.node(g, float(s.xs[i]), float(s.ys[j]), ZB/10.0)
-                ops.fix(g, 1, 1, 1, 1, 1, 1)
-                ops.element('zeroLength', s.next_tag, g, base + i, '-mat', 96, '-dir', 3)
-                s.next_tag += 1
+            # The beam's ends used to land on the side walls through its ears. It
+            # has no ears since #1090 and stops ~3 mm short of each wall, so its
+            # ends are free: only the floor bolts carry it.
+            if WALL_ENDS:
+                ops.uniaxialMaterial('Elastic', 96, wall_k())
+                for i in (0, s.nx):
+                    g = 400000 + i
+                    ops.node(g, float(s.xs[i]), float(s.ys[j]), ZB/10.0)
+                    ops.fix(g, 1, 1, 1, 1, 1, 1)
+                    ops.element('zeroLength', s.next_tag, g, base + i, '-mat', 96, '-dir', 3)
+                    s.next_tag += 1
             # a beam along x bending in z needs uz and roty; everything else
             # is a rigid-body mode and leaves the system singular. With
             # vertical-only links there is nothing else holding it.
