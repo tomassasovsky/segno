@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -13,10 +14,12 @@ import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
+import 'package:segno/control/binding/mix_value_scale.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -71,6 +74,8 @@ void main() {
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.mixSettingsSnapshot).thenAnswer((_) => currentMix);
+    when(() => looper.laneCount(any())).thenReturn(1);
+    when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
     when(() => looper.validateMixSettings(any())).thenReturn(EngineResult.ok);
     when(() => looper.applyMixSettings(any())).thenAnswer((call) {
       pendingMix = call.positionalArguments.first as MixSettingsSnapshot;
@@ -439,7 +444,7 @@ void main() {
       final slider = find.byKey(const Key('expression_endpoint_heel'));
       await tester.tapAt(tester.getCenter(slider));
       await tester.pumpAndSettle();
-      expect(textOf('expression_endpoint_heel_value'), '50%');
+      expect(textOf('expression_endpoint_heel_value'), '−27.0 dB');
 
       await tap(tester, 'external_save');
       await sweep(tester, 0);
@@ -450,7 +455,81 @@ void main() {
                   ).captured.last
                   as MixSettingsSnapshot)
               .trackLevels[0]!;
-      expect(written, closeTo(0.5, 0.02));
+      expect(written, closeTo(mixerGainAt(0.5), 0.002));
+    });
+
+    expressionTestWidgets(
+      'Escape cancels a heel edit and Enter keeps the next',
+      (
+        tester,
+      ) async {
+        await pump(tester, jack: taught);
+        final slider = find.byKey(const Key('expression_endpoint_heel'));
+        Focus.of(
+          tester.element(
+            find
+                .descendant(of: slider, matching: find.byType(GestureDetector))
+                .first,
+          ),
+        ).requestFocus();
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump();
+        expect(tester.widget<LoopSlider>(slider).value, closeTo(0.01, 1e-9));
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+        expect(tester.widget<LoopSlider>(slider).value, 0);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pump();
+        expect(tester.widget<LoopSlider>(slider).value, closeTo(0.01, 1e-9));
+        await tap(tester, 'external_save');
+        expect(
+          control.state.pedalSetup.external
+              .forJack(PedalCtrlJack.ctrl1)
+              .expression
+              .mappings
+              .single
+              .heel,
+          closeTo(0.01, 1e-9),
+        );
+      },
+    );
+
+    expressionTestWidgets('Escape leaves the saved heel endpoint unchanged', (
+      tester,
+    ) async {
+      await pump(tester, jack: taught);
+      final slider = find.byKey(const Key('expression_endpoint_heel'));
+      Focus.of(
+        tester.element(
+          find
+              .descendant(of: slider, matching: find.byType(GestureDetector))
+              .first,
+        ),
+      ).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(tester.widget<LoopSlider>(slider).value, closeTo(0.01, 1e-9));
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(tester.widget<LoopSlider>(slider).value, 0);
+      await tap(tester, 'external_save');
+      expect(
+        control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single
+            .heel,
+        0,
+      );
     });
 
     expressionTestWidgets(
@@ -502,7 +581,7 @@ void main() {
           '${const TrackVolumeTarget(0).canonicalString()}';
       expect(textOf(key), '—', reason: 'nothing has reported a position');
       await sweep(tester, 127);
-      expect(textOf(key), '100%');
+      expect(textOf(key), '+6.0 dB');
     });
 
     expressionTestWidgets(

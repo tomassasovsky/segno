@@ -107,7 +107,15 @@ void main() {
       ),
     );
     when(() => looper.sessionRevision).thenReturn(1);
+    when(() => looper.mixGeneration).thenReturn(0);
+    when(() => looper.mixSettingsSettled).thenReturn(true);
+    when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
+    when(() => looper.laneCount(any())).thenReturn(1);
+    when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
     when(() => looper.trackEffects(any())).thenReturn(const []);
+    when(() => looper.laneEffects(any(), any())).thenReturn(const []);
+    when(() => looper.monitorEffects(any())).thenReturn(const []);
+    when(() => looper.outputEffects(any())).thenReturn(const []);
     when(() => looper.allTrackChains()).thenReturn(const {});
     when(() => looper.allMonitors()).thenReturn(const {});
     when(() => looper.allLaneChains()).thenReturn(const {});
@@ -994,6 +1002,25 @@ void main() {
         control.state.midiMappings.byId('m1')!.controls.single
             as MidiParameterControl;
     expect((confirmed.low, confirmed.high), (0.2, 0.8));
+
+    Focus.of(
+      tester.element(
+        find.descendant(of: low, matching: find.byType(GestureDetector)).first,
+      ),
+    ).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(tester.widget<LoopSlider>(low).value, closeTo(0.21, 0.0001));
+    await tester.tap(find.byKey(const Key('midi_save')));
+    await tester.pumpAndSettle();
+    final saved =
+        control.state.midiMappings.byId('m1')!.controls.single
+            as MidiParameterControl;
+    expect(saved.low, closeTo(0.21, 0.0001));
+    expect(saved.high, 0.8);
   });
 
   testWidgets('Settings entry Stage pops MIDI route and ends edit owner', (
@@ -1105,10 +1132,29 @@ void main() {
       find.byKey(const Key('expression_kind_recordedTrack')),
     );
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('expression_destination_allTracks')),
+      250,
+      scrollable: find
+          .descendant(
+            of: find.byType(GridView),
+            matching: find.byType(Scrollable),
+          )
+          .last,
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('expression_destination_allTracks')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const Key('expression_destination_allTracks')),
     );
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(Key('external_pick_${externalControlKey(activation)}')),
+      150,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(
       find.byKey(Key('external_pick_${externalControlKey(activation)}')),
       findsOneWidget,

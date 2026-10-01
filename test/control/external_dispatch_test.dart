@@ -11,6 +11,7 @@ import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
@@ -71,11 +72,17 @@ class _RefusingEngine extends PumpedNativeEngine {
 class _Store extends FakeKeyValueStore {
   bool failSetup = false;
   bool failMidi = false;
+  bool failMix = false;
+  int failMixWrites = 0;
   Completer<void>? fxGate;
   Completer<void>? monitorModeGate;
   Completer<void>? monitorFxGate;
   @override
   Future<void> setString(String key, String value) async {
+    if (key == 'mix_settings' && (failMix || failMixWrites > 0)) {
+      if (failMixWrites > 0) failMixWrites--;
+      throw StateError('mix storage refused');
+    }
     if (key.startsWith('track_fx_chain.')) await fxGate?.future;
     if (key == 'monitor_input_mode.0') await monitorModeGate?.future;
     if (key == 'monitor_fx.0') await monitorFxGate?.future;
@@ -130,7 +137,11 @@ class _Rig {
         .encode();
     settings = SettingsRepository(store: store);
     midi = _Midi(settings);
-    mix = testMixSettings(looper, settings: settings);
+    mix = MixSettingsCoordinator(
+      repository: looper,
+      persistence: SettingsMixPersistence(settings),
+      device: () => 'dispatch test rig',
+    );
     pedal = PedalRepository(link, clock: () => clock.elapsed);
     controller = ControllerRepository(
       sources: [ConsoleCtrlSource(pedal)],
@@ -197,8 +208,14 @@ class _Rig {
                   [
                     MidiParameterControl(
                       key: target ?? _chain.canonicalString(),
-                      low: low,
-                      high: high,
+                      low: switch (ControlValueTarget.tryParse(target ?? '')) {
+                        final MixValueTarget mix => mix.fromDomain(low),
+                        _ => low,
+                      },
+                      high: switch (ControlValueTarget.tryParse(target ?? '')) {
+                        final MixValueTarget mix => mix.fromDomain(high),
+                        _ => high,
+                      },
                     ),
                   ],
             ),
@@ -436,6 +453,264 @@ void main() {
     },
   );
 
+  double physical(MixSettingsSnapshot mix, MixValueTarget target) =>
+      switch (target) {
+        TrackVolumeTarget(:final channel) => mix.trackLevels[channel] ?? 1,
+        LaneVolumeTarget(:final channel, :final lane) =>
+          mix.laneLevels[(channel, lane)] ?? 1,
+        MonitorVolumeTarget(:final input) => mix.monitorLevels[input] ?? 1,
+        TrackPanTarget(:final channel) => mix.trackPans[channel] ?? 0,
+        InputPanTarget(:final input) => mix.inputSetup.panOf(input),
+        PairBalanceTarget(:final input) => mix.inputSetup.pairs[input] ?? 0,
+        OutputLevelTarget(:final bus) => mix.outputSetup.of(bus).level,
+        OutputBalanceTarget(:final bus) => mix.outputSetup.of(bus).balance,
+      };
+
+  for (final target in const <MixValueTarget>[
+    TrackVolumeTarget(0),
+    LaneVolumeTarget(0, 0),
+    MonitorVolumeTarget(0),
+    TrackPanTarget(0),
+    InputPanTarget(0),
+    PairBalanceTarget(0),
+    OutputLevelTarget(0),
+    OutputBalanceTarget(0),
+  ]) {
+    final gain =
+        target is TrackVolumeTarget ||
+        target is LaneVolumeTarget ||
+        target is MonitorVolumeTarget;
+    final low = gain || target is OutputLevelTarget ? 0.0 : -1.0;
+    final high = gain ? 2.0 : 1.0;
+    check(
+      'MIDI and External ${target.canonicalString()} '
+      'share full range and durable low',
+      button(
+        [],
+        parameters: [
+          ExternalParameter(
+            target: target,
+            active: 1,
+            inactive: 0,
+            condition: ExternalValueCondition.heldReleased,
+          ),
+        ],
+      ),
+      (r) {
+        if (target is PairBalanceTarget) {
+          unawaited(r.mix.setInputPair(input: 0, paired: true));
+          r.settle();
+          expect(looper.inputSetup.pairs, contains(0));
+        }
+        r
+          ..sample(255)
+          ..settle();
+        expect(
+          physical(looper.mixSettingsSnapshot, target),
+          closeTo(high, 1e-6),
+        );
+        expect(physical(r.mix.durableSnapshot, target), closeTo(low, 1e-6));
+        r
+          ..sample(0)
+          ..settle();
+        expect(
+          physical(looper.mixSettingsSnapshot, target),
+          closeTo(low, 1e-6),
+        );
+        r
+          ..bindMidi(target: target.canonicalString(), low: low, high: high)
+          ..midiValue(127);
+        expect(
+          physical(looper.mixSettingsSnapshot, target),
+          closeTo(high, 1e-6),
+        );
+        expect(physical(r.mix.durableSnapshot, target), closeTo(low, 1e-6));
+        r.midiValue(0);
+        expect(
+          physical(looper.mixSettingsSnapshot, target),
+          closeTo(low, 1e-6),
+        );
+      },
+    );
+  }
+
+  for (final midi in [false, true]) {
+    for (final later in [false, true]) {
+      check(
+        '${midi ? 'MIDI' : 'External'} authored release respects '
+        '${later ? 'newer' : 'superseded'} ordinary mix intent',
+        button(
+          [],
+          parameters: [
+            ExternalParameter(
+              target: const TrackPanTarget(0),
+              active: .9,
+              inactive: .2,
+              condition: ExternalValueCondition.heldReleased,
+            ),
+          ],
+        ),
+        (r) {
+          unawaited(r.mix.setTrackPan(.25));
+          r.settle();
+          if (midi) {
+            r
+              ..bindMidi(
+                target: const TrackPanTarget(0).canonicalString(),
+                low: -.6,
+                high: .8,
+              )
+              ..midiValue(127);
+          } else {
+            r
+              ..sample(255)
+              ..settle();
+          }
+          expect(looper.mixSettingsSnapshot.trackPans[0], closeTo(.8, 1e-6));
+          if (later) {
+            unawaited(r.mix.setTrackPan(.3));
+            r.settle();
+          }
+          if (midi) {
+            r.midiValue(0);
+          } else {
+            r
+              ..sample(0)
+              ..settle();
+          }
+          expect(
+            looper.mixSettingsSnapshot.trackPans[0],
+            closeTo(later ? .3 : -.6, 1e-6),
+          );
+        },
+      );
+    }
+    check(
+      '${midi ? 'MIDI' : 'External'} refused press '
+      'preserves ordinary mix intent',
+      button(
+        [],
+        parameters: [
+          ExternalParameter(
+            target: const TrackPanTarget(0),
+            active: .9,
+            inactive: .2,
+            condition: ExternalValueCondition.heldReleased,
+          ),
+        ],
+      ),
+      (r) {
+        unawaited(r.mix.setTrackPan(.25));
+        r.settle();
+        r.store.failMix = true;
+        if (midi) {
+          r
+            ..bindMidi(
+              target: const TrackPanTarget(0).canonicalString(),
+              low: -.6,
+              high: .8,
+            )
+            ..midiValue(127);
+        } else {
+          r
+            ..sample(255)
+            ..settle();
+        }
+        expect(looper.mixSettingsSnapshot.trackPans[0], .25);
+        r.store.failMix = false;
+        if (midi) {
+          r.midiValue(0);
+        } else {
+          r
+            ..sample(0)
+            ..settle();
+        }
+        expect(looper.mixSettingsSnapshot.trackPans[0], .25);
+      },
+    );
+  }
+
+  check(
+    'missing External mix sibling does not reject a valid held target',
+    button(
+      [],
+      parameters: [
+        ExternalParameter(
+          target: const TrackPanTarget(0),
+          active: .9,
+          inactive: .2,
+          condition: ExternalValueCondition.heldReleased,
+        ),
+        ExternalParameter(
+          target: const PairBalanceTarget(0),
+          active: 1,
+          inactive: 0,
+          condition: ExternalValueCondition.heldReleased,
+        ),
+      ],
+    ),
+    (r) {
+      expect(looper.inputSetup.pairs, isEmpty);
+      r
+        ..sample(255)
+        ..settle();
+      expect(looper.mixSettingsSnapshot.trackPans[0], closeTo(.8, 1e-6));
+      expect(r.mix.durableSnapshot.trackPans[0], closeTo(-.6, 1e-6));
+      r
+        ..sample(0)
+        ..settle();
+      expect(looper.mixSettingsSnapshot.trackPans[0], closeTo(-.6, 1e-6));
+      expect(looper.inputSetup.pairs, isEmpty);
+    },
+  );
+
+  check(
+    'pair replacement detaches MIDI and External held releases',
+    button(
+      [],
+      parameters: [
+        ExternalParameter(
+          target: const PairBalanceTarget(0),
+          active: .875,
+          inactive: .375,
+          condition: ExternalValueCondition.heldReleased,
+        ),
+      ],
+    ),
+    (r) {
+      void pair({required bool linked}) {
+        unawaited(r.mix.setInputPair(input: 0, paired: linked));
+        r.settle();
+      }
+
+      pair(linked: true);
+      r
+        ..bindMidi(
+          target: const PairBalanceTarget(0).canonicalString(),
+          low: -.25,
+          high: .75,
+        )
+        ..midiValue(127);
+      expect(looper.inputSetup.pairs[0], .75);
+      pair(linked: false);
+      pair(linked: true);
+      r.midiValue(0);
+      expect(looper.inputSetup.pairs[0], 0);
+      expect(r.mix.durableSnapshot.inputSetup.pairs[0], 0);
+      r
+        ..sample(255)
+        ..settle();
+      expect(looper.inputSetup.pairs[0], .75);
+      pair(linked: false);
+      pair(linked: true);
+      r
+        ..sample(0)
+        ..settle();
+      expect(looper.inputSetup.pairs[0], 0);
+      expect(r.mix.durableSnapshot.inputSetup.pairs[0], 0);
+    },
+  );
+
   check(
     'External retirement restores surviving MIDI live and durable endpoints',
     button(
@@ -443,8 +718,8 @@ void main() {
       parameters: [
         ExternalParameter(
           target: const TrackVolumeTarget(0),
-          active: .6,
-          inactive: .3,
+          active: const TrackVolumeTarget(0).fromDomain(.6),
+          inactive: const TrackVolumeTarget(0).fromDomain(.3),
           condition: ExternalValueCondition.heldReleased,
         ),
       ],
@@ -457,11 +732,11 @@ void main() {
           high: .8,
         )
         ..midiValue(127);
-      expect(r.mix.durableSnapshot.trackLevels[0], .2);
+      expect(r.mix.durableSnapshot.trackLevels[0], closeTo(.2, 1e-12));
       r
         ..sample(255)
         ..settle();
-      expect(r.mix.durableSnapshot.trackLevels[0], .6);
+      expect(r.mix.durableSnapshot.trackLevels[0], closeTo(.3, 1e-12));
       r
         ..link.emit(
           const CtrlMessage(
@@ -560,6 +835,114 @@ void main() {
       },
     );
   }
+
+  for (final behavior in [MidiBehavior.continuous, MidiBehavior.toggle]) {
+    check(
+      '$behavior non-held intent replaces older External durable projection',
+      button(
+        [],
+        parameters: [
+          ExternalParameter(
+            target: const TrackVolumeTarget(0),
+            active: const TrackVolumeTarget(0).fromDomain(.75),
+            inactive: const TrackVolumeTarget(0).fromDomain(.4),
+            condition: ExternalValueCondition.heldReleased,
+          ),
+        ],
+      ),
+      (r) {
+        unawaited(r.mix.setTrackVolume(.47));
+        r
+          ..clock.flushMicrotasks()
+          ..settle()
+          ..bindMidi(
+            target: const TrackVolumeTarget(0).canonicalString(),
+            high: 1.5,
+            protocol: behavior == MidiBehavior.continuous
+                ? MidiProtocol.relative
+                : MidiProtocol.standard,
+            behavior: behavior,
+          )
+          ..sample(255)
+          ..settle();
+        expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(.75, 1e-6));
+        expect(r.mix.durableSnapshot.trackLevels[0], closeTo(.4, 1e-6));
+
+        r.midiValue(behavior == MidiBehavior.continuous ? 50 : 127);
+        const accepted = 1.5;
+        expect(
+          looper.mixSettingsSnapshot.trackLevels[0],
+          closeTo(accepted, 1e-6),
+        );
+        expect(r.mix.durableSnapshot.trackLevels[0], closeTo(accepted, 1e-6));
+        unawaited(r.cubit.setMidiControlEnabled(enabled: false));
+        r
+          ..clock.flushMicrotasks()
+          ..settle();
+        expect(
+          looper.mixSettingsSnapshot.trackLevels[0],
+          closeTo(accepted, 1e-6),
+        );
+        expect(r.mix.durableSnapshot.trackLevels[0], closeTo(accepted, 1e-6));
+        r
+          ..sample(0)
+          ..settle();
+        expect(
+          looper.mixSettingsSnapshot.trackLevels[0],
+          closeTo(accepted, 1e-6),
+        );
+        expect(r.mix.durableSnapshot.trackLevels[0], closeTo(accepted, 1e-6));
+
+        r
+          ..sample(255)
+          ..settle();
+        expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(.75, 1e-6));
+        expect(r.mix.durableSnapshot.trackLevels[0], closeTo(.4, 1e-6));
+        r
+          ..sample(0)
+          ..settle();
+        expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(.4, 1e-6));
+        expect(r.mix.durableSnapshot.trackLevels[0], closeTo(.4, 1e-6));
+      },
+    );
+  }
+
+  check(
+    'refused non-held intent preserves older External durable projection',
+    button(
+      [],
+      parameters: [
+        ExternalParameter(
+          target: const TrackVolumeTarget(0),
+          active: const TrackVolumeTarget(0).fromDomain(.75),
+          inactive: const TrackVolumeTarget(0).fromDomain(.4),
+          condition: ExternalValueCondition.heldReleased,
+        ),
+      ],
+    ),
+    (r) {
+      r
+        ..bindMidi(
+          target: const TrackVolumeTarget(0).canonicalString(),
+          high: 1.5,
+          behavior: MidiBehavior.toggle,
+        )
+        ..sample(255)
+        ..settle();
+      r.store.failMixWrites = 1;
+      r.midiValue(127);
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(.75, 1e-6));
+      expect(r.mix.durableSnapshot.trackLevels[0], closeTo(.4, 1e-6));
+      unawaited(r.cubit.setMidiControlEnabled(enabled: false));
+      r
+        ..clock.flushMicrotasks()
+        ..settle()
+        ..sample(0)
+        ..settle();
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(.4, 1e-6));
+      expect(r.mix.durableSnapshot.trackLevels[0], closeTo(.4, 1e-6));
+    },
+  );
 
   for (final gap in [99, 101]) {
     check(

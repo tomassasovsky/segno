@@ -30,7 +30,7 @@ String fxStageLabel(
   FxStage.input => l10n.pedalAssignStageInput(address.index + 1),
   FxStage.loop => l10n.pedalAssignStageLoop(
     l10n.trackName(trackNames, address.index),
-    address.lane ?? 0,
+    (address.lane ?? 0) + 1,
   ),
   FxStage.track => l10n.pedalAssignStageTrack(
     l10n.trackName(trackNames, address.index),
@@ -76,6 +76,25 @@ String valueTargetLabel(
   TrackVolumeTarget(:final channel) => l10n.midiLearnTargetVolume(
     l10n.trackName(trackNames, channel),
   ),
+  LaneVolumeTarget(:final channel, :final lane) => _laneVolumeLabel(
+    l10n,
+    trackNames,
+    channel,
+    lane,
+  ),
+  MonitorVolumeTarget(:final input) =>
+    '${l10n.pedalAssignStageInput(input + 1)} · '
+        '${l10n.expressionControlVolume}',
+  TrackPanTarget(:final channel) =>
+    '${l10n.trackName(trackNames, channel)} · ${l10n.routingPan}',
+  InputPanTarget(:final input) =>
+    '${l10n.pedalAssignStageInput(input + 1)} · ${l10n.routingPan}',
+  PairBalanceTarget(:final input) =>
+    '${l10n.pedalAssignStageInput(input + 1)} / ${l10n.pedalAssignStageInput(input + 2)} · ${l10n.routingBalance}',
+  OutputLevelTarget(:final bus) =>
+    '${l10n.pedalAssignStageOutput(bus + 1)} · ${l10n.routingOutputLevel}',
+  OutputBalanceTarget(:final bus) =>
+    '${l10n.pedalAssignStageOutput(bus + 1)} · ${l10n.routingBalance}',
   MasterGainTarget() => l10n.midiLearnTargetMaster,
   FxParamTarget(:final address, :final slotId, :final param) =>
     l10n.midiLearnTargetParam(
@@ -84,6 +103,20 @@ String valueTargetLabel(
       fxParamName(looper, target) ?? '#$param',
     ),
 };
+
+String _laneVolumeLabel(
+  AppLocalizations l10n,
+  List<String> trackNames,
+  int channel,
+  int lane,
+) {
+  final stage = fxStageLabel(
+    l10n,
+    trackNames,
+    FxAddress(stage: FxStage.loop, index: channel, lane: lane),
+  );
+  return '$stage · ${l10n.expressionControlVolume}';
+}
 
 /// The display name of the effect sitting in [target]'s slot, or `null` when
 /// the slot is gone.

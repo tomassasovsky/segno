@@ -86,7 +86,7 @@ void main() {
           names,
           const FxAddress(stage: FxStage.loop, index: 1, lane: 0),
         ),
-        l10n.pedalAssignStageLoop('bass', 0),
+        'bass lane 1',
       );
       expect(
         fxStageLabel(
@@ -132,6 +132,30 @@ void main() {
         valueTargetLabel(l10n, names, looper, const MasterGainTarget()),
         l10n.midiLearnTargetMaster,
       );
+    });
+
+    test('names every Mixer coordinate without using a mutable alias', () {
+      const targets = <MixValueTarget>[
+        TrackVolumeTarget(1),
+        LaneVolumeTarget(1, 0),
+        MonitorVolumeTarget(2),
+        TrackPanTarget(1),
+        InputPanTarget(2),
+        PairBalanceTarget(2),
+        OutputLevelTarget(0),
+        OutputBalanceTarget(0),
+      ];
+      final labels = [
+        for (final target in targets)
+          valueTargetLabel(l10n, names, looper, target),
+      ];
+
+      expect(labels, everyElement(isNotEmpty));
+      expect(labels.toSet(), hasLength(targets.length));
+      expect(labels[1], 'bass lane 1 · Volume');
+      expect(labels[2], 'Input 3 · Volume');
+      expect(labels[5], contains('4'));
+      expect(labels[6], contains('1'));
     });
 
     test(

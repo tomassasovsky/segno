@@ -36,6 +36,54 @@ void main() {
     controls: controls,
   );
 
+  test(
+    'target replacement forgets cleanup but preserves other rows and contact',
+    () {
+      final note = source();
+      final engine = MidiMappingEngine(read: (_) => .5, step: (_) => .01)
+        ..setMappings(
+          MidiMappingSet(
+            mappings: [
+              mapping('m', note, MidiBehavior.momentary, [
+                MidiParameterControl(key: 'pair', low: .2, high: .8),
+                MidiParameterControl(key: 'track', low: .3, high: .7),
+              ]),
+            ],
+          ),
+        );
+      final press = engine.prepare(event(note, 127)).single;
+      engine
+        ..settle(press, {0, 1})
+        ..invalidateTargets({'pair'});
+      expect(engine.prepare(event(note, 127)), isEmpty);
+      final release = engine.prepare(event(note, 0)).single;
+      expect(release.operations.map((op) => op.key), ['track']);
+      engine.settle(release, {1});
+      expect(engine.retryCleanup(), isEmpty);
+      final fresh = engine.prepare(event(note, 127)).single;
+      expect(fresh.operations.map((op) => op.key), ['pair', 'track']);
+    },
+  );
+
+  test('target replacement forgets retired and refused cleanup', () {
+    final note = source();
+    final engine = MidiMappingEngine(read: (_) => .5, step: (_) => .01)
+      ..setMappings(
+        MidiMappingSet(
+          mappings: [
+            mapping('m', note, MidiBehavior.momentary, [
+              MidiParameterControl(key: 'pair', low: .2, high: .8),
+            ]),
+          ],
+        ),
+      );
+    final press = engine.prepare(event(note, 127)).single;
+    engine.settle(press, {0});
+    expect(engine.retire(), hasLength(1));
+    engine.invalidateTargets({'pair'});
+    expect(engine.retryCleanup(), isEmpty);
+  });
+
   test('refused press never creates a held action or release', () {
     final note = source();
     final engine = MidiMappingEngine(read: (_) => 0.5, step: (_) => 0.01)

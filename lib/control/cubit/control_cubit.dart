@@ -172,7 +172,8 @@ class ControlCubit extends Cubit<ControlState> {
        _takeLocked = takeLocked,
        super(const ControlState()) {
     _fxPersistence.onOrdinaryWrite = _onOrdinaryFxWrite;
-    _mixSettings.onOrdinaryTrackLevel = _onOrdinaryTrackLevel;
+    _mixSettings.onOrdinaryValues = _onOrdinaryMixValues;
+    _mixSettings.onInvalidatedValues = _invalidateMixTargets;
     _midiSession = _looper.sessionRevision;
     _midiCapture = midiDevices?.session;
     _looperSub = _looper.looperState.listen(_onLooperState);
@@ -243,6 +244,8 @@ class ControlCubit extends Cubit<ControlState> {
       <PedalCtrlInput, Map<ControlValueTarget, double>>{};
   final _externalPowerReleases = <PedalCtrlInput, Map<FxBindingTarget, bool>>{};
   Object? _externalReleaseEligibility;
+  final _externalInvalidatedMix = <PedalCtrlInput, Set<MixValueTarget>>{};
+  final _externalMixReleased = <PedalCtrlInput, Map<MixValueTarget, double>>{};
   final _externalHeldSetups = <PedalCtrlInput, ExternalSwitchSetup>{};
   final _externalQueues = <PedalCtrlInput, Future<void>>{};
   final _expressionRaw = <PedalCtrlJack, int>{};
@@ -324,6 +327,7 @@ class ControlCubit extends Cubit<ControlState> {
     if (sessionChanged) {
       _externalRetiring.remove(input);
       _externalNumericReleases.remove(input);
+      _externalMixReleased.remove(input);
       _externalPowerReleases.remove(input);
       final trigger = _externalTrigger(input);
       for (final holders in _activationHolders.values) {
@@ -518,6 +522,13 @@ class ControlCubit extends Cubit<ControlState> {
       session: _looper.sessionRevision,
       held: held,
       restoring: restoring,
+      requestedReleased: {
+        if (held == true)
+          for (final row in setup.controls.parameters)
+            if (row.target case final MixValueTarget target)
+              if (row.condition == ExternalValueCondition.heldReleased)
+                target: row.inactive,
+      },
       logicalSetup: on == null ? null : setup,
       logicalOn: on,
       toggleLogical: toggleLogical,
@@ -537,11 +548,17 @@ class ControlCubit extends Cubit<ControlState> {
     bool? held,
     bool restoring = false,
     bool retiring = false,
+    Map<MixValueTarget, double> requestedReleased = const {},
     ExternalSwitchSetup? logicalSetup,
     bool? logicalOn,
     bool toggleLogical = false,
     bool actionAccepted = false,
   }) {
+    final origins = _mixOrigins({
+      ...requestedParameters.keys,
+      for (final entry in _parameterHolders.entries)
+        if (entry.value.containsKey(_externalTrigger(input))) entry.key,
+    });
     final before = _externalTail;
     late final Future<void> next;
     next = before
@@ -550,6 +567,7 @@ class ControlCubit extends Cubit<ControlState> {
               (_closing && !restoring) ||
               isClosed ||
               _looper.sessionRevision != session ||
+              !_mixOriginsCurrent(origins) ||
               (!restoring &&
                   (!identical(_externalTokens[input], token) ||
                       _externalCalibrating == input.jack));
@@ -611,6 +629,11 @@ class ControlCubit extends Cubit<ControlState> {
             }
           }
           if (held == false) {
+            parameters.removeWhere(
+              (target, _) =>
+                  target is MixValueTarget &&
+                  (_externalInvalidatedMix[input]?.contains(target) ?? false),
+            );
             (_externalNumericReleases[input] ??= {}).addAll(parameters);
             (_externalPowerReleases[input] ??= {}).addAll(activations);
           }
@@ -655,9 +678,18 @@ class ControlCubit extends Cubit<ControlState> {
           };
           void recordParameter(ControlValueTarget target) {
             if (held == false) {
+              _externalMixReleased[input]?.remove(target);
               _parameterHolders[target]?.remove(trigger);
               _externalNumericReleases[input]?.remove(target);
             } else {
+              _externalInvalidatedMix[input]?.remove(target);
+              if (target is MixValueTarget) {
+                _retireMixBaseline(target);
+                _externalMixReleased[input]?.remove(target);
+                if (requestedReleased[target] case final low?) {
+                  (_externalMixReleased[input] ??= {})[target] = low;
+                }
+              }
               // Only accepted work supersedes an older same-target cleanup.
               // Later queued releases register when their FIFO work executes.
               _externalNumericReleases[input]?.remove(target);
@@ -758,37 +790,46 @@ class ControlCubit extends Cubit<ControlState> {
             }
           }
           if (cancelled()) return;
+          final mixValues = <MixValueTarget, double>{
+            for (final entry in parameters.entries)
+              if (entry.key case final MixValueTarget target)
+                target: entry.value,
+          };
+          if (mixValues.isNotEmpty) {
+            Map<MixValueTarget, double> released() => {
+              if (held == true)
+                for (final target in mixValues.keys)
+                  target: ?requestedReleased[target],
+              if (held == false)
+                for (final target in mixValues.keys)
+                  target: ?_survivingMidiReleased(target, excluding: trigger),
+            };
+            var outcome = await _mixSettings.setControllerValues(
+              mixValues,
+              releasedValues: released(),
+            );
+            if (!outcome.isOk && held == false && !cancelled()) {
+              await _mixSettings.runExclusive(() async {});
+              if (cancelled()) return;
+              resolveSurvivors();
+              outcome = await _mixSettings.setControllerValues(
+                {
+                  for (final target in mixValues.keys)
+                    target: parameters[target]!,
+                },
+                releasedValues: released(),
+              );
+            }
+            if (outcome.isOk && !cancelled()) {
+              applied = true;
+              mixValues.keys.forEach(recordParameter);
+            }
+          }
+          if (cancelled()) return;
           for (final entry in parameters.entries) {
             switch (entry.key) {
-              case FxParamTarget():
+              case FxParamTarget() || MixValueTarget():
                 break;
-              case TrackVolumeTarget(:final channel):
-                var outcome = await _mixSettings.setMidiTrackVolume(
-                  entry.value,
-                  channel: channel,
-                  releasedValue: held == false
-                      ? _survivingMidiReleased(entry.key, excluding: trigger)
-                      : null,
-                );
-                if (!outcome.isOk && held == false && !cancelled()) {
-                  // Wait for the existing exclusive owner, once. This is an
-                  // admission boundary, not a polling retry or new mix owner.
-                  await _mixSettings.runExclusive(() async {});
-                  if (cancelled()) return;
-                  resolveSurvivors();
-                  outcome = await _mixSettings.setMidiTrackVolume(
-                    parameters[entry.key]!,
-                    channel: channel,
-                    releasedValue: _survivingMidiReleased(
-                      entry.key,
-                      excluding: trigger,
-                    ),
-                  );
-                }
-                if (outcome.isOk && !cancelled()) {
-                  applied = true;
-                  recordParameter(entry.key);
-                }
               case MasterGainTarget():
                 if (_looper.setMasterGain(entry.value).isOk) {
                   _masterGain = entry.value;
@@ -2971,7 +3012,8 @@ class ControlCubit extends Cubit<ControlState> {
     _heldRestore.clear();
     _pendingRestore.clear();
     _fxPersistence.onOrdinaryWrite = null;
-    _mixSettings.onOrdinaryTrackLevel = null;
+    _mixSettings.onOrdinaryValues = null;
+    _mixSettings.onInvalidatedValues = null;
     return super.close();
   }
 }

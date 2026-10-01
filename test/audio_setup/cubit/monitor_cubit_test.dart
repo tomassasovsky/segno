@@ -44,6 +44,7 @@ void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
   late PluginCatalog catalog;
+  late StreamController<LooperState> looperStates;
 
   setUpAll(() {
     registerFallbackValue(<TrackEffect>[]);
@@ -55,6 +56,9 @@ void main() {
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    looperStates = StreamController<LooperState>.broadcast();
+    when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
+    addTearDown(looperStates.close);
     final monitorVolumes = <int, double>{};
     final monitorChains = <int, List<TrackEffect>>{};
     final monitorChainFlags = <int, bool>{};

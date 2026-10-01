@@ -252,6 +252,8 @@ void main() {
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => repository.laneCount(any())).thenReturn(1);
     when(() => repository.fxRecipesSettled).thenReturn(true);
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),

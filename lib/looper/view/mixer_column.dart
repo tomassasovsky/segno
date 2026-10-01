@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/control/binding/mix_value_scale.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -927,25 +928,14 @@ class _StripMeterState extends State<_StripMeter> {
   bool _editing = false;
   bool _touchActive = false;
 
-  static final double _ceilingDb = 20 * math.log(kSignalMaxGain) / math.ln10;
-
   // Gain and the measured dBFS meter have different upper bounds. Both use
   // logarithmic travel; the meter's shared side scale remains -60..0 dBFS.
-  double _fraction(double gain) {
-    if (gain <= 0) return 0;
-    final db = 20 * math.log(gain) / math.ln10;
-    return ((db - kMeterFloorDb) / (_ceilingDb - kMeterFloorDb)).clamp(
-      0.0,
-      1.0,
-    );
-  }
+  double _fraction(double gain) => mixerTravelFor(gain);
 
   double _gainAt(double dy, double height) {
     if (height <= MixerColumn.markerHeight) return 0;
     final fraction = (1 - dy / height).clamp(0.0, 1.0);
-    if (fraction == 0) return 0;
-    final db = kMeterFloorDb + fraction * (_ceilingDb - kMeterFloorDb);
-    return math.pow(10, db / 20).toDouble().clamp(0, kSignalMaxGain);
+    return mixerGainAt(fraction);
   }
 
   void _cancel() {

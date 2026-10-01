@@ -8,6 +8,23 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 shared Mixer controls (#1026)
+
+MIDI and External assignments now share eight typed Mixer control families,
+actual-unit endpoint readouts and one confirmed durable transaction. Input
+monitor level remains separate from recording trim. Missing targets retain
+their identity; source retirement and topology replacement preserve newer
+accepted changes. Session capture saves Released values while a control is
+held. Four new native references are saved in Pen.
+
+The [verification record](reviews/shared-mixer-controls/verification.md)
+records 2,525 ordinary app tests at 90.0054% coverage, 30 controller tests at
+83.2237%, static checks across 706 files and 52 independent native-backed
+adversarial probes. Failed prior cases and repairs remain documented. No
+native API or firmware changed. Click/loop targets follow next. Broader live
+session-load publication remains tracked for M5; physical controllers,
+published-head CI and human merge are separate gates.
+
 ## October 2026 MIDI reconstruction (#1026)
 
 MIDI setup now selects explicit message formats, learns stable sources and
@@ -26,8 +43,10 @@ physical MIDI validation, published-head CI and human merge stay separate.
 The first MIDI publication passed tests but failed ordinary CI coverage at
 89.07%. A reviewed test-only correction adds 23 editor journeys. The matching
 local run excludes author screenshots and supplies no native library: 2,306
-tests pass at 90.0039% coverage, with static gates clean. New published-head CI
-is still required; the earlier author-side coverage did not establish it.
+tests pass at 90.0039% coverage, with static gates clean. All 20 workflow jobs
+and GitGuardian subsequently passed on PR #1047 head
+`06633b2b537efba4c59108e38764e58c0b2c542e` (run 36935129976). The current-head
+review is clean; human merge and physical MIDI validation remain separate.
 
 ## October 2026 external pedal reconstruction (#1026)
 

@@ -71,6 +71,10 @@ void main() {
   setUp(() {
     looper = _MockLooperRepository();
     when(() => looper.sessionRevision).thenReturn(0);
+    when(() => looper.mixGeneration).thenReturn(0);
+    when(() => looper.laneCount(any())).thenReturn(1);
+    when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     when(() => looper.state).thenReturn(
@@ -411,5 +415,49 @@ void main() {
     await tap(tester, 'expression_kind_recordedTrack');
     await tap(tester, 'expression_destination_track:0');
     await shot(tester, 'controls_pick');
+  }, skip: !hasScreenshotFonts);
+
+  screenshotTestWidgets('a button sets track pan while held', (tester) async {
+    await pump(
+      tester,
+      jack: ExternalJackSetup(
+        type: ExternalJackType.dualSwitch,
+        dualFirst: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: const TrackPanTarget(0),
+                condition: ExternalValueCondition.heldReleased,
+                active: 1,
+                inactive: 0.5,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    await shot(tester, 'mixer_pan');
+  }, skip: !hasScreenshotFonts);
+
+  screenshotTestWidgets('an expression pedal edits track gain in dB', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      jack: ExternalJackSetup(
+        type: ExternalJackType.expression,
+        expression: ExternalExpressionSetup(
+          calibration: ExpressionCalibration(heel: 0, toe: 255),
+          mappings: [
+            ExpressionMapping(
+              target: const TrackVolumeTarget(0),
+              heel: 0.5,
+            ),
+          ],
+        ),
+      ),
+    );
+    await shot(tester, 'mixer_expression');
   }, skip: !hasScreenshotFonts);
 }
