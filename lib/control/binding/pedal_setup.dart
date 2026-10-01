@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 /// What a HOLD on Record / Play does.
@@ -145,6 +146,7 @@ class PedalSetup extends Equatable {
     this.modeHold = InteractionMode.custom,
     this.recordHold = RecordHold.undoRecording,
     this.trackHold = TrackHold.armOverdub,
+    this.palette = const PedalPalette(),
   }) : custom = const <PedalBindingKey, ControlGesturePair>{};
 
   const PedalSetup._({
@@ -153,6 +155,7 @@ class PedalSetup extends Equatable {
     required this.recordHold,
     required this.trackHold,
     required this.custom,
+    required this.palette,
   });
 
   /// Rebuilds a setup from its [encode] string. Only an absent blob means a
@@ -171,6 +174,13 @@ class PedalSetup extends Equatable {
       throw const FormatException('Invalid pedal setup object');
     }
     final raw = decoded;
+    final rawPalette = raw['palette'];
+    if (raw.containsKey('palette') && rawPalette is! Map<String, dynamic>) {
+      throw const FormatException('Invalid pedal palette');
+    }
+    final palette = rawPalette is Map<String, dynamic>
+        ? PedalPalette.fromJson(rawPalette)
+        : const PedalPalette();
     final custom = <PedalBindingKey, ControlGesturePair>{};
     final entries = raw['custom'];
     if (raw.containsKey('custom') && entries is! List) {
@@ -219,6 +229,7 @@ class PedalSetup extends Equatable {
       recordHold: RecordHold.fromToken(optionalToken('recordHold')),
       trackHold: TrackHold.fromToken(optionalToken('trackHold')),
       custom: Map.unmodifiable(custom),
+      palette: palette,
     );
   }
 
@@ -246,6 +257,9 @@ class PedalSetup extends Equatable {
 
   /// The Custom-controls map, keyed exactly like the FX remap.
   final Map<PedalBindingKey, ControlGesturePair> custom;
+
+  /// Per-physical-switch LED hues, shared across both action banks.
+  final PedalPalette palette;
 
   /// The pair on [button] within [bank], or [ControlGesturePair.empty].
   ///
@@ -299,6 +313,7 @@ class PedalSetup extends Equatable {
     RecordHold? recordHold,
     TrackHold? trackHold,
     Map<PedalBindingKey, ControlGesturePair>? custom,
+    PedalPalette? palette,
     bool clearModeHold = false,
   }) => PedalSetup._(
     modePress: modePress ?? this.modePress,
@@ -306,6 +321,7 @@ class PedalSetup extends Equatable {
     recordHold: recordHold ?? this.recordHold,
     trackHold: trackHold ?? this.trackHold,
     custom: Map.unmodifiable(custom ?? this.custom),
+    palette: palette ?? this.palette,
   );
 
   /// The canonical encoding. Byte-stable for equal setups — the Custom
@@ -321,6 +337,7 @@ class PedalSetup extends Equatable {
         for (final key in _orderedCustomKeys())
           {...key.toJson(), ...custom[key]!.toJson()},
       ],
+    if (!palette.isEmpty) 'palette': palette.toJson(),
   });
 
   List<PedalBindingKey> _orderedCustomKeys() {
@@ -345,6 +362,7 @@ class PedalSetup extends Equatable {
     modeHold,
     recordHold,
     trackHold,
+    palette,
     // An ORDERED flattening of the map, not the map itself: two setups built
     // in different insertion orders must compare equal, which a Map does not
     // promise through Equatable. Not the encoding either — this is compared

@@ -20,6 +20,12 @@ const _allowed = <String, String>{
   'lib/control/view/pedal_setup/pedal_hardware_face.dart':
       'Fusion pedal artwork — hardware replica',
 
+  // Performer-selected LED hues are saved hardware RGB values. They must not
+  // change with the screen theme; the palette editor's surfaces and focus
+  // indicators still resolve their colors from theme tokens.
+  'lib/control/binding/pedal_palette.dart':
+      'saved physical LED palette — independent of the screen theme',
+
   // Gate decision on #499: the prototype is a 1920x1080 appliance view with no
   // title bar, so there is no design to adopt here — only one to invent.
   'lib/window/window_chrome.dart': 'desktop window chrome — no DS counterpart',

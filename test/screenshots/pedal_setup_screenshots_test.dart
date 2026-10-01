@@ -207,4 +207,33 @@ void main() {
       matchesGoldenFile('goldens/pedal_setup_clear.png'),
     );
   }, skip: !hasScreenshotFonts);
+  testWidgets('All ten LED colors share the physical map', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
+    await tester.pumpAndSettle();
+    await shot(tester, 'leds');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Custom color editor', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_swatch_add')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/pedal_setup_color_editor.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Custom color selection remains named', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_swatch_add')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_color_done')));
+    await tester.pumpAndSettle();
+    await shot(tester, 'leds_custom');
+  }, skip: !hasScreenshotFonts);
 }

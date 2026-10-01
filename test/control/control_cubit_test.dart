@@ -8,6 +8,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -883,6 +884,96 @@ void main() {
       });
 
       test(
+        'hue-only Save preserves an accepted held contact and its mask',
+        () async {
+          transport.press(PedalButton.undo, down: true);
+          await pumpEventQueue();
+          final held = transport.lastFrame!;
+          expect(held.isLit(PedalButton.undo), isTrue);
+          final next = cubit.state.pedalSetup.copyWith(
+            palette: const PedalPalette().withChoice(
+              PedalButton.undo,
+              const BuiltInPaletteEntry(PedalPaletteColor.cyan),
+            ),
+          );
+          await cubit.setPedalSetup(next);
+          final recolored = transport.lastFrame!;
+          expect(recolored.isLit(PedalButton.undo), isTrue);
+          expect(recolored.activeButtonMask, held.activeButtonMask);
+          expect(
+            recolored.colorFor(PedalButton.undo),
+            PedalPaletteColor.cyan.color,
+          );
+          expect(await settings.loadPedalSetup(), next.encode());
+          transport.press(PedalButton.undo, down: false);
+          await pumpEventQueue();
+          expect(transport.lastFrame!.isLit(PedalButton.undo), isFalse);
+        },
+      );
+
+      test('failed hue Save keeps the old frame and durable palette', () async {
+        transport.press(PedalButton.undo, down: true);
+        await pumpEventQueue();
+        final held = transport.lastFrame!;
+        setupStore.refuseSetup = true;
+        await expectLater(
+          cubit.setPedalSetup(
+            cubit.state.pedalSetup.copyWith(
+              palette: const PedalPalette().withChoice(
+                PedalButton.undo,
+                const BuiltInPaletteEntry(PedalPaletteColor.red),
+              ),
+            ),
+          ),
+          throwsException,
+        );
+        expect(transport.lastFrame, held);
+        expect(cubit.state.pedalSetup.palette, const PedalPalette());
+        transport.press(PedalButton.undo, down: false);
+        await pumpEventQueue();
+      });
+
+      test(
+        'hue-only Save retains a pending Mode gesture and FX return',
+        () async {
+          transport.press(PedalButton.mode, down: true);
+          await pumpEventQueue();
+          await cubit.setPedalSetup(
+            cubit.state.pedalSetup.copyWith(
+              palette: const PedalPalette().withChoice(
+                PedalButton.mode,
+                const BuiltInPaletteEntry(PedalPaletteColor.blue),
+              ),
+            ),
+          );
+          transport.press(PedalButton.mode, down: false);
+          await pumpEventQueue();
+          expect(cubit.state.mode, InteractionMode.mute);
+
+          await cubit.setPedalSetup(
+            cubit.state.pedalSetup.copyWith(
+              modePress: InteractionMode.fx,
+              clearModeHold: true,
+            ),
+          );
+          cubit.setMode(InteractionMode.fx);
+          await cubit.setPedalSetup(
+            cubit.state.pedalSetup.copyWith(
+              palette: cubit.state.pedalSetup.palette.withChoice(
+                PedalButton.mode,
+                const BuiltInPaletteEntry(PedalPaletteColor.amber),
+              ),
+            ),
+          );
+          transport
+            ..press(PedalButton.mode, down: true)
+            ..press(PedalButton.mode, down: false);
+          await pumpEventQueue();
+          expect(cubit.state.mode, InteractionMode.mute);
+        },
+      );
+
+      test(
         'Save waits for an older boot read before publishing its setup',
         () async {
           const old = PedalSetup();
@@ -1376,6 +1467,19 @@ void main() {
         setEngine(_tracksWith(const [Track(channel: 1, muted: true)]));
         await pumpEventQueue();
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.copyWith(
+            palette: const PedalPalette().withChoice(
+              PedalButton.track1,
+              const BuiltInPaletteEntry(PedalPaletteColor.violet),
+            ),
+          ),
+        );
+        expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
+        expect(
+          transport.lastFrame?.colorFor(PedalButton.track1),
+          PedalPaletteColor.violet.color,
+        );
         transport.press(PedalButton.track1, down: false);
         await pumpEventQueue();
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);

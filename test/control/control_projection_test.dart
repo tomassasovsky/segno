@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -306,6 +307,28 @@ void main() {
       final stopped = frame.copyWith(isGoodbye: true);
       expect(stopped.isLit(PedalButton.stop), isFalse);
     });
+
+    test(
+      'confirmed palette changes hue without changing physical activity',
+      () {
+        final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
+        final before = projectFrame(looper, const ControlState());
+        final palette = const PedalPalette().withChoice(
+          PedalButton.stop,
+          const BuiltInPaletteEntry(PedalPaletteColor.red),
+        );
+        final after = projectFrame(
+          looper,
+          ControlState(
+            pedalSetup: const PedalSetup().copyWith(palette: palette),
+          ),
+        );
+        expect(before.colorFor(PedalButton.stop), PedalColor.defaultColor);
+        expect(after.colorFor(PedalButton.stop), PedalPaletteColor.red.color);
+        expect(after.activeButtonMask, before.activeButtonMask);
+        expect(after.isLit(PedalButton.stop), isFalse);
+      },
+    );
 
     test('global color: recording red, overdub amber, playing green', () {
       const overlay = ControlState();
