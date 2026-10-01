@@ -43,7 +43,11 @@ void main() {
     ticker = StreamController<void>.broadcast();
     repository = LooperRepository(engine: engine, ticker: ticker.stream);
     settings = SettingsRepository(store: FakeKeyValueStore());
-    bloc = LooperBloc(repository: repository, settings: settings);
+    bloc = LooperBloc(
+      mixSettings: testMixSettings(repository),
+      repository: repository,
+      settings: settings,
+    );
   });
 
   tearDown(() async {

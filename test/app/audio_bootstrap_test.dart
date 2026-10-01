@@ -59,6 +59,7 @@ void main() {
         debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
 
         final result = await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           settings: settings,
         );
@@ -103,6 +104,7 @@ void main() {
           ];
 
           final result = await tryAutoStartEngine(
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             settings: settings,
           );
@@ -139,6 +141,7 @@ void main() {
             ..startResults = [EngineResult.device, EngineResult.ok];
 
           final result = await tryAutoStartEngine(
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             settings: settings,
           );
@@ -158,6 +161,7 @@ void main() {
         engine.startResult = EngineResult.device;
 
         final result = await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           settings: settings,
         );
@@ -192,6 +196,7 @@ void main() {
           );
 
           final result = await tryAutoStartEngine(
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             settings: settings,
           );
@@ -230,6 +235,7 @@ void main() {
           );
 
           final result = await tryAutoStartEngine(
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             settings: settings,
           );
@@ -274,6 +280,7 @@ void main() {
           );
 
           await tryAutoStartEngine(
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             settings: settings,
           );
@@ -312,6 +319,7 @@ void main() {
       );
 
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -343,6 +351,7 @@ void main() {
       );
 
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -375,6 +384,7 @@ void main() {
       );
 
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -417,6 +427,7 @@ void main() {
           );
 
         final result = await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           settings: settings,
         );
@@ -451,6 +462,7 @@ void main() {
         );
 
         final result = await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           settings: settings,
         );
@@ -498,6 +510,7 @@ void main() {
       );
 
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -540,6 +553,7 @@ void main() {
       );
 
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -603,6 +617,7 @@ void main() {
       );
 
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -634,7 +649,7 @@ void main() {
       await settings.saveLaneCount(0, 2);
       await settings.saveLaneInput(0, 1, 2);
       await settings.saveLaneOutput(0, 1, 0x2);
-      await settings.saveLaneVolume(0, 1, 0.4);
+      await settings.seedLaneVolume(0, 1, 0.4);
       await settings.saveLaneMute(0, 1, muted: true);
       await settings.saveLaneEffects(
         0,
@@ -656,6 +671,7 @@ void main() {
       );
 
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -678,6 +694,7 @@ void main() {
       );
 
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -705,6 +722,7 @@ void main() {
       );
 
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -712,6 +730,99 @@ void main() {
       expect(started.started, isTrue);
       expect(engine.lastConfig?.backend.name, AudioBackend.asio.name);
       expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
+    });
+
+    test("restores every track pan and the open device's input setup "
+        '(slice 3) once the engine is up', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      // Channel 1 is panned; channel 0 is at centre and gets no call.
+      await settings.seedTrackPan(1, -0.5);
+      // Keyed to the device the running engine reports ('Fake Device'); a
+      // setup saved for another interface must not be applied.
+      await settings.seedInputSetup('Fake Device', (
+        trimDb: {0: -6},
+        pan: {2: -0.5},
+        pairs: {0: 0.2},
+      ));
+      await settings.seedInputSetup('Other Box', (
+        trimDb: {3: 12},
+        pan: {},
+        pairs: {},
+      ));
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started.started, isTrue);
+      expect(engine.lanePan[(1, 0)], -0.5);
+      expect(engine.lanePan[(0, 0)], 0);
+      expect(repository.state.tracks[1].pan, -0.5);
+      expect(
+        repository.state.inputSetup,
+        InputSetup(
+          trimDb: const {0: -6},
+          pan: const {2: -0.5},
+          pairs: const {0: 0.2},
+        ),
+      );
+      expect(engine.inputTrim[0], closeTo(inputTrimGainOfDb(-6), 1e-9));
+      // The whole setup lands as one projection, including unity defaults.
+      expect(engine.inputTrim[3], 1);
+      expect(engine.monitorPan[2], -0.5);
+      // The pair's members sit hard on their sides.
+      expect(engine.monitorPan[0], -1);
+      expect(engine.monitorPan[1], 1);
+    });
+
+    test('restores a saved track pan onto every lane the saved lane count '
+        'grew, not just lane 0', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      await settings.saveLaneCount(0, 2);
+      await settings.seedTrackPan(0, 0.5);
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started.started, isTrue);
+      expect(engine.laneCount[0], 2);
+      expect(engine.lanePan[(0, 0)], 0.5);
+      expect(engine.lanePan[(0, 1)], 0.5);
     });
 
     test('restores the saved latency offset for the device', () async {
@@ -730,7 +841,11 @@ void main() {
         frames: 720,
       );
 
-      await tryAutoStartEngine(repository: repository, settings: settings);
+      await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
+        repository: repository,
+        settings: settings,
+      );
 
       expect(engine.lastRecordOffset, 720);
     });
@@ -751,7 +866,11 @@ void main() {
         );
         // No saved latency offset for this profile.
 
-        await tryAutoStartEngine(repository: repository, settings: settings);
+        await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          settings: settings,
+        );
 
         expect(engine.measureLatencyCalls, 1);
         expect(engine.lastRecordOffset, isNull); // restored nothing, measured
@@ -777,7 +896,11 @@ void main() {
           ),
         );
 
-        await tryAutoStartEngine(repository: repository, settings: settings);
+        await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          settings: settings,
+        );
 
         expect(engine.lastConfig?.useLoopbackCapture, isFalse);
         expect(engine.lastConfig?.captureDeviceId, 'clarett-in');
@@ -810,7 +933,11 @@ void main() {
           ),
         );
 
-        await tryAutoStartEngine(repository: repository, settings: settings);
+        await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          settings: settings,
+        );
 
         expect(engine.measureLatencyCalls, 1);
       },
@@ -826,6 +953,7 @@ void main() {
       );
 
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -845,6 +973,7 @@ void main() {
       );
 
       final result = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         settings: settings,
       );
@@ -889,8 +1018,17 @@ void main() {
         ticker: const Stream<void>.empty(),
       )..startEngine(const EngineConfig());
       settings = SettingsRepository(store: FakeKeyValueStore());
-      bloc = LooperBloc(repository: repository, settings: settings);
-      monitor = MonitorCubit(repository: repository, settings: settings);
+      final mixSettings = testMixSettings(repository, settings: settings);
+      bloc = LooperBloc(
+        mixSettings: mixSettings,
+        repository: repository,
+        settings: settings,
+      );
+      monitor = MonitorCubit(
+        mixSettings: mixSettings,
+        repository: repository,
+        settings: settings,
+      );
       addTearDown(() async {
         await bloc.close();
         await monitor.close();
@@ -942,6 +1080,7 @@ void main() {
       );
       addTearDown(rebooted.dispose);
       final started = await tryAutoStartEngine(
+        mixSettings: testMixSettings(rebooted),
         repository: rebooted,
         settings: settings,
       );

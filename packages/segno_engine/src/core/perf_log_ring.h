@@ -28,6 +28,7 @@
 #define SEGNO_PERF_LOG_RING_H
 
 #include <stdatomic.h>
+#include <string.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -172,9 +173,40 @@ typedef enum le_perf_log_code {
  * already reads/writes, reused verbatim for entries whose `code` is an
  * audited LE_CMD_*; le_perf_log_code entries reuse whichever arm fits their
  * own payload, documented per code above). */
+/* Performance facts are primitive commands only. Keep their named 16-byte
+ * payload independent from the larger in-process transaction union. */
+typedef struct le_log_command {
+  int32_t code;
+  union {
+    struct { int32_t arg_i; float arg_f; };
+    struct { int32_t channel; uint32_t mask; } trackmask;
+    struct { int32_t channel, lane, index, type; } fx;
+    struct { int32_t channel, lane, count; } fxcount;
+    struct { int32_t channel, lane, value; } lanei;
+    struct { int32_t channel, lane; float value; } lanef;
+    struct { int32_t channel, slot; uint32_t generation; } evt;
+    struct { int32_t channel, take_id; } take;
+    struct { int32_t position, master_len, iteration; } perf_arm;
+    struct { int32_t value; uint32_t sequence; } clock;
+    struct { int32_t base_frames, loop_bars; } session;
+    struct { int32_t channel, len, master_len; uint32_t generation; } frozen;
+    struct { int32_t channel, len, state, master_len; } restore;
+  };
+} le_log_command;
+
+/* Explicit extraction also handles the transaction union's stronger alignment:
+ * never assume a le_command payload starts four bytes after its code. */
+static inline int le_log_extract(const le_command* command, le_log_command* out) {
+  if (command->code == LE_CMD_SET_MIX || command->code == LE_CMD_RECORD_IMAGE ||
+      command->code == LE_CMD_SET_LENGTH_PRESETS) return 0;
+  out->code = command->code;
+  memcpy(&out->arg_i, &command->arg_i, 16);
+  return 1;
+}
+
 typedef struct le_perf_log_entry {
   uint64_t frame;
-  le_command cmd;
+  le_log_command cmd;
 } le_perf_log_entry;
 
 /* Fixed-capacity SPSC ring of le_perf_log_entry. `capacity` is a power of two;

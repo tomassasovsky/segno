@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_host.dart';
 import 'package:segno/control/control.dart';
@@ -37,6 +38,7 @@ class LooperPage extends StatelessWidget {
         BlocProvider(
           create: (context) => LooperBloc(
             repository: context.read<LooperRepository>(),
+            mixSettings: context.read<MixSettingsCoordinator>(),
             controller: context.read<ControllerRepository>(),
             settings: context.read<SettingsRepository>(),
             takeLocked: () {
@@ -53,6 +55,8 @@ class LooperPage extends StatelessWidget {
             repository: context.read<SessionRepository>(),
             looper: context.read<LooperRepository>(),
             performance: context.read<PerformanceRepository>(),
+            mixSettings: context.read<MixSettingsCoordinator>(),
+            mixPersistence: context.read<MixSettingsPersistence>(),
             exportDirectory: exportDirectory,
             // The session's pedal remap (part 6b) crossing as an opaque
             // string. Narrow functions rather than a cubit-to-cubit link:

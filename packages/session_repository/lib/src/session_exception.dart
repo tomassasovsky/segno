@@ -32,8 +32,8 @@ class SessionSampleRateMismatch extends SessionException {
       '$deviceRate Hz';
 }
 
-/// The session manifest was written by a newer, incompatible schema [version]
-/// than this build understands (it [supported] up to a lower version).
+/// The session manifest declares schema [version], not this build's required
+/// schema [supported].
 class SessionUnsupportedVersion extends SessionException {
   /// Creates a [SessionUnsupportedVersion].
   const SessionUnsupportedVersion({
@@ -44,12 +44,12 @@ class SessionUnsupportedVersion extends SessionException {
   /// The manifest's declared schema version.
   final int version;
 
-  /// The highest schema version this build can read.
+  /// The only schema version this build can read.
   final int supported;
 
   @override
   String toString() =>
-      'unsupported session version $version (supports up to $supported)';
+      'unsupported session version $version (requires $supported)';
 }
 
 /// A track lane's overdub-layer stack is structurally invalid — its declared

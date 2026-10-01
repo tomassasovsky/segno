@@ -1,5 +1,6 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/console_audio_devices.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/logging/app_log.dart';
 // Settings owns its own AudioBackend; the looper domain backend is the
@@ -27,6 +28,14 @@ typedef AutoStartResult = ({
 /// device could be opened, which the looper surfaces as an "audio not running"
 /// affordance.
 Future<AutoStartResult> tryAutoStartEngine({
+  required LooperRepository repository,
+  required SettingsRepository settings,
+  required MixSettingsCoordinator mixSettings,
+}) => mixSettings.runExclusive(
+  () => _tryAutoStartEngine(repository: repository, settings: settings),
+);
+
+Future<AutoStartResult> _tryAutoStartEngine({
   required LooperRepository repository,
   required SettingsRepository settings,
 }) async {
@@ -182,6 +191,7 @@ Future<AutoStartResult> tryAutoStartEngine({
   // start). A freshly measured offset is persisted the next time the cubit is
   // created (or the next interactive measurement).
   final status = repository.state.status;
+  final savedMix = await settings.loadMixSettings(status.deviceName);
   final savedOffset = await settings.loadLatencyOffsetFrames(
     device: status.deviceName,
     sampleRate: status.sampleRate,
@@ -210,6 +220,7 @@ Future<AutoStartResult> tryAutoStartEngine({
   // Separate setters would race each other while the first vector waits for
   // callback publication, and an explicit Auto override (zero) must survive.
   final lengthOverrides = <int, int>{};
+  final laneLevels = <(int, int), double>{};
   for (final track in repository.state.tracks) {
     final preset = await settings.loadTrackLengthPreset(track.channel);
     if (preset != null) lengthOverrides[track.channel] = preset;
@@ -275,9 +286,9 @@ Future<AutoStartResult> tryAutoStartEngine({
           mask: outputMask,
         );
       }
-      final volume = await settings.loadLaneVolume(track.channel, lane);
+      final volume = savedMix.laneLevels[(track.channel, lane)];
       if (volume != null) {
-        repository.setLaneVolume(volume, channel: track.channel, lane: lane);
+        laneLevels[(track.channel, lane)] = volume;
       }
       final muted = await settings.loadLaneMute(track.channel, lane);
       if (muted != null) {
@@ -393,6 +404,40 @@ Future<AutoStartResult> tryAutoStartEngine({
     if (enabled == false) {
       repository.setOutputEnabled(output: output, enabled: false);
     }
+  }
+
+  // Restore the per-input capture setup (slice 3): trims, pans and pairs,
+  // as ONE projection, the same call a session load makes. Keyed to the
+  // OPEN device like the output gate above. The repository remembers the
+  // setup and pushes every trim and monitor mix to the engine now. Bounded
+  // by the device's input count; when the status does not report one, by
+  // the same ceiling the monitor reapply scans.
+  final inputSetup = await settings.loadInputSetup(
+    device: status.deviceName,
+    inputCount: status.inputChannels > 0
+        ? status.inputChannels
+        : kMaxMonitoredInputs,
+  );
+  final mixRequest = repository.setMixSettings(
+    trackPans: savedMix.trackPans,
+    laneLevels: laneLevels,
+    monitorLevels: savedMix.monitorLevels,
+    inputSetup: InputSetup(
+      trimDb: inputSetup.trimDb,
+      pan: inputSetup.pan,
+      pairs: inputSetup.pairs,
+    ),
+  );
+  final mixResult = mixRequest.isOk
+      ? await repository.settleMixSettings()
+      : mixRequest;
+  if (!mixResult.isOk) {
+    AppLog.error(
+      'audio auto-start: saved mix replay refused '
+      'result=${mixResult.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
 
   // Per-input live monitors are restored by MonitorCubit.load() (the shell

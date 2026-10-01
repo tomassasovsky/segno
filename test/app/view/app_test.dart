@@ -241,6 +241,7 @@ void main() {
     }) async {
       await tester.pumpWidget(
         App(
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
@@ -262,6 +263,7 @@ void main() {
     ) async {
       await tester.pumpWidget(
         App(
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
@@ -439,6 +441,7 @@ void main() {
       tester,
     ) async {
       App buildApp() => App(
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         controllerRepository: controllerRepository,
         midiDeviceRepository: midiDeviceRepository,
@@ -479,6 +482,7 @@ void main() {
       link.hello();
       await tester.pumpWidget(
         App(
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
@@ -515,6 +519,7 @@ void main() {
       // directly even with no saved audio config.
       await tester.pumpWidget(
         App(
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
@@ -695,6 +700,7 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            mixSettings: testMixSettings(pinned),
             repository: pinned,
             controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
@@ -777,6 +783,7 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
             midiDeviceRepository: midi,
@@ -911,6 +918,7 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
@@ -1145,6 +1153,7 @@ void main() {
         final window = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            mixSettings: testMixSettings(driven),
             repository: driven,
             controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
@@ -1624,6 +1633,7 @@ void main() {
         // arrival). pump (not pumpAndSettle) — the cubit holds a periodic poll.
         await tester.pumpWidget(
           App(
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,

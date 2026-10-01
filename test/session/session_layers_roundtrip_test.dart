@@ -38,7 +38,7 @@ void main() {
   const loopFrames = 256;
   const poll = Duration(milliseconds: 1);
 
-  setUp(() {
+  setUp(() async {
     engine = PumpedNativeEngine();
     looper = LooperRepository(engine: engine)
       ..startEngine(
@@ -49,6 +49,9 @@ void main() {
           maxLoopFrames: 48000,
         ),
       );
+    expect(looper.record(), EngineResult.notReady);
+    engine.pump(frames: 0);
+    expect(await looper.settleMixSettings(), EngineResult.ok);
     session = SessionRepository(engine: engine);
     tempDir = Directory.systemTemp.createTempSync('segno_layers_session');
     pumpDriver = Timer.periodic(poll, (_) => engine.pump(frames: 0));
@@ -84,14 +87,14 @@ void main() {
     required int undos,
     double step = 0.1,
   }) {
-    looper.record();
+    expect(looper.record(), EngineResult.ok);
     engine.pump(frames: loopFrames, input: base);
-    looper.record(); // finalize -> playing
+    expect(looper.record(), EngineResult.ok); // finalize -> playing
     engine.pump(frames: 0);
     for (var p = 0; p < overdubs; p++) {
-      looper.record(); // punch in
+      expect(looper.record(), EngineResult.ok); // punch in
       engine.pump(frames: loopFrames, input: step);
-      looper.record(); // punch out
+      expect(looper.record(), EngineResult.ok); // punch out
       settle();
     }
     for (var u = 0; u < undos; u++) {

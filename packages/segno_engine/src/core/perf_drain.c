@@ -811,9 +811,9 @@ static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
 }
 
 /* Serializes one log entry into the fixed 28-byte on-disk record: frame,
- * code, then the union's raw 16 bytes taken directly from memory (every
- * le_command union arm is laid out as plain int32_t/float/uint32_t fields
- * with no arm exceeding 16 bytes, so this is a faithful, code-agnostic copy —
+ * code, then the compact primitive payload's 16 bytes. Admission explicitly
+ * extracts primitive fields from le_command; transaction batches never enter
+ * this ring. The compact payload has no padding after its code, so
  * the reader interprets those 16 bytes per the audited table's per-code arm
  * documentation, the same way apply_command does in-process). */
 static int le_pd_write_log_entry(FILE* f, const le_perf_log_entry* entry) {

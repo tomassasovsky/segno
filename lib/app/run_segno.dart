@@ -11,7 +11,9 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/audio_bootstrap.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/monitor_migration.dart';
+import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/app/view/app.dart';
 import 'package:segno/bootstrap.dart';
 import 'package:segno/logging/app_log.dart';
@@ -144,6 +146,11 @@ Future<void> runSegno(
           )
         : null,
   );
+  final mixSettings = MixSettingsCoordinator(
+    repository: looper,
+    persistence: SettingsMixPersistence(settings),
+    device: () => looper.state.status.deviceName,
+  );
   // In-app updates. The backend is inert until the appliance/desktop backends
   // are wired, so the update UI stays hidden on unsupported builds.
   final updates = UpdateRepository(backend: createPlatformUpdateBackend());
@@ -186,6 +193,7 @@ Future<void> runSegno(
     final result = await tryAutoStartEngine(
       repository: looper,
       settings: settings,
+      mixSettings: mixSettings,
     );
     asioDrivers = result.asioDrivers;
     audioRecoveryConfig = result.recoveryConfig;
@@ -202,6 +210,7 @@ Future<void> runSegno(
           WidgetsBinding.instance.platformDispatcher.displays.length,
       audioRecoveryConfig: audioRecoveryConfig,
       settings: settings,
+      mixSettings: mixSettings,
       waveformWindow: DesktopMultiWindowWaveformService(),
       waveformWindowOpenDelay: Duration(
         milliseconds:

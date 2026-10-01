@@ -214,8 +214,11 @@ void main() {
                     InputsCubit(settings: settings, repository: repository),
               ),
               BlocProvider<MonitorCubit>(
-                create: (_) =>
-                    MonitorCubit(repository: repository, settings: settings),
+                create: (_) => MonitorCubit(
+                  mixSettings: testMixSettings(repository),
+                  repository: repository,
+                  settings: settings,
+                ),
               ),
               // The device-lost banner and the not-running gate read the
               // audio setup cubit (#453).

@@ -23,6 +23,48 @@ void main() {
     clearPollAttempts: 4,
   );
 
+  test(
+    'read rejects older and missing schema before inspecting stems',
+    () async {
+      final dir = '${tempDir.path}/obsolete';
+      Directory(dir).createSync();
+      final manifest = const Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 4,
+        tracks: [
+          SessionTrack(
+            channel: 0,
+            multiple: 1,
+            lengthFrames: 4,
+            lanes: [
+              SessionLane(
+                lane: 0,
+                volume: 1,
+                muted: false,
+                outputMask: 3,
+                inputChannel: 0,
+                layers: [SessionLayer(file: 'missing.wav')],
+              ),
+            ],
+          ),
+        ],
+      ).toJson();
+      final file = File('$dir/${Session.manifestName}');
+      await file.writeAsString(jsonEncode(manifest..['version'] = 7));
+      await expectLater(
+        repoFor(FakeSessionEngine()).read(dir),
+        throwsA(isA<SessionUnsupportedVersion>()),
+      );
+      manifest.remove('version');
+      await file.writeAsString(jsonEncode(manifest));
+      await expectLater(
+        repoFor(FakeSessionEngine()).read(dir),
+        throwsFormatException,
+      );
+    },
+  );
+
   test('save writes the manifest, a stem per track, and a mixdown', () async {
     final engine = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
@@ -45,6 +87,31 @@ void main() {
     expect(session.tracks, hasLength(2));
     expect(session.tracks[1].multiple, 2);
   });
+
+  test(
+    'empty-track pan and input setup survive a session save and read',
+    () async {
+      final engine = FakeSessionEngine();
+      final directory = '${tempDir.path}/empty-mix';
+      const settings = SessionSettings(
+        trackPans: {7: 0.75},
+        inputSetup: SessionInputSetup(
+          trimDb: {0: -6},
+          pan: {1: -0.5},
+          pairs: {2: 0.25},
+        ),
+      );
+
+      final saved = await repoFor(engine).save(directory, settings: settings);
+      final loaded = (await repoFor(engine).read(directory)).session;
+      expect(saved.tracks, isEmpty);
+      expect(loaded.tracks, isEmpty);
+      expect(loaded.trackPans, {7: 0.75});
+      expect(loaded.inputSetup.trimDb, {0: -6});
+      expect(loaded.inputSetup.pan, {1: -0.5});
+      expect(loaded.inputSetup.pairs, {2: 0.25});
+    },
+  );
 
   test('save waits out an in-flight overdub layer before capturing', () async {
     final engine = FakeSessionEngine()
@@ -70,6 +137,8 @@ void main() {
       final decays = {0: 25};
       final playback = {0: false};
       final presets = {0: 4};
+      final pans = {6: -0.6};
+      final trims = {2: 3.0};
       final dir = '${tempDir.path}/detached';
       final pending = repoFor(engine).save(
         dir,
@@ -78,6 +147,8 @@ void main() {
           trackOverdubDecayOverrides: decays,
           trackOneShotOverrides: playback,
           trackLengthPresetOverrides: presets,
+          trackPans: pans,
+          inputSetup: SessionInputSetup(trimDb: trims),
         ),
       );
       // The save is waiting for the in-flight layer; these edits belong to the
@@ -87,6 +158,8 @@ void main() {
       decays.clear();
       playback[0] = true;
       presets[0] = 8;
+      pans[6] = 0.4;
+      trims.clear();
       final saved = await pending;
       final read = (await repoFor(engine).read(dir)).session;
       for (final session in [saved, read]) {
@@ -94,11 +167,14 @@ void main() {
         expect(session.trackOverdubDecayOverrides, {0: 25});
         expect(session.trackOneShotOverrides, {0: false});
         expect(session.trackLengthPresetOverrides, {0: 4});
+        expect(session.trackPans, {6: -0.6});
+        expect(session.inputSetup.trimDb, {2: 3});
       }
       expect(
         () => saved.trackOneShotOverrides[0] = true,
         throwsUnsupportedError,
       );
+      expect(() => saved.trackPans[6] = 0, throwsUnsupportedError);
     },
   );
 
@@ -165,6 +241,27 @@ void main() {
     expect(saved.tracks, hasLength(1));
     expect(engine.commandChecks, 2);
     expect(engine.capturedInFlight, isFalse);
+  });
+
+  test('device lifetime change during settlement writes no bundle', () async {
+    final engine = _CommandSettlementEngine()
+      ..pendingCommands = true
+      ..seedTrack(0, Float32List.fromList([1, 2, 3, 4]));
+    final dir = '${tempDir.path}/restarted';
+    var generation = 0;
+    final acceptedGeneration = generation;
+    final pending = repoFor(engine).save(
+      dir,
+      settings: const SessionSettings(trackPans: {0: .7}),
+      captureStillValid: () => generation == acceptedGeneration,
+    );
+    expect(engine.commandChecks, 1);
+    generation++;
+    engine.pendingCommands = false;
+
+    await expectLater(pending, throwsStateError);
+    expect(engine.exports, 0);
+    expect(Directory(dir).existsSync(), isFalse);
   });
 
   test('save times out without writing when commands never settle', () async {
@@ -257,7 +354,7 @@ void main() {
         monitors: [
           SessionMonitor(
             input: 2,
-            enabled: true,
+            mode: 'on',
             outputMask: 0x1,
             volume: 0.6,
             muted: true,
@@ -805,6 +902,32 @@ void main() {
     expect(wav.frames, 4);
     for (final sample in wav.samples) {
       expect(sample, closeTo(1.25, 1e-6)); // 1.0 (lane 0) + 0.25 (lane 1)
+    }
+  });
+
+  test('the saved mixdown plays a lane at its level times its balance, the '
+      'gain the engine held', () async {
+    final engine = FakeSessionEngine()
+      // The engine's own gain (0.25) is what the level times the balance
+      // came to; the save reads the two factors and multiplies them back.
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]), volume: 0.25);
+    final dir = '${tempDir.path}/mix_gain';
+
+    await repoFor(engine).save(
+      dir,
+      settings: const SessionSettings(
+        laneMix: {
+          (0, 0): (level: 0.5, imagePan: 0, balance: 0.5),
+        },
+      ),
+    );
+    final wav = WavCodec.decodeFloat32(
+      File('$dir/${SessionRepository.mixdownName}').readAsBytesSync(),
+    );
+
+    expect(wav.frames, 4);
+    for (final sample in wav.samples) {
+      expect(sample, closeTo(0.25, 1e-6));
     }
   });
 

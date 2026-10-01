@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:local_storage_client/local_storage_client.dart';
 import 'package:pub_semver/pub_semver.dart';
@@ -93,6 +95,26 @@ class StoredAudioConfig {
 
 /// Persists user/device settings via a [KeyValueStore].
 ///
+/// The per-input capture setup as this repository stores it (accepted
+/// design, Audio routing): capture trim per input in dB, pan per mono input,
+/// and every stereo pair's balance keyed by the pair's lower member. A plain
+/// record rather than the looper domain's `InputSetup`, so this repository
+/// holds no domain dependency; the app builds the model from it. Absent
+/// entries are unity, centre and unpaired.
+typedef StoredInputSetup = ({
+  Map<int, double> trimDb,
+  Map<int, double> pan,
+  Map<int, double> pairs,
+});
+
+/// The appliance-wide saved mix and the current device's capture setup.
+typedef StoredMixSettings = ({
+  Map<int, double> trackPans,
+  Map<(int, int), double> laneLevels,
+  Map<int, double> monitorLevels,
+  StoredInputSetup inputSetup,
+});
+
 /// Stores the per-device record-offset latency calibration, the last-used audio
 /// device configuration (so the engine can auto-start on launch), per-track
 /// display names, and big-picture view preferences.
@@ -103,11 +125,21 @@ class SettingsRepository {
   /// or `null` where that knob is not engaged (any non-Linux platform, or
   /// Linux without `SEGNO_ALSA_PERIODS` set). Derive it with
   /// [alsaPeriodsFromEnvironment]; the composition root passes it in.
-  const SettingsRepository({required KeyValueStore store, int? alsaPeriods})
+  SettingsRepository({required KeyValueStore store, int? alsaPeriods})
     : _store = store,
       _alsaPeriods = alsaPeriods;
 
   final KeyValueStore _store;
+  Future<void> _serializedWrite = Future<void>.value();
+
+  Future<void> _serialize(Future<void> Function() write) {
+    final operation = _serializedWrite.then((_) => write());
+    _serializedWrite = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace stackTrace) {},
+    );
+    return operation;
+  }
 
   /// The effective ALSA period count, part of the latency-calibration key.
   ///
@@ -740,7 +772,6 @@ class SettingsRepository {
   // v3 fold). The enable flag is shared with the prior model.
   String _monitorInputModeKey(int input) => 'monitor_input_mode.$input';
   String _monitorOutKey(int input) => 'monitor_out.$input';
-  String _monitorVolKey(int input) => 'monitor_vol.$input';
   String _monitorMuteKey(int input) => 'monitor_mute.$input';
   String _monitorFxKey(int input) => 'monitor_fx.$input';
 
@@ -846,13 +877,24 @@ class SettingsRepository {
   /// Loads hardware [input]'s monitor output gain (`0..LE_MAX_GAIN`, 2.0,
   /// +6.02 dB headroom above unity), or `null` if never saved (the caller
   /// defaults to unity `1.0`).
-  Future<double?> loadMonitorVolume(int input) =>
-      _store.getDouble(_monitorVolKey(input));
+  Future<double?> loadMonitorVolume(int input) async {
+    await _serializedWrite;
+    return (await _readMixSettings()).monitorLevels[input];
+  }
 
   /// Saves hardware [input]'s monitor output gain (`0..LE_MAX_GAIN`, 2.0,
   /// +6.02 dB headroom above unity).
   Future<void> saveMonitorVolume(int input, double volume) =>
-      _store.setDouble(_monitorVolKey(input), volume);
+      _serialize(() async {
+        _validateMonitorLevels({input: volume});
+        final saved = await _readMixSettings();
+        if (volume == 1) {
+          saved.monitorLevels.remove(input);
+        } else {
+          saved.monitorLevels[input] = volume;
+        }
+        await _writeMixSettings(saved);
+      });
 
   /// Loads hardware [input]'s monitor mute flag, or `null` if never saved.
   Future<bool?> loadMonitorMute(int input) =>
@@ -1085,6 +1127,194 @@ class SettingsRepository {
   Future<void> clearConsoleName(String serial) =>
       _store.remove(_consoleNameKey(serial));
 
+  static const String _mixSettingsKey = 'mix_settings';
+
+  /// Reads the exact durable mix value before a coordinated edit.
+  Future<String?> readMixSettingsCheckpoint() async {
+    await _serializedWrite;
+    return _store.getString(_mixSettingsKey);
+  }
+
+  /// Restores an exact previously read durable mix value in one operation.
+  Future<void> restoreMixSettingsCheckpoint(String? checkpoint) => _serialize(
+    () => checkpoint == null
+        ? _store.remove(_mixSettingsKey)
+        : _store.setString(_mixSettingsKey, checkpoint),
+  );
+
+  Future<_SavedMixSettings> _readMixSettings() async {
+    final raw = await _store.getString(_mixSettingsKey);
+    if (raw == null) return _SavedMixSettings();
+    final json = jsonDecode(raw) as Map<String, dynamic>;
+    Map<int, double> values(Object? source) => {
+      for (final entry in (source as Map<String, dynamic>? ?? const {}).entries)
+        int.parse(entry.key): (entry.value as num).toDouble(),
+    };
+    final levels = <(int, int), double>{};
+    for (final entry
+        in (json['levels'] as Map<String, dynamic>? ?? const {}).entries) {
+      final address = entry.key.split('.');
+      if (address.length != 2) throw const FormatException('bad mixer lane');
+      levels[(int.parse(address[0]), int.parse(address[1]))] =
+          (entry.value as num).toDouble();
+    }
+    final devices = <String, StoredInputSetup>{};
+    for (final entry
+        in (json['inputSetups'] as Map<String, dynamic>? ?? const {}).entries) {
+      final setup = entry.value as Map<String, dynamic>;
+      devices[entry.key] = (
+        trimDb: values(setup['trimDb']),
+        pan: values(setup['pan']),
+        pairs: values(setup['pairs']),
+      );
+    }
+    return _SavedMixSettings(
+      pans: values(json['pans']),
+      levels: levels,
+      monitorLevels: values(json['monitorLevels']),
+      inputSetups: devices,
+    );
+  }
+
+  Future<void> _writeMixSettings(_SavedMixSettings saved) {
+    Map<String, double> encoded(Map<int, double> values) => {
+      for (final entry in values.entries) '${entry.key}': entry.value,
+    };
+    final setups = <String, Object>{};
+    for (final entry in saved.inputSetups.entries) {
+      final setup = entry.value;
+      if (setup.trimDb.isEmpty && setup.pan.isEmpty && setup.pairs.isEmpty) {
+        continue;
+      }
+      setups[entry.key] = {
+        'trimDb': encoded(setup.trimDb),
+        'pan': encoded(setup.pan),
+        'pairs': encoded(setup.pairs),
+      };
+    }
+    if (saved.pans.isEmpty &&
+        saved.levels.isEmpty &&
+        saved.monitorLevels.isEmpty &&
+        setups.isEmpty) {
+      return _store.remove(_mixSettingsKey);
+    }
+    return _store.setString(
+      _mixSettingsKey,
+      jsonEncode({
+        'pans': encoded(saved.pans),
+        'levels': {
+          for (final entry in saved.levels.entries)
+            '${entry.key.$1}.${entry.key.$2}': entry.value,
+        },
+        'monitorLevels': encoded(saved.monitorLevels),
+        'inputSetups': setups,
+      }),
+    );
+  }
+
+  /// Reads one consistent mix and the selected device's setup.
+  Future<StoredMixSettings> loadMixSettings(String device) async {
+    await _serializedWrite;
+    final saved = await _readMixSettings();
+    return (
+      trackPans: saved.pans,
+      laneLevels: saved.levels,
+      monitorLevels: saved.monitorLevels,
+      inputSetup: saved.inputSetups[device] ?? _emptyInputSetup(),
+    );
+  }
+
+  /// Replaces all mix controls in one durable write, retaining other devices.
+  Future<void> replaceMixSettings({
+    required String device,
+    required StoredMixSettings mix,
+  }) {
+    final detached = (
+      trackPans: Map<int, double>.of(mix.trackPans),
+      laneLevels: Map<(int, int), double>.of(mix.laneLevels),
+      monitorLevels: Map<int, double>.of(mix.monitorLevels),
+      inputSetup: (
+        trimDb: Map<int, double>.of(mix.inputSetup.trimDb),
+        pan: Map<int, double>.of(mix.inputSetup.pan),
+        pairs: Map<int, double>.of(mix.inputSetup.pairs),
+      ),
+    );
+    return _serialize(() async {
+      _validateMixerSettings(detached.trackPans, detached.laneLevels);
+      _validateMonitorLevels(detached.monitorLevels);
+      _validateInputSetup(detached.inputSetup);
+      final saved = await _readMixSettings();
+      saved.pans
+        ..clear()
+        ..addAll(detached.trackPans);
+      saved.levels
+        ..clear()
+        ..addAll(detached.laneLevels);
+      saved.monitorLevels
+        ..clear()
+        ..addAll(detached.monitorLevels);
+      saved.inputSetups[device] = detached.inputSetup;
+      await _writeMixSettings(saved);
+    });
+  }
+
+  void _validateMixerSettings(
+    Map<int, double> pans,
+    Map<(int, int), double> levels,
+  ) {
+    if (pans.entries.any(
+          (e) =>
+              e.key < 0 ||
+              e.key >= 8 ||
+              !e.value.isFinite ||
+              e.value < -1 ||
+              e.value > 1,
+        ) ||
+        levels.entries.any(
+          (e) =>
+              e.key.$1 < 0 ||
+              e.key.$1 >= 8 ||
+              e.key.$2 < 0 ||
+              e.key.$2 >= 8 ||
+              !e.value.isFinite ||
+              e.value < 0 ||
+              e.value > 2,
+        )) {
+      throw ArgumentError('invalid mixer settings');
+    }
+  }
+
+  void _validateMonitorLevels(Map<int, double> levels) {
+    if (levels.entries.any(
+      (e) =>
+          e.key < 0 ||
+          e.key >= 32 ||
+          !e.value.isFinite ||
+          e.value < 0 ||
+          e.value > 2,
+    )) {
+      throw ArgumentError('invalid monitor levels');
+    }
+  }
+
+  void _validateInputSetup(StoredInputSetup setup) {
+    bool inRange(Map<int, double> values, double min, double max) =>
+        values.entries.every(
+          (e) =>
+              e.key >= 0 &&
+              e.key < 32 &&
+              e.value.isFinite &&
+              e.value >= min &&
+              e.value <= max,
+        );
+    if (!inRange(setup.trimDb, -24, 12) ||
+        !inRange(setup.pan, -1, 1) ||
+        !inRange(setup.pairs, -1, 1) ||
+        setup.pairs.keys.any((input) => input.isOdd || input >= 31)) {
+      throw ArgumentError('invalid input setup');
+    }
+  }
+
   String _trackNameKey(int channel) => 'track_name.$channel';
 
   /// Loads the custom display name for track [channel], or `null` if unset.
@@ -1124,6 +1354,43 @@ class SettingsRepository {
     required String device,
     required int input,
   }) => _store.remove(_inputNameKey(device, input));
+
+  // Every control shares the single durable mix value. _serialize keeps rapid
+  // read/modify/write gestures from overwriting one another.
+  StoredInputSetup _emptyInputSetup() => (
+    trimDb: <int, double>{},
+    pan: <int, double>{},
+    pairs: <int, double>{},
+  );
+
+  Future<StoredInputSetup> _readInputSetup(String device) async =>
+      (await _readMixSettings()).inputSetups[device] ?? _emptyInputSetup();
+
+  /// Loads the first [inputCount] inputs of [device]. Pair keys must name an
+  /// even lower member whose partner exists in the negotiated device.
+  Future<StoredInputSetup> loadInputSetup({
+    required String device,
+    required int inputCount,
+  }) async {
+    await _serializedWrite;
+    final setup = await _readInputSetup(device);
+    return (
+      trimDb: {
+        for (final e in setup.trimDb.entries)
+          if (e.key >= 0 && e.key < inputCount && e.value != 0) e.key: e.value,
+      },
+      pan: {
+        for (final e in setup.pan.entries)
+          if (e.key >= 0 && e.key < inputCount && e.value != 0)
+            e.key: e.value.clamp(-1.0, 1.0),
+      },
+      pairs: {
+        for (final e in setup.pairs.entries)
+          if (e.key >= 0 && e.key.isEven && e.key + 1 < inputCount)
+            e.key: e.value.clamp(-1.0, 1.0),
+      },
+    );
+  }
 
   String _trackRecordTimingKey(int channel) => 'track_record_timing.$channel';
 
@@ -1186,7 +1453,6 @@ class SettingsRepository {
   String _laneCountKey(int channel) => 'lane_count.$channel';
   String _laneInputKey(int channel, int lane) => 'lane_input.$channel.$lane';
   String _laneOutputKey(int channel, int lane) => 'lane_output.$channel.$lane';
-  String _laneVolKey(int channel, int lane) => 'lane_vol.$channel.$lane';
   String _laneMuteKey(int channel, int lane) => 'lane_mute.$channel.$lane';
   String _laneEffectsKey(int channel, int lane) =>
       'lane_effects.$channel.$lane';
@@ -1215,15 +1481,6 @@ class SettingsRepository {
   /// Saves lane [lane] of track [channel]'s output [mask].
   Future<void> saveLaneOutput(int channel, int lane, int mask) =>
       _store.setInt(_laneOutputKey(channel, lane), mask);
-
-  /// Loads lane [lane] of track [channel]'s playback volume, or `null` if
-  /// unset.
-  Future<double?> loadLaneVolume(int channel, int lane) =>
-      _store.getDouble(_laneVolKey(channel, lane));
-
-  /// Saves lane [lane] of track [channel]'s playback [volume].
-  Future<void> saveLaneVolume(int channel, int lane, double volume) =>
-      _store.setDouble(_laneVolKey(channel, lane), volume);
 
   /// Loads lane [lane] of track [channel]'s mute state, or `null` if unset.
   Future<bool?> loadLaneMute(int channel, int lane) =>
@@ -1340,4 +1597,21 @@ class SettingsRepository {
 
   /// Clears all settings.
   Future<void> clear() => _store.clear();
+}
+
+class _SavedMixSettings {
+  _SavedMixSettings({
+    Map<int, double>? pans,
+    Map<(int, int), double>? levels,
+    Map<int, double>? monitorLevels,
+    Map<String, StoredInputSetup>? inputSetups,
+  }) : pans = pans ?? {},
+       levels = levels ?? {},
+       monitorLevels = monitorLevels ?? {},
+       inputSetups = inputSetups ?? {};
+
+  final Map<int, double> pans;
+  final Map<(int, int), double> levels;
+  final Map<int, double> monitorLevels;
+  final Map<String, StoredInputSetup> inputSetups;
 }

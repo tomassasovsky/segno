@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -10,7 +12,14 @@ import 'package:segno/session/session_mapping.dart';
 // the engine types under an `le` prefix — everything else here is domain.
 import 'package:segno_engine/segno_engine.dart'
     as le
-    show BuiltInEffect, PluginEffect, PluginFormat, TrackEffectType;
+    show
+        BuiltInEffect,
+        LatencyState,
+        PluginEffect,
+        PluginFormat,
+        TrackEffectType;
+import 'package:segno_engine/segno_engine.dart'
+    show EngineSnapshot, LaneSnapshot, TrackSnapshot;
 import 'package:session_repository/session_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
@@ -18,6 +27,123 @@ import '../helpers/fake_audio_engine.dart';
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 void main() {
+  test(
+    'pair image and untouched fader survive a file save and recall',
+    () async {
+      const empty = EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        inputChannels: 2,
+        outputChannels: 2,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final engine = FakeAudioEngine()..nextSnapshot = empty;
+      final ticker = StreamController<void>.broadcast();
+      final looper = LooperRepository(engine: engine, ticker: ticker.stream)
+        ..startEngine(const EngineConfig(sampleRate: 48000));
+      final directory = Directory.systemTemp.createTempSync(
+        'session_pair_image',
+      );
+      addTearDown(ticker.close);
+      addTearDown(looper.dispose);
+      addTearDown(() => directory.deleteSync(recursive: true));
+
+      expect(looper.setInputPair(input: 0, paired: true), EngineResult.ok);
+      expect(looper.setPairBalance(input: 0, balance: 2 / 3), EngineResult.ok);
+      expect(looper.record(), EngineResult.ok);
+      expect(engine.laneVol[(0, 0)], closeTo(0.5, 1e-6));
+
+      final pcm = Float32List.fromList([0.4, 0.4, 0.4, 0.4]);
+      engine.laneExports[(0, 0)] = pcm;
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        inputChannels: 2,
+        outputChannels: 2,
+        masterLengthFrames: 4,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 0.5,
+            muted: false,
+            lengthFrames: 4,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+            lanes: [
+              LaneSnapshot(
+                inputChannel: 0,
+                outputMask: 3,
+                volume: 0.5,
+                muted: false,
+                lengthFrames: 4,
+                rms: 0,
+                peak: 0,
+                pan: -1,
+              ),
+            ],
+          ),
+        ],
+      );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      final live = looper.state.tracks.single.lanes.single;
+      expect(live.volume, 1);
+      expect(live.balance, closeTo(0.5, 1e-6));
+      final files = SessionRepository(engine: engine);
+      await files.save(
+        directory.path,
+        chains: chainsFromLooper(looper),
+        settings: settingsFromLooper(looper),
+      );
+      final manifest =
+          jsonDecode(
+                await File(
+                  '${directory.path}/${Session.manifestName}',
+                ).readAsString(),
+              )
+              as Map<String, dynamic>;
+      final track =
+          (manifest['tracks'] as List<dynamic>).single as Map<String, dynamic>;
+      final savedLane =
+          (track['lanes'] as List<dynamic>).single as Map<String, dynamic>;
+      expect(savedLane['volume'], 1);
+      expect(savedLane['balance'], closeTo(0.5, 1e-6));
+
+      final bundle = await files.read(directory.path);
+      expect(bundle.laneStems[(0, 0)]!.single.first, closeTo(0.4, 1e-6));
+      final rig = rigFromBundle(bundle);
+      final recalledEngine = FakeAudioEngine()..nextSnapshot = empty;
+      final recalled = LooperRepository(engine: recalledEngine)
+        ..startEngine(const EngineConfig(sampleRate: 48000));
+      addTearDown(recalled.dispose);
+      await recalled.applySession(rig, clearPollInterval: Duration.zero);
+      expect(recalledEngine.laneVol[(0, 0)], closeTo(0.5, 1e-6));
+      expect(
+        recalledEngine.laneVol[(0, 0)]! *
+            recalledEngine.exportLayer(0, 0, 0).first,
+        closeTo(0.2, 1e-6),
+      );
+    },
+  );
+
   group('settingsFromLooper', () {
     test('captures the exact published grid relationship', () {
       final looper = _MockLooperRepository();
@@ -37,6 +163,7 @@ void main() {
       when(() => looper.trackOverdubDecayOverrides).thenReturn(const {});
       when(() => looper.trackOneShotOverrides).thenReturn(const {});
       when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
+      when(() => looper.state).thenReturn(const LooperState());
       expect(settingsFromLooper(looper).loopBars, 7);
     });
 
@@ -101,6 +228,7 @@ void main() {
         expect(rig.trackOverdubDecayOverrides, {0: 30, 1: 0});
         expect(rig.trackOneShotOverrides, {0: false, 1: true});
         expect(rig.trackLengthPresetOverrides, {0: 4});
+        expect(rig.trackPans, isEmpty);
 
         looper
           ..setTrackRecordTiming(channel: 0, timing: null)
@@ -147,7 +275,7 @@ void main() {
       expect(chains.monitors, hasLength(1));
       final monitor = chains.monitors.single;
       expect(monitor.input, 1);
-      expect(monitor.enabled, isTrue);
+      expect(monitor.mode, 'on');
       expect(monitor.outputMask, 0x2);
       expect(monitor.volume, 1.0);
       expect(monitor.muted, isFalse);
@@ -155,7 +283,7 @@ void main() {
       expect(decodeFxChain(monitor.encoded), const FxChainEnvelope());
     });
 
-    test('saves the gate by name as well as by boolean', () {
+    test('saves the monitor gate by its canonical mode', () {
       when(looper.allMonitors).thenReturn(const {
         0: InputMonitor(input: 0, mode: MonitorMode.auto),
         1: InputMonitor(input: 1, mode: MonitorMode.on),
@@ -166,13 +294,6 @@ void main() {
         for (final m in chainsFromLooper(looper).monitors) m.input: m,
       };
 
-      // The boolean stays — not for older readers, which reject a v7 manifest
-      // on the version gate before they reach it, but because it is what THIS
-      // build reads back from every bundle written before the name existed.
-      expect(saved[0]!.enabled, isTrue);
-      expect(saved[1]!.enabled, isTrue);
-      expect(saved[2]!.enabled, isFalse);
-      // The name is which of the two non-off states it was.
       expect(saved[0]!.mode, 'auto');
       expect(saved[1]!.mode, 'on');
       expect(saved[2]!.mode, 'off');
@@ -191,6 +312,17 @@ void main() {
 
       final decoded = decodeFxChain(chains.monitors.single.encoded).entries;
       expect((decoded.single as BuiltInEffect).type, TrackEffectType.reverb);
+    });
+
+    test('writes no monitor pan (slice 3): the load rebuilds it from the '
+        'input setup', () {
+      when(looper.allMonitors).thenReturn(const {
+        0: InputMonitor(input: 0, mode: MonitorMode.on, pan: -1),
+      });
+
+      final chains = chainsFromLooper(looper);
+
+      expect(chains.monitors.single.toJson().containsKey('pan'), isFalse);
     });
 
     test('emits no monitors when none are configured', () {
@@ -468,10 +600,9 @@ void main() {
       tracks: tracks,
     );
 
-    test('decodes chains in BOTH wire formats: legacy bare array and the '
-        'FX v3 envelope (R15)', () {
+    test('maps bare-array FX payloads and current chain envelopes', () {
       final pcm = Float32List.fromList([1, 1, 1, 1]);
-      final legacy = encodeTrackEffects([
+      final bare = encodeTrackEffects([
         BuiltInEffect(type: TrackEffectType.drive),
       ]);
       final envelope = encodeFxChain(
@@ -494,12 +625,12 @@ void main() {
             ),
           ],
           laneChains: [
-            SessionLaneChain(channel: 0, lane: 0, encoded: legacy),
+            SessionLaneChain(channel: 0, lane: 0, encoded: bare),
           ],
           monitors: [
             SessionMonitor(
               input: 0,
-              enabled: true,
+              mode: 'on',
               outputMask: 0x3,
               volume: 1,
               muted: false,
@@ -581,7 +712,6 @@ void main() {
         session: sessionWithMonitor(
           const SessionMonitor(
             input: 0,
-            enabled: true,
             mode: 'auto',
             outputMask: 0x3,
             volume: 1,
@@ -595,16 +725,13 @@ void main() {
       expect(rig.monitors.single.mode, MonitorMode.auto);
     });
 
-    test('a v6 monitor still restores what its boolean said', () {
-      for (final (enabled, expected) in [
-        (true, MonitorMode.on),
-        (false, MonitorMode.off),
-      ]) {
-        final rig = rigFromBundle((
+    test('an unknown current-schema monitor mode is rejected', () {
+      expect(
+        () => rigFromBundle((
           session: sessionWithMonitor(
-            SessionMonitor(
+            const SessionMonitor(
               input: 0,
-              enabled: enabled,
+              mode: 'sidechain-from-2027',
               outputMask: 0x3,
               volume: 1,
               muted: false,
@@ -612,61 +739,9 @@ void main() {
             ),
           ),
           laneStems: const {},
-        ));
-
-        // `on`, not `auto`: it is what the bundle was heard as, and guessing
-        // `auto` would make a monitor that played unconditionally start
-        // following the arm.
-        expect(rig.monitors.single.mode, expected);
-      }
-    });
-
-    test('the name wins when the two disagree', () {
-      // Unreachable from this build's writer, which derives one from the
-      // other — but the precedence is the whole design: the name carries
-      // strictly more than the boolean, so it decides.
-      for (final (enabled, mode, expected) in [
-        (false, 'auto', MonitorMode.auto),
-        (true, 'off', MonitorMode.off),
-      ]) {
-        final rig = rigFromBundle((
-          session: sessionWithMonitor(
-            SessionMonitor(
-              input: 0,
-              enabled: enabled,
-              mode: mode,
-              outputMask: 0x3,
-              volume: 1,
-              muted: false,
-              encoded: '',
-            ),
-          ),
-          laneStems: const {},
-        ));
-
-        expect(rig.monitors.single.mode, expected);
-      }
-    });
-
-    test('a gate name this build does not know falls back, never to off', () {
-      final rig = rigFromBundle((
-        session: sessionWithMonitor(
-          const SessionMonitor(
-            input: 0,
-            enabled: true,
-            mode: 'sidechain-from-2027',
-            outputMask: 0x3,
-            volume: 1,
-            muted: false,
-            encoded: '',
-          ),
-        ),
-        laneStems: const {},
-      ));
-
-      // A gate written by a future build is not a deliberate disable — the
-      // same reading the settings restore takes.
-      expect(rig.monitors.single.mode, MonitorMode.on);
+        )),
+        throwsFormatException,
+      );
     });
 
     test('decodes the v5 BUS stages into the rig, chain flags included', () {
@@ -721,51 +796,56 @@ void main() {
       );
     });
 
-    test('a v4 bundle (no bus-stage fields at all) yields empty bus stages, '
-        'every level enabled — the presence-keyed migration [R15]', () {
-      final pcm = Float32List.fromList([1, 1, 1, 1]);
-      final bundle = (
-        session: Session(
-          sampleRate: 48000,
-          channels: 1,
-          baseLengthFrames: 4,
-          tracks: [
-            SessionTrack(
-              channel: 0,
-              multiple: 1,
-              lengthFrames: 4,
-              lanes: [lane(0, 'track0_lane0_L0.wav')],
-            ),
-          ],
-          // A v4 manifest's Loop chain: the bare entries array, no envelope.
-          laneChains: [
-            SessionLaneChain(
-              channel: 0,
-              lane: 0,
-              encoded: encodeTrackEffects([
-                BuiltInEffect(type: TrackEffectType.drive),
-              ]),
-            ),
-          ],
-        ),
-        laneStems: {
-          (0, 0): [pcm],
-        },
-      );
+    test(
+      'a current Session with omitted bus chains maps empty stages '
+      'and FX defaults',
+      () {
+        final pcm = Float32List.fromList([1, 1, 1, 1]);
+        final bundle = (
+          session: Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 4,
+            tracks: [
+              SessionTrack(
+                channel: 0,
+                multiple: 1,
+                lengthFrames: 4,
+                lanes: [lane(0, 'track0_lane0_L0.wav')],
+              ),
+            ],
+            // The FX decoder handles bare-array payloads independently of
+            // the schema-8 manifest reader.
+            laneChains: [
+              SessionLaneChain(
+                channel: 0,
+                lane: 0,
+                encoded: encodeTrackEffects([
+                  BuiltInEffect(type: TrackEffectType.drive),
+                ]),
+              ),
+            ],
+          ),
+          laneStems: {
+            (0, 0): [pcm],
+          },
+        );
 
-      final rig = rigFromBundle(bundle);
+        final rig = rigFromBundle(bundle);
 
-      expect(rig.trackChains, isEmpty);
-      expect(rig.masterChain, const FxChainEnvelope());
-      // The lane it DID describe loads enabled at both levels, with no
-      // inheritance marker — and no slot ids yet (the repository mints those).
-      final loop = rig.laneChains[(0, 0)]!;
-      expect(loop.chainEnabled, isTrue);
-      expect(loop.meta, isNull);
-      final loopFx = loop.entries.single as BuiltInEffect;
-      expect(loopFx.enabled, isTrue);
-      expect(loopFx.slotId, isNull);
-    });
+        expect(rig.trackChains, isEmpty);
+        expect(rig.masterChain, const FxChainEnvelope());
+        // The lane it DID describe loads enabled at both levels, with no
+        // inheritance marker — and no slot ids yet (the repository mints
+        // those).
+        final loop = rig.laneChains[(0, 0)]!;
+        expect(loop.chainEnabled, isTrue);
+        expect(loop.meta, isNull);
+        final loopFx = loop.entries.single as BuiltInEffect;
+        expect(loopFx.enabled, isTrue);
+        expect(loopFx.slotId, isNull);
+      },
+    );
 
     test('maps every lane that has decoded audio', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);

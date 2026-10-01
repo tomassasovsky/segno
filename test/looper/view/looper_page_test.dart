@@ -6,6 +6,8 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
@@ -37,6 +39,8 @@ void main() {
         exportsRoot: () async => '.',
       );
       final settings = SettingsRepository(store: FakeKeyValueStore());
+      final mixSettings = testMixSettings(repository, settings: settings);
+      final mixPersistence = SettingsMixPersistence(settings);
       final pedal = _MockPedalCubit();
       when(() => pedal.state).thenReturn(const PedalState());
       whenListen(
@@ -63,6 +67,10 @@ void main() {
             RepositoryProvider.value(value: sessionRepository),
             RepositoryProvider.value(value: performanceRepository),
             RepositoryProvider.value(value: settings),
+            RepositoryProvider.value(value: mixSettings),
+            RepositoryProvider<MixSettingsPersistence>.value(
+              value: mixPersistence,
+            ),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -95,8 +103,11 @@ void main() {
                     InputsCubit(settings: settings, repository: repository),
               ),
               BlocProvider<MonitorCubit>(
-                create: (_) =>
-                    MonitorCubit(repository: repository, settings: settings),
+                create: (_) => MonitorCubit(
+                  mixSettings: mixSettings,
+                  repository: repository,
+                  settings: settings,
+                ),
               ),
               BlocProvider<PerformanceRecorderCubit>(
                 create: (_) => PerformanceRecorderCubit(

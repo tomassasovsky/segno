@@ -56,7 +56,7 @@ void main() {
     monitors: [
       SessionMonitor(
         input: 0,
-        enabled: true,
+        mode: 'on',
         outputMask: 0x3,
         volume: 0.9,
         muted: false,
@@ -122,11 +122,10 @@ void main() {
       expect(json['baseLengthFrames'], 96000);
     });
 
-    group('monitor gate (schema v7)', () {
+    group('monitor gate (schema 8)', () {
       test('a named gate round-trips', () {
         const monitor = SessionMonitor(
           input: 2,
-          enabled: true,
           mode: 'auto',
           outputMask: 0x3,
           volume: 1,
@@ -138,28 +137,22 @@ void main() {
         expect(SessionMonitor.fromJson(monitor.toJson()), monitor);
       });
 
-      test('a v6 monitor keeps the key out of the manifest entirely', () {
-        const monitor = SessionMonitor(
+      test('a current-schema monitor requires its mode', () {
+        final json = const SessionMonitor(
           input: 2,
-          enabled: true,
+          mode: 'on',
           outputMask: 0x3,
           volume: 1,
           muted: false,
           encoded: '',
-        );
-
-        // Presence-keyed, like every rung before it: absent means "this
-        // manifest did not say", which is a different thing from a monitor
-        // whose gate happens to be named the empty string.
-        expect(monitor.toJson().containsKey('mode'), isFalse);
-        expect(SessionMonitor.fromJson(monitor.toJson()).mode, isEmpty);
+        ).toJson()..remove('mode');
+        expect(() => SessionMonitor.fromJson(json), throwsFormatException);
       });
 
       test('participates in equality — two monitors differing only in their '
           'gate are different monitors', () {
         const on = SessionMonitor(
           input: 0,
-          enabled: true,
           mode: 'on',
           outputMask: 0x3,
           volume: 1,
@@ -168,7 +161,6 @@ void main() {
         );
         const auto = SessionMonitor(
           input: 0,
-          enabled: true,
           mode: 'auto',
           outputMask: 0x3,
           volume: 1,
@@ -181,7 +173,7 @@ void main() {
       });
     });
 
-    group('pedal remap blob (schema v6)', () {
+    group('pedal remap blob (schema 8)', () {
       test('round-trips byte-intact — the control layer compares these '
           'strings for equality, so a single character of drift would look '
           'like an edit', () {
@@ -207,10 +199,9 @@ void main() {
         );
       });
 
-      test('a v5-or-earlier manifest loads with no session remap, so the '
-          'global set applies (A12)', () {
+      test('a missing required remap field is corrupt schema 8', () {
         final json = session.toJson()..remove('pedalBindings');
-        expect(Session.fromJson(json).pedalBindings, isEmpty);
+        expect(() => Session.fromJson(json), throwsA(isA<TypeError>()));
       });
 
       test('participates in equality — two sessions differing only in their '
@@ -220,7 +211,7 @@ void main() {
       });
     });
 
-    test('serializes the schema-v5 bus stages (Track + Master)', () {
+    test('serializes the bus stages (Track + Master)', () {
       final json = session.toJson();
       expect(json['trackChains'], [
         {
@@ -232,7 +223,7 @@ void main() {
       expect(json['masterChain'], '{"chainEnabled":true,"entries":[{"t":9}]}');
     });
 
-    test('v5 round-trips the bus stages, chain strings byte-intact', () {
+    test('round-trips bus-stage chain strings byte-intact', () {
       final json = jsonDecode(jsonEncode(session.toJson()));
       final loaded = Session.fromJson(json as Map<String, dynamic>);
       expect(loaded.trackChains, hasLength(2));
@@ -252,7 +243,7 @@ void main() {
     });
 
     test(
-      'save -> load -> save is byte-idempotent at v5 (the manifest a load '
+      'save -> load -> save is byte-idempotent (the manifest a load '
       're-serializes is the manifest it read; slot ids ride the opaque chain '
       'strings, so nothing is re-minted here)',
       () {
@@ -264,75 +255,15 @@ void main() {
       },
     );
 
-    test(
-      'a v4 manifest (no bus stages, bare-array chain strings) loads with '
-      'both bus stages EMPTY and its chain content byte-identical — the '
-      'presence-keyed v4 -> v5 migration, zero data loss',
-      () {
-        final v4 = {
-          'version': 4,
-          'sampleRate': 48000,
-          'channels': 1,
-          'baseLengthFrames': 96000,
-          'tracks': [
-            {
-              'channel': 0,
-              'multiple': 1,
-              'lengthFrames': 96000,
-              'lanes': [
-                {
-                  'lane': 0,
-                  'volume': 0.8,
-                  'muted': false,
-                  'outputMask': 0x3,
-                  'inputChannel': 0,
-                  'layers': [
-                    {'file': 'track0_lane0_L0.wav'},
-                  ],
-                },
-              ],
-            },
-          ],
-          // Pre-envelope wire format: the bare entries array. It stays opaque
-          // here; the looper domain's decoder defaults every level to enabled.
-          'laneChains': [
-            {'channel': 0, 'lane': 0, 'encoded': '[{"t":1}]'},
-          ],
-          'monitors': [
-            {
-              'input': 0,
-              'enabled': true,
-              'outputMask': 0x3,
-              'volume': 0.9,
-              'muted': false,
-              'encoded': '[{"t":2}]',
-            },
-          ],
-          'tempoBpm': 128.5,
-          'looperMode': 'band',
-        };
+    test('rejects a prior schema even when its fields parse', () {
+      final json = session.toJson()..['version'] = 7;
+      expect(
+        () => Session.fromJson(json),
+        throwsA(isA<SessionUnsupportedVersion>()),
+      );
+    });
 
-        final loaded = Session.fromJson(v4);
-
-        expect(loaded.trackChains, isEmpty);
-        expect(loaded.masterChain, '');
-        // Everything v4 DID describe survives untouched.
-        expect(loaded.laneChains.single.encoded, '[{"t":1}]');
-        expect(loaded.monitors.single.encoded, '[{"t":2}]');
-        expect(loaded.tempoBpm, 128.5);
-        expect(loaded.looperMode, LooperMode.band);
-        expect(loaded.tracks.single.lanes.single.volume, 0.8);
-        // And re-saving stamps the CURRENT version without inventing
-        // bus-stage content (or a remap the v4 bundle never carried).
-        final resaved = loaded.toJson();
-        expect(resaved['version'], Session.formatVersion);
-        expect(resaved['trackChains'], isEmpty);
-        expect(resaved['masterChain'], '');
-        expect(resaved['pedalBindings'], '');
-      },
-    );
-
-    test('serializes every schema-v4 tempo/click/count-in field', () {
+    test('serializes every tempo/click/count-in field', () {
       final json = session.toJson();
       expect(json['tempoBpm'], 128.5);
       expect(json['tempoSource'], 'manual');
@@ -434,76 +365,12 @@ void main() {
       expect(reordered.hashCode, session.hashCode);
     });
 
-    test(
-      'a v3 manifest (no tempo grid fields at all) loads with every new '
-      'field at its grid-off default — zero data loss',
-      () {
-        final v3 = {
-          'version': 3,
-          'sampleRate': 48000,
-          'channels': 1,
-          'baseLengthFrames': 96000,
-          'tracks': [
-            {
-              'channel': 0,
-              'multiple': 1,
-              'lengthFrames': 96000,
-              'lanes': [
-                {
-                  'lane': 0,
-                  'volume': 1.0,
-                  'muted': false,
-                  'outputMask': 0x3,
-                  'inputChannel': 0,
-                  'layers': [
-                    {'file': 'track0_lane0_L0.wav'},
-                  ],
-                },
-              ],
-            },
-          ],
-          'laneChains': <dynamic>[],
-          'monitors': <dynamic>[],
-        };
-        final loaded = Session.fromJson(v3);
-        expect(loaded.tempoBpm, 0);
-        expect(loaded.tempoSource, TempoSource.none);
-        expect(loaded.tsNum, 4);
-        expect(loaded.tsDen, 4);
-        expect(loaded.quantizeDiv, GridDivision.off);
-        expect(loaded.clickMode, ClickMode.off);
-        expect(loaded.clickOutputMask, 0);
-        expect(loaded.clickVolume, 1);
-        expect(loaded.countInBars, 0);
-        expect(loaded.trackLengthPresetOverrides, isEmpty);
-        expect(loaded.trackOneShotOverrides, isEmpty);
-        // The rest of the v3 manifest still loads intact.
-        expect(loaded.baseLengthFrames, 96000);
-        expect(loaded.tracks.single.lanes.single.volume, 1.0);
-      },
-    );
-
-    test(
-      'a v4 manifest missing later-phase (C/D) fields still loads — the '
-      'loader only reads the fields it knows about',
-      () {
-        final json = session.toJson();
-        // Simulate a build that hasn't shipped Phase C/D yet reading a file
-        // written by a build that HAS: extra top-level and per-track fields
-        // this code has never heard of (session_repository.dart:8-9 doesn't
-        // read any of these keys, so they should simply be ignored). B5c
-        // (looperMode/primaryTrack/oneShot) is EXCLUDED from this list — this
-        // code understands those now, see the test below.
-        json['clockMode'] = 'send';
-        json['syncAudioToTempo'] = true;
-        final track0 = (json['tracks'] as List).first as Map<String, dynamic>;
-        track0['freeLengthFrames'] = 48000;
-        track0['originalTempoBpm'] = 90.0;
-
-        final loaded = Session.fromJson(json);
-        expect(loaded, session);
-      },
-    );
+    test('requires an integer version field', () {
+      final absent = session.toJson()..remove('version');
+      final fractional = session.toJson()..['version'] = 8.5;
+      expect(() => Session.fromJson(absent), throwsFormatException);
+      expect(() => Session.fromJson(fractional), throwsFormatException);
+    });
 
     test('serializes tracks as per-lane layers', () {
       final json = session.toJson();
@@ -524,67 +391,14 @@ void main() {
       });
     });
 
-    test('a v1 manifest (single stem, no chains) migrates to one lane', () {
-      // A legacy bundle: one `stem` per track, track-level mix, no lanes/chains.
-      final v1 = {
-        'version': 1,
-        'sampleRate': 48000,
-        'channels': 1,
-        'baseLengthFrames': 96000,
-        'tracks': [
-          {
-            'channel': 0,
-            'volume': 0.8,
-            'muted': false,
-            'multiple': 1,
-            'lengthFrames': 96000,
-            'stem': 'track0.wav',
-          },
-        ],
+    test('does not migrate a stem-only track into a lane', () {
+      final track = {
+        'channel': 0,
+        'multiple': 1,
+        'lengthFrames': 96000,
+        'stem': 'track0.wav',
       };
-      final loaded = Session.fromJson(v1);
-      expect(loaded.laneChains, isEmpty);
-      expect(loaded.monitors, isEmpty);
-      expect(loaded.tracks, hasLength(1));
-      final track = loaded.tracks.single;
-      expect(track.lanes, hasLength(1));
-      final lane = track.lanes.single;
-      expect(lane.lane, 0);
-      expect(lane.volume, 0.8);
-      expect(lane.muted, isFalse);
-      expect(lane.inputChannel, -1);
-      expect(lane.undoCount, 0);
-      expect(lane.layers, [const SessionLayer(file: 'track0.wav')]);
-    });
-
-    test('a v2 manifest (single stem + chains) migrates to one lane', () {
-      final v2 = {
-        'version': 2,
-        'sampleRate': 48000,
-        'channels': 1,
-        'baseLengthFrames': 96000,
-        'tracks': [
-          {
-            'channel': 0,
-            'volume': 0.5,
-            'muted': true,
-            'multiple': 2,
-            'lengthFrames': 192000,
-            'stem': 'track0.wav',
-          },
-        ],
-        'laneChains': [
-          {'channel': 0, 'lane': 0, 'encoded': '[{"t":1}]'},
-        ],
-        'monitors': <dynamic>[],
-      };
-      final loaded = Session.fromJson(v2);
-      expect(loaded.laneChains, hasLength(1));
-      expect(loaded.tracks.single.lanes, hasLength(1));
-      final lane = loaded.tracks.single.lanes.single;
-      expect(lane.volume, 0.5);
-      expect(lane.muted, isTrue);
-      expect(lane.layers.single.file, 'track0.wav');
+      expect(() => SessionTrack.fromJson(track), throwsA(isA<TypeError>()));
     });
 
     test('tracks, lanes, layers, chains, and monitors have value equality', () {

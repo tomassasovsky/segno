@@ -109,6 +109,44 @@ void main() {
     );
   }, skip: skip);
 
+  test('mix acknowledgment and signal meters survive pumped snapshots', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    expect(
+      engine.start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 48000,
+        ),
+      ),
+      EngineResult.ok,
+    );
+    expect(
+      engine.setMonitorInputEnabled(input: 0, enabled: true),
+      EngineResult.ok,
+    );
+    expect(
+      engine.setMix(
+        EngineMixSettings(
+          revision: 42,
+          monitors: const {0: (gain: 0.5, pan: 0)},
+        ),
+      ),
+      EngineResult.ok,
+    );
+    expect(engine.commandsSettled, isFalse);
+    expect(engine.snapshot().mixRevision, 0);
+    engine.pump(frames: 256, input: 0.5);
+    expect(engine.commandsSettled, isTrue);
+    final snapshot = engine.snapshot();
+    expect(snapshot.mixRevision, 42);
+    expect(snapshot.inputPeaks.first, closeTo(0.5, 1e-6));
+    expect(snapshot.monitorPeaks.first, closeTo(0.25, 1e-6));
+    expect(snapshot.outputPeaks.first, closeTo(0.25, 1e-6));
+  }, skip: skip);
+
   test('pumped snapshot preserves the native recording defaults', () {
     final engine = PumpedNativeEngine();
     addTearDown(engine.dispose);

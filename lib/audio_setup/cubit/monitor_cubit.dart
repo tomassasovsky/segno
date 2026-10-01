@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/common/write_debouncer.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -45,9 +46,11 @@ class MonitorCubit extends Cubit<MonitorState> {
   MonitorCubit({
     required LooperRepository repository,
     required SettingsRepository settings,
+    required MixSettingsCoordinator mixSettings,
     Duration fxPersistDebounce = const Duration(milliseconds: 300),
   }) : _repository = repository,
        _settings = settings,
+       _mixSettings = mixSettings,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
        super(const MonitorState()) {
     // Subscribed at construction, not in [load]: this cubit is a cache of
@@ -61,6 +64,7 @@ class MonitorCubit extends Cubit<MonitorState> {
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
+  final MixSettingsCoordinator _mixSettings;
 
   /// Coalesces the chain-envelope write a knob drag would otherwise emit per
   /// pointer move — see [_schedulePersist]. Flushed in [close].
@@ -104,7 +108,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Restores the persisted per-input monitors and applies them to the
   /// repository. Reads the single-chain keys; the multi-lane → single-chain
   /// fold (v3) runs at bootstrap, before this.
-  Future<void> load() => _loadFuture ??= _restore();
+  Future<void> load() => _loadFuture ??= _mixSettings.runExclusive(_restore);
 
   Future<void> _restore() async {
     // Scan the monitor path's own ceiling ([kMaxMonitoredInputs] ==
@@ -119,8 +123,25 @@ class MonitorCubit extends Cubit<MonitorState> {
     for (final monitor in loaded) {
       if (monitor != null) restored[monitor.input] = monitor;
     }
-    emit(MonitorState(inputs: restored));
     restored.values.forEach(_applyMonitor);
+    final monitorLevels = {
+      for (final monitor in restored.values) monitor.input: monitor.volume,
+    };
+    if (monitorLevels.isNotEmpty) {
+      final request = _repository.setMixSettings(
+        trackPans: _repository.trackPans,
+        inputSetup: _repository.inputSetup,
+        monitorLevels: monitorLevels,
+      );
+      final settled = request.isOk
+          ? await _repository.settleMixSettings()
+          : request;
+      if (!settled.isOk) {
+        throw StateError('saved monitor levels were refused');
+      }
+    }
+    if (isClosed) return;
+    emit(MonitorState(inputs: restored));
     // Read the APPLIED chains back into state. What was decoded from settings
     // says nothing about whether a plugin actually loaded: `unavailable`,
     // `loading` and the enumerated params are the repository's answer, made
@@ -375,7 +396,6 @@ class MonitorCubit extends Cubit<MonitorState> {
       mode: monitor.mode.name,
     );
     await _settings.saveMonitorOutput(monitor.input, monitor.outputMask);
-    await _settings.saveMonitorVolume(monitor.input, monitor.volume);
     await _settings.saveMonitorMute(monitor.input, muted: monitor.muted);
     await _settings.saveMonitorEffects(
       monitor.input,
@@ -408,10 +428,13 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Sets and persists monitor [input]'s output gain (`0..LE_MAX_GAIN`, 2.0,
   /// +6.02 dB headroom above unity).
   Future<void> setVolume(int input, double volume) async {
-    final next = state.forInput(input).copyWith(volume: volume);
-    emit(state.withInput(next));
-    _repository.setMonitorVolume(input: input, volume: volume);
-    await _settings.saveMonitorVolume(input, volume);
+    final result = await _mixSettings.setMonitorVolume(
+      input: input,
+      volume: volume,
+    );
+    if (!result.isOk || isClosed) return;
+    final confirmed = _repository.monitorVolume(input);
+    emit(state.withInput(state.forInput(input).copyWith(volume: confirmed)));
   }
 
   /// Mutes or unmutes monitor [input].
@@ -679,14 +702,12 @@ class MonitorCubit extends Cubit<MonitorState> {
     });
   }
 
-  /// Pushes the whole [monitor] to the repository: mode, then the chain's
-  /// routing / mix / effects.
+  /// Pushes [monitor]'s non-mix fields; restore applies all levels together.
   void _applyMonitor(InputMonitor monitor) {
     final input = monitor.input;
     _repository
       ..setMonitorInputMode(input: input, mode: monitor.mode)
       ..setMonitorOutput(input: input, mask: monitor.outputMask)
-      ..setMonitorVolume(input: input, volume: monitor.volume)
       ..setMonitorMute(input: input, muted: monitor.muted)
       ..setMonitorEffects(input: input, effects: monitor.effects)
       ..setMonitorChainEnabled(input: input, enabled: monitor.chainEnabled);

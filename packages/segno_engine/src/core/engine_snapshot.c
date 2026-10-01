@@ -63,6 +63,11 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->quantize_override = engine->track_quantize[ch];
   out->quantize_div_override = load_i32(&tr->a_quantize_div_override);
   out->overdub_feedback_override = load_f32(&tr->a_overdub_fb_bits);
+  /* Mixer facts (slice 3): solo and the post-fader stereo peaks. */
+  out->solo = load_i32(&tr->a_solo);
+  out->image_revision = atomic_load_explicit(&tr->a_image_revision, memory_order_acquire);
+  out->peak_l = load_f32(&tr->a_trk_peak_l_bits);
+  out->peak_r = load_f32(&tr->a_trk_peak_r_bits);
   out->settled_take_id =
       active ? atomic_load_explicit(&tr->a_settled_take_id, memory_order_acquire)
              : 0;
@@ -239,6 +244,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->click_mask =
       atomic_load_explicit(&engine->a_click_mask, memory_order_relaxed);
   out->click_volume = load_f32(&engine->a_click_volume_bits);
+  out->mix_revision = atomic_load_explicit(&engine->a_mix_revision, memory_order_acquire);
   const int32_t record_start = load_i32(&engine->a_record_start);
   out->count_in_bars = record_start > 0 ? record_start : 0;
   out->auto_record = record_start < 0;
@@ -270,6 +276,15 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
    * ints, read on the same thread that writes them. */
   out->quantize = engine->quantize ? 1 : 0;
   out->overdub_feedback = load_f32(&engine->a_overdub_fb_bits);
+  /* Per-channel meters and trim (slice 3; trailing block). */
+  for (int32_t c = 0; c < LE_MAX_CHANNELS; ++c) {
+    out->input_peaks[c] = load_f32(&engine->a_in_peak_ch_bits[c]);
+    out->output_peaks[c] = load_f32(&engine->a_out_peak_ch_bits[c]);
+    out->input_trim[c] = load_f32(&engine->a_in_trim_bits[c]);
+    out->monitor_peaks[c] =
+        c < LE_MAX_MONITORED_INPUTS ? load_f32(&engine->monitors[c].a_peak_bits)
+                                    : 0.0f;
+  }
   /* The audio-callback telemetry (#722) is deliberately NOT read here — it has
    * its own entry point below. Anything on this struct is projected into the
    * app's render-rate state, whose equality drives the rebuild dedupe, and a
@@ -311,6 +326,10 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->length_preset_bars = 0;
     out->sync_divisor = 0;
     out->one_shot = 0;
+    out->solo = 0;
+    out->image_revision = 0;
+    out->peak_l = 0.0f;
+    out->peak_r = 0.0f;
     out->settled_take_id = 0;
     out->restore_state = 0;
     out->position_frames = 0;
@@ -336,6 +355,7 @@ void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,
     out->rms = 0.0f;
     out->peak = 0.0f;
     out->recoverable = 0;
+    out->pan = 0.0f;
     return;
   }
   le_lane* ln = &engine->tracks[channel].lanes[lane];
@@ -348,6 +368,7 @@ void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,
   out->rms = load_f32(&ln->a_rms_bits);
   out->peak = load_f32(&ln->a_peak_bits);
   out->recoverable = load_i32(&ln->a_recoverable); /* #595 */
+  out->pan = load_f32(&ln->a_pan_bits);
 }
 
 int32_t le_engine_read_visual(le_engine* engine, float* out,

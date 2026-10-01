@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
+import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:segno_engine/segno_engine.dart'
     show ClickMode, GridDivision, LooperMode, RecordTiming, TempoSource;
@@ -20,9 +21,19 @@ class SessionRigLane {
     required this.muted,
     required this.outputMask,
     required this.inputChannel,
+    this.pan = 0,
+    this.balance = 1,
     this.undoCount = 0,
     this.redoCount = 0,
   });
+
+  /// The lane's recorded image (slice 3): where its input sat when the take
+  /// started, before the track's own pan (`Lane.imagePan`).
+  final double pan;
+
+  /// The gain the input pair's balance gave the lane's side when the take
+  /// started, `0..1` (`Lane.balance`); [volume] is the level.
+  final double balance;
 
   /// Lane index within the track.
   final int lane;
@@ -165,7 +176,12 @@ class SessionRig {
     this.countInBars = 0,
     this.recDub = false,
     this.autoRecord = false,
+    this.inputSetup = const InputSetup.empty(),
+    this.trackPans = const {},
   });
+
+  /// Track pan intent, including tracks without recorded audio.
+  final Map<int, double> trackPans;
 
   /// Default recording timing, shared by tracks with no override.
   final RecordTiming recordTiming;
@@ -232,6 +248,10 @@ class SessionRig {
 
   /// Whether an armed take waits for sound.
   final bool autoRecord;
+
+  /// The per-input capture setup the session was saved with (slice 3):
+  /// trims, pans and pairs. Restored on apply; the monitors' pans follow it.
+  final InputSetup inputSetup;
 
   /// The base (master) loop length in frames; `0` for an empty session.
   final int baseLengthFrames;

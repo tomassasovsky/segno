@@ -26,6 +26,16 @@ class FakeAudioEngine implements AudioEngine {
   bool commandsAreSettled = true;
   bool publishLengthCommands = true;
   bool publishModeCommands = true;
+  bool publishMixCommands = true;
+  bool publishRecordImages = true;
+  EngineResult mixResult = EngineResult.ok;
+  EngineMixSettings? lastMix;
+  RecordImage? lastRecordImage;
+  int publishedMixRevision = 0;
+  final Map<(int, int), StereoMix> liveMix = {};
+  final Map<(int, int), StereoMix> sourceImages = {};
+  final Map<int, RecordImage> pendingImages = {};
+  final Map<int, int> imageRevisions = {};
   final Map<int, int> publishedLengths = {};
   LooperMode? publishedMode;
 
@@ -94,9 +104,11 @@ class FakeAudioEngine implements AudioEngine {
 
   @override
   EngineSnapshot snapshot() => _LengthSnapshot(
+    this,
     nextSnapshot,
     publishedLengths,
     publishedMode,
+    publishedMixRevision,
     perfStopped: perfStopped,
   );
 
@@ -128,6 +140,64 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult record({int channel = 0}) {
     recordCalls++;
     return EngineResult.ok;
+  }
+
+  @override
+  EngineResult recordWithImage(RecordImage image, {int channel = 0}) {
+    if (!image.isValid) return EngineResult.invalid;
+    final result = record(channel: channel);
+    if (!result.isOk) return result;
+    lastRecordImage = image;
+    pendingImages[channel] = image;
+    if (publishRecordImages) publishImage(channel);
+    return EngineResult.ok;
+  }
+
+  /// Simulates the callback publishing the frozen image at capture start.
+  void publishImage(int channel) {
+    final image = pendingImages.remove(channel);
+    if (image == null) return;
+    for (final entry in image.lanes.entries) {
+      final key = (channel, entry.key);
+      sourceImages[key] = entry.value;
+      _composeLane(key);
+    }
+    imageRevisions[channel] = image.revision;
+  }
+
+  @override
+  EngineResult setMix(EngineMixSettings settings) {
+    if (!settings.isValid) return EngineResult.invalid;
+    if (!mixResult.isOk) return mixResult;
+    lastMix = settings;
+    if (publishMixCommands) publishMix();
+    return EngineResult.ok;
+  }
+
+  /// Simulates callback publication after an accepted mix request.
+  void publishMix() {
+    final settings = lastMix;
+    if (settings == null) return;
+    liveMix.addAll(settings.lanes);
+    sourceImages.addAll(settings.images);
+    settings.lanes.keys
+        .followedBy(settings.images.keys)
+        .toSet()
+        .forEach(_composeLane);
+    for (final entry in settings.monitors.entries) {
+      monitorVolume[entry.key] = entry.value.gain;
+      monitorPan[entry.key] = entry.value.pan;
+    }
+    inputTrim.addAll(settings.trims);
+    trackSolo.addAll(settings.solos);
+    publishedMixRevision = settings.revision;
+  }
+
+  void _composeLane((int, int) key) {
+    final live = liveMix[key] ?? (gain: 1.0, pan: 0.0);
+    final source = sourceImages[key] ?? (gain: 1.0, pan: 0.0);
+    laneVol[key] = live.gain * source.gain;
+    lanePan[key] = (live.pan + source.pan).clamp(-1.0, 1.0);
   }
 
   @override
@@ -217,6 +287,37 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult setLaneVolume(double volume, {int channel = 0, int lane = 0}) {
     laneVol[(channel, lane)] = volume;
     lastVolume = volume;
+    return EngineResult.ok;
+  }
+
+  /// Per-(channel, lane) pan passed to [setLanePan].
+  final Map<(int, int), double> lanePan = {};
+
+  @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    lanePan[(channel, lane)] = pan;
+    return EngineResult.ok;
+  }
+
+  /// Per-track solo passed to [setTrackSolo].
+  final Map<int, bool> trackSolo = {};
+
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    trackSolo[channel] = solo;
+    return EngineResult.ok;
+  }
+
+  /// Per-input capture trim (linear gain) passed to [setInputTrim].
+  final Map<int, double> inputTrim = {};
+
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) {
+    inputTrim[input] = gain;
     return EngineResult.ok;
   }
 
@@ -803,6 +904,15 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-input monitor pan passed to [setMonitorInputPan].
+  final Map<int, double> monitorPan = {};
+
+  @override
+  EngineResult setMonitorInputPan({required int input, required double pan}) {
+    monitorPan[input] = pan;
+    return EngineResult.ok;
+  }
+
   /// Per-input conditioning enabled flag passed to
   /// [setInputConditioningEnabled].
   final Map<int, bool> conditioningEnabled = {};
@@ -972,7 +1082,9 @@ class FakeAudioEngine implements AudioEngine {
       EngineResult.ok;
 
   @override
-  Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
+  Float32List exportLayer(int channel, int lane, int ordinal) => ordinal == 0
+      ? laneExports[(channel, lane)] ?? Float32List(0)
+      : Float32List(0);
 
   @override
   EngineResult importLayer(
@@ -980,7 +1092,10 @@ class FakeAudioEngine implements AudioEngine {
     int lane,
     int ordinal,
     Float32List pcm,
-  ) => EngineResult.ok;
+  ) {
+    if (ordinal == 0) laneExports[(channel, lane)] = Float32List.fromList(pcm);
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
@@ -1178,9 +1293,11 @@ class FakeAudioEngine implements AudioEngine {
 
 class _LengthSnapshot extends EngineSnapshot {
   _LengthSnapshot(
+    FakeAudioEngine engine,
     EngineSnapshot source,
     Map<int, int> lengths,
-    LooperMode? mode, {
+    LooperMode? mode,
+    int mixRevision, {
     required bool perfStopped,
   }) : super(
          isRunning: source.isRunning,
@@ -1234,39 +1351,56 @@ class _LengthSnapshot extends EngineSnapshot {
          quantize: source.quantize,
          autoRecord: source.autoRecord,
          overdubFeedback: source.overdubFeedback,
+         mixRevision: mixRevision,
+         inputPeaks: source.inputPeaks,
+         monitorPeaks: source.monitorPeaks,
+         outputPeaks: source.outputPeaks,
          tracks: [
            for (var channel = 0; channel < source.tracks.length; channel++)
-             _LengthTrack(source.tracks[channel], lengths[channel]),
+             _LengthTrack(
+               source.tracks[channel],
+               lengths[channel],
+               imageRevision: engine.imageRevisions[channel],
+               solo: engine.trackSolo[channel],
+             ),
          ],
        );
 }
 
 class _LengthTrack extends TrackSnapshot {
-  _LengthTrack(TrackSnapshot source, int? bars)
-    : super(
-        state: source.state,
-        volume: source.volume,
-        muted: source.muted,
-        lengthFrames: source.lengthFrames,
-        undoDepth: source.undoDepth,
-        rms: source.rms,
-        peak: source.peak,
-        clearRestore: source.clearRestore,
-        redoDepth: source.redoDepth,
-        multiple: source.multiple,
-        inputMask: source.inputMask,
-        outputMask: source.outputMask,
-        layerInFlight: source.layerInFlight,
-        pending: source.pending,
-        lengthPresetBars: bars ?? source.lengthPresetBars,
-        oneShot: source.oneShot,
-        settledTakeId: source.settledTakeId,
-        restoreState: source.restoreState,
-        positionFrames: source.positionFrames,
-        pendingTrigger: source.pendingTrigger,
-        quantizeOverride: source.quantizeOverride,
-        quantizeDivOverride: source.quantizeDivOverride,
-        overdubFeedbackOverride: source.overdubFeedbackOverride,
-        lanes: source.lanes,
-      );
+  _LengthTrack(
+    TrackSnapshot source,
+    int? bars, {
+    int? imageRevision,
+    bool? solo,
+  }) : super(
+         imageRevision: imageRevision ?? source.imageRevision,
+         solo: solo ?? source.solo,
+         peakL: source.peakL,
+         peakR: source.peakR,
+         state: source.state,
+         volume: source.volume,
+         muted: source.muted,
+         lengthFrames: source.lengthFrames,
+         undoDepth: source.undoDepth,
+         rms: source.rms,
+         peak: source.peak,
+         clearRestore: source.clearRestore,
+         redoDepth: source.redoDepth,
+         multiple: source.multiple,
+         inputMask: source.inputMask,
+         outputMask: source.outputMask,
+         layerInFlight: source.layerInFlight,
+         pending: source.pending,
+         lengthPresetBars: bars ?? source.lengthPresetBars,
+         oneShot: source.oneShot,
+         settledTakeId: source.settledTakeId,
+         restoreState: source.restoreState,
+         positionFrames: source.positionFrames,
+         pendingTrigger: source.pendingTrigger,
+         quantizeOverride: source.quantizeOverride,
+         quantizeDivOverride: source.quantizeDivOverride,
+         overdubFeedbackOverride: source.overdubFeedbackOverride,
+         lanes: source.lanes,
+       );
 }

@@ -4,6 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/common/fx_chain_persistence.dart';
 import 'package:segno/common/write_debouncer.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -22,11 +23,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// [controller] (a MIDI foot controller).
   LooperBloc({
     required LooperRepository repository,
+    required MixSettingsCoordinator mixSettings,
     ControllerRepository? controller,
     SettingsRepository? settings,
     Duration fxPersistDebounce = const Duration(milliseconds: 300),
     bool Function() takeLocked = _neverLocked,
   }) : _repository = repository,
+       _mixSettings = mixSettings,
        _settings = settings,
        _takeLocked = takeLocked,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
@@ -63,9 +66,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperRedoPressed>(
       (event, _) => _repository.redo(channel: event.channel),
     );
-    on<LooperVolumeChanged>(
-      (event, _) => _repository.setVolume(event.volume, channel: event.channel),
-    );
+    on<LooperVolumeChanged>((event, _) {
+      unawaited(
+        _mixSettings.setTrackVolume(event.volume, channel: event.channel),
+      );
+    });
     on<LooperMuteToggled>(
       // Resolved against the repository's remembered intent, NOT the
       // poll-mirrored [state]: the snapshot is ~16 ms stale, so a fast
@@ -102,13 +107,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
     });
     on<LooperLaneVolumeChanged>((event, _) {
-      _repository.setLaneVolume(
-        event.volume,
-        channel: event.channel,
-        lane: event.lane,
-      );
       unawaited(
-        _settings?.saveLaneVolume(event.channel, event.lane, event.volume),
+        _mixSettings.setLaneVolume(
+          event.volume,
+          channel: event.channel,
+          lane: event.lane,
+        ),
       );
     });
     on<LooperLaneMuteToggled>((event, _) {
@@ -496,6 +500,45 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         );
       }
     });
+    on<LooperTrackPanChanged>((event, _) {
+      unawaited(_mixSettings.setTrackPan(event.pan, channel: event.channel));
+    });
+    on<LooperTrackSoloToggled>((event, _) {
+      unawaited(
+        _mixSettings.setTrackSolo(
+          channel: event.channel,
+          solo: event.solo,
+        ),
+      );
+    });
+    on<LooperSoloCleared>((_, _) {
+      unawaited(_mixSettings.clearSolo());
+    });
+    on<LooperMixerReset>((_, _) {
+      unawaited(_mixSettings.resetMixer());
+    });
+    on<LooperInputTrimChanged>((event, _) {
+      unawaited(_mixSettings.setInputTrimDb(input: event.input, db: event.db));
+    });
+    on<LooperInputPanChanged>((event, _) {
+      unawaited(_mixSettings.setInputPan(input: event.input, pan: event.pan));
+    });
+    on<LooperInputPairChanged>((event, _) {
+      unawaited(
+        _mixSettings.setInputPair(
+          input: event.input,
+          paired: event.paired,
+        ),
+      );
+    });
+    on<LooperInputBalanceChanged>((event, _) {
+      unawaited(
+        _mixSettings.setPairBalance(
+          input: event.input,
+          balance: event.balance,
+        ),
+      );
+    });
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
@@ -547,6 +590,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   }
 
   final LooperRepository _repository;
+  final MixSettingsCoordinator _mixSettings;
   final SettingsRepository? _settings;
   final bool Function() _takeLocked;
 
@@ -703,11 +747,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     channel: channel,
   );
 
-  /// Writes a loaded session's Loop / Track / Master chains back to the
-  /// boot-restore keys — the settings half of
-  /// [LooperRepository.applySession], which updates the engine and the
-  /// re-apply caches but leaves persistence to its caller (see its doc, and
-  /// `SessionPersistenceSyncListener` for the full argument).
+  /// Writes a loaded session's Loop / Track / Master chains, every track's
+  /// pan and the input setup back to the boot-restore keys — the settings
+  /// half of [LooperRepository.applySession], which updates the engine and
+  /// the re-apply caches but leaves persistence to its caller (see its doc,
+  /// and `SessionPersistenceSyncListener` for the full argument).
   ///
   /// Reads the repository's chain enumerations — the same truth a session SAVE
   /// captures — and writes through the same helpers the edit paths use, so a
@@ -717,6 +761,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// restore walks lanes `0..lane_count`, so without it every chain written
   /// for a lane above the PRE-LOAD count is stored and never read back, and a
   /// multi-lane session still restores wrong.
+  ///
+  /// The mix (slice 3) is re-persisted together: every track's pan and lane
+  /// level in one Mixer value, and the input setup WHOLE under the
+  /// open device (an edit writes one input; a load replaces the setup, so
+  /// a key the loaded session does not carry is cleared). With no device
+  /// open there is nothing to key the setup to and it is left alone, like an
+  /// edit.
   ///
   /// Sweeps the whole key space (every engine track × [kMaxLanes]) rather than
   /// just the applied keys. A key above the live lane count is unreachable
@@ -759,6 +810,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     // Unconditional: there is exactly one Master envelope and it always has a
     // value, so it is overwritten rather than cleared.
     _persistMasterChain();
+    // The SessionCubit serializes the loaded mix and its one durable write
+    // through the shared coordinator before this FX-only resync event fires.
   }
 
   /// Persists the Master insert chain envelope.

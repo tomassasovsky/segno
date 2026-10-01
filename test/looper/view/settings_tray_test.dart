@@ -174,8 +174,11 @@ void main() {
             // landing face chosen to keep this harness small.
             BlocProvider<LooperBloc>.value(value: looperBloc),
             BlocProvider<MonitorCubit>(
-              create: (_) =>
-                  MonitorCubit(repository: looper, settings: settings),
+              create: (_) => MonitorCubit(
+                mixSettings: testMixSettings(looper),
+                repository: looper,
+                settings: settings,
+              ),
             ),
           ],
           // A Scaffold + Stack mirrors how TracksView actually mounts the

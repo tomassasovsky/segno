@@ -121,6 +121,9 @@ int32_t le_mask_to_channel(uint32_t mask);
  * prebuilt typed command (the addressed/packed families fill a named union arm).
  * Both defined in engine.c. */
 int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i, float arg_f);
+int le_mix_valid(const le_engine* engine, const le_mix_settings* settings);
+int le_image_valid(const le_engine* engine, int32_t channel,
+                   const le_record_image* image);
 int32_t le_push_cmd(le_engine* engine, le_command cmd);
 
 /* Resets a lane to defaults (routing / volume / mute / effects / metering),

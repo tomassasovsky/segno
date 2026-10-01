@@ -37,19 +37,36 @@ const _playingState = LooperState(
 void main() {
   late LooperRepository repository;
   late StreamController<LooperState> stateController;
+  late MixSettingsSnapshot currentMix;
 
   setUpAll(() {
     registerFallbackValue(<TrackEffect>[]);
     registerFallbackValue(const PluginRef(format: PluginFormat.vst3, id: ''));
     registerFallbackValue(ClickMode.off);
     registerFallbackValue(LooperMode.multi);
+    registerFallbackValue(MixSettingsSnapshot());
   });
 
   setUp(() {
     repository = _MockLooperRepository();
+    currentMix = MixSettingsSnapshot();
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.mixSettingsSettled).thenReturn(true);
+    when(() => repository.mixSettingsSnapshot).thenAnswer((_) => currentMix);
+    when(
+      () => repository.validateMixSettings(any()),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.applyMixSettings(any())).thenAnswer((call) {
+      currentMix = call.positionalArguments.first as MixSettingsSnapshot;
+      return EngineResult.ok;
+    });
+    when(() => repository.laneCount(any())).thenReturn(1);
     when(() => repository.sessionRevision).thenReturn(0);
     when(
       () => repository.settleLengthSettings(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(
+      () => repository.settleMixSettings(),
     ).thenAnswer((_) async => EngineResult.ok);
     when(
       () => repository.trackLengthPresetOverrides,
@@ -120,6 +137,43 @@ void main() {
     when(
       () => repository.crownPrimary(channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
+    // The mix (slice 3).
+    when(
+      () => repository.setTrackPan(any(), channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackSolo(
+        channel: any(named: 'channel'),
+        solo: any(named: 'solo'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(repository.clearSolo).thenReturn(EngineResult.ok);
+    when(repository.resetMixer).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setInputTrimDb(
+        input: any(named: 'input'),
+        db: any(named: 'db'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setInputPan(
+        input: any(named: 'input'),
+        pan: any(named: 'pan'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setInputPair(
+        input: any(named: 'input'),
+        paired: any(named: 'paired'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setPairBalance(
+        input: any(named: 'input'),
+        balance: any(named: 'balance'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.setLooperMode(any())).thenReturn(EngineResult.ok);
     // What the repository HOLDS after a set — the value the bloc persists.
     // Tests that care about a refusal or a closed engine override it.
@@ -236,7 +290,10 @@ void main() {
 
   tearDown(() => stateController.close());
 
-  LooperBloc buildBloc() => LooperBloc(repository: repository);
+  LooperBloc buildBloc() => LooperBloc(
+    repository: repository,
+    mixSettings: testMixSettings(repository),
+  );
 
   test('initial state is an empty looper', () {
     final bloc = buildBloc();
@@ -260,7 +317,11 @@ void main() {
 
   blocTest<LooperBloc, LooperState>(
     'takeLocked suppresses LooperRecordPressed',
-    build: () => LooperBloc(repository: repository, takeLocked: () => true),
+    build: () => LooperBloc(
+      mixSettings: testMixSettings(repository),
+      repository: repository,
+      takeLocked: () => true,
+    ),
     act: (bloc) => bloc.add(const LooperRecordPressed(2)),
     verify: (_) =>
         verifyNever(() => repository.record(channel: any(named: 'channel'))),
@@ -268,7 +329,11 @@ void main() {
 
   blocTest<LooperBloc, LooperState>(
     'takeLocked suppresses LooperClearPressed',
-    build: () => LooperBloc(repository: repository, takeLocked: () => true),
+    build: () => LooperBloc(
+      mixSettings: testMixSettings(repository),
+      repository: repository,
+      takeLocked: () => true,
+    ),
     act: (bloc) => bloc.add(const LooperClearPressed(0)),
     verify: (_) {
       verifyNever(() => repository.clear(channel: any(named: 'channel')));
@@ -347,11 +412,13 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperVolumeChanged forwards the new volume and channel',
+    'LooperVolumeChanged applies the live lane level',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperVolumeChanged(3, 0.5)),
-    verify: (_) =>
-        verify(() => repository.setVolume(0.5, channel: 3)).called(1),
+    verify: (_) {
+      expect(currentMix.laneLevels[(3, 0)], 0.5);
+      verify(() => repository.applyMixSettings(any())).called(1);
+    },
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -420,7 +487,11 @@ void main() {
   late SettingsRepository trackSettings;
   LooperBloc buildBlocWithSettings() {
     trackSettings = SettingsRepository(store: FakeKeyValueStore());
-    return LooperBloc(repository: repository, settings: trackSettings);
+    return LooperBloc(
+      mixSettings: testMixSettings(repository, settings: trackSettings),
+      repository: repository,
+      settings: trackSettings,
+    );
   }
 
   blocTest<LooperBloc, LooperState>(
@@ -454,6 +525,254 @@ void main() {
       expect(await trackSettings.loadTrackOneShot(2), isTrue);
     },
   );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackPanChanged persists confirmed pan',
+    build: () {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          tracks: [
+            Track(),
+            Track(channel: 1),
+            Track(channel: 2, pan: -0.5),
+          ],
+        ),
+      );
+      return buildBlocWithSettings();
+    },
+    act: (bloc) => bloc.add(const LooperTrackPanChanged(2, pan: -0.5)),
+    verify: (_) async {
+      expect(currentMix.trackPans[2], -0.5);
+      expect((await trackSettings.loadMixSettings('test')).trackPans[2], -0.5);
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'a refused track pan leaves the saved value unchanged',
+    setUp: () {
+      when(
+        () => repository.applyMixSettings(any()),
+      ).thenReturn(EngineResult.notReady);
+    },
+    build: buildBlocWithSettings,
+    act: (bloc) async {
+      await trackSettings.seedTrackPan(2, 0.25);
+      bloc.add(const LooperTrackPanChanged(2, pan: -0.5));
+    },
+    verify: (_) async => expect(
+      (await trackSettings.loadMixSettings('test')).trackPans[2],
+      0.25,
+    ),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'a late mix refusal leaves the saved value unchanged',
+    setUp: () {
+      when(
+        () => repository.settleMixSettings(),
+      ).thenAnswer((_) async => EngineResult.invalid);
+    },
+    build: buildBlocWithSettings,
+    act: (bloc) async {
+      await trackSettings.seedTrackPan(2, 0.25);
+      bloc.add(const LooperTrackPanChanged(2, pan: -0.5));
+    },
+    verify: (_) async => expect(
+      (await trackSettings.loadMixSettings('test')).trackPans[2],
+      0.25,
+    ),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackSoloToggled applies temporary solo',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTrackSoloToggled(1, solo: true)),
+    verify: (_) => expect(currentMix.trackSolos[1], isTrue),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperSoloCleared clears temporary solo',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperSoloCleared()),
+    verify: (_) => expect(currentMix.trackSolos, isEmpty),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperMixerReset resets the mixer and puts every saved track pan back '
+    'to centre',
+    build: () {
+      when(() => repository.state).thenReturn(
+        const LooperState(tracks: [Track(), Track(channel: 1)]),
+      );
+      return buildBlocWithSettings();
+    },
+    act: (bloc) async {
+      await trackSettings.seedTrackPan(0, -1);
+      await trackSettings.seedTrackPan(1, 0.5);
+      currentMix = MixSettingsSnapshot(trackPans: const {0: -1, 1: 0.5});
+      bloc.add(const LooperMixerReset());
+    },
+    verify: (_) async {
+      expect(currentMix.trackPans, isEmpty);
+      expect(
+        (await trackSettings.loadMixSettings('test')).trackPans[0] ?? 0,
+        0,
+      );
+      expect(
+        (await trackSettings.loadMixSettings('test')).trackPans[1] ?? 0,
+        0,
+      );
+    },
+  );
+
+  group('the input setup (slice 3)', () {
+    // The coordinator writes a complete device setup with each accepted edit.
+    final setup = InputSetup(
+      trimDb: const {0: -6},
+      pan: const {2: -0.5},
+      pairs: const {0: 0.2},
+    );
+
+    LooperBloc buildWithDevice() {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(deviceName: 'Scarlett 18i20', inputChannels: 4),
+        ),
+      );
+      when(() => repository.inputSetup).thenReturn(setup);
+      return buildBlocWithSettings();
+    }
+
+    /// The keys written under the open device.
+    Future<StoredInputSetup> stored() => trackSettings.loadInputSetup(
+      device: 'Scarlett 18i20',
+      inputCount: 4,
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperInputTrimChanged forwards the trim and persists that trim only',
+      build: buildWithDevice,
+      act: (bloc) => bloc.add(const LooperInputTrimChanged(0, db: -6)),
+      verify: (_) async {
+        expect(currentMix.inputSetup.trimDb, {0: -6});
+        final s = await stored();
+        expect(s.trimDb, {0: -6.0});
+        expect(s.pan, isEmpty);
+        expect(s.pairs, isEmpty);
+        final other = await trackSettings.loadInputSetup(
+          device: 'Built-in',
+          inputCount: 4,
+        );
+        expect(other.trimDb, isEmpty);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperInputPanChanged forwards the pan and persists that pan only',
+      build: buildWithDevice,
+      act: (bloc) => bloc.add(const LooperInputPanChanged(2, pan: -0.5)),
+      verify: (_) async {
+        expect(currentMix.inputSetup.pan, {2: -0.5});
+        final s = await stored();
+        expect(s.pan, {2: -0.5});
+        expect(s.trimDb, isEmpty);
+        expect(s.pairs, isEmpty);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperInputPairChanged forwards the link and persists that pair only',
+      build: buildWithDevice,
+      act: (bloc) => bloc.add(const LooperInputPairChanged(0, paired: true)),
+      verify: (_) async {
+        expect(currentMix.inputSetup.pairs, {0: 0});
+        final s = await stored();
+        expect(s.pairs, {0: 0});
+        expect(s.trimDb, isEmpty);
+        expect(s.pan, isEmpty);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperInputBalanceChanged forwards the balance and persists it under '
+      "the pair's lower member",
+      build: () {
+        final bloc = buildWithDevice();
+        currentMix = MixSettingsSnapshot(
+          inputSetup: InputSetup(pairs: const {0: 0}),
+        );
+        return bloc;
+      },
+      act: (bloc) async {
+        await trackSettings.seedInputPair('Scarlett 18i20', 0, 0);
+        bloc.add(const LooperInputBalanceChanged(0, balance: 0.2));
+      },
+      verify: (_) async {
+        expect(currentMix.inputSetup.pairs, {0: 0.2});
+        expect((await stored()).pairs, {0: 0.2});
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'a value put back to its default is cleared from the store, and the '
+      'other inputs are left alone',
+      build: () {
+        final bloc = buildWithDevice();
+        currentMix = MixSettingsSnapshot(inputSetup: setup);
+        return bloc;
+      },
+      act: (bloc) async {
+        await trackSettings.seedInputSetup('Scarlett 18i20', (
+          trimDb: setup.trimDb,
+          pan: setup.pan,
+          pairs: setup.pairs,
+        ));
+        bloc
+          ..add(const LooperInputTrimChanged(0, db: 0))
+          ..add(const LooperInputPairChanged(0, paired: false));
+      },
+      verify: (_) async {
+        final s = await stored();
+        expect(s.trimDb, isEmpty);
+        expect(s.pairs, isEmpty);
+        // Input 2's pan was not touched by either event.
+        expect(s.pan, {2: -0.5});
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'without a device, setup edits are refused before storage and audio',
+      build: () {
+        when(() => repository.state).thenReturn(const LooperState());
+        when(() => repository.inputSetup).thenReturn(setup);
+        return buildBlocWithSettings();
+      },
+      act: (bloc) => bloc
+        ..add(const LooperInputTrimChanged(0, db: -6))
+        ..add(const LooperInputPanChanged(2, pan: -0.5))
+        ..add(const LooperInputPairChanged(0, paired: true))
+        ..add(const LooperInputBalanceChanged(0, balance: 0.2)),
+      verify: (_) async {
+        verifyNever(() => repository.applyMixSettings(any()));
+        final s = await trackSettings.loadInputSetup(
+          device: '',
+          inputCount: 4,
+        );
+        expect(s.trimDb, isEmpty);
+        expect(s.pan, isEmpty);
+        expect(s.pairs, isEmpty);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'an in-memory coordinator applies edits with no bloc settings writer',
+      build: buildBloc,
+      act: (bloc) => bloc.add(const LooperTrackPanChanged(1, pan: 0.25)),
+      verify: (_) {
+        expect(currentMix.trackPans[1], 0.25);
+      },
+    );
+  });
 
   blocTest<LooperBloc, LooperState>(
     'LooperTrackOverdubDecayChanged forwards the override to the repository '
@@ -565,12 +884,10 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperLaneVolumeChanged forwards the volume for the lane',
+    'LooperLaneVolumeChanged applies the live lane level',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperLaneVolumeChanged(3, 1, 0.5)),
-    verify: (_) => verify(
-      () => repository.setLaneVolume(0.5, channel: 3, lane: 1),
-    ).called(1),
+    verify: (_) => expect(currentMix.laneLevels[(3, 1)], 0.5),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -900,9 +1217,6 @@ void main() {
         () => settings.saveLaneOutput(any(), any(), any()),
       ).thenAnswer((_) async {});
       when(
-        () => settings.saveLaneVolume(any(), any(), any()),
-      ).thenAnswer((_) async {});
-      when(
         () => settings.saveLaneMute(any(), any(), muted: any(named: 'muted')),
       ).thenAnswer((_) async {});
       when(
@@ -927,7 +1241,11 @@ void main() {
             status: EngineStatus(deviceName: 'Scarlett 18i20'),
           ),
         );
-        return LooperBloc(repository: repository, settings: settings);
+        return LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        );
       },
       act: (bloc) =>
           bloc.add(const LooperOutputEnabledToggled(1, enabled: false)),
@@ -947,7 +1265,11 @@ void main() {
 
     blocTest<LooperBloc, LooperState>(
       'LooperLaneCountChanged persists the lane count',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: () => LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        settings: settings,
+      ),
       act: (bloc) => bloc.add(const LooperLaneCountChanged(3, 2)),
       verify: (_) {
         verify(() => repository.setLaneCount(channel: 3, count: 2)).called(1);
@@ -957,7 +1279,11 @@ void main() {
 
     blocTest<LooperBloc, LooperState>(
       'LooperLaneInputChanged persists the input onto the lane',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: () => LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        settings: settings,
+      ),
       act: (bloc) => bloc.add(const LooperLaneInputChanged(3, 1, 2)),
       verify: (_) {
         verify(
@@ -969,7 +1295,11 @@ void main() {
 
     blocTest<LooperBloc, LooperState>(
       'LooperLaneOutputChanged persists the output mask onto the lane',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: () => LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        settings: settings,
+      ),
       act: (bloc) => bloc.add(const LooperLaneOutputChanged(0, 1, 0x6)),
       verify: (_) {
         verify(
@@ -981,19 +1311,33 @@ void main() {
 
     blocTest<LooperBloc, LooperState>(
       'LooperLaneVolumeChanged persists the volume onto the lane',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: buildBlocWithSettings,
+      setUp: () => when(() => repository.state).thenReturn(
+        const LooperState(
+          tracks: [
+            Track(),
+            Track(channel: 1),
+            Track(channel: 2, lanes: [Lane(), Lane(volume: 0.4)]),
+          ],
+        ),
+      ),
       act: (bloc) => bloc.add(const LooperLaneVolumeChanged(2, 1, 0.4)),
-      verify: (_) {
-        verify(
-          () => repository.setLaneVolume(0.4, channel: 2, lane: 1),
-        ).called(1);
-        verify(() => settings.saveLaneVolume(2, 1, 0.4)).called(1);
+      verify: (_) async {
+        expect(currentMix.laneLevels[(2, 1)], 0.4);
+        expect(
+          (await trackSettings.loadMixSettings('test')).laneLevels[(2, 1)],
+          0.4,
+        );
       },
     );
 
     blocTest<LooperBloc, LooperState>(
       'LooperLaneMuteToggled persists the toggled mute onto the lane',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: () => LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        settings: settings,
+      ),
       act: (bloc) => bloc.add(const LooperLaneMuteToggled(1, 0)),
       verify: (_) {
         verify(
@@ -1005,7 +1349,11 @@ void main() {
 
     blocTest<LooperBloc, LooperState>(
       'LooperClearPressed persists the unmute so a cleared track stays armed',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: () => LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        settings: settings,
+      ),
       seed: () => const LooperState(
         tracks: [
           Track(),
@@ -1026,7 +1374,11 @@ void main() {
 
     blocTest<LooperBloc, LooperState>(
       'a lane effect structural edit persists the encoded chain onto the lane',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: () => LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        settings: settings,
+      ),
       act: (bloc) => bloc.add(const LooperLaneEffectAdded(1, 2)),
       verify: (_) {
         verify(
@@ -1043,7 +1395,11 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'persists the take chain when the repository reports a record-time '
       'snapshot copy (F3)',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: () => LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        settings: settings,
+      ),
       verify: (_) {
         // The bloc wires a chain-persist callback onto the repository; capture
         // it and simulate the record-time snapshot firing it.
@@ -1080,7 +1436,11 @@ void main() {
             name: 'Acme Reverb',
           ),
         ]);
-        return LooperBloc(repository: repository, settings: settings);
+        return LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        );
       },
       act: (bloc) => bloc.add(
         const LooperLanePluginInserted(
@@ -1103,6 +1463,7 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLaneEffectParamChanged persists the re-encoded chain',
       build: () => LooperBloc(
+        mixSettings: testMixSettings(repository),
         repository: repository,
         settings: settings,
         fxPersistDebounce: Duration.zero,
@@ -1126,6 +1487,7 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLanePluginParamChanged persists the re-encoded chain',
       build: () => LooperBloc(
+        mixSettings: testMixSettings(repository),
         repository: repository,
         settings: settings,
         fxPersistDebounce: Duration.zero,
@@ -1201,7 +1563,11 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'LooperTrackEffectsChanged pushes the chain and persists the '
         'envelope with the repo chain flag',
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(LooperTrackEffectsChanged(1, trackChain)),
         verify: (_) {
           verify(
@@ -1236,7 +1602,11 @@ void main() {
             return EngineResult.ok;
           });
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc
           ..add(
             const LooperBusEffectAdded(
@@ -1274,7 +1644,11 @@ void main() {
             () => repository.masterEffects,
           ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(
           const LooperBusEffectTypeChanged(
             FxAddress(stage: FxStage.master),
@@ -1309,7 +1683,11 @@ void main() {
             ),
           ]);
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(
           const LooperBusEffectTypeChanged(
             FxAddress(stage: FxStage.track),
@@ -1347,7 +1725,11 @@ void main() {
             ),
           ]);
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(
           const LooperBusPluginRelinked(
             FxAddress(stage: FxStage.master),
@@ -1382,7 +1764,11 @@ void main() {
             ),
           ]);
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(
           const LooperBusPluginRelinked(
             FxAddress(stage: FxStage.master),
@@ -1419,7 +1805,11 @@ void main() {
             ),
           ]);
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(
           const LooperBusPluginRelinked(
             FxAddress(stage: FxStage.master),
@@ -1463,6 +1853,7 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
           fxPersistDebounce: Duration.zero,
@@ -1515,6 +1906,7 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
           repository: repository,
           settings: settings,
           fxPersistDebounce: Duration.zero,
@@ -1564,7 +1956,11 @@ void main() {
             ),
           ).thenReturn(true);
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) async {
           bloc.add(const LooperLanePluginEditorOpened(0, 0, 0));
           await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -1592,7 +1988,11 @@ void main() {
         'a bus edit past the end of the chain is ignored',
         setUp: () =>
             when(() => repository.trackEffects(0)).thenReturn(const []),
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(
           const LooperBusEffectRemoved(FxAddress(stage: FxStage.track), 3),
         ),
@@ -1618,7 +2018,11 @@ void main() {
             ),
           ).thenReturn(EngineResult.ok);
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(
           const LooperLaneEffectEnabledToggled(0, 1, 2, enabled: false),
         ),
@@ -1646,7 +2050,11 @@ void main() {
             ),
           ).thenReturn(EngineResult.ok);
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) =>
             bloc.add(const LooperLaneChainEnabledToggled(0, 1, enabled: false)),
         verify: (_) {
@@ -1671,7 +2079,11 @@ void main() {
             ),
           ).thenReturn(true);
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(const LooperLaneChainResyncedFromInput(0, 1)),
         verify: (_) {
           // Explicit and user initiated (A6) — the repository owns the copy and
@@ -1684,7 +2096,11 @@ void main() {
 
       blocTest<LooperBloc, LooperState>(
         'LooperTrackEffectEnabledToggled flips the slot and re-persists',
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(
           const LooperTrackEffectEnabledToggled(0, 1, enabled: false),
         ),
@@ -1703,7 +2119,11 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'LooperTrackChainEnabledToggled flips the chain flag and '
         're-persists',
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) =>
             bloc.add(const LooperTrackChainEnabledToggled(2, enabled: false)),
         verify: (_) {
@@ -1717,7 +2137,11 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'LooperMasterEffectsChanged pushes the chain and persists the '
         'envelope',
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(LooperMasterEffectsChanged(masterChain)),
         verify: (_) {
           verify(
@@ -1734,7 +2158,11 @@ void main() {
 
       blocTest<LooperBloc, LooperState>(
         'LooperMasterEffectEnabledToggled flips the slot and re-persists',
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) => bloc.add(
           const LooperMasterEffectEnabledToggled(0, enabled: false),
         ),
@@ -1749,7 +2177,11 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'LooperMasterChainEnabledToggled flips the chain flag and '
         're-persists',
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        ),
         act: (bloc) =>
             bloc.add(const LooperMasterChainEnabledToggled(enabled: false)),
         verify: (_) {
@@ -1767,7 +2199,11 @@ void main() {
         when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
         // The engine refused it, so the repository still holds the old mode.
         when(() => repository.settledLooperMode).thenReturn(LooperMode.multi);
-        return LooperBloc(repository: repository, settings: settings);
+        return LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        );
       },
       act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.free)),
       verify: (_) {
@@ -1788,7 +2224,11 @@ void main() {
         // start, so the engine never reports it and the reported-state guard
         // below would write nothing at all.
         when(() => repository.settledLooperMode).thenReturn(LooperMode.free);
-        return LooperBloc(repository: repository, settings: settings);
+        return LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        );
       },
       act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.free)),
       verify: (_) {
@@ -1801,7 +2241,11 @@ void main() {
       build: () {
         when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
         when(() => repository.settledLooperMode).thenReturn(LooperMode.band);
-        return LooperBloc(repository: repository, settings: settings);
+        return LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        );
       },
       act: (bloc) => bloc
         ..add(
@@ -1870,6 +2314,7 @@ void main() {
     });
 
     LooperBloc buildDebounced() => LooperBloc(
+      mixSettings: testMixSettings(repository),
       repository: repository,
       settings: settings,
       fxPersistDebounce: debounce,
@@ -2134,7 +2579,11 @@ void main() {
       'avoid_public_bloc_methods)',
       () async {
         when(() => settings.loadLooperMode()).thenAnswer((_) async => 2);
-        final bloc = LooperBloc(repository: repository, settings: settings);
+        final bloc = LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+        );
         addTearDown(bloc.close);
 
         await restoreLooperMode(bloc, settings);
@@ -2151,7 +2600,11 @@ void main() {
 
     test('defaults to Multi when nothing was ever persisted', () async {
       when(() => settings.loadLooperMode()).thenAnswer((_) async => 0);
-      final bloc = LooperBloc(repository: repository, settings: settings);
+      final bloc = LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        settings: settings,
+      );
       addTearDown(bloc.close);
 
       await restoreLooperMode(bloc, settings);
@@ -2191,7 +2644,11 @@ void main() {
     tearDown(() => controller.dispose());
 
     test('a mapped controller press drives the repository', () async {
-      final bloc = LooperBloc(repository: repository, controller: controller);
+      final bloc = LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        controller: controller,
+      );
       addTearDown(bloc.close);
 
       // Default mapping: CC 80 -> recordOverdub on channel 0.
@@ -2231,6 +2688,7 @@ void main() {
         );
         addTearDown(customController.dispose);
         final bloc = LooperBloc(
+          mixSettings: testMixSettings(repository),
           repository: repository,
           controller: customController,
         );
@@ -2249,7 +2707,11 @@ void main() {
     );
 
     test('stop (CC 81) forwards to repository.stopTrack', () async {
-      final bloc = LooperBloc(repository: repository, controller: controller);
+      final bloc = LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        controller: controller,
+      );
       addTearDown(bloc.close);
 
       source.press(ControllerSourceKind.midiCc, 81);
@@ -2260,7 +2722,11 @@ void main() {
     });
 
     test('undo (CC 82) forwards to repository.undo', () async {
-      final bloc = LooperBloc(repository: repository, controller: controller);
+      final bloc = LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        controller: controller,
+      );
       addTearDown(bloc.close);
 
       source.press(ControllerSourceKind.midiCc, 82);
@@ -2271,7 +2737,11 @@ void main() {
     });
 
     test('clear (CC 83) forwards to repository.clear', () async {
-      final bloc = LooperBloc(repository: repository, controller: controller);
+      final bloc = LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        controller: controller,
+      );
       addTearDown(bloc.close);
 
       source.press(ControllerSourceKind.midiCc, 83);
@@ -2282,7 +2752,11 @@ void main() {
     });
 
     test('tapTempo (CC 84) forwards to repository.tapTempo', () async {
-      final bloc = LooperBloc(repository: repository, controller: controller);
+      final bloc = LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        controller: controller,
+      );
       addTearDown(bloc.close);
 
       source.press(ControllerSourceKind.midiCc, 84);
@@ -2293,7 +2767,11 @@ void main() {
     });
 
     test('toggleMetronome (CC 85) turns the click on from off', () async {
-      final bloc = LooperBloc(repository: repository, controller: controller);
+      final bloc = LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        controller: controller,
+      );
       addTearDown(bloc.close);
 
       source.press(ControllerSourceKind.midiCc, 85);
@@ -2307,6 +2785,7 @@ void main() {
       'toggleMetronome (CC 85) turns the click back off when audible',
       () async {
         final bloc = LooperBloc(
+          mixSettings: testMixSettings(repository),
           repository: repository,
           controller: controller,
         );
@@ -2331,6 +2810,7 @@ void main() {
     test('toggleMetronome persists the resulting mode via settings', () async {
       final settings = SettingsRepository(store: FakeKeyValueStore());
       final bloc = LooperBloc(
+        mixSettings: testMixSettings(repository),
         repository: repository,
         controller: controller,
         settings: settings,
@@ -2361,6 +2841,7 @@ void main() {
           ),
         );
         final bloc = LooperBloc(
+          mixSettings: testMixSettings(repository),
           repository: repository,
           controller: controller,
         );
@@ -2382,7 +2863,11 @@ void main() {
       () async {
         // The bloc's own (stream-driven) state says nothing is pending —
         // stale relative to the engine, as it would be mid-poll-interval.
-        final bloc = LooperBloc(repository: repository, controller: controller);
+        final bloc = LooperBloc(
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          controller: controller,
+        );
         addTearDown(bloc.close);
         expect(bloc.state.tracks, isEmpty);
         // repository.state (a fresh synchronous engine read) says
@@ -2403,7 +2888,11 @@ void main() {
 
     test('cancelArm (CC 86) is a no-op when nothing is pending', () async {
       // Default stub (setUp): repository.state has no tracks.
-      final bloc = LooperBloc(repository: repository, controller: controller);
+      final bloc = LooperBloc(
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        controller: controller,
+      );
       addTearDown(bloc.close);
 
       source.press(ControllerSourceKind.midiCc, 86);
@@ -2445,7 +2934,11 @@ void main() {
         ticker: const Stream<void>.empty(),
       )..startEngine(const EngineConfig());
       settings = SettingsRepository(store: FakeKeyValueStore());
-      bloc = LooperBloc(repository: looper, settings: settings);
+      bloc = LooperBloc(
+        mixSettings: testMixSettings(looper),
+        repository: looper,
+        settings: settings,
+      );
     });
 
     tearDown(() async {
@@ -2575,8 +3068,45 @@ void main() {
       expect(await settings.loadTrackFxChain(0), isNull);
     });
 
+    test(
+      'FX resync leaves canonical mix ownership with SessionCubit',
+      () async {
+        // The pre-load persistence: a pan and a setup the load supersedes.
+        await settings.seedTrackPan(1, -1);
+        await settings.seedInputSetup('Fake Device', (
+          trimDb: {3: 12},
+          pan: {1: 1},
+          pairs: {},
+        ));
+        looper
+          ..setTrackPan(0.25)
+          ..setInputSetup(
+            InputSetup(
+              trimDb: const {0: -6},
+              pan: const {2: -0.5},
+              pairs: const {0: 0.2},
+            ),
+          );
+
+        await resync();
+
+        expect((await settings.loadMixSettings('test')).trackPans[0] ?? 0, 0);
+        expect((await settings.loadMixSettings('test')).trackPans[1], -1);
+        final stored = await settings.loadInputSetup(
+          device: 'Fake Device',
+          inputCount: 4,
+        );
+        expect(stored.trimDb, {3: 12});
+        expect(stored.pan, {1: 1});
+        expect(stored.pairs, isEmpty);
+      },
+    );
+
     test('is a no-op without a settings dependency', () async {
-      final blocWithoutSettings = LooperBloc(repository: looper);
+      final blocWithoutSettings = LooperBloc(
+        repository: looper,
+        mixSettings: testMixSettings(looper),
+      );
       addTearDown(blocWithoutSettings.close);
       looper.setMasterEffects(
         effects: [BuiltInEffect(type: TrackEffectType.delay)],

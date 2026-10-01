@@ -29,11 +29,50 @@ void main() {
   setUpAll(() {
     registerFallbackValue(<TrackEffect>[]);
     registerFallbackValue(MonitorMode.off);
+    registerFallbackValue(const InputSetup.empty());
+    registerFallbackValue(MixSettingsSnapshot());
   });
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    final monitorVolumes = <int, double>{};
+    var currentMix = MixSettingsSnapshot();
+    MixSettingsSnapshot? pendingMix;
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.mixSettingsSettled).thenReturn(true);
+    when(() => repository.state).thenReturn(const LooperState());
+    when(() => repository.mixSettingsSnapshot).thenAnswer((_) => currentMix);
+    when(
+      () => repository.validateMixSettings(any()),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.applyMixSettings(any())).thenAnswer((call) {
+      pendingMix = call.positionalArguments.first as MixSettingsSnapshot;
+      return EngineResult.ok;
+    });
+    when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.trackPans).thenReturn(const {});
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => repository.monitorVolume(any())).thenAnswer(
+      (call) => monitorVolumes[call.positionalArguments.first] ?? 1,
+    );
+    when(
+      () => repository.setMixSettings(
+        trackPans: any(named: 'trackPans'),
+        inputSetup: any(named: 'inputSetup'),
+        monitorLevels: any(named: 'monitorLevels'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.settleMixSettings(),
+    ).thenAnswer((_) async {
+      if (pendingMix case final accepted?) {
+        currentMix = accepted;
+        monitorVolumes.addAll(accepted.monitorLevels);
+        pendingMix = null;
+      }
+      return EngineResult.ok;
+    });
     // The cubit follows the scan: the repository's answer about whether a
     // plugin loaded changes when one lands.
     catalog = PluginCatalog(
@@ -69,7 +108,11 @@ void main() {
         input: any(named: 'input'),
         volume: any(named: 'volume'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorVolumes[call.namedArguments[#input] as int] =
+          call.namedArguments[#volume] as double;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorMute(
         input: any(named: 'input'),
@@ -126,6 +169,7 @@ void main() {
   /// Writes through with no debounce, so a test's assertion does not have to
   /// outlive a pending write. The debounce itself is covered in its own group.
   MonitorCubit build() => MonitorCubit(
+    mixSettings: testMixSettings(repository, settings: settings),
     repository: repository,
     settings: settings,
     fxPersistDebounce: Duration.zero,
@@ -156,6 +200,18 @@ void main() {
       when(() => repository.monitorVolume(any())).thenAnswer(
         (call) => volumes[call.positionalArguments.first] ?? 1.0,
       );
+      when(
+        () => repository.setMixSettings(
+          trackPans: any(named: 'trackPans'),
+          inputSetup: any(named: 'inputSetup'),
+          monitorLevels: any(named: 'monitorLevels'),
+        ),
+      ).thenAnswer((call) {
+        volumes.addAll(
+          call.namedArguments[#monitorLevels] as Map<int, double>,
+        );
+        return EngineResult.ok;
+      });
       when(() => repository.monitorMuted(any())).thenAnswer(
         (call) => mutes[call.positionalArguments.first] ?? false,
       );
@@ -584,10 +640,45 @@ void main() {
       },
       verify: (cubit) async {
         expect(cubit.state.forInput(0).volume, 0.5);
-        verify(
-          () => repository.setMonitorVolume(input: 0, volume: 0.5),
-        ).called(1);
+        verify(() => repository.applyMixSettings(any())).called(1);
         expect(await settings.loadMonitorVolume(0), 0.5);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a refused monitor volume leaves state and storage at the prior gain',
+      setUp: () {
+        when(
+          () => repository.applyMixSettings(any()),
+        ).thenReturn(EngineResult.notReady);
+      },
+      build: build,
+      act: (cubit) async {
+        await settings.saveMonitorVolume(0, 0.75);
+        await cubit.setVolume(0, 0.5);
+      },
+      verify: (cubit) async {
+        expect(cubit.state.forInput(0).volume, 1);
+        expect(await settings.loadMonitorVolume(0), 0.75);
+        verifyNever(() => repository.settleMixSettings());
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a failed monitor publication leaves state and storage unchanged',
+      setUp: () {
+        when(
+          () => repository.settleMixSettings(),
+        ).thenAnswer((_) async => EngineResult.invalid);
+      },
+      build: build,
+      act: (cubit) async {
+        await settings.saveMonitorVolume(0, 0.75);
+        await cubit.setVolume(0, 0.5);
+      },
+      verify: (cubit) async {
+        expect(cubit.state.forInput(0).volume, 1);
+        expect(await settings.loadMonitorVolume(0), 0.75);
       },
     );
 
@@ -727,7 +818,11 @@ void main() {
           () => repository.setMonitorOutput(input: 0, mask: 0x2),
         ).called(1);
         verify(
-          () => repository.setMonitorVolume(input: 0, volume: 0.4),
+          () => repository.setMixSettings(
+            trackPans: const {},
+            inputSetup: const InputSetup.empty(),
+            monitorLevels: const {0: 0.4},
+          ),
         ).called(1);
         verify(
           () => repository.setMonitorMute(input: 0, muted: true),
@@ -741,9 +836,36 @@ void main() {
       },
     );
 
+    blocTest<MonitorCubit, MonitorState>(
+      'load restores multiple monitor levels in one confirmed mix request',
+      setUp: () async {
+        await settings.saveMonitorVolume(0, 0.4);
+        await settings.saveMonitorVolume(1, 0.6);
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      verify: (cubit) {
+        expect(cubit.state.forInput(0).volume, 0.4);
+        expect(cubit.state.forInput(1).volume, 0.6);
+        verify(
+          () => repository.setMixSettings(
+            trackPans: const {},
+            inputSetup: const InputSetup.empty(),
+            monitorLevels: const {0: 0.4, 1: 0.6},
+          ),
+        ).called(1);
+        verifyNever(
+          () => repository.setMonitorVolume(
+            input: any(named: 'input'),
+            volume: any(named: 'volume'),
+          ),
+        );
+      },
+    );
+
     group('syncFromRepository', () {
       blocTest<MonitorCubit, MonitorState>(
-        're-projects the repository monitors into state and persists them',
+        're-projects repository monitors and persists non-mix fields',
         setUp: () {
           when(repository.allMonitors).thenReturn({
             2: InputMonitor(
@@ -768,10 +890,10 @@ void main() {
             (monitor.effects.single as BuiltInEffect).type,
             TrackEffectType.delay,
           );
-          // All five fields are persisted, so the next boot restores THIS set.
+          // SessionCubit owns the separate atomic mix write before this sync.
           expect(await settings.loadMonitorInputMode(2), 'on');
           expect(await settings.loadMonitorOutput(2), 0x2);
-          expect(await settings.loadMonitorVolume(2), 0.4);
+          expect(await settings.loadMonitorVolume(2), isNull);
           expect(await settings.loadMonitorMute(2), isTrue);
           expect(await settings.loadMonitorEffects(2), isNotNull);
           // The load already applied to the engine; the re-sync only READS the
@@ -810,7 +932,7 @@ void main() {
       );
 
       blocTest<MonitorCubit, MonitorState>(
-        'resets ALL persisted fields for inputs dropped since the last state',
+        'resets non-mix fields for inputs dropped since the last state',
         setUp: () async {
           // A prior session left input 5 configured (enabled + non-default
           // routing / volume / mute) in settings AND cubit state.
@@ -833,11 +955,10 @@ void main() {
         },
         verify: (cubit) async {
           expect(cubit.state.inputs, isEmpty);
-          // Every field is reset to the disabled default — no lingering
-          // outputMask / volume / mute to resurrect the monitor on next boot.
+          // SessionCubit writes the new mix level before this listener runs.
           expect(await settings.loadMonitorInputMode(5), 'off');
           expect(await settings.loadMonitorOutput(5), 0x3);
-          expect(await settings.loadMonitorVolume(5), 1.0);
+          expect(await settings.loadMonitorVolume(5), 0.3);
           expect(await settings.loadMonitorMute(5), isFalse);
           expect(
             await settings.loadMonitorEffects(5),
@@ -1278,6 +1399,7 @@ void main() {
     });
 
     MonitorCubit buildDebounced() => MonitorCubit(
+      mixSettings: testMixSettings(repository, settings: settings),
       repository: repository,
       settings: settings,
       fxPersistDebounce: debounce,
