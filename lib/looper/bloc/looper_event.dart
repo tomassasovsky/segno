@@ -232,6 +232,37 @@ final class LooperInputPairChanged extends LooperInputEvent {
   List<Object?> get props => [input, paired];
 }
 
+/// Selects one recording source for a track; linked pairs move together.
+final class LooperRecordingInputChanged extends LooperChannelEvent {
+  /// Creates a [LooperRecordingInputChanged].
+  const LooperRecordingInputChanged(
+    super.channel,
+    this.input, {
+    required this.selected,
+  });
+
+  /// The hardware input selected or removed.
+  final int input;
+
+  /// Whether the track should record it.
+  final bool selected;
+
+  @override
+  List<Object?> get props => [channel, input, selected];
+}
+
+/// Changes every lane and future lane of one track to one destination mask.
+final class LooperTrackOutputChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackOutputChanged].
+  const LooperTrackOutputChanged(super.channel, this.mask);
+
+  /// Hardware jack bitmask.
+  final int mask;
+
+  @override
+  List<Object?> get props => [channel, mask];
+}
+
 /// The balance of the pair whose lower member is [input] changed.
 final class LooperInputBalanceChanged extends LooperInputEvent {
   /// Creates a [LooperInputBalanceChanged].
@@ -344,44 +375,6 @@ sealed class LooperLaneEvent extends LooperChannelEvent {
 
   @override
   List<Object?> get props => [channel, lane];
-}
-
-/// Track [channel]'s active lane count changed (add/remove a lane). Lanes are a
-/// stack: growing appends an empty lane, shrinking drops the last one.
-final class LooperLaneCountChanged extends LooperChannelEvent {
-  /// Creates a [LooperLaneCountChanged].
-  const LooperLaneCountChanged(super.channel, this.count);
-
-  /// The new active lane count (`>= 1`).
-  final int count;
-
-  @override
-  List<Object?> get props => [channel, count];
-}
-
-/// Lane [lane] of track [channel] now records hardware input [inputChannel]
-/// (`-1` records nothing). A lane captures a single clean input.
-final class LooperLaneInputChanged extends LooperLaneEvent {
-  /// Creates a [LooperLaneInputChanged].
-  const LooperLaneInputChanged(super.channel, super.lane, this.inputChannel);
-
-  /// The hardware input channel this lane records (`-1` = none).
-  final int inputChannel;
-
-  @override
-  List<Object?> get props => [channel, lane, inputChannel];
-}
-
-/// Lane [lane] of track [channel]'s output-routing bitmask changed.
-final class LooperLaneOutputChanged extends LooperLaneEvent {
-  /// Creates a [LooperLaneOutputChanged].
-  const LooperLaneOutputChanged(super.channel, super.lane, this.mask);
-
-  /// Bitmask of hardware output channels to play to (bit c => out c).
-  final int mask;
-
-  @override
-  List<Object?> get props => [channel, lane, mask];
 }
 
 /// Lane [lane] of track [channel]'s playback volume changed.

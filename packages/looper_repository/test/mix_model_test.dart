@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -521,15 +522,72 @@ void main() {
         ..setPairBalance(input: 0, balance: 1)
         ..record();
       expect(engine.laneVol[(0, 0)], 0.0); // Left silenced by the balance
-      repo
-        ..setLaneCount(channel: 0, count: 1)
-        ..setLaneCount(channel: 0, count: 2);
+      // Unlink future sources before shrinking to one side. The saved image
+      // still carries its original pair balance until the lane is removed.
+      expect(repo.setInputPair(input: 0, paired: false), EngineResult.ok);
+      expect(engine.laneVol[(0, 0)], 0.0);
+      expect(repo.setLaneCount(channel: 0, count: 1), EngineResult.ok);
+      expect(repo.setLaneCount(channel: 0, count: 2), EngineResult.ok);
       expect(engine.laneVol[(0, 1)], 1.0);
       expect(engine.lanePan[(0, 1)], 0.0);
     });
   });
 
   group('applySession', () {
+    test(
+      'contradictory saved count refuses before replacing live audio',
+      () async {
+        final repo = start();
+        final oldPcm = Float32List.fromList([.125, -.375, .5]);
+        engine.importLayer(0, 0, 0, oldPcm);
+        final before = repo.mixSettingsSnapshot;
+        final generation = repo.mixGeneration;
+        final revision = repo.sessionRevision;
+        final rig = SessionRig(
+          laneCounts: const {0: 1},
+          tracks: [
+            SessionRigTrack(
+              channel: 0,
+              lanes: [
+                SessionRigLane(
+                  lane: 1,
+                  layers: [
+                    Float32List.fromList([.75, -.25]),
+                  ],
+                  volume: 1,
+                  muted: false,
+                  outputMask: 3,
+                  inputChannel: 1,
+                ),
+              ],
+            ),
+          ],
+        );
+        expect(() => MixSettingsSnapshot.fromRig(rig), throwsStateError);
+        engine.calls.clear();
+        await expectLater(repo.applySession(rig), throwsStateError);
+        expect(engine.calls, isEmpty);
+        expect(repo.mixSettingsSnapshot, before);
+        expect(repo.mixGeneration, generation);
+        expect(repo.sessionRevision, revision);
+        expect(engine.importedLanes[(0, 0)], orderedEquals(oldPcm));
+        expect(engine.importedLanes.keys, [(0, 0)]);
+        // A matching explicit count, or an omitted count, remains restorable.
+        expect(
+          MixSettingsSnapshot.fromRig(
+            SessionRig(tracks: rig.tracks, laneCounts: const {0: 2}),
+          ).laneCounts[0],
+          2,
+        );
+        expect(
+          MixSettingsSnapshot.fromRig(
+            SessionRig(tracks: rig.tracks),
+          ).laneCounts[0],
+          2,
+        );
+      },
+    );
+
     test('restores track pans, lane images and the input setup', () async {
       final repo = start()
         ..setTrackPan(0.9, channel: 1)
@@ -586,6 +644,11 @@ void main() {
       expect(engine.monitorPan[0], -1.0);
       expect(engine.monitorPan[1], 1.0);
       expect(engine.monitorVolume[0], closeTo(0.70710678, 1e-6));
+      // Imported source facts need not match today's link settings. An
+      // unrelated fader edit preserves them; a new source edit must be valid.
+      expect(repo.setVolume(.7), EngineResult.ok);
+      expect(repo.laneCount(0), 1);
+      expect(repo.inputSetup.isPairLeft(0), isTrue);
     });
 
     test(
@@ -764,6 +827,49 @@ void main() {
     });
   });
 
+  group('destination masks (slice 3c)', () {
+    test('a destination is the pair of jacks it drives', () {
+      expect(outputBusMask(0, channels: 4), 0x3);
+      expect(outputBusMask(1, channels: 4), 0xC);
+      expect(outputBusMask(2, channels: 8), 0x30);
+    });
+
+    test('an odd-channel device ends on a single jack', () {
+      // A five-out interface has no output 6, and a mask that claimed one
+      // would ask the engine to drive a socket the rig has not got.
+      expect(outputBusMask(2, channels: 5), 0x10);
+      expect(outputBusMask(2, channels: 4), 0);
+    });
+
+    test('a destination past the rig drives nothing', () {
+      expect(outputBusMask(9, channels: 4), 0);
+      expect(outputBusMask(-1, channels: 4), 0);
+    });
+
+    test('what a route SETS is not what it CLEARS', () {
+      // Setting must not claim a socket the interface has not got; clearing
+      // must reach both jacks, or a route saved on a wider rig can never be
+      // switched off on a narrower one.
+      expect(outputBusMask(2, channels: 5), 0x10);
+      expect(outputBusBits(2), 0x30);
+      expect(0x30 & ~outputBusBits(2), 0);
+      expect(0x30 & ~outputBusMask(2, channels: 5), 0x20);
+      expect(outputBusBits(-1), 0);
+    });
+
+    test('EITHER jack of a pair means the destination is reached', () {
+      // A mask that reaches half a pair still reaches the destination; read
+      // as unselected, a card would offer to switch on what is already on.
+      expect(outputMaskDrivesBus(0x1, 0), isTrue);
+      expect(outputMaskDrivesBus(0x2, 0), isTrue);
+      expect(outputMaskDrivesBus(0x3, 0), isTrue);
+      expect(outputMaskDrivesBus(0x4, 0), isFalse);
+      expect(outputMaskDrivesBus(0x8, 1), isTrue);
+      expect(outputMaskDrivesBus(0x3, 1), isFalse);
+      expect(outputMaskDrivesBus(0x3, -1), isFalse);
+    });
+  });
+
   group('OutputSetup maps (slice 3b)', () {
     test('round-trip through the one-map-per-fact form drops the '
         'destinations at their defaults', () {
@@ -801,6 +907,195 @@ void main() {
       final repo = start();
       expect(repo.cutSound(), EngineResult.ok);
       expect(engine.cutSoundCalls, 1);
+    });
+  });
+
+  group('atomic routing proposals', () {
+    test('public source and count edits cannot split an existing pair', () {
+      final repo = start();
+      expect(repo.setInputPair(input: 0, paired: true), EngineResult.ok);
+      final before = repo.mixSettingsSnapshot;
+      final revision = engine.mixRevision;
+      engine.calls.clear();
+      expect(
+        repo.setLaneInput(channel: 0, lane: 1, inputChannel: -1),
+        EngineResult.invalid,
+      );
+      expect(repo.setLaneCount(channel: 0, count: 1), EngineResult.invalid);
+      expect(
+        repo.applyMixSettings(
+          before.copyWith(laneInputs: {...before.laneInputs, (0, 0): -1}),
+        ),
+        EngineResult.invalid,
+      );
+      expect(repo.mixSettingsSnapshot, before);
+      expect(engine.mixRevision, revision);
+      expect(engine.calls, isEmpty);
+      // Removing the whole pair is valid and keeps the global link setting.
+      expect(
+        repo.applyMixSettings(
+          before.copyWith(
+            laneInputs: {...before.laneInputs, (0, 0): -1, (0, 1): -1},
+          ),
+        ),
+        EngineResult.ok,
+      );
+      expect(repo.inputSetup.isPairLeft(0), isTrue);
+    });
+
+    test('either member expands the explicit pair with ordered identities', () {
+      final repo = start();
+      final base = repo.mixSettingsSnapshot.copyWith(
+        inputSetup: InputSetup(pairs: const {0: 0}),
+        laneInputs: const {(0, 0): -1},
+      );
+      for (final selected in [0, 1]) {
+        final proposal = repo.prepareRecordingInputs(
+          base,
+          channel: 0,
+          input: selected,
+          selected: true,
+        )!;
+        expect(proposal.laneInputs[(0, 0)], 0);
+        expect(proposal.laneInputs[(0, 1)], 1);
+        expect(proposal.laneCounts[0], 2);
+        expect(base.laneInputs[(0, 0)], -1);
+      }
+    });
+
+    test('pair capacity refusal changes no track or pair fact', () {
+      final repo = start();
+      final before = repo.mixSettingsSnapshot.copyWith(
+        laneCounts: const {1: 8},
+        laneInputs: {
+          (0, 0): 0,
+          for (var lane = 0; lane < 8; lane++)
+            (1, lane): lane == 0 ? 0 : lane + 1,
+        },
+      );
+      expect(repo.prepareInputPair(before, input: 0, paired: true), isNull);
+      expect(before.inputSetup.pairs, isEmpty);
+      expect(before.laneCounts[1], 8);
+      expect(repo.mixSettingsSnapshot.laneCounts, isEmpty);
+    });
+
+    test('a freed middle slot admits a missing partner without compaction', () {
+      final repo = start();
+      final before = repo.mixSettingsSnapshot.copyWith(
+        laneCounts: const {0: 8},
+        laneInputs: {
+          for (var lane = 0; lane < 8; lane++)
+            (0, lane): lane == 3
+                ? -1
+                : lane == 0
+                ? 0
+                : lane + 1,
+        },
+      );
+      final proposal = repo.prepareInputPair(before, input: 0, paired: true)!;
+      expect(proposal.laneCounts[0], 8);
+      expect(proposal.laneInputs[(0, 3)], 1);
+      expect(proposal.laneInputs[(0, 4)], 5);
+      expect(before.laneInputs[(0, 3)], -1);
+    });
+
+    test('unpair keeps assignments and each saved mono pan', () {
+      final repo = start();
+      final before = repo.mixSettingsSnapshot.copyWith(
+        inputSetup: InputSetup(
+          pan: const {0: -.3, 1: .6},
+          pairs: const {0: .2},
+        ),
+        laneCounts: const {0: 2},
+        laneInputs: const {(0, 0): 0, (0, 1): 1},
+      );
+      final proposal = repo.prepareInputPair(before, input: 0, paired: false)!;
+      expect(proposal.laneInputs, before.laneInputs);
+      expect(proposal.inputSetup.effectivePanOf(0), -.3);
+      expect(proposal.inputSetup.effectivePanOf(1), .6);
+    });
+
+    test('pending arm locks its track before any callback publication', () {
+      final repo = start();
+      engine
+        ..publishRecordImages = false
+        ..commandsAreSettled = false;
+      expect(repo.record(), EngineResult.ok);
+      final before = repo.mixSettingsSnapshot;
+      expect(
+        repo.prepareRecordingInputs(
+          before,
+          channel: 0,
+          input: 1,
+          selected: true,
+        ),
+        isNull,
+      );
+      expect(repo.prepareInputPair(before, input: 0, paired: true), isNull);
+      expect(
+        repo.prepareRecordingInputs(
+          before,
+          channel: 1,
+          input: 1,
+          selected: true,
+        ),
+        isNotNull,
+      );
+    });
+
+    test(
+      'route edit seeds every future lane and preserves detached intent',
+      () {
+        final repo = start();
+        final before = repo.mixSettingsSnapshot.copyWith(
+          laneOutputs: const {(0, 0): 1, (0, 1): 2},
+        );
+        final proposal = repo.prepareTrackOutput(before, channel: 0, mask: 2)!;
+        for (var lane = 0; lane < 8; lane++) {
+          expect(proposal.laneOutputs[(0, lane)], 2);
+        }
+        expect(before.laneOutputs[(0, 0)], 1);
+        expect(proposal.laneCounts, before.laneCounts);
+      },
+    );
+
+    test('missing destinations retain intent but cannot be newly selected', () {
+      final repo = start();
+      final before = repo.mixSettingsSnapshot.copyWith(
+        laneOutputs: {
+          for (var lane = 0; lane < 8; lane++) (0, lane): 0x81,
+        },
+      );
+      expect(
+        repo.prepareTrackOutput(before, channel: 0, mask: 0x80),
+        isNotNull,
+      );
+      expect(repo.prepareTrackOutput(before, channel: 0, mask: 1), isNotNull);
+      expect(repo.prepareTrackOutput(before, channel: 0, mask: 0x85), isNull);
+    });
+
+    test('missing source may be removed but cannot be re-added or paired', () {
+      final repo = start();
+      final before = repo.mixSettingsSnapshot.copyWith(
+        laneInputs: const {(0, 0): 30},
+      );
+      final removed = repo.prepareRecordingInputs(
+        before,
+        channel: 0,
+        input: 30,
+        selected: false,
+      )!;
+      expect(removed.laneInputs[(0, 0)], -1);
+      expect(
+        repo.prepareRecordingInputs(
+          removed,
+          channel: 0,
+          input: 30,
+          selected: true,
+        ),
+        isNull,
+      );
+      expect(repo.prepareInputPair(before, input: 30, paired: true), isNull);
     });
   });
 

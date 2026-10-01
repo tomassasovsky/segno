@@ -21,6 +21,9 @@ class SettingsMixPersistence implements MixSettingsPersistence {
           trackPans: candidate.trackPans,
           laneLevels: candidate.laneLevels,
           monitorLevels: candidate.monitorLevels,
+          laneInputs: candidate.laneInputs,
+          laneOutputs: candidate.laneOutputs,
+          laneCounts: candidate.laneCounts,
           inputSetup: device.isEmpty
               ? (trimDb: const {}, pan: const {}, pairs: const {})
               : (

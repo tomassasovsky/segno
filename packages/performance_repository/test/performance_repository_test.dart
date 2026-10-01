@@ -701,17 +701,17 @@ void main() {
       'writes the BUS stages and every chain-enabled flag into the '
       'arm-snapshot (R20/R3)',
       () async {
-        engine.seedLane(0, 0, Float32List.fromList([1, 1]));
-
-        engine.outputChain = OutputFxSnapshot(
-          effects: [
-            OutputEffectSnapshot(
-              type: TrackEffectType.filter.code,
-              params: TrackEffectType.filter.defaultParams,
-            ),
-          ],
-          chainEnabled: false,
-        );
+        engine
+          ..seedLane(0, 0, Float32List.fromList([1, 1]))
+          ..outputChain = OutputFxSnapshot(
+            effects: [
+              OutputEffectSnapshot(
+                type: TrackEffectType.filter.code,
+                params: TrackEffectType.filter.defaultParams,
+              ),
+            ],
+            chainEnabled: false,
+          );
 
         await repo.arm(
           chains: PerformanceChains(

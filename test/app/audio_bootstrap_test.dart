@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/app.dart';
+import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/looper/looper.dart';
 // Domain audio-config + effect types come from the looper_repository barrel
@@ -51,6 +52,41 @@ void main() {
       settings = SettingsRepository(store: store);
       addTearDown(repository.dispose);
     });
+
+    Future<void> saveRouting({
+      required int channel,
+      required int lane,
+      int? input,
+      int? output,
+      int? count,
+    }) async {
+      final saved = await settings.loadMixSettings('Fake Device');
+      final inputs = {...saved.laneInputs};
+      final outputs = {...saved.laneOutputs};
+      final counts = {...saved.laneCounts};
+      if (input != null) {
+        inputs[(channel, lane)] = input;
+      }
+      if (output != null) {
+        outputs[(channel, lane)] = output;
+      }
+      if (count != null) {
+        counts[channel] = count;
+      }
+      await settings.replaceMixSettings(
+        device: 'Fake Device',
+        mix: (
+          trackPans: saved.trackPans,
+          laneLevels: saved.laneLevels,
+          monitorLevels: saved.monitorLevels,
+          laneInputs: inputs,
+          laneOutputs: outputs,
+          laneCounts: counts,
+          inputSetup: saved.inputSetup,
+          outputSetup: saved.outputSetup,
+        ),
+      );
+    }
 
     group('first run (no saved config)', () {
       tearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -301,8 +337,7 @@ void main() {
       );
       // Save lane-0 routing for channel 1 only; channel 0 has none (exercises
       // the null-guard skip in the restore loop).
-      await settings.saveLaneInput(1, 0, 1);
-      await settings.saveLaneOutput(1, 0, 0x4);
+      await saveRouting(channel: 1, lane: 0, input: 1, output: 0x4);
       // The restore loop iterates the engine's reported tracks.
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
@@ -329,6 +364,49 @@ void main() {
       expect(engine.laneInput[(1, 0)], 1);
       expect(engine.laneOutput[(1, 0)], 0x4);
     });
+
+    test(
+      'refuses a saved half-pair instead of silently changing sources',
+      () async {
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+        );
+        await settings.seedInputSetup('Fake Device', (
+          trimDb: <int, double>{},
+          pan: <int, double>{},
+          pairs: {0: 0.2},
+        ));
+        engine.nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          inputChannels: 2,
+          outputChannels: 2,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          tracks: [TrackSnapshot.empty()],
+        );
+
+        final started = await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(started.started, isFalse);
+        expect(engine.stopCalls, greaterThan(0));
+        expect(repository.inputSetup.pairs, isEmpty);
+        expect(
+          (await settings.loadMixSettings('Fake Device')).inputSetup.pairs,
+          {0: 0.2},
+        );
+      },
+    );
 
     test('restores the saved global default loop multiple on launch', () async {
       await settings.saveAudioConfig(
@@ -646,9 +724,7 @@ void main() {
       );
       // Track 0 has two lanes; lane 1 carries its own input, output, mix, and
       // effect chain that must be restored alongside lane 0.
-      await settings.saveLaneCount(0, 2);
-      await settings.saveLaneInput(0, 1, 2);
-      await settings.saveLaneOutput(0, 1, 0x2);
+      await saveRouting(channel: 0, lane: 1, count: 2, input: 2, output: 0x2);
       await settings.seedLaneVolume(0, 1, 0.4);
       await settings.saveLaneMute(0, 1, muted: true);
       await settings.saveLaneEffects(
@@ -758,6 +834,16 @@ void main() {
           trackPans: savedMix.trackPans,
           laneLevels: savedMix.laneLevels,
           monitorLevels: savedMix.monitorLevels,
+          laneInputs: {
+            for (var channel = 0; channel < 8; channel++) ...{
+              (channel, 0): 0,
+              (channel, 1): 1,
+            },
+          },
+          laneOutputs: savedMix.laneOutputs,
+          laneCounts: {
+            for (var channel = 0; channel < 8; channel++) channel: 2,
+          },
           inputSetup: savedMix.inputSetup,
           outputSetup: (
             level: {1: .5},
@@ -828,7 +914,7 @@ void main() {
       await settings.saveAudioConfig(
         const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
-      await settings.saveLaneCount(0, 2);
+      await saveRouting(channel: 0, lane: 1, count: 2);
       await settings.seedTrackPan(0, 0.5);
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
@@ -1181,6 +1267,11 @@ void main() {
         ),
         clearPollInterval: Duration.zero,
       );
+      // SessionCubit durably writes the landed rig as one canonical mix. This
+      // direct domain load bypasses that cubit, so perform its storage step.
+      await SettingsMixPersistence(
+        settings,
+      ).write('Fake Device', repository.mixSettingsSnapshot);
       await resync();
 
       final rebooted = await coldBoot();
@@ -1192,7 +1283,10 @@ void main() {
       // write-back re-persisted `lane_count.0` too — the boot restore bounds
       // its lane loop by that key, so a stale count would drop this chain
       // even though it was written correctly.
-      expect(await settings.loadLaneCount(0), 2);
+      expect(
+        (await settings.loadMixSettings('Fake Device')).laneCounts[0],
+        2,
+      );
       expect(rebooted.laneFx[(0, 1, 0)]?.code, TrackEffectType.echo.code);
       // Track + Master: the loaded chains, not the pre-load drive.
       expect(rebooted.trackFx[(0, 0)]?.code, TrackEffectType.reverb.code);

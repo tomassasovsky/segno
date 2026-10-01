@@ -428,7 +428,7 @@ class PerformanceRepository {
       try {
         await pending.writeAsString(jsonEncode(finalArm.toJson()), flush: true);
         await pending.rename('$dir/$_armSnapshotFileName');
-      } catch (_) {
+      } on Object {
         try {
           if (pending.existsSync()) pending.deleteSync();
         } on FileSystemException {

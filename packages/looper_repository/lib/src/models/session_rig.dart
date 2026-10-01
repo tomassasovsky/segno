@@ -178,6 +178,9 @@ class SessionRig {
     this.recDub = false,
     this.autoRecord = false,
     this.inputSetup = const InputSetup.empty(),
+    this.laneInputs = const {},
+    this.laneOutputs = const {},
+    this.laneCounts = const {},
     this.trackPans = const {},
     this.outputSetup = const OutputSetup(),
   });
@@ -254,6 +257,15 @@ class SessionRig {
   /// The per-input capture setup the session was saved with (slice 3):
   /// trims, pans and pairs. Restored on apply; the monitors' pans follow it.
   final InputSetup inputSetup;
+
+  /// Content-independent future source assignments, including empty tracks.
+  final Map<(int, int), int> laneInputs;
+
+  /// Content-independent playback routes, including future lane slots.
+  final Map<(int, int), int> laneOutputs;
+
+  /// Active source lane counts, including tracks without captured PCM.
+  final Map<int, int> laneCounts;
 
   /// The output setup the session was saved with (slice 3b): every
   /// destination's level, mute, Stereo/Mono and balance. Restored on apply.

@@ -676,6 +676,9 @@ class Session {
     this.trackOneShotOverrides = const {},
     this.trackLengthPresetOverrides = const {},
     this.trackPans = const {},
+    this.laneInputs = const {},
+    this.laneOutputs = const {},
+    this.laneCounts = const {},
     this.syncTempo = true,
     this.recDub = false,
     this.autoRecord = false,
@@ -757,6 +760,13 @@ class Session {
         json['trackPans'],
         (value) => (value! as num).toDouble(),
       ),
+      laneInputs: _laneMapFromJson(json['laneInputs'], min: -1, max: 31),
+      laneOutputs: _laneMapFromJson(
+        json['laneOutputs'],
+        min: 0,
+        max: 0xffffffff,
+      ),
+      laneCounts: _routingCountsFromJson(json['laneCounts']),
       syncTempo: json['syncTempo'] as bool,
       recDub: json['recDub'] as bool,
       autoRecord: json['autoRecord'] as bool,
@@ -922,6 +932,15 @@ class Session {
   /// absent on an older manifest reads as the default.
   final SessionOutputSetup outputSetup;
 
+  /// Explicit source choices retained for inactive lanes and empty tracks.
+  final Map<(int, int), int> laneInputs;
+
+  /// Explicit destination choices retained for future-grown lanes.
+  final Map<(int, int), int> laneOutputs;
+
+  /// Active lane counts, including tracks without recorded audio.
+  final Map<int, int> laneCounts;
+
   /// Serializes this session manifest to a JSON map. Always writes the
   /// current [formatVersion].
   Map<String, dynamic> toJson() => {
@@ -970,6 +989,9 @@ class Session {
       'trackPans': {
         for (final entry in trackPans.entries) '${entry.key}': entry.value,
       },
+    if (laneInputs.isNotEmpty) 'laneInputs': _laneMapToJson(laneInputs),
+    if (laneOutputs.isNotEmpty) 'laneOutputs': _laneMapToJson(laneOutputs),
+    if (laneCounts.isNotEmpty) 'laneCounts': _channelMapToJson(laneCounts),
     'syncTempo': syncTempo,
     'recDub': recDub,
     'autoRecord': autoRecord,
@@ -1027,6 +1049,9 @@ class Session {
             other.trackLengthPresetOverrides,
           ) &&
           _mapEquals(trackPans, other.trackPans) &&
+          _laneMapEquals(laneInputs, other.laneInputs) &&
+          _laneMapEquals(laneOutputs, other.laneOutputs) &&
+          _mapEquals(laneCounts, other.laneCounts) &&
           inputSetup == other.inputSetup &&
           outputSetup == other.outputSetup;
 
@@ -1068,6 +1093,9 @@ class Session {
     _mapHash(trackOneShotOverrides),
     _mapHash(trackLengthPresetOverrides),
     _mapHash(trackPans),
+    _laneMapHash(laneInputs),
+    _laneMapHash(laneOutputs),
+    _mapHash(laneCounts),
     inputSetup,
     outputSetup,
   ]);
@@ -1100,6 +1128,63 @@ bool _mapEquals<T>(Map<int, T> a, Map<int, T> b) =>
 
 int _mapHash<T>(Map<int, T> values) => Object.hashAllUnordered(
   values.entries.map((entry) => Object.hash(entry.key, entry.value)),
+);
+
+Map<String, int> _laneMapToJson(Map<(int, int), int> values) => {
+  for (final e in values.entries) '${e.key.$1}.${e.key.$2}': e.value,
+};
+
+Map<(int, int), int> _laneMapFromJson(
+  Object? raw, {
+  required int min,
+  required int max,
+}) {
+  if (raw == null) return const {};
+  final result = <(int, int), int>{};
+  for (final entry in (raw as Map<String, dynamic>).entries) {
+    final address = entry.key.split('.');
+    if (address.length != 2 || entry.value is! int) {
+      throw const FormatException('invalid lane map');
+    }
+    final channel = int.parse(address[0]);
+    final lane = int.parse(address[1]);
+    final value = entry.value as int;
+    if (channel < 0 ||
+        channel >= 8 ||
+        lane < 0 ||
+        lane >= 8 ||
+        value < min ||
+        value > max) {
+      throw const FormatException('invalid lane address');
+    }
+    result[(channel, lane)] = value;
+  }
+  return result;
+}
+
+Map<int, int> _routingCountsFromJson(Object? raw) {
+  if (raw == null) return const {};
+  final result = <int, int>{};
+  for (final entry in (raw as Map<String, dynamic>).entries) {
+    final channel = int.parse(entry.key);
+    final count = entry.value;
+    if (channel < 0 ||
+        channel >= 8 ||
+        count is! int ||
+        count < 1 ||
+        count > 8) {
+      throw const FormatException('invalid lane count');
+    }
+    result[channel] = count;
+  }
+  return result;
+}
+
+bool _laneMapEquals(Map<(int, int), int> a, Map<(int, int), int> b) =>
+    a.length == b.length && a.entries.every((e) => b[e.key] == e.value);
+
+int _laneMapHash(Map<(int, int), int> values) => Object.hashAllUnordered(
+  values.entries.map((e) => Object.hash(e.key, e.value)),
 );
 
 Map<String, Object?> _channelMapToJson<V>(Map<int, V> map) => {

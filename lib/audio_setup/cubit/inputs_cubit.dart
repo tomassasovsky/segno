@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/audio_setup/cubit/alias_rename_result.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'inputs_state.dart';
@@ -38,100 +39,208 @@ class InputsCubit extends Cubit<InputsState> {
        _repository = repository,
        super(const InputsState()) {
     _subscription = _repository.looperState.listen(
-      (looper) => unawaited(_followDevice(looper.status.deviceName)),
+      (looper) => unawaited(_followDevice(looper)),
     );
-    unawaited(_followDevice(_repository.state.status.deviceName));
+    unawaited(_followDevice(_repository.state));
   }
 
   final SettingsRepository _settings;
   final LooperRepository _repository;
   late final StreamSubscription<LooperState> _subscription;
 
-  /// Sockets renamed while a load was in flight.
-  ///
-  /// The restore walks the sockets one await at a time, so a rename part-way
-  /// through would be overwritten by the list the walk started with. Recording
-  /// which sockets moved lets the restore land MERGED rather than be abandoned
-  /// — dropping it wholesale would lose every OTHER socket's persisted name.
-  final Set<int> _renamedDuringLoad = {};
-
-  /// Whether a load is currently walking the sockets.
+  final Map<int, String?> _confirmedDuringLoad = {};
+  final Map<(String, int), Future<void>> _renameTails = {};
+  final Set<(String, int)> _recoveryKeys = {};
+  String _device = '';
+  int _lifetime = 0;
+  int _generation = -1;
   bool _loading = false;
 
-  /// The device a rename belongs to RIGHT NOW.
-  ///
-  /// Set the moment a restore starts rather than when it finishes, because
-  /// [InputsState.device] cannot move until the walk has something to emit —
-  /// and a rename arriving mid-walk would otherwise be saved against the
-  /// device that is on its way out.
-  String _device = '';
+  bool _owns(int lifetime, int generation) =>
+      !isClosed &&
+      lifetime == _lifetime &&
+      generation == _repository.mixGeneration;
 
-  /// Re-reads the names when the open device changes.
-  ///
-  /// Nothing to do while the engine reports no device: the names of the rig
-  /// that is about to open are not knowable yet, and clearing the list would
-  /// blank every chip for the length of a reopen. The state simply keeps the
-  /// outgoing device's names until the incoming one names itself.
-  Future<void> _followDevice(String device) async {
-    // Against [_device], which moves the moment a walk starts — NOT
-    // `state.device`, which cannot move until the walk has something to emit.
-    // Guarding on the state would let every tick during a walk start another
-    // one, and an early finisher would clear `_loading` while the rest ran.
-    if (device.isEmpty || device == _device) return;
-    await _restore(device);
-  }
-
-  Future<void> _restore(String device) async {
+  Future<void> _followDevice(LooperState looper) async {
+    final status = looper.status;
+    final device = status.isConnected && status.devicePresent
+        ? status.deviceName
+        : '';
+    final generation = looper.mixGeneration;
+    if (generation != _repository.mixGeneration) return;
+    if (device == _device && generation == _generation) return;
     _device = device;
-    _loading = true;
-    _renamedDuringLoad.clear();
+    _generation = generation;
+    final lifetime = ++_lifetime;
+    _loading = device.isNotEmpty;
+    _confirmedDuringLoad.clear();
+    emit(InputsState(device: device, lifetime: lifetime));
+    if (device.isEmpty) return;
     final names = <int, String>{};
-    for (var input = 0; input < InputsState.probeCeiling; input++) {
-      final saved = await _settings.loadInputName(device: device, input: input);
-      if (saved != null && saved.isNotEmpty) names[input] = saved;
-    }
-    _loading = false;
-    if (isClosed) return;
-    // A socket renamed while this was walking keeps the name the user just
-    // gave it; every other socket takes what was on disk.
-    for (final input in _renamedDuringLoad) {
-      final live = state.names[input];
-      if (live == null || live.isEmpty) {
-        names.remove(input);
-      } else {
-        names[input] = live;
+    try {
+      for (var input = 0; input < InputsState.probeCeiling; input++) {
+        await _renameTails[(device, input)];
+        if (!_owns(lifetime, generation)) return;
+        final saved = await _settings.loadInputName(
+          device: device,
+          input: input,
+        );
+        if (!_owns(lifetime, generation)) return;
+        if (saved != null && saved.isNotEmpty) names[input] = saved;
+        _recoveryKeys.remove((device, input));
       }
-    }
-    _renamedDuringLoad.clear();
-    emit(InputsState(device: device, names: names));
-  }
-
-  /// Names hardware [input] on the open device, or hands the socket back its
-  /// ordinal when [name] trims to nothing.
-  ///
-  /// An empty name is a real answer here, unlike a track's: `AUDIO /
-  /// settings-rename` has no Clear button, only a backspace and Save, so
-  /// emptying the field IS how an input is un-named.
-  Future<void> rename(int input, String name) async {
-    final device = _device;
-    // Nothing to key the name to. Refused rather than stored against an empty
-    // device, which would be a name that reappears on whatever opens next.
-    if (device.isEmpty || input < 0) return;
-    final trimmed = name.trim();
-    if (trimmed == (state.names[input] ?? '')) return;
-    if (_loading) _renamedDuringLoad.add(input);
-    final names = {...state.names};
-    if (trimmed.isEmpty) {
-      names.remove(input);
-    } else {
-      names[input] = trimmed;
-    }
-    emit(state.copyWith(names: names));
-    if (trimmed.isEmpty) {
-      await _settings.clearInputName(device: device, input: input);
+    } on Object {
+      if (_owns(lifetime, generation)) _loading = false;
       return;
     }
-    await _settings.saveInputName(device: device, input: input, name: trimmed);
+    if (!_owns(lifetime, generation)) return;
+    _loading = false;
+    for (final entry in _confirmedDuringLoad.entries) {
+      if (entry.value case final name?) {
+        names[entry.key] = name;
+      } else {
+        names.remove(entry.key);
+      }
+    }
+    _confirmedDuringLoad.clear();
+    emit(InputsState(device: device, names: names, lifetime: lifetime));
+  }
+
+  /// Durably renames [input] for one device lifetime, restoring its exact key
+  /// if a write throws after touching storage.
+  Future<void> rename(
+    int input,
+    String name, {
+    int? expectedLifetime,
+    void Function(AliasRenameResult)? onResult,
+  }) async {
+    final result = await _rename(
+      input,
+      name,
+      expectedLifetime: expectedLifetime,
+    );
+    onResult?.call(result);
+  }
+
+  Future<AliasRenameResult> _rename(
+    int input,
+    String name, {
+    int? expectedLifetime,
+  }) async {
+    final device = _device;
+    final lifetime = _lifetime;
+    final generation = _generation;
+    if (device.isEmpty ||
+        input < 0 ||
+        input >= InputsState.probeCeiling ||
+        !_owns(lifetime, generation) ||
+        (expectedLifetime != null && expectedLifetime != lifetime)) {
+      return AliasRenameResult.refused;
+    }
+    final key = (device, input);
+    final previous = _renameTails[key] ?? Future<void>.value();
+    final completed = Completer<void>();
+    _renameTails[key] = completed.future;
+    try {
+      await previous;
+      if (!_owns(lifetime, generation)) {
+        return AliasRenameResult.refused;
+      }
+      if (_recoveryKeys.contains(key)) {
+        return AliasRenameResult.recoveryRequired;
+      }
+      final trimmed = name.trim();
+      if (!_loading && trimmed == (state.names[input] ?? '')) {
+        return AliasRenameResult.applied;
+      }
+      String? checkpoint;
+      try {
+        checkpoint = await _settings.loadInputName(
+          device: device,
+          input: input,
+        );
+      } on Object {
+        return AliasRenameResult.storageFailed;
+      }
+      if (!_owns(lifetime, generation)) return AliasRenameResult.refused;
+      try {
+        if (trimmed.isEmpty) {
+          await _settings.clearInputName(device: device, input: input);
+        } else {
+          await _settings.saveInputName(
+            device: device,
+            input: input,
+            name: trimmed,
+          );
+        }
+      } on Object {
+        try {
+          if (checkpoint == null) {
+            await _settings.clearInputName(device: device, input: input);
+          } else {
+            await _settings.saveInputName(
+              device: device,
+              input: input,
+              name: checkpoint,
+            );
+          }
+        } on Object {
+          _recoveryKeys.add(key);
+          return AliasRenameResult.recoveryRequired;
+        }
+        if (_owns(lifetime, generation)) {
+          if (_loading) _confirmedDuringLoad[input] = checkpoint;
+          final names = {...state.names};
+          if (checkpoint == null || checkpoint.isEmpty) {
+            names.remove(input);
+          } else {
+            names[input] = checkpoint;
+          }
+          emit(state.copyWith(names: names));
+        }
+        return AliasRenameResult.storageFailed;
+      }
+      if (!_owns(lifetime, generation)) return AliasRenameResult.refused;
+      if (_loading) {
+        _confirmedDuringLoad[input] = trimmed.isEmpty ? null : trimmed;
+      }
+      final names = {...state.names};
+      if (trimmed.isEmpty) {
+        names.remove(input);
+      } else {
+        names[input] = trimmed;
+      }
+      emit(state.copyWith(names: names));
+      return AliasRenameResult.applied;
+    } finally {
+      completed.complete();
+      if (identical(_renameTails[key], completed.future)) {
+        unawaited(_renameTails.remove(key));
+      }
+    }
+  }
+
+  /// Re-reads one uncertain key before another edit may use it.
+  Future<void> retryAliasRecovery(int input) async {
+    final device = _device;
+    final lifetime = _lifetime;
+    final generation = _generation;
+    final key = (device, input);
+    if (device.isEmpty || !_recoveryKeys.contains(key)) return;
+    try {
+      final value = await _settings.loadInputName(device: device, input: input);
+      if (!_owns(lifetime, generation)) return;
+      _recoveryKeys.remove(key);
+      final names = {...state.names};
+      if (value == null || value.isEmpty) {
+        names.remove(input);
+      } else {
+        names[input] = value;
+      }
+      emit(state.copyWith(names: names));
+    } on Object {
+      return;
+    }
   }
 
   @override

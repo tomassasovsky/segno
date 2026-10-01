@@ -220,7 +220,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
   // Separate setters would race each other while the first vector waits for
   // callback publication, and an explicit Auto override (zero) must survive.
   final lengthOverrides = <int, int>{};
-  final laneLevels = <(int, int), double>{};
   for (final track in repository.state.tracks) {
     final preset = await settings.loadTrackLengthPreset(track.channel);
     if (preset != null) lengthOverrides[track.channel] = preset;
@@ -236,6 +235,41 @@ Future<AutoStartResult> _tryAutoStartEngine({
     AppLog.error(
       'audio auto-start: saved length replay refused '
       'result=${lengthResult.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
+
+  // Replay every saved source, destination and mix control in one callback
+  // transaction before loading lane effects that depend on active lane counts.
+  final mixRequest = repository.applyMixSettings(
+    repository.mixSettingsSnapshot.copyWith(
+      trackPans: savedMix.trackPans,
+      laneLevels: savedMix.laneLevels,
+      monitorLevels: savedMix.monitorLevels,
+      laneInputs: savedMix.laneInputs,
+      laneOutputs: savedMix.laneOutputs,
+      laneCounts: savedMix.laneCounts,
+      inputSetup: InputSetup(
+        trimDb: savedMix.inputSetup.trimDb,
+        pan: savedMix.inputSetup.pan,
+        pairs: savedMix.inputSetup.pairs,
+      ),
+      outputSetup: OutputSetup.fromMaps(
+        level: savedMix.outputSetup.level,
+        muted: savedMix.outputSetup.muted,
+        mono: savedMix.outputSetup.mono,
+        balance: savedMix.outputSetup.balance,
+      ),
+    ),
+  );
+  final mixResult = mixRequest.isOk
+      ? await repository.settleMixSettings()
+      : mixRequest;
+  if (!mixResult.isOk) {
+    AppLog.error(
+      'audio auto-start: saved mix replay refused '
+      'result=${mixResult.name}',
     );
     repository.stopEngine();
     return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
@@ -263,33 +297,8 @@ Future<AutoStartResult> _tryAutoStartEngine({
     if (multiple > 0) {
       repository.setTrackMultiple(channel: track.channel, multiple: multiple);
     }
-    // Restore the saved lane count first so the engine allocates the added
-    // lanes before they are configured below.
-    final laneCount = await settings.loadLaneCount(track.channel);
-    if (laneCount > 1) {
-      repository.setLaneCount(channel: track.channel, count: laneCount);
-    }
+    final laneCount = savedMix.laneCounts[track.channel] ?? 1;
     for (var lane = 0; lane < laneCount; lane++) {
-      final inputChannel = await settings.loadLaneInput(track.channel, lane);
-      if (inputChannel != null) {
-        repository.setLaneInput(
-          channel: track.channel,
-          lane: lane,
-          inputChannel: inputChannel,
-        );
-      }
-      final outputMask = await settings.loadLaneOutput(track.channel, lane);
-      if (outputMask != null) {
-        repository.setLaneOutput(
-          channel: track.channel,
-          lane: lane,
-          mask: outputMask,
-        );
-      }
-      final volume = savedMix.laneLevels[(track.channel, lane)];
-      if (volume != null) {
-        laneLevels[(track.channel, lane)] = volume;
-      }
       final muted = await settings.loadLaneMute(track.channel, lane);
       if (muted != null) {
         repository.setLaneMute(
@@ -404,46 +413,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
     if (enabled == false) {
       repository.setOutputEnabled(output: output, enabled: false);
     }
-  }
-
-  // Restore the per-input capture setup (slice 3): trims, pans and pairs,
-  // as ONE projection, the same call a session load makes. Keyed to the
-  // OPEN device like the output gate above. The repository remembers the
-  // setup and pushes every trim and monitor mix to the engine now. Bounded
-  // by the device's input count; when the status does not report one, by
-  // the same ceiling the monitor reapply scans.
-  final inputSetup = await settings.loadInputSetup(
-    device: status.deviceName,
-    inputCount: status.inputChannels > 0
-        ? status.inputChannels
-        : kMaxMonitoredInputs,
-  );
-  final mixRequest = repository.setMixSettings(
-    trackPans: savedMix.trackPans,
-    laneLevels: laneLevels,
-    monitorLevels: savedMix.monitorLevels,
-    inputSetup: InputSetup(
-      trimDb: inputSetup.trimDb,
-      pan: inputSetup.pan,
-      pairs: inputSetup.pairs,
-    ),
-    outputSetup: OutputSetup.fromMaps(
-      level: savedMix.outputSetup.level,
-      muted: savedMix.outputSetup.muted,
-      mono: savedMix.outputSetup.mono,
-      balance: savedMix.outputSetup.balance,
-    ),
-  );
-  final mixResult = mixRequest.isOk
-      ? await repository.settleMixSettings()
-      : mixRequest;
-  if (!mixResult.isOk) {
-    AppLog.error(
-      'audio auto-start: saved mix replay refused '
-      'result=${mixResult.name}',
-    );
-    repository.stopEngine();
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
 
   // Per-input live monitors are restored by MonitorCubit.load() (the shell

@@ -168,6 +168,54 @@ void main() {
     expect(audio.calls, isNot(contains('setMix')));
   });
 
+  test('whole-track destination commits future slots in one mix', () async {
+    final result = await coordinator.setTrackOutput(channel: 0, mask: 1);
+    expect(result.isOk, isTrue);
+    for (var lane = 0; lane < 8; lane++) {
+      expect(repository.mixSettingsSnapshot.laneOutputs[(0, lane)], 1);
+      expect(persistence.candidates.single.laneOutputs[(0, lane)], 1);
+    }
+    expect(audio.calls.where((call) => call == 'setMix'), hasLength(1));
+  });
+
+  test('queued route growth and track fader cover the new lane', () async {
+    persistence.writeGate = Completer<void>();
+    final first = coordinator.setTrackPan(.2);
+    await _turn();
+    final route = coordinator.setRecordingInput(
+      channel: 0,
+      input: 1,
+      selected: true,
+    );
+    final volume = coordinator.setTrackVolume(.25);
+    persistence.writeGate!.complete();
+    expect((await first).isOk, isTrue);
+    expect((await route).isOk, isTrue);
+    expect((await volume).isOk, isTrue);
+    expect(repository.mixSettingsSnapshot.laneCounts[0], 2);
+    expect(repository.mixSettingsSnapshot.laneLevels[(0, 0)], .25);
+    expect(repository.mixSettingsSnapshot.laneLevels[(0, 1)], .25);
+    expect(persistence.candidates.last.laneLevels[(0, 1)], .25);
+  });
+
+  test(
+    'routing storage refusal leaves live and durable routes intact',
+    () async {
+      persistence.throwAfterWrite = true;
+      final before = repository.mixSettingsSnapshot;
+      final result = await coordinator.setRecordingInput(
+        channel: 0,
+        input: 1,
+        selected: true,
+      );
+      expect(result.status, MixSettingsStatus.storageFailed);
+      expect(repository.mixSettingsSnapshot, before);
+      expect(persistence.durable, 'exact prior durable value');
+      expect(persistence.restores, 1);
+      expect(audio.calls, isNot(contains('setMix')));
+    },
+  );
+
   test('output native refusal restores prior durable checkpoint', () async {
     audio.mixResult = EngineResult.notReady;
     final result = await coordinator.setOutputMono(bus: 0, mono: true);

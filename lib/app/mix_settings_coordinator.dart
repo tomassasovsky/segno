@@ -69,6 +69,8 @@ enum _Control {
   trim,
   inputPan,
   pair,
+  recordingInput,
+  trackOutput,
   balance,
   monitor,
   outputLevel,
@@ -82,6 +84,9 @@ enum _Control {
 
 typedef _Target = (_Control, int, int);
 typedef _Edit = MixSettingsSnapshot? Function(MixSettingsSnapshot);
+
+bool _sameMap<K, V>(Map<K, V> a, Map<K, V> b) =>
+    a.length == b.length && a.entries.every((e) => b[e.key] == e.value);
 
 /// Serializes live edits with durable storage and callback confirmation.
 ///
@@ -208,7 +213,10 @@ class MixSettingsCoordinator {
     final current = _repository.mixSettingsSnapshot;
     if (device.isEmpty &&
         (candidate.inputSetup != current.inputSetup ||
-            candidate.outputSetup != current.outputSetup)) {
+            candidate.outputSetup != current.outputSetup ||
+            !_sameMap(candidate.laneInputs, current.laneInputs) ||
+            !_sameMap(candidate.laneOutputs, current.laneOutputs) ||
+            !_sameMap(candidate.laneCounts, current.laneCounts))) {
       return const MixSettingsOutcome(
         MixSettingsStatus.rejected,
         engineResult: EngineResult.notReady,
@@ -382,7 +390,7 @@ class MixSettingsCoordinator {
       (value) => value.copyWith(
         laneLevels: {
           ...value.laneLevels,
-          for (var lane = 0; lane < _repository.laneCount(channel); lane++)
+          for (var lane = 0; lane < (value.laneCounts[channel] ?? 1); lane++)
             (channel, lane): volume.clamp(0.0, 2.0),
         },
       ),
@@ -461,8 +469,44 @@ class MixSettingsCoordinator {
     }
     return _submit(
       (_Control.pair, input, 0),
-      (value) => value.copyWith(
-        inputSetup: value.inputSetup.withPair(input, paired: paired),
+      (value) => _repository.prepareInputPair(
+        value,
+        input: input,
+        paired: paired,
+      ),
+    );
+  }
+
+  /// Selects or removes one recording source (both members when linked).
+  Future<MixSettingsOutcome> setRecordingInput({
+    required int channel,
+    required int input,
+    required bool selected,
+  }) {
+    if (!_track(channel) || !_input(input)) return _reject();
+    return _submit(
+      (_Control.recordingInput, channel, input),
+      (value) => _repository.prepareRecordingInputs(
+        value,
+        channel: channel,
+        input: input,
+        selected: selected,
+      ),
+    );
+  }
+
+  /// Sets a whole track's destination in one durable/native revision.
+  Future<MixSettingsOutcome> setTrackOutput({
+    required int channel,
+    required int mask,
+  }) {
+    if (!_track(channel) || mask < 0 || mask > 0xffffffff) return _reject();
+    return _submit(
+      (_Control.trackOutput, channel, 0),
+      (value) => _repository.prepareTrackOutput(
+        value,
+        channel: channel,
+        mask: mask,
       ),
     );
   }

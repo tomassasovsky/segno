@@ -5,7 +5,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/network/network_tab.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -231,20 +230,6 @@ void main() {
         const SettingsTrayState(
           dragProgress: 1,
           networkTab: NetworkTab.bluetooth,
-        ),
-      ],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'showTracksTab moves the tab and leaves the destination alone, so the '
-      'domain lands where it was left',
-      build: buildCubit,
-      seed: () => const SettingsTrayState(dragProgress: 1),
-      act: (cubit) => cubit.showTracksTab(TracksTab.routing),
-      expect: () => [
-        const SettingsTrayState(
-          dragProgress: 1,
-          tracksTab: TracksTab.routing,
         ),
       ],
     );

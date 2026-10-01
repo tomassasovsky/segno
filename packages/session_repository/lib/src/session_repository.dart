@@ -90,6 +90,9 @@ class SessionSettings {
     this.primaryTrack = -1,
     this.trackPans = const {},
     this.laneMix = const {},
+    this.laneInputs = const {},
+    this.laneOutputs = const {},
+    this.laneCounts = const {},
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
   });
@@ -127,6 +130,9 @@ class SessionSettings {
       primaryTrack = source.primaryTrack,
       trackPans = Map.unmodifiable(source.trackPans),
       laneMix = Map.unmodifiable(source.laneMix),
+      laneInputs = Map.unmodifiable(source.laneInputs),
+      laneOutputs = Map.unmodifiable(source.laneOutputs),
+      laneCounts = Map.unmodifiable(source.laneCounts),
       inputSetup = SessionInputSetup(
         trimDb: Map.unmodifiable(source.inputSetup.trimDb),
         pan: Map.unmodifiable(source.inputSetup.pan),
@@ -216,6 +222,15 @@ class SessionSettings {
 
   /// Recorded image, balance, and level for every captured lane.
   final Map<(int, int), SessionLaneMix> laneMix;
+
+  /// Recorded source choices, including inactive future lanes.
+  final Map<(int, int), int> laneInputs;
+
+  /// Playback destination choices, including inactive future lanes.
+  final Map<(int, int), int> laneOutputs;
+
+  /// Active lane counts for tracks whether or not they hold audio.
+  final Map<int, int> laneCounts;
 
   /// Session-owned recording trim, mono pan, and stereo pair balance.
   final SessionInputSetup inputSetup;
@@ -715,6 +730,9 @@ class SessionRepository {
       trackOneShotOverrides: settings.trackOneShotOverrides,
       trackLengthPresetOverrides: settings.trackLengthPresetOverrides,
       trackPans: settings.trackPans,
+      laneInputs: settings.laneInputs,
+      laneOutputs: settings.laneOutputs,
+      laneCounts: settings.laneCounts,
       inputSetup: settings.inputSetup,
       outputSetup: settings.outputSetup,
       clickMode: settings.clickMode,
