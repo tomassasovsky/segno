@@ -38,6 +38,8 @@ import segno_enclosure as se  # noqa: E402
 
 # --- cut-vinyl limits ------------------------------------------------------
 MIN_FEATURE = 0.6      # narrowest stroke and narrowest gap a plotter cuts and weeds
+SIMPLIFY = 0.005       # outline tolerance: well under a cutter's ~0.025 mm step; the Fusion
+                       # export is sampled far finer than any plotter resolves
 CORNER_LOSS = 0.25     # mm2 a sharp corner may lose to the erosion test without flagging
 
 # --- rear labels -----------------------------------------------------------
@@ -181,7 +183,7 @@ def logo_decal():
         inner = [l["pts"] for l in loops if not l["outer"]]
         for o in outer:
             shapes.append(Polygon(o, [h for h in inner if Polygon(o).contains(Polygon(h))]).buffer(0))
-    return unary_union(shapes)
+    return unary_union(shapes).simplify(SIMPLIFY, preserve_topology=True)
 
 
 def rear_decal():
