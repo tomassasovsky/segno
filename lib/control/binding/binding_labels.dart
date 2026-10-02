@@ -96,6 +96,10 @@ String valueTargetLabel(
   OutputBalanceTarget(:final bus) =>
     '${l10n.pedalAssignStageOutput(bus + 1)} · ${l10n.routingBalance}',
   ClickVolumeTarget() => l10n.clickVolumeLabel,
+  DefaultDecayTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopDecayLabel}',
+  TrackDecayTarget(:final channel) =>
+    '${l10n.trackName(trackNames, channel)} · ${l10n.loopDecayLabel}',
   MasterGainTarget() => l10n.midiLearnTargetMaster,
   FxParamTarget(:final address, :final slotId, :final param) =>
     l10n.midiLearnTargetParam(

@@ -8,7 +8,7 @@ import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -256,12 +256,54 @@ void main() {
       final click = present.singleWhere(
         (destination) => destination.id == 'click',
       );
-      expect(click.kind, FxDestinationKind.output);
+      expect(click.kind, ExpressionDestinationKind.output);
       expect(click.label, 'Click');
       expect(click.controls.single.target, const ClickVolumeTarget());
       expect(click.controls.single.label, 'Volume');
       expect(present.map((destination) => destination.id), ['click', 'master']);
     });
+
+    test(
+      'decay keeps all eight fixed tracks and a distinct Loop destination',
+      () {
+        final snapshot = DecaySnapshot(
+          defaultPercent: 0,
+          trackOverrides: const {0: 75},
+        );
+        final destinations = expressionDestinations(
+          l10n,
+          names,
+          looper,
+          decaySnapshot: snapshot,
+        );
+        final loop = destinations.singleWhere((d) => d.id == 'loop:defaults');
+        expect(loop.kind, ExpressionDestinationKind.loopControls);
+        expect(loop.label, l10n.expressionDestinationLoopDefaults);
+        expect(loop.controls.single.target, const DefaultDecayTarget());
+        for (var channel = 0; channel < 8; channel++) {
+          final track = destinations.singleWhere(
+            (d) => d.id == 'track:$channel',
+          );
+          expect(track.kind, ExpressionDestinationKind.recordedTrack);
+          expect(
+            track.controls.any((c) => c.target == TrackDecayTarget(channel)),
+            isTrue,
+          );
+        }
+        expect(
+          expressionKindLabel(l10n, ExpressionDestinationKind.loopControls),
+          l10n.expressionKindLoopControls,
+        );
+        expect(
+          expressionDestinations(
+            l10n,
+            names,
+            looper,
+          ).where((d) => d.id == 'loop:defaults'),
+          isEmpty,
+        );
+      },
+    );
 
     test('the Mixer-only catalogue avoids FX enumeration and keeps order', () {
       status = const EngineStatus(inputChannels: 2, outputChannels: 2);
@@ -297,7 +339,7 @@ void main() {
       );
       expect(
         destinations.last.kind,
-        FxDestinationKind.output,
+        ExpressionDestinationKind.output,
         reason: 'the master output is an output, not a track',
       );
       expect(destinations.first.controls.map((control) => control.label), [
@@ -406,21 +448,21 @@ void main() {
       expect(ids.last, 'master');
       expect(
         build().first.kind,
-        FxDestinationKind.liveInput,
+        ExpressionDestinationKind.liveInput,
       );
     });
 
     test('every kind has the same name the Effects page gives it', () {
       expect(
-        expressionKindLabel(l10n, FxDestinationKind.liveInput),
+        expressionKindLabel(l10n, ExpressionDestinationKind.liveInput),
         l10n.fxKindLiveInputs,
       );
       expect(
-        expressionKindLabel(l10n, FxDestinationKind.recordedTrack),
+        expressionKindLabel(l10n, ExpressionDestinationKind.recordedTrack),
         l10n.fxKindRecordedTracks,
       );
       expect(
-        expressionKindLabel(l10n, FxDestinationKind.output),
+        expressionKindLabel(l10n, ExpressionDestinationKind.output),
         l10n.fxKindOutputs,
       );
     });

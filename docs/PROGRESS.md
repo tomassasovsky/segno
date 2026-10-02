@@ -8,6 +8,23 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 shared overdub decay (#1026)
+
+MIDI and External button/expression controls now share the Playback owner for
+Loop defaults and fixed Tracks 1–8. Explicit zero remains Custom; Use default
+removes only that field and supersedes older held cleanup. Storage is verified
+before acceptance. Sessions/restarts retain Released intent, and shutdown waits
+for pending changes and refuses on unresolved recovery.
+
+`docs/reviews/shared-overdub-decay/` binds the source, saved Pen references and
+local evidence: 2,617 ordinary app results at 90.7010% coverage, three affected
+package suites, 51 independent probes, a native-sample negative control, eight
+native session cases, standard native suites and clean strict static gates.
+Startup replay and stale-error defects found during review are repaired. CI on
+the published head and human merge approval remain separate. Hardware and the
+inherited complete session-load defect with a live controller owner remain
+explicit follow-up work.
+
 ## October 2026 shared Click volume (#1026)
 
 Click volume now shares one confirmed owner across touch, MIDI and External

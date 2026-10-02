@@ -24,5 +24,10 @@ String controlValueReadout(
   ClickVolumeTarget() => l10n.loopClickVolumeReadout(
     (target.toDomain(normalized) * 100).round(),
   ),
+  DecayValueTarget() => _decayReadout(l10n, target.toDomain(normalized)),
   MasterGainTarget() => signalGainReadout(normalized),
 };
+
+String _decayReadout(AppLocalizations l10n, int percent) => percent == 0
+    ? '${l10n.loopDecayOff} · ${l10n.loopDecayKeep}'
+    : l10n.loopDecayPercent(percent);

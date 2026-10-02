@@ -227,6 +227,38 @@ class LooperRepository {
   /// ([feedbackOfDecay]).
   int _overdubDecay = 0;
   final Map<int, int> _trackOverdubDecay = {};
+  int _restartOverdubDecay = 0;
+  final Map<int, int> _restartTrackOverdubDecay = {};
+  EngineResult _decayReplayResult = EngineResult.ok;
+
+  /// Last atomic decay replay result from an engine start.
+  EngineResult get decayReplayResult => _decayReplayResult;
+
+  /// Durable default and override membership to replay after device
+  /// replacement.
+  ({int defaultPercent, Map<int, int> trackOverrides}) get decayRestartIntent =>
+      (
+        defaultPercent: _restartOverdubDecay,
+        trackOverrides: Map.unmodifiable(_restartTrackOverdubDecay),
+      );
+
+  /// Projects authored Released values without changing current audible decay.
+  void setDecayRestartIntent({
+    required int defaultPercent,
+    required Map<int, int> trackOverrides,
+  }) {
+    if (defaultPercent < 0 ||
+        defaultPercent > 100 ||
+        trackOverrides.entries.any(
+          (e) => e.key < 0 || e.key >= 8 || e.value < 0 || e.value > 100,
+        )) {
+      throw ArgumentError('Invalid durable decay intent');
+    }
+    _restartOverdubDecay = defaultPercent;
+    _restartTrackOverdubDecay
+      ..clear()
+      ..addAll(trackOverrides);
+  }
 
   /// Per-track forced loop multiples (absent => auto). The global rec/dub and
   /// auto-record (sound-activated) flags. All re-applied on every (re)start.
@@ -1967,7 +1999,6 @@ class LooperRepository {
         ..setRecDub(enabled: _recDub)
         ..setAutoRecord(enabled: _autoRecord)
         ..setDefaultMultiple(multiple: _defaultMultiple)
-        ..setOverdubFeedback(feedbackOfDecay(_overdubDecay))
         ..setMasterGain(_masterGain)
         // Master peak limiter on by default: a fresh start resets it to off, so
         // re-assert the cached state here (like the rest) to guard the summed
@@ -2035,12 +2066,29 @@ class LooperRepository {
           }
         }
       }
-      _trackOverdubDecay.forEach(
-        (channel, percent) => _engine.setTrackOverdubFeedback(
-          channel: channel,
-          feedback: feedbackOfDecay(percent),
-        ),
+      _decayReplayResult = _engine.setOverdubFeedback(
+        feedbackOfDecay(_restartOverdubDecay),
       );
+      if (_decayReplayResult.isOk) {
+        // Replay all fixed slots, including inherited ones. An absent entry
+        // explicitly clears a former override instead of assuming native reset.
+        for (var channel = 0; channel < 8; channel++) {
+          final percent = _restartTrackOverdubDecay[channel];
+          _decayReplayResult = _engine.setTrackOverdubFeedback(
+            channel: channel,
+            feedback: percent == null ? null : feedbackOfDecay(percent),
+          );
+          if (!_decayReplayResult.isOk) break;
+        }
+      }
+      if (!_decayReplayResult.isOk) {
+        stopEngine();
+        return _decayReplayResult;
+      }
+      _overdubDecay = _restartOverdubDecay;
+      _trackOverdubDecay
+        ..clear()
+        ..addAll(_restartTrackOverdubDecay);
       // Replay routes, lane activation and live controls together.
       final mixResult = _requestMix(_mixIntent(), replay: true, startup: true);
       if (!mixResult.isOk) {
@@ -2614,7 +2662,8 @@ class LooperRepository {
   /// empty, so a subsequent record-from-empty through a *dry* monitor must land
   /// a dry take — not inherit the erased take's chain (the "leftover from a
   /// previous config" bug). They are snapshotted first, so undoing the
-  /// clear can put them back. It does NOT touch routing (`_laneInput` / `_laneOutput` /
+  /// clear can put them back. It does NOT touch routing (`_laneInput` /
+  /// `_laneOutput` /
   /// `_laneVolume`), which is the track's config, not the take.
   ///
   /// This is the USER's clear. [applySession] uses [_clearDestructive]
@@ -3212,6 +3261,7 @@ class LooperRepository {
     // settings that survive `clear`, reset below and re-armed from the rig.
     _trackRecordTiming.clear();
     _trackOverdubDecay.clear();
+    _restartTrackOverdubDecay.clear();
     // The crown dies with the last take: the clear awaited below empties
     // every track, and the engine uncrowns itself on that (its own rule, not
     // a call from here). A crown requested while stopped for a rig that is
@@ -4364,7 +4414,8 @@ class LooperRepository {
   }
 
   /// Sets conditioning parameter [param] of hardware [input] to [value] in its
-  /// real unit (Hz / dB / ms / ratio — see [InputConditioningParam]). Remembered
+  /// real unit (Hz / dB / ms / ratio — see [InputConditioningParam]).
+  /// Remembered
   /// and re-applied on every (re)start; takes effect immediately only while
   /// running. Independent of the enable flag — a value set while the stage is
   /// off is applied and takes effect when it is next enabled. Returns
@@ -4558,8 +4609,10 @@ class LooperRepository {
     }
     if (clamped == null) {
       _trackOverdubDecay.remove(channel);
+      _restartTrackOverdubDecay.remove(channel);
     } else {
       _trackOverdubDecay[channel] = clamped;
+      _restartTrackOverdubDecay[channel] = clamped;
     }
     _reproject();
     return EngineResult.ok;
@@ -6393,6 +6446,7 @@ class LooperRepository {
       if (!result.isOk) return result;
     }
     _overdubDecay = percent.clamp(0, 100);
+    _restartOverdubDecay = _overdubDecay;
     _reproject();
     return EngineResult.ok;
   }

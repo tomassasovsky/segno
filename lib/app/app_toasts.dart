@@ -24,6 +24,7 @@ abstract final class AppToastId {
   static const undoClearAllAction = 'app_undoClearAll_snackbar_action';
   static const mixSettings = 'app_mixSettings_error';
   static const clickSettings = 'app_clickSettings_error';
+  static const decaySettings = 'app_decaySettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};

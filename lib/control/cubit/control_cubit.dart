@@ -31,10 +31,18 @@ import 'package:segno/control/control_projection.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'control_midi.dart';
 part 'control_state.dart';
+
+typedef _DecayOrigin = ({DecayLifetime lifetime, int revision});
+typedef _ControlOrigins = ({
+  Map<MixValueTarget, int> mix,
+  ClickVolumeLifetime? click,
+  Map<DecayValueTarget, _DecayOrigin> decay,
+});
 
 /// The press/long-press state machine every gestural footswitch shares.
 ///
@@ -155,6 +163,7 @@ class ControlCubit extends Cubit<ControlState> {
     required MixSettingsCoordinator mixSettings,
     required FxChainPersistence fxPersistence,
     required ClickVolumeControl clickVolumeControl,
+    required DecayControl decayControl,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
     Duration Function()? midiClock,
@@ -168,6 +177,7 @@ class ControlCubit extends Cubit<ControlState> {
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
        _clickVolume = clickVolumeControl,
+       _decay = decayControl,
        _midiDevices = midiDevices,
        _midiClock = midiClock,
        _learnTimeout = learnTimeout,
@@ -183,6 +193,17 @@ class ControlCubit extends Cubit<ControlState> {
         const ClickVolumeTarget(),
         const ClickVolumeTarget().fromDomain(value),
       );
+    });
+    _decayLifetime = _decay.decayLifetime;
+    _decayOrdinarySub = _decay.ordinaryDecayChanges.listen((change) {
+      final target = change.address.channel == null
+          ? const DefaultDecayTarget()
+          : TrackDecayTarget(change.address.channel!);
+      if (change.percent == null) {
+        _supersedeDecayClaims(target);
+      } else {
+        _onOrdinaryFxWrite(target, target.fromDomain(change.percent!));
+      }
     });
     _midiSession = _looper.sessionRevision;
     _midiCapture = midiDevices?.session;
@@ -223,6 +244,10 @@ class ControlCubit extends Cubit<ControlState> {
   Object? _midiRetryEligibility;
   Future<void> _midiWrites = Future<void>.value();
   int _midiIntentSequence = 0;
+  final DecayControl _decay;
+  late DecayLifetime _decayLifetime;
+  late final StreamSubscription<({DecayAddress address, int? percent})>
+  _decayOrdinarySub;
   final ClickVolumeControl _clickVolume;
   late ClickVolumeLifetime _clickLifetime;
   late final StreamSubscription<double> _clickOrdinarySub;
@@ -543,7 +568,9 @@ class ControlCubit extends Cubit<ControlState> {
       requestedReleased: {
         if (held == true)
           for (final row in setup.controls.parameters)
-            if (row.target is MixValueTarget || row.target is ClickVolumeTarget)
+            if (row.target is MixValueTarget ||
+                row.target is ClickVolumeTarget ||
+                row.target is DecayValueTarget)
               if (row.condition == ExternalValueCondition.heldReleased)
                 row.target: row.inactive,
       },
@@ -650,7 +677,9 @@ class ControlCubit extends Cubit<ControlState> {
           if (held == false) {
             parameters.removeWhere(
               (target, _) =>
-                  (target is MixValueTarget || target is ClickVolumeTarget) &&
+                  (target is MixValueTarget ||
+                      target is ClickVolumeTarget ||
+                      target is DecayValueTarget) &&
                   (_externalInvalidatedMix[input]?.contains(target) ?? false),
             );
             (_externalNumericReleases[input] ??= {}).addAll(parameters);
@@ -677,7 +706,10 @@ class ControlCubit extends Cubit<ControlState> {
 
           resolveSurvivors();
           parameters.removeWhere(
-            (target, _) => !_controlValueResolves(target),
+            (target, _) =>
+                !_controlValueResolves(target) ||
+                (target is DecayValueTarget &&
+                    !_decayOriginCurrent(target, origins.decay[target])),
           );
           activations.removeWhere(
             (target, _) => !_looper.bindingResolves(target),
@@ -696,13 +728,19 @@ class ControlCubit extends Cubit<ControlState> {
               target: _looper.bindingEnabled(target),
           };
           void recordParameter(ControlValueTarget target) {
+            if (target is DecayValueTarget &&
+                !_decayOriginCurrent(target, origins.decay[target])) {
+              return;
+            }
             if (held == false) {
               _externalMixReleased[input]?.remove(target);
               _parameterHolders[target]?.remove(trigger);
               _externalNumericReleases[input]?.remove(target);
             } else {
               _externalInvalidatedMix[input]?.remove(target);
-              if (target is MixValueTarget || target is ClickVolumeTarget) {
+              if (target is MixValueTarget ||
+                  target is ClickVolumeTarget ||
+                  target is DecayValueTarget) {
                 _retireMixBaseline(target);
                 _externalMixReleased[input]?.remove(target);
                 if (requestedReleased[target] case final low?) {
@@ -866,8 +904,38 @@ class ControlCubit extends Cubit<ControlState> {
             }
           }
           for (final entry in parameters.entries) {
+            if (entry.key case final DecayValueTarget target) {
+              final origin = origins.decay[target];
+              if (origin == null ||
+                  !entry.value.isFinite ||
+                  !_decayOriginCurrent(target, origin)) {
+                continue;
+              }
+              final released = held == true
+                  ? requestedReleased[target]
+                  : held == false
+                  ? _survivingMidiReleased(target, excluding: trigger)
+                  : null;
+              final outcome = await _decay.setControllerDecay(
+                target.address,
+                target.toDomain(entry.value),
+                lifetime: origin.lifetime,
+                revision: origin.revision,
+                releasedPercent: released == null
+                    ? null
+                    : target.toDomain(released),
+              );
+              if (cancelled()) return;
+              if (outcome.isOk && _decayOriginCurrent(target, origin)) {
+                applied = true;
+                recordParameter(target);
+              }
+            }
             switch (entry.key) {
-              case FxParamTarget() || MixValueTarget() || ClickVolumeTarget():
+              case FxParamTarget() ||
+                  MixValueTarget() ||
+                  ClickVolumeTarget() ||
+                  DecayValueTarget():
                 break;
               case MasterGainTarget():
                 if (_looper.setMasterGain(entry.value).isOk) {
@@ -2819,6 +2887,14 @@ class ControlCubit extends Cubit<ControlState> {
   // ---------------------------------------------------------------------------
 
   void _onLooperState(LooperState looperState) {
+    final decayLifetime = _decay.decayLifetime;
+    if (_decayLifetime != decayLifetime) {
+      _decayLifetime = decayLifetime;
+      <DecayValueTarget>[
+        const DefaultDecayTarget(),
+        for (var channel = 0; channel < 8; channel++) TrackDecayTarget(channel),
+      ].forEach(_supersedeDecayClaims);
+    }
     final clickLifetime = _clickVolume.clickVolumeLifetime;
     if (_clickLifetime != clickLifetime) {
       _clickLifetime = clickLifetime;
@@ -3062,6 +3138,7 @@ class ControlCubit extends Cubit<ControlState> {
     await _midiWrites;
     await _externalTail;
     await _clickOrdinarySub.cancel();
+    await _decayOrdinarySub.cancel();
     await Future.wait(_bindingDecisions.values.toList());
     await _restoreWait;
     _heldRestore.clear();

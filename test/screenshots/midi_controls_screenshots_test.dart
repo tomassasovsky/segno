@@ -23,14 +23,17 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
 import '../helpers/mock_click_tempo_cubit.dart';
+import '../helpers/mock_decay_playback_cubit.dart';
 
 class _MockLooper extends Mock implements LooperRepository {}
 
@@ -195,11 +198,15 @@ void main() {
     final mix = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mix.close()));
     final tempo = MockClickTempoCubit();
+    final decay = MockDecayPlaybackCubit(
+      snapshot: DecaySnapshot(defaultPercent: 25, trackOverrides: const {0: 0}),
+    );
     when(() => tempo.clickVolumeLifetime).thenReturn((
       sessionRevision: 1,
       mixGeneration: 1,
     ));
     control = ControlCubit(
+      decayControl: decay,
       clickVolumeControl: tempo,
       looper: looper,
       pedal: pedal,
@@ -224,6 +231,7 @@ void main() {
             BlocProvider.value(value: tracks),
             BlocProvider.value(value: midi),
             BlocProvider<TempoCubit>.value(value: tempo),
+            BlocProvider<PlaybackOptionsCubit>.value(value: decay),
           ],
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
@@ -406,6 +414,44 @@ void main() {
         findsNothing,
       );
       await shot(tester, 'click_destination');
+    });
+    testWidgets('Decay endpoints distinguish default and fixed Track 8', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        savedMapping: MidiMapping(
+          id: 'm1',
+          source: _source,
+          behavior: MidiBehavior.continuous,
+          controls: [
+            for (final target in const [
+              DefaultDecayTarget(),
+              TrackDecayTarget(7),
+            ])
+              MidiParameterControl(
+                key: target.canonicalString(),
+                low: 0,
+                high: 1,
+              ),
+          ],
+        ),
+      );
+      await tap(tester, 'midi_row_edit_m1');
+      expect(find.text('Off · Keep layers'), findsNWidgets(2));
+      expect(find.text('100%'), findsNWidgets(2));
+      await shot(tester, 'decay_ranges');
+    });
+    testWidgets('Loop controls offers the default decay', (tester) async {
+      await pump(tester, seeded: true);
+      await tap(tester, 'midi_row_edit_m1');
+      await tap(tester, 'midi_add_control');
+      await tap(tester, 'expression_kind_loopControls');
+      expect(
+        find.byKey(const Key('expression_destination_loop:defaults')),
+        findsOneWidget,
+      );
+      await shot(tester, 'decay_destination');
     });
     testWidgets('explicit format before learning', (tester) async {
       await pump(tester);

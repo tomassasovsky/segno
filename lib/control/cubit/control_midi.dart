@@ -392,7 +392,10 @@ extension MidiControlEditing on ControlCubit {
         }
         for (final event in readings) {
           if (!_mixOriginsCurrent(origins[event]!)) continue;
-          await _applyMidiProposals(_midiEngine.prepare(event));
+          await _applyMidiProposals(
+            _midiEngine.prepare(event),
+            decayOrigins: origins[event]!.decay,
+          );
         }
       }),
     );
@@ -482,6 +485,7 @@ extension MidiControlEditing on ControlCubit {
     if (target is MasterGainTarget) return ControlCubit._encoderStep;
     if (target is MixValueTarget) return target.relativeStep;
     if (target is ClickVolumeTarget) return target.relativeStep;
+    if (target is DecayValueTarget) return target.relativeStep;
     if (target is FxParamTarget) {
       final divisions = _midiParamDivisions(target);
       if (divisions != null && divisions > 0) return 1 / divisions;
@@ -489,13 +493,21 @@ extension MidiControlEditing on ControlCubit {
     return 0.01;
   }
 
-  Future<void> _applyMidiProposals(List<MidiProposal> proposals) async {
+  Future<void> _applyMidiProposals(
+    List<MidiProposal> proposals, {
+    Map<DecayValueTarget, _DecayOrigin>? decayOrigins,
+  }) async {
     final session = _looper.sessionRevision;
     for (final proposal in proposals) {
-      final origins = _mixOrigins([
+      final captured = _mixOrigins([
         for (final operation in proposal.operations)
           ?ControlValueTarget.tryParse(operation.key),
       ]);
+      final origins = (
+        mix: captured.mix,
+        click: captured.click,
+        decay: decayOrigins ?? captured.decay,
+      );
       if (session != _looper.sessionRevision || isClosed) return;
       Object? pending;
       final appliedOwners = <FxAddress>{};
@@ -546,6 +558,10 @@ extension MidiControlEditing on ControlCubit {
                   : ControlValueTarget.tryParse(op.key) ??
                         FxBindingTarget.tryParse(op.key);
               final holder = _midiHolderKeys[row];
+              if (target is DecayValueTarget &&
+                  !_decayOriginCurrent(target, origins.decay[target])) {
+                continue;
+              }
               if (target == null) {
                 if (ending) accepted.add(op.controlIndex);
                 continue;
@@ -635,6 +651,12 @@ extension MidiControlEditing on ControlCubit {
             recorded.add(index);
             final record = rows[index];
             if (record == null) continue;
+            if (record.target case final DecayValueTarget target) {
+              if (!_decayOriginCurrent(target, origins.decay[target])) {
+                accepted.remove(index);
+                continue;
+              }
+            }
             final row = (proposal.mappingId, proposal.generation, index);
             if (record.ending) {
               _dropMidiHolder(row, record.target, record.holder);
@@ -659,7 +681,9 @@ extension MidiControlEditing on ControlCubit {
                     order: ++_activationOrder,
                   );
                 case final ControlValueTarget target:
-                  if (target is MixValueTarget || target is ClickVolumeTarget) {
+                  if (target is MixValueTarget ||
+                      target is ClickVolumeTarget ||
+                      target is DecayValueTarget) {
                     _retireMixBaseline(target);
                   }
                   (_parameterHolders[target] ??= {})[holder] = (
@@ -783,6 +807,37 @@ extension MidiControlEditing on ControlCubit {
               );
               if (cancelled()) return;
               if (outcome.isOk) accepted.add(entry.key);
+            case DecayValueTarget():
+              final origin = origins.decay[target];
+              if (origin == null ||
+                  !value.isFinite ||
+                  !_decayOriginCurrent(target, origin)) {
+                continue;
+              }
+              final op = proposal.operations.firstWhere(
+                (op) => op.controlIndex == entry.key,
+              );
+              final released = op is MidiParameterWrite && op.held == true
+                  ? _midiReleasedFor(proposal, entry.key)
+                  : entry.value.ending
+                  ? _survivingMidiReleased(
+                      target,
+                      excluding: entry.value.holder,
+                    )
+                  : null;
+              final outcome = await _decay.setControllerDecay(
+                target.address,
+                target.toDomain(value),
+                lifetime: origin.lifetime,
+                revision: origin.revision,
+                releasedPercent: released == null
+                    ? null
+                    : target.toDomain(released),
+              );
+              if (cancelled()) return;
+              if (outcome.isOk && _decayOriginCurrent(target, origin)) {
+                accepted.add(entry.key);
+              }
             case MasterGainTarget():
               if (_looper.setMasterGain(value).isOk) {
                 _masterGain = value;
@@ -828,6 +883,9 @@ extension MidiControlEditing on ControlCubit {
   }
 
   double _coerceMidiValue(ControlValueTarget target, double value) {
+    if (target is DecayValueTarget) {
+      return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
+    }
     final clamped = value.clamp(0.0, 1.0);
     if (target is FxParamTarget) {
       final divisions = _midiParamDivisions(target);
@@ -920,33 +978,56 @@ extension MidiControlEditing on ControlCubit {
       _looper.readValueTarget(
         target,
         clickVolume: _clickVolume.clickVolume,
+        decaySnapshot: _decay.decaySnapshot,
       );
 
   bool _controlValueResolves(ControlValueTarget target) =>
       _looper.valueTargetResolves(
         target,
         clickVolume: _clickVolume.clickVolume,
+        decaySnapshot: _decay.decaySnapshot,
       );
 
-  ({Map<MixValueTarget, int> mix, ClickVolumeLifetime? click}) _mixOrigins(
+  _ControlOrigins _mixOrigins(
     Iterable<ControlValueTarget> targets,
   ) => (
     mix: _mixSettings.controllerOrigins(targets.whereType<MixValueTarget>()),
     click: targets.any((target) => target is ClickVolumeTarget)
         ? _clickVolume.clickVolumeLifetime
         : null,
+    decay: {
+      for (final target in targets.whereType<DecayValueTarget>())
+        target: (
+          lifetime: _decay.decayLifetime,
+          revision: _decay.decayRevision(target.address),
+        ),
+    },
   );
 
-  bool _mixOriginsCurrent(
-    ({
-      Map<MixValueTarget, int> mix,
-      ClickVolumeLifetime? click,
-    })
-    origins,
-  ) =>
+  bool _mixOriginsCurrent(_ControlOrigins origins) =>
       _mixSettings.controllerOriginsCurrent(origins.mix) &&
       (origins.click == null ||
           origins.click == _clickVolume.clickVolumeLifetime);
+
+  bool _decayOriginCurrent(DecayValueTarget target, _DecayOrigin? origin) =>
+      origin != null &&
+      origin.lifetime == _decay.decayLifetime &&
+      origin.revision == _decay.decayRevision(target.address);
+
+  void _supersedeDecayClaims(DecayValueTarget target) {
+    _midiEngine.supersedeParameterClaims({target.canonicalString()});
+    for (final entry in _midiTargets.entries.toList()) {
+      if (entry.value == target) {
+        _dropMidiHolder(entry.key, target, _midiHolderKeys[entry.key]);
+      }
+    }
+    _parameterHolders.remove(target);
+    for (final input in PedalCtrlInput.values) {
+      (_externalInvalidatedMix[input] ??= {}).add(target);
+      _externalMixReleased[input]?.remove(target);
+      _externalNumericReleases[input]?.remove(target);
+    }
+  }
 
   void _retireMixBaseline(ControlValueTarget target) {
     _parameterHolders[target]?.removeWhere(

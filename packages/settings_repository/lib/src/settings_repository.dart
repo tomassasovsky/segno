@@ -1742,25 +1742,64 @@ class SettingsRepository {
   static const String _overdubDecayKey = 'looper.overdub_decay';
   String _trackOverdubDecayKey(int channel) => 'track_overdub_decay.$channel';
 
-  /// Loads the default overdub decay in percent (`0..100`); `0` when unset.
+  String _decayKey(int? channel) {
+    if (channel != null && (channel < 0 || channel >= 8)) {
+      throw ArgumentError.value(channel, 'channel');
+    }
+    return channel == null ? _overdubDecayKey : _trackOverdubDecayKey(channel);
+  }
+
+  void _validateDecay(int? percent) {
+    if (percent != null && (percent < 0 || percent > 100)) {
+      throw const FormatException(
+        'Decay must be an integer percent from 0 to 100',
+      );
+    }
+  }
+
+  /// Reads an exact nullable decay scalar; malformed values are not repaired.
+  Future<int?> readDecayCheckpoint({required int? channel}) async {
+    final key = _decayKey(channel);
+    await _serializedWrite;
+    final value = await _store.getInt(key);
+    _validateDecay(value);
+    return value;
+  }
+
+  /// Restores an exact scalar checkpoint, including absence and explicit zero.
+  Future<void> restoreDecayCheckpoint({
+    required int? channel,
+    required int? percent,
+  }) {
+    final key = _decayKey(channel);
+    _validateDecay(percent);
+    return _serialize(() async {
+      if (percent == null) {
+        await _store.remove(key);
+      } else {
+        await _store.setInt(key, percent);
+      }
+      if (await _store.getInt(key) != percent) {
+        throw StateError('Decay scalar was not confirmed');
+      }
+    });
+  }
+
+  /// Loads default decay; an absent scalar means zero percent.
   Future<int> loadOverdubDecay() async =>
-      await _store.getInt(_overdubDecayKey) ?? 0;
+      await readDecayCheckpoint(channel: null) ?? 0;
 
-  /// Saves the default overdub decay in percent.
+  /// Saves and verifies default decay through the shared settings writer.
   Future<void> saveOverdubDecay(int percent) =>
-      _store.setInt(_overdubDecayKey, percent);
+      restoreDecayCheckpoint(channel: null, percent: percent);
 
-  /// Loads track [channel]'s overdub decay override in percent, or `null`
-  /// to follow the default.
+  /// Loads a track override; absence inherits, while explicit zero is Custom.
   Future<int?> loadTrackOverdubDecay(int channel) =>
-      _store.getInt(_trackOverdubDecayKey(channel));
+      readDecayCheckpoint(channel: channel);
 
-  /// Saves track [channel]'s overdub decay override (`null` => follow the
-  /// default).
+  /// Saves an explicit track percent, or removes the override on Use default.
   Future<void> saveTrackOverdubDecay(int channel, int? percent) =>
-      percent == null
-      ? _store.remove(_trackOverdubDecayKey(channel))
-      : _store.setInt(_trackOverdubDecayKey(channel), percent);
+      restoreDecayCheckpoint(channel: channel, percent: percent);
 
   static const String _defaultOneShotKey = 'looper.default_one_shot';
   String _trackOneShotKey(int channel) => 'track_one_shot.$channel';

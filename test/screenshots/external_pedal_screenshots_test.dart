@@ -24,15 +24,18 @@ import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
 import '../helpers/mock_click_tempo_cubit.dart';
+import '../helpers/mock_decay_playback_cubit.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -171,7 +174,11 @@ void main() {
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     final tempo = MockClickTempoCubit();
+    final decay = MockDecayPlaybackCubit(
+      snapshot: DecaySnapshot(defaultPercent: 25, trackOverrides: const {0: 0}),
+    );
     final control = ControlCubit(
+      decayControl: decay,
       clickVolumeControl: tempo,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
@@ -220,6 +227,7 @@ void main() {
               BlocProvider.value(value: tracks),
               BlocProvider.value(value: pedalCubit),
               BlocProvider<TempoCubit>.value(value: tempo),
+              BlocProvider<PlaybackOptionsCubit>.value(value: decay),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -483,6 +491,37 @@ void main() {
       findsOneWidget,
     );
     await shot(tester, 'click_held_released');
+  }, skip: !hasScreenshotFonts);
+
+  screenshotTestWidgets('a button holds decay and releases to explicit zero', (
+    tester,
+  ) async {
+    const target = TrackDecayTarget(0);
+    await pump(
+      tester,
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: target,
+                condition: ExternalValueCondition.heldReleased,
+                active: .75,
+                inactive: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    await tester.tap(
+      find.byKey(Key('external_control_value_${externalControlKey(target)}')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Off · Keep layers'), findsWidgets);
+    expect(find.text('75%'), findsWidgets);
+    await shot(tester, 'decay_held_released');
   }, skip: !hasScreenshotFonts);
 
   screenshotTestWidgets('an expression pedal edits track gain in dB', (

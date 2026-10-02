@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
@@ -139,7 +140,14 @@ void main() {
         looper,
         projection: FxChainPersistence(looper: looper),
       ),
-      settings: settingsFromLooper(looper, clickVolume: 1),
+      settings: settingsFromLooper(
+        looper,
+        clickVolume: 1,
+        decay: DecaySnapshot(
+          defaultPercent: looper.defaultOverdubDecay,
+          trackOverrides: looper.trackOverdubDecayOverrides,
+        ),
+      ),
     );
     // Wipe to an empty rig so a failed load would be visible, then load back.
     await looper.applySession(const SessionRig(), clearPollInterval: poll);

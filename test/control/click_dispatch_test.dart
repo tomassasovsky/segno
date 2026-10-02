@@ -114,6 +114,7 @@ class _Rig {
       exportsRoot: () async => Directory.systemTemp.path,
     );
     cubit = ControlCubit(
+      decayControl: FakeDecayControl(),
       looper: looper,
       pedal: pedal,
       settings: settings,

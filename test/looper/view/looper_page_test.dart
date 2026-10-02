@@ -48,6 +48,12 @@ void main() {
       final tempo = TempoCubit(repository: repository, settings: settings);
       await tempo.load();
       addTearDown(() => unawaited(tempo.close()));
+      final playback = PlaybackOptionsCubit(
+        repository: repository,
+        settings: settings,
+      );
+      await playback.load();
+      addTearDown(() => unawaited(playback.close()));
       final pedal = _MockPedalCubit();
       when(() => pedal.state).thenReturn(const PedalState());
       whenListen(
@@ -83,6 +89,7 @@ void main() {
           child: MultiBlocProvider(
             providers: [
               BlocProvider<TempoCubit>.value(value: tempo),
+              BlocProvider<PlaybackOptionsCubit>.value(value: playback),
               // The stage status bar is now unconditional, and its clock
               // readout selects a TransportClockCubit.
               BlocProvider<TransportClockCubit>(
@@ -96,6 +103,7 @@ void main() {
               // happens with the tree, not in an awaited teardown.
               BlocProvider<ControlCubit>(
                 create: (_) => ControlCubit(
+                  decayControl: playback,
                   clickVolumeControl: tempo,
                   fxPersistence: fxPersistence,
                   looper: repository,

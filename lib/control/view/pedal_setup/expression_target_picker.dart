@@ -4,7 +4,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -32,10 +31,10 @@ class ExpressionDestinationPicker extends StatelessWidget {
   final int columns;
 
   /// Which tab is open.
-  final FxDestinationKind kind;
+  final ExpressionDestinationKind kind;
 
   /// Opens another tab.
-  final ValueChanged<FxDestinationKind> onKind;
+  final ValueChanged<ExpressionDestinationKind> onKind;
 
   /// Opens a destination's controls.
   final ValueChanged<ExpressionDestination> onOpen;
@@ -61,7 +60,7 @@ class ExpressionDestinationPicker extends StatelessWidget {
           child: Row(
             children: [
               for (final (index, value)
-                  in FxDestinationKind.values.indexed) ...[
+                  in ExpressionDestinationKind.values.indexed) ...[
                 if (index > 0) const SizedBox(width: 9),
                 LoopChoiceButton(
                   key: Key('expression_kind_${value.name}'),
@@ -69,9 +68,10 @@ class ExpressionDestinationPicker extends StatelessWidget {
                   selected: value == kind,
                   onTap: () => onKind(value),
                   width: switch (value) {
-                    FxDestinationKind.liveInput => 177,
-                    FxDestinationKind.recordedTrack => 237,
-                    FxDestinationKind.output => 147,
+                    ExpressionDestinationKind.liveInput => 177,
+                    ExpressionDestinationKind.recordedTrack => 237,
+                    ExpressionDestinationKind.output => 147,
+                    ExpressionDestinationKind.loopControls => 207,
                   },
                   height: 64,
                 ),

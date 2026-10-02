@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/mix_value_scale.dart';
 import 'package:segno/looper/model/click_volume.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 
 /// What a continuous binding sweeps: an FX parameter, Mixer control, or
 /// master gain.
@@ -45,6 +46,8 @@ sealed class ControlValueTarget extends Equatable {
     OutputBalanceTarget(:final bus) => bus >= 0,
     MasterGainTarget() => true,
     ClickVolumeTarget() => true,
+    DefaultDecayTarget() => true,
+    TrackDecayTarget(:final channel) => channel >= 0 && channel < 8,
   };
 
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
@@ -69,6 +72,9 @@ sealed class ControlValueTarget extends Equatable {
       if (ctl == 'clickVolume') {
         return raw.length == 1 ? const ClickVolumeTarget() : null;
       }
+      if (ctl == 'overdubDecay') {
+        return raw.length == 1 ? const DefaultDecayTarget() : null;
+      }
       final index = raw['index'];
       final lane = raw['lane'];
       if (index is! int || index < 0) return null;
@@ -83,6 +89,9 @@ sealed class ControlValueTarget extends Equatable {
         'pairBalance' when indexed && index.isEven => PairBalanceTarget(index),
         'outputLevel' when indexed => OutputLevelTarget(index),
         'outputBalance' when indexed => OutputBalanceTarget(index),
+        'trackOverdubDecay' when indexed && index < 8 => TrackDecayTarget(
+          index,
+        ),
         _ => null,
       };
     }
@@ -342,4 +351,61 @@ final class ClickVolumeTarget extends ControlValueTarget {
 
   @override
   List<Object?> get props => ['clickVolume'];
+}
+
+/// A decay endpoint uses percent as its native domain and 0..1 in mappings.
+sealed class DecayValueTarget extends ControlValueTarget {
+  /// Creates a decay target.
+  const DecayValueTarget();
+
+  /// Its stable default or fixed-track address.
+  DecayAddress get address;
+
+  /// Converts normalized source travel into an integer decay percent.
+  int toDomain(double normalized) {
+    if (!normalized.isFinite) {
+      throw ArgumentError.value(normalized, 'normalized');
+    }
+    return (normalized.clamp(0.0, 1.0) * 100).round();
+  }
+
+  /// Converts accepted percent into normalized source travel.
+  double fromDomain(int percent) => percent.clamp(0, 100) / 100;
+
+  /// One relative-controller detent in normalized travel.
+  double get relativeStep => 0.01;
+}
+
+/// The shared overdub decay inherited by tracks without an override.
+final class DefaultDecayTarget extends DecayValueTarget {
+  /// Creates the default decay target.
+  const DefaultDecayTarget();
+
+  @override
+  DecayAddress get address => const DecayAddress.defaults();
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'overdubDecay'});
+
+  @override
+  List<Object?> get props => ['overdubDecay'];
+}
+
+/// One fixed track's effective overdub decay, including empty tracks.
+final class TrackDecayTarget extends DecayValueTarget {
+  /// Creates a track decay target with a zero-based [channel].
+  const TrackDecayTarget(this.channel);
+
+  /// Fixed channel, independent of selection and the current track count.
+  final int channel;
+
+  @override
+  DecayAddress get address => DecayAddress.track(channel);
+
+  @override
+  String canonicalString() =>
+      jsonEncode({'ctl': 'trackOverdubDecay', 'index': channel});
+
+  @override
+  List<Object?> get props => [channel];
 }

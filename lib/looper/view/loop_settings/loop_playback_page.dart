@@ -17,7 +17,6 @@ import 'package:segno/theme/theme.dart';
 typedef _PlaybackValues = ({
   int count,
   bool? trackOnceOverride,
-  int? trackDecayOverride,
 });
 
 _PlaybackValues _playbackValues(LooperState state, int? channel) {
@@ -27,7 +26,6 @@ _PlaybackValues _playbackValues(LooperState state, int? channel) {
   return (
     count: state.tracks.length,
     trackOnceOverride: track?.oneShotOverride,
-    trackDecayOverride: track?.overdubDecayOverride,
   );
 }
 
@@ -84,6 +82,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
   }
 
   void _setDecay(int? percent) {
+    if (!context.read<PlaybackOptionsCubit>().state.decayReady) return;
     final scope = _scope;
     if (scope == null) {
       unawaited(
@@ -111,12 +110,13 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
     final once = scope == null
         ? defaults.defaultOneShot
         : v.trackOnceOverride ?? defaults.defaultOneShot;
-    final decayCustom = scope != null && v.trackDecayOverride != null;
+    final trackDecay = defaults.trackOverdubDecayOverrides[scope];
+    final decayCustom = scope != null && trackDecay != null;
     final decay =
         _dragDecay ??
         (scope == null
             ? defaults.overdubDecay
-            : v.trackDecayOverride ?? defaults.overdubDecay);
+            : trackDecay ?? defaults.overdubDecay);
     const top = 342.0;
     return Positioned.fill(
       child: BlocListener<LooperBloc, LooperState>(
@@ -207,7 +207,9 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
               left: 100 + 328,
               top: top + 246 + 10,
               child: AppText(
-                overdubDecayReadout(l10n, decay),
+                defaults.decayReady
+                    ? overdubDecayReadout(l10n, decay)
+                    : l10n.expressionUnavailable,
                 key: const Key('loop_decay_readout'),
                 style: TextStyle(
                   color: surface.textPrimary,
@@ -216,7 +218,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 ),
               ),
             ),
-            if (decayCustom)
+            if (decayCustom && defaults.decayReady)
               Positioned(
                 left: 100 + 328 + 1221,
                 top: top + 246,
@@ -231,6 +233,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
               child: LoopSlider(
                 key: const Key('loop_decay_slider'),
                 value: decay / 100,
+                enabled: defaults.decayReady,
                 onChanged: _previewDecay,
                 onChangeEnd: _commitDecay,
                 onDoubleTap: () {

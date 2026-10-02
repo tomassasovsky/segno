@@ -97,6 +97,41 @@ void main() {
       expect(click.isStructurallyValid, isTrue);
     });
 
+    test('decay identity and percent travel are strict and fixed', () {
+      const defaults = DefaultDecayTarget();
+      const lastTrack = TrackDecayTarget(7);
+      expect(defaults.canonicalString(), '{"ctl":"overdubDecay"}');
+      expect(
+        lastTrack.canonicalString(),
+        '{"ctl":"trackOverdubDecay","index":7}',
+      );
+      expect(ControlValueTarget.tryParse(defaults.canonicalString()), defaults);
+      expect(
+        ControlValueTarget.tryParse(lastTrack.canonicalString()),
+        lastTrack,
+      );
+      expect(lastTrack.address.channel, 7);
+      expect(const TrackDecayTarget(8).isStructurallyValid, isFalse);
+      expect(defaults.toDomain(0.495), 50);
+      expect(defaults.toDomain(0), 0);
+      expect(defaults.toDomain(1), 100);
+      expect(defaults.fromDomain(50), 0.5);
+      expect(defaults.relativeStep, 0.01);
+      expect(() => defaults.toDomain(double.nan), throwsArgumentError);
+      expect(() => defaults.toDomain(double.infinity), throwsArgumentError);
+      for (final malformed in [
+        '{"ctl":"overdubDecay","index":0}',
+        '{"ctl":"trackOverdubDecay"}',
+        '{"ctl":"trackOverdubDecay","index":8}',
+        '{"ctl":"trackOverdubDecay","index":-1}',
+        '{"ctl":"trackOverdubDecay","index":0.5}',
+        '{"ctl":"trackOverdubDecay","index":"0"}',
+        '{"ctl":"trackOverdubDecay","index":0,"lane":0}',
+      ]) {
+        expect(ControlValueTarget.tryParse(malformed), isNull);
+      }
+    });
+
     test('equal targets encode byte-identically', () {
       const a = FxParamTarget(
         address: FxAddress(stage: FxStage.output),

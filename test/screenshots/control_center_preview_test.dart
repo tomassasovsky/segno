@@ -480,6 +480,7 @@ void main() {
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     final control = ControlCubit(
+      decayControl: FakeDecayControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: fxPersistence,
       looper: looper,

@@ -387,6 +387,25 @@ class MidiMappingEngine {
     );
   }
 
+  /// Supersedes numeric claims while retaining source contacts and toggle
+  /// intent.
+  /// Replacing the row also detaches effects from already prepared proposals.
+  void supersedeParameterClaims(Set<String> keys) {
+    for (final state in [..._active.values, ..._retired.values]) {
+      for (final (index, control) in state.mapping.controls.indexed) {
+        if (control is! MidiParameterControl || !keys.contains(control.key)) {
+          continue;
+        }
+        final row = state.rows[index];
+        if (row == null) continue;
+        state.rows[index] = _RowState()
+          ..caught = row.caught
+          ..latched = row.latched;
+      }
+    }
+    _retired.removeWhere((_, state) => !state.hasClaims);
+  }
+
   /// Forget replaced target owners without replaying their old contact state.
   /// Other rows retain accepted claims and the physical contact stays down
   /// until its actual release, so reappearance never synthesizes a press.

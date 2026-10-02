@@ -8,7 +8,15 @@ import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
+
+/// Picker categories; Loop controls are separate from FX stage categories.
+enum ExpressionDestinationKind {
+  liveInput,
+  recordedTrack,
+  output,
+  loopControls,
+}
 
 /// What an expression pedal can be pointed at, organized the way the accepted
 /// screen asks for it: pick a destination, then a control on it.
@@ -17,9 +25,8 @@ import 'package:segno/looper/model/fx_destination.dart';
 /// read straight from the live rig — this adds only the grouping and the names,
 /// which the flat MIDI-learn list did not need and this screen does.
 ///
-/// The kinds are [FxDestinationKind], not a fourth spelling of the same three
-/// words: the Effects page, the routing page and this one all say Live inputs /
-/// Recorded tracks / Outputs, and they have to mean the same thing.
+/// The first three kinds retain the Effects page's stage meanings; Loop
+/// controls is an additional destination with no FX-chain counterpart.
 
 /// One control a destination offers.
 class ExpressionControl extends Equatable {
@@ -98,7 +105,7 @@ class ExpressionDestination extends Equatable {
   final String id;
 
   /// Which tab of the picker this sits under.
-  final FxDestinationKind kind;
+  final ExpressionDestinationKind kind;
 
   /// What the destination row says.
   final String label;
@@ -192,6 +199,16 @@ class ExpressionDestination extends Equatable {
     group: l10n.routingSourceClick,
     control: l10n.expressionControlVolume,
   ),
+  DefaultDecayTarget() => (
+    destination: l10n.expressionDestinationLoopDefaults,
+    group: l10n.loopPlaybackLabel,
+    control: l10n.loopDecayLabel,
+  ),
+  TrackDecayTarget(:final channel) => (
+    destination: l10n.trackName(trackNames, channel),
+    group: l10n.loopPlaybackLabel,
+    control: l10n.loopDecayLabel,
+  ),
   MasterGainTarget() => (
     destination: l10n.fxEditorMasterTitle,
     group: l10n.fxEditorMasterTitle,
@@ -238,10 +255,11 @@ List<ExpressionDestination> expressionDestinations(
   LooperRepository looper, {
   bool withActivations = false,
   double? clickVolume,
+  DecaySnapshot? decaySnapshot,
 }) {
   final drafts = <String, _Draft>{};
   _Draft draftFor(
-    ({String id, FxDestinationKind kind, int order}) place,
+    ({String id, ExpressionDestinationKind kind, int order}) place,
     String label,
   ) => drafts.putIfAbsent(
     place.id,
@@ -253,7 +271,10 @@ List<ExpressionDestination> expressionDestinations(
     ),
   );
 
-  for (final target in looper.availableValueTargets(clickVolume: clickVolume)) {
+  for (final target in looper.availableValueTargets(
+    clickVolume: clickVolume,
+    decaySnapshot: decaySnapshot,
+  )) {
     final place = _placeOf(target);
     if (place == null) continue;
     final names = expressionTargetName(l10n, trackNames, looper, target);
@@ -363,11 +384,12 @@ String _addressLabel(
 ) => fxStageLabel(l10n, trackNames, address);
 
 /// Where [target] belongs, or `null` for a target no destination covers.
-({String id, FxDestinationKind kind, int order})? _placeOf(
+({String id, ExpressionDestinationKind kind, int order})? _placeOf(
   ControlValueTarget target,
 ) => switch (target) {
   TrackVolumeTarget(:final channel) ||
   TrackPanTarget(:final channel) => _trackPlace(channel),
+  TrackDecayTarget(:final channel) => _trackPlace(channel),
   LaneVolumeTarget(:final channel, :final lane) => _placeOfAddress(
     FxAddress(stage: FxStage.loop, index: channel, lane: lane),
   ),
@@ -380,12 +402,17 @@ String _addressLabel(
     _placeOfAddress(FxAddress(stage: FxStage.output, index: bus)),
   ClickVolumeTarget() => (
     id: 'click',
-    kind: FxDestinationKind.output,
+    kind: ExpressionDestinationKind.output,
     order: _clickOrder,
+  ),
+  DefaultDecayTarget() => (
+    id: 'loop:defaults',
+    kind: ExpressionDestinationKind.loopControls,
+    order: _loopControlsOrder,
   ),
   MasterGainTarget() => (
     id: 'master',
-    kind: FxDestinationKind.output,
+    kind: ExpressionDestinationKind.output,
     order: _masterOrder,
   ),
   FxParamTarget(:final address) => _placeOfAddress(address),
@@ -399,37 +426,40 @@ const int _allTracksOrder = 290000;
 const int _outputOrder = 300000;
 const int _clickOrder = 380000;
 const int _masterOrder = 390000;
+const int _loopControlsOrder = 400000;
 
-({String id, FxDestinationKind kind, int order}) _trackPlace(int channel) => (
+({String id, ExpressionDestinationKind kind, int order}) _trackPlace(
+  int channel,
+) => (
   id: 'track:$channel',
-  kind: FxDestinationKind.recordedTrack,
+  kind: ExpressionDestinationKind.recordedTrack,
   order: _recordedOrder + channel * 100,
 );
 
 /// Where a chain at [address] belongs, or `null` when it names no chain.
-({String id, FxDestinationKind kind, int order})? _placeOfAddress(
+({String id, ExpressionDestinationKind kind, int order})? _placeOfAddress(
   FxAddress address,
 ) => switch (address) {
   FxAddress(stage: FxStage.input, :final index) => (
     id: 'input:$index',
-    kind: FxDestinationKind.liveInput,
+    kind: ExpressionDestinationKind.liveInput,
     order: _inputOrder + index,
   ),
   FxAddress(stage: FxStage.track, :final index) => _trackPlace(index),
   FxAddress(stage: FxStage.loop, :final index, lane: final lane?) => (
     id: 'loop:$index:$lane',
-    kind: FxDestinationKind.recordedTrack,
+    kind: ExpressionDestinationKind.recordedTrack,
     // Straight after the track it is a part of, in lane order.
     order: _recordedOrder + index * 100 + lane + 1,
   ),
   FxAddress(stage: FxStage.allTracks) => (
     id: 'allTracks',
-    kind: FxDestinationKind.recordedTrack,
+    kind: ExpressionDestinationKind.recordedTrack,
     order: _allTracksOrder,
   ),
   FxAddress(stage: FxStage.output, :final index) => (
     id: 'output:$index',
-    kind: FxDestinationKind.output,
+    kind: ExpressionDestinationKind.output,
     order: _outputOrder + index,
   ),
   // A Loop address with no lane names no chain, so it offers nothing — the
@@ -448,7 +478,7 @@ class _Draft {
   });
 
   final String id;
-  final FxDestinationKind kind;
+  final ExpressionDestinationKind kind;
   final int order;
   final String label;
   final Map<String, List<ExpressionControl>> groups = {};
@@ -456,9 +486,12 @@ class _Draft {
 }
 
 /// What the picker's tab says for [kind] — the Effects page's own words.
-String expressionKindLabel(AppLocalizations l10n, FxDestinationKind kind) =>
-    switch (kind) {
-      FxDestinationKind.liveInput => l10n.fxKindLiveInputs,
-      FxDestinationKind.recordedTrack => l10n.fxKindRecordedTracks,
-      FxDestinationKind.output => l10n.fxKindOutputs,
-    };
+String expressionKindLabel(
+  AppLocalizations l10n,
+  ExpressionDestinationKind kind,
+) => switch (kind) {
+  ExpressionDestinationKind.liveInput => l10n.fxKindLiveInputs,
+  ExpressionDestinationKind.recordedTrack => l10n.fxKindRecordedTracks,
+  ExpressionDestinationKind.output => l10n.fxKindOutputs,
+  ExpressionDestinationKind.loopControls => l10n.expressionKindLoopControls,
+};

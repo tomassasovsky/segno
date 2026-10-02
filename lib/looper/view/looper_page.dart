@@ -8,6 +8,7 @@ import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/view/session_persistence_sync_listener.dart';
 import 'package:segno/looper/view/tracks_view.dart';
@@ -38,6 +39,7 @@ class LooperPage extends StatelessWidget {
       providers: [
         BlocProvider(
           create: (context) => LooperBloc(
+            decayControl: context.read<PlaybackOptionsCubit>(),
             repository: context.read<LooperRepository>(),
             mixSettings: context.read<MixSettingsCoordinator>(),
             fxPersistence: context.read<FxChainPersistence>(),
@@ -64,6 +66,11 @@ class LooperPage extends StatelessWidget {
                 .runClickVolumeExclusive,
             currentDurableClickVolume: () =>
                 context.read<TempoCubit>().durableClickVolume,
+            runDecayExclusive: context
+                .read<PlaybackOptionsCubit>()
+                .runDecayExclusive,
+            currentDurableDecay: () =>
+                context.read<PlaybackOptionsCubit>().durableDecaySnapshot,
             exportDirectory: exportDirectory,
             // The session's pedal remap (part 6b) crossing as an opaque
             // string. Narrow functions rather than a cubit-to-cubit link:

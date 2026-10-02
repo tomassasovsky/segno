@@ -27,6 +27,7 @@ import 'package:segno_engine/segno_engine.dart'
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_click_volume_control.dart';
+import '../helpers/fake_decay_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/test_mix_settings.dart';
 
@@ -723,6 +724,7 @@ class _Harness {
     final fxPersistence = FxChainPersistence(looper: repo);
     final mixSettings = testMixSettings(repo);
     bloc = LooperBloc(
+      decayControl: FakeDecayControl(),
       fxPersistence: fxPersistence,
       repository: repo,
       mixSettings: mixSettings,
@@ -739,6 +741,7 @@ class _Harness {
       exportsRoot: () async => tempDir.path,
     );
     control = ControlCubit(
+      decayControl: FakeDecayControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: fxPersistence,
       looper: repo,

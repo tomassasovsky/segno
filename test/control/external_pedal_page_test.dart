@@ -14,6 +14,8 @@ import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
@@ -23,6 +25,8 @@ import 'package:settings_repository/settings_repository.dart';
 import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_click_volume_control.dart';
 import '../helpers/fake_key_value_store.dart';
+import '../helpers/mock_click_tempo_cubit.dart';
+import '../helpers/mock_decay_playback_cubit.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -90,8 +94,10 @@ void main() {
     addTearDown(() => unawaited(mixSettings.close()));
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
+    final playback = MockDecayPlaybackCubit();
     control = ControlCubit(
       clickVolumeControl: FakeClickVolumeControl(),
+      decayControl: playback,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
@@ -128,6 +134,8 @@ void main() {
               BlocProvider.value(value: control),
               BlocProvider.value(value: tracks),
               BlocProvider.value(value: pedalCubit),
+              BlocProvider<TempoCubit>.value(value: MockClickTempoCubit()),
+              BlocProvider<PlaybackOptionsCubit>.value(value: playback),
             ],
             child: const ExternalPedalPage(),
           ),

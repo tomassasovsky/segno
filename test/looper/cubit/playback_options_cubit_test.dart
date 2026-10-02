@@ -7,7 +7,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-import '../../helpers/helpers.dart';
+import '../../helpers/fake_key_value_store.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -20,14 +20,49 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
     when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
+    var decay = 0;
+    var once = false;
+    final overrides = <int, int>{};
+    when(() => repository.defaultOverdubDecay).thenAnswer((_) => decay);
+    when(() => repository.defaultOneShot).thenAnswer((_) => once);
+    when(
+      () => repository.trackOverdubDecayOverrides,
+    ).thenAnswer((_) => Map.of(overrides));
+    when(() => repository.decayRestartIntent).thenAnswer(
+      (_) => (defaultPercent: decay, trackOverrides: Map.of(overrides)),
+    );
+    when(() => repository.state).thenReturn(const LooperState());
+    when(
+      () => repository.setTrackOverdubDecay(
+        channel: any(named: 'channel'),
+        percent: any(named: 'percent'),
+      ),
+    ).thenAnswer((call) {
+      final channel = call.namedArguments[#channel] as int;
+      final percent = call.namedArguments[#percent] as int?;
+      if (percent == null) {
+        overrides.remove(channel);
+      } else {
+        overrides[channel] = percent;
+      }
+      return EngineResult.ok;
+    });
     looperStates = StreamController<LooperState>.broadcast();
     when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
     when(
       () => repository.setOverdubDecay(any()),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      decay = call.positionalArguments.single as int;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setDefaultOneShot(oneShot: any(named: 'oneShot')),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      once = call.namedArguments[#oneShot] as bool;
+      return EngineResult.ok;
+    });
   });
 
   tearDown(() => looperStates.close());
@@ -45,18 +80,18 @@ void main() {
       setUp: () => settings.saveOverdubDecay(25),
       build: build,
       act: (cubit) => cubit.load(),
-      expect: () => [const PlaybackOptions(overdubDecay: 25)],
+      expect: () => [const PlaybackOptions(overdubDecay: 25, decayReady: true)],
       verify: (_) => verify(() => repository.setOverdubDecay(25)).called(1),
     );
 
     blocTest<PlaybackOptionsCubit, PlaybackOptions>(
-      'setOverdubDecay emits, persists and applies the clamped value',
+      'out-of-range Decay is refused without changing persistence or audio',
       build: build,
       act: (cubit) => cubit.setOverdubDecay(140),
-      expect: () => [const PlaybackOptions(overdubDecay: 100)],
+      expect: () => <PlaybackOptions>[],
       verify: (_) async {
-        expect(await settings.loadOverdubDecay(), 100);
-        verify(() => repository.setOverdubDecay(100)).called(1);
+        expect(await settings.loadOverdubDecay(), 0);
+        verifyNever(() => repository.setOverdubDecay(any()));
       },
     );
 
@@ -64,10 +99,10 @@ void main() {
       'setOverdubDecay reapplies an explicit value even if the cache matches',
       build: build,
       act: (cubit) => cubit.setOverdubDecay(0),
-      expect: () => [const PlaybackOptions()],
+      expect: () => [const PlaybackOptions(decayReady: true)],
       verify: (_) async {
         expect(await settings.loadOverdubDecay(), 0);
-        verify(() => repository.setOverdubDecay(0)).called(1);
+        verify(() => repository.setOverdubDecay(0)).called(2);
       },
     );
 
@@ -76,7 +111,10 @@ void main() {
       setUp: () => settings.saveDefaultOneShot(oneShot: true),
       build: build,
       act: (cubit) => cubit.load(),
-      expect: () => [const PlaybackOptions(defaultOneShot: true)],
+      expect: () => [
+        const PlaybackOptions(defaultOneShot: true),
+        const PlaybackOptions(defaultOneShot: true, decayReady: true),
+      ],
       verify: (_) => verify(
         () => repository.setDefaultOneShot(oneShot: true),
       ).called(1),
@@ -116,7 +154,7 @@ void main() {
       },
       build: build,
       act: (cubit) => cubit.load(),
-      expect: () => [const PlaybackOptions()],
+      expect: () => [const PlaybackOptions(decayReady: true)],
       verify: (_) async => expect(await settings.loadDefaultOneShot(), isTrue),
     );
 
@@ -126,20 +164,28 @@ void main() {
       build: build,
       act: (cubit) async {
         await cubit.load();
+        when(() => repository.defaultOverdubDecay).thenReturn(80);
+        when(() => repository.defaultOneShot).thenReturn(true);
         looperStates.add(
           const LooperState(
             transport: TransportState(overdubDecay: 80, defaultOneShot: true),
           ),
         );
         await Future<void>.delayed(Duration.zero);
+        when(() => repository.defaultOverdubDecay).thenReturn(0);
+        when(() => repository.defaultOneShot).thenReturn(false);
         looperStates.add(const LooperState());
         await Future<void>.delayed(Duration.zero);
         await cubit.load();
       },
       expect: () => [
-        const PlaybackOptions(overdubDecay: 25),
-        const PlaybackOptions(overdubDecay: 80, defaultOneShot: true),
-        const PlaybackOptions(),
+        const PlaybackOptions(overdubDecay: 25, decayReady: true),
+        const PlaybackOptions(
+          overdubDecay: 80,
+          defaultOneShot: true,
+          decayReady: true,
+        ),
+        const PlaybackOptions(decayReady: true),
       ],
       verify: (_) async {
         expect(await settings.loadOverdubDecay(), 25);

@@ -2,6 +2,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_chain_lookup.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 
 /// Resolves a typed [ControlValueTarget] against the live rig — the app-side
 /// half of the continuous binding model, and the twin of part 6b's
@@ -31,7 +32,10 @@ extension ControlValueResolver on LooperRepository {
   /// their parameters are addressed by plugin-assigned id rather than position
   /// and have no setter at every stage, so v1 leaves them to the on-screen
   /// controls.
-  List<ControlValueTarget> availableValueTargets({double? clickVolume}) {
+  List<ControlValueTarget> availableValueTargets({
+    double? clickVolume,
+    DecaySnapshot? decaySnapshot,
+  }) {
     final targets = <ControlValueTarget>[];
     void add(FxAddress address, List<TrackEffect> entries) {
       for (final fx in entries) {
@@ -74,6 +78,12 @@ extension ControlValueResolver on LooperRepository {
     }
     targets.addAll(availableMixValueTargets());
     if (clickVolume != null) targets.add(const ClickVolumeTarget());
+    if (decaySnapshot != null) {
+      targets.add(const DefaultDecayTarget());
+      for (var channel = 0; channel < 8; channel++) {
+        targets.add(TrackDecayTarget(channel));
+      }
+    }
     // The master output always exists, so it is always offerable.
     targets.add(const MasterGainTarget());
     return targets;
@@ -118,6 +128,7 @@ extension ControlValueResolver on LooperRepository {
   bool valueTargetResolves(
     ControlValueTarget target, {
     double? clickVolume,
+    DecaySnapshot? decaySnapshot,
   }) => switch (target) {
     FxParamTarget() => _paramSlot(target) != null,
     TrackVolumeTarget(:final channel) ||
@@ -136,6 +147,7 @@ extension ControlValueResolver on LooperRepository {
     OutputBalanceTarget(:final bus) => bus >= 0 && bus < state.outputBusCount,
     MasterGainTarget() => true,
     ClickVolumeTarget() => clickVolume != null,
+    DecayValueTarget() => decaySnapshot != null && target.isStructurallyValid,
   };
 
   /// The value [target] holds now (normalized `0..1`), or `null` when it does
@@ -146,12 +158,17 @@ extension ControlValueResolver on LooperRepository {
   double? readValueTarget(
     ControlValueTarget target, {
     double? clickVolume,
+    DecaySnapshot? decaySnapshot,
   }) => switch (target) {
     FxParamTarget(:final param) => _paramSlot(target)?.effect.params[param],
     MixValueTarget() => _readMixValue(target),
     MasterGainTarget() => masterGain,
     ClickVolumeTarget() =>
       clickVolume == null ? null : target.fromDomain(clickVolume),
+    DecayValueTarget() =>
+      decaySnapshot == null || !target.isStructurallyValid
+          ? null
+          : target.fromDomain(decaySnapshot.effectivePercent(target.address)),
   };
 
   bool _trackExists(int channel) =>

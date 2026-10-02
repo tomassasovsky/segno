@@ -24,9 +24,9 @@ import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
-import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
@@ -105,7 +105,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
 
   /// Which tab of the destination picker is open, kept across visits so adding
   /// two controls on one input does not start from the first tab twice.
-  FxDestinationKind _kind = FxDestinationKind.liveInput;
+  ExpressionDestinationKind _kind = ExpressionDestinationKind.liveInput;
 
   /// The destination whose controls are open.
   ExpressionDestination? _destination;
@@ -346,7 +346,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
               _destination ??
               const ExpressionDestination(
                 id: '',
-                kind: FxDestinationKind.liveInput,
+                kind: ExpressionDestinationKind.liveInput,
                 label: '',
                 groups: [],
               ),
@@ -506,6 +506,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
     final clickVolume = context.watch<TempoCubit>().clickVolume;
+    final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
     final names = context.watch<TracksCubit>().state.names;
     return [
       for (final mapping in expression.mappings)
@@ -521,6 +522,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           available: looper.valueTargetResolves(
             mapping.target,
             clickVolume: clickVolume,
+            decaySnapshot: decaySnapshot,
           ),
           art: expressionTargetArt(looper, mapping.target),
         ),
@@ -529,11 +531,13 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
 
   List<ExpressionDestination> _destinations(BuildContext context) {
     final clickVolume = context.watch<TempoCubit>().clickVolume;
+    final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
     return expressionDestinations(
       context.l10n,
       context.watch<TracksCubit>().state.names,
       context.read<LooperRepository>(),
       clickVolume: clickVolume,
+      decaySnapshot: decaySnapshot,
     );
   }
 
@@ -590,6 +594,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     if (target is ClickVolumeTarget &&
         context.read<TempoCubit>().clickVolume == null) {
+      return;
+    }
+    if (target is DecayValueTarget &&
+        context.read<PlaybackOptionsCubit>().decaySnapshot == null) {
       return;
     }
     final replacing = _replacing;
@@ -988,6 +996,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
     final clickVolume = context.watch<TempoCubit>().clickVolume;
+    final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
     final names = context.watch<TracksCubit>().state.names;
     final controls = button.controls;
     final rows = [
@@ -1012,6 +1021,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           available: looper.valueTargetResolves(
             parameter.target,
             clickVolume: clickVolume,
+            decaySnapshot: decaySnapshot,
           ),
           art: expressionTargetArt(looper, parameter.target),
         ),
@@ -1113,6 +1123,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     final l10n = context.l10n;
     final clickVolume = context.watch<TempoCubit>().clickVolume;
+    final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
     final surface = context.surface;
     final destination = _buttonDestination;
     final choosingControl =
@@ -1185,14 +1196,22 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                       final acceptedClick = context
                           .read<TempoCubit>()
                           .clickVolume;
+                      final acceptedDecay = context
+                          .read<PlaybackOptionsCubit>()
+                          .decaySnapshot;
                       if (control.target is ClickVolumeTarget &&
                           acceptedClick == null) {
+                        return;
+                      }
+                      if (control.target is DecayValueTarget &&
+                          acceptedDecay == null) {
                         return;
                       }
                       final now =
                           context.read<LooperRepository>().readValueTarget(
                             control.target,
                             clickVolume: acceptedClick,
+                            decaySnapshot: acceptedDecay,
                           ) ??
                           0;
                       _addButtonControl(
@@ -1222,6 +1241,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                       context.read<LooperRepository>(),
                       withActivations: true,
                       clickVolume: clickVolume,
+                      decaySnapshot: decaySnapshot,
                     ),
                     kind: _kind,
                     columns: 1,
