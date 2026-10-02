@@ -1,0 +1,23 @@
+<!-- cspell:words prebound -->
+
+# M3.13 independent interim review — bug-focused review
+
+Status: **interim; not a merge gate or final-head approval**. Authors were still editing. No test, analyzer, formatter, build, native rebuild or Git mutation was run by this reviewer in this pass. The independent 50-case harness and frozen oracle remain unexecuted.
+
+Base: `f186bb952d1d000522c5e8e55226bc2ee0931538`. Scope includes tracked changes and untracked Dart product/tests. The 85-path read snapshot is [adversary-interim-source-v1.json](adversary-interim-source-v1.json), SHA-256 `bd274b0fa9ab499fd3973c4ef3319c21c510aae919d061e9ae0cb95cddada2e7`. Earlier 82-path read snapshot SHA-256: `25ef2cb127303c2b7a8eceb73ccf2ba68037d69a6ea59bcb0daae0bd7752f362`. Snapshots are observations of moving source, not an atomic candidate freeze. The unrelated controller-package `build/**` analysis exclusion is preserved but is not approved by this review.
+
+The reviewer read changed app composition/bootstrap/toasts, Playback owner/port, repository receipt/restart/session code, Settings checkpoints, Control MIDI/External dispatch, typed catalogue/resolver/labels, mapping editors, ordinary Playback UI, Session mapping/gate, and corresponding changed/new tests. Generated localization output is not independently reviewed. Findings below do not use author test success narratives as behavioral authority.
+
+## Source findings
+
+**M313-A1 — Recovery can bypass failed startup validation (P1).** Original owner SHA-256 `a1c58e31aa7f2a48bccec8051810d0956036c44145365cb136997ea3ffd9c462`, `lib/looper/cubit/playback_options_cubit.dart:597` (original `recoverOneShot`). Put a malformed bool in `track_one_shot.7`, allow `load()` to reject, then cause independent native startup/reconnect replay to time out or report wrong bits. `recoverOneShot` skips `_restoreOnce` because repository recovery exists, repairs the native recovery, sets `_oneShotInitialized = true`, and publishes applied/ready without validating the malformed scalar. The accepted plan requires all nine staged reads to validate and malformed values to remain visibly refused. This is a source-traced reachable candidate, not an independently executed result. It was forwarded immediately. The later read snapshot contains a repair (owner SHA `8e8aef2ee19d4d52b5968228a82493dd80c0c010afef4e9d6ca20a0601bc535e`) which stages `_restoreOnce` outside the queue after engine recovery; final source and independent regression verification remain required.
+
+**M313-A2 — Superseded first initialization leaves Playback unavailable (P2).** Original owner hash above, `_restoreOnce` at line280, `_readyOneShot` at line336, `_syncOneShot` at line398. Block the initial nine preference reads, stop/start the device so its generation changes, then finish the reads and settle the new callback. `_restoreOnce` silently returns on origin mismatch. `_oneShotInitialized` stays false, `_syncOneShot` cannot publish readiness, and the completed `_oneShotLoadFuture` prevents ordinary/controller requests from starting initialization again. This differs from a stale edit after a successful load. The coordinator confirmed the initialization/lifetime gap is material: complete/adopt current initialization safely, while never replaying old startup preferences over a replacement session. Source-traced, not executed here; repair and final re-review pending.
+
+## Other paths inspected
+
+No additional actionable source finding was established in the captured diff. Running receipts consult command drainage and raw native bits; immutable effective vectors and affected masks are captured at admission; timeout callbacks retain pending identity; cancellation cannot complete a newer request. Held live/restart projections preserve explicit false versus absent inheritance. Ordinary reset publishes nullable intent after acceptance and retires only its target's old claims. Session acquires Mixer → Click → one Playback queue and reads both durable snapshots without a nested field queue. App shutdown cuts Control ingress, drains cleanup, recovers on explicit Retry, drains owed cleanup again, then checks both Playback flushes. Control closes before Playback. The coordinator's already-known accidental Once flush in the Click toast Retry was not duplicated as a finding.
+
+## Pending verification
+
+Re-read final changes after source freeze, retain both findings and their disposition, execute the unchanged independent matrix plus any separately prebound regression additions, and run the receipt-bypass negative control in an isolated source copy. No clean candidate disposition follows from this interim pass.

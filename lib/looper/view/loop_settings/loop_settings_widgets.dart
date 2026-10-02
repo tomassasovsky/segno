@@ -356,8 +356,8 @@ class LoopUseDefaultButton extends StatelessWidget {
   /// Creates a [LoopUseDefaultButton].
   const LoopUseDefaultButton({required this.onTap, super.key});
 
-  /// Removes the field's override.
-  final VoidCallback onTap;
+  /// Removes the field's override, or null while its owner is unavailable.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) => LoopOutlinedButton(

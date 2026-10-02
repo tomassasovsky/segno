@@ -208,6 +208,22 @@ class _DecayStore extends FakeKeyValueStore {
   }
 }
 
+class _OneShotStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    if (key == 'looper.default_one_shot' || key.startsWith('track_one_shot.')) {
+      writeEntered = true;
+      await pendingWrite?.future;
+      if (refuseWrite) throw StateError('Playback preference unavailable');
+    }
+    await super.setBool(key, value: value);
+  }
+}
+
 class _ShutdownMidi extends MidiDeviceRepository {
   _ShutdownMidi(SettingsRepository settings)
     : super(source: null, settings: settings, pollInterval: Duration.zero);
@@ -628,6 +644,165 @@ void main() {
       expect(store.writeEntered, isFalse);
       expect(decay.state.overdubDecay, 20);
       expect(decay.state.trackOverdubDecayOverrides, {7: 0});
+      await tester.pump(const Duration(seconds: 2));
+      expect(haltCalls, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    for (final channel in <int?>[null, 7]) {
+      testWidgets('power off waits for ordinary OneShot at $channel', (
+        tester,
+      ) async {
+        final store = _OneShotStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final once = context.read<PlaybackOptionsCubit>();
+        final power = context.read<PowerOffCubit>();
+        store.pendingWrite = Completer<void>();
+        if (channel == null) {
+          unawaited(once.setDefaultOneShot(value: true));
+        } else {
+          // Ordinary per-track editing uses the production Bloc -> owner path.
+          context.read<LooperBloc>().add(
+            LooperOneShotToggled(channel, oneShot: true),
+          );
+        }
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        power.press(const PowerOffSnapshot());
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(power.state.phase, PowerOffPhase.flushing);
+        expect(halted, isFalse);
+        store.pendingWrite!.complete();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        final key = channel == null
+            ? 'looper.default_one_shot'
+            : 'track_one_shot.$channel';
+        expect(store.values[key], true);
+      });
+    }
+
+    for (final retry in [false, true]) {
+      testWidgets('OneShot refusal stays on; recovery choice retry=$retry', (
+        tester,
+      ) async {
+        final store = _OneShotStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final once = context.read<PlaybackOptionsCubit>();
+        final power = context.read<PowerOffCubit>();
+        store.refuseWrite = true;
+        unawaited(once.setDefaultOneShot(value: true));
+        await tester.pumpAndSettle();
+        expect(once.state.defaultOneShot, isFalse);
+        power.press(const PowerOffSnapshot());
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.flushFailed);
+        expect(find.text('Settings could not be confirmed'), findsOneWidget);
+        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        expect(halted, isFalse);
+        store.refuseWrite = false;
+        await tester.tap(
+          find.byKey(Key(retry ? 'power_off_retry' : 'power_off_keep_playing')),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(halted, retry);
+        expect(store.values.containsKey('looper.default_one_shot'), isFalse);
+        if (!retry) {
+          unawaited(once.setDefaultOneShot(value: true));
+          await tester.pumpAndSettle();
+          expect(once.state.defaultOneShot, isTrue);
+          expect(store.values['looper.default_one_shot'], true);
+        }
+      });
+    }
+
+    testWidgets('power off releases held OneShot and rejects later MIDI', (
+      tester,
+    ) async {
+      final store = _OneShotStore();
+      settings = SettingsRepository(store: store);
+      final midi = _ShutdownMidi(settings);
+      midiDeviceRepository = midi;
+      addTearDown(() => unawaited(midi.dispose()));
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final control = context.read<ControlCubit>();
+      final once = context.read<PlaybackOptionsCubit>();
+      final power = context.read<PowerOffCubit>();
+      final editor = Object();
+      control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+      MidiSaveResult? saved;
+      unawaited(
+        control
+            .saveMidiMapping(
+              MidiMapping(
+                id: 'shutdown-once',
+                source: MidiSource(
+                  device: 'shutdown-test',
+                  kind: ControllerSourceKind.midiCc,
+                  number: 21,
+                ),
+                behavior: MidiBehavior.momentary,
+                controls: [
+                  MidiParameterControl(
+                    key: '{"ctl":"defaultOneShot"}',
+                    low: 0,
+                    high: 1,
+                  ),
+                  MidiParameterControl(
+                    key: '{"ctl":"trackOneShot","index":7}',
+                    low: 0,
+                    high: 1,
+                  ),
+                ],
+              ),
+              owner: editor,
+              create: true,
+            )
+            .then((result) => saved = result),
+      );
+      await tester.pumpAndSettle();
+      expect(saved?.saved, isTrue);
+      control.endMidiEdit(editor);
+      midi.push(127);
+      await tester.pumpAndSettle();
+      expect(once.state.defaultOneShot, isTrue);
+      expect(once.state.trackOneShotOverrides, {7: true});
+      power.press(const PowerOffSnapshot());
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(once.state.defaultOneShot, isFalse);
+      expect(once.state.trackOneShotOverrides, {7: false});
+      expect(store.values['looper.default_one_shot'], false);
+      expect(store.values['track_one_shot.7'], false);
+      store.writeEntered = false;
+      midi.push(127);
+      await tester.pump();
+      expect(store.writeEntered, isFalse);
+      expect(once.state.defaultOneShot, isFalse);
+      expect(once.state.trackOneShotOverrides, {7: false});
       await tester.pump(const Duration(seconds: 2));
       expect(haltCalls, 1);
       await tester.pumpWidget(const SizedBox.shrink());

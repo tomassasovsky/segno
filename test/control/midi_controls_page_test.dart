@@ -29,6 +29,7 @@ import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -150,6 +151,7 @@ void main() {
     MidiMapping? savedMapping,
     double? clickVolume = 1,
     DecaySnapshot? decaySnapshot,
+    OneShotSnapshot? oneShotSnapshot,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -181,11 +183,15 @@ void main() {
     final mix = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mix.close()));
     final tempo = MockClickTempoCubit(clickVolume: clickVolume);
-    final playback = MockDecayPlaybackCubit(snapshot: decaySnapshot);
+    final playback = MockDecayPlaybackCubit(
+      snapshot: decaySnapshot,
+      oneShot: oneShotSnapshot,
+    );
     control = ControlCubit(
       looper: looper,
       clickVolumeControl: tempo,
       decayControl: playback,
+      oneShotControl: playback,
       pedal: pedal,
       settings: settings,
       performance: performance,
@@ -326,6 +332,51 @@ void main() {
     verifyNever(() => looper.setOverdubDecay(any()));
   });
 
+  testWidgets('Loop/Once range edits are draft-only and Escape restores low', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      seeded: true,
+      oneShotSnapshot: OneShotSnapshot(
+        defaultOneShot: false,
+        trackOverrides: const {},
+      ),
+    );
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_add_control');
+    await tap(tester, 'expression_kind_loopControls');
+    await tap(tester, 'expression_destination_loop:defaults');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const DefaultOneShotTarget())}',
+    );
+    final key = const DefaultOneShotTarget().canonicalString();
+    expect(find.byKey(Key('midi_range_low_$key')), findsOneWidget);
+    expect(find.byKey(Key('midi_range_high_$key')), findsOneWidget);
+    await tap(tester, 'midi_once_low_${key}_once');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<LoopChoiceButton>(
+            find.byKey(Key('midi_once_low_${key}_loop')),
+          )
+          .selected,
+      isTrue,
+    );
+    await tap(tester, 'midi_once_low_${key}_once');
+    expect(control.state.midiMappings.byId('m1')!.controls, hasLength(1));
+    await tap(tester, 'midi_save');
+    final saved = control.state.midiMappings
+        .byId('m1')!
+        .controls
+        .whereType<MidiParameterControl>()
+        .singleWhere((control) => control.key == key);
+    expect((saved.low, saved.high), (1, 1));
+    verifyNever(() => looper.setDefaultOneShot(oneShot: any(named: 'oneShot')));
+  });
+
   testWidgets('unavailable Click row can be repaired without changing range', (
     tester,
   ) async {
@@ -348,6 +399,30 @@ void main() {
             as MidiParameterControl;
     expect(repaired.key, const TrackVolumeTarget(2).canonicalString());
     expect((repaired.low, repaired.high), (0.8, 0.2));
+  });
+
+  testWidgets('unavailable Loop/Once row repairs a reversed authored range', (
+    tester,
+  ) async {
+    final oldKey = const DefaultOneShotTarget().canonicalString();
+    final original = MidiMapping(
+      id: 'm1',
+      source: _source,
+      behavior: MidiBehavior.continuous,
+      controls: [MidiParameterControl(key: oldKey, low: 1, high: 0)],
+    );
+    await pump(tester, savedMapping: original);
+    expect(find.byKey(const Key('midi_row_warning_m1')), findsOneWidget);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_control_change_$oldKey');
+    await pickTrackVolume(tester, 2);
+    expect(control.state.midiMappings.byId('m1'), original);
+    await tap(tester, 'midi_save');
+    final repaired =
+        control.state.midiMappings.byId('m1')!.controls.single
+            as MidiParameterControl;
+    expect(repaired.key, const TrackVolumeTarget(2).canonicalString());
+    expect((repaired.low, repaired.high), (1, 0));
   });
 
   testWidgets('Add chooses an explicit format before Learn begins', (

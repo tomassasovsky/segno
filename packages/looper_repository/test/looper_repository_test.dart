@@ -48,6 +48,25 @@ import 'helpers/fake_audio_engine.dart';
 
 final EngineSnapshot _playingSnapshot = _playingAt(24000);
 
+const _nativeEmptySlots = <TrackSnapshot>[
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+];
+
+/// The fake device has eight native slots even when only a few have content.
+/// A shorter raw vector is reserved for the explicit malformed-receipt tests.
+List<TrackSnapshot> _nativeSlots(List<TrackSnapshot> tracks) => [
+  ...tracks,
+  for (var channel = tracks.length; channel < 8; channel++)
+    const TrackSnapshot.empty(),
+];
+
 /// [n] playing takes of one master loop; [emptyRedoOnly] tracks are empty
 /// with one redo step instead, [clearRestore] tracks are empty with a clear
 /// restore point.
@@ -69,7 +88,7 @@ EngineSnapshot _playingTracksSnapshot(
   latencyState: le.LatencyState.idle,
   measuredLatencyMs: -1,
   masterLengthFrames: 96000,
-  tracks: [
+  tracks: _nativeSlots([
     for (var i = 0; i < n; i++)
       if (emptyRedoOnly.contains(i))
         const TrackSnapshot(
@@ -103,7 +122,7 @@ EngineSnapshot _playingTracksSnapshot(
           rms: 0.3,
           peak: 0.5,
         ),
-  ],
+  ]),
 );
 
 /// One empty track with an arm as the engine publishes it: `pending` and the
@@ -124,7 +143,7 @@ EngineSnapshot _pendingSnapshot({
   outputRms: 0,
   latencyState: le.LatencyState.idle,
   measuredLatencyMs: -1,
-  tracks: [
+  tracks: _nativeSlots([
     TrackSnapshot(
       state: TrackState.empty,
       volume: 0.8,
@@ -136,7 +155,7 @@ EngineSnapshot _pendingSnapshot({
       pending: pending,
       pendingTrigger: trigger,
     ),
-  ],
+  ]),
 );
 
 /// One playing track with independently controlled transport and meter values.
@@ -156,7 +175,7 @@ EngineSnapshot _playingAt(int masterPositionFrames, {double peak = 0.5}) =>
       measuredLatencyMs: -1,
       masterLengthFrames: 96000,
       masterPositionFrames: masterPositionFrames,
-      tracks: [
+      tracks: _nativeSlots([
         TrackSnapshot(
           state: TrackState.playing,
           volume: 0.8,
@@ -168,12 +187,12 @@ EngineSnapshot _playingAt(int masterPositionFrames, {double peak = 0.5}) =>
           inputMask: 0x2,
           outputMask: 0x2,
         ),
-      ],
+      ]),
     );
 
 /// One playing track with one real lane — the cache-telemetry gate is a
 /// per-lane concern, and [_playingSnapshot]'s tracks carry no lanes.
-const _laneSnapshot = EngineSnapshot(
+final _laneSnapshot = EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
   bufferFrames: 128,
@@ -187,8 +206,8 @@ const _laneSnapshot = EngineSnapshot(
   latencyState: le.LatencyState.idle,
   measuredLatencyMs: -1,
   masterLengthFrames: 96000,
-  tracks: [
-    TrackSnapshot(
+  tracks: _nativeSlots([
+    const TrackSnapshot(
       state: TrackState.playing,
       volume: 1,
       muted: false,
@@ -208,7 +227,7 @@ const _laneSnapshot = EngineSnapshot(
         ),
       ],
     ),
-  ],
+  ]),
 );
 
 void main() {
@@ -4315,7 +4334,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -4356,7 +4375,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final changed = <(int, int)>[];
       final repo = buildRepo()
@@ -4392,7 +4411,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final changed = <(int, int)>[];
       final repo = buildRepo()
@@ -4422,7 +4441,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -4452,7 +4471,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final persisted = <(int, int)>[];
       final repo = buildRepo()
@@ -4496,7 +4515,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
@@ -4520,7 +4539,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final persisted = <(int, int)>[];
       final repo = buildRepo()
@@ -4570,7 +4589,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -4605,7 +4624,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
@@ -4632,7 +4651,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -4667,7 +4686,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -4700,7 +4719,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -4740,7 +4759,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       buildRepo()
         ..startEngine(const EngineConfig())
@@ -4779,7 +4798,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
       buildRepo()
         ..startEngine(const EngineConfig())
@@ -4819,7 +4838,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -4898,7 +4917,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -4941,7 +4960,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -5758,9 +5777,9 @@ void main() {
   });
 
   group('applySession', () {
-    /// A snapshot with [count] settled-empty tracks (the post-clear state), so
+    /// A snapshot with eight settled-empty tracks (the post-clear state), so
     /// the apply's settle wait passes immediately.
-    EngineSnapshot clearedSnapshot(int count) => EngineSnapshot(
+    EngineSnapshot clearedSnapshot() => EngineSnapshot(
       isRunning: true,
       sampleRate: 48000,
       bufferFrames: 128,
@@ -5771,7 +5790,7 @@ void main() {
       outputRms: 0,
       latencyState: le.LatencyState.idle,
       measuredLatencyMs: -1,
-      tracks: [for (var i = 0; i < count; i++) const TrackSnapshot.empty()],
+      tracks: List.generate(8, (_) => const TrackSnapshot.empty()),
     );
 
     /// A single-lane (lane 0) rig track holding one live layer of [pcm].
@@ -5799,7 +5818,7 @@ void main() {
     test(
       'clears every track, imports stems, commits, and applies mix',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -5834,7 +5853,7 @@ void main() {
     test('fires rigReplaced once on a successful apply — the explicit seam '
         '(the cleared window is transient, so the projection alone cannot '
         'announce the replacement)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
@@ -5882,7 +5901,7 @@ void main() {
     });
 
     test('an empty rig imports nothing and establishes no master', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
@@ -5898,7 +5917,7 @@ void main() {
 
     test('a restart after apply replays the LOADED mix, never the pre-load '
         'caches (F2a/F2b)', () async {
-      engine.nextSnapshot = clearedSnapshot(3);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         // Pre-load rig: remembered volume + mute on track 2.
@@ -5933,7 +5952,7 @@ void main() {
       'resets a stale length preset to AUTO when the loaded session leaves '
       'it undefined (A6)',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
           // A live/prior session left track 0 at a 4-bar preset.
@@ -5970,7 +5989,7 @@ void main() {
       "applies the loaded session's own nonzero length preset per track "
       '(A6)',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -5998,7 +6017,7 @@ void main() {
       'undefined (B5c) — mirrors the A6 length-preset reset above, since '
       'a_one_shot survives `clear` by the same "setting, not content" rule',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
           // A live/prior session left track 0 marked One Shot.
@@ -6021,19 +6040,21 @@ void main() {
         expect(engine.trackOneShot[0], isFalse);
         expect(engine.trackOneShot[1], isFalse);
 
-        // A restart replays only the loaded (off) value, not the stale true.
+        // A restart explicitly replays Loop for every physical track, not the
+        // stale Once value from the previous session.
         engine.trackOneShot.clear();
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.trackOneShot.containsKey(0), isFalse);
+        expect(engine.trackOneShot[0], isFalse);
+        expect(engine.trackOneShot[1], isFalse);
       },
     );
 
     test(
       "applies the loaded session's own one-shot flag per track (B5c)",
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -6058,7 +6079,7 @@ void main() {
       'SessionRigTrack (no content), so only the session-level set can '
       'restore it — a plain per-track restore would silently drop it',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -6073,49 +6094,57 @@ void main() {
           clearPollInterval: Duration.zero,
         );
 
-        expect(engine.trackOneShot[0], isFalse);
-        expect(engine.trackOneShot[1], isTrue);
+        expect(engine.trackOneShot, {
+          for (var channel = 0; channel < 8; channel++) channel: channel == 1,
+        });
 
         // Restored through the remembered cache too, so a restart replays it.
         engine.trackOneShot.clear();
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.trackOneShot[1], isTrue);
+        expect(engine.trackOneShot, {
+          for (var channel = 0; channel < 8; channel++) channel: channel == 1,
+        });
       },
     );
 
     test(
-      'ignores an out-of-range playback override rather than '
-      'pushing an invalid channel to the engine (a manifest saved on a '
-      'build with more physical tracks than this engine)',
+      'rejects an out-of-range playback override without '
+      'pushing an invalid ninth channel to the engine',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
+        final priorEngineChoices = Map<int, bool>.of(engine.trackOneShot);
+        final priorRememberedChoices = repo.trackOneShotOverrides;
 
-        await repo.applySession(
-          SessionRig(
-            baseLengthFrames: 4,
-            tracks: [
-              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
-            ],
-            trackOneShotOverrides: const {7: true},
+        await expectLater(
+          repo.applySession(
+            SessionRig(
+              baseLengthFrames: 4,
+              tracks: [
+                rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+              ],
+              trackOneShotOverrides: const {8: true},
+            ),
+            clearPollInterval: Duration.zero,
           ),
-          clearPollInterval: Duration.zero,
+          throwsA(isA<StateError>()),
         );
 
-        expect(engine.trackOneShot.containsKey(7), isFalse);
+        expect(engine.trackOneShot.containsKey(8), isFalse);
+        expect(engine.trackOneShot, priorEngineChoices);
+        expect(repo.trackOneShotOverrides, priorRememberedChoices);
       },
     );
 
     test(
       'ignores an out-of-range rig.primaryTrack rather than pushing an '
       'invalid channel to the engine or poisoning the re-apply cache '
-      '(a manifest saved on a build with more physical tracks than this '
-      'engine)',
+      '(the ninth channel is not in this native rig)',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -6125,7 +6154,7 @@ void main() {
             tracks: [
               rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
-            primaryTrack: 7,
+            primaryTrack: 8,
           ),
           clearPollInterval: Duration.zero,
         );
@@ -6137,7 +6166,7 @@ void main() {
     test(
       "applies the loaded session's looper mode and crown (B5c)",
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -6163,7 +6192,7 @@ void main() {
       "content-bearing session's mode is never dropped by the content rules "
       'content lock (B5c)',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
         // `startEngine`'s own re-apply cascade (independent review of #295)
@@ -6200,7 +6229,7 @@ void main() {
       'defines no crown, even though the live engine keeps a prior crown '
       '(B5c, D18: no un-crown call exists on the live engine)',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
           // A live/prior session crowned track 1.
@@ -6262,7 +6291,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
           primaryTrack: 1,
         );
         await repo.applySession(
@@ -6284,7 +6313,7 @@ void main() {
 
     test('resets remembered chains the rig does not define — lane and '
         'monitor (F2c)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setLaneEffects(
@@ -6320,7 +6349,7 @@ void main() {
     test('resets remembered TRACK-stage and MASTER chains the rig does not '
         'define, chain flags included (R17, the F2 class extended to the bus '
         'stages)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       // Session A: FX on two track buses and on the Master insert, with one
       // bus chain-DISABLED and the Master chain-disabled too.
       final repo = buildRepo()
@@ -6367,7 +6396,7 @@ void main() {
     });
 
     test('applies the rig BUS stages, chain flags included (R17)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
@@ -6419,21 +6448,21 @@ void main() {
     test('resets a remembered bus chain on a channel this engine cannot own, '
         'even when the rig "defines" it — the bounded apply cannot push it, so '
         'skipping the reset would strand the leftover', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
       // A chain remembered for a channel beyond this engine's track count —
       // e.g. a cache left by a manifest saved on a build with more tracks.
       repo.setTrackEffects(
-        channel: 5,
+        channel: 8,
         effects: [BuiltInEffect(type: TrackEffectType.drive)],
       );
-      expect(repo.trackEffects(5), isNotEmpty);
+      expect(repo.trackEffects(8), isNotEmpty);
 
       await repo.applySession(
         SessionRig(
           trackChains: {
-            5: FxChainEnvelope(
+            8: FxChainEnvelope(
               entries: [BuiltInEffect(type: TrackEffectType.reverb)],
             ),
           },
@@ -6442,19 +6471,19 @@ void main() {
       );
 
       // Not applied (out of range) and therefore reset, not left behind.
-      expect(repo.trackEffects(5), isEmpty);
+      expect(repo.trackEffects(8), isEmpty);
       expect(repo.allTrackChains(), isEmpty);
     });
 
     test(
       'drops an out-of-range remembered lane chain on session load',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
         expect(
           repo.setLaneEffects(
-            channel: 5,
+            channel: 8,
             lane: 0,
             effects: [BuiltInEffect(type: TrackEffectType.drive)],
           ),
@@ -6463,21 +6492,21 @@ void main() {
         await repo.applySession(
           SessionRig(
             laneChains: {
-              (5, 0): FxChainEnvelope(
+              (8, 0): FxChainEnvelope(
                 entries: [BuiltInEffect(type: TrackEffectType.reverb)],
               ),
             },
           ),
           clearPollInterval: Duration.zero,
         );
-        expect(repo.laneEffects(5, 0), isEmpty);
+        expect(repo.laneEffects(8, 0), isEmpty);
         expect(repo.allLaneChains(), isEmpty);
       },
     );
 
     test('restores a lane envelope whole — entries, chain flag, and the '
         'inheritance marker (R13/R15)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       // A leftover disabled flag + marker on a DIFFERENT lane must not survive.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -6522,7 +6551,7 @@ void main() {
 
     test('fully resets a leftover monitor the rig does not define — routing '
         'and mix, not just its chain (F2)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       // Session A left input 1 enabled with custom routing / mix.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -6549,7 +6578,7 @@ void main() {
 
     test("resets a leftover track's lane count/routing the rig omits — the "
         "engine must not keep session A's lanes for a record", () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       // Session A configured track 0 with two lanes recording inputs 3 and 5.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -6579,7 +6608,7 @@ void main() {
     test(
       'applies the rig chains and monitors through the cached setters',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -6638,7 +6667,7 @@ void main() {
         // The engine rejects the first couple of imports (the posted-clear ack
         // race); applySession retries and the import lands rather than failing.
         engine
-          ..nextSnapshot = clearedSnapshot(1)
+          ..nextSnapshot = clearedSnapshot()
           ..importFailCountdown = 2;
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
@@ -6674,7 +6703,7 @@ void main() {
 
     test('throws when a stem import is rejected', () async {
       engine
-        ..nextSnapshot = clearedSnapshot(1)
+        ..nextSnapshot = clearedSnapshot()
         ..importResult = EngineResult.invalid;
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
@@ -6696,7 +6725,7 @@ void main() {
     test(
       'imports every lane of a multi-lane track and restores per-lane mix',
       () async {
-        engine.nextSnapshot = clearedSnapshot(1);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -6750,7 +6779,7 @@ void main() {
     test(
       'imports every overdub layer in order and finalizes the undo/redo stacks',
       () async {
-        engine.nextSnapshot = clearedSnapshot(1);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -6980,10 +7009,10 @@ void main() {
       outputRms: 0,
       latencyState: le.LatencyState.idle,
       measuredLatencyMs: -1,
-      tracks: [
+      tracks: _nativeSlots([
         for (var channel = 0; channel < trackCount; channel++)
           const TrackSnapshot.empty(),
-      ],
+      ]),
     );
 
     const pinned = le.AudioDevice(
@@ -7053,7 +7082,10 @@ void main() {
         expect(repo.sessionTransport.looperMode, LooperMode.free);
         expect(repo.sessionTransport.defaultLengthPresetBars, 4);
         expect(repo.trackLengthPresetOverrides, {0: 8});
-        expect(engine.publishedLengths, {0: 8, 1: 4, 2: 4});
+        expect(engine.publishedLengths, {
+          0: 8,
+          for (var i = 1; i < 8; i++) i: 4,
+        });
         expect(startCount(), 2);
         expect(stopCount(), 1);
       });
@@ -8693,7 +8725,7 @@ void main() {
       outputRms: 0,
       latencyState: le.LatencyState.idle,
       measuredLatencyMs: -1,
-      tracks: [TrackSnapshot.empty()],
+      tracks: _nativeEmptySlots,
     );
 
     test('re-sync re-copies the routed input chain with a fresh stamp, '

@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/midi_controls/midi_segmented.dart';
+import 'package:segno/control/view/playback_endpoint_choice.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -302,6 +303,33 @@ class _Card extends StatelessWidget {
                     enabled: card.available,
                     keyPrefix: 'midi_activation_high_$key',
                     onChanged: (value) => onRange(key, high: value ? 1 : 0),
+                  ),
+                ],
+              ),
+            MidiParameterControl(:final low, :final high)
+                when ControlValueTarget.tryParse(key) is OneShotValueTarget =>
+              Row(
+                children: [
+                  if (captions.low case final lowCaption?) ...[
+                    PlaybackEndpointChoice(
+                      key: Key('midi_range_low_$key'),
+                      caption: lowCaption,
+                      value: low,
+                      width: _rangeWidth,
+                      enabled: card.available,
+                      keyPrefix: 'midi_once_low_$key',
+                      onChanged: (value) => onRange(key, low: value),
+                    ),
+                    const SizedBox(width: 36),
+                  ],
+                  PlaybackEndpointChoice(
+                    key: Key('midi_range_high_$key'),
+                    caption: captions.high,
+                    value: high,
+                    width: _rangeWidth,
+                    enabled: card.available,
+                    keyPrefix: 'midi_once_high_$key',
+                    onChanged: (value) => onRange(key, high: value),
                   ),
                 ],
               ),

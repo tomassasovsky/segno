@@ -3925,6 +3925,18 @@
     "@expressionDestinationLoopDefaults": {
         "description": "Destination for the shared overdub decay inherited by tracks."
     },
+    "oneShotSettingsRefusedTitle": "Playback change was not applied",
+    "@oneShotSettingsRefusedTitle": {
+        "description": "Playback preference could not be confirmed."
+    },
+    "oneShotSettingsRecoveryTitle": "Playback settings need recovery",
+    "@oneShotSettingsRecoveryTitle": {
+        "description": "Persistent recovery title for a Loop/Once preference."
+    },
+    "oneShotSettingsRecoveryBody": "Retry to recover the playback setting.",
+    "@oneShotSettingsRecoveryBody": {
+        "description": "Explicit retry for a failed playback preference."
+    },
     "decaySettingsRefusedTitle": "Decay change was not applied",
     "@decaySettingsRefusedTitle": {
         "description": "Toast title after a decay setting is refused."

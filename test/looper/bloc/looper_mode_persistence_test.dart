@@ -23,6 +23,7 @@ le.EngineSnapshot _stopped(LooperMode mode) => le.EngineSnapshot(
   latencyState: le.LatencyState.idle,
   measuredLatencyMs: -1,
   looperMode: mode,
+  tracks: List.generate(8, (_) => const le.TrackSnapshot.empty()),
 );
 
 void main() {
@@ -46,6 +47,7 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = LooperBloc(
       decayControl: FakeDecayControl(),
+      oneShotControl: FakeOneShotControl(),
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,

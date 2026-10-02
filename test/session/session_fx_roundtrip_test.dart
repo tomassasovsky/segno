@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -120,6 +121,10 @@ void main() {
         decay: DecaySnapshot(
           defaultPercent: looper.defaultOverdubDecay,
           trackOverrides: looper.trackOverdubDecayOverrides,
+        ),
+        oneShot: OneShotSnapshot(
+          defaultOneShot: looper.defaultOneShot,
+          trackOverrides: looper.trackOneShotOverrides,
         ),
       ),
     );

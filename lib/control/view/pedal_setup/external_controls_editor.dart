@@ -6,6 +6,7 @@ import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/pedal_setup/control_row_list.dart';
+import 'package:segno/control/view/playback_endpoint_choice.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -441,23 +442,36 @@ class ExternalControlsEditor extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          LoopSlider(
-            key: Key('external_value_$id'),
-            value: value,
-            width: 500,
-            semanticLabel: '${row.name} $name',
-            semanticValueBuilder: (normalized) => controlValueReadout(
-              context.l10n,
-              parameter.target,
-              normalized,
+          if (parameter.target is OneShotValueTarget)
+            PlaybackEndpointChoice(
+              key: Key(
+                'external_value_${id}_${parameter.target.canonicalString()}',
+              ),
+              value: value,
+              width: 500,
+              enabled: row.available,
+              keyPrefix: 'external_value_$id',
+              onChanged: (next) => onValue(active: active, value: next),
+            )
+          else
+            LoopSlider(
+              key: Key('external_value_$id'),
+              value: value,
+              width: 500,
+              semanticLabel: '${row.name} $name',
+              semanticValueBuilder: (normalized) => controlValueReadout(
+                context.l10n,
+                parameter.target,
+                normalized,
+              ),
+              // Moving a value writes the draft, never the parameter: the
+              // accepted design is explicit that editing a mapping dispatches
+              // nothing.
+              enabled: row.available,
+              onChanged: (next) => onValue(active: active, value: next),
+              onEditCancel: (opening) =>
+                  onValue(active: active, value: opening),
             ),
-            // Moving a value writes the draft, never the parameter: the
-            // accepted design is explicit that editing a mapping dispatches
-            // nothing.
-            enabled: row.available,
-            onChanged: (next) => onValue(active: active, value: next),
-            onEditCancel: (opening) => onValue(active: active, value: opening),
-          ),
         ],
       ),
     );

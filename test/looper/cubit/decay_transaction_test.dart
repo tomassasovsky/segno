@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno_engine/segno_engine.dart'
+    show EngineSnapshot, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_audio_engine.dart';
@@ -78,7 +80,10 @@ void main() {
     late LooperRepository repository;
     late SettingsRepository settings;
     setUp(() {
-      engine = _Engine();
+      engine = _Engine()
+        ..nextSnapshot = const EngineSnapshot.initial().copyWith(
+          tracks: List.generate(8, (_) => const TrackSnapshot.empty()),
+        );
       store = _Store();
       repository = LooperRepository(
         engine: engine,
@@ -262,7 +267,7 @@ void main() {
         expect(store.writes, writes);
         expect(owner.decaySnapshot!.defaultPercent, 40);
         await expectLater(
-          owner.runDecayExclusive(() async {}),
+          owner.runPlaybackExclusive(() async {}),
           throwsStateError,
         );
         expect((await owner.recoverDecay()).isOk, isTrue);

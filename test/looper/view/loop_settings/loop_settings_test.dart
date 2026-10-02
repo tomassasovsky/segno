@@ -53,6 +53,7 @@ void main() {
   late int confirmedDecay;
   late Map<int, int> confirmedTrackDecay;
   late bool confirmedOneShot;
+  late Map<int, bool> confirmedTrackOneShot;
 
   setUpAll(() {
     registerFallbackValue(const LooperRecordPressed(0));
@@ -74,6 +75,7 @@ void main() {
     confirmedDecay = 0;
     confirmedTrackDecay = {};
     confirmedOneShot = false;
+    confirmedTrackOneShot = {};
     when(() => repository.sessionRevision).thenAnswer((_) => sessionRevision);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
@@ -90,6 +92,55 @@ void main() {
       ),
     );
     when(() => repository.defaultOneShot).thenAnswer((_) => confirmedOneShot);
+    when(() => repository.trackOneShotOverrides).thenAnswer(
+      (_) => Map.unmodifiable(confirmedTrackOneShot),
+    );
+    when(() => repository.oneShotSettingsSettled).thenReturn(true);
+    when(() => repository.oneShotRecoveryRequired).thenReturn(false);
+    when(
+      () => repository.settleOneShot(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.oneShotRestartIntent).thenAnswer(
+      (_) => (
+        defaultOneShot: confirmedOneShot,
+        trackOverrides: Map<int, bool>.unmodifiable(confirmedTrackOneShot),
+      ),
+    );
+    when(
+      () => repository.setOneShotRestartIntent(
+        defaultOneShot: any(named: 'defaultOneShot'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((_) {});
+    when(
+      () => repository.setOneShotSnapshot(
+        defaultOneShot: any(named: 'defaultOneShot'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedOneShot = call.namedArguments[#defaultOneShot] as bool;
+      confirmedTrackOneShot = Map.of(
+        call.namedArguments[#trackOverrides] as Map<int, bool>,
+      );
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setOneShot(
+        channel: any(named: 'channel'),
+        oneShot: any(named: 'oneShot'),
+        releasedOneShot: any(named: 'releasedOneShot'),
+      ),
+    ).thenAnswer((call) {
+      final channel = call.namedArguments[#channel] as int;
+      final value = call.namedArguments[#oneShot] as bool?;
+      if (value == null) {
+        confirmedTrackOneShot.remove(channel);
+      } else {
+        confirmedTrackOneShot[channel] = value;
+      }
+      return EngineResult.ok;
+    });
+
     when(
       () => repository.setDecayRestartIntent(
         defaultPercent: any(named: 'defaultPercent'),
@@ -178,7 +229,10 @@ void main() {
           }),
       () =>
           when(
-            () => repository.setDefaultOneShot(oneShot: any(named: 'oneShot')),
+            () => repository.setDefaultOneShot(
+              oneShot: any(named: 'oneShot'),
+              releasedOneShot: any(named: 'releasedOneShot'),
+            ),
           ).thenAnswer((call) {
             confirmedOneShot = call.namedArguments[#oneShot] as bool;
             return EngineResult.ok;
@@ -201,6 +255,11 @@ void main() {
       if (value != null) confirmedTrackDecay[track.channel] = value;
     }
     confirmedOneShot = state.transport.defaultOneShot;
+    confirmedTrackOneShot = {
+      for (final track in state.tracks)
+        if (track.oneShotOverride != null)
+          track.channel: track.oneShotOverride!,
+    };
     when(() => bloc.state).thenReturn(state);
     whenListen(bloc, states.stream, initialState: state);
   }
@@ -231,6 +290,10 @@ void main() {
     await settings.saveOverdubDecay(confirmedDecay);
     for (final entry in confirmedTrackDecay.entries) {
       await settings.saveTrackOverdubDecay(entry.key, entry.value);
+    }
+    await settings.saveDefaultOneShot(oneShot: confirmedOneShot);
+    for (final entry in confirmedTrackOneShot.entries) {
+      await settings.saveTrackOneShot(entry.key, oneShot: entry.value);
     }
     tempo = TempoCubit(repository: repository, settings: settings);
     options = RecordOptionsCubit(repository: repository, settings: settings);

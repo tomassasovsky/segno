@@ -25,6 +25,8 @@ String controlValueReadout(
     (target.toDomain(normalized) * 100).round(),
   ),
   DecayValueTarget() => _decayReadout(l10n, target.toDomain(normalized)),
+  OneShotValueTarget() =>
+    target.toDomain(normalized) ? l10n.loopPlaybackOnce : l10n.loopPlaybackLoop,
   MasterGainTarget() => signalGainReadout(normalized),
 };
 

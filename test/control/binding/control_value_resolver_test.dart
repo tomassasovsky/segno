@@ -3,6 +3,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -225,6 +226,56 @@ void main() {
           decaySnapshot: snapshot,
         ),
         0.8,
+      );
+    });
+
+    test('Loop/Once distinguishes an unready owner from explicit Loop', () {
+      final snapshot = OneShotSnapshot(
+        defaultOneShot: true,
+        trackOverrides: const {0: false, 7: true},
+      );
+      expect(
+        looper.availableValueTargets().whereType<OneShotValueTarget>(),
+        isEmpty,
+      );
+      expect(looper.valueTargetResolves(const DefaultOneShotTarget()), isFalse);
+      expect(looper.readValueTarget(const TrackOneShotTarget(0)), isNull);
+      final offered = looper
+          .availableValueTargets(oneShotSnapshot: snapshot)
+          .whereType<OneShotValueTarget>()
+          .toList();
+      expect(offered.first, const DefaultOneShotTarget());
+      expect(
+        offered.whereType<TrackOneShotTarget>().map((t) => t.channel),
+        List.generate(8, (index) => index),
+      );
+      expect(
+        looper.valueTargetResolves(
+          const TrackOneShotTarget(8),
+          oneShotSnapshot: snapshot,
+        ),
+        isFalse,
+      );
+      expect(
+        looper.readValueTarget(
+          const DefaultOneShotTarget(),
+          oneShotSnapshot: snapshot,
+        ),
+        1,
+      );
+      expect(
+        looper.readValueTarget(
+          const TrackOneShotTarget(0),
+          oneShotSnapshot: snapshot,
+        ),
+        0,
+      );
+      expect(
+        looper.readValueTarget(
+          const TrackOneShotTarget(1),
+          oneShotSnapshot: snapshot,
+        ),
+        1,
       );
     });
 

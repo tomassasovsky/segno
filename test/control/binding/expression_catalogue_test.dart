@@ -8,6 +8,7 @@ import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -304,6 +305,40 @@ void main() {
         );
       },
     );
+
+    test('Loop/Once shares one Playback group after decay', () {
+      final destinations = expressionDestinations(
+        l10n,
+        names,
+        looper,
+        decaySnapshot: DecaySnapshot(
+          defaultPercent: 75,
+          trackOverrides: const {},
+        ),
+        oneShotSnapshot: OneShotSnapshot(
+          defaultOneShot: false,
+          trackOverrides: const {0: true},
+        ),
+      );
+      final defaults = destinations.singleWhere(
+        (destination) => destination.id == 'loop:defaults',
+      );
+      expect(defaults.groups, hasLength(1));
+      expect(defaults.groups.single.label, l10n.loopPlaybackLabel);
+      expect(
+        defaults.controls.map((row) => row.target),
+        [const DefaultDecayTarget(), const DefaultOneShotTarget()],
+      );
+      for (var channel = 0; channel < 8; channel++) {
+        final track = destinations.singleWhere(
+          (destination) => destination.id == 'track:$channel',
+        );
+        expect(
+          track.controls.whereType<ExpressionControl>().map((c) => c.target),
+          contains(TrackOneShotTarget(channel)),
+        );
+      }
+    });
 
     test('the Mixer-only catalogue avoids FX enumeration and keeps order', () {
       status = const EngineStatus(inputChannels: 2, outputChannels: 2);

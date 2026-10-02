@@ -1,0 +1,154 @@
+{
+  "suites": [
+    {
+      "suite": "app",
+      "success": 2666,
+      "hidden": 215,
+      "skips": 112,
+      "covered": 24836,
+      "lines": 27354,
+      "percent": 90.79476493383052,
+      "result": {
+        "name": "app",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 81.5,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "--coverage",
+          "--exclude-tags",
+          "screenshots",
+          "--reporter",
+          "json"
+        ],
+        "coverage_sha256": "d1f341c675b074ad3407e6b2a8ee033235372f11d9bf3c9ad98a879d1b802f99"
+      },
+      "bindingUnchanged": true,
+      "reusedFrom": null
+    },
+    {
+      "suite": "looper_repository",
+      "success": 686,
+      "hidden": 24,
+      "skips": 12,
+      "covered": 4075,
+      "lines": 4256,
+      "percent": 95.74718045112782,
+      "result": {
+        "name": "looper_repository",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 7.9,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "--coverage",
+          "--exclude-tags",
+          "screenshots",
+          "--reporter",
+          "json"
+        ],
+        "coverage_sha256": "35bd9c00c7cbe0a4c5fed369ebaaaeae942c56bc7d34c111caaca3bcb6f47fad"
+      },
+      "bindingUnchanged": true,
+      "reusedFrom": null
+    },
+    {
+      "suite": "settings_repository",
+      "success": 166,
+      "hidden": 3,
+      "skips": 0,
+      "covered": 721,
+      "lines": 801,
+      "percent": 90.01248439450687,
+      "result": {
+        "name": "settings_repository",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 2.0,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "--coverage",
+          "--exclude-tags",
+          "screenshots",
+          "--reporter",
+          "json"
+        ],
+        "coverage_sha256": "3fb9c66494d7ae6c4e14e3dba1b73367812d4589fcc4a79663b247dbf2b15477"
+      },
+      "bindingUnchanged": true,
+      "reusedFrom": "M3.13 v1"
+    },
+    {
+      "suite": "controller_repository",
+      "success": 33,
+      "hidden": 5,
+      "skips": 0,
+      "covered": 515,
+      "lines": 617,
+      "percent": 83.46839546191248,
+      "result": {
+        "name": "controller_repository",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 1.7,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "--coverage",
+          "--exclude-tags",
+          "screenshots",
+          "--reporter",
+          "json"
+        ],
+        "coverage_sha256": "b634b327aa8cd3b5bda3fb396238fab3ac2965bd6350e037683526510b27d703"
+      },
+      "bindingUnchanged": true,
+      "reusedFrom": "M3.12"
+    }
+  ],
+  "appExclusions": [
+    "**/window_chrome.dart",
+    "**/waveform_window*.dart",
+    "**/run_segno.dart",
+    "**/bootstrap.dart",
+    "**/session_directory.dart",
+    "**/system_appliance_env.dart"
+  ],
+  "static": {
+    "results": [
+      {
+        "check": "format",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 1.83
+      },
+      {
+        "check": "analyze",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 29.71
+      },
+      {
+        "check": "bloc",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 4.17
+      },
+      {
+        "check": "whitespace",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 0.15
+      }
+    ],
+    "fileCount": 733,
+    "changed": []
+  }
+}

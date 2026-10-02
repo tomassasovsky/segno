@@ -260,6 +260,37 @@ class LooperRepository {
       ..addAll(trackOverrides);
   }
 
+  bool _restartOneShot = false;
+  final Map<int, bool> _restartTrackOneShot = {};
+  _PendingOneShot? _pendingOneShot;
+  _OneShotIntent? _oneShotRecoveryIntent;
+  _OneShotIntent? _oneShotRecoveryRestart;
+  EngineResult _lastOneShotResult = EngineResult.ok;
+
+  /// Whether an uncertain callback requires explicit recovery before replay.
+  bool get oneShotRecoveryRequired => _oneShotRecoveryIntent != null;
+
+  /// Durable membership for engine restart and named session capture.
+  ({bool defaultOneShot, Map<int, bool> trackOverrides})
+  get oneShotRestartIntent => (
+    defaultOneShot: _restartOneShot,
+    trackOverrides: Map.unmodifiable(_restartTrackOneShot),
+  );
+
+  /// Sets authored Released intent without changing audible playback.
+  void setOneShotRestartIntent({
+    required bool defaultOneShot,
+    required Map<int, bool> trackOverrides,
+  }) {
+    if (trackOverrides.keys.any((c) => c < 0 || c >= 8)) {
+      throw ArgumentError('Invalid playback track');
+    }
+    _restartOneShot = defaultOneShot;
+    _restartTrackOneShot
+      ..clear()
+      ..addAll(trackOverrides);
+  }
+
   /// Per-track forced loop multiples (absent => auto). The global rec/dub and
   /// auto-record (sound-activated) flags. All re-applied on every (re)start.
   final Map<int, int> _trackMultiple = {};
@@ -687,6 +718,7 @@ class LooperRepository {
 
   void _cancelMix() {
     _cancelClickVolume();
+    _cancelOneShot();
     _mixGeneration++;
     if (_pendingImages.isNotEmpty) _settleImages(_engine.snapshot());
     final pending = _pendingMix;
@@ -1642,6 +1674,7 @@ class LooperRepository {
   }
 
   void _poll() {
+    final onceSettled = _settlePendingOneShot();
     final clickSettled = _settlePendingClickVolume();
     final lengthSettled = _settlePendingLengthSettings();
     final mixSettled = _settlePendingMix();
@@ -1662,7 +1695,13 @@ class LooperRepository {
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (next == _last && !clickSettled && !lengthSettled && !mixSettled) return;
+    if (next == _last &&
+        !onceSettled &&
+        !clickSettled &&
+        !lengthSettled &&
+        !mixSettled) {
+      return;
+    }
     _last = next;
     _forgetEmptyWaveforms(next);
     // Before listeners see it: `auto` monitors resolve against the arm state
@@ -1677,6 +1716,7 @@ class LooperRepository {
   /// param the UI drives — reflects on the next frame rather than waiting for
   /// the next poll tick (which would make a dragged knob feel a tick behind).
   void _reproject() {
+    final onceSettled = _settlePendingOneShot();
     final clickSettled = _settlePendingClickVolume();
     final lengthSettled = _settlePendingLengthSettings();
     final mixSettled = _settlePendingMix();
@@ -1685,7 +1725,13 @@ class LooperRepository {
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (next == _last && !clickSettled && !lengthSettled && !mixSettled) return;
+    if (next == _last &&
+        !onceSettled &&
+        !clickSettled &&
+        !lengthSettled &&
+        !mixSettled) {
+      return;
+    }
     _last = next;
     _forgetEmptyWaveforms(next);
     _reconcileAutoMonitors();
@@ -1965,10 +2011,13 @@ class LooperRepository {
 
   /// Opens the audio device and starts processing.
   EngineResult startEngine(EngineConfig config) {
-    if (_mixRecoveryStartBlocked || _clickRecoveryStartBlocked) {
+    if (_mixRecoveryStartBlocked ||
+        _clickRecoveryStartBlocked ||
+        oneShotRecoveryRequired) {
       return EngineResult.notReady;
     }
     _cancelClickVolume();
+    _cancelOneShot();
     final replayedPriorEngine = _hasOpenedEngine;
     _mixGeneration++;
     final result = _engine.start(engineConfigToEngine(config));
@@ -2055,16 +2104,15 @@ class LooperRepository {
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
       );
-      _trackOneShot.forEach((channel, oneShot) {
-        _engine.setOneShot(channel: channel, oneShot: oneShot);
-      });
-      if (_defaultOneShot) {
-        final tracks = _engine.snapshot().tracks;
-        for (var channel = 0; channel < tracks.length; channel++) {
-          if (!_trackOneShot.containsKey(channel)) {
-            _engine.setOneShot(channel: channel, oneShot: true);
-          }
-        }
+      final onceResult = _requestOneShot(
+        _OneShotIntent(_restartTrackOneShot, defaultValue: _restartOneShot),
+        0xff,
+        replay: true,
+        startup: true,
+      );
+      if (!onceResult.isOk) {
+        stopEngine();
+        return onceResult;
       }
       _decayReplayResult = _engine.setOverdubFeedback(
         feedbackOfDecay(_restartOverdubDecay),
@@ -3201,6 +3249,9 @@ class LooperRepository {
     final revision = ++_sessionRevision;
     _cancelLengthSettings();
     _cancelMix();
+    _oneShotRecoveryIntent = null;
+    _oneShotRecoveryRestart = null;
+    _lastOneShotResult = EngineResult.ok;
     // Own the settings before the first await. Callers may reuse their maps.
     final recordTimingOverrides = Map.of(rig.trackRecordTimingOverrides);
     final overdubDecayOverrides = Map.of(rig.trackOverdubDecayOverrides);
@@ -3257,6 +3308,7 @@ class LooperRepository {
     // One Shot must be explicitly turned off below or a prior session/live
     // flag would bleed into the freshly loaded one.
     _trackOneShot.clear();
+    _restartTrackOneShot.clear();
     // Same for the record timing and decay overrides (slice 2b): per-track
     // settings that survive `clear`, reset below and re-armed from the rig.
     _trackRecordTiming.clear();
@@ -3322,7 +3374,7 @@ class LooperRepository {
       _requireSessionSetting(setQuantizeDiv(rig.quantizeDiv));
     }
     _requireSessionSetting(setOverdubDecay(rig.overdubDecay));
-    _requireSessionSetting(setDefaultOneShot(oneShot: rig.defaultOneShot));
+
     _requireSessionSetting(setDefaultMultiple(multiple: rig.defaultMultiple));
     _requireSessionSetting(setRecDub(enabled: rig.recDub));
     _requireSessionSetting(setAutoRecord(enabled: rig.autoRecord));
@@ -3470,18 +3522,20 @@ class LooperRepository {
       }
     }
 
+    _requireSessionSetting(
+      setOneShotSnapshot(
+        defaultOneShot: rig.defaultOneShot,
+        trackOverrides: oneShotOverrides,
+      ),
+    );
+    _requireSessionSetting(await settleOneShot());
+
     // Settings have one content-independent owner. Empty tracks and custom
     // values equal to defaults restore through the same maps as recorded ones.
     // Before device startup there is no native track array yet, but the eight
     // product tracks still own settings that must be replayed on first start.
     final settingsTrackCount = _intendRunning ? trackCount : 8;
     for (var channel = 0; channel < settingsTrackCount; channel++) {
-      _requireSessionSetting(
-        setOneShot(
-          channel: channel,
-          oneShot: oneShotOverrides[channel],
-        ),
-      );
       _requireSessionSetting(
         setTrackRecordTiming(
           channel: channel,
@@ -6757,39 +6811,233 @@ class LooperRepository {
 
   /// Sets a playback override. `null` removes only this override, making
   /// the track follow [defaultOneShot] again. Audio and history are unchanged.
-  EngineResult setOneShot({required int channel, required bool? oneShot}) {
+  EngineResult setOneShot({
+    required int channel,
+    required bool? oneShot,
+    bool? releasedOneShot,
+  }) {
     if (channel < 0 || channel >= 8) return EngineResult.invalid;
-    if (_intendRunning) {
-      final result = _engine.setOneShot(
-        channel: channel,
-        oneShot: oneShot ?? _defaultOneShot,
-      );
-      if (!result.isOk) return result;
-    }
+    final overrides = Map<int, bool>.of(_trackOneShot);
     if (oneShot == null) {
-      _trackOneShot.remove(channel);
+      overrides.remove(channel);
     } else {
-      _trackOneShot[channel] = oneShot;
+      overrides[channel] = oneShot;
     }
-    _reproject();
+    final durable = Map<int, bool>.of(_restartTrackOneShot);
+    final released = releasedOneShot ?? oneShot;
+    if (released == null) {
+      durable.remove(channel);
+    } else {
+      durable[channel] = released;
+    }
+    return _requestOneShot(
+      _OneShotIntent(overrides, defaultValue: _defaultOneShot),
+      1 << channel,
+      restart: _OneShotIntent(durable, defaultValue: _restartOneShot),
+    );
+  }
+
+  /// Changes the default for inheritors; Custom false remains Custom.
+  EngineResult setDefaultOneShot({
+    required bool oneShot,
+    bool? releasedOneShot,
+  }) {
+    var mask = 0;
+    for (var c = 0; c < 8; c++) {
+      if (!_trackOneShot.containsKey(c)) mask |= 1 << c;
+    }
+    return _requestOneShot(
+      _OneShotIntent(_trackOneShot, defaultValue: oneShot),
+      mask,
+      restart: _OneShotIntent(
+        _restartTrackOneShot,
+        defaultValue: releasedOneShot ?? oneShot,
+      ),
+    );
+  }
+
+  /// Applies one coherent default/override vector for startup or session recall.
+  EngineResult setOneShotSnapshot({
+    required bool defaultOneShot,
+    required Map<int, bool> trackOverrides,
+  }) {
+    if (trackOverrides.keys.any((c) => c < 0 || c >= 8)) {
+      return EngineResult.invalid;
+    }
+    return _requestOneShot(
+      _OneShotIntent(trackOverrides, defaultValue: defaultOneShot),
+      0xff,
+      replay: true,
+    );
+  }
+
+  void _acceptOneShot(_OneShotIntent intent, {_OneShotIntent? restart}) {
+    _defaultOneShot = intent.defaultValue;
+    _trackOneShot
+      ..clear()
+      ..addAll(intent.overrides);
+    setOneShotRestartIntent(
+      defaultOneShot: (restart ?? intent).defaultValue,
+      trackOverrides: (restart ?? intent).overrides,
+    );
+  }
+
+  EngineResult _requestOneShot(
+    _OneShotIntent intent,
+    int mask, {
+    bool replay = false,
+    bool startup = false,
+    _OneShotIntent? restart,
+  }) {
+    if (_pendingOneShot != null || oneShotRecoveryRequired) {
+      return EngineResult.notReady;
+    }
+    if (!_intendRunning || mask == 0) {
+      _acceptOneShot(intent, restart: restart);
+      _lastOneShotResult = EngineResult.ok;
+      _reproject();
+      return EngineResult.ok;
+    }
+    var admitted = false;
+    for (final choice in [false, true]) {
+      var choiceMask = 0;
+      for (var c = 0; c < 8; c++) {
+        if ((mask & (1 << c)) != 0 && intent.effective(c) == choice) {
+          choiceMask |= 1 << c;
+        }
+      }
+      if (choiceMask == 0) continue;
+      final result = _engine.setOneShotMask(
+        channels: choiceMask,
+        oneShot: choice,
+      );
+      if (!result.isOk) {
+        if (admitted) {
+          _oneShotRecoveryIntent = replay
+              ? intent
+              : _OneShotIntent(_trackOneShot, defaultValue: _defaultOneShot);
+          _oneShotRecoveryRestart = replay
+              ? (restart ?? intent)
+              : _OneShotIntent(
+                  _restartTrackOneShot,
+                  defaultValue: _restartOneShot,
+                );
+          _lastOneShotResult = result;
+          stopEngine();
+        }
+        return result;
+      }
+      admitted = true;
+    }
+    final pending = _PendingOneShot(
+      intent,
+      mask,
+      replay
+          ? intent
+          : _OneShotIntent(_trackOneShot, defaultValue: _defaultOneShot),
+      restart ?? intent,
+      replay
+          ? (restart ?? intent)
+          : _OneShotIntent(_restartTrackOneShot, defaultValue: _restartOneShot),
+    );
+    _pendingOneShot = pending;
+    // Autonomous replay has a deadline even without a UI poll or later edit.
+    pending.timer = Timer.periodic(const Duration(milliseconds: 10), (timer) {
+      if (!identical(_pendingOneShot, pending)) {
+        timer.cancel();
+        return;
+      }
+      if (_settlePendingOneShot()) {
+        _reproject();
+        return;
+      }
+      if (++pending.polls >= 50) {
+        _failOneShot(pending, EngineResult.notReady);
+        _reproject();
+      }
+    });
+    if (!startup) _reproject();
     return EngineResult.ok;
   }
 
-  /// Changes the playback default for tracks which inherit it. Custom Loop
-  /// and Once choices remain custom, even if they equal the new default.
-  EngineResult setDefaultOneShot({required bool oneShot}) {
-    if (_intendRunning) {
-      final tracks = _engine.snapshot().tracks;
-      var mask = 0;
-      for (var channel = 0; channel < tracks.length; channel++) {
-        if (!_trackOneShot.containsKey(channel)) mask |= 1 << channel;
-      }
-      if (mask != 0) {
-        final result = _engine.setOneShotMask(channels: mask, oneShot: oneShot);
-        if (!result.isOk) return result;
+  /// True only after actual callback bits match the admitted effective vector.
+  bool get oneShotSettingsSettled {
+    _settlePendingOneShot();
+    return _pendingOneShot == null &&
+        _lastOneShotResult.isOk &&
+        !oneShotRecoveryRequired;
+  }
+
+  bool _settlePendingOneShot() {
+    final pending = _pendingOneShot;
+    if (pending == null || !_engine.commandsSettled) return false;
+    final tracks = _engine.snapshot().tracks;
+    for (var c = 0; c < 8; c++) {
+      if ((pending.mask & (1 << c)) != 0 &&
+          (c >= tracks.length ||
+              tracks[c].oneShot != pending.intent.effective(c))) {
+        _failOneShot(pending, EngineResult.invalid);
+        return true;
       }
     }
-    _defaultOneShot = oneShot;
+    _pendingOneShot = null;
+    pending.timer?.cancel();
+    _acceptOneShot(pending.intent, restart: pending.restart);
+    _lastOneShotResult = EngineResult.ok;
+    pending.completed.complete(EngineResult.ok);
+    return true;
+  }
+
+  void _failOneShot(_PendingOneShot pending, EngineResult result) {
+    if (!identical(_pendingOneShot, pending)) return;
+    _pendingOneShot = null;
+    pending.timer?.cancel();
+    _oneShotRecoveryIntent = pending.recovery;
+    _oneShotRecoveryRestart = pending.recoveryRestart;
+    _lastOneShotResult = result;
+    pending.completed.complete(result);
+    stopEngine();
+  }
+
+  void _cancelOneShot() {
+    final pending = _pendingOneShot;
+    _pendingOneShot = null;
+    pending?.timer?.cancel();
+    if (pending != null) {
+      _lastOneShotResult = EngineResult.notReady;
+      pending.completed.complete(EngineResult.notReady);
+    }
+  }
+
+  /// Waits for a callback receipt, with a lifetime-bound timeout.
+  Future<EngineResult> settleOneShot({
+    Duration pollInterval = const Duration(milliseconds: 10),
+    int attempts = 50,
+  }) async {
+    final pending = _pendingOneShot;
+    if (pending == null) return _lastOneShotResult;
+    for (var i = 0; i < attempts; i++) {
+      if (pending.completed.isCompleted) return pending.completed.future;
+      if (_settlePendingOneShot()) _reproject();
+      if (pending.completed.isCompleted) return pending.completed.future;
+      await Future<void>.delayed(pollInterval);
+    }
+    if (pending.completed.isCompleted) return pending.completed.future;
+    _failOneShot(pending, EngineResult.notReady);
+    return pending.completed.future;
+  }
+
+  /// Explicitly makes a stopped uncertain rig coherent and safe to restart.
+  /// This does not claim the device is running or replay a prior lifetime.
+  EngineResult recoverOneShotSettings() {
+    final recovery = _oneShotRecoveryIntent;
+    if (recovery == null) return _lastOneShotResult;
+    if (_intendRunning) return EngineResult.notReady;
+    final restart = _oneShotRecoveryRestart;
+    _oneShotRecoveryIntent = null;
+    _oneShotRecoveryRestart = null;
+    _acceptOneShot(recovery, restart: restart);
+    _lastOneShotResult = EngineResult.ok;
     _reproject();
     return EngineResult.ok;
   }
@@ -6995,4 +7243,30 @@ class _PendingClickVolume {
   final double volume;
   final double restartVolume;
   final completed = Completer<EngineResult>();
+}
+
+final class _OneShotIntent {
+  _OneShotIntent(Map<int, bool> overrides, {required this.defaultValue})
+    : overrides = Map.unmodifiable(overrides);
+  final bool defaultValue;
+  final Map<int, bool> overrides;
+  bool effective(int channel) => overrides[channel] ?? defaultValue;
+}
+
+final class _PendingOneShot {
+  _PendingOneShot(
+    this.intent,
+    this.mask,
+    this.recovery,
+    this.restart,
+    this.recoveryRestart,
+  );
+  final _OneShotIntent intent;
+  final int mask;
+  final _OneShotIntent recovery;
+  final _OneShotIntent restart;
+  final _OneShotIntent recoveryRestart;
+  final completed = Completer<EngineResult>();
+  Timer? timer;
+  int polls = 0;
 }

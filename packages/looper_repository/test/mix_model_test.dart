@@ -9,7 +9,7 @@ import 'package:segno_engine/segno_engine.dart' as le show LatencyState;
 
 import 'helpers/fake_audio_engine.dart';
 
-/// A running two-input, two-output rig with [count] empty tracks.
+/// A fixed-eight-track rig with [count] tracks in the authored state.
 EngineSnapshot _rig(
   int count, {
   TrackState state = TrackState.empty,
@@ -50,6 +50,7 @@ EngineSnapshot _rig(
           ),
         ],
       ),
+    for (var i = count; i < 8; i++) const TrackSnapshot.empty(),
   ],
 );
 
@@ -281,11 +282,11 @@ void main() {
         ..startEngine(const EngineConfig());
       expect(repo.trackSoloed(1), isTrue);
       expect(repo.trackSoloed(0), isFalse);
-      expect(engine.trackSolo, {0: false, 1: true});
+      expect(engine.trackSolo, {for (var c = 0; c < 8; c++) c: c == 1});
       repo
         ..setTrackSolo(channel: 0, solo: true)
         ..clearSolo();
-      expect(engine.trackSolo, {0: false, 1: false});
+      expect(engine.trackSolo, {for (var c = 0; c < 8; c++) c: false});
       expect(repo.trackSoloed(1), isFalse);
     });
 
@@ -306,7 +307,8 @@ void main() {
       expect(repo.resetMixer(), EngineResult.ok);
       expect(repo.trackPan(2), 0);
       repo.startEngine(const EngineConfig());
-      expect(engine.lanePan[(2, 0)], isNull);
+      // Slot2 exists in the fixed native rig and replays centered.
+      expect(engine.lanePan[(2, 0)], 0);
     });
 
     test('resets track gain and pan, keeps part level, mute and solo', () {
@@ -838,7 +840,7 @@ void main() {
         measuredLatencyMs: -1,
         outputBusCount: 2,
         tailResetRev: 3,
-        tracks: [for (var i = 0; i < 2; i++) const TrackSnapshot.empty()],
+        tracks: [for (var i = 0; i < 8; i++) const TrackSnapshot.empty()],
       );
       ticker.add(null);
       expect(repo.state.outputBusCount, 2);

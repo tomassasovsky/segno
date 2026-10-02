@@ -24,6 +24,31 @@ void main() {
     when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
     var decay = 0;
     var once = false;
+    final onceOverrides = <int, bool>{};
+    when(() => repository.oneShotRecoveryRequired).thenReturn(false);
+    when(() => repository.oneShotSettingsSettled).thenReturn(true);
+    when(
+      () => repository.settleOneShot(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(
+      () => repository.trackOneShotOverrides,
+    ).thenAnswer((_) => Map.of(onceOverrides));
+    when(() => repository.oneShotRestartIntent).thenAnswer(
+      (_) => (defaultOneShot: once, trackOverrides: Map.of(onceOverrides)),
+    );
+    when(
+      () => repository.setOneShotSnapshot(
+        defaultOneShot: any(named: 'defaultOneShot'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      once = call.namedArguments[#defaultOneShot] as bool;
+      onceOverrides
+        ..clear()
+        ..addAll(call.namedArguments[#trackOverrides] as Map<int, bool>);
+      return EngineResult.ok;
+    });
+
     final overrides = <int, int>{};
     when(() => repository.defaultOverdubDecay).thenAnswer((_) => decay);
     when(() => repository.defaultOneShot).thenAnswer((_) => once);
@@ -58,7 +83,10 @@ void main() {
       return EngineResult.ok;
     });
     when(
-      () => repository.setDefaultOneShot(oneShot: any(named: 'oneShot')),
+      () => repository.setDefaultOneShot(
+        oneShot: any(named: 'oneShot'),
+        releasedOneShot: any(named: 'releasedOneShot'),
+      ),
     ).thenAnswer((call) {
       once = call.namedArguments[#oneShot] as bool;
       return EngineResult.ok;
@@ -80,7 +108,14 @@ void main() {
       setUp: () => settings.saveOverdubDecay(25),
       build: build,
       act: (cubit) => cubit.load(),
-      expect: () => [const PlaybackOptions(overdubDecay: 25, decayReady: true)],
+      expect: () => [
+        const PlaybackOptions(overdubDecay: 25, decayReady: true),
+        const PlaybackOptions(
+          overdubDecay: 25,
+          decayReady: true,
+          oneShotReady: true,
+        ),
+      ],
       verify: (_) => verify(() => repository.setOverdubDecay(25)).called(1),
     );
 
@@ -112,11 +147,18 @@ void main() {
       build: build,
       act: (cubit) => cubit.load(),
       expect: () => [
-        const PlaybackOptions(defaultOneShot: true),
-        const PlaybackOptions(defaultOneShot: true, decayReady: true),
+        const PlaybackOptions(decayReady: true),
+        const PlaybackOptions(
+          defaultOneShot: true,
+          decayReady: true,
+          oneShotReady: true,
+        ),
       ],
       verify: (_) => verify(
-        () => repository.setDefaultOneShot(oneShot: true),
+        () => repository.setOneShotSnapshot(
+          defaultOneShot: true,
+          trackOverrides: any(named: 'trackOverrides'),
+        ),
       ).called(1),
     );
 
@@ -124,10 +166,14 @@ void main() {
       'setDefaultOneShot persists and reapplies a matching explicit value',
       build: build,
       act: (cubit) => cubit.setDefaultOneShot(value: false),
-      expect: () => [const PlaybackOptions()],
+      expect: () => [const PlaybackOptions(oneShotReady: true)],
       verify: (_) async {
         expect(await settings.loadDefaultOneShot(), isFalse);
-        verify(() => repository.setDefaultOneShot(oneShot: false)).called(1);
+        verify(
+          () => repository.setDefaultOneShot(
+            oneShot: false,
+          ),
+        ).called(1);
       },
     );
 
@@ -135,12 +181,14 @@ void main() {
       'refused Once changes leave the displayed and saved choice intact',
       setUp: () {
         when(
-          () => repository.setDefaultOneShot(oneShot: true),
+          () => repository.setDefaultOneShot(
+            oneShot: true,
+          ),
         ).thenReturn(EngineResult.invalid);
       },
       build: build,
       act: (cubit) => cubit.setDefaultOneShot(value: true),
-      expect: () => <PlaybackOptions>[],
+      expect: () => [const PlaybackOptions(oneShotReady: true)],
       verify: (_) async => expect(await settings.loadDefaultOneShot(), isFalse),
     );
 
@@ -149,7 +197,10 @@ void main() {
       setUp: () async {
         await settings.saveDefaultOneShot(oneShot: true);
         when(
-          () => repository.setDefaultOneShot(oneShot: true),
+          () => repository.setOneShotSnapshot(
+            defaultOneShot: true,
+            trackOverrides: any(named: 'trackOverrides'),
+          ),
         ).thenReturn(EngineResult.invalid);
       },
       build: build,
@@ -181,11 +232,17 @@ void main() {
       expect: () => [
         const PlaybackOptions(overdubDecay: 25, decayReady: true),
         const PlaybackOptions(
+          overdubDecay: 25,
+          decayReady: true,
+          oneShotReady: true,
+        ),
+        const PlaybackOptions(
           overdubDecay: 80,
           defaultOneShot: true,
           decayReady: true,
+          oneShotReady: true,
         ),
-        const PlaybackOptions(decayReady: true),
+        const PlaybackOptions(decayReady: true, oneShotReady: true),
       ],
       verify: (_) async {
         expect(await settings.loadOverdubDecay(), 25);

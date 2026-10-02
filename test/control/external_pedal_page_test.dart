@@ -98,6 +98,7 @@ void main() {
     control = ControlCubit(
       clickVolumeControl: FakeClickVolumeControl(),
       decayControl: playback,
+      oneShotControl: playback,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,

@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/common/write_debouncer.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -24,6 +25,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     required MixSettingsCoordinator mixSettings,
     required FxChainPersistence fxPersistence,
     required DecayControl decayControl,
+    required OneShotControl oneShotControl,
     SettingsRepository? settings,
     Duration fxPersistDebounce = const Duration(milliseconds: 300),
     bool Function() takeLocked = _neverLocked,
@@ -31,6 +33,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
        _decayControl = decayControl,
+       _oneShotControl = oneShotControl,
        _settings = settings,
        _takeLocked = takeLocked,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
@@ -778,15 +781,16 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _repository.trackLengthPresetOverrides[event.channel],
       );
     });
-    on<LooperOneShotToggled>((event, _) {
-      final result = _repository.setOneShot(
+    on<LooperOneShotToggled>((event, _) async {
+      final write = _oneShotControl.setTrackOneShot(
         channel: event.channel,
         oneShot: event.oneShot,
       );
-      if (result.isOk) {
-        unawaited(
-          _settings?.saveTrackOneShot(event.channel, oneShot: event.oneShot),
-        );
+      _oneShotWrites.add(write);
+      try {
+        await write;
+      } finally {
+        _oneShotWrites.remove(write);
       }
     });
     on<LooperTrackPanChanged>((event, _) {
@@ -886,6 +890,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperPersistFlush>((event, _) async {
       try {
         await Future.wait(_decayWrites.toList());
+        await Future.wait(_oneShotWrites.toList());
         _fxPersist.flush();
         await _fxPersistence.flush();
         event.receipt?.complete();
@@ -921,6 +926,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   final MixSettingsCoordinator _mixSettings;
   final FxChainPersistence _fxPersistence;
   final DecayControl _decayControl;
+  final OneShotControl _oneShotControl;
+  final _oneShotWrites = <Future<OneShotOutcome>>{};
   final _decayWrites = <Future<DecayOutcome>>{};
   final SettingsRepository? _settings;
   final bool Function() _takeLocked;

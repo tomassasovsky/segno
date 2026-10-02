@@ -119,6 +119,7 @@ void main() {
     addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
       decayControl: FakeDecayControl(),
+      oneShotControl: FakeOneShotControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: fxPersistence,
       looper: repository,

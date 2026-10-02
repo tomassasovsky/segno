@@ -28,6 +28,7 @@ import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -153,7 +154,11 @@ void main() {
     }
   }, skip: skip);
 
-  Future<void> pump(WidgetTester tester, {ExternalJackSetup? jack}) async {
+  Future<void> pump(
+    WidgetTester tester, {
+    ExternalJackSetup? jack,
+    OneShotSnapshot? oneShotSnapshot,
+  }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -176,9 +181,11 @@ void main() {
     final tempo = MockClickTempoCubit();
     final decay = MockDecayPlaybackCubit(
       snapshot: DecaySnapshot(defaultPercent: 25, trackOverrides: const {0: 0}),
+      oneShot: oneShotSnapshot,
     );
     final control = ControlCubit(
       decayControl: decay,
+      oneShotControl: decay,
       clickVolumeControl: tempo,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
@@ -522,6 +529,41 @@ void main() {
     expect(find.text('Off · Keep layers'), findsWidgets);
     expect(find.text('75%'), findsWidgets);
     await shot(tester, 'decay_held_released');
+  }, skip: !hasScreenshotFonts);
+
+  screenshotTestWidgets('a button holds Once and releases to Loop', (
+    tester,
+  ) async {
+    const target = TrackOneShotTarget(0);
+    await pump(
+      tester,
+      oneShotSnapshot: OneShotSnapshot(
+        defaultOneShot: false,
+        trackOverrides: const {0: true},
+      ),
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: target,
+                condition: ExternalValueCondition.heldReleased,
+                active: 1,
+                inactive: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    await tester.tap(
+      find.byKey(Key('external_control_value_${externalControlKey(target)}')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Loop'), findsWidgets);
+    expect(find.text('Once'), findsWidgets);
+    await shot(tester, 'playback_held_released');
   }, skip: !hasScreenshotFonts);
 
   screenshotTestWidgets('an expression pedal edits track gain in dB', (

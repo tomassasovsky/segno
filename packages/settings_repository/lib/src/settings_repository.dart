@@ -1804,23 +1804,53 @@ class SettingsRepository {
   static const String _defaultOneShotKey = 'looper.default_one_shot';
   String _trackOneShotKey(int channel) => 'track_one_shot.$channel';
 
-  /// Loads the default playback choice: `false` loops, `true` plays once.
+  String _oneShotKey(int? channel) {
+    if (channel != null && (channel < 0 || channel >= 8)) {
+      throw ArgumentError.value(channel, 'channel');
+    }
+    return channel == null ? _defaultOneShotKey : _trackOneShotKey(channel);
+  }
+
+  /// Reads an exact nullable playback scalar without repairing malformed data.
+  Future<bool?> readOneShotCheckpoint({required int? channel}) async {
+    final key = _oneShotKey(channel);
+    await _serializedWrite;
+    return _store.getBool(key);
+  }
+
+  /// Saves/removes and verifies one exact playback scalar.
+  Future<void> restoreOneShotCheckpoint({
+    required int? channel,
+    required bool? oneShot,
+  }) {
+    final key = _oneShotKey(channel);
+    return _serialize(() async {
+      if (oneShot == null) {
+        await _store.remove(key);
+      } else {
+        await _store.setBool(key, value: oneShot);
+      }
+      if (await _store.getBool(key) != oneShot) {
+        throw StateError('Playback scalar was not confirmed');
+      }
+    });
+  }
+
+  /// Loads the default choice; absence loops.
   Future<bool> loadDefaultOneShot() async =>
-      await _store.getBool(_defaultOneShotKey) ?? false;
+      await readOneShotCheckpoint(channel: null) ?? false;
 
   /// Saves the default playback choice.
   Future<void> saveDefaultOneShot({required bool oneShot}) =>
-      _store.setBool(_defaultOneShotKey, value: oneShot);
+      restoreOneShotCheckpoint(channel: null, oneShot: oneShot);
 
-  /// Loads the track's playback override; `null` follows the default.
+  /// Loads explicit membership, including false; null inherits.
   Future<bool?> loadTrackOneShot(int channel) =>
-      _store.getBool(_trackOneShotKey(channel));
+      readOneShotCheckpoint(channel: channel);
 
-  /// Saves the track's playback override; `null` removes the override.
+  /// Saves explicit membership or removes only this field's override.
   Future<void> saveTrackOneShot(int channel, {required bool? oneShot}) =>
-      oneShot == null
-      ? _store.remove(_trackOneShotKey(channel))
-      : _store.setBool(_trackOneShotKey(channel), value: oneShot);
+      restoreOneShotCheckpoint(channel: channel, oneShot: oneShot);
 
   String _laneMuteKey(int channel, int lane) => 'lane_mute.$channel.$lane';
   String _laneEffectsKey(int channel, int lane) =>

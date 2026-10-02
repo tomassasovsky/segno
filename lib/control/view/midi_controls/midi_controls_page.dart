@@ -29,6 +29,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -389,6 +390,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     final looper = context.read<LooperRepository>();
     final clickVolume = context.watch<TempoCubit>().clickVolume;
     final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
+    final oneShotSnapshot = context
+        .watch<PlaybackOptionsCubit>()
+        .oneShotSnapshot;
     final missing = mapping.controls.any(
       (control) => switch (control) {
         MidiParameterControl(:final key) => !_resolves(
@@ -396,6 +400,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
           key,
           clickVolume: clickVolume,
           decaySnapshot: decaySnapshot,
+          oneShotSnapshot: oneShotSnapshot,
         ),
         MidiActionControl(:final key) => ControlAction.tryParse(key) == null,
       },
@@ -627,6 +632,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                         decaySnapshot: context
                             .watch<PlaybackOptionsCubit>()
                             .decaySnapshot,
+                        oneShotSnapshot: context
+                            .watch<PlaybackOptionsCubit>()
+                            .oneShotSnapshot,
                       ),
                     },
                   ),
@@ -656,6 +664,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                 decaySnapshot: context
                     .watch<PlaybackOptionsCubit>()
                     .decaySnapshot,
+                oneShotSnapshot: context
+                    .watch<PlaybackOptionsCubit>()
+                    .oneShotSnapshot,
               ),
               kind: _kind,
               onKind: (kind) => setState(() => _kind = kind),
@@ -926,6 +937,10 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         context.read<PlaybackOptionsCubit>().decaySnapshot == null) {
       return;
     }
+    if (target is OneShotValueTarget &&
+        context.read<PlaybackOptionsCubit>().oneShotSnapshot == null) {
+      return;
+    }
     final key = switch (target) {
       ControlValueTarget() => target.canonicalString(),
       FxBindingTarget() => target.canonicalString(),
@@ -941,6 +956,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
           replacing,
           clickVolume: context.read<TempoCubit>().clickVolume,
           decaySnapshot: context.read<PlaybackOptionsCubit>().decaySnapshot,
+          oneShotSnapshot: context.read<PlaybackOptionsCubit>().oneShotSnapshot,
         );
     final l10n = context.l10n;
     setState(() {
@@ -1117,6 +1133,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     String key, {
     double? clickVolume,
     DecaySnapshot? decaySnapshot,
+    OneShotSnapshot? oneShotSnapshot,
   }) {
     final target = ControlValueTarget.tryParse(key);
     if (target != null) {
@@ -1124,6 +1141,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         target,
         clickVolume: clickVolume,
         decaySnapshot: decaySnapshot,
+        oneShotSnapshot: oneShotSnapshot,
       );
     }
     final activation = FxBindingTarget.tryParse(key);

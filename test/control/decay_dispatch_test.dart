@@ -18,6 +18,8 @@ import 'package:segno/control/control.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
+import 'package:segno_engine/segno_engine.dart'
+    show EngineSnapshot, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
@@ -124,6 +126,7 @@ class _Rig {
       fxPersistence: FxChainPersistence(looper: looper),
       clickVolumeControl: FakeClickVolumeControl(),
       decayControl: owner,
+      oneShotControl: owner,
       takeLocked: () => powerUp,
       controller: controller,
       midiDevices: midi,
@@ -245,7 +248,10 @@ void main() {
   group('Decay shared dispatch', () {
     void check(String name, void Function(_Rig) body) => test(name, () {
       fakeAsync((clock) {
-        final engine = _Engine();
+        final engine = _Engine()
+          ..nextSnapshot = const EngineSnapshot.initial().copyWith(
+            tracks: List.generate(8, (_) => const TrackSnapshot.empty()),
+          );
         final looper = LooperRepository(
           engine: engine,
           ticker: const Stream.empty(),

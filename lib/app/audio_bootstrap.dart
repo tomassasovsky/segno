@@ -61,6 +61,34 @@ Future<AutoStartResult> tryAutoStartEngine({
     );
   }
 
+  // Validate all nine values before replay, including empty fixed tracks.
+  try {
+    final once = await Future.wait([
+      settings.readOneShotCheckpoint(channel: null),
+      for (var channel = 0; channel < 8; channel++)
+        settings.readOneShotCheckpoint(channel: channel),
+    ]);
+    final request = repository.setOneShotSnapshot(
+      defaultOneShot: once.first ?? false,
+      trackOverrides: {
+        for (var channel = 0; channel < 8; channel++)
+          if (once[channel + 1] != null) channel: once[channel + 1]!,
+      },
+    );
+    final result = request.isOk ? await repository.settleOneShot() : request;
+    if (!result.isOk) {
+      throw StateError('Saved playback replay refused: ${result.name}');
+    }
+  } on Object catch (error) {
+    AppLog.error('audio auto-start: saved playback failed: $error');
+    repository.stopEngine();
+    return (
+      started: false,
+      asioDrivers: const <AudioDevice>[],
+      recoveryConfig: null,
+    );
+  }
+
   try {
     return await _tryAutoStartEngine(
       repository: repository,
@@ -207,6 +235,14 @@ Future<AutoStartResult> _tryAutoStartEngine({
     repository.stopEngine();
     return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
+  final startupOnce = await repository.settleOneShot();
+  if (!startupOnce.isOk) {
+    AppLog.error(
+      'audio auto-start: playback replay refused ${startupOnce.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
   if (consolePinned) {
     await settings.saveAudioConfig(
       StoredAudioConfig(
@@ -251,9 +287,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
   // created on the auto-start path and may not have initialized before the
   // pedal triggers a recording, so without this a saved forced ×1 reverts to
   // auto-round-up and loops record at ×2/×4.
-  repository
-    ..setDefaultMultiple(multiple: await settings.loadDefaultMultiple())
-    ..setDefaultOneShot(oneShot: await settings.loadDefaultOneShot());
+  repository.setDefaultMultiple(multiple: await settings.loadDefaultMultiple());
 
   // Submit the saved default and every explicit track override together.
   // Separate setters would race each other while the first vector waits for
@@ -334,10 +368,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
   }
 
   for (final track in repository.state.tracks) {
-    repository.setOneShot(
-      channel: track.channel,
-      oneShot: await settings.loadTrackOneShot(track.channel),
-    );
     final timing = RecordTiming.fromCode(
       await settings.loadTrackRecordTiming(track.channel),
     );
@@ -566,6 +596,14 @@ Future<bool> _firstRunAutoStart({
     AppLog.error(
       'audio first-run: initial length replay refused '
       'result=${startupLength.name}',
+    );
+    repository.stopEngine();
+    return false;
+  }
+  final startupOnce = await repository.settleOneShot();
+  if (!startupOnce.isOk) {
+    AppLog.error(
+      'audio first-run: playback replay refused ${startupOnce.name}',
     );
     repository.stopEngine();
     return false;
