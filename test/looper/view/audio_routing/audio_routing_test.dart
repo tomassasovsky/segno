@@ -81,6 +81,8 @@ void main() {
     when(() => repository.looperState).thenAnswer((_) => states.stream);
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.clickVolumeSettled).thenReturn(true);
+    when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenReturn(1);
     when(() => repository.sessionTransport).thenReturn(const TransportState());

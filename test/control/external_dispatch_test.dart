@@ -152,6 +152,7 @@ class _Rig {
     );
     fx = FxChainPersistence(looper: looper);
     cubit = ControlCubit(
+      clickVolumeControl: FakeClickVolumeControl(),
       looper: looper,
       pedal: pedal,
       settings: settings,

@@ -3,7 +3,20 @@ part of 'control_cubit.dart';
 /// MIDI configuration, capture and admission use the same control owner.
 extension MidiControlEditing on ControlCubit {
   /// Waits for in-flight confirmed configuration before an orderly halt.
-  Future<void> flushMidiConfiguration() async {
+  Future<void> flushMidiConfiguration({bool retireControls = false}) async {
+    if (retireControls) {
+      final retry = _haltInputSuspended;
+      _haltInputSuspended = true;
+      _retireMidi();
+      _retireAllExternal();
+      if (retry) {
+        unawaited(
+          _queueMidi(() => _applyMidiProposals(_midiEngine.retryCleanup())),
+        );
+        _externalReleaseEligibility = null;
+        _retryExternalReleases();
+      }
+    }
     await _midiWrites;
     await _externalTail;
     await _fxPersistence.flush();
@@ -388,6 +401,7 @@ extension MidiControlEditing on ControlCubit {
   bool _midiCanDispatch(String device) =>
       !_closing &&
       !isClosed &&
+      !_controlInputSuspended &&
       state.midiLoaded &&
       !state.midiUnavailable &&
       state.midiControlEnabled &&
@@ -450,7 +464,7 @@ extension MidiControlEditing on ControlCubit {
 
   double? _readMidiValue(String key) {
     final value = ControlValueTarget.tryParse(key);
-    if (value != null) return _looper.readValueTarget(value);
+    if (value != null) return _readControlValue(value);
     final activation = FxBindingTarget.tryParse(key);
     final enabled = activation == null
         ? null
@@ -467,6 +481,7 @@ extension MidiControlEditing on ControlCubit {
     // Master uses the hardware encoder's established 1/64 normalized step.
     if (target is MasterGainTarget) return ControlCubit._encoderStep;
     if (target is MixValueTarget) return target.relativeStep;
+    if (target is ClickVolumeTarget) return target.relativeStep;
     if (target is FxParamTarget) {
       final divisions = _midiParamDivisions(target);
       if (divisions != null && divisions > 0) return 1 / divisions;
@@ -525,6 +540,7 @@ extension MidiControlEditing on ControlCubit {
               final ending =
                   op is MidiParameterEnd ||
                   (op is MidiParameterWrite && op.cleanup);
+              if (!ending && _takeLocked()) continue;
               final target = ending
                   ? _midiTargets[row]
                   : ControlValueTarget.tryParse(op.key) ??
@@ -581,7 +597,7 @@ extension MidiControlEditing on ControlCubit {
                 }
                 if (value != null) powers[target] = value >= 0.5;
               } else if (target is ControlValueTarget) {
-                if (!_looper.valueTargetResolves(target)) {
+                if (!_controlValueResolves(target)) {
                   if (ending) {
                     _dropMidiHolder(row, target, holder);
                     accepted.add(op.controlIndex);
@@ -643,7 +659,9 @@ extension MidiControlEditing on ControlCubit {
                     order: ++_activationOrder,
                   );
                 case final ControlValueTarget target:
-                  if (target is MixValueTarget) _retireMixBaseline(target);
+                  if (target is MixValueTarget || target is ClickVolumeTarget) {
+                    _retireMixBaseline(target);
+                  }
                   (_parameterHolders[target] ??= {})[holder] = (
                     value: values[target]!,
                     order: ++_activationOrder,
@@ -744,6 +762,27 @@ extension MidiControlEditing on ControlCubit {
           switch (target) {
             case MixValueTarget():
               break;
+            case ClickVolumeTarget():
+              final op = proposal.operations.firstWhere(
+                (op) => op.controlIndex == entry.key,
+              );
+              final released = op is MidiParameterWrite && op.held == true
+                  ? _midiReleasedFor(proposal, entry.key)
+                  : entry.value.ending
+                  ? _survivingMidiReleased(
+                      target,
+                      excluding: entry.value.holder,
+                    )
+                  : null;
+              final outcome = await _clickVolume.setControllerClickVolume(
+                target.toDomain(value),
+                lifetime: origins.click ?? _clickVolume.clickVolumeLifetime,
+                releasedVolume: released == null
+                    ? null
+                    : target.toDomain(released),
+              );
+              if (cancelled()) return;
+              if (outcome.isOk) accepted.add(entry.key);
             case MasterGainTarget():
               if (_looper.setMasterGain(value).isOk) {
                 _masterGain = value;
@@ -833,7 +872,7 @@ extension MidiControlEditing on ControlCubit {
         order = entry.value.order;
       }
     }
-    if (winner is MappingTrigger && target is MixValueTarget) {
+    if (winner is MappingTrigger) {
       return _externalMixReleased[_externalInput(winner)]?[target];
     }
     return _midiReleasedValues[winner];
@@ -877,13 +916,39 @@ extension MidiControlEditing on ControlCubit {
     _syncMidiDurableFx();
   }
 
-  Map<MixValueTarget, int> _mixOrigins(Iterable<ControlValueTarget> targets) =>
-      _mixSettings.controllerOrigins(targets.whereType<MixValueTarget>());
+  double? _readControlValue(ControlValueTarget target) =>
+      _looper.readValueTarget(
+        target,
+        clickVolume: _clickVolume.clickVolume,
+      );
 
-  bool _mixOriginsCurrent(Map<MixValueTarget, int> origins) =>
-      _mixSettings.controllerOriginsCurrent(origins);
+  bool _controlValueResolves(ControlValueTarget target) =>
+      _looper.valueTargetResolves(
+        target,
+        clickVolume: _clickVolume.clickVolume,
+      );
 
-  void _retireMixBaseline(MixValueTarget target) {
+  ({Map<MixValueTarget, int> mix, ClickVolumeLifetime? click}) _mixOrigins(
+    Iterable<ControlValueTarget> targets,
+  ) => (
+    mix: _mixSettings.controllerOrigins(targets.whereType<MixValueTarget>()),
+    click: targets.any((target) => target is ClickVolumeTarget)
+        ? _clickVolume.clickVolumeLifetime
+        : null,
+  );
+
+  bool _mixOriginsCurrent(
+    ({
+      Map<MixValueTarget, int> mix,
+      ClickVolumeLifetime? click,
+    })
+    origins,
+  ) =>
+      _mixSettings.controllerOriginsCurrent(origins.mix) &&
+      (origins.click == null ||
+          origins.click == _clickVolume.clickVolumeLifetime);
+
+  void _retireMixBaseline(ControlValueTarget target) {
     _parameterHolders[target]?.removeWhere(
       (key, _) =>
           key is (Symbol, Object) &&
@@ -891,7 +956,10 @@ extension MidiControlEditing on ControlCubit {
     );
   }
 
-  void _invalidateMixTargets(Set<MixValueTarget> targets) {
+  void _invalidateMixTargets(Set<MixValueTarget> targets) =>
+      _invalidateValueTargets(targets);
+
+  void _invalidateValueTargets(Set<ControlValueTarget> targets) {
     _midiEngine.invalidateTargets({
       for (final target in targets) target.canonicalString(),
     });

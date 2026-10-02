@@ -97,6 +97,7 @@ SessionChains chainsFromLooper(
 /// Captures repository-owned settings without depending on an engine report.
 SessionSettings settingsFromLooper(
   LooperRepository looper, {
+  required double clickVolume,
   MixSettingsSnapshot? mix,
 }) {
   final transport = looper.sessionTransport;
@@ -141,7 +142,7 @@ SessionSettings settingsFromLooper(
     outputSetup: _sessionOutputSetup(snapshot.outputSetup),
     clickMode: transport.clickMode,
     clickMask: transport.clickMask,
-    clickVolume: transport.clickVolume,
+    clickVolume: clickVolume,
     countInBars: transport.countInBars,
     recDub: transport.recDub,
     autoRecord: transport.autoRecord,

@@ -140,6 +140,29 @@ void main() {
       expect(targets.where((t) => t.slotId == 'plug-1'), isEmpty);
     });
 
+    test('Click needs a confirmed owner, including silent zero, not a bus', () {
+      when(() => looper.state).thenAnswer(
+        (_) => const LooperState(),
+      );
+      const target = ClickVolumeTarget();
+      expect(
+        looper.availableValueTargets().whereType<ClickVolumeTarget>(),
+        isEmpty,
+      );
+      expect(looper.valueTargetResolves(target), isFalse);
+      expect(looper.readValueTarget(target), isNull);
+      expect(
+        looper
+            .availableValueTargets(clickVolume: 0)
+            .whereType<ClickVolumeTarget>(),
+        [target],
+      );
+      expect(looper.valueTargetResolves(target, clickVolume: 0), isTrue);
+      expect(looper.readValueTarget(target, clickVolume: 0), 0);
+      expect(looper.readValueTarget(target, clickVolume: 1), 0.5);
+      expect(looper.readValueTarget(target, clickVolume: 2), 1);
+    });
+
     test('never offers a slot with no stable id (A9)', () {
       trackChains[5] = [BuiltInEffect(type: TrackEffectType.filter)];
 

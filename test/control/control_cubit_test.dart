@@ -294,6 +294,7 @@ void main() {
       // snapshot has to exist before the first one; setEngine() re-stubs it.
       when(() => looper.state).thenReturn(_stateWith(_emptyTracks()));
       cubit = ControlCubit(
+        clickVolumeControl: FakeClickVolumeControl(),
         fxPersistence: FxChainPersistence(looper: looper),
         looper: looper,
         mixSettings: testMixSettings(looper),
@@ -1853,6 +1854,7 @@ void main() {
 
       test('takeLocked suppresses recPlay', () {
         final locked = ControlCubit(
+          clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -1868,6 +1870,7 @@ void main() {
 
       test('takeLocked suppresses rec-mode trackPressed', () {
         final locked = ControlCubit(
+          clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -1883,6 +1886,7 @@ void main() {
 
       test('takeLocked suppresses togglePerformanceRecord', () {
         final locked = ControlCubit(
+          clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -1903,6 +1907,7 @@ void main() {
         await pumpEventQueue();
         addTearDown(lockedPedal.dispose);
         final locked = ControlCubit(
+          clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -2245,6 +2250,7 @@ void main() {
           );
           addTearDown(recordingPerformance.dispose);
           final armedCubit = ControlCubit(
+            clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
@@ -2287,6 +2293,7 @@ void main() {
         );
         addTearDown(unarmedPerformance.dispose);
         final unarmedCubit = ControlCubit(
+          clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -2316,6 +2323,7 @@ void main() {
           );
           addTearDown(recordingPerformance.dispose);
           final armedCubit = ControlCubit(
+            clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
@@ -2451,6 +2459,7 @@ void main() {
           // before this was wired both armed with an empty chain set, so a
           // capture documented no FX at all.
           final wired = ControlCubit(
+            clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
@@ -3684,6 +3693,7 @@ void main() {
         );
 
         final reloaded = ControlCubit(
+          clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -3778,6 +3788,7 @@ void main() {
           await pumpEventQueue();
           addTearDown(idlePedal.dispose);
           final idle = ControlCubit(
+            clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),

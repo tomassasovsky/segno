@@ -5679,5 +5679,17 @@
     "midiRetryOff": "Retry Off",
     "midiResumeOn": "Resume On",
     "midiResetConfiguration": "Reset mappings",
-    "midiConfigurationUnavailable": "Saved mappings could not be read. Reset them to start again."
+    "midiConfigurationUnavailable": "Saved mappings could not be read. Reset them to start again.",
+    "powerOffSettingsFailedTitle": "Settings could not be confirmed",
+    "@powerOffSettingsFailedTitle": {"description": "Click settings and safe shutdown recovery message."},
+    "powerOffSettingsFailedBody": "Segno is still on. Retry to finish saving before powering off.",
+    "@powerOffSettingsFailedBody": {"description": "Click settings and safe shutdown recovery message."},
+    "powerOffRetry": "Retry",
+    "@powerOffRetry": {"description": "Click settings and safe shutdown recovery message."},
+    "clickSettingsRecoveryTitle": "Click settings need recovery",
+    "@clickSettingsRecoveryTitle": {"description": "Click settings and safe shutdown recovery message."},
+    "clickSettingsRefusedTitle": "Click change was not applied",
+    "@clickSettingsRefusedTitle": {"description": "Click settings and safe shutdown recovery message."},
+    "clickSettingsRecoveryBody": "Retry to recover the Click setting.",
+    "@clickSettingsRecoveryBody": {"description": "Click settings and safe shutdown recovery message."}
 }

@@ -18,7 +18,7 @@ part 'power_off_state.dart';
 class PowerOffCubit extends Cubit<PowerOffState> {
   /// Creates a [PowerOffCubit].
   PowerOffCubit({
-    required FutureOr<void> Function() flush,
+    required FutureOr<void> Function({required bool retry}) flush,
     required void Function() pedalGoodbye,
     required Future<void> Function() powerOff,
     Duration markHold = const Duration(seconds: 2),
@@ -28,7 +28,7 @@ class PowerOffCubit extends Cubit<PowerOffState> {
        _markHold = markHold,
        super(const PowerOffState());
 
-  final FutureOr<void> Function() _flush;
+  final FutureOr<void> Function({required bool retry}) _flush;
   final void Function() _pedalGoodbye;
   final Future<void> Function() _powerOff;
   final Duration _markHold;
@@ -76,6 +76,13 @@ class PowerOffCubit extends Cubit<PowerOffState> {
     unawaited(_halt());
   }
 
+  /// Retries settings after a failed flush, using the current take gate.
+  void retryPowerOff(PowerOffSnapshot snapshot) {
+    if (state.phase != PowerOffPhase.flushFailed) return;
+    if (!_prepareCommit(snapshot)) return;
+    unawaited(_halt(retry: true));
+  }
+
   /// Host finished naming an unnamed session. Runs [save] under Saving.
   void commitSave(
     PowerOffSnapshot snapshot,
@@ -109,12 +116,16 @@ class PowerOffCubit extends Cubit<PowerOffState> {
     await _halt();
   }
 
-  Future<void> _halt() async {
+  Future<void> _halt({bool retry = false}) async {
+    _set(PowerOffPhase.flushing);
     try {
-      await _flush();
+      await _flush(retry: retry);
     } on Object catch (error, stack) {
       AppLog.error('power-off flush failed', error: error, stack: stack);
+      if (!isClosed) _set(PowerOffPhase.flushFailed);
+      return;
     }
+    if (isClosed) return;
     _pedalGoodbye();
     _set(PowerOffPhase.goodbye);
     if (_markHold > Duration.zero) {

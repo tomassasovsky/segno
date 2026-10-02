@@ -12,12 +12,13 @@ const String kPowerOffLockupAsset = 'assets/brand/segno-lockup.png';
 
 /// [PerformanceReadout.goodbye] for a power-off phase.
 ReadoutGoodbye readoutGoodbyeOf(PowerOffPhase phase) => switch (phase) {
-  PowerOffPhase.saving => ReadoutGoodbye.saving,
+  PowerOffPhase.saving || PowerOffPhase.flushing => ReadoutGoodbye.saving,
   PowerOffPhase.goodbye => ReadoutGoodbye.mark,
   PowerOffPhase.idle ||
   PowerOffPhase.refuse ||
   PowerOffPhase.confirm ||
   PowerOffPhase.saveAs ||
+  PowerOffPhase.flushFailed ||
   PowerOffPhase.saveFailed => ReadoutGoodbye.none,
 };
 

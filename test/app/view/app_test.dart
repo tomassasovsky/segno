@@ -175,6 +175,52 @@ class _WindowGone implements Exception {
 /// controller can be made to vanish and return through `refresh()`.
 class _MockMidiSource extends Mock implements MidiControllerSource {}
 
+class _ClickStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+
+  @override
+  Future<void> setDouble(String key, double value) async {
+    if (key == 'tempo.click_volume') {
+      writeEntered = true;
+      await pendingWrite?.future;
+      if (refuseWrite) throw StateError('Click preference unavailable');
+    }
+    await super.setDouble(key, value);
+  }
+}
+
+class _ShutdownMidi extends MidiDeviceRepository {
+  _ShutdownMidi(SettingsRepository settings)
+    : super(source: null, settings: settings, pollInterval: Duration.zero);
+
+  final _inputs = StreamController<MidiInputMessage>.broadcast();
+
+  @override
+  MidiInputSession get session => const MidiInputSession('shutdown-test', 1);
+
+  @override
+  Stream<MidiInputMessage> get messages => _inputs.stream;
+
+  void push(int value) => _inputs.add(
+    MidiInputMessage(
+      session,
+      RawControllerInput(
+        kind: ControllerSourceKind.midiCc,
+        id: 21,
+        value: value,
+      ),
+    ),
+  );
+
+  @override
+  Future<void> dispose() async {
+    await _inputs.close();
+    await super.dispose();
+  }
+}
+
 /// Distinct track and mixed-output shapes expose a wrong waveform source.
 class _WaveformAudioEngine extends FakeAudioEngine {
   final trackSamples = <int, Float32List>{};
@@ -277,6 +323,140 @@ void main() {
       );
       await tester.pumpAndSettle();
     }
+
+    testWidgets('power off waits for an ordinary Click preference', (
+      tester,
+    ) async {
+      final store = _ClickStore();
+      settings = SettingsRepository(store: store);
+      var halted = false;
+      final window = _RecordingWindowService();
+      await pumpApp(tester, window, powerOff: () async => halted = true);
+      final context = tester.element(find.byType(TracksView));
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerOffCubit>();
+      store.pendingWrite = Completer<void>();
+      unawaited(tempo.setClickVolume(1.5));
+      await tester.pump();
+      expect(store.writeEntered, isTrue);
+      power.press(const PowerOffSnapshot());
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(power.state.phase, PowerOffPhase.flushing);
+      expect(halted, isFalse);
+      store.pendingWrite!.complete();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      expect(halted, isTrue);
+      expect(store.values['tempo.click_volume'], 1.5);
+      expect(tempo.clickVolume, 1.5);
+    });
+
+    testWidgets('Click refusal prevents halt and visible Retry recovers', (
+      tester,
+    ) async {
+      final store = _ClickStore();
+      settings = SettingsRepository(store: store);
+      var halted = false;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => halted = true,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerOffCubit>();
+      store.refuseWrite = true;
+      unawaited(tempo.setClickVolume(1.5));
+      await tester.pump();
+      expect(tempo.clickVolume, 1);
+      power.press(const PowerOffSnapshot());
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerOffPhase.flushFailed);
+      expect(find.text('Settings could not be confirmed'), findsOneWidget);
+      expect(find.byKey(const Key('power_off_retry')), findsOneWidget);
+      expect(find.byKey(const Key('power_off_discard')), findsNothing);
+      expect(halted, isFalse);
+      store.refuseWrite = false;
+      await tester.tap(find.byKey(const Key('power_off_retry')));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+      expect(halted, isTrue);
+      expect(store.values.containsKey('tempo.click_volume'), isFalse);
+    });
+
+    testWidgets('power off retires held Click before refusing later MIDI', (
+      tester,
+    ) async {
+      final store = _ClickStore();
+      settings = SettingsRepository(store: store);
+      final midi = _ShutdownMidi(settings);
+      midiDeviceRepository = midi;
+      addTearDown(() => unawaited(midi.dispose()));
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final control = context.read<ControlCubit>();
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerOffCubit>();
+      final editor = Object();
+      control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+      MidiSaveResult? saved;
+      unawaited(
+        control
+            .saveMidiMapping(
+              MidiMapping(
+                id: 'shutdown-click',
+                source: MidiSource(
+                  device: 'shutdown-test',
+                  kind: ControllerSourceKind.midiCc,
+                  number: 21,
+                ),
+                behavior: MidiBehavior.momentary,
+                controls: [
+                  MidiParameterControl(
+                    key: '{"ctl":"clickVolume"}',
+                    low: .125,
+                    high: .75,
+                  ),
+                ],
+              ),
+              owner: editor,
+              create: true,
+            )
+            .then((result) => saved = result),
+      );
+      await tester.pumpAndSettle();
+      expect(saved?.saved, isTrue);
+      control.endMidiEdit(editor);
+      midi.push(127);
+      await tester.pumpAndSettle();
+      expect(tempo.clickVolume, 1.5);
+      power.press(const PowerOffSnapshot());
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(tempo.clickVolume, .25);
+      expect(store.values['tempo.click_volume'], .25);
+      expect(haltCalls, 0);
+
+      // A new controller event after the final flush must not start a save.
+      store
+        ..writeEntered = false
+        ..pendingWrite = Completer<void>();
+      midi.push(127);
+      await tester.pump();
+      expect(store.writeEntered, isFalse);
+      expect(tempo.clickVolume, .25);
+      store.pendingWrite!.complete();
+      await tester.pump(const Duration(seconds: 2));
+      expect(haltCalls, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
 
     for (final redo in [false, true]) {
       testWidgets('explains a refused ${redo ? 'redo' : 'undo'} without '
@@ -992,17 +1172,19 @@ void main() {
     testWidgets('a shutdown phase change reaches an otherwise idle readout', (
       tester,
     ) async {
+      // Construct the writer under the widget clock so startup completes here.
+      settings = SettingsRepository(store: FakeKeyValueStore());
       final windowService = _RecordingWindowService();
       var haltCalls = 0;
       await pumpApp(tester, windowService, powerOff: () async => haltCalls++);
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.readouts.last.goodbye, ReadoutGoodbye.none);
 
-      tester
-          .element(find.byType(LooperPage))
-          .read<PowerOffCubit>()
-          .press(const PowerOffSnapshot());
+      final power =
+          tester.element(find.byType(LooperPage)).read<PowerOffCubit>()
+            ..press(const PowerOffSnapshot());
       await tester.pump(const Duration(milliseconds: 40));
+      expect(power.state.phase, PowerOffPhase.goodbye);
       expect(windowService.readouts.last.goodbye, ReadoutGoodbye.mark);
       await tester.pump(const Duration(seconds: 2));
       expect(haltCalls, 1);
