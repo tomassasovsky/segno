@@ -8,6 +8,24 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 shared Playback Loop or Once (#1026)
+
+Touch, MIDI and External controls now share confirmed Loop/Once choices for
+Loop defaults and fixed Tracks 1–8, including empty tracks and all five modes.
+Explicit false remains Custom. Use default supersedes older held cleanup;
+Save and reconnect preserve authored Released values. Startup validates all
+nine stored choices and verifies the eight native bits. Shutdown drains pending
+changes and offers recovery instead of losing them.
+
+`docs/reviews/shared-playback-choice/` binds source and saved Pen references.
+The final app suite passes 2,666 results at 90.7948% coverage; Looper repository
+passes 686 at 95.7472%. Settings and Controller results are reused only for
+unchanged sources. The independent 50-case matrix covers all native modes, and
+an isolated receipt bypass fails the expected pending assertion. Strict static
+checks cover 733 Dart files. Review caught and fixed startup-validation Retry
+and reconnect-readiness defects. Exact-head CI and human merge approval remain
+separate; hardware proof and M5 live-controller full Session Load remain open.
+
 ## October 2026 shared overdub decay (#1026)
 
 MIDI and External button/expression controls now share the Playback owner for

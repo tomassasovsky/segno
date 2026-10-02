@@ -507,6 +507,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final looper = context.read<LooperRepository>();
     final clickVolume = context.watch<TempoCubit>().clickVolume;
     final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
+    final oneShotSnapshot = context
+        .watch<PlaybackOptionsCubit>()
+        .oneShotSnapshot;
     final names = context.watch<TracksCubit>().state.names;
     return [
       for (final mapping in expression.mappings)
@@ -523,6 +526,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             mapping.target,
             clickVolume: clickVolume,
             decaySnapshot: decaySnapshot,
+            oneShotSnapshot: oneShotSnapshot,
           ),
           art: expressionTargetArt(looper, mapping.target),
         ),
@@ -532,12 +536,16 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   List<ExpressionDestination> _destinations(BuildContext context) {
     final clickVolume = context.watch<TempoCubit>().clickVolume;
     final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
+    final oneShotSnapshot = context
+        .watch<PlaybackOptionsCubit>()
+        .oneShotSnapshot;
     return expressionDestinations(
       context.l10n,
       context.watch<TracksCubit>().state.names,
       context.read<LooperRepository>(),
       clickVolume: clickVolume,
       decaySnapshot: decaySnapshot,
+      oneShotSnapshot: oneShotSnapshot,
     );
   }
 
@@ -598,6 +606,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     }
     if (target is DecayValueTarget &&
         context.read<PlaybackOptionsCubit>().decaySnapshot == null) {
+      return;
+    }
+    if (target is OneShotValueTarget &&
+        context.read<PlaybackOptionsCubit>().oneShotSnapshot == null) {
       return;
     }
     final replacing = _replacing;
@@ -997,6 +1009,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final looper = context.read<LooperRepository>();
     final clickVolume = context.watch<TempoCubit>().clickVolume;
     final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
+    final oneShotSnapshot = context
+        .watch<PlaybackOptionsCubit>()
+        .oneShotSnapshot;
     final names = context.watch<TracksCubit>().state.names;
     final controls = button.controls;
     final rows = [
@@ -1022,6 +1037,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             parameter.target,
             clickVolume: clickVolume,
             decaySnapshot: decaySnapshot,
+            oneShotSnapshot: oneShotSnapshot,
           ),
           art: expressionTargetArt(looper, parameter.target),
         ),
@@ -1124,6 +1140,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final l10n = context.l10n;
     final clickVolume = context.watch<TempoCubit>().clickVolume;
     final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
+    final oneShotSnapshot = context
+        .watch<PlaybackOptionsCubit>()
+        .oneShotSnapshot;
     final surface = context.surface;
     final destination = _buttonDestination;
     final choosingControl =
@@ -1199,6 +1218,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                       final acceptedDecay = context
                           .read<PlaybackOptionsCubit>()
                           .decaySnapshot;
+                      final acceptedOneShot = context
+                          .read<PlaybackOptionsCubit>()
+                          .oneShotSnapshot;
                       if (control.target is ClickVolumeTarget &&
                           acceptedClick == null) {
                         return;
@@ -1207,11 +1229,16 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                           acceptedDecay == null) {
                         return;
                       }
+                      if (control.target is OneShotValueTarget &&
+                          acceptedOneShot == null) {
+                        return;
+                      }
                       final now =
                           context.read<LooperRepository>().readValueTarget(
                             control.target,
                             clickVolume: acceptedClick,
                             decaySnapshot: acceptedDecay,
+                            oneShotSnapshot: acceptedOneShot,
                           ) ??
                           0;
                       _addButtonControl(
@@ -1242,6 +1269,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                       withActivations: true,
                       clickVolume: clickVolume,
                       decaySnapshot: decaySnapshot,
+                      oneShotSnapshot: oneShotSnapshot,
                     ),
                     kind: _kind,
                     columns: 1,

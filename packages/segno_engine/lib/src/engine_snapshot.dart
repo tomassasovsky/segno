@@ -673,8 +673,7 @@ class TrackSnapshot {
 
   /// One Shot (song-mode-spec.md §2, B4/B5c): when `true`, this track plays
   /// once and then stops instead of looping. Settable in any looper mode via
-  /// `LooperModeControl.setOneShot`, but only behaviorally active in
-  /// Free/Song. A per-track SETTING, not content — survives a clear/
+  /// `LooperModeControl.setOneShot`, and active in all five modes. A per-track SETTING, not content — survives a clear/
   /// undo-to-empty and a mode switch, but resets to `false` on a fresh
   /// (re)start of the engine (unlike [lengthPresetBars]'s live behavior,
   /// which persists — see `LooperRepository`'s re-apply cache for the

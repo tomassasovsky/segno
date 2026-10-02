@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/session/session_mapping.dart';
 // The chains a performance arm records cross the boundary as ENGINE models
@@ -32,7 +33,7 @@ void main() {
   test(
     'pair image and untouched fader survive a file save and recall',
     () async {
-      const empty = EngineSnapshot(
+      final empty = EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
         bufferFrames: 128,
@@ -45,7 +46,7 @@ void main() {
         measuredLatencyMs: -1,
         inputChannels: 2,
         outputChannels: 2,
-        tracks: [TrackSnapshot.empty()],
+        tracks: List.generate(8, (_) => const TrackSnapshot.empty()),
       );
       final engine = FakeAudioEngine()..nextSnapshot = empty;
       final ticker = StreamController<void>.broadcast();
@@ -65,7 +66,7 @@ void main() {
 
       final pcm = Float32List.fromList([0.4, 0.4, 0.4, 0.4]);
       engine.laneExports[(0, 0)] = pcm;
-      engine.nextSnapshot = const EngineSnapshot(
+      engine.nextSnapshot = EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
         bufferFrames: 128,
@@ -80,7 +81,7 @@ void main() {
         outputChannels: 2,
         masterLengthFrames: 4,
         tracks: [
-          TrackSnapshot(
+          const TrackSnapshot(
             state: TrackState.playing,
             volume: 0.5,
             muted: false,
@@ -101,12 +102,14 @@ void main() {
               ),
             ],
           ),
+          for (var channel = 1; channel < 8; channel++)
+            const TrackSnapshot.empty(),
         ],
       );
       ticker.add(null);
       await Future<void>.delayed(Duration.zero);
 
-      final live = looper.state.tracks.single.lanes.single;
+      final live = looper.state.tracks.first.lanes.single;
       expect(live.volume, 1);
       expect(live.balance, closeTo(0.5, 1e-6));
       final files = SessionRepository(engine: engine);
@@ -122,6 +125,10 @@ void main() {
           decay: DecaySnapshot(
             defaultPercent: looper.defaultOverdubDecay,
             trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
+          oneShot: OneShotSnapshot(
+            defaultOneShot: looper.defaultOneShot,
+            trackOverrides: looper.trackOneShotOverrides,
           ),
         ),
       );
@@ -185,6 +192,10 @@ void main() {
             defaultPercent: looper.defaultOverdubDecay,
             trackOverrides: looper.trackOverdubDecayOverrides,
           ),
+          oneShot: OneShotSnapshot(
+            defaultOneShot: looper.defaultOneShot,
+            trackOverrides: looper.trackOneShotOverrides,
+          ),
         ).loopBars,
         7,
       );
@@ -230,6 +241,10 @@ void main() {
             defaultPercent: looper.defaultOverdubDecay,
             trackOverrides: looper.trackOverdubDecayOverrides,
           ),
+          oneShot: OneShotSnapshot(
+            defaultOneShot: looper.defaultOneShot,
+            trackOverrides: looper.trackOneShotOverrides,
+          ),
         );
         final repository = SessionRepository(engine: engine);
         await repository.save(directory.path, settings: settings);
@@ -272,6 +287,10 @@ void main() {
           decay: DecaySnapshot(
             defaultPercent: looper.defaultOverdubDecay,
             trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
+          oneShot: OneShotSnapshot(
+            defaultOneShot: looper.defaultOneShot,
+            trackOverrides: looper.trackOneShotOverrides,
           ),
         );
         expect(inherited.trackRecordTimingOverrides, isEmpty);

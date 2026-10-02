@@ -104,6 +104,7 @@ void main() {
               BlocProvider<ControlCubit>(
                 create: (_) => ControlCubit(
                   decayControl: playback,
+                  oneShotControl: playback,
                   clickVolumeControl: tempo,
                   fxPersistence: fxPersistence,
                   looper: repository,

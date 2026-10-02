@@ -27,6 +27,7 @@ import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -167,6 +168,7 @@ void main() {
     bool malformed = false,
     bool routeEntry = false,
     MidiMapping? savedMapping,
+    OneShotSnapshot? oneShotSnapshot,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -200,6 +202,7 @@ void main() {
     final tempo = MockClickTempoCubit();
     final decay = MockDecayPlaybackCubit(
       snapshot: DecaySnapshot(defaultPercent: 25, trackOverrides: const {0: 0}),
+      oneShot: oneShotSnapshot,
     );
     when(() => tempo.clickVolumeLifetime).thenReturn((
       sessionRevision: 1,
@@ -207,6 +210,7 @@ void main() {
     ));
     control = ControlCubit(
       decayControl: decay,
+      oneShotControl: decay,
       clickVolumeControl: tempo,
       looper: looper,
       pedal: pedal,
@@ -397,6 +401,38 @@ void main() {
       expect(find.text('100%'), findsOneWidget);
       expect(find.text('200%'), findsOneWidget);
       await shot(tester, 'click_range');
+    });
+    testWidgets('Playback range offers Loop and Once endpoints', (
+      tester,
+    ) async {
+      const target = DefaultOneShotTarget();
+      await pump(
+        tester,
+        oneShotSnapshot: OneShotSnapshot(
+          defaultOneShot: false,
+          trackOverrides: const {},
+        ),
+        savedMapping: MidiMapping(
+          id: 'm1',
+          source: _source,
+          behavior: MidiBehavior.continuous,
+          controls: [
+            MidiParameterControl(
+              key: target.canonicalString(),
+              low: 0,
+              high: 1,
+            ),
+          ],
+        ),
+      );
+      await tap(tester, 'midi_row_edit_m1');
+      expect(
+        find.byKey(Key('midi_range_low_${target.canonicalString()}')),
+        findsOneWidget,
+      );
+      expect(find.text('Loop'), findsWidgets);
+      expect(find.text('Once'), findsWidgets);
+      await shot(tester, 'playback_range');
     });
     testWidgets('Outputs offers one Click destination', (
       tester,

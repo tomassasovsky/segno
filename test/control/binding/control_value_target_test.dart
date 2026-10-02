@@ -132,6 +132,41 @@ void main() {
       }
     });
 
+    test('Loop/Once identities are fixed and threshold at half travel', () {
+      const defaults = DefaultOneShotTarget();
+      const track = TrackOneShotTarget(7);
+      expect(defaults.canonicalString(), '{"ctl":"defaultOneShot"}');
+      expect(track.canonicalString(), '{"ctl":"trackOneShot","index":7}');
+      expect(ControlValueTarget.tryParse(defaults.canonicalString()), defaults);
+      expect(ControlValueTarget.tryParse(track.canonicalString()), track);
+      expect(track.address.channel, 7);
+      expect(const TrackOneShotTarget(8).isStructurallyValid, isFalse);
+      for (final (travel, once) in <(double, bool)>[
+        (0, false),
+        (0.49, false),
+        (0.5, true),
+        (1, true),
+      ]) {
+        expect(defaults.toDomain(travel), once);
+      }
+      expect(defaults.fromDomain(oneShot: false), 0);
+      expect(defaults.fromDomain(oneShot: true), 1);
+      expect(defaults.relativeStep, 1);
+      expect(() => defaults.toDomain(double.nan), throwsArgumentError);
+      expect(() => defaults.toDomain(double.infinity), throwsArgumentError);
+      for (final malformed in [
+        '{"ctl":"defaultOneShot","index":0}',
+        '{"ctl":"trackOneShot"}',
+        '{"ctl":"trackOneShot","index":8}',
+        '{"ctl":"trackOneShot","index":-1}',
+        '{"ctl":"trackOneShot","index":0.5}',
+        '{"ctl":"trackOneShot","index":"0"}',
+        '{"ctl":"trackOneShot","index":0,"lane":0}',
+      ]) {
+        expect(ControlValueTarget.tryParse(malformed), isNull);
+      }
+    });
+
     test('equal targets encode byte-identically', () {
       const a = FxParamTarget(
         address: FxAddress(stage: FxStage.output),

@@ -36,6 +36,18 @@ import 'package:settings_repository/settings_repository.dart'
 
 import '../helpers/helpers.dart';
 
+// Startup snapshots model the engine's eight fixed physical track slots.
+const _emptyTrackSlots = <TrackSnapshot>[
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+];
+
 class _DecayBootEngine extends FakeAudioEngine {
   double? defaultFeedback;
   int? refuseTrack;
@@ -54,6 +66,16 @@ class _DecayBootEngine extends FakeAudioEngine {
   }) => channel == refuseTrack
       ? EngineResult.invalid
       : super.setTrackOverdubFeedback(channel: channel, feedback: feedback);
+}
+
+class _OnceBootEngine extends FakeAudioEngine {
+  bool refuseOnce = false;
+
+  @override
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) =>
+      refuseOnce
+      ? EngineResult.invalid
+      : super.setOneShotMask(channels: channels, oneShot: oneShot);
 }
 
 void main() {
@@ -109,6 +131,80 @@ void main() {
         ),
       );
     }
+
+    group('saved playback initialization', () {
+      for (final hasAudioConfig in [false, true]) {
+        for (final defaultOnce in [false, true]) {
+          test('restores fixed empty slots and explicit false, config '
+              '$hasAudioConfig default $defaultOnce', () async {
+            if (hasAudioConfig) {
+              await settings.saveAudioConfig(
+                const StoredAudioConfig(sampleRate: 48000, bufferFrames: 256),
+              );
+            }
+            await settings.saveDefaultOneShot(oneShot: defaultOnce);
+            await settings.saveTrackOneShot(0, oneShot: false);
+            await settings.saveTrackOneShot(7, oneShot: true);
+            final result = await tryAutoStartEngine(
+              repository: repository,
+              settings: settings,
+              mixSettings: testMixSettings(repository, settings: settings),
+            );
+            expect(result.started, isTrue);
+            expect(repository.defaultOneShot, defaultOnce);
+            expect(repository.trackOneShotOverrides, {0: false, 7: true});
+            expect(repository.oneShotSettingsSettled, isTrue);
+            expect(engine.trackOneShot, {
+              0: false,
+              for (var c = 1; c < 7; c++) c: defaultOnce,
+              7: true,
+            });
+          });
+        }
+      }
+      test(
+        'invalid last slot preserves prior intent and never opens audio',
+        () async {
+          repository.setOneShotSnapshot(
+            defaultOneShot: true,
+            trackOverrides: {1: false},
+          );
+          store.values.addAll({
+            'looper.default_one_shot': false,
+            'track_one_shot.7': 'invalid',
+          });
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            mixSettings: testMixSettings(repository, settings: settings),
+          );
+          expect(result.started, isFalse);
+          expect(engine.startCalls, 0);
+          expect(repository.defaultOneShot, isTrue);
+          expect(repository.trackOneShotOverrides, {1: false});
+          expect(store.values['track_one_shot.7'], 'invalid');
+        },
+      );
+      test(
+        'refused initial playback command cannot report successful start',
+        () async {
+          final refusing = _OnceBootEngine()..refuseOnce = true;
+          final looper = LooperRepository(
+            engine: refusing,
+            ticker: const Stream<void>.empty(),
+          );
+          addTearDown(looper.dispose);
+          final result = await tryAutoStartEngine(
+            repository: looper,
+            settings: settings,
+            mixSettings: testMixSettings(looper, settings: settings),
+          );
+          expect(result.started, isFalse);
+          expect(looper.state.status.isConnected, isFalse);
+          expect(refusing.stopCalls, greaterThan(0));
+        },
+      );
+    });
 
     group('saved decay initialization', () {
       for (final hasAudioConfig in [false, true]) {
@@ -456,7 +552,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+        tracks: _emptyTrackSlots,
       );
 
       final started = await tryAutoStartEngine(
@@ -495,7 +591,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _emptyTrackSlots,
         );
 
         final started = await tryAutoStartEngine(
@@ -531,7 +627,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+        tracks: _emptyTrackSlots,
       );
 
       final started = await tryAutoStartEngine(
@@ -564,7 +660,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+        tracks: _emptyTrackSlots,
       );
 
       final started = await tryAutoStartEngine(
@@ -575,12 +671,12 @@ void main() {
 
       expect(started.started, isTrue);
       // One vector carries the default and overrides. Multi applies its
-      // shared default to both tracks while keeping the explicit choices.
+      // shared default to all tracks while keeping the explicit choices.
       expect(repository.state.tracks[1].lengthPresetOverride, 8);
       expect(repository.state.tracks[0].lengthPresetOverride, 0);
       expect(engine.trackLengthPreset[1], 4);
       expect(engine.trackLengthPreset[0], 4);
-      expect(engine.lastTrackLengthPresets, [4, 4]);
+      expect(engine.lastTrackLengthPresets, [4, 4, 4, 4, 4, 4, 4, 4]);
       repository.setLooperMode(LooperMode.song);
       expect((await repository.settleLengthSettings()).isOk, isTrue);
       expect(engine.trackLengthPreset[1], 8);
@@ -607,7 +703,7 @@ void main() {
             outputRms: 0,
             latencyState: le.LatencyState.idle,
             measuredLatencyMs: -1,
-            tracks: [TrackSnapshot.empty()],
+            tracks: _emptyTrackSlots,
           );
 
         final result = await tryAutoStartEngine(
@@ -642,7 +738,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+          tracks: _emptyTrackSlots,
         );
 
         final result = await tryAutoStartEngine(
@@ -655,7 +751,16 @@ void main() {
         expect(repository.defaultOneShot, isTrue);
         expect(repository.state.tracks[0].oneShotOverride, isNull);
         expect(repository.state.tracks[1].oneShotOverride, isFalse);
-        expect(engine.trackOneShot, {0: true, 1: false});
+        expect(engine.trackOneShot, {
+          0: true,
+          1: false,
+          2: true,
+          3: true,
+          4: true,
+          5: true,
+          6: true,
+          7: true,
+        });
       },
     );
 
@@ -690,7 +795,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _emptyTrackSlots,
       );
 
       final started = await tryAutoStartEngine(
@@ -734,7 +839,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _emptyTrackSlots,
       );
 
       final started = await tryAutoStartEngine(
@@ -799,7 +904,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _emptyTrackSlots,
       );
 
       final started = await tryAutoStartEngine(
@@ -844,7 +949,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _emptyTrackSlots,
       );
 
       final result = await tryAutoStartEngine(
@@ -886,7 +991,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _emptyTrackSlots,
       );
 
       final started = await tryAutoStartEngine(
@@ -1012,7 +1117,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+        tracks: _emptyTrackSlots,
       );
 
       final started = await tryAutoStartEngine(
@@ -1074,7 +1179,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _emptyTrackSlots,
       );
 
       final started = await tryAutoStartEngine(
@@ -1189,6 +1294,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
+          tracks: _emptyTrackSlots,
         );
         await settings.saveAudioConfig(
           const StoredAudioConfig(
@@ -1272,7 +1378,7 @@ void main() {
       outputRms: 0,
       latencyState: le.LatencyState.idle,
       measuredLatencyMs: -1,
-      tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+      tracks: _emptyTrackSlots,
     );
 
     setUp(() async {
@@ -1286,6 +1392,7 @@ void main() {
       final mixSettings = testMixSettings(repository, settings: settings);
       bloc = LooperBloc(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: repository,

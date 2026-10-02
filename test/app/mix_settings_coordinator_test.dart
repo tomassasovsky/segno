@@ -43,7 +43,7 @@ class _Persistence implements MixSettingsPersistence {
   }
 }
 
-EngineSnapshot _rig({int trackCount = 1}) => EngineSnapshot(
+EngineSnapshot _rig({int trackCount = 8}) => EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
   bufferFrames: 128,
@@ -212,7 +212,7 @@ void main() {
         PairBalanceTarget(0),
         OutputLevelTarget(1),
         OutputBalanceTarget(1),
-        TrackPanTarget(1),
+        TrackPanTarget(8),
       ]) {
         expect(
           (await coordinator.setControllerValues({
@@ -821,7 +821,7 @@ void main() {
     'reset publishes all eight gains and pans atomically, '
     'preserving other facts',
     () async {
-      audio.nextSnapshot = _rig(trackCount: 8);
+      audio.nextSnapshot = _rig();
       final seed = MixSettingsSnapshot(
         trackLevels: {
           for (var channel = 0; channel < 8; channel++) channel: .3,

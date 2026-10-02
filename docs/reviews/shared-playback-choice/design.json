@@ -1,0 +1,14 @@
+{
+  "section": "B5yE6R",
+  "name": "Native implementation / Shared Playback Loop or Once / M3.13",
+  "penSha256": "083aba53d605617129a1a8d3b44d27ffbd4d58dc2ee8ce3a080a53f882af641e",
+  "layout": "Fresh MCP bounds inspection found no clipped descendants. Both new renders visually inspected in Pen. File > Save cleared Edited state and on-disk hash changed.",
+  "nativeUI": "Restarted actual development app; Loop controls > Loop defaults offered Playback. New external button endpoints were both Loop. Saved Held Once and Released Loop. Removal followed by Cancel restored the mapping and its values. Removed only this temporary review row and saved afterward; original Pan and Click assignments were preserved.",
+  "screenshots": {
+    "test/screenshots/goldens/midi_controls_playback_range.png": "5986d6362e4c0ac9866d2c1e43e57f43e5ff849eb001660e0b191add1f7446c4",
+    "test/screenshots/goldens/external_pedals_playback_held_released.png": "493d3fbac2019ff89e3fedb6330b543cb9e26b12f8000838e13b70591fe336c5",
+    "test/screenshots/goldens/loop_settings_playback_custom.png": "e5cf9481dd5272c637602666bd3b838bf0f0ae987ba75a67d1a4971afdb9ddd0",
+    "test/screenshots/goldens/click_recovery_power_off.png": "0d98a565abee2fc9740f9f891b886d00738ec7c8062f02756c9150fa958fe29a"
+  },
+  "reused": "Existing custom Playback and generic shutdown recovery references; two new author-only mapping renders. Physical controls and appliance halt remain separate."
+}

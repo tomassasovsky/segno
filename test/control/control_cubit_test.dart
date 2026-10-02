@@ -295,6 +295,7 @@ void main() {
       when(() => looper.state).thenReturn(_stateWith(_emptyTracks()));
       cubit = ControlCubit(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         clickVolumeControl: FakeClickVolumeControl(),
         fxPersistence: FxChainPersistence(looper: looper),
         looper: looper,
@@ -1856,6 +1857,7 @@ void main() {
       test('takeLocked suppresses recPlay', () {
         final locked = ControlCubit(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -1873,6 +1875,7 @@ void main() {
       test('takeLocked suppresses rec-mode trackPressed', () {
         final locked = ControlCubit(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -1890,6 +1893,7 @@ void main() {
       test('takeLocked suppresses togglePerformanceRecord', () {
         final locked = ControlCubit(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -1912,6 +1916,7 @@ void main() {
         addTearDown(lockedPedal.dispose);
         final locked = ControlCubit(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -2256,6 +2261,7 @@ void main() {
           addTearDown(recordingPerformance.dispose);
           final armedCubit = ControlCubit(
             decayControl: FakeDecayControl(),
+            oneShotControl: FakeOneShotControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
@@ -2300,6 +2306,7 @@ void main() {
         addTearDown(unarmedPerformance.dispose);
         final unarmedCubit = ControlCubit(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -2331,6 +2338,7 @@ void main() {
           addTearDown(recordingPerformance.dispose);
           final armedCubit = ControlCubit(
             decayControl: FakeDecayControl(),
+            oneShotControl: FakeOneShotControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
@@ -2468,6 +2476,7 @@ void main() {
           // capture documented no FX at all.
           final wired = ControlCubit(
             decayControl: FakeDecayControl(),
+            oneShotControl: FakeOneShotControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
@@ -3703,6 +3712,7 @@ void main() {
 
         final reloaded = ControlCubit(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -3799,6 +3809,7 @@ void main() {
           addTearDown(idlePedal.dispose);
           final idle = ControlCubit(
             decayControl: FakeDecayControl(),
+            oneShotControl: FakeOneShotControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,

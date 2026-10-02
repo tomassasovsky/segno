@@ -25,6 +25,7 @@ abstract final class AppToastId {
   static const mixSettings = 'app_mixSettings_error';
   static const clickSettings = 'app_clickSettings_error';
   static const decaySettings = 'app_decaySettings_error';
+  static const oneShotSettings = 'app_oneShotSettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};

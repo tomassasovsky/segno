@@ -22,6 +22,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
@@ -101,6 +102,7 @@ void main() {
     ExternalJackSetup? jack,
     double? clickVolume = 1,
     DecaySnapshot? decaySnapshot,
+    OneShotSnapshot? oneShotSnapshot,
   }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tester.view
@@ -121,12 +123,16 @@ void main() {
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
     tempo = MockClickTempoCubit(clickVolume: clickVolume);
-    final playback = MockDecayPlaybackCubit(snapshot: decaySnapshot);
+    final playback = MockDecayPlaybackCubit(
+      snapshot: decaySnapshot,
+      oneShot: oneShotSnapshot,
+    );
     control = ControlCubit(
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       clickVolumeControl: tempo,
       decayControl: playback,
+      oneShotControl: playback,
       mixSettings: mixSettings,
       pedal: pedal,
       settings: settings,
@@ -375,6 +381,128 @@ void main() {
     expect(parameter.target, const DefaultDecayTarget());
     expect((parameter.active, parameter.inactive), (0.4, 0.4));
     verifyNever(() => looper.setOverdubDecay(any()));
+  });
+
+  for (final once in [false, true]) {
+    testWidgets('Loop/Once button starts at accepted $once on both sides', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        oneShotSnapshot: OneShotSnapshot(
+          defaultOneShot: once,
+          trackOverrides: const {},
+        ),
+      );
+      await tap(tester, 'external_panel_controls');
+      await tap(tester, 'external_add_control');
+      await tap(tester, 'expression_kind_loopControls');
+      await tap(tester, 'expression_destination_loop:defaults');
+      await tap(
+        tester,
+        'external_pick_${externalControlKey(const DefaultOneShotTarget())}',
+      );
+      await tap(tester, 'external_save');
+      final parameter = saved().parameters.single;
+      expect(parameter.target, const DefaultOneShotTarget());
+      expect((parameter.active, parameter.inactive), once ? (1, 1) : (0, 0));
+      await tap(
+        tester,
+        once ? 'external_value_active_loop' : 'external_value_active_once',
+      );
+      expect(saved().parameters.single.active, once ? 1 : 0);
+      await tap(tester, 'external_save');
+      expect(saved().parameters.single.active, once ? 0 : 1);
+      expect(saved().parameters.single.inactive, once ? 1 : 0);
+      verifyNever(
+        () => looper.setDefaultOneShot(oneShot: any(named: 'oneShot')),
+      );
+    });
+  }
+
+  testWidgets('Loop/Once endpoint Escape and Cancel preserve saved choice', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      oneShotSnapshot: OneShotSnapshot(
+        defaultOneShot: false,
+        trackOverrides: const {},
+      ),
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: const DefaultOneShotTarget(),
+                active: 0,
+                inactive: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    await tap(tester, 'external_value_active_once');
+    expect(saved().parameters.single.active, 0);
+    expect(
+      tester
+          .widget<LoopChoiceButton>(
+            find.byKey(const Key('external_value_active_once')),
+          )
+          .selected,
+      isTrue,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<LoopChoiceButton>(
+            find.byKey(const Key('external_value_active_loop')),
+          )
+          .selected,
+      isTrue,
+    );
+    await tap(tester, 'external_value_active_once');
+    await tap(tester, 'external_cancel');
+    expect(saved().parameters.single.active, 0);
+    verifyNever(() => looper.setDefaultOneShot(oneShot: any(named: 'oneShot')));
+  });
+
+  testWidgets('unavailable Loop/Once row repairs without changing endpoints', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: const DefaultOneShotTarget(),
+                active: 1,
+                inactive: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    expect(find.text('Unavailable'), findsOneWidget);
+    await tap(tester, 'external_change_control');
+    await tap(tester, 'expression_kind_recordedTrack');
+    await tap(tester, 'expression_destination_track:0');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const TrackVolumeTarget(0))}',
+    );
+    expect(saved().parameters.single.target, const DefaultOneShotTarget());
+    await tap(tester, 'external_save');
+    final repaired = saved().parameters.single;
+    expect(repaired.target, const TrackVolumeTarget(0));
+    expect((repaired.active, repaired.inactive), (1, 0));
   });
 
   testWidgets('Cancel drops the new Click button without writing audio', (

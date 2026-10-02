@@ -79,8 +79,9 @@ void main() {
         await playback.load();
         final cubit = SessionCubit(
           runClickVolumeExclusive: tempo.runClickVolumeExclusive,
-          runDecayExclusive: playback.runDecayExclusive,
+          runPlaybackExclusive: playback.runPlaybackExclusive,
           currentDurableDecay: () => playback.durableDecaySnapshot,
+          currentDurableOneShot: () => playback.durableOneShotSnapshot,
           currentDurableClickVolume: () => tempo.durableClickVolume,
           repository: sessions,
           looper: looper,
@@ -166,6 +167,7 @@ void main() {
           );
           control = ControlCubit(
             decayControl: playback,
+            oneShotControl: playback,
             clickVolumeControl: tempo,
             looper: looper,
             pedal: pedal,

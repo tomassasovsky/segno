@@ -302940,6 +302940,200 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "B5yE6R",
+      "x": 55408,
+      "y": 3744,
+      "name": "Native implementation / Shared Playback Loop or Once / M3.13",
+      "width": 4000,
+      "height": 2720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "jFsqf",
+          "name": "Shared Playback reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Playback · Loop / Once · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "WSZcl",
+          "name": "c/ Playback choices, inheritance and recovery",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Loop defaults and fixed Tracks 1–8 share one verified Playback owner. Loop repeats; Once finishes the current pass and stops that track. Custom Loop stays explicit; Use default restores inheritance. Held values are temporary: session Save and restart retain Released intent. MIDI, external buttons and expression share the same choices. Native renders at 1920 × 1080; physical controls and appliance shutdown still need device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "we5dQ",
+          "name": "Shared Playback reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "ErALI",
+              "name": "MIDI · Playback endpoints reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rEjKj",
+                  "name": "MIDI · Playback endpoints caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Playback endpoints",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "dSP0E",
+                  "name": "MIDI · Playback endpoints native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_playback_range.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "nr7oy",
+              "name": "External button · Held Once, Released Loop reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "YYfql",
+                  "name": "External button · Held Once, Released Loop caption",
+                  "fill": "#C7CDD6",
+                  "content": "External button · Held Once, Released Loop",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "a9YOgc",
+                  "name": "External button · Held Once, Released Loop native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_playback_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "WFipa",
+          "name": "Shared Playback reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "eysa5",
+              "name": "Loop settings · Custom playback reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "R3rqFT",
+                  "name": "Loop settings · Custom playback caption",
+                  "fill": "#C7CDD6",
+                  "content": "Loop settings · Custom playback",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "ezlsy",
+                  "name": "Loop settings · Custom playback native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/loop_settings_playback_custom.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ixHg2",
+              "name": "Shutdown · settings recovery reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "IWHco",
+                  "name": "Shutdown · settings recovery caption",
+                  "fill": "#C7CDD6",
+                  "content": "Shutdown · settings recovery",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rRrIz",
+                  "name": "Shutdown · settings recovery native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/click_recovery_power_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {
