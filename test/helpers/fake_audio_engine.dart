@@ -21,6 +21,7 @@ class FakeAudioEngine implements AudioEngine {
 
   /// Snapshot returned by [snapshot].
   EngineSnapshot _nextSnapshot = const EngineSnapshot.initial().copyWith(
+    tracks: List.generate(8, (_) => const TrackSnapshot.empty()),
     outputChannels: 2,
     outputBusCount: 1,
   );
@@ -1653,6 +1654,7 @@ class _LengthSnapshot extends EngineSnapshot {
                lengths[channel],
                imageRevision: engine.imageRevisions[channel],
                solo: engine.trackSolo[channel],
+               oneShot: engine.trackOneShot[channel],
              ),
          ],
        );
@@ -1664,6 +1666,7 @@ class _LengthTrack extends TrackSnapshot {
     int? bars, {
     int? imageRevision,
     bool? solo,
+    bool? oneShot,
   }) : super(
          imageRevision: imageRevision ?? source.imageRevision,
          solo: solo ?? source.solo,
@@ -1684,7 +1687,7 @@ class _LengthTrack extends TrackSnapshot {
          layerInFlight: source.layerInFlight,
          pending: source.pending,
          lengthPresetBars: bars ?? source.lengthPresetBars,
-         oneShot: source.oneShot,
+         oneShot: oneShot ?? source.oneShot,
          settledTakeId: source.settledTakeId,
          restoreState: source.restoreState,
          positionFrames: source.positionFrames,

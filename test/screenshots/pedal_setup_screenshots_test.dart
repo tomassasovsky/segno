@@ -105,6 +105,7 @@ void main() {
     addTearDown(() => unawaited(pedalCubit.close()));
     final control = ControlCubit(
       decayControl: FakeDecayControl(),
+      oneShotControl: FakeOneShotControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,

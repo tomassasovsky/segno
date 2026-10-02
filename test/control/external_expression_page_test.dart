@@ -21,6 +21,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
@@ -114,6 +115,7 @@ void main() {
     WidgetTester tester, {
     ExternalJackSetup? jack,
     double? clickVolume = 1,
+    OneShotSnapshot? oneShotSnapshot,
   }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tester.view
@@ -135,13 +137,14 @@ void main() {
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
     final tempo = MockClickTempoCubit(clickVolume: clickVolume);
-    final playback = MockDecayPlaybackCubit();
+    final playback = MockDecayPlaybackCubit(oneShot: oneShotSnapshot);
     final controller = ControllerRepository(
       sources: [ConsoleCtrlSource(pedal)],
     );
     addTearDown(() => unawaited(controller.dispose()));
     control = ControlCubit(
       decayControl: playback,
+      oneShotControl: playback,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       clickVolumeControl: tempo,
@@ -466,6 +469,49 @@ void main() {
         expect(mapping.target, const ClickVolumeTarget());
         expect((mapping.heel, mapping.toe), (0, 1));
         verifyNever(() => looper.setClickVolume(any()));
+      },
+    );
+
+    expressionTestWidgets(
+      'Loop/Once keeps full range, Escape, Save and Cancel in the draft',
+      (tester) async {
+        await pump(
+          tester,
+          oneShotSnapshot: OneShotSnapshot(
+            defaultOneShot: false,
+            trackOverrides: const {},
+          ),
+        );
+        await tap(tester, 'expression_add');
+        await tap(tester, 'expression_kind_loopControls');
+        await tap(tester, 'expression_destination_loop:defaults');
+        await tap(tester, targetKey(const DefaultOneShotTarget()));
+        expect(textOf('expression_endpoint_heel_value'), 'Loop');
+        expect(textOf('expression_endpoint_toe_value'), 'Once');
+        await tap(tester, 'expression_endpoint_heel_once');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(textOf('expression_endpoint_heel_value'), 'Loop');
+        await tap(tester, 'expression_endpoint_heel_once');
+        await tap(tester, 'external_save');
+        final saved = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(saved.target, const DefaultOneShotTarget());
+        expect((saved.heel, saved.toe), (1, 1));
+        await tap(tester, 'expression_endpoint_heel_loop');
+        await tap(tester, 'external_cancel');
+        final afterCancel = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect((afterCancel.heel, afterCancel.toe), (1, 1));
+        verifyNever(
+          () => looper.setDefaultOneShot(oneShot: any(named: 'oneShot')),
+        );
       },
     );
 

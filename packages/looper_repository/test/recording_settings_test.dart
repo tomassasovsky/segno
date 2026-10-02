@@ -6,7 +6,7 @@ import 'package:segno_engine/segno_engine.dart' as engine;
 
 import 'helpers/fake_audio_engine.dart';
 
-engine.EngineSnapshot emptyTracks([int count = 3]) => engine.EngineSnapshot(
+engine.EngineSnapshot emptyTracks([int count = 8]) => engine.EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
   bufferFrames: 128,
@@ -89,9 +89,17 @@ void main() {
       ..setTrackLengthPreset(channel: 0, bars: 0)
       ..setTrackLengthPreset(channel: 1, bars: 4)
       ..startEngine(const EngineConfig());
-    expect(audio.trackLengthPreset, {0: 0, 1: 4, 2: 4});
+    expect(audio.trackLengthPreset, {
+      0: 0,
+      1: 4,
+      for (var c = 2; c < 8; c++) c: 4,
+    });
     repository.setDefaultLengthPreset(8);
-    expect(audio.trackLengthPreset, {0: 0, 1: 4, 2: 8});
+    expect(audio.trackLengthPreset, {
+      0: 0,
+      1: 4,
+      for (var c = 2; c < 8; c++) c: 8,
+    });
     expect(repository.state.tracks[0].lengthPresetOverride, 0);
     expect(repository.state.tracks[2].lengthPresetOverride, isNull);
     repository.setTrackLengthPreset(channel: 1, bars: null);
@@ -100,7 +108,11 @@ void main() {
     repository.stopEngine();
     audio.trackLengthPreset.clear();
     repository.startEngine(const EngineConfig());
-    expect(audio.trackLengthPreset, {0: 0, 1: 8, 2: 8});
+    expect(audio.trackLengthPreset, {
+      0: 0,
+      1: 8,
+      for (var c = 2; c < 8; c++) c: 8,
+    });
   });
 
   test('Multi shares default and restores dormant independent overrides', () {
@@ -109,13 +121,29 @@ void main() {
       ..setTrackLengthPreset(channel: 0, bars: 8)
       ..setTrackLengthPreset(channel: 1, bars: 0)
       ..startEngine(const EngineConfig());
-    expect(audio.trackLengthPreset, {0: 4, 1: 4, 2: 4});
+    expect(audio.trackLengthPreset, {
+      0: 4,
+      1: 4,
+      for (var c = 2; c < 8; c++) c: 4,
+    });
     repository.setDefaultLengthPreset(16);
-    expect(audio.trackLengthPreset, {0: 16, 1: 16, 2: 16});
+    expect(audio.trackLengthPreset, {
+      0: 16,
+      1: 16,
+      for (var c = 2; c < 8; c++) c: 16,
+    });
     repository.setLooperMode(LooperMode.free);
-    expect(audio.trackLengthPreset, {0: 8, 1: 0, 2: 16});
+    expect(audio.trackLengthPreset, {
+      0: 8,
+      1: 0,
+      for (var c = 2; c < 8; c++) c: 16,
+    });
     repository.setLooperMode(LooperMode.multi);
-    expect(audio.trackLengthPreset, {0: 16, 1: 16, 2: 16});
+    expect(audio.trackLengthPreset, {
+      0: 16,
+      1: 16,
+      for (var c = 2; c < 8; c++) c: 16,
+    });
     expect(repository.trackLengthPresetOverrides, {0: 8, 1: 0});
   });
 
@@ -134,7 +162,11 @@ void main() {
     expect(repository.sessionTransport.defaultLengthPresetBars, 4);
     expect(repository.sessionTransport.looperMode, LooperMode.multi);
     expect(repository.trackLengthPresetOverrides, {0: 8});
-    expect(audio.trackLengthPreset, {0: 4, 1: 4, 2: 4});
+    expect(audio.trackLengthPreset, {
+      0: 4,
+      1: 4,
+      for (var c = 2; c < 8; c++) c: 4,
+    });
   });
 
   for (final action in [
@@ -173,7 +205,7 @@ void main() {
         expect(repository.sessionTransport.defaultLengthPresetBars, 4);
         expect(repository.sessionTransport.looperMode, LooperMode.multi);
         expect(repository.trackLengthPresetOverrides, {0: 8});
-        expect(audio.publishedLengths, {0: 4, 1: 4, 2: 4});
+        expect(audio.publishedLengths, {for (var c = 0; c < 8; c++) c: 4});
         expect(repository.lengthSettingsSettled, isTrue);
       },
     );
@@ -241,7 +273,11 @@ void main() {
         await Future<void>.delayed(Duration.zero);
       }
       expect(repository.settledLooperMode, LooperMode.multi);
-      expect(audio.trackLengthPreset, {0: 4, 1: 4, 2: 4});
+      expect(audio.trackLengthPreset, {
+        0: 4,
+        1: 4,
+        for (var c = 2; c < 8; c++) c: 4,
+      });
       expect(audio.calls, isNot(contains('setTrackLengthPresets')));
       expect(audio.calls, isNot(contains('setTrackLengthPreset')));
     },
@@ -261,9 +297,17 @@ void main() {
       );
       expect(repository.sessionTransport.defaultLengthPresetBars, 4);
       expect(repository.trackLengthPresetOverrides, {0: 0, 1: 4});
-      expect(audio.trackLengthPreset, {0: 0, 1: 4, 2: 4});
+      expect(audio.trackLengthPreset, {
+        0: 0,
+        1: 4,
+        for (var c = 2; c < 8; c++) c: 4,
+      });
       repository.setDefaultLengthPreset(8);
-      expect(audio.trackLengthPreset, {0: 0, 1: 4, 2: 8});
+      expect(audio.trackLengthPreset, {
+        0: 0,
+        1: 4,
+        for (var c = 2; c < 8; c++) c: 8,
+      });
     },
   );
 
@@ -385,7 +429,7 @@ void main() {
         ..commandsAreSettled = true
         ..publishLengthCommands = true;
       expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
-      expect(audio.publishedLengths, {0: 4, 1: 4, 2: 4});
+      expect(audio.publishedLengths, {for (var c = 0; c < 8; c++) c: 4});
       expect(await repository.settleLengthSettings(), EngineResult.ok);
     },
   );
@@ -408,7 +452,11 @@ void main() {
       ..setOneShot(channel: 0, oneShot: false)
       ..setOneShot(channel: 1, oneShot: true)
       ..setDefaultOneShot(oneShot: true);
-    expect(audio.trackOneShot, {0: false, 1: true, 2: true});
+    expect(audio.trackOneShot, {
+      0: false,
+      1: true,
+      for (var c = 2; c < 8; c++) c: true,
+    });
     expect(repository.state.tracks[0].oneShotOverride, isFalse);
     expect(repository.state.tracks[2].oneShotOverride, isNull);
     expect(repository.state.tracks[2].oneShot, isTrue);
@@ -490,7 +538,11 @@ void main() {
     expect(repository.trackRecordTimingOverrides, {0: RecordTiming.quarter});
     expect(repository.trackOverdubDecayOverrides, {0: 25});
     expect(repository.trackLengthPresetOverrides, {0: 8});
-    expect(audio.trackOneShot, {0: false, 1: true, 2: true});
+    expect(audio.trackOneShot, {
+      0: false,
+      1: true,
+      for (var c = 2; c < 8; c++) c: true,
+    });
     expect(repository.state.tracks.every((track) => !track.hasContent), isTrue);
     repository.setDefaultOneShot(oneShot: false);
     expect(audio.trackOneShot[1], isTrue);
@@ -573,7 +625,11 @@ void main() {
     expect(repository.setDefaultOneShot(oneShot: true), EngineResult.invalid);
     expect(repository.defaultOneShot, isFalse);
     expect(repository.trackOneShotOverrides, {1: true});
-    expect(audio.trackOneShot, {0: false, 1: true, 2: false});
+    expect(audio.trackOneShot, {
+      0: false,
+      1: true,
+      for (var c = 2; c < 8; c++) c: false,
+    });
   });
 
   for (final running in [false, true]) {
@@ -696,7 +752,7 @@ void main() {
     expect(audio.trackOverdubFeedback, isEmpty);
     expect(audio.trackOneShot, isEmpty);
     expect(audio.trackLengthPreset, isEmpty);
-    audio.nextSnapshot = emptyTracks(8);
+    audio.nextSnapshot = emptyTracks();
     repository.startEngine(const EngineConfig());
     expect(audio.trackQuantizeDiv[7], GridDivision.bar);
     expect(audio.trackOverdubFeedback[7], 0);

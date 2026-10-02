@@ -153,6 +153,7 @@ class _Rig {
     fx = FxChainPersistence(looper: looper);
     cubit = ControlCubit(
       decayControl: FakeDecayControl(),
+      oneShotControl: FakeOneShotControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       looper: looper,
       pedal: pedal,

@@ -13,22 +13,6 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/loop_settings/loop_track_names.dart';
 import 'package:segno/theme/theme.dart';
 
-/// What the Playback & overdub page reads off the looper for one scope.
-typedef _PlaybackValues = ({
-  int count,
-  bool? trackOnceOverride,
-});
-
-_PlaybackValues _playbackValues(LooperState state, int? channel) {
-  final track = channel == null || channel >= state.tracks.length
-      ? null
-      : state.tracks[channel];
-  return (
-    count: state.tracks.length,
-    trackOnceOverride: track?.oneShotOverride,
-  );
-}
-
 /// The Playback & overdub page: the scope selector, then Loop/Once and the
 /// overdub decay slider for that scope, each with its origin tag and a Use
 /// default when a track overrides it (the pen's `playback-layout`, 1720 x
@@ -69,6 +53,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
   }
 
   void _setOnce(bool? once) {
+    if (!context.read<PlaybackOptionsCubit>().state.oneShotReady) return;
     final scope = _scope;
     if (scope == null) {
       unawaited(
@@ -99,17 +84,15 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final v = context.select<LooperBloc, _PlaybackValues>(
-      (bloc) => _playbackValues(bloc.state, _scope),
+    final count = context.select<LooperBloc, int>(
+      (bloc) => bloc.state.tracks.length,
     );
-    // The defaults are the cubit's own intent (what it persists and pushes);
-    // the overrides are the repository's projection.
+    // Default and Custom membership come from the same confirmed owner.
     final defaults = context.watch<PlaybackOptionsCubit>().state;
     final scope = _scope;
-    final onceCustom = scope != null && v.trackOnceOverride != null;
-    final once = scope == null
-        ? defaults.defaultOneShot
-        : v.trackOnceOverride ?? defaults.defaultOneShot;
+    final trackOnce = defaults.trackOneShotOverrides[scope];
+    final onceCustom = scope != null && trackOnce != null;
+    final once = trackOnce ?? defaults.defaultOneShot;
     final trackDecay = defaults.trackOverdubDecayOverrides[scope];
     final decayCustom = scope != null && trackDecay != null;
     final decay =
@@ -136,7 +119,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
               left: 100,
               top: 124,
               child: LoopScopeSelector(
-                trackNames: trackDisplayNames(context, v.count),
+                trackNames: trackDisplayNames(context, count),
                 selected: scope,
                 onSelected: (channel) => setState(() {
                   _scope = channel;
@@ -168,6 +151,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                     o ? LucideIcons.arrowRightToLine : LucideIcons.repeat,
                 selected: once,
                 onSelected: _setOnce,
+                enabled: defaults.oneShotReady,
                 width: 584,
                 height: 120,
                 fontSize: 28,
@@ -179,7 +163,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 top: top + 28,
                 child: LoopUseDefaultButton(
                   key: const Key('loop_playback_use_default'),
-                  onTap: () => _setOnce(null),
+                  onTap: defaults.oneShotReady ? () => _setOnce(null) : null,
                 ),
               ),
             Positioned(

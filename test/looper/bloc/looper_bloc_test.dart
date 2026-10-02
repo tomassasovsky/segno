@@ -30,6 +30,7 @@ void main() {
   late int confirmedDecay;
   late Map<int, int> confirmedTrackDecay;
   late bool confirmedOneShot;
+  late Map<int, bool> confirmedTrackOneShot;
 
   setUpAll(() {
     registerFallbackValue(<TrackEffect>[]);
@@ -46,6 +47,7 @@ void main() {
     confirmedDecay = 0;
     confirmedTrackDecay = {};
     confirmedOneShot = false;
+    confirmedTrackOneShot = {};
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
@@ -62,6 +64,55 @@ void main() {
       ),
     );
     when(() => repository.defaultOneShot).thenAnswer((_) => confirmedOneShot);
+    when(() => repository.trackOneShotOverrides).thenAnswer(
+      (_) => Map.unmodifiable(confirmedTrackOneShot),
+    );
+    when(() => repository.oneShotSettingsSettled).thenReturn(true);
+    when(() => repository.oneShotRecoveryRequired).thenReturn(false);
+    when(
+      () => repository.settleOneShot(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.oneShotRestartIntent).thenAnswer(
+      (_) => (
+        defaultOneShot: confirmedOneShot,
+        trackOverrides: Map<int, bool>.unmodifiable(confirmedTrackOneShot),
+      ),
+    );
+    when(
+      () => repository.setOneShotRestartIntent(
+        defaultOneShot: any(named: 'defaultOneShot'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((_) {});
+    when(
+      () => repository.setOneShotSnapshot(
+        defaultOneShot: any(named: 'defaultOneShot'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedOneShot = call.namedArguments[#defaultOneShot] as bool;
+      confirmedTrackOneShot = Map.of(
+        call.namedArguments[#trackOverrides] as Map<int, bool>,
+      );
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setOneShot(
+        channel: any(named: 'channel'),
+        oneShot: any(named: 'oneShot'),
+        releasedOneShot: any(named: 'releasedOneShot'),
+      ),
+    ).thenAnswer((call) {
+      final channel = call.namedArguments[#channel] as int;
+      final value = call.namedArguments[#oneShot] as bool?;
+      if (value == null) {
+        confirmedTrackOneShot.remove(channel);
+      } else {
+        confirmedTrackOneShot[channel] = value;
+      }
+      return EngineResult.ok;
+    });
+
     when(
       () => repository.setDecayRestartIntent(
         defaultPercent: any(named: 'defaultPercent'),
@@ -73,7 +124,10 @@ void main() {
       return EngineResult.ok;
     });
     when(
-      () => repository.setDefaultOneShot(oneShot: any(named: 'oneShot')),
+      () => repository.setDefaultOneShot(
+        oneShot: any(named: 'oneShot'),
+        releasedOneShot: any(named: 'releasedOneShot'),
+      ),
     ).thenAnswer((call) {
       confirmedOneShot = call.namedArguments[#oneShot] as bool;
       return EngineResult.ok;
@@ -188,12 +242,6 @@ void main() {
       () => repository.setTrackLengthPreset(
         channel: any(named: 'channel'),
         bars: any(named: 'bars'),
-      ),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setOneShot(
-        channel: any(named: 'channel'),
-        oneShot: any(named: 'oneShot'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
@@ -371,6 +419,7 @@ void main() {
 
   LooperBloc buildBloc() => LooperBloc(
     decayControl: FakeDecayControl(),
+    oneShotControl: FakeOneShotControl(),
     fxPersistence: FxChainPersistence(looper: repository),
     repository: repository,
     mixSettings: testMixSettings(repository),
@@ -429,6 +478,7 @@ void main() {
     'takeLocked suppresses LooperRecordPressed',
     build: () => LooperBloc(
       decayControl: FakeDecayControl(),
+      oneShotControl: FakeOneShotControl(),
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -443,6 +493,7 @@ void main() {
     'takeLocked suppresses LooperClearPressed',
     build: () => LooperBloc(
       decayControl: FakeDecayControl(),
+      oneShotControl: FakeOneShotControl(),
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -609,6 +660,7 @@ void main() {
     addTearDown(() => unawaited(playback.close()));
     return LooperBloc(
       decayControl: playback,
+      oneShotControl: playback,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository, settings: trackSettings),
       repository: repository,
@@ -996,15 +1048,6 @@ void main() {
     act: (bloc) => bloc.add(const LooperTrackLengthPresetChanged(1, 8)),
     verify: (_) async =>
         expect(await trackSettings.loadTrackLengthPreset(1), isNull),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperOneShotToggled forwards the flag to the repository (B5c)',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperOneShotToggled(1, oneShot: true)),
-    verify: (_) => verify(
-      () => repository.setOneShot(channel: 1, oneShot: true),
-    ).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -1509,6 +1552,7 @@ void main() {
         );
         return LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1557,6 +1601,7 @@ void main() {
       'LooperLaneMuteToggled persists the toggled mute onto the lane',
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1575,6 +1620,7 @@ void main() {
       'LooperClearPressed persists the unmute so a cleared track stays armed',
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1605,6 +1651,7 @@ void main() {
       ).thenReturn(EngineResult.invalid),
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1621,6 +1668,7 @@ void main() {
       'a lane effect structural edit persists the encoded chain onto the lane',
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1645,6 +1693,7 @@ void main() {
       () async {
         final bloc = LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1688,6 +1737,7 @@ void main() {
         ]);
         return LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1716,6 +1766,7 @@ void main() {
       'LooperLaneEffectParamChanged persists the re-encoded chain',
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1742,6 +1793,7 @@ void main() {
       'LooperLanePluginParamChanged persists the re-encoded chain',
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1824,6 +1876,7 @@ void main() {
         'envelope with the repo chain flag',
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1859,6 +1912,7 @@ void main() {
           ).thenAnswer((_) => applied.future);
           final bloc = LooperBloc(
             decayControl: FakeDecayControl(),
+            oneShotControl: FakeOneShotControl(),
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -1891,6 +1945,7 @@ void main() {
           ).thenAnswer((_) => applied.future);
           final bloc = LooperBloc(
             decayControl: FakeDecayControl(),
+            oneShotControl: FakeOneShotControl(),
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -1952,6 +2007,7 @@ void main() {
         ).thenAnswer((_) => oldWait.future);
         final bloc = LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1993,6 +2049,7 @@ void main() {
           });
           final bloc = LooperBloc(
             decayControl: FakeDecayControl(),
+            oneShotControl: FakeOneShotControl(),
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -2020,6 +2077,7 @@ void main() {
         ).thenAnswer((_) async => throw StateError('storage refused')),
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2055,6 +2113,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2099,6 +2158,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2148,6 +2208,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2202,6 +2263,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2244,6 +2306,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2295,6 +2358,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2347,6 +2411,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2403,6 +2468,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2458,6 +2524,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2492,6 +2559,7 @@ void main() {
             when(() => repository.trackEffects(0)).thenReturn(const []),
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2524,6 +2592,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2558,6 +2627,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2589,6 +2659,7 @@ void main() {
         },
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2608,6 +2679,7 @@ void main() {
         'LooperTrackEffectEnabledToggled flips the slot and re-persists',
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2633,6 +2705,7 @@ void main() {
         're-persists',
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2653,6 +2726,7 @@ void main() {
         'envelope',
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2676,6 +2750,7 @@ void main() {
         'LooperMasterEffectEnabledToggled flips the slot and re-persists',
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2701,6 +2776,7 @@ void main() {
         're-persists',
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2725,6 +2801,7 @@ void main() {
         when(() => repository.settledLooperMode).thenReturn(LooperMode.multi);
         return LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2752,6 +2829,7 @@ void main() {
         when(() => repository.settledLooperMode).thenReturn(LooperMode.free);
         return LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2771,6 +2849,7 @@ void main() {
         when(() => repository.settledLooperMode).thenReturn(LooperMode.band);
         return LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2848,6 +2927,7 @@ void main() {
 
     LooperBloc buildDebounced() => LooperBloc(
       decayControl: FakeDecayControl(),
+      oneShotControl: FakeOneShotControl(),
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -3116,6 +3196,7 @@ void main() {
         when(() => settings.loadLooperMode()).thenAnswer((_) async => 2);
         final bloc = LooperBloc(
           decayControl: FakeDecayControl(),
+          oneShotControl: FakeOneShotControl(),
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -3139,6 +3220,7 @@ void main() {
       when(() => settings.loadLooperMode()).thenAnswer((_) async => 0);
       final bloc = LooperBloc(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -3204,6 +3286,7 @@ void main() {
       settings = SettingsRepository(store: FakeKeyValueStore());
       bloc = LooperBloc(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         fxPersistence: FxChainPersistence(looper: looper),
         mixSettings: testMixSettings(looper),
         repository: looper,
@@ -3408,6 +3491,7 @@ void main() {
     test('is a no-op without a settings dependency', () async {
       final blocWithoutSettings = LooperBloc(
         decayControl: FakeDecayControl(),
+        oneShotControl: FakeOneShotControl(),
         fxPersistence: FxChainPersistence(looper: looper),
         repository: looper,
         mixSettings: testMixSettings(looper),

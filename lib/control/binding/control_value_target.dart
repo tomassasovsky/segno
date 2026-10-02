@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/mix_value_scale.dart';
 import 'package:segno/looper/model/click_volume.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 
 /// What a continuous binding sweeps: an FX parameter, Mixer control, or
@@ -48,6 +49,8 @@ sealed class ControlValueTarget extends Equatable {
     ClickVolumeTarget() => true,
     DefaultDecayTarget() => true,
     TrackDecayTarget(:final channel) => channel >= 0 && channel < 8,
+    DefaultOneShotTarget() => true,
+    TrackOneShotTarget(:final channel) => channel >= 0 && channel < 8,
   };
 
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
@@ -75,6 +78,9 @@ sealed class ControlValueTarget extends Equatable {
       if (ctl == 'overdubDecay') {
         return raw.length == 1 ? const DefaultDecayTarget() : null;
       }
+      if (ctl == 'defaultOneShot') {
+        return raw.length == 1 ? const DefaultOneShotTarget() : null;
+      }
       final index = raw['index'];
       final lane = raw['lane'];
       if (index is! int || index < 0) return null;
@@ -92,6 +98,7 @@ sealed class ControlValueTarget extends Equatable {
         'trackOverdubDecay' when indexed && index < 8 => TrackDecayTarget(
           index,
         ),
+        'trackOneShot' when indexed && index < 8 => TrackOneShotTarget(index),
         _ => null,
       };
     }
@@ -405,6 +412,63 @@ final class TrackDecayTarget extends DecayValueTarget {
   @override
   String canonicalString() =>
       jsonEncode({'ctl': 'trackOverdubDecay', 'index': channel});
+
+  @override
+  List<Object?> get props => [channel];
+}
+
+/// A binary Loop/Once endpoint represented by normalized controller travel.
+sealed class OneShotValueTarget extends ControlValueTarget {
+  /// Creates a Loop/Once target.
+  const OneShotValueTarget();
+
+  /// The fixed default or track address.
+  OneShotAddress get address;
+
+  /// Converts normalized source travel to the owner's Loop/Once value.
+  bool toDomain(double normalized) {
+    if (!normalized.isFinite) {
+      throw ArgumentError.value(normalized, 'normalized');
+    }
+    return normalized >= 0.5;
+  }
+
+  /// Converts the accepted Loop/Once value to a stored endpoint.
+  double fromDomain({required bool oneShot}) => oneShot ? 1 : 0;
+
+  /// One relative-controller detent crosses the binary choice.
+  double get relativeStep => 1;
+}
+
+/// The Loop/Once default inherited by tracks without an override.
+final class DefaultOneShotTarget extends OneShotValueTarget {
+  /// Creates the default Loop/Once target.
+  const DefaultOneShotTarget();
+
+  @override
+  OneShotAddress get address => const OneShotAddress.defaults();
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'defaultOneShot'});
+
+  @override
+  List<Object?> get props => ['defaultOneShot'];
+}
+
+/// One fixed track's effective Loop/Once choice, including empty tracks.
+final class TrackOneShotTarget extends OneShotValueTarget {
+  /// Creates a track Loop/Once target with a zero-based [channel].
+  const TrackOneShotTarget(this.channel);
+
+  /// Fixed channel, independent of selection and current track count.
+  final int channel;
+
+  @override
+  OneShotAddress get address => OneShotAddress.track(channel);
+
+  @override
+  String canonicalString() =>
+      jsonEncode({'ctl': 'trackOneShot', 'index': channel});
 
   @override
   List<Object?> get props => [channel];

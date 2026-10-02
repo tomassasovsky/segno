@@ -98,8 +98,9 @@ void main() {
         mixPersistence: SettingsMixPersistence(settings),
         fxPersistence: FxChainPersistence(looper: looper),
         runClickVolumeExclusive: tempo.runClickVolumeExclusive,
-        runDecayExclusive: playback.runDecayExclusive,
+        runPlaybackExclusive: playback.runPlaybackExclusive,
         currentDurableDecay: () => playback.durableDecaySnapshot,
+        currentDurableOneShot: () => playback.durableOneShotSnapshot,
         currentDurableClickVolume: () => tempo.durableClickVolume,
         exportDirectory: () async => directory.path,
       );

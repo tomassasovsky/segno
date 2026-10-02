@@ -40,6 +40,7 @@ class LooperPage extends StatelessWidget {
         BlocProvider(
           create: (context) => LooperBloc(
             decayControl: context.read<PlaybackOptionsCubit>(),
+            oneShotControl: context.read<PlaybackOptionsCubit>(),
             repository: context.read<LooperRepository>(),
             mixSettings: context.read<MixSettingsCoordinator>(),
             fxPersistence: context.read<FxChainPersistence>(),
@@ -66,11 +67,13 @@ class LooperPage extends StatelessWidget {
                 .runClickVolumeExclusive,
             currentDurableClickVolume: () =>
                 context.read<TempoCubit>().durableClickVolume,
-            runDecayExclusive: context
+            runPlaybackExclusive: context
                 .read<PlaybackOptionsCubit>()
-                .runDecayExclusive,
+                .runPlaybackExclusive,
             currentDurableDecay: () =>
                 context.read<PlaybackOptionsCubit>().durableDecaySnapshot,
+            currentDurableOneShot: () =>
+                context.read<PlaybackOptionsCubit>().durableOneShotSnapshot,
             exportDirectory: exportDirectory,
             // The session's pedal remap (part 6b) crossing as an opaque
             // string. Narrow functions rather than a cubit-to-cubit link:

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -14,6 +15,8 @@ class PlaybackOptions extends Equatable {
     this.defaultOneShot = false,
     this.trackOverdubDecayOverrides = const {},
     this.decayReady = false,
+    this.oneShotReady = false,
+    this.trackOneShotOverrides = const {},
   });
 
   /// The default overdub decay in percent, from zero to 100.
@@ -25,6 +28,12 @@ class PlaybackOptions extends Equatable {
   /// Explicit track values, including zero; absence means inheritance.
   final Map<int, int> trackOverdubDecayOverrides;
 
+  /// Confirmed playback override membership, including Custom false.
+  final Map<int, bool> trackOneShotOverrides;
+
+  /// Whether Playback has initialized independently of Decay.
+  final bool oneShotReady;
+
   /// Whether Decay has initialized independently of the Once preference.
   final bool decayReady;
 
@@ -34,12 +43,16 @@ class PlaybackOptions extends Equatable {
     bool? defaultOneShot,
     Map<int, int>? trackOverdubDecayOverrides,
     bool? decayReady,
+    bool? oneShotReady,
+    Map<int, bool>? trackOneShotOverrides,
   }) => PlaybackOptions(
     overdubDecay: overdubDecay ?? this.overdubDecay,
     defaultOneShot: defaultOneShot ?? this.defaultOneShot,
     trackOverdubDecayOverrides:
         trackOverdubDecayOverrides ?? this.trackOverdubDecayOverrides,
     decayReady: decayReady ?? this.decayReady,
+    oneShotReady: oneShotReady ?? this.oneShotReady,
+    trackOneShotOverrides: trackOneShotOverrides ?? this.trackOneShotOverrides,
   );
 
   @override
@@ -48,12 +61,14 @@ class PlaybackOptions extends Equatable {
     defaultOneShot,
     trackOverdubDecayOverrides,
     decayReady,
+    oneShotReady,
+    trackOneShotOverrides,
   ];
 }
 
 /// Owns verified decay intent and the existing global Once preference.
 class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
-    implements DecayControl {
+    implements DecayControl, OneShotControl {
   /// Creates the application owner backed by the existing repositories.
   PlaybackOptionsCubit({
     required LooperRepository repository,
@@ -79,7 +94,20 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
   Future<void> _tail = Future<void>.value();
   Future<void>? _closeFuture;
   late DecayLifetime _lifetime;
-  int _onceEditRevision = 0;
+  Future<void>? _oneShotLoadFuture;
+  bool _oneShotInitialized = false;
+  final _oneShotRevisions = <OneShotAddress, int>{};
+  final _ordinaryOneShot =
+      StreamController<({OneShotAddress address, bool? oneShot})>.broadcast(
+        sync: true,
+      );
+  final _oneShotFailures = StreamController<OneShotOutcome>.broadcast(
+    sync: true,
+  );
+  OneShotOutcome _lastOneShot = const OneShotOutcome(OneShotStatus.rejected);
+  _OneShotRecovery? _oneShotRecovery;
+  OneShotLifetime? _oneShotLifetime;
+
   bool _closing = false;
   bool _applying = false;
   _DecayRecovery? _recovery;
@@ -133,7 +161,6 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
       state.copyWith(
         overdubDecay: _repository.defaultOverdubDecay,
         trackOverdubDecayOverrides: _repository.trackOverdubDecayOverrides,
-        defaultOneShot: _repository.defaultOneShot,
         decayReady: ready,
       ),
     );
@@ -141,6 +168,7 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
 
   void _onLooperState(LooperState _) {
     if (_closing || isClosed || _applying) return;
+    _syncOneShot();
     if (_lifetime != decayLifetime) {
       _lifetime = decayLifetime;
       _revisions.clear();
@@ -158,8 +186,6 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
       _publish(ready: _repository.decayReplayResult.isOk);
     } else if (state.decayReady) {
       _publish();
-    } else {
-      emit(state.copyWith(defaultOneShot: _repository.defaultOneShot));
     }
   }
 
@@ -172,7 +198,7 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
   /// Starts independent Decay and Once restoration exactly once.
   Future<void> load() => _loadFuture ??= Future.wait([
     _decayLoadFuture ??= _restoreDecay(),
-    _restoreOnce(),
+    _oneShotLoadFuture ??= _restoreOnce(),
   ]).then((_) {});
 
   Future<void> _ready() async {
@@ -180,7 +206,7 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
     await _decayLoadFuture;
   }
 
-  Future<void> _restoreDecay() async {
+  Future<void> _restoreDecay({bool insideQueue = false}) async {
     final lifetime = decayLifetime;
     try {
       // Read and validate every fixed slot before applying any value.
@@ -189,53 +215,61 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
         for (var channel = 0; channel < 8; channel++)
           _settings.readDecayCheckpoint(channel: channel),
       ]);
-      if (_closing || isClosed) return;
-      if (lifetime != decayLifetime) {
-        _lifetime = decayLifetime;
-        _publish(ready: _repository.decayReplayResult.isOk);
-        return;
-      }
-      if (!_repository.decayReplayResult.isOk) {
-        _report(
-          DecayOutcome(
-            DecayStatus.rejected,
-            engineResult: _repository.decayReplayResult,
-          ),
-        );
-        _publish(ready: false);
-        return;
-      }
-      final prior = durableDecaySnapshot;
-      _applying = true;
-      try {
-        var result = _repository.setOverdubDecay(saved.first ?? 0);
-        for (var channel = 0; channel < 8 && result.isOk; channel++) {
-          result = _repository.setTrackOverdubDecay(
-            channel: channel,
-            percent: saved[channel + 1],
-          );
-        }
-        if (!result.isOk) {
-          // A failed multi-scope initialization cannot remain partly audible.
-          _repository
-            ..stopEngine()
-            ..setOverdubDecay(prior.defaultPercent);
-          for (var channel = 0; channel < 8; channel++) {
-            _repository.setTrackOverdubDecay(
-              channel: channel,
-              percent: prior.trackOverrides[channel],
-            );
-          }
+      Future<void> apply() async {
+        if (_closing || isClosed) return;
+        if (lifetime != decayLifetime) {
           _lifetime = decayLifetime;
-          _report(DecayOutcome(DecayStatus.rejected, engineResult: result));
+          _publish(ready: _repository.decayReplayResult.isOk);
+          return;
+        }
+        if (!_repository.decayReplayResult.isOk) {
+          _report(
+            DecayOutcome(
+              DecayStatus.rejected,
+              engineResult: _repository.decayReplayResult,
+            ),
+          );
           _publish(ready: false);
           return;
         }
-        _lifetime = decayLifetime;
-        _last = const DecayOutcome(DecayStatus.applied);
-        _publish();
-      } finally {
-        _applying = false;
+        final prior = durableDecaySnapshot;
+        _applying = true;
+        try {
+          var result = _repository.setOverdubDecay(saved.first ?? 0);
+          for (var channel = 0; channel < 8 && result.isOk; channel++) {
+            result = _repository.setTrackOverdubDecay(
+              channel: channel,
+              percent: saved[channel + 1],
+            );
+          }
+          if (!result.isOk) {
+            // A failed multi-scope initialization cannot remain partly audible.
+            _repository
+              ..stopEngine()
+              ..setOverdubDecay(prior.defaultPercent);
+            for (var channel = 0; channel < 8; channel++) {
+              _repository.setTrackOverdubDecay(
+                channel: channel,
+                percent: prior.trackOverrides[channel],
+              );
+            }
+            _lifetime = decayLifetime;
+            _report(DecayOutcome(DecayStatus.rejected, engineResult: result));
+            _publish(ready: false);
+            return;
+          }
+          _lifetime = decayLifetime;
+          _last = const DecayOutcome(DecayStatus.applied);
+          _publish();
+        } finally {
+          _applying = false;
+        }
+      }
+
+      if (insideQueue) {
+        await apply();
+      } else {
+        await _queue(apply);
       }
     } on Object catch (error) {
       if (lifetime != decayLifetime || _closing || isClosed) return;
@@ -244,17 +278,387 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
   }
 
   Future<void> _restoreOnce() async {
-    final session = _repository.sessionRevision;
-    final revision = _onceEditRevision;
-    final value = await _settings.loadDefaultOneShot();
+    final startupSession = oneShotLifetime.sessionRevision;
+    try {
+      final saved = await Future.wait([
+        _settings.readOneShotCheckpoint(channel: null),
+        for (var c = 0; c < 8; c++) _settings.readOneShotCheckpoint(channel: c),
+      ]);
+      // Device replacement can occur while reading or awaiting a receipt.
+      // Retry admission for that device; a newer session owns its own vector.
+      while (!_closing && !isClosed) {
+        final origin = oneShotLifetime;
+        final finished = await _queue(() async {
+          if (_closing || isClosed) return true;
+          if (origin != oneShotLifetime) return false;
+          _applying = true;
+          try {
+            final prior = await _repository.settleOneShot();
+            if (_closing || isClosed) return true;
+            if (origin != oneShotLifetime) return false;
+            if (!prior.isOk || _repository.oneShotRecoveryRequired) {
+              _reportOneShot(
+                const OneShotOutcome(OneShotStatus.recoveryRequired),
+              );
+              return true;
+            }
+            if (origin.sessionRevision == startupSession) {
+              var result = _repository.setOneShotSnapshot(
+                defaultOneShot: saved.first ?? false,
+                trackOverrides: {
+                  for (var c = 0; c < 8; c++)
+                    if (saved[c + 1] != null) c: saved[c + 1]!,
+                },
+              );
+              if (result.isOk) result = await _repository.settleOneShot();
+              if (_closing || isClosed) return true;
+              if (origin != oneShotLifetime) return false;
+              if (!result.isOk) {
+                _reportOneShot(
+                  OneShotOutcome(
+                    _repository.oneShotRecoveryRequired
+                        ? OneShotStatus.recoveryRequired
+                        : OneShotStatus.rejected,
+                    engineResult: result,
+                  ),
+                );
+                return true;
+              }
+            }
+            _oneShotLifetime = oneShotLifetime;
+            _oneShotInitialized = true;
+            _publishOneShot();
+            _reportOneShot(const OneShotOutcome(OneShotStatus.applied));
+            return true;
+          } finally {
+            _applying = false;
+          }
+        });
+        if (finished) return;
+      }
+    } on Object catch (error) {
+      if (!_closing && !isClosed) {
+        _reportOneShot(OneShotOutcome(OneShotStatus.rejected, error: error));
+      }
+    }
+  }
+
+  Future<void> _readyOneShot() async {
+    _oneShotLoadFuture ??= _restoreOnce();
+    await _oneShotLoadFuture;
+  }
+
+  @override
+  OneShotSnapshot? get oneShotSnapshot => state.oneShotReady
+      ? OneShotSnapshot(
+          defaultOneShot: state.defaultOneShot,
+          trackOverrides: state.trackOneShotOverrides,
+        )
+      : null;
+
+  @override
+  OneShotSnapshot get durableOneShotSnapshot {
+    final intent = _repository.oneShotRestartIntent;
+    return OneShotSnapshot(
+      defaultOneShot: intent.defaultOneShot,
+      trackOverrides: intent.trackOverrides,
+    );
+  }
+
+  @override
+  OneShotLifetime get oneShotLifetime => (
+    sessionRevision: _repository.sessionRevision,
+    mixGeneration: _repository.mixGeneration,
+  );
+
+  @override
+  int oneShotRevision(OneShotAddress address) =>
+      _oneShotRevisions[address] ?? 0;
+
+  @override
+  Stream<({OneShotAddress address, bool? oneShot})>
+  get ordinaryOneShotChanges => _ordinaryOneShot.stream;
+
+  /// Playback refusals for the application's visible recovery flow.
+  Stream<OneShotOutcome> get oneShotFailures => _oneShotFailures.stream;
+
+  OneShotOutcome _reportOneShot(OneShotOutcome outcome) {
+    if (outcome.status == OneShotStatus.superseded) return outcome;
+    _lastOneShot = outcome;
+    if (!outcome.isOk && !_closing && !isClosed) _oneShotFailures.add(outcome);
+    return outcome;
+  }
+
+  void _publishOneShot() {
     if (_closing || isClosed) return;
-    if (session == _repository.sessionRevision &&
-        revision == _onceEditRevision) {
-      _repository.setDefaultOneShot(oneShot: value);
+    emit(
+      state.copyWith(
+        defaultOneShot: _repository.defaultOneShot,
+        trackOneShotOverrides: Map.unmodifiable(
+          _repository.trackOneShotOverrides,
+        ),
+        oneShotReady: true,
+        overdubDecay: state.decayReady ? _repository.defaultOverdubDecay : null,
+        trackOverdubDecayOverrides: state.decayReady
+            ? _repository.trackOverdubDecayOverrides
+            : null,
+      ),
+    );
+  }
+
+  void _syncOneShot() {
+    final replaced = _oneShotLifetime != oneShotLifetime;
+    if (replaced) {
+      _oneShotLifetime = oneShotLifetime;
+      _oneShotRevisions.clear();
     }
-    if (state.defaultOneShot != _repository.defaultOneShot) {
-      emit(state.copyWith(defaultOneShot: _repository.defaultOneShot));
+    if (_repository.oneShotRecoveryRequired) {
+      if (_lastOneShot.status != OneShotStatus.recoveryRequired) {
+        _reportOneShot(const OneShotOutcome(OneShotStatus.recoveryRequired));
+      }
+    } else if (_oneShotInitialized) {
+      if (_repository.oneShotSettingsSettled) {
+        _publishOneShot();
+        if (replaced && _oneShotRecovery == null) {
+          _lastOneShot = const OneShotOutcome(OneShotStatus.applied);
+        }
+      } else if (replaced) {
+        emit(state.copyWith(oneShotReady: false));
+      }
     }
+  }
+
+  /// Sets and verifies ordinary default Playback through the shared queue.
+  Future<OneShotOutcome> setDefaultOneShot({required bool value}) =>
+      _writeOneShot(const OneShotAddress.defaults(), value, ordinary: true);
+
+  @override
+  Future<OneShotOutcome> setTrackOneShot({
+    required int channel,
+    required bool? oneShot,
+  }) => _writeOneShot(OneShotAddress.track(channel), oneShot, ordinary: true);
+
+  @override
+  Future<OneShotOutcome> setControllerOneShot(
+    OneShotAddress address, {
+    required bool oneShot,
+    required OneShotLifetime lifetime,
+    required int revision,
+    bool? releasedOneShot,
+  }) => _writeOneShot(
+    address,
+    oneShot,
+    lifetime: lifetime,
+    revision: revision,
+    releasedOneShot: releasedOneShot,
+  );
+
+  Future<OneShotOutcome> _writeOneShot(
+    OneShotAddress address,
+    bool? oneShot, {
+    bool ordinary = false,
+    OneShotLifetime? lifetime,
+    int? revision,
+    bool? releasedOneShot,
+  }) async {
+    if (!address.isValid || (address.channel == null && oneShot == null)) {
+      return _reportOneShot(
+        const OneShotOutcome(
+          OneShotStatus.rejected,
+          engineResult: EngineResult.invalid,
+        ),
+      );
+    }
+    final origin = lifetime ?? oneShotLifetime;
+    await _readyOneShot();
+    return _queue(() async {
+      bool current() =>
+          origin == oneShotLifetime &&
+          (revision == null || revision == oneShotRevision(address));
+      if (!current()) return const OneShotOutcome(OneShotStatus.superseded);
+      if (_closing ||
+          isClosed ||
+          !state.oneShotReady ||
+          _oneShotRecovery != null ||
+          _repository.oneShotRecoveryRequired) {
+        return _reportOneShot(
+          OneShotOutcome(
+            _oneShotRecovery != null || _repository.oneShotRecoveryRequired
+                ? OneShotStatus.recoveryRequired
+                : OneShotStatus.rejected,
+            engineResult: EngineResult.notReady,
+          ),
+        );
+      }
+      bool? checkpoint;
+      var storeAttempted = false;
+      try {
+        checkpoint = await _settings.readOneShotCheckpoint(
+          channel: address.channel,
+        );
+        if (!current() || _closing || isClosed) {
+          return const OneShotOutcome(OneShotStatus.superseded);
+        }
+        final durable = releasedOneShot ?? oneShot;
+        if (checkpoint != durable) {
+          storeAttempted = true;
+          await _settings.restoreOneShotCheckpoint(
+            channel: address.channel,
+            oneShot: durable,
+          );
+        }
+        if (!current() || _closing || isClosed) {
+          throw const _OneShotRefusal(OneShotStatus.superseded);
+        }
+        _applying = true;
+        try {
+          var result = address.channel == null
+              ? _repository.setDefaultOneShot(
+                  oneShot: oneShot!,
+                  releasedOneShot: releasedOneShot,
+                )
+              : _repository.setOneShot(
+                  channel: address.channel!,
+                  oneShot: oneShot,
+                  releasedOneShot: releasedOneShot,
+                );
+          if (result.isOk) result = await _repository.settleOneShot();
+          if (!result.isOk) {
+            throw _OneShotRefusal(OneShotStatus.rejected, result: result);
+          }
+          if (!current() || _closing || isClosed) {
+            throw const _OneShotRefusal(OneShotStatus.superseded);
+          }
+          _publishOneShot();
+          if (ordinary) {
+            _oneShotRevisions[address] = oneShotRevision(address) + 1;
+            _ordinaryOneShot.add((address: address, oneShot: oneShot));
+          }
+          return _reportOneShot(
+            OneShotOutcome(
+              OneShotStatus.applied,
+              deferred: !_repository.state.status.isConnected,
+            ),
+          );
+        } finally {
+          _applying = false;
+        }
+      } on Object catch (error) {
+        if (storeAttempted) {
+          try {
+            await _settings.restoreOneShotCheckpoint(
+              channel: address.channel,
+              oneShot: checkpoint,
+            );
+          } on Object catch (rollbackError) {
+            _oneShotRecovery = _OneShotRecovery(
+              address,
+              origin,
+              checkpoint: checkpoint,
+            );
+            return _reportOneShot(
+              OneShotOutcome(
+                OneShotStatus.recoveryRequired,
+                error: rollbackError,
+              ),
+            );
+          }
+        }
+        if (_repository.oneShotRecoveryRequired) {
+          return _reportOneShot(
+            OneShotOutcome(OneShotStatus.recoveryRequired, error: error),
+          );
+        }
+        if (!current() || _closing || isClosed) {
+          return const OneShotOutcome(OneShotStatus.superseded);
+        }
+        return _reportOneShot(
+          OneShotOutcome(
+            error is _OneShotRefusal ? error.status : OneShotStatus.rejected,
+            engineResult: error is _OneShotRefusal ? error.result : null,
+            error: error,
+          ),
+        );
+      }
+    });
+  }
+
+  /// Drains admitted writes and observes autonomous replay without new input.
+  Future<OneShotOutcome> flushOneShot() async {
+    await _readyOneShot();
+    await _tail;
+    final result = await _repository.settleOneShot();
+    if (!result.isOk ||
+        _repository.oneShotRecoveryRequired ||
+        _oneShotRecovery != null) {
+      return _reportOneShot(
+        OneShotOutcome(OneShotStatus.recoveryRequired, engineResult: result),
+      );
+    }
+    return state.oneShotReady
+        ? _lastOneShot
+        : _reportOneShot(const OneShotOutcome(OneShotStatus.rejected));
+  }
+
+  /// Repairs exact storage and current repository recovery, never an old rig.
+  Future<OneShotOutcome> recoverOneShot() async {
+    await _readyOneShot();
+    if (!_oneShotInitialized &&
+        !_repository.oneShotRecoveryRequired &&
+        _oneShotRecovery == null) {
+      await _restoreOnce();
+      return _lastOneShot;
+    }
+    final outcome = await _queue(() async {
+      if (_closing || isClosed) {
+        return const OneShotOutcome(OneShotStatus.rejected);
+      }
+      final recovery = _oneShotRecovery;
+      try {
+        if (recovery != null) {
+          await _settings.restoreOneShotCheckpoint(
+            channel: recovery.address.channel,
+            oneShot: recovery.checkpoint,
+          );
+          if (_closing || isClosed) {
+            return const OneShotOutcome(OneShotStatus.superseded);
+          }
+          _oneShotRecovery = null;
+        }
+        if (_repository.oneShotRecoveryRequired) {
+          final result = _repository.recoverOneShotSettings();
+          if (!result.isOk) {
+            return _reportOneShot(
+              OneShotOutcome(
+                OneShotStatus.recoveryRequired,
+                engineResult: result,
+              ),
+            );
+          }
+        }
+        if (!_oneShotInitialized) {
+          // Recovery repairs the engine, not unvalidated startup settings.
+          // Their staged reads must run outside this serial queue.
+          return const OneShotOutcome(OneShotStatus.applied);
+        }
+        _publishOneShot();
+        return _reportOneShot(
+          OneShotOutcome(
+            OneShotStatus.applied,
+            deferred: !_repository.state.status.isConnected,
+          ),
+        );
+      } on Object catch (error) {
+        return _reportOneShot(
+          OneShotOutcome(OneShotStatus.recoveryRequired, error: error),
+        );
+      }
+    });
+    if (outcome.isOk && !_oneShotInitialized) {
+      await _restoreOnce();
+      return _lastOneShot;
+    }
+    return outcome;
   }
 
   /// Sets and persists ordinary default decay.
@@ -462,31 +866,30 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
         );
       }
       if (!state.decayReady) {
-        await _restoreDecay();
+        await _restoreDecay(insideQueue: true);
         return _last;
       }
       return _report(const DecayOutcome(DecayStatus.applied));
     });
   }
 
-  /// Session lock order is Mixer, Click, then Decay; startup precedes the
-  /// queue.
-  Future<T> runDecayExclusive<T>(Future<T> Function() operation) async {
-    await _ready();
+  /// Mixer, Click, then one Playback queue; initialization precedes its lock.
+  Future<T> runPlaybackExclusive<T>(Future<T> Function() operation) async {
+    await Future.wait([_ready(), _readyOneShot()]);
     return _queue(() async {
-      if (_closing || isClosed || !state.decayReady || _recovery != null) {
-        throw StateError('Decay is unavailable for session capture');
+      if (_closing ||
+          isClosed ||
+          !state.decayReady ||
+          !state.oneShotReady ||
+          _recovery != null ||
+          _oneShotRecovery != null ||
+          _repository.oneShotRecoveryRequired) {
+        throw StateError('Playback is unavailable for session capture');
       }
+      final settled = await _repository.settleOneShot();
+      if (!settled.isOk) throw StateError('Playback receipt is unavailable');
       return operation();
     });
-  }
-
-  /// Preserves the existing, independently initialized Once preference.
-  Future<void> setDefaultOneShot({required bool value}) async {
-    _onceEditRevision++;
-    if (!_repository.setDefaultOneShot(oneShot: value).isOk) return;
-    if (!_closing && !isClosed) emit(state.copyWith(defaultOneShot: value));
-    await _settings.saveDefaultOneShot(oneShot: value);
   }
 
   @override
@@ -497,9 +900,12 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions>
     await _subscription.cancel();
     await _loadFuture;
     await _decayLoadFuture;
+    await _oneShotLoadFuture;
     await _tail;
     await _ordinary.close();
     await _failures.close();
+    await _ordinaryOneShot.close();
+    await _oneShotFailures.close();
   }
 }
 
@@ -513,5 +919,22 @@ final class _DecayRecovery {
 final class _DecayRefusal implements Exception {
   const _DecayRefusal(this.status, {this.result});
   final DecayStatus status;
+  final EngineResult? result;
+}
+
+final class _OneShotRecovery {
+  const _OneShotRecovery(
+    this.address,
+    this.lifetime, {
+    required this.checkpoint,
+  });
+  final OneShotAddress address;
+  final bool? checkpoint;
+  final OneShotLifetime lifetime;
+}
+
+final class _OneShotRefusal implements Exception {
+  const _OneShotRefusal(this.status, {this.result});
+  final OneShotStatus status;
   final EngineResult? result;
 }

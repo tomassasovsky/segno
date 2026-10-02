@@ -29,6 +29,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/click_volume.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
@@ -183,6 +184,7 @@ class _AppState extends State<App> {
   StreamSubscription<ClickVolumeOutcome>? _clickFailureSubscription;
   late final PlaybackOptionsCubit _playback;
   StreamSubscription<DecayOutcome>? _decayFailureSubscription;
+  StreamSubscription<OneShotOutcome>? _oneShotFailureSubscription;
 
   @override
   void initState() {
@@ -207,6 +209,9 @@ class _AppState extends State<App> {
     _decayFailureSubscription = _playback.decayFailures.listen(
       _showDecayFailure,
     );
+    _oneShotFailureSubscription = _playback.oneShotFailures.listen(
+      _showOneShotFailure,
+    );
     unawaited(_playback.load());
     _powerKeySource =
         widget.powerKeySource ??
@@ -219,6 +224,7 @@ class _AppState extends State<App> {
     unawaited(_mixFailureSubscription?.cancel());
     unawaited(_clickFailureSubscription?.cancel());
     unawaited(_decayFailureSubscription?.cancel());
+    unawaited(_oneShotFailureSubscription?.cancel());
     unawaited(_closeControlOwners());
     super.dispose();
   }
@@ -348,6 +354,47 @@ class _AppState extends State<App> {
     );
   }
 
+  void _showOneShotFailure(OneShotOutcome outcome) {
+    if (!mounted || outcome.status == OneShotStatus.superseded) return;
+    final recovery = outcome.status == OneShotStatus.recoveryRequired;
+    AppLog.error(
+      'OneShot settings: ${outcome.status.name} ${outcome.error ?? ''}',
+    );
+    showAppToast(
+      id: AppToastId.oneShotSettings,
+      type: ToastificationType.error,
+      dismissible: !recovery,
+      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
+      title: Builder(
+        builder: (context) => Text(
+          recovery
+              ? context.l10n.oneShotSettingsRecoveryTitle
+              : context.l10n.oneShotSettingsRefusedTitle,
+        ),
+      ),
+      description: recovery
+          ? Builder(
+              builder: (context) =>
+                  Text(context.l10n.oneShotSettingsRecoveryBody),
+            )
+          : null,
+      actions: recovery
+          ? [
+              TextButton(
+                onPressed: () async {
+                  if ((await _playback.recoverOneShot()).isOk) {
+                    dismissAppToast(AppToastId.oneShotSettings);
+                  }
+                },
+                child: Builder(
+                  builder: (context) => Text(context.l10n.powerOffRetry),
+                ),
+              ),
+            ]
+          : const [],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiRepositoryProvider(
@@ -410,6 +457,7 @@ class _AppState extends State<App> {
             create: (context) {
               final bloc = LooperBloc(
                 decayControl: _playback,
+                oneShotControl: _playback,
                 repository: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),
                 fxPersistence: context.read<FxChainPersistence>(),
@@ -639,6 +687,10 @@ class _AppState extends State<App> {
                   if (!decay.isOk) {
                     throw StateError('Decay settings still need recovery');
                   }
+                  final once = await _playback.recoverOneShot();
+                  if (!once.isOk) {
+                    throw StateError('Playback settings still need recovery');
+                  }
                   await _control?.flushMidiConfiguration(retireControls: true);
                 }
                 await monitor.flushPersistence();
@@ -655,6 +707,11 @@ class _AppState extends State<App> {
                 if (!decay.isOk) {
                   throw StateError('Decay settings were not confirmed');
                 }
+                final once = await _playback.flushOneShot();
+                if (!once.isOk) {
+                  throw StateError('Playback settings were not confirmed');
+                }
+                dismissAppToast(AppToastId.oneShotSettings);
                 dismissAppToast(AppToastId.clickSettings);
                 dismissAppToast(AppToastId.decaySettings);
               },
@@ -674,6 +731,7 @@ class _AppState extends State<App> {
             create: (context) {
               final cubit = ControlCubit(
                 decayControl: _playback,
+                oneShotControl: _playback,
                 clickVolumeControl: _tempo,
                 looper: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),

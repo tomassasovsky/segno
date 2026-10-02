@@ -5,7 +5,9 @@ import 'package:segno_engine/segno_engine.dart';
 /// A controllable in-memory [AudioEngine] for repository tests.
 class FakeAudioEngine implements AudioEngine {
   /// Snapshot returned by [snapshot] (mutate between ticks in tests).
-  EngineSnapshot _nextSnapshot = const EngineSnapshot.initial();
+  EngineSnapshot _nextSnapshot = const EngineSnapshot.initial().copyWith(
+    tracks: List.generate(8, (_) => const TrackSnapshot.empty()),
+  );
   EngineSnapshot get nextSnapshot => _nextSnapshot;
   set nextSnapshot(EngineSnapshot value) {
     _nextSnapshot = value;
@@ -1874,7 +1876,7 @@ class _LengthTrack extends TrackSnapshot {
         layerInFlight: source.layerInFlight,
         pending: source.pending,
         lengthPresetBars: bars ?? source.lengthPresetBars,
-        oneShot: source.oneShot,
+        oneShot: engine.trackOneShot[channel] ?? source.oneShot,
         settledTakeId: source.settledTakeId,
         restoreState: source.restoreState,
         positionFrames: source.positionFrames,

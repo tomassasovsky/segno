@@ -43,6 +43,7 @@ void main() {
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: repository),
       decayControl: owner,
+      oneShotControl: owner,
     );
     addTearDown(() async {
       if (!store.release.isCompleted) store.release.complete();

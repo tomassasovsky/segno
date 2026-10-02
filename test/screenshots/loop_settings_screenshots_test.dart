@@ -12,12 +12,15 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/one_shot.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
+import '../helpers/mock_decay_playback_cubit.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
@@ -101,6 +104,7 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     confirmedLength = 0;
     when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.sessionTransport).thenAnswer(
       (_) => TransportState(defaultLengthPresetBars: confirmedLength),
     );
@@ -185,9 +189,15 @@ void main() {
       repository: repository,
       settings: settings,
     );
-    final playback = PlaybackOptionsCubit(
-      repository: repository,
-      settings: settings,
+    final playback = MockDecayPlaybackCubit(
+      snapshot: DecaySnapshot(
+        defaultPercent: 0,
+        trackOverrides: const {1: 25},
+      ),
+      oneShot: OneShotSnapshot(
+        defaultOneShot: false,
+        trackOverrides: const {1: true},
+      ),
     );
     final timing = RecordTimingCubit(
       repository: repository,
@@ -222,7 +232,7 @@ void main() {
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider.value(value: tempo),
               BlocProvider.value(value: options),
-              BlocProvider.value(value: playback),
+              BlocProvider<PlaybackOptionsCubit>.value(value: playback),
               BlocProvider.value(value: timing),
               BlocProvider.value(value: tracks),
             ],

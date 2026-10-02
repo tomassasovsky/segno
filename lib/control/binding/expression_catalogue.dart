@@ -8,6 +8,7 @@ import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 
 /// Picker categories; Loop controls are separate from FX stage categories.
@@ -209,6 +210,16 @@ class ExpressionDestination extends Equatable {
     group: l10n.loopPlaybackLabel,
     control: l10n.loopDecayLabel,
   ),
+  DefaultOneShotTarget() => (
+    destination: l10n.expressionDestinationLoopDefaults,
+    group: l10n.loopPlaybackLabel,
+    control: '${l10n.loopPlaybackLoop} / ${l10n.loopPlaybackOnce}',
+  ),
+  TrackOneShotTarget(:final channel) => (
+    destination: l10n.trackName(trackNames, channel),
+    group: l10n.loopPlaybackLabel,
+    control: '${l10n.loopPlaybackLoop} / ${l10n.loopPlaybackOnce}',
+  ),
   MasterGainTarget() => (
     destination: l10n.fxEditorMasterTitle,
     group: l10n.fxEditorMasterTitle,
@@ -256,6 +267,7 @@ List<ExpressionDestination> expressionDestinations(
   bool withActivations = false,
   double? clickVolume,
   DecaySnapshot? decaySnapshot,
+  OneShotSnapshot? oneShotSnapshot,
 }) {
   final drafts = <String, _Draft>{};
   _Draft draftFor(
@@ -274,6 +286,7 @@ List<ExpressionDestination> expressionDestinations(
   for (final target in looper.availableValueTargets(
     clickVolume: clickVolume,
     decaySnapshot: decaySnapshot,
+    oneShotSnapshot: oneShotSnapshot,
   )) {
     final place = _placeOf(target);
     if (place == null) continue;
@@ -389,7 +402,8 @@ String _addressLabel(
 ) => switch (target) {
   TrackVolumeTarget(:final channel) ||
   TrackPanTarget(:final channel) => _trackPlace(channel),
-  TrackDecayTarget(:final channel) => _trackPlace(channel),
+  TrackDecayTarget(:final channel) ||
+  TrackOneShotTarget(:final channel) => _trackPlace(channel),
   LaneVolumeTarget(:final channel, :final lane) => _placeOfAddress(
     FxAddress(stage: FxStage.loop, index: channel, lane: lane),
   ),
@@ -405,7 +419,7 @@ String _addressLabel(
     kind: ExpressionDestinationKind.output,
     order: _clickOrder,
   ),
-  DefaultDecayTarget() => (
+  DefaultDecayTarget() || DefaultOneShotTarget() => (
     id: 'loop:defaults',
     kind: ExpressionDestinationKind.loopControls,
     order: _loopControlsOrder,

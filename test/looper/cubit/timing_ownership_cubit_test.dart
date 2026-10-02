@@ -90,6 +90,9 @@ void main() {
       addTearDown(quantize.close);
       addTearDown(record.close);
       addTearDown(tempo.close);
+      addTearDown(() {
+        if (!delayed.ready.isCompleted) delayed.ready.complete();
+      });
       final loads = Future.wait([
         playback.load(),
         quantize.load(),
@@ -109,7 +112,11 @@ void main() {
       await poll();
       expect(
         playback.state,
-        const PlaybackOptions(overdubDecay: 35, decayReady: true),
+        const PlaybackOptions(
+          overdubDecay: 35,
+          decayReady: true,
+          oneShotReady: true,
+        ),
       );
       expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions(autoRecord: true));
@@ -120,7 +127,11 @@ void main() {
       await poll();
       expect(
         playback.state,
-        const PlaybackOptions(overdubDecay: 35, decayReady: true),
+        const PlaybackOptions(
+          overdubDecay: 35,
+          decayReady: true,
+          oneShotReady: true,
+        ),
       );
       expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions(autoRecord: true));
@@ -154,6 +165,9 @@ void main() {
       addTearDown(quantize.close);
       addTearDown(record.close);
       addTearDown(tempo.close);
+      addTearDown(() {
+        if (!delayed.ready.isCompleted) delayed.ready.complete();
+      });
       final loads = Future.wait([
         playback.load(),
         quantize.load(),
@@ -172,7 +186,11 @@ void main() {
       // An ordinary Once edit does not discard the independent saved Decay.
       expect(
         playback.state,
-        const PlaybackOptions(overdubDecay: 80, decayReady: true),
+        const PlaybackOptions(
+          overdubDecay: 80,
+          decayReady: true,
+          oneShotReady: true,
+        ),
       );
       expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions());
@@ -244,6 +262,7 @@ void main() {
           overdubDecay: 40,
           defaultOneShot: true,
           decayReady: true,
+          oneShotReady: true,
         ),
       );
 
@@ -251,12 +270,20 @@ void main() {
       await poll();
       expect(
         cubit.state,
-        const PlaybackOptions(overdubDecay: 75, decayReady: true),
+        const PlaybackOptions(
+          overdubDecay: 75,
+          decayReady: true,
+          oneShotReady: true,
+        ),
       );
       await cubit.load();
       expect(
         cubit.state,
-        const PlaybackOptions(overdubDecay: 75, decayReady: true),
+        const PlaybackOptions(
+          overdubDecay: 75,
+          decayReady: true,
+          oneShotReady: true,
+        ),
       );
       expect(await settings.loadOverdubDecay(), 40);
       expect(await settings.loadDefaultOneShot(), isTrue);
@@ -264,8 +291,10 @@ void main() {
       await repository.applySession(const SessionRig());
       await poll();
     },
-    verify: (cubit) =>
-        expect(cubit.state, const PlaybackOptions(decayReady: true)),
+    verify: (cubit) => expect(
+      cubit.state,
+      const PlaybackOptions(decayReady: true, oneShotReady: true),
+    ),
   );
 
   blocTest<RecordTimingCubit, RecordTiming>(
