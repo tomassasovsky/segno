@@ -36,6 +36,26 @@ import 'package:settings_repository/settings_repository.dart'
 
 import '../helpers/helpers.dart';
 
+class _DecayBootEngine extends FakeAudioEngine {
+  double? defaultFeedback;
+  int? refuseTrack;
+  bool refuseDefault = false;
+
+  @override
+  EngineResult setOverdubFeedback(double feedback) {
+    defaultFeedback = feedback;
+    return refuseDefault ? EngineResult.invalid : EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) => channel == refuseTrack
+      ? EngineResult.invalid
+      : super.setTrackOverdubFeedback(channel: channel, feedback: feedback);
+}
+
 void main() {
   group('tryAutoStartEngine', () {
     late FakeAudioEngine engine;
@@ -89,6 +109,90 @@ void main() {
         ),
       );
     }
+
+    group('saved decay initialization', () {
+      for (final hasAudioConfig in [false, true]) {
+        test('restores every decay slot before audio opens, saved config '
+            '$hasAudioConfig', () async {
+          final decayEngine = _DecayBootEngine();
+          engine = decayEngine;
+          repository = LooperRepository(
+            engine: engine,
+            ticker: const Stream<void>.empty(),
+          );
+          addTearDown(repository.dispose);
+          if (hasAudioConfig) {
+            await settings.saveAudioConfig(
+              const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+            );
+          }
+          await settings.saveOverdubDecay(35);
+          await settings.saveTrackOverdubDecay(0, 0);
+          await settings.saveTrackOverdubDecay(7, 80);
+          final result = await tryAutoStartEngine(
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            settings: settings,
+          );
+          expect(result.started, isTrue);
+          expect(decayEngine.defaultFeedback, .65);
+          expect(decayEngine.trackOverdubFeedback, {
+            0: 1.0,
+            for (var channel = 1; channel < 7; channel++) channel: null,
+            7: closeTo(.2, 1e-9),
+          });
+          expect(repository.decayRestartIntent.trackOverrides, {0: 0, 7: 80});
+        });
+      }
+
+      test(
+        'an invalid last slot prevents every saved decay write and open',
+        () async {
+          repository
+            ..setOverdubDecay(10)
+            ..setTrackOverdubDecay(channel: 7, percent: 20);
+          store.values.addAll({
+            'looper.overdub_decay': 80,
+            'track_overdub_decay.0': 60,
+            'track_overdub_decay.7': 101,
+          });
+          final result = await tryAutoStartEngine(
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            settings: settings,
+          );
+          expect(result.started, isFalse);
+          expect(engine.startCalls, 0);
+          expect(repository.defaultOverdubDecay, 10);
+          expect(repository.trackOverdubDecayOverrides, {7: 20});
+        },
+      );
+
+      for (final refuseDefault in [false, true]) {
+        test('native decay refusal leaves startup stopped: default '
+            '$refuseDefault', () async {
+          engine = _DecayBootEngine()
+            ..refuseDefault = refuseDefault
+            ..refuseTrack = refuseDefault ? null : 7;
+          repository = LooperRepository(
+            engine: engine,
+            ticker: const Stream<void>.empty(),
+          );
+          addTearDown(repository.dispose);
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+          );
+          final result = await tryAutoStartEngine(
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            settings: settings,
+          );
+          expect(result.started, isFalse);
+          expect(repository.state.transport.isRunning, isFalse);
+          expect(repository.decayReplayResult, EngineResult.invalid);
+        });
+      }
+    });
 
     group('first run (no saved config)', () {
       tearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -1181,6 +1285,7 @@ void main() {
       final fxPersistence = FxChainPersistence(looper: repository);
       final mixSettings = testMixSettings(repository, settings: settings);
       bloc = LooperBloc(
+        decayControl: FakeDecayControl(),
         fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: repository,

@@ -191,6 +191,23 @@ class _ClickStore extends FakeKeyValueStore {
   }
 }
 
+class _DecayStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    if (key == 'looper.overdub_decay' ||
+        key.startsWith('track_overdub_decay.')) {
+      writeEntered = true;
+      await pendingWrite?.future;
+      if (refuseWrite) throw StateError('Decay preference unavailable');
+    }
+    await super.setInt(key, value);
+  }
+}
+
 class _ShutdownMidi extends MidiDeviceRepository {
   _ShutdownMidi(SettingsRepository settings)
     : super(source: null, settings: settings, pollInterval: Duration.zero);
@@ -452,6 +469,165 @@ void main() {
       expect(store.writeEntered, isFalse);
       expect(tempo.clickVolume, .25);
       store.pendingWrite!.complete();
+      await tester.pump(const Duration(seconds: 2));
+      expect(haltCalls, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    for (final channel in <int?>[null, 7]) {
+      testWidgets('power off waits for ordinary Decay at $channel', (
+        tester,
+      ) async {
+        final store = _DecayStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final decay = context.read<PlaybackOptionsCubit>();
+        final power = context.read<PowerOffCubit>();
+        store.pendingWrite = Completer<void>();
+        if (channel == null) {
+          unawaited(decay.setOverdubDecay(65));
+        } else {
+          // Ordinary per-track editing uses the production Bloc -> owner path.
+          context.read<LooperBloc>().add(
+            LooperTrackOverdubDecayChanged(channel, percent: 65),
+          );
+        }
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        power.press(const PowerOffSnapshot());
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(power.state.phase, PowerOffPhase.flushing);
+        expect(halted, isFalse);
+        store.pendingWrite!.complete();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        final key = channel == null
+            ? 'looper.overdub_decay'
+            : 'track_overdub_decay.$channel';
+        expect(store.values[key], 65);
+      });
+    }
+
+    for (final retry in [false, true]) {
+      testWidgets('Decay refusal stays on; recovery choice retry=$retry', (
+        tester,
+      ) async {
+        final store = _DecayStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final decay = context.read<PlaybackOptionsCubit>();
+        final power = context.read<PowerOffCubit>();
+        store.refuseWrite = true;
+        unawaited(decay.setOverdubDecay(80));
+        await tester.pumpAndSettle();
+        expect(decay.state.overdubDecay, 0);
+        power.press(const PowerOffSnapshot());
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.flushFailed);
+        expect(find.text('Settings could not be confirmed'), findsOneWidget);
+        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        expect(halted, isFalse);
+        store.refuseWrite = false;
+        await tester.tap(
+          find.byKey(Key(retry ? 'power_off_retry' : 'power_off_keep_playing')),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(halted, retry);
+        expect(store.values.containsKey('looper.overdub_decay'), isFalse);
+        if (!retry) {
+          unawaited(decay.setOverdubDecay(25));
+          await tester.pumpAndSettle();
+          expect(decay.state.overdubDecay, 25);
+          expect(store.values['looper.overdub_decay'], 25);
+        }
+      });
+    }
+
+    testWidgets('power off releases held Decay and rejects later MIDI', (
+      tester,
+    ) async {
+      final store = _DecayStore();
+      settings = SettingsRepository(store: store);
+      final midi = _ShutdownMidi(settings);
+      midiDeviceRepository = midi;
+      addTearDown(() => unawaited(midi.dispose()));
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final control = context.read<ControlCubit>();
+      final decay = context.read<PlaybackOptionsCubit>();
+      final power = context.read<PowerOffCubit>();
+      final editor = Object();
+      control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+      MidiSaveResult? saved;
+      unawaited(
+        control
+            .saveMidiMapping(
+              MidiMapping(
+                id: 'shutdown-decay',
+                source: MidiSource(
+                  device: 'shutdown-test',
+                  kind: ControllerSourceKind.midiCc,
+                  number: 21,
+                ),
+                behavior: MidiBehavior.momentary,
+                controls: [
+                  MidiParameterControl(
+                    key: '{"ctl":"overdubDecay"}',
+                    low: .2,
+                    high: .8,
+                  ),
+                  MidiParameterControl(
+                    key: '{"ctl":"trackOverdubDecay","index":7}',
+                    low: 0,
+                    high: .75,
+                  ),
+                ],
+              ),
+              owner: editor,
+              create: true,
+            )
+            .then((result) => saved = result),
+      );
+      await tester.pumpAndSettle();
+      expect(saved?.saved, isTrue);
+      control.endMidiEdit(editor);
+      midi.push(127);
+      await tester.pumpAndSettle();
+      expect(decay.state.overdubDecay, 80);
+      expect(decay.state.trackOverdubDecayOverrides, {7: 75});
+      power.press(const PowerOffSnapshot());
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(decay.state.overdubDecay, 20);
+      expect(decay.state.trackOverdubDecayOverrides, {7: 0});
+      expect(store.values['looper.overdub_decay'], 20);
+      expect(store.values['track_overdub_decay.7'], 0);
+      store.writeEntered = false;
+      midi.push(127);
+      await tester.pump();
+      expect(store.writeEntered, isFalse);
+      expect(decay.state.overdubDecay, 20);
+      expect(decay.state.trackOverdubDecayOverrides, {7: 0});
       await tester.pump(const Duration(seconds: 2));
       expect(haltCalls, 1);
       await tester.pumpWidget(const SizedBox.shrink());

@@ -26,9 +26,10 @@ import 'package:segno/control/view/pedal_setup/expression_target_picker.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
-import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -87,7 +88,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   String? _notice;
 
   /// Which tab of the destination picker is open, kept across visits.
-  FxDestinationKind _kind = FxDestinationKind.liveInput;
+  ExpressionDestinationKind _kind = ExpressionDestinationKind.liveInput;
 
   /// The destination whose controls are open.
   ExpressionDestination? _destination;
@@ -387,12 +388,14 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
     final clickVolume = context.watch<TempoCubit>().clickVolume;
+    final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
     final missing = mapping.controls.any(
       (control) => switch (control) {
         MidiParameterControl(:final key) => !_resolves(
           looper,
           key,
           clickVolume: clickVolume,
+          decaySnapshot: decaySnapshot,
         ),
         MidiActionControl(:final key) => ControlAction.tryParse(key) == null,
       },
@@ -621,6 +624,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                         context.read<LooperRepository>(),
                         key,
                         clickVolume: context.watch<TempoCubit>().clickVolume,
+                        decaySnapshot: context
+                            .watch<PlaybackOptionsCubit>()
+                            .decaySnapshot,
                       ),
                     },
                   ),
@@ -647,6 +653,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                 context.read<LooperRepository>(),
                 withActivations: true,
                 clickVolume: context.watch<TempoCubit>().clickVolume,
+                decaySnapshot: context
+                    .watch<PlaybackOptionsCubit>()
+                    .decaySnapshot,
               ),
               kind: _kind,
               onKind: (kind) => setState(() => _kind = kind),
@@ -913,6 +922,10 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         context.read<TempoCubit>().clickVolume == null) {
       return;
     }
+    if (target is DecayValueTarget &&
+        context.read<PlaybackOptionsCubit>().decaySnapshot == null) {
+      return;
+    }
     final key = switch (target) {
       ControlValueTarget() => target.canonicalString(),
       FxBindingTarget() => target.canonicalString(),
@@ -927,6 +940,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
           context.read<LooperRepository>(),
           replacing,
           clickVolume: context.read<TempoCubit>().clickVolume,
+          decaySnapshot: context.read<PlaybackOptionsCubit>().decaySnapshot,
         );
     final l10n = context.l10n;
     setState(() {
@@ -1102,10 +1116,15 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     LooperRepository looper,
     String key, {
     double? clickVolume,
+    DecaySnapshot? decaySnapshot,
   }) {
     final target = ControlValueTarget.tryParse(key);
     if (target != null) {
-      return looper.valueTargetResolves(target, clickVolume: clickVolume);
+      return looper.valueTargetResolves(
+        target,
+        clickVolume: clickVolume,
+        decaySnapshot: decaySnapshot,
+      );
     }
     final activation = FxBindingTarget.tryParse(key);
     return activation != null && looper.bindingResolves(activation);

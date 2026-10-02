@@ -3,6 +3,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -161,6 +162,70 @@ void main() {
       expect(looper.readValueTarget(target, clickVolume: 0), 0);
       expect(looper.readValueTarget(target, clickVolume: 1), 0.5);
       expect(looper.readValueTarget(target, clickVolume: 2), 1);
+    });
+
+    test('decay offers default and all fixed tracks only with an owner', () {
+      final snapshot = DecaySnapshot(
+        defaultPercent: 50,
+        trackOverrides: const {0: 0, 7: 80},
+      );
+      expect(
+        looper.availableValueTargets().whereType<DecayValueTarget>(),
+        isEmpty,
+      );
+      expect(looper.valueTargetResolves(const DefaultDecayTarget()), isFalse);
+      expect(looper.readValueTarget(const TrackDecayTarget(0)), isNull);
+      final offered = looper
+          .availableValueTargets(decaySnapshot: snapshot)
+          .whereType<DecayValueTarget>()
+          .toList();
+      expect(offered.first, const DefaultDecayTarget());
+      expect(
+        offered.whereType<TrackDecayTarget>().map((t) => t.channel),
+        List.generate(8, (index) => index),
+      );
+      expect(
+        looper.valueTargetResolves(
+          const TrackDecayTarget(7),
+          decaySnapshot: snapshot,
+        ),
+        isTrue,
+      );
+      expect(
+        looper.valueTargetResolves(
+          const TrackDecayTarget(8),
+          decaySnapshot: snapshot,
+        ),
+        isFalse,
+      );
+      expect(
+        looper.readValueTarget(
+          const DefaultDecayTarget(),
+          decaySnapshot: snapshot,
+        ),
+        0.5,
+      );
+      expect(
+        looper.readValueTarget(
+          const TrackDecayTarget(0),
+          decaySnapshot: snapshot,
+        ),
+        0,
+      );
+      expect(
+        looper.readValueTarget(
+          const TrackDecayTarget(1),
+          decaySnapshot: snapshot,
+        ),
+        0.5,
+      );
+      expect(
+        looper.readValueTarget(
+          const TrackDecayTarget(7),
+          decaySnapshot: snapshot,
+        ),
+        0.8,
+      );
     });
 
     test('never offers a slot with no stable id (A9)', () {

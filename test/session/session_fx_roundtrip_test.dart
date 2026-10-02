@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart'
     show FxFingerprint, PumpedNativeEngine;
@@ -113,7 +114,14 @@ void main() {
         looper,
         projection: FxChainPersistence(looper: looper),
       ),
-      settings: settingsFromLooper(looper, clickVolume: 1),
+      settings: settingsFromLooper(
+        looper,
+        clickVolume: 1,
+        decay: DecaySnapshot(
+          defaultPercent: looper.defaultOverdubDecay,
+          trackOverrides: looper.trackOverdubDecayOverrides,
+        ),
+      ),
     );
     expect(saved.laneChains, isNotEmpty);
     // BOTH monitors are captured: the FX chain on input 0 AND the dry monitor

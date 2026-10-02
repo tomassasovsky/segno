@@ -9,6 +9,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -114,6 +115,11 @@ void main() {
 
   SessionCubit build() => SessionCubit(
     runClickVolumeExclusive: _readyClick,
+    runDecayExclusive: _readyClick,
+    currentDurableDecay: () => DecaySnapshot(
+      defaultPercent: looper.defaultOverdubDecay,
+      trackOverrides: looper.trackOverdubDecayOverrides,
+    ),
     currentDurableClickVolume: () => 1,
     fxPersistence: FxChainPersistence(looper: looper),
     repository: repository,
@@ -1116,6 +1122,11 @@ void main() {
 
         final cubit = SessionCubit(
           runClickVolumeExclusive: _readyClick,
+          runDecayExclusive: _readyClick,
+          currentDurableDecay: () => DecaySnapshot(
+            defaultPercent: looper.defaultOverdubDecay,
+            trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
           currentDurableClickVolume: () => 1,
           fxPersistence: FxChainPersistence(looper: looper),
           repository: repository,
@@ -1166,6 +1177,11 @@ void main() {
 
         final cubit = SessionCubit(
           runClickVolumeExclusive: _readyClick,
+          runDecayExclusive: _readyClick,
+          currentDurableDecay: () => DecaySnapshot(
+            defaultPercent: looper.defaultOverdubDecay,
+            trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
           currentDurableClickVolume: () => 1,
           fxPersistence: FxChainPersistence(looper: looper),
           repository: repository,
@@ -1202,6 +1218,11 @@ void main() {
 
       final cubit = SessionCubit(
         runClickVolumeExclusive: _readyClick,
+        runDecayExclusive: _readyClick,
+        currentDurableDecay: () => DecaySnapshot(
+          defaultPercent: looper.defaultOverdubDecay,
+          trackOverrides: looper.trackOverdubDecayOverrides,
+        ),
         currentDurableClickVolume: () => 1,
         fxPersistence: FxChainPersistence(looper: looper),
         repository: repository,

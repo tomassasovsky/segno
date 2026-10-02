@@ -19,8 +19,10 @@ import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -29,6 +31,7 @@ import 'package:settings_repository/settings_repository.dart';
 import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/mock_click_tempo_cubit.dart';
+import '../helpers/mock_decay_playback_cubit.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -97,6 +100,7 @@ void main() {
     WidgetTester tester, {
     ExternalJackSetup? jack,
     double? clickVolume = 1,
+    DecaySnapshot? decaySnapshot,
   }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tester.view
@@ -117,10 +121,12 @@ void main() {
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
     tempo = MockClickTempoCubit(clickVolume: clickVolume);
+    final playback = MockDecayPlaybackCubit(snapshot: decaySnapshot);
     control = ControlCubit(
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       clickVolumeControl: tempo,
+      decayControl: playback,
       mixSettings: mixSettings,
       pedal: pedal,
       settings: settings,
@@ -164,6 +170,7 @@ void main() {
               BlocProvider.value(value: tracks),
               BlocProvider.value(value: pedalCubit),
               BlocProvider<TempoCubit>.value(value: tempo),
+              BlocProvider<PlaybackOptionsCubit>.value(value: playback),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -344,6 +351,31 @@ void main() {
       verifyNever(() => looper.setClickVolume(any()));
     });
   }
+
+  testWidgets('Decay button starts at accepted default with no audio preview', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      decaySnapshot: DecaySnapshot(
+        defaultPercent: 40,
+        trackOverrides: const {0: 0},
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    await tap(tester, 'external_add_control');
+    await tap(tester, 'expression_kind_loopControls');
+    await tap(tester, 'expression_destination_loop:defaults');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const DefaultDecayTarget())}',
+    );
+    await tap(tester, 'external_save');
+    final parameter = saved().parameters.single;
+    expect(parameter.target, const DefaultDecayTarget());
+    expect((parameter.active, parameter.inactive), (0.4, 0.4));
+    verifyNever(() => looper.setOverdubDecay(any()));
+  });
 
   testWidgets('Cancel drops the new Click button without writing audio', (
     tester,

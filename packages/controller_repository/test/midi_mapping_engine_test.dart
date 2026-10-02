@@ -36,6 +36,77 @@ void main() {
     controls: controls,
   );
 
+  test('ordinary supersession preserves toggle latch and source contact', () {
+    final note = source();
+    final engine = MidiMappingEngine(read: (_) => .4, step: (_) => .01)
+      ..setMappings(
+        MidiMappingSet(
+          mappings: [
+            mapping('m', note, MidiBehavior.toggle, [
+              MidiParameterControl(key: 'decay', low: .2, high: .8),
+            ]),
+          ],
+        ),
+      );
+    final press = engine.prepare(event(note, 127)).single;
+    engine
+      ..settle(press, {0})
+      ..supersedeParameterClaims({'decay'});
+    expect(engine.prepare(event(note, 127)), isEmpty);
+    expect(engine.prepare(event(note, 0)), isEmpty);
+    final fresh = engine.prepare(event(note, 127)).single;
+    expect((fresh.operations.single as MidiParameterWrite).value, .2);
+  });
+
+  test('ordinary supersession forgets held cleanup only for its target', () {
+    final note = source();
+    final engine = MidiMappingEngine(read: (_) => .4, step: (_) => .01)
+      ..setMappings(
+        MidiMappingSet(
+          mappings: [
+            mapping('m', note, MidiBehavior.momentary, [
+              MidiParameterControl(key: 'decay', low: 0, high: .75),
+              MidiParameterControl(key: 'sibling', low: .2, high: .8),
+            ]),
+          ],
+        ),
+      );
+    final press = engine.prepare(event(note, 127)).single;
+    engine
+      ..settle(press, {0, 1})
+      ..supersedeParameterClaims({'decay'});
+    expect(engine.prepare(event(note, 127)), isEmpty);
+    final release = engine.prepare(event(note, 0)).single;
+    expect(release.operations.map((op) => op.key), ['sibling']);
+    engine.settle(release, {1});
+    expect(engine.retryCleanup(), isEmpty);
+    final fresh = engine.prepare(event(note, 127)).single;
+    expect(fresh.operations.map((op) => op.key), ['decay', 'sibling']);
+  });
+
+  test(
+    'superseded prepared effects cannot recreate a claim on late settle',
+    () {
+      final note = source();
+      final engine = MidiMappingEngine(read: (_) => .4, step: (_) => .01)
+        ..setMappings(
+          MidiMappingSet(
+            mappings: [
+              mapping('m', note, MidiBehavior.momentary, [
+                MidiParameterControl(key: 'decay', low: 0, high: .75),
+              ]),
+            ],
+          ),
+        );
+      final press = engine.prepare(event(note, 127)).single;
+      engine
+        ..supersedeParameterClaims({'decay'})
+        ..settle(press, {0});
+      expect(engine.prepare(event(note, 0)), isEmpty);
+      expect(engine.retire(), isEmpty);
+    },
+  );
+
   test(
     'target replacement forgets cleanup but preserves other rows and contact',
     () {

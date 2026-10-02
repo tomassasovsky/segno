@@ -50,6 +50,9 @@ void main() {
   late StreamController<void> rigReplaced;
   late int confirmedLength;
   late int sessionRevision;
+  late int confirmedDecay;
+  late Map<int, int> confirmedTrackDecay;
+  late bool confirmedOneShot;
 
   setUpAll(() {
     registerFallbackValue(const LooperRecordPressed(0));
@@ -68,8 +71,46 @@ void main() {
     settings = SettingsRepository(store: store);
     confirmedLength = 0;
     sessionRevision = 0;
+    confirmedDecay = 0;
+    confirmedTrackDecay = {};
+    confirmedOneShot = false;
     when(() => repository.sessionRevision).thenAnswer((_) => sessionRevision);
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
+    when(
+      () => repository.defaultOverdubDecay,
+    ).thenAnswer((_) => confirmedDecay);
+    when(
+      () => repository.trackOverdubDecayOverrides,
+    ).thenAnswer((_) => Map.unmodifiable(confirmedTrackDecay));
+    when(() => repository.decayRestartIntent).thenAnswer(
+      (_) => (
+        defaultPercent: confirmedDecay,
+        trackOverrides: Map.unmodifiable(confirmedTrackDecay),
+      ),
+    );
+    when(() => repository.defaultOneShot).thenAnswer((_) => confirmedOneShot);
+    when(
+      () => repository.setDecayRestartIntent(
+        defaultPercent: any(named: 'defaultPercent'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((_) {});
+    when(
+      () => repository.setTrackOverdubDecay(
+        channel: any(named: 'channel'),
+        percent: any(named: 'percent'),
+      ),
+    ).thenAnswer((call) {
+      final channel = call.namedArguments[#channel] as int;
+      final percent = call.namedArguments[#percent] as int?;
+      if (percent == null) {
+        confirmedTrackDecay.remove(channel);
+      } else {
+        confirmedTrackDecay[channel] = percent;
+      }
+      return EngineResult.ok;
+    });
     when(() => repository.clickVolumeSettled).thenReturn(true);
     when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
     when(() => repository.recordStartRevision).thenReturn(0);
@@ -128,12 +169,20 @@ void main() {
       () => when(
         () => repository.setRecordTiming(any()),
       ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setOverdubDecay(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setDefaultOneShot(oneShot: any(named: 'oneShot')),
-      ).thenReturn(EngineResult.ok),
+      () =>
+          when(
+            () => repository.setOverdubDecay(any()),
+          ).thenAnswer((call) {
+            confirmedDecay = call.positionalArguments.single as int;
+            return EngineResult.ok;
+          }),
+      () =>
+          when(
+            () => repository.setDefaultOneShot(oneShot: any(named: 'oneShot')),
+          ).thenAnswer((call) {
+            confirmedOneShot = call.namedArguments[#oneShot] as bool;
+            return EngineResult.ok;
+          }),
     ]) {
       stub();
     }
@@ -145,6 +194,13 @@ void main() {
   });
 
   void seed(LooperState state) {
+    confirmedDecay = state.transport.overdubDecay;
+    confirmedTrackDecay = {};
+    for (final track in state.tracks) {
+      final value = track.overdubDecayOverride;
+      if (value != null) confirmedTrackDecay[track.channel] = value;
+    }
+    confirmedOneShot = state.transport.defaultOneShot;
     when(() => bloc.state).thenReturn(state);
     whenListen(bloc, states.stream, initialState: state);
   }
@@ -172,9 +228,14 @@ void main() {
     // its zone. Rebind that writer inside testWidgets while retaining values
     // seeded before pump (for example the saved count-in choice).
     settings = SettingsRepository(store: store);
+    await settings.saveOverdubDecay(confirmedDecay);
+    for (final entry in confirmedTrackDecay.entries) {
+      await settings.saveTrackOverdubDecay(entry.key, entry.value);
+    }
     tempo = TempoCubit(repository: repository, settings: settings);
     options = RecordOptionsCubit(repository: repository, settings: settings);
     playback = PlaybackOptionsCubit(repository: repository, settings: settings);
+    await playback.load();
     timing = RecordTimingCubit(repository: repository, settings: settings);
     tracks = TracksCubit(settings: settings);
     tray = SettingsTrayCubit(settings: settings);

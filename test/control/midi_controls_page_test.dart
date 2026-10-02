@@ -25,9 +25,11 @@ import 'package:segno/control/view/midi_controls/midi_segmented.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -35,6 +37,7 @@ import 'package:settings_repository/settings_repository.dart';
 import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/mock_click_tempo_cubit.dart';
+import '../helpers/mock_decay_playback_cubit.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooper extends Mock implements LooperRepository {}
@@ -146,6 +149,7 @@ void main() {
     bool routeEntry = false,
     MidiMapping? savedMapping,
     double? clickVolume = 1,
+    DecaySnapshot? decaySnapshot,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -177,9 +181,11 @@ void main() {
     final mix = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mix.close()));
     final tempo = MockClickTempoCubit(clickVolume: clickVolume);
+    final playback = MockDecayPlaybackCubit(snapshot: decaySnapshot);
     control = ControlCubit(
       looper: looper,
       clickVolumeControl: tempo,
+      decayControl: playback,
       pedal: pedal,
       settings: settings,
       performance: performance,
@@ -202,6 +208,7 @@ void main() {
             BlocProvider.value(value: tracks),
             BlocProvider.value(value: midi),
             BlocProvider<TempoCubit>.value(value: tempo),
+            BlocProvider<PlaybackOptionsCubit>.value(value: playback),
           ],
           child: MaterialApp(
             navigatorKey: routeEntry ? segnoNavigatorKey : null,
@@ -286,6 +293,37 @@ void main() {
         .singleWhere((control) => control.key == clickKey);
     expect((click.low, click.high), (0, 1));
     verifyNever(() => looper.setClickVolume(any()));
+  });
+
+  testWidgets('Decay maps from Loop controls with full range and no preview', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      seeded: true,
+      decaySnapshot: DecaySnapshot(
+        defaultPercent: 50,
+        trackOverrides: const {},
+      ),
+    );
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_add_control');
+    await tap(tester, 'expression_kind_loopControls');
+    await tap(tester, 'expression_destination_loop:defaults');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const DefaultDecayTarget())}',
+    );
+    final key = const DefaultDecayTarget().canonicalString();
+    expect(find.byKey(Key('midi_range_low_$key')), findsOneWidget);
+    await tap(tester, 'midi_save');
+    final saved = control.state.midiMappings
+        .byId('m1')!
+        .controls
+        .whereType<MidiParameterControl>()
+        .singleWhere((control) => control.key == key);
+    expect((saved.low, saved.high), (0, 1));
+    verifyNever(() => looper.setOverdubDecay(any()));
   });
 
   testWidgets('unavailable Click row can be repaired without changing range', (
