@@ -8,6 +8,24 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 shared Click volume (#1026)
+
+Click volume now shares one confirmed owner across touch, MIDI and External
+buttons/expression. The same linear range appears as 0–200%, with unity at
+100%. Temporary held values do not enter saved sessions or engine restart
+intent. Settings and native acceptance are checked; explicit recovery keeps
+old failures separate from replacement sessions. Shutdown retires controls,
+waits for settings and stays on after a failure with Retry or Keep playing.
+
+The [verification record](reviews/shared-click-volume/verification.md) binds
+83 intended files, 55 independent native-backed probes, ordinary app coverage
+of 90.4296%, affected package gates and strict static checks across 714 Dart
+files. Four native references are saved in Pen. Earlier failures and repairs
+remain documented. No native/FFI or firmware source changed. Published-head
+CI, human merge and physical device validation remain separate. Shared decay
+and the remaining loop targets follow; the M5 live-owner session-load issue
+is still open.
+
 ## October 2026 shared Mixer controls (#1026)
 
 MIDI and External assignments now share eight typed Mixer control families,

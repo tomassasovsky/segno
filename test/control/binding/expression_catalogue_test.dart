@@ -240,6 +240,29 @@ void main() {
   });
 
   group('the catalogue', () {
+    test('Click is a separate Outputs destination even with no output bus', () {
+      when(() => looper.state).thenAnswer(
+        (_) => const LooperState(),
+      );
+      final absent = expressionDestinations(l10n, names, looper);
+      expect(absent.where((destination) => destination.id == 'click'), isEmpty);
+
+      final present = expressionDestinations(
+        l10n,
+        names,
+        looper,
+        clickVolume: 0,
+      );
+      final click = present.singleWhere(
+        (destination) => destination.id == 'click',
+      );
+      expect(click.kind, FxDestinationKind.output);
+      expect(click.label, 'Click');
+      expect(click.controls.single.target, const ClickVolumeTarget());
+      expect(click.controls.single.label, 'Volume');
+      expect(present.map((destination) => destination.id), ['click', 'master']);
+    });
+
     test('the Mixer-only catalogue avoids FX enumeration and keeps order', () {
       status = const EngineStatus(inputChannels: 2, outputChannels: 2);
       inputs = InputSetup(pairs: const {0: 0});

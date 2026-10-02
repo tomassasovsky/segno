@@ -187,6 +187,11 @@ class ExpressionDestination extends Equatable {
     group: l10n.pedalAssignStageOutput(bus + 1),
     control: l10n.routingBalance,
   ),
+  ClickVolumeTarget() => (
+    destination: l10n.routingSourceClick,
+    group: l10n.routingSourceClick,
+    control: l10n.expressionControlVolume,
+  ),
   MasterGainTarget() => (
     destination: l10n.fxEditorMasterTitle,
     group: l10n.fxEditorMasterTitle,
@@ -232,6 +237,7 @@ List<ExpressionDestination> expressionDestinations(
   List<String> trackNames,
   LooperRepository looper, {
   bool withActivations = false,
+  double? clickVolume,
 }) {
   final drafts = <String, _Draft>{};
   _Draft draftFor(
@@ -247,7 +253,7 @@ List<ExpressionDestination> expressionDestinations(
     ),
   );
 
-  for (final target in looper.availableValueTargets()) {
+  for (final target in looper.availableValueTargets(clickVolume: clickVolume)) {
     final place = _placeOf(target);
     if (place == null) continue;
     final names = expressionTargetName(l10n, trackNames, looper, target);
@@ -372,6 +378,11 @@ String _addressLabel(
   ) => _placeOfAddress(FxAddress(stage: FxStage.input, index: input)),
   OutputLevelTarget(:final bus) || OutputBalanceTarget(:final bus) =>
     _placeOfAddress(FxAddress(stage: FxStage.output, index: bus)),
+  ClickVolumeTarget() => (
+    id: 'click',
+    kind: FxDestinationKind.output,
+    order: _clickOrder,
+  ),
   MasterGainTarget() => (
     id: 'master',
     kind: FxDestinationKind.output,
@@ -386,6 +397,7 @@ const int _inputOrder = 100000;
 const int _recordedOrder = 200000;
 const int _allTracksOrder = 290000;
 const int _outputOrder = 300000;
+const int _clickOrder = 380000;
 const int _masterOrder = 390000;
 
 ({String id, FxDestinationKind kind, int order}) _trackPlace(int channel) => (

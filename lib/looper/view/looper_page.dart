@@ -8,6 +8,7 @@ import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/view/session_persistence_sync_listener.dart';
 import 'package:segno/looper/view/tracks_view.dart';
 import 'package:segno/session/session.dart';
@@ -58,6 +59,11 @@ class LooperPage extends StatelessWidget {
             mixSettings: context.read<MixSettingsCoordinator>(),
             fxPersistence: context.read<FxChainPersistence>(),
             mixPersistence: context.read<MixSettingsPersistence>(),
+            runClickVolumeExclusive: context
+                .read<TempoCubit>()
+                .runClickVolumeExclusive,
+            currentDurableClickVolume: () =>
+                context.read<TempoCubit>().durableClickVolume,
             exportDirectory: exportDirectory,
             // The session's pedal remap (part 6b) crossing as an opaque
             // string. Narrow functions rather than a cubit-to-cubit link:

@@ -302552,6 +302552,200 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "RQYox",
+      "x": 47128,
+      "y": 3744,
+      "name": "Native implementation / Shared Click volume / M3.11",
+      "width": 4000,
+      "height": 2720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "k2YQv",
+          "name": "Shared Click reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Click volume · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "clrN3",
+          "name": "c/ Click values and recovery",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "MIDI, external switches and expression share the existing Click volume owner. 100% is unity; 200% is maximum. Held values stay temporary: saved sessions and restarts retain Released intent. Shutdown waits for confirmed settings; failure offers Retry or Keep playing. Native renders at 1920 × 1080; physical controllers and appliance halt still need device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "tPStZ",
+          "name": "Shared Click reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "TGcxu",
+              "name": "MIDI · Click range reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "ad1aQ",
+                  "name": "MIDI · Click range caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Click range",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "dxMp1",
+                  "name": "MIDI · Click range native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_click_range.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "xSYAp",
+              "name": "MIDI · Click destination reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "QszTW",
+                  "name": "MIDI · Click destination caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Click destination",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "YRYYg",
+                  "name": "MIDI · Click destination native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_click_destination.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "W1pJN",
+          "name": "Shared Click reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "xUkCW",
+              "name": "External button · Held / Released reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "o7tA7",
+                  "name": "External button · Held / Released caption",
+                  "fill": "#C7CDD6",
+                  "content": "External button · Held / Released",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "A5fnc",
+                  "name": "External button · Held / Released native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_click_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "mMwy0",
+              "name": "Shutdown · settings recovery reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "m2adpy",
+                  "name": "Shutdown · settings recovery caption",
+                  "fill": "#C7CDD6",
+                  "content": "Shutdown · settings recovery",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "SuSft",
+                  "name": "Shutdown · settings recovery native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/click_recovery_power_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {

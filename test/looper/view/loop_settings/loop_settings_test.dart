@@ -44,6 +44,7 @@ const _rig = LooperState(
 void main() {
   late _MockLooperBloc bloc;
   late _MockLooperRepository repository;
+  late FakeKeyValueStore store;
   late SettingsRepository settings;
   late StreamController<LooperState> states;
   late StreamController<void> rigReplaced;
@@ -63,10 +64,14 @@ void main() {
     when(() => repository.lengthSettingsFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
-    settings = SettingsRepository(store: FakeKeyValueStore());
+    store = FakeKeyValueStore();
+    settings = SettingsRepository(store: store);
     confirmedLength = 0;
     sessionRevision = 0;
     when(() => repository.sessionRevision).thenAnswer((_) => sessionRevision);
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.clickVolumeSettled).thenReturn(true);
+    when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
     when(() => repository.recordStartRevision).thenReturn(0);
     when(() => repository.sessionTransport).thenAnswer(
       (_) => TransportState(defaultLengthPresetBars: confirmedLength),
@@ -100,6 +105,9 @@ void main() {
       () => when(
         () => repository.setClickVolume(any()),
       ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.settleClickVolume(),
+      ).thenAnswer((_) async => EngineResult.ok),
       () =>
           when(() => repository.setCountIn(any())).thenReturn(EngineResult.ok),
       () => when(
@@ -160,6 +168,10 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     seed(state);
+    // The Click owner's startup read waits the settings writer initialized in
+    // its zone. Rebind that writer inside testWidgets while retaining values
+    // seeded before pump (for example the saved count-in choice).
+    settings = SettingsRepository(store: store);
     tempo = TempoCubit(repository: repository, settings: settings);
     options = RecordOptionsCubit(repository: repository, settings: settings);
     playback = PlaybackOptionsCubit(repository: repository, settings: settings);

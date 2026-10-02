@@ -109,7 +109,7 @@ void main() {
       expect(playback.state, const PlaybackOptions(overdubDecay: 35));
       expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions(autoRecord: true));
-      expect(tempo.state, const TempoSettings(bpm: 96));
+      expect(tempo.state, const TempoSettings(bpm: 96, clickReady: true));
 
       delayed.ready.complete();
       await loads;
@@ -117,7 +117,7 @@ void main() {
       expect(playback.state, const PlaybackOptions(overdubDecay: 35));
       expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions(autoRecord: true));
-      expect(tempo.state, const TempoSettings(bpm: 96));
+      expect(tempo.state, const TempoSettings(bpm: 96, clickReady: true));
       expect(repository.sessionTransport.overdubDecay, 35);
       expect(repository.sessionTransport.defaultOneShot, isFalse);
       expect(repository.sessionTransport.defaultMultiple, 0);
@@ -339,6 +339,7 @@ void main() {
           clickMode: ClickMode.playRec,
           clickOutputMask: 3,
           clickVolume: 0.5,
+          clickReady: true,
           countInBars: 2,
         ),
       );
@@ -350,7 +351,8 @@ void main() {
       await repository.applySession(const SessionRig());
       await poll();
     },
-    verify: (cubit) => expect(cubit.state, const TempoSettings()),
+    verify: (cubit) =>
+        expect(cubit.state, const TempoSettings(clickReady: true)),
   );
 
   blocTest<RecordOptionsCubit, RecordOptions>(

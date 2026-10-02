@@ -27,9 +27,12 @@ void main() {
     test('the rig-level controls round-trip', () {
       const volume = TrackVolumeTarget(3);
       const master = MasterGainTarget();
+      const click = ClickVolumeTarget();
 
       expect(ControlValueTarget.tryParse(volume.canonicalString()), volume);
       expect(ControlValueTarget.tryParse(master.canonicalString()), master);
+      expect(click.canonicalString(), '{"ctl":"clickVolume"}');
+      expect(ControlValueTarget.tryParse(click.canonicalString()), click);
     });
 
     test('all Mixer coordinates keep distinct canonical identities', () {
@@ -78,6 +81,22 @@ void main() {
       expect(const OutputLevelTarget(0).toDomain(0.75), 0.75);
     });
 
+    test('Click travel is linear physical gain, with unity at halfway', () {
+      const click = ClickVolumeTarget();
+      for (final (travel, gain) in <(double, double)>[
+        (0, 0),
+        (0.125, 0.25),
+        (0.5, 1),
+        (0.75, 1.5),
+        (1, 2),
+      ]) {
+        expect(click.toDomain(travel), gain);
+        expect(click.fromDomain(gain), travel);
+      }
+      expect(click.relativeStep, 0.01);
+      expect(click.isStructurallyValid, isTrue);
+    });
+
     test('equal targets encode byte-identically', () {
       const a = FxParamTarget(
         address: FxAddress(stage: FxStage.output),
@@ -109,6 +128,9 @@ void main() {
         '{"ctl":"outputLevel","index":null}',
         '{"ctl":"trackPan","index":0,"lane":0}',
         '{"ctl":"masterGain","index":0}',
+        '{"ctl":"clickVolume","index":0}',
+        '{"ctl":"clickVolume","extra":true}',
+        '{"ctl":"clickGain"}',
       ]) {
         expect(ControlValueTarget.tryParse(encoded), isNull);
       }

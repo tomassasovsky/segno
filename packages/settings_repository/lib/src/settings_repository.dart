@@ -807,13 +807,36 @@ class SettingsRepository {
 
   static const String _clickVolumeKey = 'tempo.click_volume';
 
-  /// Loads the click volume (`0..LE_MAX_GAIN`). Defaults to `1.0` when unset.
-  Future<double> loadClickVolume() async =>
-      await _store.getDouble(_clickVolumeKey) ?? 1.0;
+  /// Reads the exact Click scalar, preserving absence for rollback.
+  Future<double?> readClickVolumeCheckpoint() async {
+    await _serializedWrite;
+    return _store.getDouble(_clickVolumeKey);
+  }
 
-  /// Saves the click volume.
-  Future<void> saveClickVolume(double volume) =>
-      _store.setDouble(_clickVolumeKey, volume);
+  /// Loads Click startup intent; an absent scalar means unity.
+  Future<double> loadClickVolume() async =>
+      await readClickVolumeCheckpoint() ?? 1;
+
+  /// Saves and verifies the Click scalar through the existing writer.
+  Future<void> saveClickVolume(double volume) => _serialize(() async {
+    await _store.setDouble(_clickVolumeKey, volume);
+    if (await _store.getDouble(_clickVolumeKey) != volume) {
+      throw StateError('Click volume was not saved');
+    }
+  });
+
+  /// Restores the exact old scalar, including an absent preference.
+  Future<void> restoreClickVolumeCheckpoint(double? checkpoint) =>
+      _serialize(() async {
+        if (checkpoint == null) {
+          await _store.remove(_clickVolumeKey);
+        } else {
+          await _store.setDouble(_clickVolumeKey, checkpoint);
+        }
+        if (await _store.getDouble(_clickVolumeKey) != checkpoint) {
+          throw StateError('Click volume checkpoint was not restored');
+        }
+      });
 
   static const String _countInBarsKey = 'tempo.count_in_bars';
 

@@ -54,6 +54,8 @@ void main() {
   group('readoutGoodbyeOf', () {
     test('saving and mark map to the 7" overlay faces', () {
       expect(readoutGoodbyeOf(PowerOffPhase.saving), ReadoutGoodbye.saving);
+      expect(readoutGoodbyeOf(PowerOffPhase.flushing), ReadoutGoodbye.saving);
+      expect(readoutGoodbyeOf(PowerOffPhase.flushFailed), ReadoutGoodbye.none);
       expect(readoutGoodbyeOf(PowerOffPhase.goodbye), ReadoutGoodbye.mark);
       expect(readoutGoodbyeOf(PowerOffPhase.idle), ReadoutGoodbye.none);
       expect(readoutGoodbyeOf(PowerOffPhase.refuse), ReadoutGoodbye.none);

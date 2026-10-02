@@ -132,6 +132,10 @@ void main() {
         valueTargetLabel(l10n, names, looper, const MasterGainTarget()),
         l10n.midiLearnTargetMaster,
       );
+      expect(
+        valueTargetLabel(l10n, names, looper, const ClickVolumeTarget()),
+        l10n.clickVolumeLabel,
+      );
     });
 
     test('names every Mixer coordinate without using a mutable alias', () {

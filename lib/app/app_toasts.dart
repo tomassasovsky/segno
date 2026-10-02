@@ -23,6 +23,7 @@ abstract final class AppToastId {
   static const undoClearAll = 'app_undoClearAll_snackbar';
   static const undoClearAllAction = 'app_undoClearAll_snackbar_action';
   static const mixSettings = 'app_mixSettings_error';
+  static const clickSettings = 'app_clickSettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};

@@ -16,6 +16,7 @@ import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_audio_engine.dart';
+import '../../helpers/fake_click_volume_control.dart';
 import '../../helpers/fake_key_value_store.dart';
 import '../../helpers/test_mix_settings.dart';
 
@@ -85,6 +86,7 @@ void main() {
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
+      clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,

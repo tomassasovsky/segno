@@ -113,7 +113,7 @@ void main() {
         looper,
         projection: FxChainPersistence(looper: looper),
       ),
-      settings: settingsFromLooper(looper),
+      settings: settingsFromLooper(looper, clickVolume: 1),
     );
     expect(saved.laneChains, isNotEmpty);
     // BOTH monitors are captured: the FX chain on input 0 AND the dry monitor

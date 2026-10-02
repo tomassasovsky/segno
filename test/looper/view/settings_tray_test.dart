@@ -163,6 +163,7 @@ void main() {
     mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     controlCubit = ControlCubit(
+      clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: fxPersistence,
       looper: looper,
       mixSettings: mixSettings,
