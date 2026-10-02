@@ -32,6 +32,35 @@ Future<AutoStartResult> tryAutoStartEngine({
   required SettingsRepository settings,
   required MixSettingsCoordinator mixSettings,
 }) => mixSettings.runExclusive(() async {
+  // Validate every scalar before changing any decay. Fixed empty tracks and
+  // absent overrides are part of the saved intent, just like explicit zero.
+  // Bootstrap owns this initial replay before the runtime owner is created.
+  try {
+    final decay = await Future.wait([
+      settings.readDecayCheckpoint(channel: null),
+      for (var channel = 0; channel < 8; channel++)
+        settings.readDecayCheckpoint(channel: channel),
+    ]);
+    var result = repository.setOverdubDecay(decay.first ?? 0);
+    for (var channel = 0; channel < 8 && result.isOk; channel++) {
+      result = repository.setTrackOverdubDecay(
+        channel: channel,
+        percent: decay[channel + 1],
+      );
+    }
+    if (!result.isOk) {
+      throw StateError('Saved decay replay refused: ${result.name}');
+    }
+  } on Object catch (error) {
+    AppLog.error('audio auto-start: saved decay failed: $error');
+    repository.stopEngine();
+    return (
+      started: false,
+      asioDrivers: const <AudioDevice>[],
+      recoveryConfig: null,
+    );
+  }
+
   try {
     return await _tryAutoStartEngine(
       repository: repository,
@@ -224,10 +253,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
   // auto-round-up and loops record at ×2/×4.
   repository
     ..setDefaultMultiple(multiple: await settings.loadDefaultMultiple())
-    ..setDefaultOneShot(oneShot: await settings.loadDefaultOneShot())
-    // The default overdub decay (slice 2b), for the same reason: the cubit
-    // that owns it may not have loaded before the first overdub pass.
-    ..setOverdubDecay(await settings.loadOverdubDecay());
+    ..setDefaultOneShot(oneShot: await settings.loadDefaultOneShot());
 
   // Submit the saved default and every explicit track override together.
   // Separate setters would race each other while the first vector waits for
@@ -317,10 +343,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
     );
     if (timing != null) {
       repository.setTrackRecordTiming(channel: track.channel, timing: timing);
-    }
-    final decay = await settings.loadTrackOverdubDecay(track.channel);
-    if (decay != null) {
-      repository.setTrackOverdubDecay(channel: track.channel, percent: decay);
     }
     final multiple = await settings.loadTrackMultiple(track.channel);
     if (multiple > 0) {

@@ -29,6 +29,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/click_volume.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
@@ -180,6 +181,8 @@ class _AppState extends State<App> {
   ControlCubit? _control;
   late final TempoCubit _tempo;
   StreamSubscription<ClickVolumeOutcome>? _clickFailureSubscription;
+  late final PlaybackOptionsCubit _playback;
+  StreamSubscription<DecayOutcome>? _decayFailureSubscription;
 
   @override
   void initState() {
@@ -197,6 +200,14 @@ class _AppState extends State<App> {
       _showClickFailure,
     );
     unawaited(_tempo.load());
+    _playback = PlaybackOptionsCubit(
+      repository: widget.repository,
+      settings: widget.settings,
+    );
+    _decayFailureSubscription = _playback.decayFailures.listen(
+      _showDecayFailure,
+    );
+    unawaited(_playback.load());
     _powerKeySource =
         widget.powerKeySource ??
         openAppliancePowerKeySource(onAppliance: isAppliance());
@@ -207,6 +218,7 @@ class _AppState extends State<App> {
     unawaited(_powerKeySource?.close());
     unawaited(_mixFailureSubscription?.cancel());
     unawaited(_clickFailureSubscription?.cancel());
+    unawaited(_decayFailureSubscription?.cancel());
     unawaited(_closeControlOwners());
     super.dispose();
   }
@@ -215,6 +227,7 @@ class _AppState extends State<App> {
     // BlocProvider can also close Control; its memoized completion ensures
     // held cleanup finishes while the Click and Mixer owners are still alive.
     await _control?.close();
+    await _playback.close();
     await _tempo.close();
     await _mixSettings.close();
   }
@@ -294,6 +307,47 @@ class _AppState extends State<App> {
     );
   }
 
+  void _showDecayFailure(DecayOutcome outcome) {
+    if (!mounted || outcome.status == DecayStatus.superseded) return;
+    final recovery = outcome.status == DecayStatus.recoveryRequired;
+    AppLog.error(
+      'Decay settings: ${outcome.status.name} ${outcome.error ?? ''}',
+    );
+    showAppToast(
+      id: AppToastId.decaySettings,
+      type: ToastificationType.error,
+      dismissible: !recovery,
+      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
+      title: Builder(
+        builder: (context) => Text(
+          recovery
+              ? context.l10n.decaySettingsRecoveryTitle
+              : context.l10n.decaySettingsRefusedTitle,
+        ),
+      ),
+      description: recovery
+          ? Builder(
+              builder: (context) =>
+                  Text(context.l10n.decaySettingsRecoveryBody),
+            )
+          : null,
+      actions: recovery
+          ? [
+              TextButton(
+                onPressed: () async {
+                  if ((await _playback.recoverDecay()).isOk) {
+                    dismissAppToast(AppToastId.decaySettings);
+                  }
+                },
+                child: Builder(
+                  builder: (context) => Text(context.l10n.powerOffRetry),
+                ),
+              ),
+            ]
+          : const [],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiRepositoryProvider(
@@ -355,6 +409,7 @@ class _AppState extends State<App> {
           BlocProvider(
             create: (context) {
               final bloc = LooperBloc(
+                decayControl: _playback,
                 repository: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),
                 fxPersistence: context.read<FxChainPersistence>(),
@@ -497,6 +552,7 @@ class _AppState extends State<App> {
             },
           ),
           BlocProvider<TempoCubit>.value(value: _tempo),
+          BlocProvider<PlaybackOptionsCubit>.value(value: _playback),
           BlocProvider(
             // Not lazy: the monitor graph page is the only widget that reads
             // this cubit, but the saved per-input monitors must be applied to
@@ -532,17 +588,6 @@ class _AppState extends State<App> {
             lazy: false,
             create: (context) {
               final cubit = RecordOptionsCubit(
-                repository: context.read<LooperRepository>(),
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
-          BlocProvider(
-            lazy: false,
-            create: (context) {
-              final cubit = PlaybackOptionsCubit(
                 repository: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
               );
@@ -590,6 +635,10 @@ class _AppState extends State<App> {
                   if (!click.isOk) {
                     throw StateError('Click settings still need recovery');
                   }
+                  final decay = await _playback.recoverDecay();
+                  if (!decay.isOk) {
+                    throw StateError('Decay settings still need recovery');
+                  }
                   await _control?.flushMidiConfiguration(retireControls: true);
                 }
                 await monitor.flushPersistence();
@@ -602,7 +651,12 @@ class _AppState extends State<App> {
                 if (!click.isOk) {
                   throw StateError('Click settings were not confirmed');
                 }
+                final decay = await _playback.flushDecay();
+                if (!decay.isOk) {
+                  throw StateError('Decay settings were not confirmed');
+                }
                 dismissAppToast(AppToastId.clickSettings);
+                dismissAppToast(AppToastId.decaySettings);
               },
               pedalGoodbye: () => context.read<PedalRepository>().goodbye(),
               powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
@@ -619,6 +673,7 @@ class _AppState extends State<App> {
             lazy: false,
             create: (context) {
               final cubit = ControlCubit(
+                decayControl: _playback,
                 clickVolumeControl: _tempo,
                 looper: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),

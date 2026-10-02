@@ -7,6 +7,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
@@ -35,6 +36,7 @@ void main() {
     late PumpedNativeEngine engine;
     late LooperRepository looper;
     late TempoCubit tempo;
+    late PlaybackOptionsCubit playback;
     late SessionCubit session;
     late SessionRepository sessions;
     late PerformanceRepository performance;
@@ -67,6 +69,11 @@ void main() {
       settings = SettingsRepository(store: store);
       tempo = TempoCubit(repository: looper, settings: settings);
       await tempo.load();
+      playback = PlaybackOptionsCubit(
+        repository: looper,
+        settings: settings,
+      );
+      await playback.load();
       mix = MixSettingsCoordinator(
         repository: looper,
         persistence: SettingsMixPersistence(settings),
@@ -88,6 +95,8 @@ void main() {
         mixPersistence: SettingsMixPersistence(settings),
         fxPersistence: FxChainPersistence(looper: looper),
         runClickVolumeExclusive: tempo.runClickVolumeExclusive,
+        runDecayExclusive: playback.runDecayExclusive,
+        currentDurableDecay: () => playback.durableDecaySnapshot,
         currentDurableClickVolume: () => tempo.durableClickVolume,
         exportDirectory: () async => directory.path,
       );
@@ -103,6 +112,7 @@ void main() {
         pending.complete();
       }
       await session.close();
+      await playback.close();
       await tempo.close();
       await mix.close();
       performance.dispose();

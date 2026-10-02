@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/common/write_debouncer.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
@@ -22,12 +23,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     required LooperRepository repository,
     required MixSettingsCoordinator mixSettings,
     required FxChainPersistence fxPersistence,
+    required DecayControl decayControl,
     SettingsRepository? settings,
     Duration fxPersistDebounce = const Duration(milliseconds: 300),
     bool Function() takeLocked = _neverLocked,
   }) : _repository = repository,
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
+       _decayControl = decayControl,
        _settings = settings,
        _takeLocked = takeLocked,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
@@ -747,15 +750,17 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveTrackRecordTiming(event.channel, event.timing?.code),
       );
     });
-    on<LooperTrackOverdubDecayChanged>((event, _) {
-      final result = _repository.setTrackOverdubDecay(
+    on<LooperTrackOverdubDecayChanged>((event, _) async {
+      final write = _decayControl.setTrackOverdubDecay(
         channel: event.channel,
         percent: event.percent,
       );
-      if (!result.isOk) return;
-      unawaited(
-        _settings?.saveTrackOverdubDecay(event.channel, event.percent),
-      );
+      _decayWrites.add(write);
+      try {
+        await write;
+      } finally {
+        _decayWrites.remove(write);
+      }
     });
     on<LooperTrackLengthPresetChanged>((event, _) async {
       final sessionRevision = _repository.sessionRevision;
@@ -880,6 +885,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperSessionLoaded>((_, _) => _resyncSessionChains());
     on<LooperPersistFlush>((event, _) async {
       try {
+        await Future.wait(_decayWrites.toList());
         _fxPersist.flush();
         await _fxPersistence.flush();
         event.receipt?.complete();
@@ -914,6 +920,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   final LooperRepository _repository;
   final MixSettingsCoordinator _mixSettings;
   final FxChainPersistence _fxPersistence;
+  final DecayControl _decayControl;
+  final _decayWrites = <Future<DecayOutcome>>{};
   final SettingsRepository? _settings;
   final bool Function() _takeLocked;
 

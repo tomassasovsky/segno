@@ -20,7 +20,8 @@ class _DelayedSettingsRepository extends SettingsRepository {
   }
 
   @override
-  Future<int> loadOverdubDecay() => _delay(super.loadOverdubDecay());
+  Future<int?> readDecayCheckpoint({required int? channel}) =>
+      _delay(super.readDecayCheckpoint(channel: channel));
 
   @override
   Future<bool> loadQuantize() => _delay(super.loadQuantize());
@@ -106,7 +107,10 @@ void main() {
         ),
       );
       await poll();
-      expect(playback.state, const PlaybackOptions(overdubDecay: 35));
+      expect(
+        playback.state,
+        const PlaybackOptions(overdubDecay: 35, decayReady: true),
+      );
       expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions(autoRecord: true));
       expect(tempo.state, const TempoSettings(bpm: 96, clickReady: true));
@@ -114,7 +118,10 @@ void main() {
       delayed.ready.complete();
       await loads;
       await poll();
-      expect(playback.state, const PlaybackOptions(overdubDecay: 35));
+      expect(
+        playback.state,
+        const PlaybackOptions(overdubDecay: 35, decayReady: true),
+      );
       expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions(autoRecord: true));
       expect(tempo.state, const TempoSettings(bpm: 96, clickReady: true));
@@ -162,11 +169,15 @@ void main() {
       await loads;
       await poll();
 
-      expect(playback.state, const PlaybackOptions());
+      // An ordinary Once edit does not discard the independent saved Decay.
+      expect(
+        playback.state,
+        const PlaybackOptions(overdubDecay: 80, decayReady: true),
+      );
       expect(quantize.state, RecordTiming.immediately);
       expect(record.state, const RecordOptions());
       expect(tempo.state, const TempoSettings());
-      expect(repository.sessionTransport.overdubDecay, 0);
+      expect(repository.sessionTransport.overdubDecay, 80);
       expect(repository.sessionTransport.defaultOneShot, isFalse);
       expect(repository.sessionTransport.defaultMultiple, 0);
       expect(repository.sessionTransport.tempoBpm, 0);
@@ -229,21 +240,32 @@ void main() {
       await poll();
       expect(
         cubit.state,
-        const PlaybackOptions(overdubDecay: 40, defaultOneShot: true),
+        const PlaybackOptions(
+          overdubDecay: 40,
+          defaultOneShot: true,
+          decayReady: true,
+        ),
       );
 
       await repository.applySession(const SessionRig(overdubDecay: 75));
       await poll();
-      expect(cubit.state, const PlaybackOptions(overdubDecay: 75));
+      expect(
+        cubit.state,
+        const PlaybackOptions(overdubDecay: 75, decayReady: true),
+      );
       await cubit.load();
-      expect(cubit.state, const PlaybackOptions(overdubDecay: 75));
+      expect(
+        cubit.state,
+        const PlaybackOptions(overdubDecay: 75, decayReady: true),
+      );
       expect(await settings.loadOverdubDecay(), 40);
       expect(await settings.loadDefaultOneShot(), isTrue);
 
       await repository.applySession(const SessionRig());
       await poll();
     },
-    verify: (cubit) => expect(cubit.state, const PlaybackOptions()),
+    verify: (cubit) =>
+        expect(cubit.state, const PlaybackOptions(decayReady: true)),
   );
 
   blocTest<RecordTimingCubit, RecordTiming>(

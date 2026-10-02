@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/session/session_mapping.dart';
 // The chains a performance arm records cross the boundary as ENGINE models
 // (the manifest embeds them as canonical JSON), so the assertions on them name
@@ -115,7 +116,14 @@ void main() {
           looper,
           projection: FxChainPersistence(looper: looper),
         ),
-        settings: settingsFromLooper(looper, clickVolume: 1),
+        settings: settingsFromLooper(
+          looper,
+          clickVolume: 1,
+          decay: DecaySnapshot(
+            defaultPercent: looper.defaultOverdubDecay,
+            trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
+        ),
       );
       final manifest =
           jsonDecode(
@@ -169,7 +177,17 @@ void main() {
       when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
       when(() => looper.state).thenReturn(const LooperState());
       when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
-      expect(settingsFromLooper(looper, clickVolume: 1).loopBars, 7);
+      expect(
+        settingsFromLooper(
+          looper,
+          clickVolume: 1,
+          decay: DecaySnapshot(
+            defaultPercent: looper.defaultOverdubDecay,
+            trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
+        ).loopBars,
+        7,
+      );
     });
 
     test(
@@ -205,7 +223,14 @@ void main() {
           ..setTrackLengthPreset(channel: 0, bars: 4);
         expect(engine.snapshot().isRunning, isFalse);
         expect(engine.snapshot().tempoBpm, 0);
-        final settings = settingsFromLooper(looper, clickVolume: .6);
+        final settings = settingsFromLooper(
+          looper,
+          clickVolume: .6,
+          decay: DecaySnapshot(
+            defaultPercent: looper.defaultOverdubDecay,
+            trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
+        );
         final repository = SessionRepository(engine: engine);
         await repository.save(directory.path, settings: settings);
         final rig = rigFromBundle(await repository.read(directory.path));
@@ -241,7 +266,14 @@ void main() {
           ..setOneShot(channel: 0, oneShot: null)
           ..setTrackLengthPreset(channel: 0, bars: null)
           ..setAutoRecord(enabled: true);
-        final inherited = settingsFromLooper(looper, clickVolume: 1);
+        final inherited = settingsFromLooper(
+          looper,
+          clickVolume: 1,
+          decay: DecaySnapshot(
+            defaultPercent: looper.defaultOverdubDecay,
+            trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
+        );
         expect(inherited.trackRecordTimingOverrides, isEmpty);
         expect(inherited.trackOverdubDecayOverrides, {1: 0});
         expect(inherited.trackOneShotOverrides, {1: true});

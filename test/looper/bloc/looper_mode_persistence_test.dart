@@ -45,6 +45,7 @@ void main() {
     repository = LooperRepository(engine: engine, ticker: ticker.stream);
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = LooperBloc(
+      decayControl: FakeDecayControl(),
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,

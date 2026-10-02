@@ -302746,6 +302746,200 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "A3mXW",
+      "x": 51248,
+      "y": 3744,
+      "name": "Native implementation / Shared overdub decay / M3.12",
+      "width": 4000,
+      "height": 2720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "bMp8u",
+          "name": "Shared Decay reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared overdub decay · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "vZyK0",
+          "name": "c/ Decay values, inheritance and recovery",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Loop defaults and fixed Tracks 1–8 share one verified Decay owner. 0% keeps earlier layers; 100% replaces earlier audio during overdub, including silence. Playback is unchanged. Explicit track 0 remains Custom; Use default removes the override. Held values stay temporary: session Save and device restart retain Released intent. Ordinary edits take priority over older holds. Native renders at 1920 × 1080; physical controls and appliance halt still need device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "DV4xu",
+          "name": "Shared Decay reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "qd69H",
+              "name": "MIDI · Decay ranges reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "i5oUbq",
+                  "name": "MIDI · Decay ranges caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Default and Track 8 endpoints",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "ZV9sU",
+                  "name": "MIDI · Decay ranges native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_decay_ranges.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "XVC0U",
+              "name": "MIDI · Loop defaults destination reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "uIajH",
+                  "name": "MIDI · Loop defaults caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Loop controls destination",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "BS67b",
+                  "name": "MIDI · Loop defaults native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_decay_destination.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "IgQVS",
+          "name": "Shared Decay reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "s0URR",
+              "name": "External button · Decay Held / Released reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "SEYMq",
+                  "name": "External button · Decay Held / Released caption",
+                  "fill": "#C7CDD6",
+                  "content": "External button · Held 75%, Released 0%",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "C92T8",
+                  "name": "External button · Decay Held / Released native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_decay_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "y7MYm",
+              "name": "Shutdown · settings recovery reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "CLVaG",
+                  "name": "Shutdown · settings recovery caption",
+                  "fill": "#C7CDD6",
+                  "content": "Shutdown · settings recovery",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "kmXLh",
+                  "name": "Shutdown · settings recovery native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/click_recovery_power_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {

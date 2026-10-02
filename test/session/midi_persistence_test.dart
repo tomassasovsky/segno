@@ -13,6 +13,7 @@ import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno/session/session.dart';
@@ -71,8 +72,15 @@ void main() {
         );
         final tempo = TempoCubit(repository: looper, settings: settings);
         await tempo.load();
+        final playback = PlaybackOptionsCubit(
+          repository: looper,
+          settings: settings,
+        );
+        await playback.load();
         final cubit = SessionCubit(
           runClickVolumeExclusive: tempo.runClickVolumeExclusive,
+          runDecayExclusive: playback.runDecayExclusive,
+          currentDurableDecay: () => playback.durableDecaySnapshot,
           currentDurableClickVolume: () => tempo.durableClickVolume,
           repository: sessions,
           looper: looper,
@@ -113,6 +121,7 @@ void main() {
           await controller?.dispose();
           await pedal?.dispose();
           await cubit.close();
+          await playback.close();
           await tempo.close();
           await mix.close();
           performance.dispose();
@@ -156,6 +165,7 @@ void main() {
             sources: [ConsoleCtrlSource(pedal)],
           );
           control = ControlCubit(
+            decayControl: playback,
             clickVolumeControl: tempo,
             looper: looper,
             pedal: pedal,

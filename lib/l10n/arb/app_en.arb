@@ -3917,6 +3917,26 @@
     "@fxKindOutputs": {
         "description": "Sound type: the output destinations."
     },
+    "expressionKindLoopControls": "Loop controls",
+    "@expressionKindLoopControls": {
+        "description": "Destination-picker tab for loop-wide controls."
+    },
+    "expressionDestinationLoopDefaults": "Loop defaults",
+    "@expressionDestinationLoopDefaults": {
+        "description": "Destination for the shared overdub decay inherited by tracks."
+    },
+    "decaySettingsRefusedTitle": "Decay change was not applied",
+    "@decaySettingsRefusedTitle": {
+        "description": "Toast title after a decay setting is refused."
+    },
+    "decaySettingsRecoveryTitle": "Decay settings need recovery",
+    "@decaySettingsRecoveryTitle": {
+        "description": "Toast title when decay settings need explicit recovery."
+    },
+    "decaySettingsRecoveryBody": "Retry to recover the decay setting.",
+    "@decaySettingsRecoveryBody": {
+        "description": "Recovery guidance for an uncertain decay setting."
+    },
     "fxAllTracks": "All tracks",
     "@fxAllTracks": {
         "description": "The recorded-mix destination, beside the tracks in the same strip."
