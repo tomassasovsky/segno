@@ -328,6 +328,47 @@ def write_pdf(path, geom, guides=(), title="", margin=8.0, notes=()):
     plt.close(fig)
 
 
+def write_pdf_compact(path, geom, title):
+    """The cut paths alone as a minimal PDF (one even-odd fill, coordinates to
+    0.1 pt = 0.035 mm, outlines simplified at 0.01 mm, base-14 Helvetica so no
+    font is embedded): small enough to attach to an email, still well inside a
+    plotter's 0.025 mm step."""
+    import zlib
+    from shapely.geometry import LinearRing
+    K = 72 / 25.4
+    rings = [list(LinearRing(r).simplify(0.01).coords)[:-1] for r in _rings(geom)]
+    xs = [p[0] for r in rings for p in r]; ys = [p[1] for r in rings for p in r]
+    x0, y0, x1, y1 = min(xs) - 10, min(ys) - 22, max(xs) + 10, max(ys) + 16
+    W, H = (x1 - x0) * K, (y1 - y0) * K
+    ops = []
+    for r in rings:
+        pts = [((x - x0) * K, (y - y0) * K) for x, y in r]
+        ops.append("%.1f %.1f m" % pts[0] + "".join(" %.1f %.1f l" % q for q in pts[1:]) + " h")
+    bx = by = 5 * K
+    body = ("0 g\n" + "\n".join(ops) + "\nf*\n"
+            + "0 G 0.8 w %.1f %.1f m %.1f %.1f l S\n" % (bx, by, bx + 100 * K, by)
+            + "BT /F1 7 Tf %.1f %.1f Td (100 mm - escala 1:1) Tj ET\n" % (bx, by + 2 * K)
+            + "BT /F1 8 Tf %.1f %.1f Td (%s) Tj ET\n" % (bx, H - 6 * K, title))
+    data = zlib.compress(body.encode("latin-1"), 9)
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.1f %.1f] /Contents 4 0 R "
+            "/Resources << /Font << /F1 5 0 R >> >> >>" % (W, H),
+            None, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, offs = b"%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offs.append(len(out))
+        if o is None:
+            out += (b"%d 0 obj\n<< /Length %d /Filter /FlateDecode >>\nstream\n" % (i, len(data))
+                    + data + b"\nendstream\nendobj\n")
+        else:
+            out += ("%d 0 obj\n%s\nendobj\n" % (i, o)).encode()
+    xref = len(out)
+    out += ("xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)).encode()
+    out += b"".join(b"%010d 00000 n \n" % o for o in offs)
+    out += ("trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)).encode()
+    Path(path).write_bytes(out)
+
+
 def main():
     global U_REF
     OUT.mkdir(exist_ok=True)
@@ -389,6 +430,8 @@ def main():
     write_dxf(OUT / "segno_decals_cut_sheet.dxf", sheet)
     write_svg(OUT / "segno_decals_cut_sheet.svg", sheet)
     write_pdf(OUT / "segno_decals_cut_sheet.pdf", sheet, title="Segno: hoja de corte de calcomanías (logo + rótulos traseros), 1:1", notes=[vinyl])
+    write_pdf_compact(OUT / "segno_decals_cut_sheet_compact.pdf", sheet,
+                      "Segno - calcos en vinilo de corte blanco mate, escala 1:1")
     print(f"logo {lx1 - lx0:.1f} x {ly1 - ly0:.1f} mm at lid u {lx0:.1f}..{lx1:.1f}, v {ly0:.1f}..{ly1:.1f}")
     print(f"rear strip {rx1 - rx0:.1f} x {ry1 - ry0:.1f} mm, baseline z {LABEL_BASE_Z}")
     return {"logo": logo.bounds, "rear": rear.bounds}
