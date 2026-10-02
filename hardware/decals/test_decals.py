@@ -48,9 +48,20 @@ class DecalTest(unittest.TestCase):
             for ext in (".dxf", ".svg", ".pdf"):
                 self.assertTrue((decals.OUT / (stem + ext)).stat().st_size > 1000, stem + ext)
         import ezdxf
+        from ezdxf import bbox
         doc = ezdxf.readfile(decals.OUT / "segno_decal_logo.dxf")
-        xs = [p[0] for e in doc.modelspace() for p in e.get_points()]
-        self.assertAlmostEqual(max(xs) - min(xs), 125.9, delta=0.1)
+        box_ = bbox.extents(doc.modelspace())
+        self.assertAlmostEqual(box_.size.x, 125.9, delta=0.1)
+        # curves stay curves: the cut paths are splines, not faceted polylines
+        kinds = {e.dxftype() for e in doc.modelspace() if e.dxf.layer == "CUT"}
+        self.assertIn("SPLINE", kinds)
+
+    def test_logo_is_the_type_placed_on_the_fusion_bodies(self):
+        for part, (place, shape) in decals.logo_match().items():
+            self.assertLess(place, decals.LOGO_PLACE, part)
+            self.assertLess(shape, decals.LOGO_SHAPE, part)
+        # the glyph is the brand SVG exactly where Fusion has it
+        self.assertLess(decals.logo_match()["glyph"][1], 0.06)
 
 
 if __name__ == "__main__":
