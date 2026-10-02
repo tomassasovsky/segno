@@ -26,6 +26,7 @@ import 'package:segno/control/view/pedal_setup/expression_target_picker.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
@@ -385,9 +386,14 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   ) {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
+    final clickVolume = context.watch<TempoCubit>().clickVolume;
     final missing = mapping.controls.any(
       (control) => switch (control) {
-        MidiParameterControl(:final key) => !_resolves(looper, key),
+        MidiParameterControl(:final key) => !_resolves(
+          looper,
+          key,
+          clickVolume: clickVolume,
+        ),
         MidiActionControl(:final key) => ControlAction.tryParse(key) == null,
       },
     );
@@ -614,6 +620,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                       MidiParameterControl(:final key) => _resolves(
                         context.read<LooperRepository>(),
                         key,
+                        clickVolume: context.watch<TempoCubit>().clickVolume,
                       ),
                     },
                   ),
@@ -639,6 +646,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                 context.watch<TracksCubit>().state.names,
                 context.read<LooperRepository>(),
                 withActivations: true,
+                clickVolume: context.watch<TempoCubit>().clickVolume,
               ),
               kind: _kind,
               onKind: (kind) => setState(() => _kind = kind),
@@ -901,6 +909,10 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         )) {
       return;
     }
+    if (target is ClickVolumeTarget &&
+        context.read<TempoCubit>().clickVolume == null) {
+      return;
+    }
     final key = switch (target) {
       ControlValueTarget() => target.canonicalString(),
       FxBindingTarget() => target.canonicalString(),
@@ -911,7 +923,11 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     // looks whole again reads as already done.
     final repaired =
         replacing != null &&
-        !_resolves(context.read<LooperRepository>(), replacing);
+        !_resolves(
+          context.read<LooperRepository>(),
+          replacing,
+          clickVolume: context.read<TempoCubit>().clickVolume,
+        );
     final l10n = context.l10n;
     setState(() {
       _draft = replacing == null
@@ -1082,9 +1098,15 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     }
   }
 
-  static bool _resolves(LooperRepository looper, String key) {
+  static bool _resolves(
+    LooperRepository looper,
+    String key, {
+    double? clickVolume,
+  }) {
     final target = ControlValueTarget.tryParse(key);
-    if (target != null) return looper.valueTargetResolves(target);
+    if (target != null) {
+      return looper.valueTargetResolves(target, clickVolume: clickVolume);
+    }
     final activation = FxBindingTarget.tryParse(key);
     return activation != null && looper.bindingResolves(activation);
   }

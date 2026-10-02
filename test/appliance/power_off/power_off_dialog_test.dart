@@ -11,7 +11,7 @@ import 'package:segno/common/console_surface.dart';
 import '../../helpers/helpers.dart';
 
 PowerOffCubit _cubit() => PowerOffCubit(
-  flush: () {},
+  flush: ({required retry}) {},
   pedalGoodbye: () {},
   powerOff: () async {},
   markHold: Duration.zero,

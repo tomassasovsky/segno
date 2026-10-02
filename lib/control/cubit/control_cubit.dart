@@ -29,6 +29,7 @@ import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/control_projection.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -153,6 +154,7 @@ class ControlCubit extends Cubit<ControlState> {
     required PerformanceRepository performance,
     required MixSettingsCoordinator mixSettings,
     required FxChainPersistence fxPersistence,
+    required ClickVolumeControl clickVolumeControl,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
     Duration Function()? midiClock,
@@ -165,6 +167,7 @@ class ControlCubit extends Cubit<ControlState> {
        _performance = performance,
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
+       _clickVolume = clickVolumeControl,
        _midiDevices = midiDevices,
        _midiClock = midiClock,
        _learnTimeout = learnTimeout,
@@ -174,6 +177,13 @@ class ControlCubit extends Cubit<ControlState> {
     _fxPersistence.onOrdinaryWrite = _onOrdinaryFxWrite;
     _mixSettings.onOrdinaryValues = _onOrdinaryMixValues;
     _mixSettings.onInvalidatedValues = _invalidateMixTargets;
+    _clickLifetime = _clickVolume.clickVolumeLifetime;
+    _clickOrdinarySub = _clickVolume.ordinaryClickVolumeChanges.listen((value) {
+      _onOrdinaryFxWrite(
+        const ClickVolumeTarget(),
+        const ClickVolumeTarget().fromDomain(value),
+      );
+    });
     _midiSession = _looper.sessionRevision;
     _midiCapture = midiDevices?.session;
     _looperSub = _looper.looperState.listen(_onLooperState);
@@ -213,6 +223,10 @@ class ControlCubit extends Cubit<ControlState> {
   Object? _midiRetryEligibility;
   Future<void> _midiWrites = Future<void>.value();
   int _midiIntentSequence = 0;
+  final ClickVolumeControl _clickVolume;
+  late ClickVolumeLifetime _clickLifetime;
+  late final StreamSubscription<double> _clickOrdinarySub;
+
   final _midiReleasedValues = <Object, double>{};
   final _midiHolderKeys = <(String, int, int), Object>{};
   final _midiTargets = <(String, int, int), Object>{};
@@ -244,8 +258,9 @@ class ControlCubit extends Cubit<ControlState> {
       <PedalCtrlInput, Map<ControlValueTarget, double>>{};
   final _externalPowerReleases = <PedalCtrlInput, Map<FxBindingTarget, bool>>{};
   Object? _externalReleaseEligibility;
-  final _externalInvalidatedMix = <PedalCtrlInput, Set<MixValueTarget>>{};
-  final _externalMixReleased = <PedalCtrlInput, Map<MixValueTarget, double>>{};
+  final _externalInvalidatedMix = <PedalCtrlInput, Set<ControlValueTarget>>{};
+  final _externalMixReleased =
+      <PedalCtrlInput, Map<ControlValueTarget, double>>{};
   final _externalHeldSetups = <PedalCtrlInput, ExternalSwitchSetup>{};
   final _externalQueues = <PedalCtrlInput, Future<void>>{};
   final _expressionRaw = <PedalCtrlJack, int>{};
@@ -360,7 +375,9 @@ class ControlCubit extends Cubit<ControlState> {
       }
       return;
     }
-    if (_pedal.status != PedalLinkStatus.connected) return;
+    if (_pedal.status != PedalLinkStatus.connected || _controlInputSuspended) {
+      return;
+    }
     final raw = event as RawControllerInput;
     final input = _externalInput(raw.trigger);
     if (input == null) return;
@@ -368,7 +385,8 @@ class ControlCubit extends Cubit<ControlState> {
     if (raw.kind == ControllerSourceKind.consoleExpression) {
       final before = _expressionRaw[input.jack];
       _expressionRaw[input.jack] = raw.value;
-      if (before == null ||
+      if (_takeLocked() ||
+          before == null ||
           before == raw.value ||
           state.pedalSetupUnavailable ||
           _externalCalibrating == input.jack) {
@@ -525,9 +543,9 @@ class ControlCubit extends Cubit<ControlState> {
       requestedReleased: {
         if (held == true)
           for (final row in setup.controls.parameters)
-            if (row.target case final MixValueTarget target)
+            if (row.target is MixValueTarget || row.target is ClickVolumeTarget)
               if (row.condition == ExternalValueCondition.heldReleased)
-                target: row.inactive,
+                row.target: row.inactive,
       },
       logicalSetup: on == null ? null : setup,
       logicalOn: on,
@@ -548,7 +566,7 @@ class ControlCubit extends Cubit<ControlState> {
     bool? held,
     bool restoring = false,
     bool retiring = false,
-    Map<MixValueTarget, double> requestedReleased = const {},
+    Map<ControlValueTarget, double> requestedReleased = const {},
     ExternalSwitchSetup? logicalSetup,
     bool? logicalOn,
     bool toggleLogical = false,
@@ -563,6 +581,7 @@ class ControlCubit extends Cubit<ControlState> {
     late final Future<void> next;
     next = before
         .then((_) async {
+          if (!restoring && held != false && _takeLocked()) return;
           bool cancelled() =>
               (_closing && !restoring) ||
               isClosed ||
@@ -621,7 +640,7 @@ class ControlCubit extends Cubit<ControlState> {
               );
               if (survivor != null && !parameters.containsKey(entry.key)) {
                 parameters[entry.key] =
-                    _looper.readValueTarget(entry.key) ?? survivor;
+                    _readControlValue(entry.key) ?? survivor;
               } else if (survivor == null &&
                   !parameters.containsKey(entry.key)) {
                 entry.value.remove(trigger);
@@ -631,7 +650,7 @@ class ControlCubit extends Cubit<ControlState> {
           if (held == false) {
             parameters.removeWhere(
               (target, _) =>
-                  target is MixValueTarget &&
+                  (target is MixValueTarget || target is ClickVolumeTarget) &&
                   (_externalInvalidatedMix[input]?.contains(target) ?? false),
             );
             (_externalNumericReleases[input] ??= {}).addAll(parameters);
@@ -658,14 +677,14 @@ class ControlCubit extends Cubit<ControlState> {
 
           resolveSurvivors();
           parameters.removeWhere(
-            (target, _) => !_looper.valueTargetResolves(target),
+            (target, _) => !_controlValueResolves(target),
           );
           activations.removeWhere(
             (target, _) => !_looper.bindingResolves(target),
           );
           final fx = <FxParamTarget, double>{
             for (final e in parameters.entries)
-              if (e.key is FxParamTarget && _looper.valueTargetResolves(e.key))
+              if (e.key is FxParamTarget && _controlValueResolves(e.key))
                 e.key as FxParamTarget: e.value,
           };
           final owners = <FxAddress>{
@@ -683,7 +702,7 @@ class ControlCubit extends Cubit<ControlState> {
               _externalNumericReleases[input]?.remove(target);
             } else {
               _externalInvalidatedMix[input]?.remove(target);
-              if (target is MixValueTarget) {
+              if (target is MixValueTarget || target is ClickVolumeTarget) {
                 _retireMixBaseline(target);
                 _externalMixReleased[input]?.remove(target);
                 if (requestedReleased[target] case final low?) {
@@ -826,9 +845,29 @@ class ControlCubit extends Cubit<ControlState> {
             }
           }
           if (cancelled()) return;
+          const clickTarget = ClickVolumeTarget();
+          if (parameters[clickTarget] case final value?) {
+            final released = held == true
+                ? requestedReleased[clickTarget]
+                : held == false
+                ? _survivingMidiReleased(clickTarget, excluding: trigger)
+                : null;
+            final outcome = await _clickVolume.setControllerClickVolume(
+              clickTarget.toDomain(value),
+              lifetime: origins.click ?? _clickVolume.clickVolumeLifetime,
+              releasedVolume: released == null
+                  ? null
+                  : clickTarget.toDomain(released),
+            );
+            if (cancelled()) return;
+            if (outcome.isOk) {
+              applied = true;
+              recordParameter(clickTarget);
+            }
+          }
           for (final entry in parameters.entries) {
             switch (entry.key) {
-              case FxParamTarget() || MixValueTarget():
+              case FxParamTarget() || MixValueTarget() || ClickVolumeTarget():
                 break;
               case MasterGainTarget():
                 if (_looper.setMasterGain(entry.value).isOk) {
@@ -951,6 +990,12 @@ class ControlCubit extends Cubit<ControlState> {
   final Duration _learnTimeout;
   final PerformanceChains Function() _currentChains;
   final bool Function() _takeLocked;
+  bool _haltInputSuspended = false;
+  bool get _controlInputSuspended {
+    if (!_takeLocked()) _haltInputSuspended = false;
+    return _haltInputSuspended;
+  }
+
   late final StreamSubscription<LooperState> _looperSub;
   late final StreamSubscription<PedalEvent> _eventsSub;
   late final StreamSubscription<PedalLinkStatus> _statusSub;
@@ -2774,6 +2819,11 @@ class ControlCubit extends Cubit<ControlState> {
   // ---------------------------------------------------------------------------
 
   void _onLooperState(LooperState looperState) {
+    final clickLifetime = _clickVolume.clickVolumeLifetime;
+    if (_clickLifetime != clickLifetime) {
+      _clickLifetime = clickLifetime;
+      _invalidateValueTargets({const ClickVolumeTarget()});
+    }
     if (_externalSession != null &&
         _externalSession != _looper.sessionRevision) {
       _retireAllExternal(sessionChanged: true);
@@ -2980,8 +3030,12 @@ class ControlCubit extends Cubit<ControlState> {
     _pushProjected();
   }
 
+  Future<void>? _closeFuture;
+
   @override
-  Future<void> close() async {
+  Future<void> close() => _closeFuture ??= _close().then((_) => super.close());
+
+  Future<void> _close() async {
     _retireAllExternal();
     _retireMidi();
     _midiLearnTimer?.cancel();
@@ -3007,6 +3061,7 @@ class ControlCubit extends Cubit<ControlState> {
     await _midiMessageSub?.cancel();
     await _midiWrites;
     await _externalTail;
+    await _clickOrdinarySub.cancel();
     await Future.wait(_bindingDecisions.values.toList());
     await _restoreWait;
     _heldRestore.clear();
@@ -3014,6 +3069,5 @@ class ControlCubit extends Cubit<ControlState> {
     _fxPersistence.onOrdinaryWrite = null;
     _mixSettings.onOrdinaryValues = null;
     _mixSettings.onInvalidatedValues = null;
-    return super.close();
   }
 }

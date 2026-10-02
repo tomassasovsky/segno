@@ -53,7 +53,7 @@ void main() {
       log = <String>[];
       keys = FakePowerKeySource();
       cubit = PowerOffCubit(
-        flush: () => log.add('flush'),
+        flush: ({required retry}) => log.add('flush'),
         pedalGoodbye: () => log.add('pedal'),
         powerOff: () async => log.add('powerOff'),
         markHold: Duration.zero,

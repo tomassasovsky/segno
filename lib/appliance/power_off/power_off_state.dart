@@ -17,6 +17,12 @@ enum PowerOffPhase {
   /// Session bundle is writing. Non-cancellable.
   saving,
 
+  /// Pending control/settings writes are settling. Non-cancellable.
+  flushing,
+
+  /// Settings could not be confirmed. Retry or keep the appliance on.
+  flushFailed,
+
   /// Plymouth mark on every display. Non-cancellable.
   goodbye,
 
@@ -40,6 +46,7 @@ class PowerOffState extends Equatable {
       phase == PowerOffPhase.refuse ||
       phase == PowerOffPhase.confirm ||
       phase == PowerOffPhase.saveAs ||
+      phase == PowerOffPhase.flushFailed ||
       phase == PowerOffPhase.saveFailed;
 
   @override

@@ -31,7 +31,7 @@ extension ControlValueResolver on LooperRepository {
   /// their parameters are addressed by plugin-assigned id rather than position
   /// and have no setter at every stage, so v1 leaves them to the on-screen
   /// controls.
-  List<ControlValueTarget> availableValueTargets() {
+  List<ControlValueTarget> availableValueTargets({double? clickVolume}) {
     final targets = <ControlValueTarget>[];
     void add(FxAddress address, List<TrackEffect> entries) {
       for (final fx in entries) {
@@ -72,10 +72,10 @@ extension ControlValueResolver on LooperRepository {
     for (var bus = 0; bus < state.outputBusCount; bus++) {
       add(FxAddress(stage: FxStage.output, index: bus), outputEffects(bus));
     }
-    targets
-      ..addAll(availableMixValueTargets())
-      // The master output always exists, so it is always offerable.
-      ..add(const MasterGainTarget());
+    targets.addAll(availableMixValueTargets());
+    if (clickVolume != null) targets.add(const ClickVolumeTarget());
+    // The master output always exists, so it is always offerable.
+    targets.add(const MasterGainTarget());
     return targets;
   }
 
@@ -115,7 +115,10 @@ extension ControlValueResolver on LooperRepository {
   }
 
   /// Whether [target] names something that exists in the live rig.
-  bool valueTargetResolves(ControlValueTarget target) => switch (target) {
+  bool valueTargetResolves(
+    ControlValueTarget target, {
+    double? clickVolume,
+  }) => switch (target) {
     FxParamTarget() => _paramSlot(target) != null,
     TrackVolumeTarget(:final channel) ||
     TrackPanTarget(:final channel) => _trackExists(channel),
@@ -132,6 +135,7 @@ extension ControlValueResolver on LooperRepository {
     OutputLevelTarget(:final bus) ||
     OutputBalanceTarget(:final bus) => bus >= 0 && bus < state.outputBusCount,
     MasterGainTarget() => true,
+    ClickVolumeTarget() => clickVolume != null,
   };
 
   /// The value [target] holds now (normalized `0..1`), or `null` when it does
@@ -139,10 +143,15 @@ extension ControlValueResolver on LooperRepository {
   ///
   /// What a newly added button parameter starts from on BOTH of its values, so
   /// adding the mapping invents no sound change.
-  double? readValueTarget(ControlValueTarget target) => switch (target) {
+  double? readValueTarget(
+    ControlValueTarget target, {
+    double? clickVolume,
+  }) => switch (target) {
     FxParamTarget(:final param) => _paramSlot(target)?.effect.params[param],
     MixValueTarget() => _readMixValue(target),
     MasterGainTarget() => masterGain,
+    ClickVolumeTarget() =>
+      clickVolume == null ? null : target.fromDomain(clickVolume),
   };
 
   bool _trackExists(int channel) =>

@@ -20,9 +20,11 @@ import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/expression_position_panel.dart';
+import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
@@ -30,6 +32,7 @@ import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
+import '../helpers/mock_click_tempo_cubit.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -167,7 +170,9 @@ void main() {
     addTearDown(() => unawaited(pedalCubit.close()));
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
+    final tempo = MockClickTempoCubit();
     final control = ControlCubit(
+      clickVolumeControl: tempo,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
@@ -214,6 +219,7 @@ void main() {
               BlocProvider.value(value: control),
               BlocProvider.value(value: tracks),
               BlocProvider.value(value: pedalCubit),
+              BlocProvider<TempoCubit>.value(value: tempo),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -438,6 +444,45 @@ void main() {
     );
     await tap(tester, 'external_panel_controls');
     await shot(tester, 'mixer_pan');
+  }, skip: !hasScreenshotFonts);
+
+  screenshotTestWidgets('a button releases Click at unity after a 200% hold', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: const ClickVolumeTarget(),
+                condition: ExternalValueCondition.heldReleased,
+                active: 1,
+                inactive: 0.5,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    final clickRow = externalControlKey(const ClickVolumeTarget());
+    await tester.tap(
+      find.byKey(Key('external_control_value_$clickRow')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('100%'), findsWidgets);
+    expect(find.text('200%'), findsWidgets);
+    expect(
+      find.byKey(const Key('external_value_inactive_label')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('external_value_active_label')),
+      findsOneWidget,
+    );
+    await shot(tester, 'click_held_released');
   }, skip: !hasScreenshotFonts);
 
   screenshotTestWidgets('an expression pedal edits track gain in dB', (

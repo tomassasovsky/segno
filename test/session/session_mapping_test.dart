@@ -115,7 +115,7 @@ void main() {
           looper,
           projection: FxChainPersistence(looper: looper),
         ),
-        settings: settingsFromLooper(looper),
+        settings: settingsFromLooper(looper, clickVolume: 1),
       );
       final manifest =
           jsonDecode(
@@ -169,7 +169,7 @@ void main() {
       when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
       when(() => looper.state).thenReturn(const LooperState());
       when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
-      expect(settingsFromLooper(looper).loopBars, 7);
+      expect(settingsFromLooper(looper, clickVolume: 1).loopBars, 7);
     });
 
     test(
@@ -205,7 +205,7 @@ void main() {
           ..setTrackLengthPreset(channel: 0, bars: 4);
         expect(engine.snapshot().isRunning, isFalse);
         expect(engine.snapshot().tempoBpm, 0);
-        final settings = settingsFromLooper(looper);
+        final settings = settingsFromLooper(looper, clickVolume: .6);
         final repository = SessionRepository(engine: engine);
         await repository.save(directory.path, settings: settings);
         final rig = rigFromBundle(await repository.read(directory.path));
@@ -241,7 +241,7 @@ void main() {
           ..setOneShot(channel: 0, oneShot: null)
           ..setTrackLengthPreset(channel: 0, bars: null)
           ..setAutoRecord(enabled: true);
-        final inherited = settingsFromLooper(looper);
+        final inherited = settingsFromLooper(looper, clickVolume: 1);
         expect(inherited.trackRecordTimingOverrides, isEmpty);
         expect(inherited.trackOverdubDecayOverrides, {1: 0});
         expect(inherited.trackOneShotOverrides, {1: true});

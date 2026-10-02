@@ -22,7 +22,7 @@ void main() {
 
     PowerOffCubit buildCubit({Future<void> Function()? powerOff}) {
       return PowerOffCubit(
-        flush: () => log.add('flush'),
+        flush: ({required retry}) => log.add('flush'),
         pedalGoodbye: () => log.add('pedal'),
         powerOff:
             powerOff ??
@@ -36,7 +36,7 @@ void main() {
     test('halt waits for a delayed confirmed MIDI settings flush', () async {
       final receipt = Completer<void>();
       final cubit = PowerOffCubit(
-        flush: () async {
+        flush: ({required retry}) async {
           log.add('flush');
           await receipt.future;
           log.add('saved');
@@ -51,6 +51,95 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(log, ['flush', 'saved', 'pedal', 'powerOff']);
       await cubit.close();
+    });
+
+    test(
+      'pending settings lock shutdown and refuse duplicate requests',
+      () async {
+        final receipt = Completer<void>();
+        final cubit = PowerOffCubit(
+          flush: ({required retry}) async {
+            expect(retry, isFalse);
+            log.add('flush');
+            await receipt.future;
+          },
+          pedalGoodbye: () => log.add('pedal'),
+          powerOff: () async => log.add('powerOff'),
+          markHold: Duration.zero,
+        )..press(empty);
+        expect(cubit.state.phase, PowerOffPhase.flushing);
+        expect(cubit.state.isUiUp, isTrue);
+        expect(cubit.state.isDismissible, isFalse);
+        cubit
+          ..press(empty)
+          ..powerOffWithoutSaving(empty)
+          ..retryPowerOff(empty)
+          ..keepPlaying();
+        expect(log, ['flush']);
+        receipt.complete();
+        await Future<void>.delayed(Duration.zero);
+        expect(log, ['flush', 'pedal', 'powerOff']);
+        await cubit.close();
+      },
+    );
+
+    test('explicit Retry recovers once before halting', () async {
+      final attempts = <bool>[];
+      final cubit = PowerOffCubit(
+        flush: ({required retry}) async {
+          attempts.add(retry);
+          if (!retry) throw StateError('Click rollback pending');
+        },
+        pedalGoodbye: () => log.add('pedal'),
+        powerOff: () async => log.add('powerOff'),
+        markHold: Duration.zero,
+      )..press(empty);
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.phase, PowerOffPhase.flushFailed);
+      expect(log, isEmpty);
+      cubit.retryPowerOff(empty);
+      await Future<void>.delayed(Duration.zero);
+      expect(attempts, [false, true]);
+      expect(log, ['pedal', 'powerOff']);
+      await cubit.close();
+    });
+
+    test(
+      'Retry rechecks recording and Keep playing dismisses failure',
+      () async {
+        final cubit = PowerOffCubit(
+          flush: ({required retry}) => throw StateError('storage unavailable'),
+          pedalGoodbye: () => log.add('pedal'),
+          powerOff: () async => log.add('powerOff'),
+          markHold: Duration.zero,
+        )..press(empty);
+        await Future<void>.delayed(Duration.zero);
+        expect(cubit.state.phase, PowerOffPhase.flushFailed);
+        cubit.retryPowerOff(inFlight);
+        expect(cubit.state.phase, PowerOffPhase.refuse);
+        cubit.keepPlaying();
+        expect(cubit.state.phase, PowerOffPhase.idle);
+        cubit.press(empty);
+        await Future<void>.delayed(Duration.zero);
+        cubit.keepPlaying();
+        expect(cubit.state.phase, PowerOffPhase.idle);
+        expect(log, isEmpty);
+        await cubit.close();
+      },
+    );
+
+    test('closing during flush never sends a late halt', () async {
+      final receipt = Completer<void>();
+      final cubit = PowerOffCubit(
+        flush: ({required retry}) => receipt.future,
+        pedalGoodbye: () => log.add('pedal'),
+        powerOff: () async => log.add('powerOff'),
+        markHold: Duration.zero,
+      )..press(empty);
+      await cubit.close();
+      receipt.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(log, isEmpty);
     });
 
     blocTest<PowerOffCubit, PowerOffState>(
@@ -99,7 +188,10 @@ void main() {
       build: buildCubit,
       act: (cubit) => cubit.press(empty),
       wait: const Duration(milliseconds: 1),
-      expect: () => [const PowerOffState(phase: PowerOffPhase.goodbye)],
+      expect: () => [
+        const PowerOffState(phase: PowerOffPhase.flushing),
+        const PowerOffState(phase: PowerOffPhase.goodbye),
+      ],
       verify: (_) {
         expect(log, ['flush', 'pedal', 'powerOff']);
       },
@@ -114,6 +206,7 @@ void main() {
       wait: const Duration(milliseconds: 1),
       expect: () => [
         const PowerOffState(phase: PowerOffPhase.confirm),
+        const PowerOffState(phase: PowerOffPhase.flushing),
         const PowerOffState(phase: PowerOffPhase.goodbye),
       ],
       verify: (_) => expect(log, ['flush', 'pedal', 'powerOff']),
@@ -126,7 +219,10 @@ void main() {
         ..press(empty)
         ..keepPlaying(),
       wait: const Duration(milliseconds: 1),
-      expect: () => [const PowerOffState(phase: PowerOffPhase.goodbye)],
+      expect: () => [
+        const PowerOffState(phase: PowerOffPhase.flushing),
+        const PowerOffState(phase: PowerOffPhase.goodbye),
+      ],
     );
 
     blocTest<PowerOffCubit, PowerOffState>(
@@ -216,6 +312,7 @@ void main() {
       expect: () => [
         const PowerOffState(phase: PowerOffPhase.confirm),
         const PowerOffState(phase: PowerOffPhase.saving),
+        const PowerOffState(phase: PowerOffPhase.flushing),
         const PowerOffState(phase: PowerOffPhase.goodbye),
       ],
       verify: (_) => expect(log, ['save', 'flush', 'pedal', 'powerOff']),
@@ -241,6 +338,7 @@ void main() {
         const PowerOffState(phase: PowerOffPhase.confirm),
         const PowerOffState(phase: PowerOffPhase.saveAs),
         const PowerOffState(phase: PowerOffPhase.saving),
+        const PowerOffState(phase: PowerOffPhase.flushing),
         const PowerOffState(phase: PowerOffPhase.goodbye),
       ],
       verify: (_) => expect(log, ['save', 'flush', 'pedal', 'powerOff']),
@@ -311,14 +409,17 @@ void main() {
       ),
       act: (cubit) => cubit.press(empty),
       wait: const Duration(milliseconds: 1),
-      expect: () => [const PowerOffState(phase: PowerOffPhase.goodbye)],
+      expect: () => [
+        const PowerOffState(phase: PowerOffPhase.flushing),
+        const PowerOffState(phase: PowerOffPhase.goodbye),
+      ],
       verify: (_) => expect(log, ['flush', 'pedal', 'powerOff']),
     );
 
     blocTest<PowerOffCubit, PowerOffState>(
-      'a throwing flush still goodbyes and powerOffs',
+      'a throwing flush keeps the device on and offers recovery',
       build: () => PowerOffCubit(
-        flush: () {
+        flush: ({required retry}) {
           log.add('flush');
           throw StateError('store down');
         },
@@ -328,14 +429,17 @@ void main() {
       ),
       act: (cubit) => cubit.press(empty),
       wait: const Duration(milliseconds: 1),
-      expect: () => [const PowerOffState(phase: PowerOffPhase.goodbye)],
-      verify: (_) => expect(log, ['flush', 'pedal', 'powerOff']),
+      expect: () => [
+        const PowerOffState(phase: PowerOffPhase.flushing),
+        const PowerOffState(phase: PowerOffPhase.flushFailed),
+      ],
+      verify: (_) => expect(log, ['flush']),
     );
 
     test('markHold delays powerOff until after the mark', () {
       fakeAsync((async) {
         final cubit = PowerOffCubit(
-          flush: () => log.add('flush'),
+          flush: ({required retry}) => log.add('flush'),
           pedalGoodbye: () => log.add('pedal'),
           powerOff: () async => log.add('powerOff'),
           markHold: const Duration(milliseconds: 40),

@@ -26,6 +26,7 @@ import 'package:segno_engine/segno_engine.dart'
         TrackEffectType;
 import 'package:settings_repository/settings_repository.dart';
 
+import '../helpers/fake_click_volume_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/test_mix_settings.dart';
 
@@ -738,6 +739,7 @@ class _Harness {
       exportsRoot: () async => tempDir.path,
     );
     control = ControlCubit(
+      clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: fxPersistence,
       looper: repo,
       mixSettings: mixSettings,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/mix_value_scale.dart';
+import 'package:segno/looper/model/click_volume.dart';
 
 /// What a continuous binding sweeps: an FX parameter, Mixer control, or
 /// master gain.
@@ -43,6 +44,7 @@ sealed class ControlValueTarget extends Equatable {
     OutputLevelTarget(:final bus) => bus >= 0,
     OutputBalanceTarget(:final bus) => bus >= 0,
     MasterGainTarget() => true,
+    ClickVolumeTarget() => true,
   };
 
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
@@ -63,6 +65,9 @@ sealed class ControlValueTarget extends Equatable {
     if (raw.containsKey('ctl')) {
       if (ctl == 'masterGain') {
         return raw.length == 1 ? const MasterGainTarget() : null;
+      }
+      if (ctl == 'clickVolume') {
+        return raw.length == 1 ? const ClickVolumeTarget() : null;
       }
       final index = raw['index'];
       final lane = raw['lane'];
@@ -314,4 +319,27 @@ final class MasterGainTarget extends ControlValueTarget {
 
   @override
   List<Object?> get props => ['masterGain'];
+}
+
+/// The click's gain, owned by the current Click volume control rather than a
+/// Mixer output bus. A normalized position of 0.5 is physical unity.
+final class ClickVolumeTarget extends ControlValueTarget {
+  /// Creates the click-volume target.
+  const ClickVolumeTarget();
+
+  /// Converts a stored normalized endpoint to the click's physical gain.
+  double toDomain(double normalized) =>
+      normalized.clamp(0.0, 1.0) * kMaxClickGain;
+
+  /// Converts an accepted physical gain to a normalized endpoint.
+  double fromDomain(double gain) => (gain / kMaxClickGain).clamp(0.0, 1.0);
+
+  /// One MIDI relative-controller detent in normalized source travel.
+  double get relativeStep => 0.01;
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'clickVolume'});
+
+  @override
+  List<Object?> get props => ['clickVolume'];
 }

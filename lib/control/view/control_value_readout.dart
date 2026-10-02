@@ -21,5 +21,8 @@ String controlValueReadout(
     (target as MixValueTarget).toDomain(normalized),
   ),
   OutputLevelTarget() || FxParamTarget() => '${(normalized * 100).round()}%',
+  ClickVolumeTarget() => l10n.loopClickVolumeReadout(
+    (target.toDomain(normalized) * 100).round(),
+  ),
   MasterGainTarget() => signalGainReadout(normalized),
 };

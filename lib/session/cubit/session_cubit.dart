@@ -44,6 +44,9 @@ class SessionCubit extends Cubit<SessionState> {
     required MixSettingsCoordinator mixSettings,
     required FxChainPersistence fxPersistence,
     required MixSettingsPersistence mixPersistence,
+    required Future<T> Function<T>(Future<T> Function() operation)
+    runClickVolumeExclusive,
+    required double Function() currentDurableClickVolume,
     required Future<String> Function() exportDirectory,
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
@@ -54,6 +57,8 @@ class SessionCubit extends Cubit<SessionState> {
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
        _mixPersistence = mixPersistence,
+       _runClickVolumeExclusive = runClickVolumeExclusive,
+       _currentDurableClickVolume = currentDurableClickVolume,
        _exportDirectory = exportDirectory,
        _currentPedalBindings = currentPedalBindings,
        _onPedalBindings = onPedalBindings,
@@ -78,10 +83,17 @@ class SessionCubit extends Cubit<SessionState> {
   final MixSettingsCoordinator _mixSettings;
   final FxChainPersistence _fxPersistence;
   final MixSettingsPersistence _mixPersistence;
+  final Future<T> Function<T>(Future<T> Function() operation)
+  _runClickVolumeExclusive;
+  final double Function() _currentDurableClickVolume;
   final Future<String> Function() _exportDirectory;
   final String Function() _currentPedalBindings;
   final void Function(String encoded) _onPedalBindings;
   final void Function() _releaseHeldBindings;
+
+  // One lock order for every session boundary: Mixer, then Click.
+  Future<T> _runSettingsExclusive<T>(Future<T> Function() operation) =>
+      _mixSettings.runExclusive(() => _runClickVolumeExclusive(operation));
 
   // ---- exports (a separate action from the session catalog) ----
 
@@ -116,7 +128,7 @@ class SessionCubit extends Cubit<SessionState> {
     final generation = _looper.mixGeneration;
     final device = _looper.state.status.deviceName;
     return _run(
-      () => _mixSettings.runExclusive(() async {
+      () => _runSettingsExclusive(() async {
         final slug = _slugOf(name);
         if ((await _repository.listSessions()).any((s) => s.name == slug)) {
           throw SessionNameCollision(slug: slug);
@@ -154,7 +166,7 @@ class SessionCubit extends Cubit<SessionState> {
     final generation = _looper.mixGeneration;
     final device = _looper.state.status.deviceName;
     return _run(
-      () => _mixSettings.runExclusive(() async {
+      () => _runSettingsExclusive(() async {
         await _saveCurrentRig(
           await _repository.bundlePath(name),
           revision,
@@ -211,7 +223,11 @@ class SessionCubit extends Cubit<SessionState> {
         projection: _fxPersistence,
         mix: _mixSettings.durableSnapshot,
       ),
-      settings: settingsFromLooper(_looper, mix: _mixSettings.durableSnapshot),
+      settings: settingsFromLooper(
+        _looper,
+        mix: _mixSettings.durableSnapshot,
+        clickVolume: _currentDurableClickVolume(),
+      ),
       pedalBindings: _currentPedalBindings(),
       captureStillValid: stillOwned,
     );
@@ -227,7 +243,7 @@ class SessionCubit extends Cubit<SessionState> {
   /// status stream, so it reflects this disarm too even though it was never
   /// the one to call it.
   Future<void> loadNamed(String name) => _run(
-    () => _mixSettings.runExclusive(() async {
+    () => _runSettingsExclusive(() async {
       final disarmed = await _performance.disarmAndFinalize();
       if (!disarmed.isOk) {
         throw StateError(

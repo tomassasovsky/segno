@@ -274,6 +274,20 @@ class LooperRepository {
   ClickMode _clickMode = ClickMode.off;
   int _clickMask = 0;
   double _clickVolume = 1;
+  double _clickRestartVolume = 1;
+  _PendingClickVolume? _pendingClickVolume;
+  EngineResult _lastClickVolumeResult = EngineResult.ok;
+  bool _clickRecoveryStartBlocked = false;
+
+  /// Whether Click uncertainty prevents another engine start.
+  bool get clickVolumeRecoveryRequired => _clickRecoveryStartBlocked;
+
+  /// Fences restart until the Click owner restores its exact checkpoint.
+  void blockStartForClickRecovery() => _clickRecoveryStartBlocked = true;
+
+  /// Clears only Click recovery; Mixer recovery retains its own fence.
+  void clearClickRecoveryStartBlock() => _clickRecoveryStartBlocked = false;
+
   int _countInBars = 0;
 
   /// The five-mode axis (B2a, D4). Remembered and re-applied on every
@@ -640,6 +654,7 @@ class LooperRepository {
   }
 
   void _cancelMix() {
+    _cancelClickVolume();
     _mixGeneration++;
     if (_pendingImages.isNotEmpty) _settleImages(_engine.snapshot());
     final pending = _pendingMix;
@@ -1595,6 +1610,7 @@ class LooperRepository {
   }
 
   void _poll() {
+    final clickSettled = _settlePendingClickVolume();
     final lengthSettled = _settlePendingLengthSettings();
     final mixSettled = _settlePendingMix();
     _drainHistoryFx();
@@ -1614,7 +1630,7 @@ class LooperRepository {
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (next == _last && !lengthSettled && !mixSettled) return;
+    if (next == _last && !clickSettled && !lengthSettled && !mixSettled) return;
     _last = next;
     _forgetEmptyWaveforms(next);
     // Before listeners see it: `auto` monitors resolve against the arm state
@@ -1629,6 +1645,7 @@ class LooperRepository {
   /// param the UI drives — reflects on the next frame rather than waiting for
   /// the next poll tick (which would make a dragged knob feel a tick behind).
   void _reproject() {
+    final clickSettled = _settlePendingClickVolume();
     final lengthSettled = _settlePendingLengthSettings();
     final mixSettled = _settlePendingMix();
     final snapshot = _engine.snapshot();
@@ -1636,7 +1653,7 @@ class LooperRepository {
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (next == _last && !lengthSettled && !mixSettled) return;
+    if (next == _last && !clickSettled && !lengthSettled && !mixSettled) return;
     _last = next;
     _forgetEmptyWaveforms(next);
     _reconcileAutoMonitors();
@@ -1916,7 +1933,10 @@ class LooperRepository {
 
   /// Opens the audio device and starts processing.
   EngineResult startEngine(EngineConfig config) {
-    if (_mixRecoveryStartBlocked) return EngineResult.notReady;
+    if (_mixRecoveryStartBlocked || _clickRecoveryStartBlocked) {
+      return EngineResult.notReady;
+    }
+    _cancelClickVolume();
     final replayedPriorEngine = _hasOpenedEngine;
     _mixGeneration++;
     final result = _engine.start(engineConfigToEngine(config));
@@ -1928,6 +1948,17 @@ class LooperRepository {
       _monitorSlots.clear();
       _lastEngineConfig = config;
       _intendRunning = true;
+      // Do not project this partial startup: remembered track lengths and
+      // other rig settings are replayed below before the final projection.
+      final clickResult = _engine.setClickVolume(_clickRestartVolume);
+      if (!clickResult.isOk) {
+        stopEngine();
+        return clickResult;
+      }
+      _pendingClickVolume = _PendingClickVolume(
+        _clickRestartVolume,
+        _clickRestartVolume,
+      );
       // A fresh start resets the engine's quantize flag and monitor masks;
       // re-apply the desired state so it survives device changes / reconnects.
       _engine.setQuantize(enabled: _quantize);
@@ -1970,7 +2001,6 @@ class LooperRepository {
         ..setQuantizeDiv(_quantizeDiv)
         ..setClickMode(_clickMode)
         ..setClickOutput(_clickMask)
-        ..setClickVolume(_clickVolume)
         ..setCountIn(_countInBars);
       final lengthResult = _requestLengthSettings(
         defaultBars: _defaultLengthPreset,
@@ -2285,6 +2315,7 @@ class LooperRepository {
       }
     }
     _intendRunning = false;
+    _clickVolume = _clickRestartVolume;
     _stopReconnectPolling();
     // The engine tears down all plugin slots on stop; drop our stale handles so
     // a later param set doesn't address a freed slot.
@@ -3249,6 +3280,7 @@ class LooperRepository {
     _requireSessionSetting(setClickMode(rig.clickMode));
     _requireSessionSetting(setClickOutput(rig.clickMask));
     _requireSessionSetting(setClickVolume(rig.clickVolume));
+    _requireSessionSetting(await settleClickVolume());
 
     // Session-level mode + crown (B5c), applied here — before any content is
     // imported below — so the mode lands on an empty rig with nothing to
@@ -6469,19 +6501,90 @@ class LooperRepository {
     return EngineResult.ok;
   }
 
-  /// Sets the click [volume] (`0..LE_MAX_GAIN`, the click's only gain stage —
-  /// clamped by the engine, like [setLaneVolume] / [setMonitorVolume]; this
-  /// repository does not duplicate that range here since `LE_MAX_GAIN` is not
-  /// part of this package's public surface). Remembered and re-applied on
-  /// every (re)start.
-  EngineResult setClickVolume(double volume) {
-    if (_intendRunning) {
-      final result = _engine.setClickVolume(volume);
-      if (!result.isOk) return result;
+  /// Admits a Click gain edit. Running edits publish only after the callback;
+  /// callers must await [settleClickVolume] before treating them as accepted.
+  EngineResult setClickVolume(double volume, {double? releasedVolume}) {
+    final restartVolume = releasedVolume ?? volume;
+    if (!volume.isFinite ||
+        volume < 0 ||
+        volume > 2 ||
+        !restartVolume.isFinite ||
+        restartVolume < 0 ||
+        restartVolume > 2) {
+      return EngineResult.invalid;
     }
-    _clickVolume = volume;
+    if (_pendingClickVolume != null) return EngineResult.notReady;
+    if (!_intendRunning) {
+      _clickVolume = volume;
+      _clickRestartVolume = restartVolume;
+      _lastClickVolumeResult = EngineResult.ok;
+      _reproject();
+      return EngineResult.ok;
+    }
+    if (_clickRecoveryStartBlocked) return EngineResult.notReady;
+    final result = _engine.setClickVolume(volume);
+    if (!result.isOk) return result;
+    _pendingClickVolume = _PendingClickVolume(volume, restartVolume);
     _reproject();
     return EngineResult.ok;
+  }
+
+  /// Whether the most recent admitted Click command has a callback receipt.
+  bool get clickVolumeSettled {
+    _settlePendingClickVolume();
+    return _pendingClickVolume == null && _lastClickVolumeResult.isOk;
+  }
+
+  bool _settlePendingClickVolume() {
+    final pending = _pendingClickVolume;
+    if (pending == null || !_engine.commandsSettled) return false;
+    final actual = _engine.snapshot().clickVolume;
+    final result = actual.isFinite && (actual - pending.volume).abs() <= 1e-6
+        ? EngineResult.ok
+        : EngineResult.invalid;
+    _pendingClickVolume = null;
+    _lastClickVolumeResult = result;
+    if (result.isOk) {
+      _clickVolume = pending.volume;
+      _clickRestartVolume = pending.restartVolume;
+    } else {
+      // A drained queue with a different published gain is not an accepted
+      // write. Stop uncertain audio before the owner restores durable intent.
+      blockStartForClickRecovery();
+      stopEngine();
+    }
+    pending.completed.complete(result);
+    return true;
+  }
+
+  void _cancelClickVolume() {
+    final pending = _pendingClickVolume;
+    _pendingClickVolume = null;
+    if (pending != null) {
+      _lastClickVolumeResult = EngineResult.notReady;
+      pending.completed.complete(EngineResult.notReady);
+    }
+  }
+
+  /// Awaits command publication and actual gain readback, independently of UI
+  /// polling. Timeout stops processing so no late queued high can sound.
+  Future<EngineResult> settleClickVolume({
+    Duration pollInterval = const Duration(milliseconds: 10),
+    int attempts = 50,
+  }) async {
+    final pending = _pendingClickVolume;
+    if (pending == null) return _lastClickVolumeResult;
+    for (var i = 0; i < attempts; i++) {
+      if (pending.completed.isCompleted) return pending.completed.future;
+      if (_settlePendingClickVolume()) _reproject();
+      if (pending.completed.isCompleted) return pending.completed.future;
+      await Future<void>.delayed(pollInterval);
+    }
+    if (pending.completed.isCompleted) return pending.completed.future;
+    blockStartForClickRecovery();
+    stopEngine();
+    _reproject();
+    return EngineResult.notReady;
   }
 
   /// Sets the count-in length in measures (`0` = off). Remembered and
@@ -6831,4 +6934,11 @@ class _FxPreparationRefused implements Exception {
   const _FxPreparationRefused(this.result);
 
   final EngineResult result;
+}
+
+class _PendingClickVolume {
+  _PendingClickVolume(this.volume, this.restartVolume);
+  final double volume;
+  final double restartVolume;
+  final completed = Completer<EngineResult>();
 }

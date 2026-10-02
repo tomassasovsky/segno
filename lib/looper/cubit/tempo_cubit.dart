@@ -4,17 +4,8 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/click_volume.dart';
 import 'package:settings_repository/settings_repository.dart';
-
-/// The click's own gain-stage ceiling — the engine's `LE_MAX_GAIN` (2.0,
-/// +6.02 dB above unity), the same ceiling every other volume control in the
-/// app (lane/monitor) uses.
-///
-/// Beside the cubit that writes the value rather than private to one of the
-/// surfaces that draws it: two click controls now exist — the Settings slider
-/// and the console's own bar — and a ceiling known to only one of them is a
-/// pair of controls with different reach over the same setting.
-const double kMaxClickGain = 2;
 
 /// The tempo range the engine accepts, inclusive.
 ///
@@ -82,6 +73,7 @@ class TempoSettings extends Equatable {
     this.clickMode = ClickMode.off,
     this.clickOutputMask = 0,
     this.clickVolume = 1,
+    this.clickReady = false,
     this.countInBars = 0,
   });
 
@@ -103,6 +95,9 @@ class TempoSettings extends Equatable {
   /// Click volume (`0..LE_MAX_GAIN`).
   final double clickVolume;
 
+  /// Whether Click initialization has established an accepted value.
+  final bool clickReady;
+
   /// Count-in length in measures (`0` = off).
   final int countInBars;
 
@@ -114,6 +109,7 @@ class TempoSettings extends Equatable {
     ClickMode? clickMode,
     int? clickOutputMask,
     double? clickVolume,
+    bool? clickReady,
     int? countInBars,
   }) => TempoSettings(
     bpm: bpm ?? this.bpm,
@@ -122,6 +118,7 @@ class TempoSettings extends Equatable {
     clickMode: clickMode ?? this.clickMode,
     clickOutputMask: clickOutputMask ?? this.clickOutputMask,
     clickVolume: clickVolume ?? this.clickVolume,
+    clickReady: clickReady ?? this.clickReady,
     countInBars: countInBars ?? this.countInBars,
   );
 
@@ -133,6 +130,7 @@ class TempoSettings extends Equatable {
     clickMode,
     clickOutputMask,
     clickVolume,
+    clickReady,
     countInBars,
   ];
 }
@@ -148,16 +146,21 @@ class TempoSettings extends Equatable {
 /// the repository, never persisted (see [LooperRepository.tapTempo]'s doc —
 /// there is nothing meaningful to remember; the resulting tempo, if any, is
 /// the engine's own runtime state).
-class TempoCubit extends Cubit<TempoSettings> {
+class TempoCubit extends Cubit<TempoSettings> implements ClickVolumeControl {
   /// Creates a [TempoCubit] driving [repository], persisted through
   /// [settings]. Starts at the tempo-free defaults until [load] restores the
   /// saved values.
   TempoCubit({
     required LooperRepository repository,
     required SettingsRepository settings,
+    Duration clickPollInterval = const Duration(milliseconds: 10),
+    int clickPollAttempts = 50,
   }) : _repository = repository,
        _settings = settings,
+       _clickPollInterval = clickPollInterval,
+       _clickPollAttempts = clickPollAttempts,
        super(const TempoSettings()) {
+    _acceptedClickLifetime = clickVolumeLifetime;
     _subscription = _repository.looperState.listen(_onLooperState);
   }
 
@@ -166,10 +169,217 @@ class TempoCubit extends Cubit<TempoSettings> {
   Future<void>? _loadFuture;
   late final StreamSubscription<LooperState> _subscription;
   int _userEditRevision = 0;
+  final Duration _clickPollInterval;
+  final int _clickPollAttempts;
+  Future<void> _clickTail = Future<void>.value();
+  final _ordinaryClick = StreamController<double>.broadcast(sync: true);
+  final _clickFailures = StreamController<ClickVolumeOutcome>.broadcast();
+  bool _closing = false;
+  bool _clickBusy = false;
+  bool _clickObservationQueued = false;
+  double? _releasedClick;
+  ClickVolumeLifetime? _acceptedClickLifetime;
+  ({double? checkpoint, double volume, ClickVolumeLifetime lifetime})?
+  _clickRecovery;
+  ClickVolumeOutcome _lastClickOutcome = const ClickVolumeOutcome(
+    ClickVolumeStatus.applied,
+    deferred: true,
+  );
+
+  bool get _clickRecoveryPending =>
+      _clickRecovery != null || _repository.clickVolumeRecoveryRequired;
+
+  @override
+  double? get clickVolume =>
+      state.clickReady && !_closing && !isClosed ? state.clickVolume : null;
+
+  @override
+  double get durableClickVolume => _releasedClick ?? state.clickVolume;
+
+  @override
+  ClickVolumeLifetime get clickVolumeLifetime => (
+    sessionRevision: _repository.sessionRevision,
+    mixGeneration: _repository.mixGeneration,
+  );
+
+  @override
+  Stream<double> get ordinaryClickVolumeChanges => _ordinaryClick.stream;
+
+  /// Refusals and recovery obligations shared by both touch and controllers.
+  Stream<ClickVolumeOutcome> get clickVolumeFailures => _clickFailures.stream;
+
+  Future<T> _queueClick<T>(Future<T> Function() operation) {
+    final result = _clickTail.then((_) => operation());
+    _clickTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  /// Waits for every Click write, including ordinary touch edits.
+  Future<ClickVolumeOutcome> flushClickVolume() async {
+    try {
+      await _loadFuture;
+      await _clickTail;
+      await _queueClick(_observeClickReplay);
+    } on Object catch (error) {
+      return _reportClick(
+        ClickVolumeOutcome(ClickVolumeStatus.rejected, error: error),
+      );
+    }
+    if (!state.clickReady) {
+      return _reportClick(
+        const ClickVolumeOutcome(
+          ClickVolumeStatus.rejected,
+          engineResult: EngineResult.notReady,
+        ),
+      );
+    }
+    return _lastClickOutcome;
+  }
+
+  /// Session callers acquire Mixer before this gate, never the reverse.
+  Future<T> runClickVolumeExclusive<T>(Future<T> Function() operation) async {
+    await _loadFuture;
+    return _queueClick(() async {
+      if (!state.clickReady || _clickRecoveryPending || _closing || isClosed) {
+        throw StateError('Click volume is unavailable for session capture');
+      }
+      final checkpoint = await _settings.readClickVolumeCheckpoint();
+      final priorDurable = durableClickVolume;
+      final lifetime = clickVolumeLifetime;
+      try {
+        return await operation();
+      } finally {
+        if (_repository.clickVolumeRecoveryRequired && _clickRecovery == null) {
+          await _recoverFailedClick(
+            checkpoint,
+            priorDurable,
+            false,
+            lifetime: lifetime,
+          );
+        }
+        _syncFromRepository();
+      }
+    });
+  }
+
+  ClickVolumeOutcome _reportClick(ClickVolumeOutcome outcome) {
+    _lastClickOutcome = outcome;
+    if (!outcome.isOk &&
+        outcome.status != ClickVolumeStatus.superseded &&
+        !_clickFailures.isClosed) {
+      _clickFailures.add(outcome);
+    }
+    return outcome;
+  }
+
+  /// Reestablishes the exact preference and deferred runtime intent, stopped.
+  Future<ClickVolumeOutcome> recoverClickVolume() => _queueClick(() async {
+    if (_clickRecovery == null && _repository.clickVolumeRecoveryRequired) {
+      await _adoptClickRecovery();
+    }
+    var recovery = _clickRecovery;
+    if (recovery == null) {
+      if (_closing ||
+          isClosed ||
+          !state.clickReady ||
+          !_repository.clickVolumeSettled) {
+        return _reportClick(
+          const ClickVolumeOutcome(
+            ClickVolumeStatus.rejected,
+            engineResult: EngineResult.notReady,
+          ),
+        );
+      }
+      try {
+        await _settings.readClickVolumeCheckpoint();
+        return _reportClick(
+          ClickVolumeOutcome(
+            ClickVolumeStatus.applied,
+            deferred: !_repository.sessionTransport.isRunning,
+          ),
+        );
+      } on Object catch (error) {
+        return _reportClick(
+          ClickVolumeOutcome(ClickVolumeStatus.rejected, error: error),
+        );
+      }
+    }
+    try {
+      await _settings.restoreClickVolumeCheckpoint(recovery.checkpoint);
+      if (_closing || isClosed) {
+        return const ClickVolumeOutcome(ClickVolumeStatus.superseded);
+      }
+      if (clickVolumeLifetime != recovery.lifetime) {
+        // Only the old scalar obligation belongs to this transaction. A
+        // replacement rig's replay failure owns its own confirmed gain.
+        _clickRecovery = null;
+        if (!_repository.clickVolumeRecoveryRequired) {
+          _syncFromRepository();
+          return _reportClick(
+            const ClickVolumeOutcome(ClickVolumeStatus.applied),
+          );
+        }
+        await _adoptClickRecovery();
+        final adopted = _clickRecovery;
+        if (adopted == null) {
+          return _reportClick(
+            const ClickVolumeOutcome(ClickVolumeStatus.recoveryRequired),
+          );
+        }
+        recovery = adopted;
+      }
+      if (_closing || isClosed || clickVolumeLifetime != recovery.lifetime) {
+        return const ClickVolumeOutcome(ClickVolumeStatus.superseded);
+      }
+      final result = _repository.setClickVolume(recovery.volume);
+      if (!result.isOk) {
+        return _reportClick(
+          ClickVolumeOutcome(
+            ClickVolumeStatus.recoveryRequired,
+            engineResult: result,
+          ),
+        );
+      }
+      _repository.clearClickRecoveryStartBlock();
+      _clickRecovery = null;
+      _releasedClick = null;
+      _acceptedClickLifetime = clickVolumeLifetime;
+      emit(state.copyWith(clickVolume: recovery.volume, clickReady: true));
+      return _reportClick(
+        const ClickVolumeOutcome(ClickVolumeStatus.applied, deferred: true),
+      );
+    } on Object catch (error) {
+      return _reportClick(
+        ClickVolumeOutcome(ClickVolumeStatus.recoveryRequired, error: error),
+      );
+    }
+  });
 
   void _onLooperState(LooperState _) => _syncFromRepository();
 
   void _syncFromRepository() {
+    if (_closing || isClosed) return;
+    final lifetime = clickVolumeLifetime;
+    final changed =
+        _acceptedClickLifetime != null && _acceptedClickLifetime != lifetime;
+    if (changed && !_clickBusy) {
+      _releasedClick = null;
+      _acceptedClickLifetime = lifetime;
+    }
+    final clickSettled = !_clickBusy && _repository.clickVolumeSettled;
+    if (!_clickBusy &&
+        (changed || _repository.clickVolumeRecoveryRequired) &&
+        !_clickObservationQueued) {
+      _clickObservationQueued = true;
+      unawaited(
+        _queueClick(_observeClickReplay).whenComplete(() {
+          _clickObservationQueued = false;
+        }),
+      );
+    }
     final transport = _repository.sessionTransport;
     emit(
       TempoSettings(
@@ -178,15 +388,58 @@ class TempoCubit extends Cubit<TempoSettings> {
         tsDen: transport.tsDen,
         clickMode: transport.clickMode,
         clickOutputMask: transport.clickMask,
-        clickVolume: transport.clickVolume,
+        clickVolume: clickSettled && (state.clickReady || changed)
+            ? transport.clickVolume
+            : state.clickVolume,
+        clickReady: state.clickReady || changed && clickSettled,
         countInBars: transport.countInBars,
       ),
     );
   }
 
+  Future<void> _observeClickReplay() async {
+    if (_closing || isClosed) return;
+    if (_repository.sessionTransport.isRunning &&
+        !_repository.clickVolumeSettled) {
+      await _repository.settleClickVolume(
+        pollInterval: _clickPollInterval,
+        attempts: _clickPollAttempts,
+      );
+    }
+    if (_repository.clickVolumeRecoveryRequired && _clickRecovery == null) {
+      await _adoptClickRecovery();
+    }
+    _syncFromRepository();
+  }
+
+  Future<void> _adoptClickRecovery() async {
+    final lifetime = clickVolumeLifetime;
+    final volume = _repository.sessionTransport.clickVolume;
+    try {
+      final checkpoint = await _settings.readClickVolumeCheckpoint();
+      if (_closing ||
+          isClosed ||
+          lifetime != clickVolumeLifetime ||
+          !_repository.clickVolumeRecoveryRequired) {
+        return;
+      }
+      await _recoverFailedClick(checkpoint, volume, false, lifetime: lifetime);
+    } on Object catch (error) {
+      // The checkpoint remains unknown; explicit Retry reads it again before
+      // attempting any restoration. Never invent an absent scalar.
+      _reportClick(
+        ClickVolumeOutcome(ClickVolumeStatus.recoveryRequired, error: error),
+      );
+    }
+  }
+
   @override
   Future<void> close() async {
+    _closing = true;
+    await _clickTail;
     await _subscription.cancel();
+    await _ordinaryClick.close();
+    await _clickFailures.close();
     await super.close();
   }
 
@@ -225,9 +478,33 @@ class TempoCubit extends Cubit<TempoSettings> {
     if (_repository.setClickOutput(clickOutputMask).isOk) {
       restored = restored.copyWith(clickOutputMask: clickOutputMask);
     }
-    if (_repository.setClickVolume(clickVolume).isOk) {
-      restored = restored.copyWith(clickVolume: clickVolume);
+    ClickVolumeOutcome? restoredClick;
+    await _queueClick(() async {
+      if (sessionRevision != _repository.sessionRevision ||
+          userEditRevision != _userEditRevision ||
+          _closing ||
+          isClosed) {
+        return;
+      }
+      restoredClick = await _writeClickVolume(
+        clickVolume,
+        lifetime: clickVolumeLifetime,
+        persist: false,
+        publish: false,
+      );
+    });
+    if (_closing || isClosed) return;
+    if (sessionRevision != _repository.sessionRevision ||
+        userEditRevision != _userEditRevision) {
+      _syncFromRepository();
+      return;
     }
+    restored = restored.copyWith(
+      clickVolume: restoredClick?.isOk ?? false
+          ? clickVolume
+          : state.clickVolume,
+      clickReady: (restoredClick?.isOk ?? false) || state.clickReady,
+    );
     // One startup owner restores the mutually exclusive start methods. A
     // later Sound start edit in RecordOptionsCubit also takes precedence.
     if (recordStartRevision == _repository.recordStartRevision) {
@@ -301,14 +578,203 @@ class TempoCubit extends Cubit<TempoSettings> {
     await _settings.saveClickOutputMask(mask);
   }
 
-  /// Sets and persists the click volume, applying it now. Unconditional
-  /// repository call — see [setTempo]'s doc.
-  Future<void> setClickVolume(double volume) async {
+  /// Applies ordinary touch intent through the same durable Click owner.
+  Future<ClickVolumeOutcome> setClickVolume(double volume) {
     _userEditRevision++;
-    if (!_repository.setClickVolume(volume).isOk) return;
-    emit(state.copyWith(clickVolume: volume));
+    final lifetime = clickVolumeLifetime;
+    return _queueClick(
+      () => _writeClickVolume(volume, lifetime: lifetime, ordinary: true),
+    );
+  }
 
-    await _settings.saveClickVolume(volume);
+  @override
+  Future<ClickVolumeOutcome> setControllerClickVolume(
+    double volume, {
+    required ClickVolumeLifetime lifetime,
+    double? releasedVolume,
+  }) => _queueClick(
+    () => _writeClickVolume(
+      volume,
+      releasedVolume: releasedVolume,
+      lifetime: lifetime,
+    ),
+  );
+
+  Future<ClickVolumeOutcome> _writeClickVolume(
+    double volume, {
+    required ClickVolumeLifetime lifetime,
+    double? releasedVolume,
+    bool ordinary = false,
+    bool persist = true,
+    bool publish = true,
+  }) async {
+    bool current() => !isClosed && lifetime == clickVolumeLifetime;
+    if (_closing || !current()) {
+      return const ClickVolumeOutcome(ClickVolumeStatus.superseded);
+    }
+    if (_clickRecoveryPending) {
+      return _reportClick(
+        const ClickVolumeOutcome(ClickVolumeStatus.recoveryRequired),
+      );
+    }
+    if (!volume.isFinite ||
+        volume < 0 ||
+        volume > kMaxClickGain ||
+        releasedVolume != null &&
+            (!releasedVolume.isFinite ||
+                releasedVolume < 0 ||
+                releasedVolume > kMaxClickGain)) {
+      return _reportClick(
+        const ClickVolumeOutcome(
+          ClickVolumeStatus.rejected,
+          engineResult: EngineResult.invalid,
+        ),
+      );
+    }
+    final priorDurable = durableClickVolume;
+    double? checkpoint;
+    var saved = false;
+    _clickBusy = true;
+    try {
+      checkpoint = await _settings.readClickVolumeCheckpoint();
+      if (!current()) {
+        return const ClickVolumeOutcome(ClickVolumeStatus.superseded);
+      }
+      // Engine startup replays the accepted gain through the same native
+      // queue. Drain that receipt before admitting the owner's next intent.
+      if (_repository.sessionTransport.isRunning &&
+          !_repository.clickVolumeSettled) {
+        final prior = await _repository.settleClickVolume(
+          pollInterval: _clickPollInterval,
+          attempts: _clickPollAttempts,
+        );
+        if (_repository.clickVolumeRecoveryRequired) {
+          return await _recoverFailedClick(
+            checkpoint,
+            priorDurable,
+            false,
+            lifetime: lifetime,
+            result: prior,
+          );
+        }
+        if (!current() || !prior.isOk) {
+          return _reportClick(
+            ClickVolumeOutcome(
+              current()
+                  ? ClickVolumeStatus.rejected
+                  : ClickVolumeStatus.superseded,
+              engineResult: prior,
+            ),
+          );
+        }
+      }
+      if (persist) {
+        // A write may mutate storage and then throw: checkpoint restoration is
+        // required even when its returned Future did not succeed.
+        saved = true;
+        await _settings.saveClickVolume(releasedVolume ?? volume);
+      }
+      if (!current()) {
+        if (saved) await _settings.restoreClickVolumeCheckpoint(checkpoint);
+        return const ClickVolumeOutcome(ClickVolumeStatus.superseded);
+      }
+      final deferred = !_repository.sessionTransport.isRunning;
+      var result = _repository.setClickVolume(
+        volume,
+        releasedVolume: releasedVolume,
+      );
+      if (result.isOk) {
+        result = await _repository.settleClickVolume(
+          pollInterval: _clickPollInterval,
+          attempts: _clickPollAttempts,
+        );
+      }
+      if (_repository.clickVolumeRecoveryRequired) {
+        return await _recoverFailedClick(
+          checkpoint,
+          priorDurable,
+          saved,
+          lifetime: lifetime,
+          result: result,
+        );
+      }
+      if (!current() || !result.isOk) {
+        if (saved) await _settings.restoreClickVolumeCheckpoint(checkpoint);
+        return _reportClick(
+          ClickVolumeOutcome(
+            current()
+                ? ClickVolumeStatus.rejected
+                : ClickVolumeStatus.superseded,
+            engineResult: result,
+          ),
+        );
+      }
+      _releasedClick = releasedVolume;
+      _acceptedClickLifetime = lifetime;
+      if (publish) emit(state.copyWith(clickVolume: volume, clickReady: true));
+      if (ordinary) _ordinaryClick.add(volume);
+      return _reportClick(
+        ClickVolumeOutcome(ClickVolumeStatus.applied, deferred: deferred),
+      );
+    } on Object catch (error) {
+      if (saved) {
+        try {
+          await _settings.restoreClickVolumeCheckpoint(checkpoint);
+        } on Object catch (restoreError) {
+          final recovery = await _recoverFailedClick(
+            checkpoint,
+            priorDurable,
+            false,
+            lifetime: lifetime,
+            error: restoreError,
+          );
+          return recovery;
+        }
+      }
+      return _reportClick(
+        ClickVolumeOutcome(ClickVolumeStatus.rejected, error: error),
+      );
+    } finally {
+      _clickBusy = false;
+      if (_acceptedClickLifetime != clickVolumeLifetime) _syncFromRepository();
+    }
+  }
+
+  Future<ClickVolumeOutcome> _recoverFailedClick(
+    double? checkpoint,
+    double priorDurable,
+    bool restore, {
+    required ClickVolumeLifetime lifetime,
+    EngineResult? result,
+    Object? error,
+  }) async {
+    final sameLifetime = lifetime == clickVolumeLifetime;
+    if (sameLifetime && !_repository.clickVolumeRecoveryRequired) {
+      _repository
+        ..blockStartForClickRecovery()
+        ..stopEngine();
+    }
+    _releasedClick = null;
+    _clickRecovery = (
+      checkpoint: checkpoint,
+      volume: priorDurable,
+      lifetime: sameLifetime ? clickVolumeLifetime : lifetime,
+    );
+    var failureError = error;
+    if (restore) {
+      try {
+        await _settings.restoreClickVolumeCheckpoint(checkpoint);
+      } on Object catch (failure) {
+        failureError = failure;
+      }
+    }
+    return _reportClick(
+      ClickVolumeOutcome(
+        ClickVolumeStatus.recoveryRequired,
+        engineResult: result,
+        error: failureError,
+      ),
+    );
   }
 
   /// Sets and persists the count-in length in measures (`0` = off), applying

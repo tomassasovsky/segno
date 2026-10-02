@@ -64,6 +64,22 @@ void main() {
     );
   });
 
+  test('Click endpoints show percent of physical unity', () async {
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    for (final (position, label) in <(double, String)>[
+      (0, '0%'),
+      (0.125, '25%'),
+      (0.5, '100%'),
+      (0.75, '150%'),
+      (1, '200%'),
+    ]) {
+      expect(
+        controlValueReadout(l10n, const ClickVolumeTarget(), position),
+        label,
+      );
+    }
+  });
+
   testWidgets('expression endpoint shows Mixer gain in dB', (tester) async {
     const target = TrackVolumeTarget(0);
     final semantics = tester.ensureSemantics();
@@ -107,6 +123,42 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump();
     expect(tester.getSemantics(slider).value, '−27.0 dB');
+    semantics.dispose();
+  });
+
+  testWidgets('Click endpoint text and semantics use percent of unity', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await pumpPanel(
+      tester,
+      ExpressionControlsPanel(
+        rows: [
+          ExpressionRow(
+            mapping: ExpressionMapping(
+              target: const ClickVolumeTarget(),
+              heel: 0.5,
+            ),
+            destination: 'Click',
+            control: 'Volume',
+            available: true,
+          ),
+        ],
+        selected: const ClickVolumeTarget(),
+        position: null,
+        onSelect: (_) {},
+        onAdd: () {},
+        onChange: () {},
+        onRemove: () {},
+        onEndpoint: ({required isHeel, required value}) {},
+      ),
+    );
+    final heel = find.byKey(const Key('expression_endpoint_heel'));
+    final toe = find.byKey(const Key('expression_endpoint_toe'));
+    expect(find.text('100%'), findsOneWidget);
+    expect(find.text('200%'), findsOneWidget);
+    expect(tester.getSemantics(heel).value, '100%');
+    expect(tester.getSemantics(toe).value, '200%');
     semantics.dispose();
   });
 

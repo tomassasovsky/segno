@@ -56,7 +56,21 @@ class _InMemoryStore implements KeyValueStore {
   Future<double?> getDouble(String key) async => values[key] as double?;
 
   @override
-  Future<void> setDouble(String key, double value) async => values[key] = value;
+  Future<void> setDouble(String key, double value) async {
+    if (discardNextWriteKey == key) {
+      discardNextWriteKey = null;
+      return;
+    }
+    if (failNextKey == key) {
+      failNextKey = null;
+      throw StateError('scalar write failed');
+    }
+    values[key] = value;
+    if (failAfterWriteKey == key) {
+      failAfterWriteKey = null;
+      throw StateError('scalar wrote then failed');
+    }
+  }
 
   @override
   Future<void> remove(String key) async {
@@ -78,6 +92,54 @@ void main() {
   setUp(() {
     store = _InMemoryStore();
     repository = SettingsRepository(store: store);
+  });
+
+  group('Click scalar checkpoint', () {
+    test(
+      'absence and explicit unity remain distinct after restoration',
+      () async {
+        expect(await repository.readClickVolumeCheckpoint(), isNull);
+        await repository.saveClickVolume(1.5);
+        await repository.restoreClickVolumeCheckpoint(null);
+        expect(store.values.containsKey('tempo.click_volume'), isFalse);
+        await repository.saveClickVolume(1);
+        final checkpoint = await repository.readClickVolumeCheckpoint();
+        await repository.saveClickVolume(.25);
+        await repository.restoreClickVolumeCheckpoint(checkpoint);
+        expect(store.values['tempo.click_volume'], 1);
+      },
+    );
+    test(
+      'unconfirmed scalar write is rejected and next write still works',
+      () async {
+        await repository.saveClickVolume(.5);
+        store.discardNextWriteKey = 'tempo.click_volume';
+        await expectLater(repository.saveClickVolume(1.5), throwsStateError);
+        expect(await repository.readClickVolumeCheckpoint(), .5);
+        await repository.saveClickVolume(.25);
+        expect(await repository.loadClickVolume(), .25);
+      },
+    );
+    test(
+      'write-then-failure checkpoint can restore exact prior scalar',
+      () async {
+        await repository.saveClickVolume(.5);
+        final checkpoint = await repository.readClickVolumeCheckpoint();
+        store.failAfterWriteKey = 'tempo.click_volume';
+        await expectLater(repository.saveClickVolume(1.5), throwsStateError);
+        expect(store.values['tempo.click_volume'], 1.5);
+        await repository.restoreClickVolumeCheckpoint(checkpoint);
+        expect(await repository.loadClickVolume(), .5);
+      },
+    );
+    test('failed restoration is not reported as confirmed', () async {
+      store.failNextKey = 'tempo.click_volume';
+      await expectLater(
+        repository.restoreClickVolumeCheckpoint(1),
+        throwsStateError,
+      );
+      expect(store.values.containsKey('tempo.click_volume'), isFalse);
+    });
   });
 
   group('latency offset', () {

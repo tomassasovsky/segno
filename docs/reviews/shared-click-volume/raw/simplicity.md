@@ -1,0 +1,9 @@
+# Simplicity review — shared Click volume
+
+Reviewed the final Click target, editors, owner transaction, shutdown/session composition, and fixture/render changes against base `42e5e849ec21bc5cd6a6feae0251a96923556ba7`. Different cross-author reviewers handled model/UI versus runtime/root. Each covered the five perspectives sequentially; there were not five distinct reviewers.
+
+The addition uses one target and narrow branches in the existing resolver, catalogue, labels, and readout. The existing normalized mapping envelope and endpoint editor are reused. A nullable accepted physical Click value is passed to the existing catalogue instead of introducing a parallel availability store or a transport fallback. New External button endpoints use the current accepted value; expression and MIDI retain their established `0..1` ranges. No Click-only editor mode or migration path was added.
+
+The runtime uses one Tempo queue and the existing settings scalar. The final recovery repair adds a derived predicate over the local record and repository restart block, rather than another recovery service. Keeping an old transaction's lifetime on its record is sufficient to distinguish a replacement device. Explicit Retry uses the same serialized queue and checkpoint APIs. The App shutdown change uses the existing retirement/cleanup path: the first call closes ingress before waiting; the second drains cleanup that became possible after recovery. It does not depend on a timer or speculative repeated polling.
+
+The test changes use existing fakes and one shared Tempo mock per editor page. The screenshot harness remains author-only and adds no product machinery. No unnecessary abstraction, compatibility layer, duplicate persistence key, or broad unrelated refactor was found. Existing large editor files are outside this slice's simplification scope; extracting them merely for line-count reduction would add risk without serving the accepted Click behavior.

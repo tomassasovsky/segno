@@ -24,11 +24,13 @@ import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
+import '../helpers/mock_click_tempo_cubit.dart';
 
 class _MockLooper extends Mock implements LooperRepository {}
 
@@ -192,7 +194,13 @@ void main() {
     addTearDown(() => unawaited(pedal.dispose()));
     final mix = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mix.close()));
+    final tempo = MockClickTempoCubit();
+    when(() => tempo.clickVolumeLifetime).thenReturn((
+      sessionRevision: 1,
+      mixGeneration: 1,
+    ));
     control = ControlCubit(
+      clickVolumeControl: tempo,
       looper: looper,
       pedal: pedal,
       settings: settings,
@@ -215,6 +223,7 @@ void main() {
             BlocProvider.value(value: control),
             BlocProvider.value(value: tracks),
             BlocProvider.value(value: midi),
+            BlocProvider<TempoCubit>.value(value: tempo),
           ],
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
@@ -352,6 +361,51 @@ void main() {
       );
       await tap(tester, 'midi_row_edit_m1');
       await shot(tester, 'mixer_placement');
+    });
+    testWidgets('Click range reads 100 to 200 percent of unity', (
+      tester,
+    ) async {
+      const target = ClickVolumeTarget();
+      await pump(
+        tester,
+        savedMapping: MidiMapping(
+          id: 'm1',
+          source: _source,
+          behavior: MidiBehavior.continuous,
+          controls: [
+            MidiParameterControl(
+              key: target.canonicalString(),
+              low: 0.5,
+              high: 1,
+            ),
+          ],
+        ),
+      );
+      await tap(tester, 'midi_row_edit_m1');
+      expect(
+        find.byKey(Key('midi_range_low_${target.canonicalString()}')),
+        findsOneWidget,
+      );
+      expect(find.text('100%'), findsOneWidget);
+      expect(find.text('200%'), findsOneWidget);
+      await shot(tester, 'click_range');
+    });
+    testWidgets('Outputs offers one Click destination', (
+      tester,
+    ) async {
+      await pump(tester, seeded: true);
+      await tap(tester, 'midi_row_edit_m1');
+      await tap(tester, 'midi_add_control');
+      await tap(tester, 'expression_kind_output');
+      expect(
+        find.byKey(const Key('expression_destination_click')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('expression_destination_output:0')),
+        findsNothing,
+      );
+      await shot(tester, 'click_destination');
     });
     testWidgets('explicit format before learning', (tester) async {
       await pump(tester);

@@ -28,6 +28,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
@@ -177,6 +178,8 @@ class _AppState extends State<App> {
   StreamSubscription<MixSettingsOutcome>? _mixFailureSubscription;
   PowerKeySource? _powerKeySource;
   ControlCubit? _control;
+  late final TempoCubit _tempo;
+  StreamSubscription<ClickVolumeOutcome>? _clickFailureSubscription;
 
   @override
   void initState() {
@@ -186,6 +189,14 @@ class _AppState extends State<App> {
     _mixSettings = widget.mixSettings;
     _fxPersistence = FxChainPersistence(looper: widget.repository);
     _mixFailureSubscription = _mixSettings.failures.listen(_showMixFailure);
+    _tempo = TempoCubit(
+      repository: widget.repository,
+      settings: widget.settings,
+    );
+    _clickFailureSubscription = _tempo.clickVolumeFailures.listen(
+      _showClickFailure,
+    );
+    unawaited(_tempo.load());
     _powerKeySource =
         widget.powerKeySource ??
         openAppliancePowerKeySource(onAppliance: isAppliance());
@@ -195,8 +206,58 @@ class _AppState extends State<App> {
   void dispose() {
     unawaited(_powerKeySource?.close());
     unawaited(_mixFailureSubscription?.cancel());
-    unawaited(_mixSettings.close());
+    unawaited(_clickFailureSubscription?.cancel());
+    unawaited(_closeControlOwners());
     super.dispose();
+  }
+
+  Future<void> _closeControlOwners() async {
+    // BlocProvider can also close Control; its memoized completion ensures
+    // held cleanup finishes while the Click and Mixer owners are still alive.
+    await _control?.close();
+    await _tempo.close();
+    await _mixSettings.close();
+  }
+
+  void _showClickFailure(ClickVolumeOutcome outcome) {
+    if (!mounted || outcome.status == ClickVolumeStatus.superseded) return;
+    final recovery = outcome.status == ClickVolumeStatus.recoveryRequired;
+    AppLog.error(
+      'Click settings: ${outcome.status.name} ${outcome.error ?? ''}',
+    );
+    showAppToast(
+      id: AppToastId.clickSettings,
+      type: ToastificationType.error,
+      dismissible: !recovery,
+      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
+      title: Builder(
+        builder: (context) => Text(
+          recovery
+              ? context.l10n.clickSettingsRecoveryTitle
+              : context.l10n.clickSettingsRefusedTitle,
+        ),
+      ),
+      description: recovery
+          ? Builder(
+              builder: (context) =>
+                  Text(context.l10n.clickSettingsRecoveryBody),
+            )
+          : null,
+      actions: recovery
+          ? [
+              TextButton(
+                onPressed: () async {
+                  if ((await _tempo.recoverClickVolume()).isOk) {
+                    dismissAppToast(AppToastId.clickSettings);
+                  }
+                },
+                child: Builder(
+                  builder: (context) => Text(context.l10n.powerOffRetry),
+                ),
+              ),
+            ]
+          : const [],
+    );
   }
 
   void _showMixFailure(MixSettingsOutcome outcome) {
@@ -435,17 +496,7 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
-          BlocProvider(
-            lazy: false,
-            create: (context) {
-              final cubit = TempoCubit(
-                repository: context.read<LooperRepository>(),
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
+          BlocProvider<TempoCubit>.value(value: _tempo),
           BlocProvider(
             // Not lazy: the monitor graph page is the only widget that reads
             // this cubit, but the saved per-input monitors must be applied to
@@ -525,38 +576,33 @@ class _AppState extends State<App> {
           BlocProvider(
             lazy: false,
             create: (context) => PowerOffCubit(
-              flush: () async {
+              flush: ({required retry}) async {
                 final monitor = context.read<MonitorCubit>();
                 final looper = context.read<LooperBloc>();
-                try {
-                  await monitor.flushPersistence();
-                } on Object catch (error, stack) {
-                  AppLog.error(
-                    'power-off monitor flush failed',
-                    error: error,
-                    stack: stack,
-                  );
+                final controllers = _control?.flushMidiConfiguration(
+                  retireControls: true,
+                );
+                await controllers;
+                if (retry) {
+                  final mix = await _mixSettings.recover();
+                  if (!mix.isOk) throw MixSettingsRecoveryException(mix);
+                  final click = await _tempo.recoverClickVolume();
+                  if (!click.isOk) {
+                    throw StateError('Click settings still need recovery');
+                  }
+                  await _control?.flushMidiConfiguration(retireControls: true);
                 }
-                try {
-                  await _control?.flushMidiConfiguration();
-                } on Object catch (error, stack) {
-                  AppLog.error(
-                    'power-off mappings flush failed',
-                    error: error,
-                    stack: stack,
-                  );
+                await monitor.flushPersistence();
+                final receipt = Completer<void>();
+                looper.add(LooperPersistFlush(receipt: receipt));
+                await receipt.future;
+                final mix = await _mixSettings.flush();
+                if (!mix.isOk) throw MixSettingsRecoveryException(mix);
+                final click = await _tempo.flushClickVolume();
+                if (!click.isOk) {
+                  throw StateError('Click settings were not confirmed');
                 }
-                try {
-                  final receipt = Completer<void>();
-                  looper.add(LooperPersistFlush(receipt: receipt));
-                  await receipt.future;
-                } on Object catch (error, stack) {
-                  AppLog.error(
-                    'power-off looper flush failed',
-                    error: error,
-                    stack: stack,
-                  );
-                }
+                dismissAppToast(AppToastId.clickSettings);
               },
               pedalGoodbye: () => context.read<PedalRepository>().goodbye(),
               powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
@@ -573,6 +619,7 @@ class _AppState extends State<App> {
             lazy: false,
             create: (context) {
               final cubit = ControlCubit(
+                clickVolumeControl: _tempo,
                 looper: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),
                 fxPersistence: context.read<FxChainPersistence>(),

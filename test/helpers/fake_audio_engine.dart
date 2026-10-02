@@ -31,6 +31,7 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   bool commandsAreSettled = true;
+  bool publishClickCommands = true;
   bool publishLengthCommands = true;
   bool publishModeCommands = true;
   bool publishMixCommands = true;
@@ -618,6 +619,9 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult setClickVolume(double volume) {
     lastClickVolume = volume;
+    if (publishClickCommands) {
+      nextSnapshot = nextSnapshot.copyWith(clickVolume: volume);
+    }
     return EngineResult.ok;
   }
 

@@ -18,6 +18,7 @@ import 'package:segno/control/binding/mix_value_scale.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
@@ -27,6 +28,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_key_value_store.dart';
+import '../helpers/mock_click_tempo_cubit.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -109,6 +111,7 @@ void main() {
   Future<void> pump(
     WidgetTester tester, {
     ExternalJackSetup? jack,
+    double? clickVolume = 1,
   }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tester.view
@@ -129,6 +132,7 @@ void main() {
     addTearDown(() => unawaited(mixSettings.close()));
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
+    final tempo = MockClickTempoCubit(clickVolume: clickVolume);
     final controller = ControllerRepository(
       sources: [ConsoleCtrlSource(pedal)],
     );
@@ -136,6 +140,7 @@ void main() {
     control = ControlCubit(
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
+      clickVolumeControl: tempo,
       mixSettings: mixSettings,
       controller: controller,
       pedal: pedal,
@@ -177,6 +182,7 @@ void main() {
               BlocProvider.value(value: control),
               BlocProvider.value(value: tracks),
               BlocProvider.value(value: pedalCubit),
+              BlocProvider<TempoCubit>.value(value: tempo),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -435,6 +441,28 @@ void main() {
         const TrackVolumeTarget(1),
       );
     });
+
+    expressionTestWidgets(
+      'Click appears under Outputs and keeps the normal full range on Save',
+      (tester) async {
+        await pump(tester);
+        await tap(tester, 'expression_add');
+        await tap(tester, 'expression_kind_output');
+        await tap(tester, 'expression_destination_click');
+        await tap(tester, targetKey(const ClickVolumeTarget()));
+        expect(textOf('expression_endpoint_heel_value'), '0%');
+        expect(textOf('expression_endpoint_toe_value'), '200%');
+        await tap(tester, 'external_save');
+        final mapping = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(mapping.target, const ClickVolumeTarget());
+        expect((mapping.heel, mapping.toe), (0, 1));
+        verifyNever(() => looper.setClickVolume(any()));
+      },
+    );
 
     expressionTestWidgets('an endpoint moves, and the pedal writes it', (
       tester,

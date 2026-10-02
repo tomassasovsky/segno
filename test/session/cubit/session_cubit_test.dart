@@ -51,6 +51,8 @@ const _session = Session(
   tracks: [],
 );
 
+Future<T> _readyClick<T>(Future<T> Function() operation) => operation();
+
 void main() {
   late SessionRepository repository;
   late LooperRepository looper;
@@ -111,6 +113,8 @@ void main() {
   });
 
   SessionCubit build() => SessionCubit(
+    runClickVolumeExclusive: _readyClick,
+    currentDurableClickVolume: () => 1,
     fxPersistence: FxChainPersistence(looper: looper),
     repository: repository,
     looper: looper,
@@ -1111,6 +1115,8 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
+          runClickVolumeExclusive: _readyClick,
+          currentDurableClickVolume: () => 1,
           fxPersistence: FxChainPersistence(looper: looper),
           repository: repository,
           looper: looper,
@@ -1159,6 +1165,8 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
+          runClickVolumeExclusive: _readyClick,
+          currentDurableClickVolume: () => 1,
           fxPersistence: FxChainPersistence(looper: looper),
           repository: repository,
           looper: looper,
@@ -1193,6 +1201,8 @@ void main() {
       ).thenAnswer((_) async => _session);
 
       final cubit = SessionCubit(
+        runClickVolumeExclusive: _readyClick,
+        currentDurableClickVolume: () => 1,
         fxPersistence: FxChainPersistence(looper: looper),
         repository: repository,
         looper: looper,

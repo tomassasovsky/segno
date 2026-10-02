@@ -24,6 +24,7 @@ import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
@@ -504,6 +505,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
+    final clickVolume = context.watch<TempoCubit>().clickVolume;
     final names = context.watch<TracksCubit>().state.names;
     return [
       for (final mapping in expression.mappings)
@@ -516,18 +518,24 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             mapping.target,
           ).destination,
           control: expressionRowName(l10n, names, looper, mapping.target),
-          available: looper.valueTargetResolves(mapping.target),
+          available: looper.valueTargetResolves(
+            mapping.target,
+            clickVolume: clickVolume,
+          ),
           art: expressionTargetArt(looper, mapping.target),
         ),
     ];
   }
 
-  List<ExpressionDestination> _destinations(BuildContext context) =>
-      expressionDestinations(
-        context.l10n,
-        context.watch<TracksCubit>().state.names,
-        context.read<LooperRepository>(),
-      );
+  List<ExpressionDestination> _destinations(BuildContext context) {
+    final clickVolume = context.watch<TempoCubit>().clickVolume;
+    return expressionDestinations(
+      context.l10n,
+      context.watch<TracksCubit>().state.names,
+      context.read<LooperRepository>(),
+      clickVolume: clickVolume,
+    );
+  }
 
   void _openCalibrate(BuildContext context) {
     // Told before the view opens, not after: a sweep arriving between the two
@@ -580,6 +588,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     ExternalJackSetup jack,
     ControlValueTarget target,
   ) {
+    if (target is ClickVolumeTarget &&
+        context.read<TempoCubit>().clickVolume == null) {
+      return;
+    }
     final replacing = _replacing;
     final expression = jack.expression;
     if (target == replacing) {
@@ -975,6 +987,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
+    final clickVolume = context.watch<TempoCubit>().clickVolume;
     final names = context.watch<TracksCubit>().state.names;
     final controls = button.controls;
     final rows = [
@@ -996,7 +1009,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             parameter.target,
           ).destination,
           name: expressionRowName(l10n, names, looper, parameter.target),
-          available: looper.valueTargetResolves(parameter.target),
+          available: looper.valueTargetResolves(
+            parameter.target,
+            clickVolume: clickVolume,
+          ),
           art: expressionTargetArt(looper, parameter.target),
         ),
     ];
@@ -1096,6 +1112,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     ExternalSwitchSetup button,
   ) {
     final l10n = context.l10n;
+    final clickVolume = context.watch<TempoCubit>().clickVolume;
     final surface = context.surface;
     final destination = _buttonDestination;
     final choosingControl =
@@ -1165,9 +1182,17 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                     onParameter: (control) {
                       // Both values start at what the parameter holds NOW, so
                       // adding the mapping invents no sound change.
+                      final acceptedClick = context
+                          .read<TempoCubit>()
+                          .clickVolume;
+                      if (control.target is ClickVolumeTarget &&
+                          acceptedClick == null) {
+                        return;
+                      }
                       final now =
                           context.read<LooperRepository>().readValueTarget(
                             control.target,
+                            clickVolume: acceptedClick,
                           ) ??
                           0;
                       _addButtonControl(
@@ -1196,6 +1221,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                       context.watch<TracksCubit>().state.names,
                       context.read<LooperRepository>(),
                       withActivations: true,
+                      clickVolume: clickVolume,
                     ),
                     kind: _kind,
                     columns: 1,

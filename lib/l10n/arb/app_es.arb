@@ -2592,5 +2592,11 @@
     "midiRetryOff": "Reintentar apagar",
     "midiResumeOn": "Reanudar",
     "midiResetConfiguration": "Restablecer asignaciones",
-    "midiConfigurationUnavailable": "No se pudieron leer las asignaciones guardadas. Restablécelas para empezar de nuevo."
+    "midiConfigurationUnavailable": "No se pudieron leer las asignaciones guardadas. Restablécelas para empezar de nuevo.",
+    "powerOffSettingsFailedTitle": "No se pudieron confirmar los ajustes",
+    "powerOffSettingsFailedBody": "Segno sigue encendido. Reintenta guardar antes de apagar.",
+    "powerOffRetry": "Reintentar",
+    "clickSettingsRecoveryTitle": "Hay que recuperar los ajustes del clic",
+    "clickSettingsRefusedTitle": "No se aplicó el cambio del clic",
+    "clickSettingsRecoveryBody": "Reintenta recuperar el ajuste del clic."
 }

@@ -14,6 +14,7 @@ class FakeAudioEngine implements AudioEngine {
 
   LooperMode? publishedMode;
   bool commandsAreSettled = true;
+  bool publishClickCommands = true;
   bool publishLengthCommands = true;
   bool publishModeCommands = true;
   final Map<int, int> publishedLengths = {};
@@ -645,6 +646,9 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult setClickVolume(double volume) {
     lastClickVolume = volume;
+    if (publishClickCommands) {
+      nextSnapshot = nextSnapshot.copyWith(clickVolume: volume);
+    }
     calls.add('setClickVolume');
     return EngineResult.ok;
   }

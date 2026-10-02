@@ -17,6 +17,7 @@ void main() {
   late StreamController<LooperState> looperStates;
 
   setUpAll(() {
+    registerFallbackValue(Duration.zero);
     registerFallbackValue(GridDivision.off);
     registerFallbackValue(ClickMode.off);
   });
@@ -25,6 +26,15 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
     when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.clickVolumeSettled).thenReturn(true);
+    when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
+    when(
+      () => repository.settleClickVolume(
+        pollInterval: any(named: 'pollInterval'),
+        attempts: any(named: 'attempts'),
+      ),
+    ).thenAnswer((_) async => EngineResult.ok);
     when(() => repository.recordStartRevision).thenReturn(0);
     when(
       () => repository.setAutoRecord(enabled: any(named: 'enabled')),
@@ -82,6 +92,7 @@ void main() {
           clickMode: ClickMode.playRec,
           clickOutputMask: 0x3,
           clickVolume: 0.5,
+          clickReady: true,
           countInBars: 2,
         ),
       ],
@@ -240,7 +251,7 @@ void main() {
       'setClickVolume emits, persists, and applies the new volume',
       build: () => TempoCubit(repository: repository, settings: settings),
       act: (cubit) => cubit.setClickVolume(0.75),
-      expect: () => [const TempoSettings(clickVolume: 0.75)],
+      expect: () => [const TempoSettings(clickVolume: 0.75, clickReady: true)],
       verify: (_) async {
         expect(await settings.loadClickVolume(), 0.75);
         verify(() => repository.setClickVolume(0.75)).called(1);
@@ -318,8 +329,8 @@ void main() {
       await Future<void>.delayed(Duration.zero);
     },
     expect: () => [
-      const TempoSettings(countInBars: 2),
-      const TempoSettings(),
+      const TempoSettings(countInBars: 2, clickReady: true),
+      const TempoSettings(clickReady: true),
     ],
     verify: (_) async => expect(await settings.loadCountInBars(), 2),
   );
@@ -352,7 +363,7 @@ void main() {
       await cubit.load();
     },
     expect: () => [
-      const TempoSettings(),
+      const TempoSettings(clickReady: true),
       const TempoSettings(
         bpm: 96,
         tsNum: 5,
@@ -360,9 +371,10 @@ void main() {
         clickMode: ClickMode.playRec,
         clickOutputMask: 3,
         clickVolume: 0.5,
+        clickReady: true,
         countInBars: 2,
       ),
-      const TempoSettings(),
+      const TempoSettings(clickReady: true),
     ],
     verify: (_) async {
       expect(await settings.loadTempoBpm(), 0);

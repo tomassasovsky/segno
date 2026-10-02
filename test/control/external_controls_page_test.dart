@@ -19,6 +19,7 @@ import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
@@ -27,6 +28,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_key_value_store.dart';
+import '../helpers/mock_click_tempo_cubit.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -38,6 +40,7 @@ void main() {
   late StreamController<LooperState> looperStates;
   late SettingsRepository settings;
   late ControlCubit control;
+  late MockClickTempoCubit tempo;
 
   const drive = FxSlotTarget(
     address: FxAddress(stage: FxStage.track),
@@ -90,7 +93,11 @@ void main() {
     await looperStates.close();
   });
 
-  Future<void> pump(WidgetTester tester, {ExternalJackSetup? jack}) async {
+  Future<void> pump(
+    WidgetTester tester, {
+    ExternalJackSetup? jack,
+    double? clickVolume = 1,
+  }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -109,9 +116,11 @@ void main() {
     addTearDown(() => unawaited(mixSettings.close()));
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
+    tempo = MockClickTempoCubit(clickVolume: clickVolume);
     control = ControlCubit(
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
+      clickVolumeControl: tempo,
       mixSettings: mixSettings,
       pedal: pedal,
       settings: settings,
@@ -154,6 +163,7 @@ void main() {
               BlocProvider.value(value: control),
               BlocProvider.value(value: tracks),
               BlocProvider.value(value: pedalCubit),
+              BlocProvider<TempoCubit>.value(value: tempo),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -311,6 +321,101 @@ void main() {
     verifyNever(
       () => looper.setVolume(any(), channel: any(named: 'channel')),
     );
+  });
+
+  for (final (gain, endpoint) in <(double, double)>[(1, 0.5), (0, 0)]) {
+    testWidgets('Click button starts at accepted gain $gain on both sides', (
+      tester,
+    ) async {
+      await pump(tester, clickVolume: gain);
+      await tap(tester, 'external_panel_controls');
+      await tap(tester, 'external_add_control');
+      await tap(tester, 'expression_kind_output');
+      await tap(tester, 'expression_destination_click');
+      await tap(
+        tester,
+        'external_pick_${externalControlKey(const ClickVolumeTarget())}',
+      );
+      await tap(tester, 'external_save');
+      final parameter = saved().parameters.single;
+      expect(parameter.target, const ClickVolumeTarget());
+      expect(parameter.active, endpoint);
+      expect(parameter.inactive, endpoint);
+      verifyNever(() => looper.setClickVolume(any()));
+    });
+  }
+
+  testWidgets('Cancel drops the new Click button without writing audio', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tap(tester, 'external_panel_controls');
+    await tap(tester, 'external_add_control');
+    await tap(tester, 'expression_kind_output');
+    await tap(tester, 'expression_destination_click');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const ClickVolumeTarget())}',
+    );
+    await tap(tester, 'external_cancel');
+    expect(saved().parameters, isEmpty);
+    verifyNever(() => looper.setClickVolume(any()));
+  });
+
+  testWidgets('Click owner disappearing during a picker adds no guessed zero', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tap(tester, 'external_panel_controls');
+    await tap(tester, 'external_add_control');
+    await tap(tester, 'expression_kind_output');
+    await tap(tester, 'expression_destination_click');
+    when(() => tempo.clickVolume).thenReturn(null);
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const ClickVolumeTarget())}',
+    );
+    await tap(tester, 'external_save');
+    expect(saved().parameters, isEmpty);
+    verifyNever(() => looper.setClickVolume(any()));
+  });
+
+  testWidgets('retained Click button is unavailable without its owner', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      clickVolume: null,
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: const ClickVolumeTarget(),
+                active: 0.8,
+                inactive: 0.2,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    expect(find.text('Unavailable'), findsOneWidget);
+    expect(find.byKey(const Key('external_change_control')), findsOneWidget);
+    expect(saved().parameters.single.target, const ClickVolumeTarget());
+    await tap(tester, 'external_change_control');
+    await tap(tester, 'expression_kind_recordedTrack');
+    await tap(tester, 'expression_destination_track:0');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const TrackVolumeTarget(0))}',
+    );
+    expect(saved().parameters.single.target, const ClickVolumeTarget());
+    await tap(tester, 'external_save');
+    final repaired = saved().parameters.single;
+    expect(repaired.target, const TrackVolumeTarget(0));
+    expect((repaired.active, repaired.inactive), (0.8, 0.2));
   });
 
   testWidgets('a control added past the bottom of the list is in view', (

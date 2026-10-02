@@ -59,7 +59,14 @@ class PowerOffDialog extends StatelessWidget {
           child: Center(
             child: ConsoleDialogShell(
               key: const Key('power_off_dialog'),
-              child: refuse
+              child: state.phase == PowerOffPhase.flushFailed
+                  ? _FlushFailedBody(
+                      onKeepPlaying: () => _keepPlaying(context),
+                      onRetry: () => context
+                          .read<PowerOffCubit>()
+                          .retryPowerOff(snapshot()),
+                    )
+                  : refuse
                   ? _RefuseBody(onKeepPlaying: () => _keepPlaying(context))
                   : _ConfirmBody(
                       failed: state.phase == PowerOffPhase.saveFailed,
@@ -80,6 +87,60 @@ class PowerOffDialog extends StatelessWidget {
 
   void _keepPlaying(BuildContext context) {
     context.read<PowerOffCubit>().keepPlaying();
+  }
+}
+
+class _FlushFailedBody extends StatelessWidget {
+  const _FlushFailedBody({required this.onKeepPlaying, required this.onRetry});
+
+  final VoidCallback onKeepPlaying;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppText(
+          l10n.powerOffSettingsFailedTitle,
+          style: TextStyle(
+            color: context.surface.textPrimary,
+            fontSize: 19,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 10),
+        AppText(
+          l10n.powerOffSettingsFailedBody,
+          style: TextStyle(
+            color: context.surface.textSecondary,
+            fontSize: 16,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 19),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            ConsoleDialogButton(
+              key: const Key('power_off_keep_playing'),
+              label: l10n.powerOffKeepPlaying,
+              onPressed: onKeepPlaying,
+            ),
+            ConsoleDialogButton(
+              key: const Key('power_off_retry'),
+              label: l10n.powerOffRetry,
+              tone: ConsoleDialogTone.accent,
+              onPressed: onRetry,
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }
 

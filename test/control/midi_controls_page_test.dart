@@ -26,6 +26,7 @@ import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -33,6 +34,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_key_value_store.dart';
+import '../helpers/mock_click_tempo_cubit.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooper extends Mock implements LooperRepository {}
@@ -143,6 +145,7 @@ void main() {
     bool malformed = false,
     bool routeEntry = false,
     MidiMapping? savedMapping,
+    double? clickVolume = 1,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -173,8 +176,10 @@ void main() {
     addTearDown(() => unawaited(pedal.dispose()));
     final mix = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mix.close()));
+    final tempo = MockClickTempoCubit(clickVolume: clickVolume);
     control = ControlCubit(
       looper: looper,
+      clickVolumeControl: tempo,
       pedal: pedal,
       settings: settings,
       performance: performance,
@@ -196,6 +201,7 @@ void main() {
             BlocProvider.value(value: control),
             BlocProvider.value(value: tracks),
             BlocProvider.value(value: midi),
+            BlocProvider<TempoCubit>.value(value: tempo),
           ],
           child: MaterialApp(
             navigatorKey: routeEntry ? segnoNavigatorKey : null,
@@ -256,6 +262,55 @@ void main() {
       'external_pick_${externalControlKey(TrackVolumeTarget(channel))}',
     );
   }
+
+  testWidgets('Click maps from Outputs with full range and no Save preview', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_add_control');
+    await tap(tester, 'expression_kind_output');
+    await tap(tester, 'expression_destination_click');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const ClickVolumeTarget())}',
+    );
+    final clickKey = const ClickVolumeTarget().canonicalString();
+    expect(find.byKey(Key('midi_range_low_$clickKey')), findsOneWidget);
+    expect(find.byKey(Key('midi_range_high_$clickKey')), findsOneWidget);
+    await tap(tester, 'midi_save');
+    final click = control.state.midiMappings
+        .byId('m1')!
+        .controls
+        .whereType<MidiParameterControl>()
+        .singleWhere((control) => control.key == clickKey);
+    expect((click.low, click.high), (0, 1));
+    verifyNever(() => looper.setClickVolume(any()));
+  });
+
+  testWidgets('unavailable Click row can be repaired without changing range', (
+    tester,
+  ) async {
+    final clickKey = const ClickVolumeTarget().canonicalString();
+    final original = MidiMapping(
+      id: 'm1',
+      source: _source,
+      behavior: MidiBehavior.continuous,
+      controls: [MidiParameterControl(key: clickKey, low: 0.8, high: 0.2)],
+    );
+    await pump(tester, savedMapping: original, clickVolume: null);
+    expect(find.byKey(const Key('midi_row_warning_m1')), findsOneWidget);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_control_change_$clickKey');
+    await pickTrackVolume(tester, 2);
+    expect(control.state.midiMappings.byId('m1'), original);
+    await tap(tester, 'midi_save');
+    final repaired =
+        control.state.midiMappings.byId('m1')!.controls.single
+            as MidiParameterControl;
+    expect(repaired.key, const TrackVolumeTarget(2).canonicalString());
+    expect((repaired.low, repaired.high), (0.8, 0.2));
+  });
 
   testWidgets('Add chooses an explicit format before Learn begins', (
     tester,

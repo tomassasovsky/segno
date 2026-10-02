@@ -95,6 +95,7 @@ String valueTargetLabel(
     '${l10n.pedalAssignStageOutput(bus + 1)} · ${l10n.routingOutputLevel}',
   OutputBalanceTarget(:final bus) =>
     '${l10n.pedalAssignStageOutput(bus + 1)} · ${l10n.routingBalance}',
+  ClickVolumeTarget() => l10n.clickVolumeLabel,
   MasterGainTarget() => l10n.midiLearnTargetMaster,
   FxParamTarget(:final address, :final slotId, :final param) =>
     l10n.midiLearnTargetParam(

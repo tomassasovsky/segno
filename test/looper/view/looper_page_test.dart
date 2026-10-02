@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -43,6 +45,9 @@ void main() {
       final fxPersistence = FxChainPersistence(looper: repository);
       final mixSettings = testMixSettings(repository, settings: settings);
       final mixPersistence = SettingsMixPersistence(settings);
+      final tempo = TempoCubit(repository: repository, settings: settings);
+      await tempo.load();
+      addTearDown(() => unawaited(tempo.close()));
       final pedal = _MockPedalCubit();
       when(() => pedal.state).thenReturn(const PedalState());
       whenListen(
@@ -77,6 +82,7 @@ void main() {
           ],
           child: MultiBlocProvider(
             providers: [
+              BlocProvider<TempoCubit>.value(value: tempo),
               // The stage status bar is now unconditional, and its clock
               // readout selects a TransportClockCubit.
               BlocProvider<TransportClockCubit>(
@@ -90,6 +96,7 @@ void main() {
               // happens with the tree, not in an awaited teardown.
               BlocProvider<ControlCubit>(
                 create: (_) => ControlCubit(
+                  clickVolumeControl: tempo,
                   fxPersistence: fxPersistence,
                   looper: repository,
                   mixSettings: mixSettings,

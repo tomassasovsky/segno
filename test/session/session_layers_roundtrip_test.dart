@@ -139,7 +139,7 @@ void main() {
         looper,
         projection: FxChainPersistence(looper: looper),
       ),
-      settings: settingsFromLooper(looper),
+      settings: settingsFromLooper(looper, clickVolume: 1),
     );
     // Wipe to an empty rig so a failed load would be visible, then load back.
     await looper.applySession(const SessionRig(), clearPollInterval: poll);
