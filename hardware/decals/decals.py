@@ -138,6 +138,18 @@ def earth_symbol():
     return unary_union([ring, stem] + bars)
 
 
+def lid_cut_shape(c):
+    """One lid opening as the laser cuts it (segno_enclosure.faceplate_metal_cuts):
+    rectangles with their corner radius, so the pill slots are stadiums."""
+    if c["kind"] == "rect":
+        r = min(c.get("r", 0.0) or 0.0, c["w"] / 2.0, c["h"] / 2.0)
+        if r <= 0:
+            return box(c["u"], c["v"], c["u"] + c["w"], c["v"] + c["h"])
+        return box(c["u"] + r, c["v"] + r, c["u"] + c["w"] - r, c["v"] + c["h"] - r).buffer(r, quad_segs=32)
+    d = c.get("od") or c.get("d")
+    return Point(c["u"], c["v"]).buffer(d / 2.0, quad_segs=64)
+
+
 def check_cuttable(name, geom):
     """Every stroke and gap at least MIN_FEATURE: erode/dilate by half of it and
     look for anything bigger than a corner that disappears or fills in."""
@@ -324,10 +336,13 @@ def main():
     # The guides are the openings right under the logo, so the template fits a
     # sheet of A4: both pill slots and the top 15 mm of the CLEAR/BANK openings.
     lid_guides = []
-    for c in se.faceplate_holes():
-        if c["kind"] == "rect" and c["ref"] in ("CLEAR", "BANK", "CLEAR_LEDSLOT", "BANK_LEDSLOT"):
-            v0 = c["v"] if c["ref"].endswith("LEDSLOT") else c["v"] + c["h"] - 15.0
-            lid_guides.append(box(c["u"], v0, c["u"] + c["w"], c["v"] + c["h"]).exterior.buffer(0.01))
+    for c in se.faceplate_metal_cuts():
+        if c["ref"] in ("CLEAR_LEDSLOT", "BANK_LEDSLOT"):
+            lid_guides.append(lid_cut_shape(c).exterior.buffer(0.01))
+        elif c["ref"] in ("CLEAR", "BANK"):
+            # only the real edges of the opening's top 15 mm, not a closed box
+            clip = box(c["u"] - 1, c["v"] + c["h"] - 15.0, c["u"] + c["w"] + 1, c["v"] + c["h"] + 1)
+            lid_guides.append(lid_cut_shape(c).exterior.intersection(clip).buffer(0.01))
     # --- rear labels
     lay = se.rear_io_layout()
     U_REF = (min(lay[r][0] for r in LABELS) + max(lay[r][0] for r in LABELS)) / 2.0

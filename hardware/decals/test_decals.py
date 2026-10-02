@@ -17,13 +17,20 @@ class DecalTest(unittest.TestCase):
 
     def test_logo_sits_on_metal_clear_of_every_lid_opening(self):
         logo = decals.logo_decal()
-        for c in decals.se.faceplate_holes():
-            if c["kind"] == "rect":
-                hole = box(c["u"], c["v"], c["u"] + c["w"], c["v"] + c["h"])
-                self.assertGreater(logo.distance(hole), 3.0, c["ref"])
+        for c in decals.se.faceplate_metal_cuts():
+            self.assertGreater(logo.distance(decals.lid_cut_shape(c)), 3.0, c["ref"])
         x0, y0, x1, y1 = logo.bounds
         self.assertGreater(x0, 0); self.assertLess(x1, decals.se.FP_W)
         self.assertLess(y1, decals.se.FP_V)
+
+    def test_pill_slots_on_the_template_are_stadiums(self):
+        slot = next(c for c in decals.se.faceplate_metal_cuts() if c["ref"] == "CLEAR_LEDSLOT")
+        shape = decals.lid_cut_shape(slot)
+        x0, y0, x1, y1 = shape.bounds
+        self.assertAlmostEqual(x1 - x0, 60.4, places=2)
+        self.assertAlmostEqual(y1 - y0, 6.4, places=2)
+        # full-round ends: the corner of the bounding box is NOT metal-free cut
+        self.assertFalse(shape.contains(box(x0, y0, x0 + 0.5, y0 + 0.5)))
 
     def test_every_connector_is_labelled_once(self):
         refs = set(decals.rear_decal())

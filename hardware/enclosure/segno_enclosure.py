@@ -3347,6 +3347,21 @@ def _mirror_u(feats, width):
         out.append(c)
     return out
 
+def faceplate_metal_cuts():
+    """faceplate_holes() as the laser cuts them: the pill slots and the ring
+    window carry a metal allowance over the unchanged printed lenses (pill
+    60.4 x 6.4 R3.2, ring Ø67.4). The lid drawing and the decal placement
+    templates both use this, so they show the same openings."""
+    cuts = faceplate_holes()
+    for c in cuts:
+        if c['ref'].endswith('_LEDSLOT'):
+            c['u'] -= .20; c['v'] -= .20
+            c['w'] += .40; c['h'] += .40; c['r'] += .20
+        elif c['ref'] == 'RING':
+            c['od'] += .40
+    return cuts
+
+
 def dxf_faceplate(path):
     """REMOVABLE LID (top plate), developed flat = a simple rectangle: the sloped top
     plate (all cutouts) + a down-turned FRONT LIP (screws into the front wall) + a REAR LAP
@@ -3366,14 +3381,7 @@ def dxf_faceplate(path):
     _poly(msp, [(0, ffl), (LW, ffl)], "BEND", closed=False)                # front lip fold (FULL width)
     _poly(msp, [(oh, yr0), (LW - oh, yr0)], "BEND", closed=False)          # rear lap fold (base width)
 
-    cuts = faceplate_holes()                   # canonical layout, 7" left
-    # Metal aperture allowance is separate from the unchanged printed lenses.
-    for c in cuts:
-        if c['ref'].endswith('_LEDSLOT'):
-            c['u'] -= .20; c['v'] -= .20
-            c['w'] += .40; c['h'] += .40; c['r'] += .20
-        elif c['ref'] == 'RING':
-            c['od'] += .40
+    cuts = faceplate_metal_cuts()              # canonical layout, 7" left
     # the ENCODER shaft hole lives in the ring_disc part, not this plate -- the
     # entry stays in faceplate_holes() for the renders/assembly, but cutting it
     # here would just pierce scrap inside the RING aperture (#760 audit)
