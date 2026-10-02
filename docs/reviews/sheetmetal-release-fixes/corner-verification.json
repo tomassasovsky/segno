@@ -1,0 +1,118 @@
+{
+  "date": "2026-09-05",
+  "relief_diameter_mm": 6.5,
+  "front_end_trim_mm": 0.15,
+  "rear_regrowth_mm": 2.5,
+  "source_flat_sha256": "00b5947753f043733c2774ab5460d34ff01138c8d850f375b28d73d7ebc31d57",
+  "cached_native_flat_sha256": "9d5808da71ecf01f20f5655a6b3c13a5d06e43ca5e5a3a31e539da5bfa3280ee",
+  "native_base_step_sha256": "9a92e8a3999727d313c63792562c862a5237b0774d2a7eab3cbf2aac6941e37e",
+  "documents": {
+    "vsm": {
+      "document": "VAMP sheet metal",
+      "version": 130,
+      "modified": false,
+      "occurrences": 18,
+      "unchanged_other_occurrences": 17,
+      "maximum_other_volume_delta_mm3": 0.0,
+      "maximum_other_bounds_delta_mm": 0.0,
+      "maximum_placement_delta_cm": 0.0,
+      "visibility_and_appearance_preserved": true,
+      "base_id": "08bdda9a-c23d-40b7-920b-789071902d63",
+      "base_volume_mm3": 936684.7087436389,
+      "base_features_healthy": true,
+      "intersections": {
+        "base_lid_mm3": 5.519248937766008,
+        "corner_bracket:1": 0.0,
+        "corner_bracket:2": 0.0,
+        "faceplate_support_post:1": 0.0,
+        "faceplate_support_post:2": 0.0
+      },
+      "flat_pattern_comparison": {
+        "matched_reference_holes": 107,
+        "missing_area_mm2": 0.0,
+        "extra_area_mm2": 0.0,
+        "area_tolerance_mm2": 0.01
+      },
+      "captured_flat_sha256": "f388e28755d9841945c2a882803c18d055049138834ede1255edd0b085a7861f"
+    },
+    "pop": {
+      "document": "VAMP console (populated)",
+      "version": 342,
+      "modified": false,
+      "occurrences": 415,
+      "unchanged_other_occurrences": 414,
+      "maximum_other_volume_delta_mm3": 0.0,
+      "maximum_other_bounds_delta_mm": 0.0,
+      "maximum_placement_delta_cm": 0.0,
+      "visibility_and_appearance_preserved": true,
+      "base_id": "d331f54f-d4e5-45f3-89cf-6d27de235173",
+      "base_volume_mm3": 936684.7087436217,
+      "base_features_healthy": true,
+      "intersections": {
+        "base_lid_mm3": 5.519248940920818,
+        "VAMP sheet metal:1+corner_bracket:1": 0.0,
+        "VAMP sheet metal:1+corner_bracket:2": 0.0,
+        "faceplate_support_post:1": 0.0,
+        "faceplate_support_post:2": 0.0
+      },
+      "flat_pattern_comparison": {
+        "matched_reference_holes": 107,
+        "missing_area_mm2": 0.0,
+        "extra_area_mm2": 0.0,
+        "area_tolerance_mm2": 0.01
+      },
+      "captured_flat_sha256": "4b0345bb69cbc1e4bd6a05d1879dcb0fb78a184889587e7fe564cb7090ab0ec2"
+    }
+  },
+  "limits": [
+    "Local CAD verification, not physical tooling or production approval.",
+    "Base/lid contact films remain approximately 5.52 mm3; first-set coating fit remains required.",
+    "Round-hole edge distances establish separation only, not structural or tooling qualification."
+  ],
+  "nearest_round_hole_gaps": [
+    {
+      "relief_centre_mm": [
+        0.0,
+        0.0
+      ],
+      "nearest_round_hole_centre_mm": [
+        18.42857142857143,
+        -5.044579557318606
+      ],
+      "edge_gap_mm": 14.606544109494948
+    },
+    {
+      "relief_centre_mm": [
+        846.0,
+        0.0
+      ],
+      "nearest_round_hole_centre_mm": [
+        827.5714285714286,
+        -5.044579557318606
+      ],
+      "edge_gap_mm": 14.606544109494958
+    },
+    {
+      "relief_centre_mm": [
+        0.0,
+        419.0
+      ],
+      "nearest_round_hole_centre_mm": [
+        10.0,
+        429.0891591146372
+      ],
+      "edge_gap_mm": 9.305320539870504
+    },
+    {
+      "relief_centre_mm": [
+        846.0,
+        419.0
+      ],
+      "nearest_round_hole_centre_mm": [
+        836.0,
+        429.0891591146372
+      ],
+      "edge_gap_mm": 9.305320539870504
+    }
+  ]
+}

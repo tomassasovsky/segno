@@ -1,0 +1,48 @@
+{
+  "saved_documents": {
+    "vsm": {
+      "version": 135,
+      "occurrences": 27,
+      "bodies": 27,
+      "warnings": 0,
+      "saved_reopened_preservation": "exact",
+      "base_features": 12,
+      "base_component_id": "e701147e-7c07-4d45-afa7-fcc3496f0c8b"
+    },
+    "pop": {
+      "version": 348,
+      "occurrences": 423,
+      "bodies": 973,
+      "warnings": 41,
+      "saved_reopened_preservation": "exact",
+      "base_features": 16,
+      "base_component_id": "d331f54f-d4e5-45f3-89cf-6d27de235173"
+    }
+  },
+  "base_flat_parity": {
+    "vsm": {
+      "matched_reference_holes": 107,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "pop": {
+      "matched_reference_holes": 107,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    }
+  },
+  "tests": {
+    "count": 34,
+    "result": "pass"
+  },
+  "scope": "tight riveted straight rear joint; preserve prior corrections",
+  "physical_fit_mm": [
+    0,
+    0.1
+  ],
+  "nominal_mm": 0.05,
+  "vsm_rebuild": "Replaced only the base from the current source DXF after its old flat-pattern asset failed to initialize; all five final flat products healthy and the unreadable old product removed.",
+  "reopened_flat_export": "Base exports and parity passed after reopening vsm134/pop347; derived-cache-only saves vsm135/pop348 then reopened with exact unchanged occurrence geometry."
+}

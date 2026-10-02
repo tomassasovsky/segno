@@ -1,0 +1,15 @@
+{
+  "changed_occurrences": [
+    "screen7_module:1",
+    "screen7_tower:1"
+  ],
+  "module_delta_mm": [
+    0.0,
+    -0.48815132418127405,
+    -0.10820482752634142
+  ],
+  "tower_native_source_missing_mm3": 0.0,
+  "tower_native_source_extra_mm3": 0.0,
+  "old_module_tower_contact_mm3": 0.8593145106256945,
+  "new_module_tower_contact_mm3": 0.8593145105635387
+}

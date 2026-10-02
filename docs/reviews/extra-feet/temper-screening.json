@@ -1,0 +1,331 @@
+{
+  "scope": "Material-only screen for nominal2.0mm1050/1050A sheet, all individually documented standard sheet tempers found. No geometry, load capacity, stock qualification, post-paint strength guarantee or production release is implied.",
+  "nominal_thickness_mm": 2.0,
+  "sources": {
+    "levha_sheet": {
+      "publisher": "Can Al\u00fcminyum / LevhaRulo",
+      "kind": "primary supplier and processor catalog",
+      "url": "https://www.levharulo.com/catalogs/levha-en.pdf",
+      "page": 8,
+      "alloy_label": "1050",
+      "basis": "Yield Strength N/mm2 (min); tensile strength limits; thickness-specific elongation rows encompass 2 mm. Table visually inspected from downloaded PDF.",
+      "local_pdf": "/tmp/segno-extra-feet/material-sources/levha-en.pdf",
+      "sha256": "83198db8b76a28dd23e2b486c92114fd40ef39c92b613b2b9039c5aeb7ccbfbe"
+    },
+    "bikar_1050a": {
+      "publisher": "BIKAR Metals",
+      "kind": "primary supplier datasheet",
+      "url": "https://www.bikar.com/fileadmin/Unterlagen_BIKAR/Unterlagen_BIKAR_eng/1050A-complete-en.pdf",
+      "pages": [
+        1,
+        2
+      ],
+      "alloy_label": "EN AW-1050A",
+      "basis": "EN 485-2 sheet/plate minima for O/H111, H14 and H24; physical E69 GPa; F has no mechanical limits. H112 sheet rows begin at6mm."
+    },
+    "hulamin_1050": {
+      "publisher": "Hulamin Rolled Products",
+      "kind": "primary mill datasheet",
+      "url": "https://www.hulamin.com/sites/default/files/downloads/1050%20Data%20Sheet.pdf",
+      "alloy_label": "1050",
+      "basis": "O and H14 proof minima at >1.5 to3mm; E69GPa for alloy."
+    },
+    "tk_1050a": {
+      "publisher": "tk accelis Processing Europe, formerly thyssenkrupp Materials Processing Europe",
+      "kind": "primary supplier/processor technical table",
+      "url": "https://www.thyssenkrupp-materials-processing-europe.com/en/aluminum/alloy-group-1000-or-en-aw-1050-a-or-en-aw-1200a/en-aw-1050a",
+      "alloy_label": "EN AW-1050A",
+      "basis": "Independent O/H111, H22, H24 and H19 rows for1.5\u20133mm; H19 proof130MPa and tensile minimum150MPa at2mm."
+    },
+    "alumeco_1050a": {
+      "publisher": "Alumeco",
+      "kind": "primary supplier technical table",
+      "url": "https://www.alumeco.no/aluminium/data/mekaniske-egenskaper/plater/",
+      "alloy_label": "EN AW-1050A",
+      "basis": "Independent sheet proof/elongation/bend radius values. H16 >1.5 to4mm; other listed2mm rows >1.5 to3mm. H16 R1.5t; H18 R3t for90deg."
+    },
+    "ucin_1050": {
+      "publisher": "UCIN Aluminio",
+      "kind": "primary mill technical table",
+      "url": "https://www.ucinaluminio.com/caracteristicas-mecanicas/",
+      "alloy_label": "EN AW-1050",
+      "basis": "Independent H12 throughH28 proof values. No thickness ranges. O/H111 lists30MPa (differs from20MPa EN sheet minimum); H16 tensile125\u2013160 differs from120\u2013160 other sources. Not used to increase screening strength."
+    }
+  },
+  "conditions": [
+    {
+      "temper": "O",
+      "yield_min_mpa": 20,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 65,
+      "tensile_max_mpa": 95,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 26,
+      "reference_90deg_bend_radius_over_t": 0,
+      "reference_90deg_bend_radius_mm_at_2mm": 0,
+      "current_R2_meets_reference_radius": true,
+      "sources": [
+        "levha_sheet",
+        "bikar_1050a",
+        "hulamin_1050",
+        "tk_1050a",
+        "alumeco_1050a"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    },
+    {
+      "temper": "H111",
+      "yield_min_mpa": 20,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 65,
+      "tensile_max_mpa": 95,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 26,
+      "reference_90deg_bend_radius_over_t": 0,
+      "reference_90deg_bend_radius_mm_at_2mm": 0,
+      "current_R2_meets_reference_radius": true,
+      "sources": [
+        "bikar_1050a",
+        "tk_1050a",
+        "alumeco_1050a"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    },
+    {
+      "temper": "H12",
+      "yield_min_mpa": 65,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 85,
+      "tensile_max_mpa": 125,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 5,
+      "reference_90deg_bend_radius_over_t": 0.5,
+      "reference_90deg_bend_radius_mm_at_2mm": 1.0,
+      "current_R2_meets_reference_radius": true,
+      "sources": [
+        "levha_sheet",
+        "alumeco_1050a",
+        "ucin_1050"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    },
+    {
+      "temper": "H22",
+      "yield_min_mpa": 55,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 85,
+      "tensile_max_mpa": 125,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 6,
+      "reference_90deg_bend_radius_over_t": 0.5,
+      "reference_90deg_bend_radius_mm_at_2mm": 1.0,
+      "current_R2_meets_reference_radius": true,
+      "sources": [
+        "levha_sheet",
+        "tk_1050a",
+        "alumeco_1050a",
+        "ucin_1050"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    },
+    {
+      "temper": "H14",
+      "yield_min_mpa": 85,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 105,
+      "tensile_max_mpa": 145,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 4,
+      "reference_90deg_bend_radius_over_t": 1,
+      "reference_90deg_bend_radius_mm_at_2mm": 2,
+      "current_R2_meets_reference_radius": true,
+      "sources": [
+        "levha_sheet",
+        "bikar_1050a",
+        "hulamin_1050",
+        "alumeco_1050a",
+        "ucin_1050"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    },
+    {
+      "temper": "H24",
+      "yield_min_mpa": 75,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 105,
+      "tensile_max_mpa": 145,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 5,
+      "reference_90deg_bend_radius_over_t": 1,
+      "reference_90deg_bend_radius_mm_at_2mm": 2,
+      "current_R2_meets_reference_radius": true,
+      "sources": [
+        "levha_sheet",
+        "bikar_1050a",
+        "tk_1050a",
+        "alumeco_1050a",
+        "ucin_1050"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    },
+    {
+      "temper": "H16",
+      "yield_min_mpa": 100,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 120,
+      "tensile_max_mpa": 160,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 3,
+      "reference_90deg_bend_radius_over_t": 1.5,
+      "reference_90deg_bend_radius_mm_at_2mm": 3.0,
+      "current_R2_meets_reference_radius": false,
+      "sources": [
+        "levha_sheet",
+        "alumeco_1050a",
+        "ucin_1050"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    },
+    {
+      "temper": "H26",
+      "yield_min_mpa": 90,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 120,
+      "tensile_max_mpa": 160,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 4,
+      "reference_90deg_bend_radius_over_t": null,
+      "reference_90deg_bend_radius_mm_at_2mm": null,
+      "current_R2_meets_reference_radius": null,
+      "sources": [
+        "levha_sheet",
+        "ucin_1050"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    },
+    {
+      "temper": "H18",
+      "yield_min_mpa": 120,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 140,
+      "tensile_max_mpa": null,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 2,
+      "reference_90deg_bend_radius_over_t": 3,
+      "reference_90deg_bend_radius_mm_at_2mm": 6,
+      "current_R2_meets_reference_radius": false,
+      "sources": [
+        "levha_sheet",
+        "alumeco_1050a",
+        "ucin_1050"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    },
+    {
+      "temper": "H28",
+      "yield_min_mpa": 110,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 140,
+      "tensile_max_mpa": null,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 3,
+      "reference_90deg_bend_radius_over_t": null,
+      "reference_90deg_bend_radius_mm_at_2mm": null,
+      "current_R2_meets_reference_radius": null,
+      "sources": [
+        "levha_sheet",
+        "ucin_1050"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    },
+    {
+      "temper": "H19",
+      "yield_min_mpa": 130,
+      "yield_definition": "0.2% proof stress Rp0.2",
+      "tensile_min_mpa": 150,
+      "tensile_max_mpa": null,
+      "elastic_modulus_gpa": 69,
+      "elastic_modulus_basis": "Alloy-level value from Hulamin1050/BIKAR1050A, applied equally to all tempers for screening; not a separate temper guarantee.",
+      "minimum_elongation_A50_percent_at_2mm": 1,
+      "reference_90deg_bend_radius_over_t": null,
+      "reference_90deg_bend_radius_mm_at_2mm": null,
+      "current_R2_meets_reference_radius": null,
+      "sources": [
+        "levha_sheet",
+        "tk_1050a"
+      ],
+      "primary_table_thickness_at_2mm": "1.51\u20133.00mm in LevhaRulo printed table exceptH19=0.20\u20133.00mm; H111 from EN1050A1.5\u20133.0mm. H16 independentAlumeco1.5\u20134.0mm."
+    }
+  ],
+  "unqualified_conditions": [
+    {
+      "temper": "F",
+      "yield_min_mpa": null,
+      "reason": "As-fabricated temper has no specified mechanical limits; a generic1050-F callout cannot inherit the20MPa minimum guaranteed for certifiedO/H111 sheet."
+    },
+    {
+      "temper": "H112",
+      "yield_min_mpa": null,
+      "reason": "AvailableBIKARsheet table starts at6mm, not valid at2mm. Do not extrapolate thickplate or extrusion values."
+    },
+    {
+      "temper": "Hxx painted/embossed/proprietary variants",
+      "yield_min_mpa": null,
+      "reason": "Not interchangeable automatically with listed sheet tempers. Need matching product specification at2mm."
+    }
+  ],
+  "cautions": [
+    "1050 and EN AW-1050A are distinct designations; values above are an explicitly mapped conservative reference comparison, not an assertion that all chemical and delivery specifications are interchangeable.",
+    "H1x work-hardened and H2x partially-annealed tempers of the same hardness digit have different minimum proof stress. Do not combineH12/H22,H14/H24,H16/H26,H18/H28 into identical strength rows.",
+    "Known soft-sheet minima exist:O/H11120MPa. Unknown temper orF does not automatically guarantee that minimum.",
+    "Harder tempers do not increaseE appreciably, so purely elastic same-geometry deflection stays essentially unchanged.",
+    "Bend radii are generic informational recommendations; observedshoptooling and grain direction still govern. Null radius means not verified, not zero.",
+    "No thermal-cycle degradation assumed or certified. Cold-worked strength after actualpowdercure remains separate from as-suppliedstrength comparison.",
+    "One supplier table has an H28 thickness-range overlap (0.20\u20131.50 and0.51\u20133.00); at2mm only the latter contains the target, and common proof110MPa/tensile140MPa are unambiguous.",
+    "UCINno-thickness O/H11130MPa and H16tensile125MPa were not used to override the lower independentlyverifiedsheet values."
+  ],
+  "screening": {
+    "type": "Analytical simply supported bare-sheet strip sensitivity; not an assembled-enclosure rating or conservative bound",
+    "thickness_mm": 2,
+    "span_mm": 202.2857142857,
+    "loaded_width_mm": 88.75,
+    "load_centroid_from_left_mm": 50.5714285714,
+    "effective_width_cases_mm": [
+      115.37,
+      230.74
+    ],
+    "load_cases_N": [
+      200,
+      700
+    ],
+    "stress_MPa_per_N_for_115_37mm_width": 0.3849561271808716,
+    "stress_cases_MPa": [
+      [
+        76.99122543617432,
+        269.4692890266101
+      ],
+      [
+        38.49561271808716,
+        134.73464451330506
+      ]
+    ],
+    "limitations": [
+      "Real feet are small compliant contact patches, not continuous support lines.",
+      "Folded walls, two-dimensional plate action and printed-support stiffness are omitted.",
+      "CLEAR/BANK have perimeter and boss-ring bearing, not full-area bearing.",
+      "Large linear deflections would invalidate small-deflection and fixed-contact assumptions.",
+      "700 N is a provisional static case; owner scale readings do not establish impact peak."
+    ],
+    "conclusion": "All listed tempers have minimum proof strength below both 700 N strip stress cases. This flags unresolved assembled bending; it does not predict physical enclosure failure or certify any temper."
+  }
+}

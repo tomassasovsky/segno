@@ -1,0 +1,116 @@
+{
+  "scope": "Single metal-shop visit before separate coating; instructions and masks only",
+  "native_geometry_preserved": {
+    "sheet_metal_version": 135,
+    "populated_version": 348,
+    "mini_version": 13
+  },
+  "source_sha256": "1ffc2d27b839da7d1ad8740a75520f12c128c644785e5618cab67da44f301ba3",
+  "tests": {
+    "count": 34,
+    "result": "pass",
+    "elapsed_seconds": 41.421
+  },
+  "generator": "Drawing/package assertions ALL PASS",
+  "visual_review": {
+    "changed_pdf_count": 9,
+    "page_count": 14,
+    "result": "rendered at115dpi and individually inspected"
+  },
+  "changed_pdf_sha256": {
+    "segno_base.pdf": "48092658d4b97d12e022e81915eb8a1069d281193908a64f6a6b34875a32ca2b",
+    "segno_corner_bracket_rear.pdf": "a767bf589e57055ba80c9b19985d193f1b29b3141af108223faf4367a2fdb775",
+    "segno_corner_bracket_rear_mirrored.pdf": "fd9c013d461ac6f4e0b3c70e1b8ab7d70158f528f606af865355ecc30a47f3b6",
+    "segno_faceplate.pdf": "1f86512425a36f2fa0945204fc4c4cff127f4470fd7e92a99712992f465a63ba",
+    "segno_overlay.pdf": "5b8e1b1d77ef46d9376244e00ae9852306d11cd5a2c544530dfbb557c950c996",
+    "segno_paint_quote.pdf": "d8867fb5b2623c1d539f1d414492609f6fd40d9e612da1995ad6d57586b65d3d",
+    "segno_post.pdf": "1d329cd23976bb77f97b8abb780abd75e0e73de7aba488639f733a902ae74e8c",
+    "segno_rear_panel.pdf": "37e927a8a8951e983a79bd023ab0e7befbb0f650a9639712bbfefa32c8c4a29f",
+    "segno_ring_disc.pdf": "8ae041edccb34cf4fa1e25fad27860b7ffcea331a71f49353f3f916cd93490ec"
+  },
+  "step_preservation": {
+    "segno_pedal_base_fit_test.step": "d47b7bf866529122924c6cf42004f9e0fb2b7e757542f08b07b8348387b90053",
+    "segno_platform_mid_ring.step": "203f37cb635a4ee896a9dc0eee0f70ba4c066c3382444b29db9f18c42608c2c7",
+    "segno_corner_bracket_rear.step": "69e878582085c4c89c1fd50e779d5005c447d59ea5b0d4d83deb3d4847bbb9a1",
+    "segno_buck_reference.step": "f0561790b1e61c20b5d8043f2b19414e36a9539ffcb8bdcf83eb232eb8740e1d",
+    "segno_pedal_tile_UNDO.step": "9a31de05fae7fa8d8087078a280cd1a2c17b2673c649317f4f79bcd581e5d678",
+    "segno_pedal_tile_MODE.step": "dd44d7f6711946060c1a5c9802b8676123e58d8e6881a4e9cb72f77aae79fd2b",
+    "segno_pedal_tile_TRACK1.step": "764c7319ad4c7b54655f8ab343286d977b6851d57a3057294317c0f00c323424",
+    "segno_platform_sled.step": "0ab1dfa63cd067f56649dcdf8a3a3b8967be9720331ce8811f3a83ff0d1d48b5",
+    "segno_assembly.step": "02ddd5e94f89b33fc71dab2819e6801de104c04ccce0d677696087203d099632",
+    "segno_encoder_knob.step": "ea8d5b39a35e66701491e9c27884b8b1509499b45389e4bea4da6d025d85e783",
+    "segno_screen7_fit_test.step": "76bf62e8d9356b2a0e3d5936676d93ffa73dd9532b567838d02b95aaab1469b1",
+    "segno_led_diffuser.step": "7f90b48ed349fd00dd18e193c976b90728d338a667ff588999de05ff3349e415",
+    "segno_ring_diffuser.step": "4e8b793dbd60e2cc70a83f441c120963d84054e894d6b884e6c205d9a9ed602f",
+    "segno_ring_disc.step": "24247bc8edd8eadbd3dfc3ee3bc6659dd030a82dc1b8322e2e53081596e28d4f",
+    "segno_pedal_tile_REC_PLAY.step": "9dd54a0a9b93e3bea3e7e6d212520d819951cbe98400da49b1a53c3246aab85f",
+    "segno_pedal_tile_STOP.step": "8f1b7496053eb6c9e0896ff79e709c8f49e106e77c87665c31c9812e5849767b",
+    "segno_mini_console_sled.step": "5d1f798df6bfca35441feaddd90c0316a5b13fa4a11c304a4be7580147eb30fc",
+    "segno_pedal_tile_TRACK4.step": "d693cdb6460050d67fcb0ed0921c77ec7814db93a466eb5be04920e43d913097",
+    "segno_screen16_stand_R.step": "cdd0d5049e9c7ee12be96c0e13285fcbbe6474df31c5dbaef199e7315375bd2d",
+    "segno_corner_bracket_rear_mirrored.step": "12dcbd799e6500a6c0a90499f087099e79969381e5de84c9a515a4d43143031f",
+    "segno_post.step": "5b774f77d0849900c35cc3c5cc4051d5a68b4cc94332c41d0263eff5bdb23479",
+    "segno_base.step": "2e9976ec08f5719bd3ad19980c6c36938089901fa860633eafee6fe16e72e52a",
+    "segno_platform_front_ring.step": "2b50c5366ab2f60189a01b2c8b1fb3b439b119c9574270a4377fac1cec4fd9d0",
+    "segno_pedal_tile_BANK.step": "53dd21e49ce33772831945880666e918c7ff758bb6abcd8d59c0bfa8cf5ca5b3",
+    "segno_post_felt.step": "a99592cea0addb00013d04736135609e19d1700e0e9ab45d6dd9107b85a0bd04",
+    "segno_pedal_tile_CLEAR.step": "172f0473f7af4f261944957ea6deb9d5143ebfbaf52aaf6c9552c04bd5411630",
+    "segno_buck_envelope.step": "f698e21e15d830188c1e6f778af606d9297b322bb840e434505292fff33658da",
+    "segno_faceplate.step": "38bbde2afa694603959f92965159318a2c098ae5d8e6f7f127f1a5e2e7251e25",
+    "segno_screen16_portclear.step": "cdd753a9abea03fb1ad4f4176b0b90de6dde7a79dc25a61f7ab6ad9d490e7494",
+    "segno_mini_console_lid.step": "e420d283311f08f9b83177714db10cb192c631ddda7f1ffbc49c31cdbbddeeaf",
+    "segno_pedal_tile_TRACK2.step": "33d10f39109778be123a00c6daef30c0d4d7fdfc1327c89b196baa6316c5b915",
+    "segno_screen16_monitor.step": "7b5850b99635924d66cfbc6100f5fccbd5460bb3be5ffcd337100172977f7148",
+    "segno_pedal_tile_TRACK3.step": "48fc696b9228ee2ac51b665e2e4826fb27eaa8c02344a1645930556bcf6bb2b4",
+    "segno_front_shim_pack_reference.step": "aef735652bf11fbe1094bbd92c5793db0aa65648502934ea9a4126aee8a4e605",
+    "segno_screen16_stand_L.step": "bb5539cc27fe32f7ddc4bf213af25e5eac02c999e26f3d652af36b94a16af075",
+    "segno_rear_panel.step": "814b4649fdc4769e212d113a6ce6866f9d83493413f4b7cacd096d36a72df27c",
+    "segno_screen7_tower.step": "1c9cff4438a73a99d5d20fc99e90d5b284a61b3bd64d11424a39eadc978c71cf",
+    "segno_mini_console_tray.step": "39cd6db56167b82137130f2652921622dd7c045e2838fd1d94f409ba2f423426",
+    "segno_mini_console_assembly.step": "1866b5b07202b6af4c2bebccf82d2035ce38fc2a5943a4f620b6ae135a6d3587"
+  },
+  "formed_cache_preservation": {
+    "segno_corner_bracket_rear.step": "292181420b6d5533757b6a9dedbd734598884effaeea6b0bd88c70ebb39be008",
+    "segno_faceplate_flat.dxf": "873d6826494adb0e4934bc9606e6610766b17fe3e36a3f9f77527add7668a3d1",
+    "segno_corner_bracket_rear_mirrored_flat.dxf": "31c0417b4fbb90f16ce73e99fc7a36ca6236f028bc25162dbaddec9d6c9825be",
+    "segno_corner_bracket_rear_mirrored.step": "d3c09ef5f479d9e723c7991c276b8004def057d2710a13da68c19eaf2e2a6341",
+    "segno_base.step": "2e9976ec08f5719bd3ad19980c6c36938089901fa860633eafee6fe16e72e52a",
+    "manifest.json": "401389b8c32400832bef5a6b70bd06960460d5501200b9d69c4d54116aef1313",
+    "segno_faceplate.step": "357318f44c5d90c4372c1eb33f86efa47266d7d33eedf6849afbf507481eb2b4",
+    "segno_corner_bracket_rear_flat.dxf": "5faafb8c98861d11044c91e74cd435b1b5b14fa33b09c254182350d240f8ac28",
+    "segno_base_flat.dxf": "f09d2e9a604af233d4acb9ae9d6eb5b47a4043df8690f07ce3c613c0b6ad3c3c"
+  },
+  "archives": {
+    "segno_3dprint.zip": {
+      "generated_sha256": "57923460d5524a5ba6e354ba19fe1f4ed7e83affcb8c07140842a3823e4f921d",
+      "final_sha256": "7be4a293262c8d02c78385478e92544000aa75e705a2b0dc1cc39f8b349d41d7",
+      "member_count": 36
+    },
+    "segno_overlay.zip": {
+      "generated_sha256": "4891aeeef79203dd6aa69c76cdfb9d8ee8506a2cc5c7fdca17354a4826c0fe8e",
+      "final_sha256": "4891aeeef79203dd6aa69c76cdfb9d8ee8506a2cc5c7fdca17354a4826c0fe8e",
+      "member_count": 2
+    },
+    "segno_pedal_tiles.zip": {
+      "generated_sha256": "88b099c38a6eedebe17ffd85d845a2b80347a9ea697f37e59d64aa851c7ca36a",
+      "final_sha256": "ae1e644233520ced1add6dc08966815fc85cfbc65ebb03754629b086edd3511a",
+      "member_count": 22
+    },
+    "segno_pintura.zip": {
+      "generated_sha256": "878174cfff98b60c5f8a2269029c0c75e504215147a2d5aa20cb9881075fa84a",
+      "final_sha256": "878174cfff98b60c5f8a2269029c0c75e504215147a2d5aa20cb9881075fa84a",
+      "member_count": 8
+    },
+    "segno_sheetmetal.zip": {
+      "generated_sha256": "3487719a51d1ecb2003d33a1edc6fdb5aa42f14e8a8bc4747822debb6bff4f9f",
+      "final_sha256": "3487719a51d1ecb2003d33a1edc6fdb5aa42f14e8a8bc4747822debb6bff4f9f",
+      "member_count": 14
+    },
+    "segno_sheetmetal_step.zip": {
+      "generated_sha256": "61367897099ad6fbaec38accb41ed3553d3d28027d1749a8bea02ea57867d8f7",
+      "final_sha256": "ef6ecebc409f73de74c92fbfe6f4722e199dd5c223e83245d1013b0cb0f9d3c0",
+      "member_count": 8
+    }
+  },
+  "formed_input_sha256": "bd1fec53ff1ece0a0df3907d571cb203545c97f2ef55b510ec05771539b882bd"
+}

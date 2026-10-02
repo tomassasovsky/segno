@@ -1,0 +1,39 @@
+{
+  "snapshot_version": 348,
+  "assumption": "All floor-mounted electronic assemblies conservatively translated +0.10 mm worldZ with coating under their supports. Screen supports retain bare position on newly recommended masks. Boxes fully contain each occurrence all bodies, including hidden references.",
+  "bounded_groups_count": 103,
+  "electronic_body_count": 667,
+  "min_painted_lid_normal_clearance_mm": 36.81527329466762,
+  "closest_to_lid": {
+    "path": "electronics:1+raspberry_pi_5_real:1+3.0_PIN_HEADER_10:1",
+    "body_count": 90,
+    "raised_0p1_bounds_mm": [
+      [
+        671.4550000381472,
+        256.34999989509527,
+        19.635161839266125
+      ],
+      [
+        676.5350000381477,
+        307.1499998950953,
+        31.435161839266822
+      ]
+    ],
+    "minimum_normal_clearance_to_painted_lid_mm": 36.81527329466762
+  },
+  "screen_stand_clearance": [
+    {
+      "stand": "L",
+      "electronics_bounding_envelope_distance_mm": 2.2897628595364163,
+      "intersection_mm3": 0.0
+    },
+    {
+      "stand": "R",
+      "electronics_bounding_envelope_distance_mm": 2.289762859533489,
+      "intersection_mm3": 0.0
+    }
+  ],
+  "limits": [
+    "Actual attached cables, screw heads absent from purchased models and flexible looms remain physical fit checks. Bounding boxes are conservative; this proof establishes clearance only."
+  ]
+}

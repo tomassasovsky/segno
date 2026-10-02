@@ -1,0 +1,170 @@
+{
+  "baseline": "/tmp/segno-rear-closure/out-before",
+  "restored": {
+    "segno_corner_bracket_rear.step": {
+      "before_sha256": "69e878582085c4c89c1fd50e779d5005c447d59ea5b0d4d83deb3d4847bbb9a1",
+      "generated_sha256": "292181420b6d5533757b6a9dedbd734598884effaeea6b0bd88c70ebb39be008",
+      "date_fields": 1,
+      "normalized_nondate_sha256": "c68cd974ad1c04ccb416f5ade53c5fb1961f8bfee634511f7dce3259daf9dbdc",
+      "final_sha256": "69e878582085c4c89c1fd50e779d5005c447d59ea5b0d4d83deb3d4847bbb9a1"
+    },
+    "segno_corner_bracket_rear_mirrored.step": {
+      "before_sha256": "12dcbd799e6500a6c0a90499f087099e79969381e5de84c9a515a4d43143031f",
+      "generated_sha256": "d3c09ef5f479d9e723c7991c276b8004def057d2710a13da68c19eaf2e2a6341",
+      "date_fields": 1,
+      "normalized_nondate_sha256": "dfc8ee9d7d20bba2924f22b2487b41ade2eb4a569be1a01d4bf4e5deb033664d",
+      "final_sha256": "12dcbd799e6500a6c0a90499f087099e79969381e5de84c9a515a4d43143031f"
+    },
+    "segno_faceplate.step": {
+      "before_sha256": "38bbde2afa694603959f92965159318a2c098ae5d8e6f7f127f1a5e2e7251e25",
+      "generated_sha256": "357318f44c5d90c4372c1eb33f86efa47266d7d33eedf6849afbf507481eb2b4",
+      "date_fields": 1,
+      "normalized_nondate_sha256": "56f818e6cb863cabd32a341eb57559be132374e73aef3c763d08119b3cee23c9",
+      "final_sha256": "38bbde2afa694603959f92965159318a2c098ae5d8e6f7f127f1a5e2e7251e25"
+    },
+    "segno_mini_console_lid.step": {
+      "before_sha256": "e420d283311f08f9b83177714db10cb192c631ddda7f1ffbc49c31cdbbddeeaf",
+      "generated_sha256": "262c920142dab14e126f5ffd1037bfa1b7bb23b3fc006dd9a84cdad9125598d4",
+      "date_fields": 1,
+      "normalized_nondate_sha256": "39f59289126965a1285b7ac51c799a812aa9b3a527430ecfd72880dd277a30ef",
+      "final_sha256": "e420d283311f08f9b83177714db10cb192c631ddda7f1ffbc49c31cdbbddeeaf"
+    },
+    "segno_mini_console_sled.step": {
+      "before_sha256": "5d1f798df6bfca35441feaddd90c0316a5b13fa4a11c304a4be7580147eb30fc",
+      "generated_sha256": "d4db6906f5e45ec4e94e237a416be200d54646c9830e627719c5bb5dcd818eac",
+      "date_fields": 1,
+      "normalized_nondate_sha256": "de8135020f461baa2e1b5e982051e3970bfa9e6a0a68450799a911c9d69e4657",
+      "final_sha256": "5d1f798df6bfca35441feaddd90c0316a5b13fa4a11c304a4be7580147eb30fc"
+    },
+    "segno_mini_console_tray.step": {
+      "before_sha256": "39cd6db56167b82137130f2652921622dd7c045e2838fd1d94f409ba2f423426",
+      "generated_sha256": "e5a3c98e6e4469bd42afc11a6a8e5e2cac7c0127fb5da10fba84df1e26750b7d",
+      "date_fields": 1,
+      "normalized_nondate_sha256": "9ec9fb9f09ecad628b61822777930d1ef48913e6afa17f97c13073c855e8399c",
+      "final_sha256": "39cd6db56167b82137130f2652921622dd7c045e2838fd1d94f409ba2f423426"
+    },
+    "segno_screen7_fit_test.step": {
+      "before_sha256": "76bf62e8d9356b2a0e3d5936676d93ffa73dd9532b567838d02b95aaab1469b1",
+      "generated_sha256": "b2cb0c0f741f5c2bb812de7855398f3dd5361813a56b2629e13978b4a25f8ec0",
+      "date_fields": 1,
+      "normalized_nondate_sha256": "6d2979ac70522bdbc72cddf0b83a452d8a7e1adf5cc58f9be9cafb688fef3d97",
+      "final_sha256": "76bf62e8d9356b2a0e3d5936676d93ffa73dd9532b567838d02b95aaab1469b1"
+    },
+    "segno_screen7_tower.step": {
+      "before_sha256": "1c9cff4438a73a99d5d20fc99e90d5b284a61b3bd64d11424a39eadc978c71cf",
+      "generated_sha256": "29a8e975bd92d0cd3b5fc798caefdaa862aa46ab85d5fd4e23ddd7943efc862c",
+      "date_fields": 1,
+      "normalized_nondate_sha256": "a999521ce8ab614dd971f90bcb995f98b4f7fb672e163bbf797c834fdf56f4ec",
+      "final_sha256": "1c9cff4438a73a99d5d20fc99e90d5b284a61b3bd64d11424a39eadc978c71cf"
+    }
+  },
+  "unchanged": [
+    "segno_buck_envelope.step",
+    "segno_buck_reference.step",
+    "segno_corner_bracket_rear.pdf",
+    "segno_corner_bracket_rear_mirrored.pdf",
+    "segno_encoder_knob.step",
+    "segno_faceplate.pdf",
+    "segno_front_shim_pack_reference.step",
+    "segno_led_diffuser.step",
+    "segno_overlay.pdf",
+    "segno_pedal_base_fit_test.step",
+    "segno_pedal_base_gauge.pdf",
+    "segno_pedal_tile_BANK.pdf",
+    "segno_pedal_tile_BANK.step",
+    "segno_pedal_tile_CLEAR.pdf",
+    "segno_pedal_tile_CLEAR.step",
+    "segno_pedal_tile_MODE.pdf",
+    "segno_pedal_tile_MODE.step",
+    "segno_pedal_tile_REC_PLAY.pdf",
+    "segno_pedal_tile_REC_PLAY.step",
+    "segno_pedal_tile_STOP.pdf",
+    "segno_pedal_tile_STOP.step",
+    "segno_pedal_tile_TRACK1.pdf",
+    "segno_pedal_tile_TRACK1.step",
+    "segno_pedal_tile_TRACK2.pdf",
+    "segno_pedal_tile_TRACK2.step",
+    "segno_pedal_tile_TRACK3.pdf",
+    "segno_pedal_tile_TRACK3.step",
+    "segno_pedal_tile_TRACK4.pdf",
+    "segno_pedal_tile_TRACK4.step",
+    "segno_pedal_tile_UNDO.pdf",
+    "segno_pedal_tile_UNDO.step",
+    "segno_pedal_tiles.pdf",
+    "segno_platform_front_ring.step",
+    "segno_platform_mid_ring.step",
+    "segno_platform_sled.step",
+    "segno_post.pdf",
+    "segno_post.step",
+    "segno_post_felt.step",
+    "segno_rear_panel.pdf",
+    "segno_rear_panel.step",
+    "segno_ring_diffuser.step",
+    "segno_ring_disc.pdf",
+    "segno_ring_disc.step",
+    "segno_screen16_monitor.step",
+    "segno_screen16_portclear.step",
+    "segno_screen16_stand_L.step",
+    "segno_screen16_stand_R.step"
+  ],
+  "retained_changed": {
+    "segno_assembly.step": {
+      "before_sha256": "824052b822574d3f91d77f4291955feb70c0d71a6a8cdecd6cf1704dd0690874",
+      "generated_sha256": "02ddd5e94f89b33fc71dab2819e6801de104c04ccce0d677696087203d099632",
+      "date_fields": 1
+    },
+    "segno_base.pdf": {
+      "before_sha256": "557173d7d1ee2635cf5c1fa66035587bbc16f3c0d9162346e8bdb1d802de4384",
+      "generated_sha256": "5422cacdd0183e861878d319275c44d05cbe294f843ed21e803ef73874d1677d",
+      "date_fields": 1
+    },
+    "segno_base.step": {
+      "before_sha256": "2668641e2ebed4f0e9ec495015133400d343d0b40894e9586f1a9c6a18dad615",
+      "generated_sha256": "2e9976ec08f5719bd3ad19980c6c36938089901fa860633eafee6fe16e72e52a",
+      "date_fields": 1
+    },
+    "segno_mini_console_assembly.step": {
+      "before_sha256": "1866b5b07202b6af4c2bebccf82d2035ce38fc2a5943a4f620b6ae135a6d3587",
+      "generated_sha256": "f8ae4398970d4754e081995fcaa76269e27a49079f172dab338867c84b869fb5",
+      "date_fields": 1
+    },
+    "segno_paint_quote.pdf": {
+      "before_sha256": "3c785ed6593528e77d0c16cb79ba8ac4408768ae632a1dc944b97a77c1578a0f",
+      "generated_sha256": "950b9486003d692ab1445f8387b6e9dc30434430fb26c898e5642730523a6e9b",
+      "date_fields": 1
+    }
+  },
+  "archives": {
+    "segno_3dprint.zip": {
+      "generated_sha256": "416c04cf587ccbbf720b566aa3a53e243307118d2addd0bb361bf4d29d05115b",
+      "final_sha256": "21996287c61e0c5cd5b463124eb0be1a9d1e65a1fcf5eb35763a5b36685a6e7d",
+      "member_count": 36
+    },
+    "segno_overlay.zip": {
+      "generated_sha256": "0208448546f39e7af6593465fb8b05410427c0898af89e42d9499c0620b20a2e",
+      "final_sha256": "0208448546f39e7af6593465fb8b05410427c0898af89e42d9499c0620b20a2e",
+      "member_count": 2
+    },
+    "segno_pedal_tiles.zip": {
+      "generated_sha256": "a53327efb834c589e639e57274d4e7bc127b784a03233f04697fbb3ab0f1caca",
+      "final_sha256": "a53327efb834c589e639e57274d4e7bc127b784a03233f04697fbb3ab0f1caca",
+      "member_count": 22
+    },
+    "segno_pintura.zip": {
+      "generated_sha256": "1c7a404fe57ec2ddb070fa37ffef5ca0b518773c51e1315a01f24c39d4e83cb7",
+      "final_sha256": "1c7a404fe57ec2ddb070fa37ffef5ca0b518773c51e1315a01f24c39d4e83cb7",
+      "member_count": 8
+    },
+    "segno_sheetmetal.zip": {
+      "generated_sha256": "9c9a5678230fdc49104e7bee4a768e2d96936f64670d1ae03aba42ac054ed190",
+      "final_sha256": "9c9a5678230fdc49104e7bee4a768e2d96936f64670d1ae03aba42ac054ed190",
+      "member_count": 14
+    },
+    "segno_sheetmetal_step.zip": {
+      "generated_sha256": "41eb8a9942b0521897507740d0d529fb5b37c1b4b07de0b29d78ada131f01f01",
+      "final_sha256": "894054039fd0409dc9b77c1061bef4a38941b3fd946a016d2d0a1131f4bfd0f4",
+      "member_count": 8
+    }
+  },
+  "applied": true
+}

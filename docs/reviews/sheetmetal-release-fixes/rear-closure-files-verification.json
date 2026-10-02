@@ -1,0 +1,228 @@
+{
+  "source_sha256": {
+    "hardware/enclosure/segno_enclosure.py": "76c275a7ced8e8b4ae10d2b784da181b49859d2a6341c986bad7d1ff699c23f1",
+    "hardware/enclosure/flat_pattern_check.py": "76c041bb51fc30c94c531e95bec2e250eaf0cd85be10176054fba186469d0ff1",
+    "hardware/enclosure/fusion_export_formed.py": "71904b34710928c657c9d7394a0b81499f95e6f7d065e0d03f37fdef2e4fc21a",
+    "hardware/enclosure/tests/test_manufacturing_fit.py": "a3d1a5ef37cd9fc55699d0b5ca87a626bc73835e259955f15851727c8d586432",
+    "hardware/enclosure/tests/test_manufacturing_pipeline.py": "04a05c501b2345f0e5f097eec95b5d1f487d587d16f37dca2335bc3ae6807fdf",
+    "hardware/enclosure/tests/test_mini_sled_retention.py": "76a305d2324f3fe2c2f9816c31850ea2309ee9a0ebc1c9bbb81259bd82f8666f",
+    "hardware/enclosure/tests/test_screen7_adjustment.py": "8f8e3f4b2f4e6a3f179cd76a18e2f579191f5937512fb1f09f5c44e5793b1ee3",
+    "hardware/enclosure/reference/ring24_interface.json": "4e8306a6598b7aa3ba80dfe26cb6af241999183f24fe0fbb22b7b351d2609174"
+  },
+  "formed_sha256": {
+    "manifest.json": "401389b8c32400832bef5a6b70bd06960460d5501200b9d69c4d54116aef1313",
+    "segno_base.step": "2e9976ec08f5719bd3ad19980c6c36938089901fa860633eafee6fe16e72e52a",
+    "segno_base_flat.dxf": "f09d2e9a604af233d4acb9ae9d6eb5b47a4043df8690f07ce3c613c0b6ad3c3c",
+    "segno_corner_bracket_rear.step": "292181420b6d5533757b6a9dedbd734598884effaeea6b0bd88c70ebb39be008",
+    "segno_corner_bracket_rear_flat.dxf": "5faafb8c98861d11044c91e74cd435b1b5b14fa33b09c254182350d240f8ac28",
+    "segno_corner_bracket_rear_mirrored.step": "d3c09ef5f479d9e723c7991c276b8004def057d2710a13da68c19eaf2e2a6341",
+    "segno_corner_bracket_rear_mirrored_flat.dxf": "31c0417b4fbb90f16ce73e99fc7a36ca6236f028bc25162dbaddec9d6c9825be",
+    "segno_faceplate.step": "357318f44c5d90c4372c1eb33f86efa47266d7d33eedf6849afbf507481eb2b4",
+    "segno_faceplate_flat.dxf": "873d6826494adb0e4934bc9606e6610766b17fe3e36a3f9f77527add7668a3d1"
+  },
+  "archives": {
+    "segno_3dprint.zip": {
+      "sha256": "21996287c61e0c5cd5b463124eb0be1a9d1e65a1fcf5eb35763a5b36685a6e7d",
+      "members": {
+        "segno_platform_front_ring.step": "2b50c5366ab2f60189a01b2c8b1fb3b439b119c9574270a4377fac1cec4fd9d0",
+        "segno_platform_front_ring.stl": "8594fb6942ad088b3747378e1f42471ea7674e0be5741979c4a8fb1a64581381",
+        "segno_platform_mid_ring.step": "203f37cb635a4ee896a9dc0eee0f70ba4c066c3382444b29db9f18c42608c2c7",
+        "segno_platform_mid_ring.stl": "a3240f0b00e86e9bbb3ed3b4e3dfae97af5cf3306705fe1dc672e6bb989e661c",
+        "segno_platform_sled.step": "0ab1dfa63cd067f56649dcdf8a3a3b8967be9720331ce8811f3a83ff0d1d48b5",
+        "segno_platform_sled.stl": "9b9f25a4ce3965ae0412574f323b7e2bf3635b9f5e2bec3de55517509064eb57",
+        "segno_led_diffuser.step": "7f90b48ed349fd00dd18e193c976b90728d338a667ff588999de05ff3349e415",
+        "segno_led_diffuser.stl": "3ae2ec3fbfaf7bd567ab2cb7338d4b9c7045fe5dee23baa3ef28c7916f901a8a",
+        "segno_ring_diffuser.step": "4e8b793dbd60e2cc70a83f441c120963d84054e894d6b884e6c205d9a9ed602f",
+        "segno_ring_diffuser.stl": "9a8f876a82764a605308d55d01c38b5e0b46c5fa4757e0ff8a4a97bae57ea6f1",
+        "segno_pedal_tile_REC_PLAY.step": "9dd54a0a9b93e3bea3e7e6d212520d819951cbe98400da49b1a53c3246aab85f",
+        "segno_pedal_tile_REC_PLAY.stl": "3d9b740a1d1e7e74b6b95403e2cd2ab57dcf26398bd0eb4b34d0e05b6da74927",
+        "segno_pedal_tile_STOP.step": "8f1b7496053eb6c9e0896ff79e709c8f49e106e77c87665c31c9812e5849767b",
+        "segno_pedal_tile_STOP.stl": "4cce4a0c000d8e982531f5fa6b7d46b03af7ec496cdf20f213bdeed2c92f4fca",
+        "segno_pedal_tile_UNDO.step": "9a31de05fae7fa8d8087078a280cd1a2c17b2673c649317f4f79bcd581e5d678",
+        "segno_pedal_tile_UNDO.stl": "032d22216f4b5063a01968904d352c2a8e4829cf1850e2f333ef3c9c5b861a2c",
+        "segno_pedal_tile_MODE.step": "dd44d7f6711946060c1a5c9802b8676123e58d8e6881a4e9cb72f77aae79fd2b",
+        "segno_pedal_tile_MODE.stl": "ff14d241f2baf3fce6083cd3decf3844b437fe38aee9cc4658542407354b3ee0",
+        "segno_pedal_tile_TRACK1.step": "764c7319ad4c7b54655f8ab343286d977b6851d57a3057294317c0f00c323424",
+        "segno_pedal_tile_TRACK1.stl": "44e4fada2cd23494a486b320f9cf7fc287ad05affde2d133e9667f42335803b7",
+        "segno_pedal_tile_TRACK2.step": "33d10f39109778be123a00c6daef30c0d4d7fdfc1327c89b196baa6316c5b915",
+        "segno_pedal_tile_TRACK2.stl": "d72b0b9fe0129f6a5cb444185fcbb65d49d846dbceeadd2bcc7da7332c6a7e7f",
+        "segno_pedal_tile_TRACK3.step": "48fc696b9228ee2ac51b665e2e4826fb27eaa8c02344a1645930556bcf6bb2b4",
+        "segno_pedal_tile_TRACK3.stl": "ab678d5fdf3f0c5a08094c3a26f23a5ee5316a994ea01591af0c7504b98655cf",
+        "segno_pedal_tile_TRACK4.step": "d693cdb6460050d67fcb0ed0921c77ec7814db93a466eb5be04920e43d913097",
+        "segno_pedal_tile_TRACK4.stl": "f48860f032752d17dca734911c2bbc9565c8f300d9d8344a80ddd52957189f3d",
+        "segno_pedal_tile_CLEAR.step": "172f0473f7af4f261944957ea6deb9d5143ebfbaf52aaf6c9552c04bd5411630",
+        "segno_pedal_tile_CLEAR.stl": "b81e970c8e060bd10f749b62ac87917c382d64f9cf6be8cad04285336d790c1c",
+        "segno_pedal_tile_BANK.step": "53dd21e49ce33772831945880666e918c7ff758bb6abcd8d59c0bfa8cf5ca5b3",
+        "segno_pedal_tile_BANK.stl": "01e9224c8df659c6de1bda41a57610fdf95247b39fbc11b5bc9a87d4ec304f9e",
+        "segno_screen7_tower.step": "1c9cff4438a73a99d5d20fc99e90d5b284a61b3bd64d11424a39eadc978c71cf",
+        "segno_screen7_tower.stl": "7a0331724073013a3a2a23ec4c14e8bdd9c5a77e69663e24ed9ae72b01896398",
+        "segno_screen16_stand_L.step": "bb5539cc27fe32f7ddc4bf213af25e5eac02c999e26f3d652af36b94a16af075",
+        "segno_screen16_stand_L.stl": "4a1070fe04d297fd97169a7ab4d94590526804c4eefdb3fd1b45e7c134264257",
+        "segno_screen16_stand_R.step": "cdd0d5049e9c7ee12be96c0e13285fcbbe6474df31c5dbaef199e7315375bd2d",
+        "segno_screen16_stand_R.stl": "eba82d79ee95c3f01ba5a64d34f214403b154400792132ec1c03cb32efe4a5e5"
+      },
+      "member_count": 36
+    },
+    "segno_overlay.zip": {
+      "sha256": "0208448546f39e7af6593465fb8b05410427c0898af89e42d9499c0620b20a2e",
+      "members": {
+        "segno_overlay.dxf": "435cdf5a4b250525a38c7469becb74b39afea5beb5138ab6eb722e471b8857ad",
+        "segno_overlay.pdf": "ff599a2d2f2ba6fef093d3f7d50419210d9212e18a25fa9bc78aa02450f052f6"
+      },
+      "member_count": 2
+    },
+    "segno_pedal_tiles.zip": {
+      "sha256": "a53327efb834c589e639e57274d4e7bc127b784a03233f04697fbb3ab0f1caca",
+      "members": {
+        "segno_pedal_tiles.pdf": "848523d420d491a6879a99294f99666f4ff3d5965581889450bb52bee6d31eea",
+        "segno_pedal_tiles.dxf": "d7c1a3f530adbbe2411bddd1e1b22f38e5ae1101b269928bf638601bd78c2293",
+        "segno_pedal_tile_REC_PLAY.dxf": "454780edb816c08c2311dd7efac47e873b868788edb2246e8aedf05e1a338cb0",
+        "segno_pedal_tile_STOP.dxf": "985e54fe4c0f8b551ce54e3f03933955dfedc4496a1af1e9387f1616cb4f6b7a",
+        "segno_pedal_tile_UNDO.dxf": "d1ad0368a930f8d923cd6963169c30c19bfdfd3c91193f992dddc9d87fb04db4",
+        "segno_pedal_tile_MODE.dxf": "5ea1f0627e20cb9f478576702757c72263f85a2ea8e0ea29e4797a74f25182d1",
+        "segno_pedal_tile_TRACK1.dxf": "e8a0c412905f740b3ccda32fdc2722c318c31d00d20e2e9bdcd9d1633e6511c7",
+        "segno_pedal_tile_TRACK2.dxf": "d2bb86b5fcab14d14270362cecf63a15c28ef78f34676e19ffa6f192137a1e5a",
+        "segno_pedal_tile_TRACK3.dxf": "f281fddc08256232c56a8670f8e5d8694db3b13324a0ca910abd62bfd36ae09a",
+        "segno_pedal_tile_TRACK4.dxf": "7ee1220ed201b417a96261ff067d130c802a6f9eee7383780bdac58e7fd2a71d",
+        "segno_pedal_tile_CLEAR.dxf": "a6d87ce97fe31553e248a834a265970b758487a0e77099a142dcb3db334d7b03",
+        "segno_pedal_tile_BANK.dxf": "66319aa0a09f2418f3597bcde62225bdc17d4b31591acdb9ddaf4aaa4f633f8f",
+        "segno_pedal_tile_REC_PLAY.pdf": "390d3df75b73725b1138c9bf7ac8a0c24021dbf52cb29f3a40cfdf784b0abbb7",
+        "segno_pedal_tile_STOP.pdf": "65f4cf48d0118fcd4a4731953466fa32c8982acd4163cbed6cc20b6458896617",
+        "segno_pedal_tile_UNDO.pdf": "7119d069e4f9e7a6715bed7ece9deaf36f75fca9b742b2ab418661170594da21",
+        "segno_pedal_tile_MODE.pdf": "385b5975d31629725ac4771d509b61732274f3c78a26883d4e73ac6c3a1c5c9f",
+        "segno_pedal_tile_TRACK1.pdf": "e714f205467715d01865d536b44650ad60b05d2d7014b57d1b71ee6a4d323406",
+        "segno_pedal_tile_TRACK2.pdf": "926c688d77cf9370fd232ac63d3e9fa997d2beeedca10d43cc89dcef1295388f",
+        "segno_pedal_tile_TRACK3.pdf": "1751ad761f606a4a1c3660c58391edf7eef5d6ac5939c0d2a9eed4d76cde5b39",
+        "segno_pedal_tile_TRACK4.pdf": "dbfa85c526483686e15c7ae1de2a72e90212fb79b55fb3d693a339aa4b2fd869",
+        "segno_pedal_tile_CLEAR.pdf": "063d8741b920e9c0238b13242c39522efcef5c325f4a997d48b1fe4e43bc5dc5",
+        "segno_pedal_tile_BANK.pdf": "47cdb41a5f991b06161f09725b2b69fdeb91b8f685649952c79ecec9fcb806e7"
+      },
+      "member_count": 22
+    },
+    "segno_pintura.zip": {
+      "sha256": "1c7a404fe57ec2ddb070fa37ffef5ca0b518773c51e1315a01f24c39d4e83cb7",
+      "members": {
+        "segno_paint_quote.pdf": "950b9486003d692ab1445f8387b6e9dc30434430fb26c898e5642730523a6e9b",
+        "segno_base.pdf": "5422cacdd0183e861878d319275c44d05cbe294f843ed21e803ef73874d1677d",
+        "segno_faceplate.pdf": "0690f5a4da0e82c7ac56e61dde645fa91d1f04829adb27266181338f493c32fe",
+        "segno_rear_panel.pdf": "23037350ba2fddefca64a15eda32215ce734b6a72dae5f4165c2aa7d38b77d45",
+        "segno_corner_bracket_rear.pdf": "73d59a82f8f41fc82b77de3de675f96476830a6ba2e4f01ba3d9d2a1b5791f1f",
+        "segno_corner_bracket_rear_mirrored.pdf": "46a800caf03fa5d513944174aa28b23d24686c987dc25ee26fc8dd59c7c31daf",
+        "segno_ring_disc.pdf": "0f4d0a3616d2d752ded3319c2ff4bda63ab6dd3bb89b80a388da0eaa1a43ed0f",
+        "segno_post.pdf": "8a13fb191d86019cdc9bde5c5e6e626ade8c84c15fc2d9ba6b6d7244e355a41c"
+      },
+      "member_count": 8
+    },
+    "segno_sheetmetal.zip": {
+      "sha256": "9c9a5678230fdc49104e7bee4a768e2d96936f64670d1ae03aba42ac054ed190",
+      "members": {
+        "segno_faceplate.dxf": "3fb4ce345300806043d9c4002caee07ece1f54189174c51700d5274dd2370230",
+        "segno_faceplate.pdf": "0690f5a4da0e82c7ac56e61dde645fa91d1f04829adb27266181338f493c32fe",
+        "segno_base.dxf": "1810424cc4b44b800323370099af70c19453121c9a1d18bcae279e74347d1167",
+        "segno_base.pdf": "5422cacdd0183e861878d319275c44d05cbe294f843ed21e803ef73874d1677d",
+        "segno_rear_panel.dxf": "29a0ca770a7f77c12b166043834490c22460e0c5392099da0e7e91e0bf24ec82",
+        "segno_rear_panel.pdf": "23037350ba2fddefca64a15eda32215ce734b6a72dae5f4165c2aa7d38b77d45",
+        "segno_ring_disc.dxf": "dfac80161e829b5e085ec2de1cc32d38ae29d241cf7423705ab639909a455ac9",
+        "segno_ring_disc.pdf": "0f4d0a3616d2d752ded3319c2ff4bda63ab6dd3bb89b80a388da0eaa1a43ed0f",
+        "segno_corner_bracket_rear.dxf": "b2a8c614f3b08bf693721bf21346e12b2753f912f8195291de46bfeec94f9f70",
+        "segno_corner_bracket_rear.pdf": "73d59a82f8f41fc82b77de3de675f96476830a6ba2e4f01ba3d9d2a1b5791f1f",
+        "segno_corner_bracket_rear_mirrored.dxf": "d887fe30da7d48c4aa099db8e79843f86afeaf95954ae5b0a170639464937762",
+        "segno_corner_bracket_rear_mirrored.pdf": "46a800caf03fa5d513944174aa28b23d24686c987dc25ee26fc8dd59c7c31daf",
+        "segno_post.dxf": "74556a283deaf558f76421637a25bfe5c24ee0edb0df715d1c9d38725dcb022f",
+        "segno_post.pdf": "8a13fb191d86019cdc9bde5c5e6e626ade8c84c15fc2d9ba6b6d7244e355a41c"
+      },
+      "member_count": 14
+    },
+    "segno_sheetmetal_step.zip": {
+      "sha256": "894054039fd0409dc9b77c1061bef4a38941b3fd946a016d2d0a1131f4bfd0f4",
+      "members": {
+        "segno_assembly.step": "02ddd5e94f89b33fc71dab2819e6801de104c04ccce0d677696087203d099632",
+        "segno_faceplate.step": "38bbde2afa694603959f92965159318a2c098ae5d8e6f7f127f1a5e2e7251e25",
+        "segno_base.step": "2e9976ec08f5719bd3ad19980c6c36938089901fa860633eafee6fe16e72e52a",
+        "segno_rear_panel.step": "814b4649fdc4769e212d113a6ce6866f9d83493413f4b7cacd096d36a72df27c",
+        "segno_ring_disc.step": "24247bc8edd8eadbd3dfc3ee3bc6659dd030a82dc1b8322e2e53081596e28d4f",
+        "segno_corner_bracket_rear.step": "69e878582085c4c89c1fd50e779d5005c447d59ea5b0d4d83deb3d4847bbb9a1",
+        "segno_corner_bracket_rear_mirrored.step": "12dcbd799e6500a6c0a90499f087099e79969381e5de84c9a515a4d43143031f",
+        "segno_post.step": "5b774f77d0849900c35cc3c5cc4051d5a68b4cc94332c41d0263eff5bdb23479"
+      },
+      "member_count": 8
+    }
+  },
+  "flat_parity": {
+    "segno_faceplate": {
+      "matched_reference_holes": 10,
+      "missing_area_mm2": 0.008358020637356134,
+      "extra_area_mm2": 0.008358020743416184,
+      "area_tolerance_mm2": 0.01
+    },
+    "segno_base": {
+      "matched_reference_holes": 107,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "segno_corner_bracket_rear": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "segno_corner_bracket_rear_mirrored": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    }
+  },
+  "pdf_pages": {
+    "segno_base.pdf": 2,
+    "segno_corner_bracket_rear.pdf": 1,
+    "segno_corner_bracket_rear_mirrored.pdf": 1,
+    "segno_faceplate.pdf": 2,
+    "segno_overlay.pdf": 1,
+    "segno_paint_quote.pdf": 4,
+    "segno_pedal_base_gauge.pdf": 1,
+    "segno_pedal_tile_BANK.pdf": 1,
+    "segno_pedal_tile_CLEAR.pdf": 1,
+    "segno_pedal_tile_MODE.pdf": 1,
+    "segno_pedal_tile_REC_PLAY.pdf": 1,
+    "segno_pedal_tile_STOP.pdf": 1,
+    "segno_pedal_tile_TRACK1.pdf": 1,
+    "segno_pedal_tile_TRACK2.pdf": 1,
+    "segno_pedal_tile_TRACK3.pdf": 1,
+    "segno_pedal_tile_TRACK4.pdf": 1,
+    "segno_pedal_tile_UNDO.pdf": 1,
+    "segno_pedal_tiles.pdf": 1,
+    "segno_post.pdf": 1,
+    "segno_rear_panel.pdf": 1,
+    "segno_ring_disc.pdf": 1
+  },
+  "contours": {
+    "segno_faceplate": "pass",
+    "segno_base": "pass",
+    "segno_rear_panel": "pass",
+    "segno_ring_disc": "pass",
+    "segno_corner_bracket_rear": "pass",
+    "segno_corner_bracket_rear_mirrored": "pass",
+    "segno_post": "pass"
+  },
+  "fresh_source_parity": {
+    "segno_faceplate": "pass",
+    "segno_base": "pass",
+    "segno_rear_panel": "pass",
+    "segno_ring_disc": "pass",
+    "segno_corner_bracket_rear": "pass",
+    "segno_corner_bracket_rear_mirrored": "pass",
+    "segno_post": "pass"
+  },
+  "documentation_BOM": {
+    "segno_base": 1,
+    "segno_faceplate": 1,
+    "segno_rear_panel": 1,
+    "segno_corner_bracket_rear": 1,
+    "segno_corner_bracket_rear_mirrored": 1,
+    "segno_ring_disc": 1,
+    "segno_post": 2
+  },
+  "rear_seam_pdf_and_doc_requirement": "pass: 0.05 nominal / 0.00\u20130.10 dry fit"
+}

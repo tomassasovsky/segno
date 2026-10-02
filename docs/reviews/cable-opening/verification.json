@@ -1,0 +1,123 @@
+{
+  "date": "2026-09-09",
+  "scope": "Console rear cable opening only",
+  "dimensions_mm": {
+    "measured_width": 7.6,
+    "measured_height": 11.45,
+    "clearance_per_side": 0.5,
+    "slot_width": 8.6,
+    "bottom_above_bare_case_underside": 6.95,
+    "vertical_measurement_discrepancy": 1.05,
+    "top_open_for_insertion": true
+  },
+  "tests": {
+    "command": "python -m unittest discover -s hardware/enclosure/tests",
+    "passed": 50,
+    "elapsed_seconds": 70.889
+  },
+  "geometry": [
+    {
+      "part": "front",
+      "removed_mm3": 0.0,
+      "added_mm3": 695.7827155920108,
+      "added_only_inside_old_slot": true,
+      "stl_closed": true,
+      "triangles": 2108
+    },
+    {
+      "part": "mid",
+      "removed_mm3": 0.0,
+      "added_mm3": 695.7827155919626,
+      "added_only_inside_old_slot": true,
+      "stl_closed": true,
+      "triangles": 4140
+    }
+  ],
+  "native": [
+    {
+      "document": "VAMP console (populated)",
+      "version": 355,
+      "modified": false,
+      "unchanged_occurrences": 442,
+      "total_occurrences": 452,
+      "warnings_unchanged": true,
+      "source_checks": [
+        {
+          "part": "front",
+          "instances": 8,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 53457.673846859674
+        },
+        {
+          "part": "mid",
+          "instances": 2,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 164891.9815796129
+        }
+      ]
+    },
+    {
+      "document": "VAMP sheet metal",
+      "version": 141,
+      "modified": false,
+      "unchanged_occurrences": 35,
+      "total_occurrences": 45,
+      "warnings_unchanged": true,
+      "source_checks": [
+        {
+          "part": "front",
+          "instances": 8,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 53457.673846859674
+        },
+        {
+          "part": "mid",
+          "instances": 2,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 164891.9815796129
+        }
+      ]
+    }
+  ],
+  "artifacts": {
+    "changed_output_files": [
+      "segno_3dprint.zip",
+      "segno_platform_front_ring.step",
+      "segno_platform_front_ring.stl",
+      "segno_platform_mid_ring.step",
+      "segno_platform_mid_ring.stl"
+    ],
+    "print_zip_members": 36,
+    "zip_matches_current_files": true,
+    "other_output_files_unchanged": true,
+    "sheetmetal_zip_sha256": "d2329edf667586356f759a7ce9282a4ffc76195bff03da4c540ad787232829d9"
+  },
+  "user_visibility_changes_preserved": {
+    "populated": [
+      "pedals:1",
+      "tile_REC_PLAY:1",
+      "base:1"
+    ]
+  },
+  "selected_collar_faceplate_gap_mm": 0.179998366796031,
+  "physical_checks_remaining": [
+    "First printed cable/strain-relief fit",
+    "Actual M3 5x5 insert fit",
+    "Assembled structural qualification"
+  ],
+  "review": {
+    "roles_completed": [
+      "vgv",
+      "architecture",
+      "test-quality",
+      "simplicity",
+      "readiness"
+    ],
+    "independent_reviewers": 3,
+    "unresolved_findings": 0
+  }
+}
