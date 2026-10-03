@@ -145,6 +145,7 @@ void main() {
       ),
       settings: settingsFromLooper(
         looper,
+        clickMode: looper.sessionTransport.clickMode,
         recordTiming: RecordTimingSnapshot(
           defaultTiming: looper.defaultRecordTiming,
           rememberedDivision: looper.sessionTransport.quantizeDiv,

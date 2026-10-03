@@ -1,4 +1,5 @@
 export 'fake_audio_engine.dart';
+export 'fake_click_mode_control.dart';
 export 'fake_click_volume_control.dart';
 export 'fake_decay_control.dart';
 export 'fake_key_value_store.dart';

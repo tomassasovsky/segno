@@ -23,6 +23,7 @@ import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
+import '../helpers/fake_click_mode_control.dart';
 import '../helpers/fake_click_volume_control.dart';
 import '../helpers/fake_decay_control.dart';
 import '../helpers/fake_key_value_store.dart';
@@ -141,6 +142,7 @@ void main() {
       recordLengthControl: FakeRecordLengthControl(),
       recordTimingControl: FakeRecordTimingControl(),
       clickVolumeControl: FakeClickVolumeControl(),
+      clickModeControl: FakeClickModeControl(),
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,

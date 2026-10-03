@@ -1571,6 +1571,12 @@ struct le_engine {
    * default to click-off values (mode off, mask 0 = unrouted, count-in 0 =
    * off) so the untouched engine is bit-identical to the click-free build. */
   _Atomic int32_t a_click_mode;         /* le_click_mode; default 0 = off */
+  _Atomic uint32_t a_click_mode_revision;
+  _Atomic int32_t a_click_mode_result;
+  uint32_t click_mode_posted_revision; /* sole control producer */
+  uint64_t click_mode_command; /* command publication reserves one request */
+  uint32_t click_mode_publish_revision; /* callback completion at block tail */
+  int click_mode_publish_pending;
   _Atomic uint32_t a_click_mask;        /* output bitmask; default 0 = unrouted */
   _Atomic uint32_t a_click_volume_bits; /* float bits, 0..LE_MAX_GAIN; def. 1 */
   /* Callback-published exclusive recording-start choice: positive = count-in

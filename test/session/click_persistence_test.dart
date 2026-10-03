@@ -21,6 +21,16 @@ import '../helpers/fake_key_value_store.dart';
 class _ClickStore extends FakeKeyValueStore {
   Completer<void>? pendingWrite;
   bool writeEntered = false;
+  bool delayMode = false;
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    if (key == 'tempo.click_mode' && delayMode && pendingWrite != null) {
+      writeEntered = true;
+      await pendingWrite!.future;
+    }
+    await super.setInt(key, value);
+  }
 
   @override
   Future<void> setDouble(String key, double value) async {
@@ -96,7 +106,7 @@ void main() {
         mixSettings: mix,
         mixPersistence: SettingsMixPersistence(settings),
         fxPersistence: FxChainPersistence(looper: looper),
-        runClickVolumeExclusive: tempo.runClickVolumeExclusive,
+        runClickExclusive: tempo.runClickExclusive,
         runPlaybackExclusive: playback.runPlaybackExclusive,
         runRecordExclusive: <T>(operation) => operation(),
         runRecordTimingExclusive: <T>(operation) => operation(),
@@ -115,13 +125,15 @@ void main() {
         currentDurableDecay: () => playback.durableDecaySnapshot,
         currentDurableOneShot: () => playback.durableOneShotSnapshot,
         currentDurableClickVolume: () => tempo.durableClickVolume,
+        currentDurableClickMode: () => tempo.durableClickMode,
         exportDirectory: () async => directory.path,
       );
       expect((await tempo.setClickVolume(.4)).isOk, isTrue);
       expect(looper.record(), EngineResult.ok);
       engine.pump(frames: 256, input: .5);
       expect(looper.record(), EngineResult.ok);
-      engine.pump(frames: 0);
+      engine.pump();
+      expect(engine.snapshot().tracks.first.state, TrackState.playing);
     });
 
     tearDown(() async {
@@ -184,6 +196,77 @@ void main() {
       final bundle = await sessions.read(await sessions.bundlePath('Pending'));
       expect(bundle.session.clickVolume, closeTo(1.2, 1e-6));
     });
+
+    test('Hear click Save As and Save retain Released, not Held', () async {
+      expect((await tempo.setClickMode(ClickMode.off)).isOk, isTrue);
+      expect(
+        (await tempo.setControllerClickMode(
+          ClickMode.playRec,
+          releasedMode: ClickMode.off,
+          lifetime: tempo.clickModeLifetime,
+          revision: tempo.clickModeRevision,
+        )).isOk,
+        isTrue,
+      );
+      await session.saveAs('Held mode');
+      expect(session.state.status, SessionStatus.success);
+      var bundle = await sessions.read(await sessions.bundlePath('Held mode'));
+      expect(bundle.session.clickMode, ClickMode.off);
+      expect(engine.snapshot().clickMode, ClickMode.playRec);
+      expect(tempo.clickModeSnapshot?.mode, ClickMode.playRec);
+      expect(bundle.session.clickVolume, closeTo(.4, 1e-6));
+      expect((await tempo.setClickVolume(.7)).isOk, isTrue);
+      await session.save();
+      expect(session.state.status, SessionStatus.success);
+      bundle = await sessions.read(await sessions.bundlePath('Held mode'));
+      expect(bundle.session.clickVolume, closeTo(.7, 1e-6));
+      expect(bundle.session.clickMode, ClickMode.off);
+      expect(engine.snapshot().clickMode, ClickMode.playRec);
+      expect(await settings.readClickModeCheckpoint(), 0);
+    });
+
+    test(
+      'Session capture waits for pending Hear click before saving',
+      () async {
+        store
+          ..delayMode = true
+          ..pendingWrite = Completer<void>();
+        final edit = tempo.setClickMode(ClickMode.rec);
+        for (var attempt = 0; attempt < 50 && !store.writeEntered; attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+        }
+        expect(store.writeEntered, isTrue);
+        var saved = false;
+        final save = session.saveAs('Pending mode').then((_) => saved = true);
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(saved, isFalse);
+        expect(await sessions.listSessions(), isEmpty);
+        store.pendingWrite!.complete();
+        expect((await edit).isOk, isTrue);
+        await save;
+        expect(session.state.status, SessionStatus.success);
+        final bundle = await sessions.read(
+          await sessions.bundlePath('Pending mode'),
+        );
+        expect(bundle.session.clickMode, ClickMode.rec);
+        expect(engine.snapshot().clickMode, ClickMode.rec);
+      },
+    );
+
+    test(
+      'recall restores explicit Off without rewriting startup mode',
+      () async {
+        expect((await tempo.setClickMode(ClickMode.off)).isOk, isTrue);
+        await session.saveAs('No click');
+        expect((await tempo.setClickMode(ClickMode.playRec)).isOk, isTrue);
+        await session.loadNamed('No click');
+        expect(session.state.status, SessionStatus.success);
+        expect(tempo.clickModeSnapshot?.mode, ClickMode.off);
+        expect(tempo.durableClickMode, ClickMode.off);
+        expect(engine.snapshot().clickMode, ClickMode.off);
+        expect(await settings.readClickModeCheckpoint(), 3);
+      },
+    );
 
     test(
       'recall restores saved Click without rewriting startup gain',

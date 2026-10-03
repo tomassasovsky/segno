@@ -99,7 +99,7 @@ void main() {
         mixSettings: mix,
         mixPersistence: SettingsMixPersistence(settings),
         fxPersistence: FxChainPersistence(looper: looper),
-        runClickVolumeExclusive: tempo.runClickVolumeExclusive,
+        runClickExclusive: tempo.runClickExclusive,
         runPlaybackExclusive: playback.runPlaybackExclusive,
         runRecordExclusive: <T>(operation) => operation(),
         runRecordTimingExclusive: <T>(operation) => operation(),
@@ -118,6 +118,7 @@ void main() {
         currentDurableDecay: () => playback.durableDecaySnapshot,
         currentDurableOneShot: () => playback.durableOneShotSnapshot,
         currentDurableClickVolume: () => tempo.durableClickVolume,
+        currentDurableClickMode: () => tempo.durableClickMode,
         exportDirectory: () async => directory.path,
       );
       expect((await playback.setOverdubDecay(20)).isOk, isTrue);

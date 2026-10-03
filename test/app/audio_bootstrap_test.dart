@@ -98,6 +98,28 @@ class _TimingBootStore extends FakeKeyValueStore {
   }
 }
 
+class _ClickModeBootStore extends FakeKeyValueStore {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'tempo.click_mode') {
+      if (!entered.isCompleted) entered.complete();
+      await release.future;
+    }
+    return super.getInt(key);
+  }
+}
+
+class _ClickModeBootEngine extends FakeAudioEngine {
+  bool refuseMode = false;
+
+  @override
+  EngineResult setClickMode(ClickMode mode) =>
+      refuseMode ? EngineResult.invalid : super.setClickMode(mode);
+}
+
 class _OnceBootEngine extends FakeAudioEngine {
   bool refuseOnce = false;
 
@@ -161,6 +183,98 @@ void main() {
         ),
       );
     }
+
+    group('confirmed Hear click startup', () {
+      for (final hasAudioConfig in [false, true]) {
+        for (final stored in <int?>[null, 0, 1, 2, 3]) {
+          test('config=$hasAudioConfig stored=$stored', () async {
+            if (hasAudioConfig) {
+              await settings.saveAudioConfig(
+                const StoredAudioConfig(sampleRate: 48000, bufferFrames: 256),
+              );
+            }
+            if (stored != null) store.values['tempo.click_mode'] = stored;
+            final result = await tryAutoStartEngine(
+              repository: repository,
+              settings: settings,
+              mixSettings: testMixSettings(repository, settings: settings),
+            );
+            expect(result.started, isTrue);
+            expect(repository.clickModeSettled, isTrue);
+            expect(repository.clickModeRecoveryRequired, isFalse);
+            expect(engine.snapshot().clickMode.code, stored ?? 2);
+            expect(repository.sessionTransport.clickMode.code, stored ?? 2);
+            expect(store.values['tempo.click_mode'], stored);
+            expect(
+              store.values.containsKey('tempo.click_mode'),
+              stored != null,
+            );
+          });
+        }
+      }
+
+      for (final malformed in <Object>['2', 1.5, -1, 4]) {
+        test(
+          'invalid Hear click $malformed stays intact and stops startup',
+          () async {
+            store.values['tempo.click_mode'] = malformed;
+            final result = await tryAutoStartEngine(
+              repository: repository,
+              settings: settings,
+              mixSettings: testMixSettings(repository, settings: settings),
+            );
+            expect(result.started, isFalse);
+            expect(result.recoveryConfig, isNull);
+            expect(engine.startCalls, 0);
+            expect(store.values['tempo.click_mode'], malformed);
+            expect(engine.clickModeRequests, isEmpty);
+          },
+        );
+      }
+
+      test('pending Hear click read cannot open the audio device', () async {
+        final delayed = _ClickModeBootStore();
+        delayed.values['tempo.click_mode'] = 0;
+        final saved = SettingsRepository(store: delayed);
+        final starting = tryAutoStartEngine(
+          repository: repository,
+          settings: saved,
+          mixSettings: testMixSettings(repository, settings: saved),
+        );
+        await delayed.entered.future;
+        expect(engine.startCalls, 0);
+        expect(engine.clickModeRequests, isEmpty);
+        delayed.release.complete();
+        expect((await starting).started, isTrue);
+        expect(engine.snapshot().clickMode, ClickMode.off);
+      });
+
+      for (final refused in [false, true]) {
+        test(
+          'unconfirmed Hear click replay blocks startup; refused=$refused',
+          () async {
+            final failed = _ClickModeBootEngine()
+              ..refuseMode = refused
+              ..publishClickModeCommands = false;
+            final looper = LooperRepository(
+              engine: failed,
+              ticker: const Stream<void>.empty(),
+            );
+            addTearDown(looper.dispose);
+            store.values['tempo.click_mode'] = 3;
+            final result = await tryAutoStartEngine(
+              repository: looper,
+              settings: settings,
+              mixSettings: testMixSettings(looper, settings: settings),
+            );
+            expect(result.started, isFalse);
+            expect(failed.startCalls, 1);
+            expect(failed.stopCalls, greaterThan(0));
+            expect(store.values['tempo.click_mode'], 3);
+          },
+        );
+      }
+    });
 
     group('complete Record timing startup', () {
       for (final hasAudioConfig in [false, true]) {

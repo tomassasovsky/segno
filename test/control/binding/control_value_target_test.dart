@@ -97,6 +97,37 @@ void main() {
       expect(click.isStructurallyValid, isTrue);
     });
 
+    test('Hear click has one strict key and four user-ordered choices', () {
+      const target = ClickModeValueTarget();
+      expect(target.canonicalString(), '{"ctl":"clickMode"}');
+      expect(ControlValueTarget.tryParse(target.canonicalString()), target);
+      expect(target.isStructurallyValid, isTrue);
+      expect(target.relativeStep, 1 / 3);
+      for (final (position, mode) in <(double, ClickMode)>[
+        (0, ClickMode.off),
+        (1 / 3, ClickMode.recFirst),
+        (2 / 3, ClickMode.rec),
+        (1, ClickMode.playRec),
+      ]) {
+        expect(target.toDomain(position), mode);
+        expect(target.fromDomain(mode), position);
+      }
+      expect(target.toDomain(0.16), ClickMode.off);
+      expect(target.toDomain(0.17), ClickMode.recFirst);
+      expect(target.toDomain(0.5), ClickMode.rec);
+      expect(target.toDomain(-1), ClickMode.off);
+      expect(target.toDomain(2), ClickMode.playRec);
+      expect(() => target.toDomain(double.nan), throwsArgumentError);
+      expect(() => target.toDomain(double.infinity), throwsArgumentError);
+      for (final malformed in [
+        '{"ctl":"clickMode","index":0}',
+        '{"ctl":"clickMode","mode":0}',
+        '{"ctl":"clickMode","lane":null}',
+      ]) {
+        expect(ControlValueTarget.tryParse(malformed), isNull);
+      }
+    });
+
     test('Record timing identities and seven musical positions are exact', () {
       const defaults = DefaultRecordTimingTarget();
       const track = TrackRecordTimingTarget(7);

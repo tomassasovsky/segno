@@ -32,6 +32,27 @@ Future<AutoStartResult> tryAutoStartEngine({
   required SettingsRepository settings,
   required MixSettingsCoordinator mixSettings,
 }) => mixSettings.runExclusive(() async {
+  // Read exact intent before starting audio. An absent preference selects
+  // First recording without writing a preference or changing click routing.
+  try {
+    final savedMode = await settings.readClickModeCheckpoint();
+    final request = repository.setClickMode(
+      ClickMode.fromCode(savedMode ?? ClickMode.recFirst.code),
+    );
+    final result = request.isOk ? await repository.settleClickMode() : request;
+    if (!result.isOk) {
+      throw StateError('Saved Hear click replay refused: ${result.name}');
+    }
+  } on Object catch (error) {
+    AppLog.error('audio auto-start: saved Hear click failed: $error');
+    repository.stopEngine();
+    return (
+      started: false,
+      asioDrivers: const <AudioDevice>[],
+      recoveryConfig: null,
+    );
+  }
+
   // Validate every scalar before changing any decay. Fixed empty tracks and
   // absent overrides are part of the saved intent, just like explicit zero.
   // Bootstrap owns this initial replay before the runtime owner is created.
@@ -291,6 +312,14 @@ Future<AutoStartResult> _tryAutoStartEngine({
   }
   // A successful enqueue is not a callback confirmation. Finish the engine's
   // initial mode/length replay before applying saved choices.
+  final startupClick = await repository.settleClickMode();
+  if (!startupClick.isOk) {
+    AppLog.error(
+      'audio auto-start: Hear click replay refused ${startupClick.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
   final startupLength = await repository.settleLengthSettings();
   if (!startupLength.isOk) {
     AppLog.error(
@@ -632,6 +661,14 @@ Future<bool> _firstRunAutoStart({
   }
   if (!result.isOk) {
     AppLog.error('audio first-run: open failed result=${result.name}');
+    return false;
+  }
+  final startupClick = await repository.settleClickMode();
+  if (!startupClick.isOk) {
+    AppLog.error(
+      'audio first-run: Hear click replay refused ${startupClick.name}',
+    );
+    repository.stopEngine();
     return false;
   }
   final startupLength = await repository.settleLengthSettings();

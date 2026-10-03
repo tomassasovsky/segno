@@ -131,7 +131,7 @@ void main() {
     unawaited(r.owner.load());
     double? captured;
     unawaited(
-      r.owner.runClickVolumeExclusive(() async {
+      r.owner.runClickExclusive(() async {
         captured = r.owner.durableClickVolume;
       }),
     );
@@ -316,17 +316,19 @@ void main() {
     expect(ordinary, [1.5]);
     unawaited(sub.cancel());
   });
-  check('explicit Retry clears safe refusal for flush without another edit', (
+  check('compensated refusal permits flush without requiring another edit', (
     r,
   ) {
     r.load();
     r.engine.refuseClick = true;
-    unawaited(r.owner.setClickVolume(1.5));
+    ClickVolumeOutcome? write;
+    unawaited(r.owner.setClickVolume(1.5).then((v) => write = v));
     r.pump();
     ClickVolumeOutcome? flush;
     unawaited(r.owner.flushClickVolume().then((v) => flush = v));
     r.pump();
-    expect(flush!.status, ClickVolumeStatus.rejected);
+    expect(write!.status, ClickVolumeStatus.rejected);
+    expect(flush!.status, ClickVolumeStatus.applied);
     unawaited(r.owner.recoverClickVolume());
     r.pump();
     unawaited(r.owner.flushClickVolume().then((v) => flush = v));
@@ -479,7 +481,7 @@ void main() {
       ..onReadFailure = () {
         unawaited(
           r.owner
-              .runClickVolumeExclusive(() async {
+              .runClickExclusive(() async {
                 captured = true;
               })
               .catchError((Object error) {
@@ -495,7 +497,7 @@ void main() {
     unawaited(r.owner.recoverClickVolume());
     r.pump();
     unawaited(
-      r.owner.runClickVolumeExclusive(() async {
+      r.owner.runClickExclusive(() async {
         captured = true;
       }),
     );

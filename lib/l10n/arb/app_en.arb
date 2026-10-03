@@ -5743,5 +5743,10 @@
     "recordTimingSettingsRecoveryBody": "Retry to recover the record timing settings.",
     "@recordTimingSettingsRecoveryBody": {"description": "Recovery action for recording timing."},
     "recordTimingUnavailable": "Record timing is not ready",
-    "@recordTimingUnavailable": {"description": "Timing has no confirmed value during initialization or recovery."}
+    "@recordTimingUnavailable": {"description": "Timing has no confirmed value during initialization or recovery."},
+    "clickModeCaptureLocked": "Finish recording to change Hear click.",
+    "clickModeUnavailable": "Hear click is unavailable.",
+    "clickModeSettingsRecoveryTitle": "Hear click needs attention",
+    "clickModeSettingsRefusedTitle": "Hear click was not changed",
+    "clickModeSettingsRecoveryBody": "Retry to confirm the saved click setting."
 }

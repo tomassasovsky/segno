@@ -102,6 +102,7 @@ SessionChains chainsFromLooper(
 SessionSettings settingsFromLooper(
   LooperRepository looper, {
   required double clickVolume,
+  required ClickMode clickMode,
   required DecaySnapshot decay,
   required OneShotSnapshot oneShot,
   required RecordLengthSnapshot recordLength,
@@ -148,7 +149,7 @@ SessionSettings settingsFromLooper(
       pairs: snapshot.inputSetup.pairs,
     ),
     outputSetup: _sessionOutputSetup(snapshot.outputSetup),
-    clickMode: transport.clickMode,
+    clickMode: clickMode,
     clickMask: transport.clickMask,
     clickVolume: clickVolume,
     countInBars: transport.countInBars,

@@ -380,7 +380,12 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->loop_bars = load_i32(&engine->a_loop_bars);
   out->current_beat = load_i32(&engine->a_current_beat);
   /* Click + count-in (trailing block; click-off defaults read 0/0/1/0/0/0). */
+  /* A command receipt is sampled only after commands_settled acquired the
+   * callback boundary, synchronously before the sole producer posts another. */
   out->click_mode = load_i32(&engine->a_click_mode);
+  out->click_mode_revision = atomic_load_explicit(&engine->a_click_mode_revision,
+                                                 memory_order_relaxed);
+  out->click_mode_result = load_i32(&engine->a_click_mode_result);
   out->click_mask =
       atomic_load_explicit(&engine->a_click_mask, memory_order_relaxed);
   out->click_volume = load_f32(&engine->a_click_volume_bits);

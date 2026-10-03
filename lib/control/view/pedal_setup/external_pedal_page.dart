@@ -517,6 +517,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
     final clickVolume = context.watch<TempoCubit>().clickVolume;
+    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
     final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
     final oneShotSnapshot = context
         .watch<PlaybackOptionsCubit>()
@@ -542,12 +543,18 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           available: looper.valueTargetResolves(
             mapping.target,
             clickVolume: clickVolume,
+            clickModeSnapshot: clickModeSnapshot,
             decaySnapshot: decaySnapshot,
             oneShotSnapshot: oneShotSnapshot,
             recordLengthSnapshot: recordLengthSnapshot,
             recordTimingSnapshot: recordTimingSnapshot,
           ),
           disabledReason:
+              clickModeDisabledReason(
+                l10n,
+                mapping.target,
+                clickModeSnapshot,
+              ) ??
               recordLengthDisabledReason(
                 l10n,
                 mapping.target,
@@ -565,6 +572,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
 
   List<ExpressionDestination> _destinations(BuildContext context) {
     final clickVolume = context.watch<TempoCubit>().clickVolume;
+    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
     final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
     final oneShotSnapshot = context
         .watch<PlaybackOptionsCubit>()
@@ -580,6 +588,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
       context.watch<TracksCubit>().state.names,
       context.read<LooperRepository>(),
       clickVolume: clickVolume,
+      clickModeSnapshot: clickModeSnapshot,
       decaySnapshot: decaySnapshot,
       oneShotSnapshot: oneShotSnapshot,
       recordLengthSnapshot: recordLengthSnapshot,
@@ -640,6 +649,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     if (target is ClickVolumeTarget &&
         context.read<TempoCubit>().clickVolume == null) {
+      return;
+    }
+    if (target is ClickModeValueTarget &&
+        context.read<TempoCubit>().clickModeSnapshot?.canEdit != true) {
       return;
     }
     if (target is DecayValueTarget &&
@@ -1068,6 +1081,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
     final clickVolume = context.watch<TempoCubit>().clickVolume;
+    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
     final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
     final oneShotSnapshot = context
         .watch<PlaybackOptionsCubit>()
@@ -1102,12 +1116,18 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           available: looper.valueTargetResolves(
             parameter.target,
             clickVolume: clickVolume,
+            clickModeSnapshot: clickModeSnapshot,
             decaySnapshot: decaySnapshot,
             oneShotSnapshot: oneShotSnapshot,
             recordLengthSnapshot: recordLengthSnapshot,
             recordTimingSnapshot: recordTimingSnapshot,
           ),
           disabledReason:
+              clickModeDisabledReason(
+                l10n,
+                parameter.target,
+                clickModeSnapshot,
+              ) ??
               recordLengthDisabledReason(
                 l10n,
                 parameter.target,
@@ -1218,6 +1238,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     final l10n = context.l10n;
     final clickVolume = context.watch<TempoCubit>().clickVolume;
+    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
     final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
     final oneShotSnapshot = context
         .watch<PlaybackOptionsCubit>()
@@ -1300,6 +1321,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                       final acceptedClick = context
                           .read<TempoCubit>()
                           .clickVolume;
+                      final acceptedClickMode = context
+                          .read<TempoCubit>()
+                          .clickModeSnapshot;
                       final acceptedDecay = context
                           .read<PlaybackOptionsCubit>()
                           .decaySnapshot;
@@ -1308,6 +1332,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                           .oneShotSnapshot;
                       if (control.target is ClickVolumeTarget &&
                           acceptedClick == null) {
+                        return;
+                      }
+                      if (control.target is ClickModeValueTarget &&
+                          acceptedClickMode?.canEdit != true) {
                         return;
                       }
                       if (control.target is DecayValueTarget &&
@@ -1344,6 +1372,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                           context.read<LooperRepository>().readValueTarget(
                             control.target,
                             clickVolume: acceptedClick,
+                            clickModeSnapshot: acceptedClickMode,
                             decaySnapshot: acceptedDecay,
                             oneShotSnapshot: acceptedOneShot,
                             recordLengthSnapshot: acceptedLength,
@@ -1377,6 +1406,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                       context.read<LooperRepository>(),
                       withActivations: true,
                       clickVolume: clickVolume,
+                      clickModeSnapshot: clickModeSnapshot,
                       decaySnapshot: decaySnapshot,
                       oneShotSnapshot: oneShotSnapshot,
                       recordLengthSnapshot: recordLengthSnapshot,

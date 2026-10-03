@@ -137,6 +137,11 @@ void main() {
         l10n.clickVolumeLabel,
       );
       expect(
+        valueTargetLabel(l10n, names, looper, const ClickModeValueTarget()),
+        '${l10n.expressionDestinationLoopDefaults} · '
+        '${l10n.loopTempoHearClick}',
+      );
+      expect(
         valueTargetLabel(l10n, names, looper, const DefaultOneShotTarget()),
         '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopPlaybackLabel}',
       );
