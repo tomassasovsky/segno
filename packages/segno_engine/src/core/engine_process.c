@@ -2866,13 +2866,48 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
        * defining-loop finalizes (sync_grid_to_loop), never a live grid. */
       store_i32(&e->a_sync_tempo, cmd->arg_f != 0.0f ? 1 : 0);
       break;
-    case LE_CMD_SET_QUANTIZE_DIV: {
-      int32_t d = cmd->arg_i;
-      if (d < LE_GRID_DIV_OFF) d = LE_GRID_DIV_OFF;
-      if (d > LE_GRID_DIV_SIXTEENTH) d = LE_GRID_DIV_SIXTEENTH;
-      store_i32(&e->a_quantize_div, d);
+    case LE_CMD_SET_RECORD_TIMING: {
+      const le_record_timing_settings* v = &cmd->timing.settings;
+      int accepted = le_record_timing_valid(v);
+      for (int c = 0; c < e->track_count && accepted; ++c) {
+        const int state = load_i32(&e->tracks[c].a_state);
+        if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) accepted = 0;
+      }
+      atomic_store_explicit(&e->a_record_timing_revision, cmd->timing.revision - 1u, memory_order_seq_cst);
+#ifdef LE_NATIVE_TESTS
+      if (le_test_record_timing_hook) le_test_record_timing_hook(e, 1);
+#endif
+      if (accepted) {
+        atomic_store_explicit(&e->a_record_timing_default, v->default_timing, memory_order_seq_cst);
+        atomic_store_explicit(&e->a_quantize_div, v->remembered_division, memory_order_seq_cst);
+#ifdef LE_NATIVE_TESTS
+        if (le_test_record_timing_hook) le_test_record_timing_hook(e, 2);
+#endif
+        for (int c = 0; c < LE_MAX_TRACKS; ++c) {
+          const int code = v->track_timing[c];
+          atomic_store_explicit(&e->a_record_timing_track[c], code, memory_order_seq_cst);
+          atomic_store_explicit(&e->tracks[c].a_quantize_div_override,
+                                code < 0 ? -1 : code > 0 ? code - 1 : 0,
+                                memory_order_seq_cst);
+          const int affected = (v->edit_mask & (2u << c)) ||
+              ((v->edit_mask & 1u) && code < 0);
+          const int effective = code < 0 ? v->default_timing : code;
+          le_track* t = &e->tracks[c];
+          if (affected && effective == 0 && t->pending_record && t->pending_trigger == 0) {
+            t->pending_image.revision = 0;
+            t->pending_capture_shadow = 0;
+            t->pending_record = 0;
+            t->pending_trigger = 0;
+            store_i32(&t->a_pending, 0);
+          }
+        }
+      }
+      atomic_store_explicit(&e->a_record_timing_result, accepted ? LE_OK : LE_ERR_INVALID, memory_order_seq_cst);
+      e->record_timing_publish_revision = cmd->timing.revision;
+      e->record_timing_publish_pending = 1;
       break;
     }
+
     /* ---- looper mode (B2a, D4; see le_looper_mode_switch_blocked above).
      * Mode selection is not performance logged. */
     case LE_CMD_SET_LOOPER_MODE: {
@@ -6275,6 +6310,11 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   /* Session capture waits on publication, not a ring that becomes empty
    * before its last command is applied. Release covers every snapshot store
    * above; the control-side query acquires it before reading that snapshot. */
+  if (e->record_timing_publish_pending) {
+    atomic_store_explicit(&e->a_record_timing_revision,
+                          e->record_timing_publish_revision, memory_order_seq_cst);
+    e->record_timing_publish_pending = 0;
+  }
   atomic_store_explicit(&e->a_commands_published, e->commands_applied,
                          memory_order_release);
 }

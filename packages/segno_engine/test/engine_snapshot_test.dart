@@ -1620,6 +1620,9 @@ void main() {
         'overdubFeedback',
         // Changes on accepted human-paced mix publications, never per block.
         'mixRevision',
+        // Timing receipts advance only for accepted human-paced commands.
+        'recordTimingRevision',
+        'recordTimingResult',
         // Per-channel block peaks (slice 3), like outputPeak: written once per
         // block, read at render rate — not per-callback counters. One entry
         // per channel the device has; the C's fixed-width `input_trim` array

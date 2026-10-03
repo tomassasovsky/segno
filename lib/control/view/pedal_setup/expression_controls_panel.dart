@@ -337,6 +337,8 @@ class ExpressionControlsPanel extends StatelessWidget {
               enabled: row.available && row.disabledReason == null,
               keyboardStep: row.mapping.target is RecordLengthValueTarget
                   ? 1 / 64
+                  : row.mapping.target is RecordTimingValueTarget
+                  ? 1 / 6
                   : 0.01,
               onChanged: (next) => onEndpoint(isHeel: isHeel, value: next),
               onEditCancel: (opening) =>

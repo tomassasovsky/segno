@@ -31,6 +31,7 @@ import '../helpers/fake_decay_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/fake_one_shot_control.dart';
 import '../helpers/fake_record_length_control.dart';
+import '../helpers/fake_record_timing_control.dart';
 import '../helpers/test_mix_settings.dart';
 
 /// The control-sequence fuzzer: the REAL native engine (device-free pump) +
@@ -516,6 +517,7 @@ void main() {
           ..run(const [_Tap(PedalButton.recPlay)], fa) // 256 grid, t0 playing
           ..settle(fa)
           ..run(const [_SetQuantize(enabled: true)], fa)
+          ..settle(fa) // confirm timing before acquiring a new recording
           ..run(const [_Bloc('record', 1)], fa) // arms a quantized START
           ..run(const [_Pump(256, 0.5)], fa) // fires: t1 recording
           ..run(const [_Pump(64, 0.5)], fa) // capture something real
@@ -654,6 +656,7 @@ void main() {
           ..run(const [_Tap(PedalButton.recPlay)], fa) // 256-frame loop plays
           ..settle(fa)
           ..run(const [_SetQuantize(enabled: true)], fa)
+          ..settle(fa) // confirm timing before acquiring a new overdub
           ..run(const [_Bloc('record', 0)], fa) // arms for the next loop top
           ..run(const [_MuteTrack(0, muted: true)], fa) // muted while armed
           ..settle(fa);
@@ -729,6 +732,7 @@ class _Harness {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
+      recordTimingControl: FakeRecordTimingControl(),
       fxPersistence: fxPersistence,
       repository: repo,
       mixSettings: mixSettings,
@@ -748,6 +752,7 @@ class _Harness {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
+      recordTimingControl: FakeRecordTimingControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: fxPersistence,
       looper: repo,
@@ -1049,7 +1054,12 @@ class _SetQuantize extends _FuzzAction {
   const _SetQuantize({required this.enabled});
   final bool enabled;
   @override
-  void apply(_Harness h, FakeAsync fa) => h.repo.setQuantize(enabled: enabled);
+  void apply(_Harness h, FakeAsync fa) => h.repo.setRecordTiming(
+    RecordTiming.of(
+      quantize: enabled,
+      division: h.repo.sessionTransport.quantizeDiv,
+    ),
+  );
   @override
   String describe() => '_SetQuantize(enabled: $enabled)';
 }

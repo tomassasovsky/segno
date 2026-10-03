@@ -252,6 +252,60 @@ class _LengthStore extends FakeKeyValueStore {
   }
 }
 
+class _TimingStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+  bool refuseNextRead = false;
+
+  bool _isTiming(String key) =>
+      key == 'looper.quantize' ||
+      key == 'tempo.quantize_div' ||
+      key.startsWith('track_record_timing.');
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'track_record_timing.7' && refuseNextRead) {
+      refuseNextRead = false;
+      throw StateError('Record timing preference temporarily unavailable');
+    }
+    return super.getInt(key);
+  }
+
+  Future<void> _beforeWrite(String key) async {
+    if (_isTiming(key)) {
+      writeEntered = true;
+      await pendingWrite?.future;
+    }
+  }
+
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    await _beforeWrite(key);
+    await super.setBool(key, value: value);
+    if (_isTiming(key) && refuseWrite) {
+      throw StateError('Record timing write failed after mutation');
+    }
+  }
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    await _beforeWrite(key);
+    await super.setInt(key, value);
+    if (_isTiming(key) && refuseWrite) {
+      throw StateError('Record timing write failed after mutation');
+    }
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if (_isTiming(key) && refuseWrite) {
+      throw StateError('Record timing compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
 class _PowerKey implements PowerKeySource {
   final _presses = StreamController<void>.broadcast();
 
@@ -292,6 +346,25 @@ class _ShutdownMidi extends MidiDeviceRepository {
     await _inputs.close();
     await super.dispose();
   }
+}
+
+class _RefusingTimingEngine extends FakeAudioEngine {
+  bool refuseTiming = false;
+
+  @override
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
+  }) => refuseTiming
+      ? EngineResult.notReady
+      : super.setRecordTimingSettings(
+          defaultTiming: defaultTiming,
+          rememberedDivision: rememberedDivision,
+          trackOverrides: trackOverrides,
+          editMask: editMask,
+        );
 }
 
 /// Distinct track and mixed-output shapes expose a wrong waveform source.
@@ -571,6 +644,145 @@ void main() {
           await tester.pump();
         },
       );
+    }
+
+    for (final malformed in [false, true]) {
+      testWidgets(
+        'Record timing startup recovery is reachable; malformed=$malformed',
+        (tester) async {
+          final store = _TimingStore()..refuseNextRead = !malformed;
+          store.values.addAll({
+            'looper.quantize': true,
+            'tempo.quantize_div': 3,
+            'track_record_timing.7': malformed ? 7 : 0,
+          });
+          final before = Map<String, Object>.of(store.values);
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final context = tester.element(find.byType(TracksView));
+          final timing = context.read<RecordTimingCubit>();
+          expect(timing.state.recordTimingReady, isFalse);
+          expect(find.text('Record timing needs recovery'), findsOneWidget);
+          await tester.pump(const Duration(seconds: 6));
+          expect(find.text('Record timing needs recovery'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(timing.state.recordTimingReady, !malformed);
+          expect(store.values, before);
+          if (malformed) {
+            expect(find.text('Record timing needs recovery'), findsOneWidget);
+            expect(repository.trackRecordTimingOverrides, isEmpty);
+          } else {
+            expect(find.text('Record timing needs recovery'), findsNothing);
+            expect(timing.state.defaultTiming, RecordTiming.quarter);
+            expect(timing.state.trackOverrides, {7: RecordTiming.immediately});
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+        },
+      );
+    }
+
+    for (final channel in <int?>[null, 7]) {
+      testWidgets('power off waits for ordinary Record timing at $channel', (
+        tester,
+      ) async {
+        final store = _TimingStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final timing = context.read<RecordTimingCubit>();
+        final power = context.read<PowerOffCubit>();
+        store.pendingWrite = Completer<void>();
+        if (channel == null) {
+          unawaited(timing.setTiming(RecordTiming.half));
+        } else {
+          context.read<LooperBloc>().add(
+            LooperTrackRecordTimingChanged(
+              channel,
+              timing: RecordTiming.eighth,
+            ),
+          );
+        }
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        power.press(const PowerOffSnapshot());
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(power.state.phase, PowerOffPhase.flushing);
+        expect(halted, isFalse);
+        store.pendingWrite!.complete();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        if (channel == null) {
+          expect(store.values['looper.quantize'], true);
+          expect(store.values['tempo.quantize_div'], 2);
+        } else {
+          expect(store.values['track_record_timing.7'], 5);
+        }
+      });
+    }
+
+    for (final retry in [false, true]) {
+      testWidgets('Record timing failure keeps power on; retry=$retry', (
+        tester,
+      ) async {
+        final store = _TimingStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final timing = context.read<RecordTimingCubit>();
+        final power = context.read<PowerOffCubit>();
+        store.refuseWrite = true;
+        unawaited(timing.setTiming(RecordTiming.half));
+        await tester.pumpAndSettle();
+        expect(timing.state.defaultTiming, RecordTiming.immediately);
+        power.press(const PowerOffSnapshot());
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.flushFailed);
+        expect(halted, isFalse);
+        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        store.refuseWrite = false;
+        await tester.tap(
+          find.byKey(
+            Key(retry ? 'power_off_retry' : 'power_off_keep_playing'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(halted, retry);
+        if (!retry) {
+          // Staying on reopens input, but cannot prove a failed rollback.
+          expect(find.text('Record timing needs recovery'), findsOneWidget);
+          expect(timing.state.recordTimingReady, isFalse);
+          unawaited(timing.setTiming(RecordTiming.half));
+          await tester.pumpAndSettle();
+          expect(timing.state.defaultTiming, RecordTiming.immediately);
+          expect(timing.state.recordTimingReady, isFalse);
+          // Explicit timing recovery restores the exact absent checkpoint.
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(find.text('Record timing needs recovery'), findsNothing);
+        }
+        expect(store.values.containsKey('looper.quantize'), isFalse);
+        expect(store.values.containsKey('tempo.quantize_div'), isFalse);
+        if (!retry) {
+          unawaited(timing.setTiming(RecordTiming.half));
+          await tester.pumpAndSettle();
+          expect(timing.state.defaultTiming, RecordTiming.half);
+          expect(store.values['tempo.quantize_div'], 2);
+        }
+      });
     }
 
     for (final channel in <int?>[null, 7]) {
@@ -983,6 +1195,281 @@ void main() {
         },
       );
     }
+
+    testWidgets('compensated timing refusal does not block power off', (
+      tester,
+    ) async {
+      final rejectingEngine = _RefusingTimingEngine();
+      engine = rejectingEngine;
+      repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      );
+      final store = FakeKeyValueStore();
+      settings = SettingsRepository(store: store);
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      repository.startEngine(const EngineConfig());
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(TracksView));
+      final timing = context.read<RecordTimingCubit>();
+      final power = context.read<PowerOffCubit>();
+      rejectingEngine.refuseTiming = true;
+      bool? accepted;
+      unawaited(
+        timing.setTiming(RecordTiming.quarter).then((v) => accepted = v.isOk),
+      );
+      await tester.pumpAndSettle();
+      expect(accepted, isFalse);
+      expect(timing.state.defaultTiming, RecordTiming.immediately);
+      expect(timing.state.recordTimingReady, isTrue);
+      expect(store.values.containsKey('looper.quantize'), isFalse);
+      expect(store.values.containsKey('tempo.quantize_div'), isFalse);
+      expect(repository.recordTimingRecoveryRequired, isFalse);
+      power.press(const PowerOffSnapshot());
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(find.byKey(const Key('power_off_retry')), findsNothing);
+      // Let both the goodbye and the earlier refusal toast finish.
+      await tester.pump(const Duration(seconds: 6));
+      expect(haltCalls, 1);
+    });
+
+    for (final releasedBeforeShutdown in [false, true]) {
+      testWidgets(
+        'power off waits for an owed timing release; '
+        'releasedBeforeShutdown=$releasedBeforeShutdown',
+        (tester) async {
+          final rejectingEngine = _RefusingTimingEngine();
+          engine = rejectingEngine;
+          repository = LooperRepository(
+            engine: engine,
+            ticker: const Stream<void>.empty(),
+          );
+          final store = FakeKeyValueStore();
+          settings = SettingsRepository(store: store);
+          final midi = _ShutdownMidi(settings);
+          midiDeviceRepository = midi;
+          addTearDown(() => unawaited(midi.dispose()));
+          var haltCalls = 0;
+          await pumpApp(
+            tester,
+            NoopWaveformWindowService(),
+            powerOff: () async => haltCalls++,
+          );
+          repository.startEngine(const EngineConfig());
+          await tester.pumpAndSettle();
+          final context = tester.element(find.byType(TracksView));
+          final control = context.read<ControlCubit>();
+          final timing = context.read<RecordTimingCubit>();
+          final power = context.read<PowerOffCubit>();
+          final editor = Object();
+          control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+          MidiSaveResult? saved;
+          unawaited(
+            control
+                .saveMidiMapping(
+                  MidiMapping(
+                    id: 'held-timing-shutdown',
+                    source: MidiSource(
+                      device: 'shutdown-test',
+                      kind: ControllerSourceKind.midiCc,
+                      number: 21,
+                    ),
+                    behavior: MidiBehavior.momentary,
+                    controls: [
+                      MidiParameterControl(
+                        key: '{"ctl":"trackRecordTiming","index":0}',
+                        low: 0,
+                        high: 1,
+                      ),
+                    ],
+                  ),
+                  owner: editor,
+                  create: true,
+                )
+                .then((result) => saved = result),
+          );
+          await tester.pumpAndSettle();
+          expect(saved?.saved, isTrue);
+          control.endMidiEdit(editor);
+          midi.push(127);
+          await tester.pumpAndSettle();
+          expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
+          expect(
+            timing.durableRecordTimingSnapshot.trackOverrides[0],
+            RecordTiming.immediately,
+          );
+          rejectingEngine.refuseTiming = true;
+          if (releasedBeforeShutdown) {
+            midi.push(0);
+            await tester.pumpAndSettle();
+            expect(
+              debugAppToastActive(AppToastId.recordTimingSettings),
+              isTrue,
+            );
+            expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
+          }
+          final stopCalls = engine.stopCalls;
+          power.press(const PowerOffSnapshot());
+          await tester.pumpAndSettle();
+          expect(power.state.phase, PowerOffPhase.flushFailed);
+          expect(find.byKey(const Key('power_off_retry')), findsOneWidget);
+          expect(haltCalls, 0);
+          expect(engine.stopCalls, stopCalls);
+          expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
+          expect(store.values['track_record_timing.0'], 0);
+          expect(debugAppToastActive(AppToastId.recordTimingSettings), isFalse);
+          expect(
+            find.byKey(const Key('power_off_retry')).hitTestable(),
+            findsOneWidget,
+          );
+
+          rejectingEngine.refuseTiming = false;
+          await tester.tap(find.byKey(const Key('power_off_retry')));
+          await tester.pumpAndSettle();
+          expect(timing.state.trackOverrides[0], RecordTiming.immediately);
+          expect(power.state.phase, PowerOffPhase.goodbye);
+          await tester.pump(const Duration(seconds: 6));
+          expect(haltCalls, 1);
+        },
+      );
+    }
+
+    testWidgets(
+      'Record timing held memory survives capture and safe power key',
+      (tester) async {
+        final ticker = StreamController<void>.broadcast();
+        repository = LooperRepository(engine: engine, ticker: ticker.stream);
+        addTearDown(repository.dispose);
+        addTearDown(() => unawaited(ticker.close()));
+        final store = _TimingStore();
+        store.values['tempo.quantize_div'] = 3;
+        settings = SettingsRepository(store: store);
+        final midi = _ShutdownMidi(settings);
+        midiDeviceRepository = midi;
+        addTearDown(() => unawaited(midi.dispose()));
+        final key = _PowerKey();
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerKeySource: key,
+          powerOff: () async => halted = true,
+        );
+        repository.startEngine(const EngineConfig());
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        final context = tester.element(find.byType(TracksView));
+        final control = context.read<ControlCubit>();
+        final timing = context.read<RecordTimingCubit>();
+        final power = context.read<PowerOffCubit>();
+        final editor = Object();
+        control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+        MidiSaveResult? saved;
+        unawaited(
+          control
+              .saveMidiMapping(
+                MidiMapping(
+                  id: 'capture-timing',
+                  source: MidiSource(
+                    device: 'shutdown-test',
+                    kind: ControllerSourceKind.midiCc,
+                    number: 21,
+                  ),
+                  behavior: MidiBehavior.momentary,
+                  controls: [
+                    MidiParameterControl(
+                      key: '{"ctl":"defaultRecordTiming"}',
+                      low: 0,
+                      high: 1,
+                    ),
+                  ],
+                ),
+                owner: editor,
+                create: true,
+              )
+              .then((result) => saved = result),
+        );
+        await tester.pumpAndSettle();
+        expect(saved?.saved, isTrue);
+        control.endMidiEdit(editor);
+        midi.push(127);
+        await tester.pumpAndSettle();
+        expect(timing.state.defaultTiming, RecordTiming.sixteenth);
+        expect(
+          timing.durableRecordTimingSnapshot.defaultTiming,
+          RecordTiming.immediately,
+        );
+        expect(
+          timing.durableRecordTimingSnapshot.rememberedDivision,
+          GridDivision.quarter,
+        );
+
+        // Only the engine seam is simulated. The live repository, owner,
+        // controller, Bloc, power-key host, gate and dialog are production.
+        engine.nextSnapshot = engine.snapshot().copyWith(
+          looperMode: LooperMode.multi,
+          tracks: [
+            const le.TrackSnapshot(
+              state: le.TrackState.recording,
+              volume: 1,
+              muted: false,
+              lengthFrames: 1000,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+            ),
+            for (var i = 1; i < 8; i++) const le.TrackSnapshot.empty(),
+          ],
+        );
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        expect(timing.state.captureLocked, isTrue);
+        midi.push(0);
+        await tester.pumpAndSettle();
+        expect(timing.state.defaultTiming, RecordTiming.sixteenth);
+        expect(
+          timing.durableRecordTimingSnapshot.defaultTiming,
+          RecordTiming.immediately,
+        );
+        expect(
+          timing.durableRecordTimingSnapshot.rememberedDivision,
+          GridDivision.quarter,
+        );
+        final stopCalls = engine.stopCalls;
+        key.press();
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.refuse);
+        expect(find.byKey(const Key('power_off_keep_playing')), findsOneWidget);
+        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        expect(halted, isFalse);
+        expect(engine.stopCalls, stopCalls);
+        expect(repository.state.tracks.first.isCapturing, isTrue);
+        await tester.tap(find.byKey(const Key('power_off_keep_playing')));
+        await tester.pumpAndSettle();
+
+        // The player ends capture; the owed release can now retire safely.
+        engine.nextSnapshot = engine.snapshot().copyWith(
+          tracks: [for (var i = 0; i < 8; i++) const le.TrackSnapshot.empty()],
+        );
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        expect(timing.state.defaultTiming, RecordTiming.immediately);
+        expect(timing.state.rememberedDivision, GridDivision.quarter);
+        expect(engine.stopCalls, stopCalls);
+        key.press();
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+    );
 
     testWidgets(
       'Record length release during capture keeps actual power key safe',

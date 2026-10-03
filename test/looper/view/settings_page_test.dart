@@ -56,6 +56,8 @@ void main() {
   late LooperBloc looperBloc;
   late TempoCubit tempo;
   late UpdateCubit updates;
+  late RecordTiming confirmedTiming;
+  late GridDivision rememberedDivision;
 
   setUpAll(() {
     registerFallbackValue(RecordTiming.immediately);
@@ -65,7 +67,9 @@ void main() {
     registerFallbackValue(const LooperRecordPressed(0));
   });
 
-  setUp(() {
+  Future<void> prepare() async {
+    confirmedTiming = RecordTiming.immediately;
+    rememberedDivision = GridDivision.off;
     settings = SettingsRepository(store: FakeKeyValueStore());
     updates = UpdateCubit(
       updates: const UpdateRepository(backend: UnsupportedPlatformBackend()),
@@ -109,6 +113,59 @@ void main() {
     when(() => repository.lengthSettingsFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
+    when(() => repository.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordTimingSettingsSettled).thenReturn(true);
+    when(() => repository.recordTimingRecoveryRequired).thenReturn(false);
+    when(() => repository.recordTimingCaptureLocked).thenReturn(false);
+    when(
+      () => repository.defaultRecordTiming,
+    ).thenAnswer((_) => confirmedTiming);
+    when(() => repository.trackRecordTimingOverrides).thenReturn(const {});
+    when(() => repository.recordTimingRestartIntent).thenAnswer(
+      (_) => (
+        defaultTiming: confirmedTiming,
+        rememberedDivision: rememberedDivision,
+        trackOverrides: const <int, RecordTiming>{},
+      ),
+    );
+    when(() => repository.sessionTransport).thenAnswer(
+      (_) => TransportState(
+        recordTiming: confirmedTiming,
+        quantizeDiv: rememberedDivision,
+      ),
+    );
+    when(repository.settleRecordTimingSettings).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => repository.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      rememberedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setRecordTiming(
+        any(),
+        releasedTiming: any(named: 'releasedTiming'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.positionalArguments.single as RecordTiming;
+      if (confirmedTiming.quantize) {
+        rememberedDivision = confirmedTiming.division;
+      }
+      return EngineResult.ok;
+    });
+    quantize = RecordTimingCubit(repository: repository, settings: settings);
+    addTearDown(() => unawaited(quantize.close()));
+    await quantize.load();
     // The real control cubit: it owns the shared InteractionMode whose
     // persisted default the View section edits.
     pedalRepo = PedalRepository(NoopPedalLink());
@@ -124,6 +181,7 @@ void main() {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
+      recordTimingControl: quantize,
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: fxPersistence,
       looper: repository,
@@ -132,7 +190,7 @@ void main() {
       settings: settings,
       performance: performance,
     );
-    addTearDown(control.close);
+    addTearDown(() => unawaited(control.close()));
     // The Audio tab embeds the pedal output picker, driven by PedalCubit.
     pedal = PedalCubit(
       pedal: pedalRepo,
@@ -150,19 +208,12 @@ void main() {
     ).thenReturn(const FxChainEnvelope());
     when(() => repository.outputChainEnabled(any())).thenReturn(true);
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
-    quantize = RecordTimingCubit(repository: repository, settings: settings);
     monitor = MonitorCubit(
       fxPersistence: fxPersistence,
       mixSettings: mixSettings,
       repository: repository,
       settings: settings,
     );
-    when(
-      () => repository.setQuantize(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setRecordTiming(any()),
-    ).thenReturn(EngineResult.ok);
     when(
       () => repository.setMonitorInputMode(
         input: any(named: 'input'),
@@ -199,9 +250,6 @@ void main() {
         () => repository.setSyncTempo(on: any(named: 'on')),
       ).thenReturn(EngineResult.ok),
       () => when(
-        () => repository.setQuantizeDiv(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
         () => repository.setClickMode(any()),
       ).thenReturn(EngineResult.ok),
       () => when(
@@ -218,40 +266,43 @@ void main() {
       stub();
     }
     tempo = TempoCubit(repository: repository, settings: settings);
-  });
+  }
 
-  Future<void> pump(WidgetTester tester) => tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.neon,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: MultiRepositoryProvider(
-        providers: [
-          RepositoryProvider<LooperRepository>.value(value: repository),
-          RepositoryProvider<SettingsRepository>.value(value: settings),
-        ],
-        child: MultiBlocProvider(
+  Future<void> pump(WidgetTester tester) async {
+    await prepare();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.neon,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: MultiRepositoryProvider(
           providers: [
-            BlocProvider<TracksCubit>.value(value: tracks),
-            BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
-            BlocProvider<HighContrastCubit>.value(value: highContrast),
-            BlocProvider<AudioSetupCubit>.value(value: audioSetup),
-            BlocProvider<MidiSetupCubit>.value(value: midiSetup),
-            BlocProvider<ControlCubit>.value(value: control),
-            BlocProvider<PedalCubit>.value(value: pedal),
-            BlocProvider<RefreshRateCubit>.value(value: refreshRate),
-            BlocProvider<RecordTimingCubit>.value(value: quantize),
-            BlocProvider<MonitorCubit>.value(value: monitor),
-            BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
-            BlocProvider<LooperBloc>.value(value: looperBloc),
-            BlocProvider<TempoCubit>.value(value: tempo),
-            BlocProvider<UpdateCubit>.value(value: updates),
+            RepositoryProvider<LooperRepository>.value(value: repository),
+            RepositoryProvider<SettingsRepository>.value(value: settings),
           ],
-          child: const SettingsPage(),
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<TracksCubit>.value(value: tracks),
+              BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
+              BlocProvider<HighContrastCubit>.value(value: highContrast),
+              BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+              BlocProvider<MidiSetupCubit>.value(value: midiSetup),
+              BlocProvider<ControlCubit>.value(value: control),
+              BlocProvider<PedalCubit>.value(value: pedal),
+              BlocProvider<RefreshRateCubit>.value(value: refreshRate),
+              BlocProvider<RecordTimingCubit>.value(value: quantize),
+              BlocProvider<MonitorCubit>.value(value: monitor),
+              BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+              BlocProvider<LooperBloc>.value(value: looperBloc),
+              BlocProvider<TempoCubit>.value(value: tempo),
+              BlocProvider<UpdateCubit>.value(value: updates),
+            ],
+            child: const SettingsPage(),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   testWidgets('toggling the waveform window persists the preference', (
     tester,
@@ -374,7 +425,7 @@ void main() {
     tester,
   ) async {
     await pump(tester);
-    expect(quantize.state.quantize, isFalse);
+    expect(quantize.state.defaultTiming.quantize, isFalse);
 
     // Quantize lives in the Audio > Recording group.
     await tester.tap(find.byKey(const Key('settings_tab_audio')));
@@ -384,7 +435,7 @@ void main() {
     await tester.tap(toggle);
     await tester.pumpAndSettle();
 
-    expect(quantize.state.quantize, isTrue);
+    expect(quantize.state.defaultTiming.quantize, isTrue);
     expect(await settings.loadQuantize(), isTrue);
     verify(() => repository.setRecordTiming(RecordTiming.loopStart)).called(1);
   });
@@ -452,6 +503,7 @@ void main() {
   });
 
   testWidgets('Escape pops the settings page', (tester) async {
+    await prepare();
     // Providers above MaterialApp so the pushed settings route can read them.
     await tester.pumpWidget(
       MultiRepositoryProvider(

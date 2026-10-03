@@ -97,6 +97,40 @@ void main() {
       expect(click.isStructurallyValid, isTrue);
     });
 
+    test('Record timing identities and seven musical positions are exact', () {
+      const defaults = DefaultRecordTimingTarget();
+      const track = TrackRecordTimingTarget(7);
+      expect(defaults.canonicalString(), '{"ctl":"defaultRecordTiming"}');
+      expect(
+        track.canonicalString(),
+        '{"ctl":"trackRecordTiming","index":7}',
+      );
+      expect(ControlValueTarget.tryParse(defaults.canonicalString()), defaults);
+      expect(ControlValueTarget.tryParse(track.canonicalString()), track);
+      expect(track.isStructurallyValid, isTrue);
+      expect(const TrackRecordTimingTarget(8).isStructurallyValid, isFalse);
+      expect(defaults.relativeStep, 1 / 6);
+      for (var code = 0; code <= 6; code++) {
+        final choice = RecordTiming.values[code];
+        expect(defaults.toDomain(code / 6), choice);
+        expect(defaults.fromDomain(choice), code / 6);
+      }
+      expect(defaults.toDomain(0.249), RecordTiming.loopStart);
+      expect(defaults.toDomain(0.25), RecordTiming.bar);
+      expect(defaults.toDomain(-1), RecordTiming.immediately);
+      expect(defaults.toDomain(2), RecordTiming.sixteenth);
+      expect(() => defaults.toDomain(double.nan), throwsArgumentError);
+      for (final encoded in [
+        '{"ctl":"defaultRecordTiming","index":0}',
+        '{"ctl":"trackRecordTiming"}',
+        '{"ctl":"trackRecordTiming","index":8}',
+        '{"ctl":"trackRecordTiming","index":0.5}',
+        '{"ctl":"trackRecordTiming","index":0,"extra":true}',
+      ]) {
+        expect(ControlValueTarget.tryParse(encoded), isNull);
+      }
+    });
+
     test('decay identity and percent travel are strict and fixed', () {
       const defaults = DefaultDecayTarget();
       const lastTrack = TrackDecayTarget(7);

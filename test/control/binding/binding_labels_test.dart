@@ -144,6 +144,24 @@ void main() {
         valueTargetLabel(l10n, names, looper, const TrackOneShotTarget(1)),
         '${l10n.trackName(names, 1)} · ${l10n.loopPlaybackLabel}',
       );
+      expect(
+        valueTargetLabel(
+          l10n,
+          names,
+          looper,
+          const DefaultRecordTimingTarget(),
+        ),
+        '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopTimingLabel}',
+      );
+      expect(
+        valueTargetLabel(
+          l10n,
+          names,
+          looper,
+          const TrackRecordTimingTarget(1),
+        ),
+        '${l10n.trackName(names, 1)} · ${l10n.loopTimingLabel}',
+      );
     });
 
     test('names every Mixer coordinate without using a mutable alias', () {

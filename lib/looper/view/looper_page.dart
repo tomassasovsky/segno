@@ -10,6 +10,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/view/session_persistence_sync_listener.dart';
 import 'package:segno/looper/view/tracks_view.dart';
@@ -43,6 +44,7 @@ class LooperPage extends StatelessWidget {
             decayControl: context.read<PlaybackOptionsCubit>(),
             oneShotControl: context.read<PlaybackOptionsCubit>(),
             recordLengthControl: context.read<RecordOptionsCubit>(),
+            recordTimingControl: context.read<RecordTimingCubit>(),
             repository: context.read<LooperRepository>(),
             mixSettings: context.read<MixSettingsCoordinator>(),
             fxPersistence: context.read<FxChainPersistence>(),
@@ -58,6 +60,11 @@ class LooperPage extends StatelessWidget {
         ),
         BlocProvider(
           create: (context) => SessionCubit(
+            runRecordTimingExclusive: context
+                .read<RecordTimingCubit>()
+                .runRecordTimingExclusive,
+            currentDurableRecordTiming: () =>
+                context.read<RecordTimingCubit>().durableRecordTimingSnapshot,
             repository: context.read<SessionRepository>(),
             looper: context.read<LooperRepository>(),
             performance: context.read<PerformanceRepository>(),

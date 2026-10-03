@@ -23,6 +23,36 @@ class SegnoEngineBindings {
     ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
   ) : _lookup = lookup;
 
+  /// One bounded command; enqueue is not application. The full snapshot carries
+  /// the coherent applied tuple and its even receipt revision/result.
+  int le_engine_set_record_timing_settings(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_record_timing_settings> settings,
+  ) {
+    return _le_engine_set_record_timing_settings(
+      engine,
+      settings,
+    );
+  }
+
+  late final _le_engine_set_record_timing_settingsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_record_timing_settings>,
+          )
+        >
+      >('le_engine_set_record_timing_settings');
+  late final _le_engine_set_record_timing_settings =
+      _le_engine_set_record_timing_settingsPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              ffi.Pointer<le_record_timing_settings>,
+            )
+          >();
+
   /// Structural changes publish in one callback command. A pending structural
   /// edit fences granular writes to that chain until publication. Refusal leaves
   /// the active recipe and prepared-plugin ownership unchanged.
@@ -1994,85 +2024,6 @@ class SegnoEngineBindings {
   late final _le_engine_set_record_offset = _le_engine_set_record_offsetPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
-  /// Enables or disables quantized recording. When enabled, a record/overdub press
-  /// over an existing master loop is deferred to the next base-loop top, so
-  /// captures start and finalize aligned to the loop grid; a second press before
-  /// the boundary cancels the pending action. The defining recording (no master
-  /// yet) always acts immediately. Disabling cancels any pending arms.
-  int le_engine_set_quantize(
-    ffi.Pointer<le_engine> engine,
-    int enabled,
-  ) {
-    return _le_engine_set_quantize(
-      engine,
-      enabled,
-    );
-  }
-
-  late final _le_engine_set_quantizePtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
-        >
-      >('le_engine_set_quantize');
-  late final _le_engine_set_quantize = _le_engine_set_quantizePtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
-
-  /// Sets track [channel]'s quantize override: a negative [mode] inherits the
-  /// global default (le_engine_set_quantize), 0 forces quantize off for the track,
-  /// and a positive value forces it on.
-  int le_engine_set_track_quantize(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-    int mode,
-  ) {
-    return _le_engine_set_track_quantize(
-      engine,
-      channel,
-      mode,
-    );
-  }
-
-  late final _le_engine_set_track_quantizePtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
-        >
-      >('le_engine_set_track_quantize');
-  late final _le_engine_set_track_quantize = _le_engine_set_track_quantizePtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
-
-  /// Sets track [channel]'s musical quantization division override (accepted
-  /// design, slice 2b): a negative [div] inherits the global default
-  /// (le_engine_set_quantize_div); 0 = the loop top only; 1..5 = bar .. 1/16
-  /// note (le_grid_div). Read live wherever the global division is read, so a
-  /// pending arm on this track fires on this track's own boundaries and a change
-  /// while armed re-evaluates on the next boundary of the new division. Only
-  /// meaningful while the track's quantize gate is effectively on
-  /// (le_engine_set_quantize / le_engine_set_track_quantize): the gate decides
-  /// whether a press waits at all, the division decides for what.
-  int le_engine_set_track_quantize_div(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-    int div,
-  ) {
-    return _le_engine_set_track_quantize_div(
-      engine,
-      channel,
-      div,
-    );
-  }
-
-  late final _le_engine_set_track_quantize_divPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
-        >
-      >('le_engine_set_track_quantize_div');
-  late final _le_engine_set_track_quantize_div =
-      _le_engine_set_track_quantize_divPtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
-
   /// Cancels track [channel]'s pending record arm, whatever armed it — the
   /// quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
   /// section toggle. No-op (LE_OK) when the track is not armed.
@@ -2278,29 +2229,6 @@ class SegnoEngineBindings {
         >
       >('le_engine_set_sync_tempo');
   late final _le_engine_set_sync_tempo = _le_engine_set_sync_tempoPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
-
-  /// Sets the musical quantization granularity (le_grid_div, tempo_grid.h):
-  /// 0 = off (default), 1 = bar, 2..5 = 1/2..1/16 note. Values outside 0..5
-  /// return LE_ERR_INVALID. State only in this part (published in the snapshot;
-  /// consumed by the musical arm machinery in a later part).
-  int le_engine_set_quantize_div(
-    ffi.Pointer<le_engine> engine,
-    int div,
-  ) {
-    return _le_engine_set_quantize_div(
-      engine,
-      div,
-    );
-  }
-
-  late final _le_engine_set_quantize_divPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
-        >
-      >('le_engine_set_quantize_div');
-  late final _le_engine_set_quantize_div = _le_engine_set_quantize_divPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// What le_engine_set_looper_mode would do with [mode] right now: one of
@@ -5742,12 +5670,6 @@ enum le_command_code {
   /// (any trigger).
   LE_CMD_DISARM(17),
 
-  /// arg_i = le_grid_div (tempo_grid.h): 0 off /
-  /// 1 bar / 2..5 = 1/2..1/16 note. State only in
-  /// this part — the musical arm machinery that
-  /// consumes it lands in A3. Default off.
-  LE_CMD_SET_QUANTIZE_DIV(18),
-
   /// arg_i = le_click_mode (0..3). Default off.
   LE_CMD_SET_CLICK_MODE(19),
 
@@ -6018,7 +5940,10 @@ enum le_command_code {
   /// the restore point the control thread left
   /// pending (0 len: a void take, no way back).
   LE_EVT_CLEAR_FROZEN(102),
-  LE_CMD_SET_FX_RECIPE(77);
+  LE_CMD_SET_FX_RECIPE(77),
+
+  /// one complete timing vector and receipt
+  LE_CMD_SET_RECORD_TIMING(78);
 
   final int value;
   const le_command_code(this.value);
@@ -6042,7 +5967,6 @@ enum le_command_code {
     15 => LE_CMD_SET_OUTPUT_MASK,
     16 => LE_CMD_ARM,
     17 => LE_CMD_DISARM,
-    18 => LE_CMD_SET_QUANTIZE_DIV,
     19 => LE_CMD_SET_CLICK_MODE,
     20 => LE_CMD_SET_LANE_FX,
     21 => LE_CMD_SET_LANE_FX_COUNT,
@@ -6103,6 +6027,7 @@ enum le_command_code {
     101 => LE_EVT_TAKE_CANCELLED,
     102 => LE_EVT_CLEAR_FROZEN,
     77 => LE_CMD_SET_FX_RECIPE,
+    78 => LE_CMD_SET_RECORD_TIMING,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -6197,6 +6122,23 @@ final class le_config extends ffi.Struct {
   /// Reserved, alongside LE_BACKEND_ASIO. Always empty and ignored.
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> asio_driver;
+}
+
+/// Default and fixed-track recording choices: 0 immediately, 1 loop start,
+/// 2 bar, 3 half, 4 quarter, 5 eighth, 6 sixteenth. Track -1 inherits.
+final class le_record_timing_settings extends ffi.Struct {
+  @ffi.Int32()
+  external int default_timing;
+
+  @ffi.Int32()
+  external int remembered_division;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> track_timing;
+
+  /// bit 0 default, bits 1..8 track intentions
+  @ffi.Uint32()
+  external int edit_mask;
 }
 
 final class le_output_fx_snapshot extends ffi.Struct {
@@ -6568,12 +6510,12 @@ final class le_track_snapshot extends ffi.Struct {
   external int pending_trigger;
 
   /// -1 inherit, 0 forced off, 1 forced on
-  /// (le_engine_set_track_quantize)
+  /// (record timing vector)
   @ffi.Int32()
   external int quantize_override;
 
   /// -1 inherit, else le_grid_div
-  /// (le_engine_set_track_quantize_div)
+  /// (record timing vector)
   @ffi.Int32()
   external int quantize_div_override;
 
@@ -7116,6 +7058,18 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Uint32()
   external int perf_output_enabled_mask;
+
+  /// NOTE: the audio-callback telemetry (#722) is deliberately NOT here — see
+  /// le_callback_telemetry and le_engine_get_callback_telemetry. */
+  /// /* One coherent applied timing tuple, never producer desired state.
+  @ffi.Uint32()
+  external int record_timing_revision;
+
+  @ffi.Int32()
+  external int record_timing_result;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> record_timing_overrides;
 }
 
 /// The plugin format a descriptor was discovered in.

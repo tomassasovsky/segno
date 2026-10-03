@@ -20,18 +20,13 @@ typedef _LengthValues = ({
   int count,
   LooperMode mode,
   bool capturing,
-  RecordTiming? trackTimingOverride,
 });
 
-_LengthValues _lengthValues(LooperState state, int? channel) {
-  final track = channel == null || channel >= state.tracks.length
-      ? null
-      : state.tracks[channel];
+_LengthValues _lengthValues(LooperState state) {
   return (
     count: state.tracks.length,
     mode: state.transport.looperMode,
     capturing: state.tracks.any((t) => t.isCapturing),
-    trackTimingOverride: track?.recordTimingOverride,
   );
 }
 
@@ -111,8 +106,10 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
 
   void _setTiming(RecordTiming? timing) {
     final scope = _scope;
+    final owner = context.read<RecordTimingCubit>();
+    if (!owner.state.recordTimingReady || owner.state.captureLocked) return;
     if (scope == null) {
-      unawaited(context.read<RecordTimingCubit>().setTiming(timing!));
+      unawaited(owner.setTiming(timing!));
     } else {
       context.read<LooperBloc>().add(
         LooperTrackRecordTimingChanged(scope, timing: timing),
@@ -124,7 +121,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final v = context.select<LooperBloc, _LengthValues>(
-      (bloc) => _lengthValues(bloc.state, _scope),
+      (bloc) => _lengthValues(bloc.state),
     );
     // Length defaults and exact Custom membership share the confirmed owner.
     final record = context.watch<RecordOptionsCubit>().state;
@@ -132,7 +129,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
     final sessionRevision = context.select<LoopSettingsFeedbackCubit, int>(
       (cubit) => cubit.state.sessionRevision,
     );
-    final defaultTiming = context.watch<RecordTimingCubit>().state;
+    final timingState = context.watch<RecordTimingCubit>().state;
     final scope = _scope;
     final shared = scope != null && record.recordLengthMode == LooperMode.multi;
     final barsCustom =
@@ -142,10 +139,11 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
     final bars = shared || scope == null
         ? defaultBars
         : record.trackLengthPresetOverrides[scope] ?? defaultBars;
-    final timingCustom = scope != null && v.trackTimingOverride != null;
-    final timing = scope == null
-        ? defaultTiming
-        : v.trackTimingOverride ?? defaultTiming;
+    final timingCustom =
+        scope != null && timingState.trackOverrides.containsKey(scope);
+    final timing = timingState.recordTimingReady
+        ? timingState.trackOverrides[scope] ?? timingState.defaultTiming
+        : null;
     if (_sessionRevision != null && _sessionRevision != sessionRevision) {
       _discardCandidate();
     }
@@ -158,8 +156,12 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
     }
     if (bars > 0 && !shared) _lastBars[scope] = bars;
     final shownBars = _candidateBars ?? bars;
-    final locked = v.capturing || record.recordLengthCaptureLocked;
+    final locked =
+        v.capturing ||
+        record.recordLengthCaptureLocked ||
+        timingState.captureLocked;
     final lengthEnabled = record.recordLengthReady && !locked && !shared;
+    final timingEnabled = timingState.recordTimingReady && !locked;
     final top = locked ? 441.0 : 349.0;
     return BlocListener<LoopSettingsFeedbackCubit, LoopSettingsFeedback>(
       listenWhen: (previous, current) => previous.refused != current.refused,
@@ -271,7 +273,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
                 ),
               ),
             ),
-            if (timingCustom && !locked)
+            if (timingCustom && timingEnabled)
               Positioned(
                 left: 100 + 1549,
                 top: top + 231,
@@ -288,7 +290,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
                 labelOf: (t) => recordTimingLabels(l10n)[t]!,
                 keyOf: (t) => Key('loop_timing_${t.name}'),
                 selected: timing,
-                enabled: !locked,
+                enabled: timingEnabled,
                 onSelected: _setTiming,
                 width: 1720,
                 gap: 16,
@@ -298,7 +300,9 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
               left: 100,
               top: top + 231 + 208,
               child: LoopNote(
-                recordTimingNote(l10n, timing),
+                timing == null
+                    ? l10n.recordTimingUnavailable
+                    : recordTimingNote(l10n, timing),
                 key: const Key('loop_timing_note'),
               ),
             ),

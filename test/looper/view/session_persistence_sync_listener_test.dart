@@ -80,6 +80,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: FakeRecordLengthControl(),
+        recordTimingControl: FakeRecordTimingControl(),
         fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: looper,

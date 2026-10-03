@@ -91,6 +91,8 @@ void main() {
   late RecordOptionsCubit options;
   late TempoCubit tempo;
   late SettingsTrayCubit tray;
+  late RecordTiming confirmedTiming;
+  late GridDivision rememberedDivision;
 
   /// The engine's own state stream, so a test can push a tick and watch the
   /// face react — the negotiation cases need it.
@@ -98,11 +100,15 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(RecordTiming.immediately);
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(<int, RecordTiming>{});
     registerFallbackValue(const EngineConfig());
     registerFallbackValue(const LooperRecordPressed(0));
   });
 
   setUp(() {
+    confirmedTiming = RecordTiming.immediately;
+    rememberedDivision = GridDivision.off;
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
     engine = StreamController<LooperState>.broadcast();
@@ -118,7 +124,10 @@ void main() {
     when(() => repository.clickVolumeSettled).thenReturn(true);
     when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
     when(() => repository.sessionTransport).thenAnswer(
-      (_) => repository.state.transport,
+      (_) => TransportState(
+        recordTiming: confirmedTiming,
+        quantizeDiv: rememberedDivision,
+      ),
     );
     when(() => repository.lastEngineConfig).thenReturn(
       const EngineConfig(
@@ -134,12 +143,50 @@ void main() {
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
     when(repository.devices).thenReturn(_devices);
     when(repository.asioDrivers).thenReturn(const []);
+    when(() => repository.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordTimingSettingsSettled).thenReturn(true);
+    when(() => repository.recordTimingRecoveryRequired).thenReturn(false);
+    when(() => repository.recordTimingCaptureLocked).thenReturn(false);
     when(
-      () => repository.setQuantize(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
+      () => repository.defaultRecordTiming,
+    ).thenAnswer((_) => confirmedTiming);
+    when(() => repository.trackRecordTimingOverrides).thenReturn(const {});
+    when(() => repository.recordTimingRestartIntent).thenAnswer(
+      (_) => (
+        defaultTiming: confirmedTiming,
+        rememberedDivision: rememberedDivision,
+        trackOverrides: const <int, RecordTiming>{},
+      ),
+    );
+    when(() => repository.settleRecordTimingSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
     when(
-      () => repository.setRecordTiming(any()),
-    ).thenReturn(EngineResult.ok);
+      () => repository.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      rememberedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setRecordTiming(
+        any(),
+        releasedTiming: any(named: 'releasedTiming'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.positionalArguments.single as RecordTiming;
+      if (confirmedTiming.quantize) {
+        rememberedDivision = confirmedTiming.division;
+      }
+      return EngineResult.ok;
+    });
     when(
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
@@ -191,6 +238,7 @@ void main() {
     );
     inputs = InputsCubit(settings: settings, repository: repository);
     quantize = RecordTimingCubit(repository: repository, settings: settings);
+    await quantize.load();
     options = RecordOptionsCubit(repository: repository, settings: settings);
     tempo = TempoCubit(repository: repository, settings: settings);
     tray = SettingsTrayCubit(settings: settings)
@@ -649,6 +697,7 @@ void main() {
       );
       inputs = InputsCubit(settings: settings, repository: repository);
       quantize = RecordTimingCubit(repository: repository, settings: settings);
+      await quantize.load();
       options = RecordOptionsCubit(repository: repository, settings: settings);
       tempo = TempoCubit(repository: repository, settings: settings);
       tray = SettingsTrayCubit(settings: settings)
@@ -816,7 +865,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('audio_quantize_switch')));
       await tester.pumpAndSettle();
-      expect(quantize.state.quantize, isTrue);
+      expect(quantize.state.defaultTiming.quantize, isTrue);
 
       await tester.tap(find.byKey(const Key('audio_rec_dub_switch')));
       await tester.pumpAndSettle();

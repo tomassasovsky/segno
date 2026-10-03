@@ -25,6 +25,7 @@ structs:
   include:
     - 'le_config'
     - 'le_snapshot'
+    - 'le_record_timing_settings'
     - 'le_track_snapshot'
     - 'le_loopback_info'
     - 'le_device_info'

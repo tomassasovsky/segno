@@ -225,6 +225,8 @@ class _Card extends StatelessWidget {
     final lengthTarget = ControlValueTarget.tryParse(key);
     double canonical(double value) => lengthTarget is RecordLengthValueTarget
         ? lengthTarget.fromDomain(lengthTarget.toDomain(value))
+        : lengthTarget is RecordTimingValueTarget
+        ? lengthTarget.fromDomain(lengthTarget.toDomain(value))
         : value;
     final editable = card.available && card.disabledReason == null;
     return Container(
@@ -363,6 +365,8 @@ class _Card extends StatelessWidget {
                     enabled: editable,
                     keyboardStep: lengthTarget is RecordLengthValueTarget
                         ? 1 / 64
+                        : lengthTarget is RecordTimingValueTarget
+                        ? 1 / 6
                         : 0.01,
                     onChanged: (value) => onRange(key, low: canonical(value)),
                     onDoubleTap: () => onRange(key, low: 0),
@@ -380,6 +384,8 @@ class _Card extends StatelessWidget {
                   enabled: editable,
                   keyboardStep: lengthTarget is RecordLengthValueTarget
                       ? 1 / 64
+                      : lengthTarget is RecordTimingValueTarget
+                      ? 1 / 6
                       : 0.01,
                   onChanged: (value) => onRange(key, high: canonical(value)),
                   onDoubleTap: () => onRange(key, high: 1),

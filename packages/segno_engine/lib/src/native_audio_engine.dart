@@ -156,6 +156,14 @@ class NativeAudioEngine implements AudioEngine {
         _bindings.le_engine_get_lane(_engine, i, l, _lanePtr);
         lanes.add(LaneSnapshot.fromNative(_lanePtr.ref));
       }
+      // The full snapshot owns this read's timing tuple. A callback between
+      // the full and standalone track reads must not mix two timing vectors.
+      final timing = _snapshotPtr.ref.record_timing_overrides[i];
+      _trackPtr.ref
+        ..quantize_override = timing < 0 ? -1 : (timing == 0 ? 0 : 1)
+        ..quantize_div_override = timing < 0
+            ? -1
+            : (timing == 0 ? 0 : timing - 1);
       tracks.add(TrackSnapshot.fromNative(_trackPtr.ref, lanes));
     }
     return EngineSnapshot.fromNative(_snapshotPtr.ref, tracks);
@@ -1130,23 +1138,31 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setQuantize({required bool enabled}) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_quantize(_engine, enabled ? 1 : 0),
-    );
-  }
-
-  @override
-  EngineResult setTrackQuantize({
-    required int channel,
-    required bool? enabled,
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
   }) {
     _checkAlive();
-    final mode = enabled == null ? -1 : (enabled ? 1 : 0);
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_track_quantize(_engine, channel, mode),
-    );
+    if (trackOverrides.keys.any((channel) => channel < 0 || channel >= 8)) {
+      return EngineResult.invalid;
+    }
+    final ptr = calloc<le_record_timing_settings>();
+    try {
+      ptr.ref
+        ..default_timing = defaultTiming.code
+        ..remembered_division = rememberedDivision.code
+        ..edit_mask = editMask;
+      for (var channel = 0; channel < 8; channel++) {
+        ptr.ref.track_timing[channel] = trackOverrides[channel]?.code ?? -1;
+      }
+      return EngineResult.fromCode(
+        _bindings.le_engine_set_record_timing_settings(_engine, ptr),
+      );
+    } finally {
+      calloc.free(ptr);
+    }
   }
 
   @override
@@ -1526,21 +1542,6 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setTrackQuantizeDiv({
-    required int channel,
-    required GridDivision? div,
-  }) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_track_quantize_div(
-        _engine,
-        channel,
-        div == null ? -1 : div.code,
-      ),
-    );
-  }
-
-  @override
   EngineResult setTrackOverdubFeedback({
     required int channel,
     required double? feedback,
@@ -1601,14 +1602,6 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     return EngineResult.fromCode(
       _bindings.le_engine_set_sync_tempo(_engine, on ? 1 : 0),
-    );
-  }
-
-  @override
-  EngineResult setQuantizeDiv(GridDivision div) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_quantize_div(_engine, div.code),
     );
   }
 

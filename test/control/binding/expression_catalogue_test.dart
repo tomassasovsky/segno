@@ -10,6 +10,7 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_timing.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -338,6 +339,73 @@ void main() {
           contains(TrackOneShotTarget(channel)),
         );
       }
+    });
+
+    test('timing keeps nine fixed choices visible and locks only capture', () {
+      final ready = RecordTimingSnapshot(
+        defaultTiming: RecordTiming.bar,
+        rememberedDivision: GridDivision.bar,
+        trackOverrides: const {7: RecordTiming.immediately},
+        captureLocked: false,
+      );
+      final choices = expressionDestinations(
+        l10n,
+        names,
+        looper,
+        recordTimingSnapshot: ready,
+      );
+      final timing = choices
+          .expand((place) => place.controls)
+          .where((control) => control.target is RecordTimingValueTarget)
+          .toList();
+      expect(timing, hasLength(9));
+      expect(timing.every((control) => control.disabledReason == null), isTrue);
+      final defaults = choices.singleWhere(
+        (place) => place.id == 'loop:defaults',
+      );
+      expect(defaults.groups.single.label, l10n.loopTimingLabel);
+      expect(
+        expressionRowName(
+          l10n,
+          names,
+          looper,
+          const DefaultRecordTimingTarget(),
+        ),
+        l10n.loopTimingLabel,
+      );
+      expect(
+        defaults.controls.single.target,
+        const DefaultRecordTimingTarget(),
+      );
+      expect(
+        choices
+            .singleWhere((place) => place.id == 'track:7')
+            .controls
+            .single
+            .target,
+        const TrackRecordTimingTarget(7),
+      );
+
+      final locked = expressionDestinations(
+        l10n,
+        names,
+        looper,
+        recordTimingSnapshot: RecordTimingSnapshot(
+          defaultTiming: RecordTiming.bar,
+          rememberedDivision: GridDivision.bar,
+          trackOverrides: const {},
+          captureLocked: true,
+        ),
+      );
+      final lockedTiming = locked
+          .expand((place) => place.controls)
+          .where((control) => control.target is RecordTimingValueTarget);
+      expect(
+        lockedTiming.every(
+          (control) => control.disabledReason == l10n.recordTimingCaptureLocked,
+        ),
+        isTrue,
+      );
     });
 
     test('the Mixer-only catalogue avoids FX enumeration and keeps order', () {

@@ -46,6 +46,7 @@ void main() {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: owner,
+      recordTimingControl: FakeRecordTimingControl(),
     );
     addTearDown(() async {
       if (!store.release.isCompleted) store.release.complete();

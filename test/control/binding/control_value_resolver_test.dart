@@ -6,6 +6,7 @@ import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -424,6 +425,59 @@ void main() {
   });
 
   group('reads', () {
+    test(
+      'timing is offered for all fixed tracks only after owner readiness',
+      () {
+        final timing = RecordTimingSnapshot(
+          defaultTiming: RecordTiming.bar,
+          rememberedDivision: GridDivision.bar,
+          trackOverrides: const {7: RecordTiming.immediately},
+          captureLocked: true,
+        );
+        const defaultTarget = DefaultRecordTimingTarget();
+        const trackTarget = TrackRecordTimingTarget(7);
+        expect(looper.availableValueTargets(), isNot(contains(defaultTarget)));
+        expect(looper.valueTargetResolves(trackTarget), isFalse);
+        final offered = looper.availableValueTargets(
+          recordTimingSnapshot: timing,
+        );
+        expect(offered.whereType<RecordTimingValueTarget>(), hasLength(9));
+        expect(offered, contains(defaultTarget));
+        expect(offered, contains(trackTarget));
+        expect(
+          looper.valueTargetResolves(
+            trackTarget,
+            recordTimingSnapshot: timing,
+          ),
+          isTrue,
+          reason:
+              'capture locks edits but does not erase saved target identity',
+        );
+        expect(
+          looper.readValueTarget(defaultTarget, recordTimingSnapshot: timing),
+          2 / 6,
+        );
+        expect(
+          looper.readValueTarget(trackTarget, recordTimingSnapshot: timing),
+          0,
+          reason: 'explicit Immediately is not inheritance',
+        );
+        expect(
+          looper.readValueTarget(
+            const TrackRecordTimingTarget(6),
+            recordTimingSnapshot: timing,
+          ),
+          2 / 6,
+        );
+        expect(
+          looper.readValueTarget(
+            const TrackRecordTimingTarget(8),
+            recordTimingSnapshot: timing,
+          ),
+          isNull,
+        );
+      },
+    );
     test('an effect parameter reads its current value', () {
       expect(looper.readValueTarget(laneParam), 0.2);
     });

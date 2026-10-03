@@ -135,7 +135,7 @@ int main(void) {
   CHECK(le_engine_prepare_plugin(e, "gain", &next) == LE_OK);
   CHECK(le_engine_prepare_plugin_param(e, next, 0, .25) == LE_OK);
   r = recipe(next);
-  while (le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK) {}
+  while (le_push(e, 0, 0, 0) == LE_OK) {}
   CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 2, &r) == LE_ERR_INVALID);
   CHECK(le_engine_discard_prepared_plugin(e, next) == LE_OK);
   CHECK(destroyed == 1);

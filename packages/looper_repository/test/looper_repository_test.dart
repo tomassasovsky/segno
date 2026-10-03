@@ -1995,9 +1995,9 @@ void main() {
       expect(engine.calls, contains('start'));
     });
 
-    test('setQuantize is deferred until running, then applied', () {
+    test('Record timing is deferred until running, then applied', () {
       // Not running yet: the value is remembered but not pushed to the engine.
-      final repo = buildRepo()..setQuantize(enabled: true);
+      final repo = buildRepo()..setRecordTiming(RecordTiming.loopStart);
       expect(engine.lastQuantize, isNull);
 
       // A start re-applies the remembered quantize state.
@@ -2005,12 +2005,12 @@ void main() {
       expect(engine.lastQuantize, isTrue);
     });
 
-    test('setQuantize applies immediately while running', () {
+    test('Record timing confirms the callback while running', () {
       final repo = buildRepo()..startEngine(const EngineConfig());
       // The start re-applied the default (off).
       expect(engine.lastQuantize, isFalse);
 
-      repo.setQuantize(enabled: true);
+      repo.setRecordTiming(RecordTiming.loopStart);
       expect(engine.lastQuantize, isTrue);
     });
 
@@ -2073,10 +2073,11 @@ void main() {
         expect(engine.trackQuantize[1], isNull);
         expect(engine.trackQuantizeDiv[1], isNull);
 
-        // A later restart does not re-apply the cleared override.
+        // A later full restart vector explicitly retains inheritance.
         engine.trackQuantize.clear();
         repo.startEngine(const EngineConfig());
-        expect(engine.trackQuantize.containsKey(1), isFalse);
+        expect(engine.trackQuantize[1], isNull);
+        expect(engine.trackQuantizeDiv[1], isNull);
       },
     );
 
@@ -2088,8 +2089,8 @@ void main() {
       expect(engine.lastQuantizeDiv, GridDivision.eighth);
       expect(engine.lastQuantize, isTrue);
       expect(
-        engine.calls.indexOf('setQuantizeDiv'),
-        lessThan(engine.calls.indexOf('setQuantize')),
+        engine.calls.where((c) => c == 'setRecordTimingSettings'),
+        hasLength(1),
       );
       expect(repo.state.transport.quantize, isTrue);
       expect(repo.state.transport.recordTiming, RecordTiming.eighth);
@@ -4308,7 +4309,7 @@ void main() {
     test('setOutputEnabled re-projects so a stopped rig reports it', () async {
       // No user gesture on the face that draws this: a session load gates the
       // output, and without the re-projection nothing on the stream would say
-      // so. Mirrors the setTrackQuantize case.
+      // so. Mirrors the track timing case.
       final repo = buildRepo();
       final states = <LooperState>[];
       final sub = repo.looperState.listen(states.add);
@@ -5332,13 +5333,21 @@ void main() {
       expect(engine.lastSyncTempo, isFalse);
     });
 
-    test('setQuantizeDiv is deferred until running, then re-applied', () {
-      final repo = buildRepo()..setQuantizeDiv(GridDivision.eighth);
-      expect(engine.lastQuantizeDiv, isNull); // not running yet
+    test(
+      'The full timing tuple is deferred until running, then re-applied',
+      () {
+        final repo = buildRepo()
+          ..setRecordTimingSettings(
+            defaultTiming: RecordTiming.immediately,
+            rememberedDivision: GridDivision.eighth,
+            trackOverrides: {},
+          );
+        expect(engine.lastQuantizeDiv, isNull); // not running yet
 
-      repo.startEngine(const EngineConfig());
-      expect(engine.lastQuantizeDiv, GridDivision.eighth);
-    });
+        repo.startEngine(const EngineConfig());
+        expect(engine.lastQuantizeDiv, GridDivision.eighth);
+      },
+    );
 
     test('setClickMode is deferred until running, then re-applied', () {
       final repo = buildRepo()..setClickMode(ClickMode.playRec);
@@ -5427,7 +5436,11 @@ void main() {
           ..startEngine(const EngineConfig())
           ..setTimeSignature(3, 4)
           ..setSyncTempo(on: false)
-          ..setQuantizeDiv(GridDivision.bar)
+          ..setRecordTimingSettings(
+            defaultTiming: RecordTiming.immediately,
+            rememberedDivision: GridDivision.bar,
+            trackOverrides: {},
+          )
           ..setClickMode(ClickMode.rec)
           ..setClickOutput(0x1)
           ..setClickVolume(0.7)

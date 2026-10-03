@@ -61,6 +61,47 @@
 #include "segno_engine_api.h"
 #include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
 
+/* Ordinary musical fixtures apply a complete timing vector and pump a zero-
+ * frame callback; this changes no sample position. Receipt tests below use the
+ * production producer directly and deliberately withhold that callback. */
+static le_record_timing_settings timing_vector(le_engine* e) {
+  const le_record_timing_readback p = le_record_timing_read(e, 0);
+  le_record_timing_settings v = {.default_timing = p.default_timing,
+    .remembered_division = p.remembered_division, .edit_mask = 0x1ff};
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) v.track_timing[c] = p.track_timing[c];
+  return v;
+}
+static int timing_apply(le_engine* e, le_record_timing_settings* v) {
+  const int result = le_engine_set_record_timing_settings(e, v);
+  if (result == LE_OK) { float sample = 0; le_engine_process(e, &sample, &sample, 0); }
+  return result;
+}
+static int timing_gate(le_engine* e, int enabled) {
+  if (!e) return LE_ERR_INVALID;
+  le_record_timing_settings v = timing_vector(e);
+  v.default_timing = enabled ? v.remembered_division + 1 : 0;
+  return timing_apply(e, &v);
+}
+static int timing_remember(le_engine* e, int division) {
+  if (!e || division < 0 || division > 5) return LE_ERR_INVALID;
+  le_record_timing_settings v = timing_vector(e);
+  v.remembered_division = division;
+  if (v.default_timing) v.default_timing = division + 1;
+  return timing_apply(e, &v);
+}
+static int timing_track_division(le_engine* e, int channel, int division) {
+  if (!e || channel < 0 || channel >= LE_MAX_TRACKS || division < -1 || division > 5) return LE_ERR_INVALID;
+  le_record_timing_settings v = timing_vector(e);
+  v.track_timing[channel] = division < 0 ? -1 : division + 1;
+  return timing_apply(e, &v);
+}
+static int timing_track_gate(le_engine* e, int channel, int gate) {
+  if (!e || channel < 0 || channel >= LE_MAX_TRACKS) return LE_ERR_INVALID;
+  le_record_timing_settings v = timing_vector(e);
+  v.track_timing[channel] = gate < 0 ? -1 : gate == 0 ? 0 : v.remembered_division + 1;
+  return timing_apply(e, &v);
+}
+
 static int g_failures = 0;
 
 #ifdef LE_NATIVE_TESTS
@@ -1497,7 +1538,7 @@ static void test_undo_to_empty_cancels_pending_arm(void) {
   CHECK(le_engine_record(e, 1) == LE_OK);
   drain(e);
 
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
   process_const(e, 0.0f, 1, out);         /* move off the loop top */
   CHECK(le_engine_record(e, 0) == LE_OK); /* arm a quantized overdub on 0 */
   drain(e);
@@ -1530,7 +1571,7 @@ static void test_cancel_arm_retires_a_pending_arm(void) {
   le_snapshot s;
 
   record_base_loop(e, 1.0f); /* track 0 defines the master and plays */
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
   process_const(e, 0.0f, 1, out);         /* move off the loop top */
   CHECK(le_engine_record(e, 1) == LE_OK); /* arm a quantized take on 1 */
   drain(e);
@@ -1566,7 +1607,7 @@ static void test_cancel_arm_reports_a_refused_push(void) {
   le_snapshot s;
 
   record_base_loop(e, 1.0f);
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
   process_const(e, 0.0f, 1, out);
   CHECK(le_engine_record(e, 1) == LE_OK); /* arm a quantized take on 1 */
   drain(e);
@@ -1597,7 +1638,7 @@ static void test_record_press_on_pending_arm_starts_when_parked(void) {
   le_snapshot s;
 
   record_base_loop(e, 1.0f);
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
   process_const(e, 0.0f, 1, out);
   CHECK(le_engine_record(e, 1) == LE_OK); /* arm a quantized take on 1 */
   drain(e);
@@ -1715,7 +1756,7 @@ static void test_finalize_take_leaves_pending_arms_untouched(void) {
   le_snapshot s;
 
   record_base_loop(e, 1.0f); /* master = LOOP_N, track 0 playing */
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
 
   /* A live take on 1, started by its own quantized arm firing at the top. */
   process_const(e, 0.0f, 1, out);
@@ -1854,7 +1895,7 @@ static void test_quantize_acts_immediately_when_transport_held(void) {
   record_base_loop(e, 1.0f);
   CHECK(le_engine_stop_track(e, 0) == LE_OK); /* park: clock holds at top */
   drain(e);
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
 
   CHECK(le_engine_record(e, 1) == LE_OK); /* would deadlock if it armed */
   drain(e);
@@ -4834,11 +4875,11 @@ static void test_tempo_grid_defaults_and_persistence(void) {
   CHECK(s.current_beat == 0);
 
   /* Settings persist across a reconfigure (the 2f0513a pattern): tempo,
-   * signature, quantize granularity, and the source survive; the transient
+   * signature and source survive; timing is replayed as a complete vector; the transient
    * loop-derived state resets. */
   CHECK(le_engine_set_tempo(e, 100.0f) == LE_OK);
   CHECK(le_engine_set_time_signature(e, 7, 8) == LE_OK);
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
   CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_engine_configure(e, 1000, 1, 1, 20000);
@@ -4846,7 +4887,7 @@ static void test_tempo_grid_defaults_and_persistence(void) {
   CHECK(fabsf(s.tempo_bpm - 100.0f) < 0.01f);
   CHECK(s.ts_num == 7);
   CHECK(s.ts_den == 8);
-  CHECK(s.quantize_div == LE_GRID_DIV_QUARTER);
+  CHECK(s.quantize_div == LE_GRID_DIV_OFF); /* new timing lifetime awaits replay */
   CHECK(s.sync_tempo == 0);
   CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
   CHECK(s.loop_bars == 0);
@@ -4873,7 +4914,7 @@ static void test_tempo_grid_defaults_and_persistence(void) {
   CHECK(s.ts_num == 7);
   CHECK(s.ts_den == 8);
   CHECK(s.sync_tempo == 1);
-  CHECK(s.quantize_div == LE_GRID_DIV_QUARTER);
+  CHECK(s.quantize_div == LE_GRID_DIV_OFF); /* new timing lifetime awaits replay */
 
   le_engine_destroy(e);
 }
@@ -5011,34 +5052,30 @@ static void test_quantize_div_setter(void) {
   le_engine* e = tg_make_engine(48000);
   le_snapshot s;
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_EIGHTH) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_EIGHTH) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.quantize_div == LE_GRID_DIV_EIGHTH);
 
-  CHECK(le_engine_set_quantize_div(e, -1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_quantize_div(e, 6) == LE_ERR_INVALID);
+  CHECK(timing_remember(e, -1) == LE_ERR_INVALID);
+  CHECK(timing_remember(e, 6) == LE_ERR_INVALID);
 
-  /* A raw ring push clamps rather than handing the audio thread an
-   * out-of-range value. Checked on the WIRE field the audio thread reads, not
-   * through the snapshot: the snapshot publishes the control thread's mirror
-   * so that it and the quantize GATE beside it — which has no wire form at
-   * all — always come from one thread at one instant. */
-  CHECK(le_push(e, LE_CMD_SET_QUANTIZE_DIV, 9, 0.0f) == LE_OK);
+  /* Invalid raw vectors are refused atomically by the callback. */
+  le_record_timing_settings invalid = timing_vector(e);
+  invalid.remembered_division = 9;
+  le_command raw = {.code = LE_CMD_SET_RECORD_TIMING,
+    .timing = {.settings = invalid, .revision = 4}};
+  CHECK(le_push_cmd(e, raw) == LE_OK);
   tg_advance(e, 1);
-  CHECK(load_i32(&e->a_quantize_div) == LE_GRID_DIV_SIXTEENTH);
+  CHECK(load_i32(&e->a_quantize_div) == LE_GRID_DIV_EIGHTH);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.record_timing_result == LE_ERR_INVALID);
 
   le_engine_destroy(e);
 }
 
-/* The gate and its division are published together, with no pump between.
- *
- * The gate is a plain control-side int the setter writes at once; the
- * division reaches the audio thread through the ring. Publishing one of each
- * let a reader see the gate move without its division, and a session saved in
- * that window recorded a different record timing from the one chosen — the
- * gate on with no division reads as "at the loop start", not "every quarter".
- */
+/* Ordinary fixture setup confirms the callback vector before reading it. The
+ * explicit pending-publication regression below withholds that callback. */
 static void test_quantize_gate_and_division_publish_together(void) {
   printf("test_quantize_gate_and_division_publish_together\n");
   le_engine* e = tg_make_engine(48000);
@@ -5046,8 +5083,8 @@ static void test_quantize_gate_and_division_publish_together(void) {
 
   /* The order the repository writes them in, and NO block between: this is
    * the window a save can land in. */
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
   le_engine_get_snapshot(e, &s);
   CHECK(s.quantize == 1);
   CHECK(s.quantize_div == LE_GRID_DIV_QUARTER);
@@ -5063,18 +5100,18 @@ static void test_quantize_gate_and_division_publish_together(void) {
 
 static void test_quantize_div_failure_keeps_published_setting(void) {
   printf("test_quantize_div_failure_keeps_published_setting\n");
-  CHECK(le_engine_set_quantize_div(NULL, LE_GRID_DIV_QUARTER) == LE_ERR_INVALID);
+  CHECK(timing_remember(NULL, LE_GRID_DIV_QUARTER) == LE_ERR_INVALID);
   le_engine* e = le_engine_create();
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_ERR_NOT_RUNNING);
-  CHECK(e->quantize_div == LE_GRID_DIV_OFF);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_ERR_NOT_RUNNING);
+  CHECK(le_record_timing_read(e, 0).remembered_division == LE_GRID_DIV_OFF);
   CHECK(le_engine_configure(e, 1000, 1, 1, 20000) == LE_OK);
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_HALF) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_HALF) == LE_OK);
   tg_advance(e, 1);
   /* Fill the public producer's command queue without an audio callback. */
   int posted = 0;
-  while (le_engine_set_quantize_div(e, LE_GRID_DIV_HALF) == LE_OK) posted++;
+  while (le_push(e, 0, 0, 0) == LE_OK) posted++;
   CHECK(posted > 0);
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_ERR_INVALID);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_ERR_INVALID);
   le_snapshot snapshot;
   le_engine_get_snapshot(e, &snapshot);
   CHECK(snapshot.quantize_div == LE_GRID_DIV_HALF);
@@ -5112,7 +5149,7 @@ static void test_command_settlement_waits_for_snapshot_publication(void) {
   CHECK(snapshot.tempo_bpm == 120);
 
   int posted = 0;
-  while (le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK) posted++;
+  while (le_push(e, 0, 0, 0) == LE_OK) posted++;
   CHECK(posted > 0);
   CHECK(le_engine_set_tempo(e, 90) == LE_ERR_INVALID);
   CHECK(le_engine_commands_settled(e) == 0);
@@ -5195,8 +5232,8 @@ static void test_session_import_restores_musical_grid_without_resizing(void) {
   float exported[3500];
   CHECK(le_engine_export_track_lane(e, 0, 0, exported, 3500) == 3500);
   CHECK(memcmp(exported, pcm, sizeof(pcm)) == 0);
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
-  CHECK(le_engine_set_track_quantize_div(e, 1, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
+  CHECK(timing_track_division(e, 1, LE_GRID_DIV_QUARTER) == LE_OK);
   CHECK(le_engine_record(e, 1) == LE_OK);
   tg_advance(e, 998); /* one frame before the quarter-note boundary */
   le_engine_get_snapshot(e, &snapshot);
@@ -5243,8 +5280,8 @@ static void test_session_import_preserves_actual_bar_count(void) {
     float exported[100];
     CHECK(le_engine_export_track_lane(e, 0, 0, exported, 100) == 100);
     CHECK(memcmp(pcm, exported, sizeof(pcm)) == 0);
-    CHECK(le_engine_set_quantize(e, 1) == LE_OK);
-    CHECK(le_engine_set_track_quantize_div(e, 1, LE_GRID_DIV_BAR) == LE_OK);
+    CHECK(timing_gate(e, 1) == LE_OK);
+    CHECK(timing_track_division(e, 1, LE_GRID_DIV_BAR) == LE_OK);
     CHECK(le_engine_record(e, 1) == LE_OK);
     tg_advance(e, 23);
     le_engine_get_snapshot(e, &restored);
@@ -6350,7 +6387,7 @@ static le_engine* qa_make_grid_engine(void) {
   le_engine_set_tempo(e, 120.0f);
   tg_advance(e, 1);
   tg_record_defining_loop(e, 3000);
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
   return e;
 }
 
@@ -6391,7 +6428,7 @@ static void qa_capture_out(le_engine* e, float* dst, int len) {
 static void qa_check_start_fire(le_engine* e, int32_t div, int32_t arm_pos,
                                 int32_t fire_pos) {
   le_snapshot s;
-  CHECK(le_engine_set_quantize_div(e, div) == LE_OK);
+  CHECK(timing_remember(e, div) == LE_OK);
   qa_advance_to(e, 0.0f, arm_pos);
   CHECK(le_engine_record(e, 1) == LE_OK);
   drain(e);
@@ -6442,7 +6479,7 @@ static void test_quantize_div_record_end_rounds_down(void) {
   le_engine* e = qa_make_grid_engine();
   le_snapshot s;
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
   qa_advance_to(e, 0.0f, 1);
   le_engine_record(e, 1); /* arm the start */
   drain(e);
@@ -6483,7 +6520,7 @@ static void test_quantize_div_record_end_rounds_up(void) {
   le_engine* e = qa_make_grid_engine();
   le_snapshot s;
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
   qa_advance_to(e, 0.0f, 1);
   le_engine_record(e, 1);
   drain(e);
@@ -6526,7 +6563,7 @@ static void test_quantize_div_record_end_min_one_unit(void) {
   le_engine* e = qa_make_grid_engine();
   le_snapshot s;
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
   qa_advance_to(e, 0.0f, 1);
   le_engine_record(e, 1);
   drain(e);
@@ -6563,7 +6600,7 @@ static void test_quantize_div_overdub_start_quantized_end_layer(void) {
   le_engine* e = qa_make_grid_engine();
   le_snapshot s;
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
   qa_advance_to(e, 0.0f, 400);
   le_engine_record(e, 0); /* arm a punch-in on the playing master track */
   drain(e);
@@ -6604,7 +6641,7 @@ static void test_quantize_div_granularity_change_reevaluates(void) {
   le_engine* e = qa_make_grid_engine();
   le_snapshot s;
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_BAR) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_BAR) == LE_OK);
   qa_advance_to(e, 0.0f, 1600); /* past the interior bar boundary at 1500 */
   le_engine_record(e, 1);       /* arm: the BAR fire would be the loop top */
   drain(e);
@@ -6615,7 +6652,7 @@ static void test_quantize_div_granularity_change_reevaluates(void) {
   /* Switch to SIXTEENTH (93.75 frames/unit): the next sixteenth boundary
    * after 1600 is ceil(18 * 93.75) = 1688 — the pending arm must fire there,
    * within one sixteenth of the change, not wait for the bar. */
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_SIXTEENTH) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_SIXTEENTH) == LE_OK);
   qa_advance_to(e, 0.0f, 1687);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
@@ -6633,11 +6670,11 @@ static void test_quantize_div_off_reverts_pending_to_loop_top(void) {
   le_engine* e = qa_make_grid_engine();
   le_snapshot s;
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_SIXTEENTH) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_SIXTEENTH) == LE_OK);
   qa_advance_to(e, 0.0f, 100);
   le_engine_record(e, 1);
   drain(e);
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_OFF) == LE_OK);
 
   /* Every interior sixteenth boundary passes without firing... */
   qa_advance_to(e, 0.0f, 2999);
@@ -6652,35 +6689,23 @@ static void test_quantize_div_off_reverts_pending_to_loop_top(void) {
   le_engine_destroy(e);
 }
 
-/* Code-review fix (A3 follow-up), design decision documented at the ARM
- * apply-site's min-1-unit check: "min 1 unit" is scoped to whichever
- * division is live when the boundary actually fires, not the one active
- * when the press armed it (option (a) — the stateless-wait philosophy
- * already used for the record-START and granularity-change-while-armed
- * paths; no target length or armed division is latched anywhere). A press
- * whose round-down candidate fails QUARTER's min-1-unit (leaving < 1 quarter
- * of capture) falls through to the plain wait — and a granularity change to
- * SIXTEENTH during that wait is honored on the SIXTEENTH's own very next
- * boundary, producing a capture shorter than one QUARTER unit: min-1-unit is
- * never re-checked against the division active at press time. */
-static void test_quantize_div_min_one_unit_reevaluates_on_granularity_change(
+/* Capture locks even same-value edits, preserving the already armed end. */
+static void test_quantize_div_capture_lock_preserves_pending_end(
     void) {
-  printf("test_quantize_div_min_one_unit_reevaluates_on_granularity_change\n");
+  printf("test_quantize_div_capture_lock_preserves_pending_end\n");
   le_engine* e = qa_make_grid_engine(); /* quantize=1 boolean ON, div OFF (default) */
   le_snapshot s;
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
 
-  /* Arm and fire the start with the division still OFF, so it fires
-   * specifically at the loop top (position 0) — the only boundary that
-   * exists pre-A3 — rather than the first QUARTER boundary reached on the
-   * way there (375), which a div already live at arm time would fire on
-   * instead. record_start must be exactly 0 for the span math below. */
+  /* Arm one frame before the wrap, so capture starts exactly at zero. */
+  qa_advance_to(e, 0.0f, 2999);
   le_engine_record(e, 1); /* arm the start */
   drain(e);
   qa_advance_to(e, 0.0f, 0); /* wrap: fires the start at the loop top, pos 0 */
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_ERR_INVALID);
 
   /* Only 50 frames in: the round-down candidate (boundary 0, `behind` = 50)
    * would leave a ZERO-length capture — min-1-unit under QUARTER (unit 375)
@@ -6692,31 +6717,27 @@ static void test_quantize_div_min_one_unit_reevaluates_on_granularity_change(
   CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* not truncated: waiting */
   CHECK(s.tracks[1].pending == 1);
 
-  /* Switch to SIXTEENTH (93.75 frames/unit) immediately: the wait is
-   * stateless, so this is honored on SIXTEENTH's own next boundary — 94 —
-   * NOT re-checked against QUARTER's 375-frame min-1-unit floor. */
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_SIXTEENTH) == LE_OK);
-  qa_advance_to(e, 2.0f, 93);
+  /* Capture refuses a changed division; the pending end keeps its original
+   * quarter-note boundary, exactly 375 frames from capture start. */
+  CHECK(timing_remember(e, LE_GRID_DIV_SIXTEENTH) == LE_ERR_INVALID);
+  qa_advance_to(e, 2.0f, 374);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* one frame short: waiting */
 
-  /* position 94: the sixteenth boundary fires the finalize (still capturing
-   * 2.0 through the last frame — a silent tg_advance here would falsely
-   * plant a silent sample at index 93 and corrupt the span check below). */
-  qa_advance_to(e, 2.0f, 94);
+  /* The unchanged quarter boundary fires after exactly 375 frames. */
+  qa_advance_to(e, 2.0f, 375);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
   CHECK(s.tracks[1].pending == 0);
   CHECK(s.tracks[1].length_frames == 3000); /* rounded up to the base loop */
 
-  /* The captured span itself proves it: content in [0, 94) only — a 94-frame
-   * take, far short of one QUARTER unit (375), exactly as documented. */
+  /* Literal PCM boundary: content through 374, silence from 375. */
   float* lane1 = (float*)calloc(3000, sizeof(float));
   CHECK(le_engine_export_track_lane(e, 1, 0, lane1, 3000) == 3000);
   CHECK(fabsf(lane1[0] - 2.0f) < 1e-6f);
-  CHECK(fabsf(lane1[93] - 2.0f) < 1e-6f);
-  CHECK(fabsf(lane1[94]) < 1e-6f);
-  CHECK(fabsf(lane1[374]) < 1e-6f); /* silent well past the old QUARTER unit */
+  CHECK(fabsf(lane1[374] - 2.0f) < 1e-6f);
+  CHECK(fabsf(lane1[375]) < 1e-6f);
+  CHECK(fabsf(lane1[750]) < 1e-6f); /* silent well past the old QUARTER unit */
   free(lane1);
 
   le_engine_destroy(e);
@@ -6733,7 +6754,7 @@ static void test_quantize_div_disarm_wins_at_boundary_block(void) {
   le_engine* e = qa_make_grid_engine();
   le_snapshot s;
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
   qa_advance_to(e, 0.0f, 1);
   le_engine_record(e, 1); /* arm: fires at 375 */
   drain(e);
@@ -6761,8 +6782,9 @@ static void test_quantize_div_handoff_clears_pending_end(void) {
   printf("test_quantize_div_handoff_clears_pending_end\n");
   le_engine* e = qa_make_grid_engine();
   le_snapshot s;
+  CHECK(timing_track_gate(e, 2, 0) == LE_OK);
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
   qa_advance_to(e, 0.0f, 1);
   le_engine_record(e, 1);
   drain(e);
@@ -6778,7 +6800,6 @@ static void test_quantize_div_handoff_clears_pending_end(void) {
 
   /* An immediate record on track 2 (per-track quantize off) hands the one
    * capturer over: track 1 finalizes NOW and its pending end is spent. */
-  CHECK(le_engine_set_track_quantize(e, 2, 0) == LE_OK);
   le_engine_record(e, 2);
   drain(e);
   le_engine_get_snapshot(e, &s);
@@ -6814,6 +6835,7 @@ static void test_quantize_boolean_handoff_clears_pending_end(void) {
   printf("test_quantize_boolean_handoff_clears_pending_end\n");
   le_engine* e = qa_make_grid_engine(); /* quantize=1 boolean ON, div OFF (default) */
   le_snapshot s;
+  CHECK(timing_track_gate(e, 2, 0) == LE_OK);
   le_engine_get_snapshot(e, &s);
   CHECK(s.quantize_div == LE_GRID_DIV_OFF); /* the pre-A3 boolean-only path */
 
@@ -6839,7 +6861,6 @@ static void test_quantize_boolean_handoff_clears_pending_end(void) {
    * capturer over: track 1 finalizes NOW (rounded up to the base loop) and
    * its pending end is spent — close_active_capture's clear, exercised here
    * on the div-OFF/loop-top path. */
-  CHECK(le_engine_set_track_quantize(e, 2, 0) == LE_OK);
   le_engine_record(e, 2);
   drain(e);
   le_engine_get_snapshot(e, &s);
@@ -6875,8 +6896,8 @@ static void test_track_quantize_div_override_fires_on_own_boundary(void) {
   le_snapshot s;
 
   /* Global OFF (loop top only), track 1 QUARTER: fires at 375. */
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK);
-  CHECK(le_engine_set_track_quantize_div(e, 1, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_OFF) == LE_OK);
+  CHECK(timing_track_division(e, 1, LE_GRID_DIV_QUARTER) == LE_OK);
   qa_advance_to(e, 0.0f, 1);
   CHECK(le_engine_record(e, 1) == LE_OK);
   drain(e);
@@ -6891,8 +6912,8 @@ static void test_track_quantize_div_override_fires_on_own_boundary(void) {
 
   /* Global QUARTER, track 1 forced to the loop top (0): waits for 3000
    * while a sibling on the global grid fires at 375. */
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
-  CHECK(le_engine_set_track_quantize_div(e, 1, LE_GRID_DIV_OFF) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_track_division(e, 1, LE_GRID_DIV_OFF) == LE_OK);
   qa_advance_to(e, 0.0f, 1);
   CHECK(le_engine_record(e, 1) == LE_OK);
   CHECK(le_engine_record(e, 2) == LE_OK);
@@ -6912,7 +6933,7 @@ static void test_track_quantize_div_override_fires_on_own_boundary(void) {
   drain(e);
 
   /* Inherit again: the global QUARTER applies to track 1. */
-  CHECK(le_engine_set_track_quantize_div(e, 1, -1) == LE_OK);
+  CHECK(timing_track_division(e, 1, -1) == LE_OK);
   qa_advance_to(e, 0.0f, 1);
   CHECK(le_engine_record(e, 1) == LE_OK);
   drain(e);
@@ -6921,9 +6942,9 @@ static void test_track_quantize_div_override_fires_on_own_boundary(void) {
   CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
 
   /* Bounds. */
-  CHECK(le_engine_set_track_quantize_div(e, 1, LE_GRID_DIV_SIXTEENTH + 1) ==
+  CHECK(timing_track_division(e, 1, LE_GRID_DIV_SIXTEENTH + 1) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_set_track_quantize_div(e, 99, 0) == LE_ERR_INVALID);
+  CHECK(timing_track_division(e, 99, 0) == LE_ERR_INVALID);
 
   le_engine_destroy(e);
 }
@@ -7020,7 +7041,7 @@ static void test_snapshot_publishes_record_start_settings(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.quantize == 0);
   CHECK(s.auto_record == 0);
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
   CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
   le_engine_get_snapshot(e, &s);
   CHECK(s.quantize == 1);
@@ -7046,8 +7067,8 @@ static void test_quantize_div_requires_boolean_quantize(void) {
   le_engine* e = qa_make_grid_engine();
   le_snapshot s;
 
-  le_engine_set_quantize(e, 0); /* boolean off, division set */
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  timing_gate(e, 0); /* boolean off, division set */
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
 
   qa_advance_to(e, 0.0f, 100); /* mid-unit */
   le_engine_record(e, 1);
@@ -8226,7 +8247,7 @@ static void test_quantize_start_and_finalize_on_grid(void) {
 
   establish_master(e, out);
   le_engine_set_track_mute(e, 0, 1); /* observe track 1 alone */
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
 
   /* Move the master off the top (pos 0 -> 1), then press record mid-loop. */
   process_const(e, 0.0f, 1, out);
@@ -8269,7 +8290,7 @@ static void test_quantize_second_press_disarms(void) {
   le_snapshot s;
 
   establish_master(e, out);
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
   process_const(e, 0.0f, 1, out); /* pos -> 1 */
 
   le_engine_record(e, 1); /* arm */
@@ -8298,7 +8319,7 @@ static void test_quantize_defining_track_is_immediate(void) {
   float out[64];
   le_snapshot s;
 
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
   le_engine_record(e, 0); /* no master -> immediate RECORDING */
   drain(e);
   le_engine_get_snapshot(e, &s);
@@ -8318,7 +8339,7 @@ static void test_quantize_overdub_arm_disarm_no_phantom_layer(void) {
   le_snapshot s;
 
   establish_master(e, out); /* track 0 PLAYING, length LOOP_N */
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
   process_const(e, 0.0f, 1, out); /* pos -> 1 */
 
   le_engine_record(e, 0); /* arm overdub: no snapshot, no layer */
@@ -8344,7 +8365,7 @@ static void test_quantize_overdub_fires_on_grid(void) {
   le_snapshot s;
 
   establish_master(e, out);
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
   process_const(e, 0.0f, 1, out); /* pos -> 1 */
 
   le_engine_record(e, 0); /* arm overdub */
@@ -12184,7 +12205,7 @@ static void test_quantize_track_override_forces_on(void) {
 
   establish_master(e, out);
   // Global default off (the engine default); force quantize on for track 1.
-  CHECK(le_engine_set_track_quantize(e, 1, 1) == LE_OK);
+  CHECK(timing_track_gate(e, 1, 1) == LE_OK);
   process_const(e, 0.0f, 1, out); /* move off the loop top */
 
   le_engine_record(e, 1); /* should ARM (override on), not start now */
@@ -12208,8 +12229,8 @@ static void test_quantize_track_override_forces_off(void) {
   le_snapshot s;
 
   establish_master(e, out);
-  le_engine_set_quantize(e, 1);              /* global on */
-  CHECK(le_engine_set_track_quantize(e, 1, 0) == LE_OK); /* force off track 1 */
+  timing_gate(e, 1);              /* global on */
+  CHECK(timing_track_gate(e, 1, 0) == LE_OK); /* force off track 1 */
   process_const(e, 0.0f, 1, out);
 
   le_engine_record(e, 1); /* immediate, not armed */
@@ -12228,8 +12249,8 @@ static void test_quantize_track_override_inherits(void) {
   le_snapshot s;
 
   establish_master(e, out);
-  le_engine_set_quantize(e, 1);                /* global on */
-  le_engine_set_track_quantize(e, 1, -1);      /* explicit inherit */
+  timing_gate(e, 1);                /* global on */
+  timing_track_gate(e, 1, -1);      /* explicit inherit */
   process_const(e, 0.0f, 1, out);
 
   le_engine_record(e, 1); /* inherits global on -> arms */
@@ -13822,7 +13843,7 @@ static void test_record_start_refusal_preserves_settings_and_arms(void) {
     }
     tg_advance(e, 1);
     int filled = 0;
-    while (le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK) filled++;
+    while (le_push(e, 0, 0, 0) == LE_OK) filled++;
     CHECK(filled > 0);
     const int result = variant == 0 ? le_engine_set_auto_record(e, 1)
                        : variant == 1 ? le_engine_set_count_in(e, 2)
@@ -13863,11 +13884,11 @@ static void test_record_start_edit_cancels_arms_with_one_queue_slot(void) {
     le_engine_get_snapshot(e, &s);
     CHECK(s.tracks[0].pending == 1 && s.tracks[1].pending == 1);
     for (int n = 0; n < LE_RING_CAPACITY - 2; ++n) {
-      CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK);
+      CHECK(le_push(e, 0, 0, 0) == LE_OK);
     }
     CHECK((enable_count_in ? le_engine_set_count_in(e, 2)
                            : le_engine_set_auto_record(e, 0)) == LE_OK);
-    CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_ERR_INVALID);
+    CHECK(le_push(e, 0, 0, 0) == LE_ERR_INVALID);
     le_engine_get_snapshot(e, &s);
     CHECK(s.auto_record == 1 && s.count_in_bars == 0); /* old applied pair */
     tg_advance(e, 1);
@@ -16059,7 +16080,7 @@ static void test_structural_record_fence_keeps_cancellation(void) {
         CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 128) == LE_OK);
         CHECK(le_engine_commit_session(e, 128, 0) == LE_OK);
         CHECK(le_engine_play(e, 0) == LE_OK);
-        CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+        CHECK(timing_gate(e, 1) == LE_OK);
         le_engine_process(e, out, pcm, 1); /* leave the loop boundary */
         ch = 1;
       }
@@ -16122,7 +16143,7 @@ static void test_record_image_punch_in_preserves_history(void) {
       CHECK(le_engine_finalize_layers(e, 0, 1, 1) == LE_OK);
       CHECK(le_engine_commit_session(e, 1024, 0) == LE_OK);
       CHECK(le_engine_play(e, 0) == LE_OK);
-      CHECK(le_engine_set_quantize(e, quantized) == LE_OK);
+      CHECK(timing_gate(e, quantized) == LE_OK);
       drain(e);
       process_const(e, 0, 64, out); /* away from the quantized boundary */
       const int before_undo = e->tracks[0].undo_count;
@@ -16153,9 +16174,8 @@ static void test_record_image_punch_in_preserves_history(void) {
         for (int i = 0; i < wait_blocks + 5; ++i)
           process_const(e, .2f, 64, out);
         CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_OVERDUBBING);
-        CHECK(le_engine_set_quantize(e, 0) == LE_OK);
-        drain(e);
-        CHECK(le_engine_record(e, 0) == LE_OK);
+        /* Capture locks timing; explicit Stop closes this temporary pass. */
+        CHECK(le_engine_stop_track(e, 0) == LE_OK);
         drain(e);
         settle_layers(e);
         CHECK(load_i32(&e->tracks[0].a_layer_in_flight) == 0);
@@ -16341,7 +16361,7 @@ static void test_record_image_deferred_shadow_survives_until_capture(void) {
       CHECK(le_engine_set_track_multiple(e, 1, 1) == LE_OK);
       CHECK(le_engine_set_lane_input(e, 1, 0, 0) == LE_OK);
       CHECK(le_engine_play(e, 0) == LE_OK);
-      CHECK(le_engine_set_quantize(e, !sound) == LE_OK);
+      CHECK(timing_gate(e, !sound) == LE_OK);
       CHECK(le_engine_set_auto_record(e, sound) == LE_OK);
       drain(e);
       if (!sound) pump_frames(e, 0, 64);
@@ -16814,7 +16834,7 @@ static void test_multi_lane_quantize_overdub_arm(void) {
   le_engine_set_lane_output(e, 0, 1, 0x2); /* lane 1 -> out 1 (observe alone) */
   drain(e);
   record_two_lane(e, 1.0f, 2.0f); /* master LOOP_N; lane0=1.0, lane1=2.0 */
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
 
   /* Move off the loop top, then arm the overdub: arming creates no layer (the
    * pass captures itself once the overdub runs). */
@@ -19753,7 +19773,7 @@ static void test_finalize_take_ends_live_take_at_call_frame(void) {
   CHECK(le_engine_record(e, 0) == LE_OK);
   drain(e);
 
-  le_engine_set_quantize(e, 1); /* the discriminating condition */
+  timing_gate(e, 1); /* the discriminating condition */
 
   /* A live take on 1, started at the loop top by its own quantized arm. */
   process_const(e, 0.0f, 1, out);         /* frame 5, master position 1 */
@@ -20132,14 +20152,14 @@ static void test_perf_render_quantized_round_down_truncation_log_frame(void) {
   le_engine_set_tempo(e, 120.0f);
   tg_advance(e, 1);
   tg_record_defining_loop(e, loop_len); /* master position 1 on return */
-  le_engine_set_quantize(e, 1);
+  timing_gate(e, 1);
 
   /* Exactly test_quantize_div_record_end_rounds_down's scripted press
    * sequence: arm a quarter-quantized start (fires at loop-locked position
    * 375), record 2.0 for 1309 frames (position 1684), then press finalize --
    * behind=184 < ahead=191, so the capture truncates back to the boundary at
    * 1500 and finalizes NOW, not at the next boundary. */
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
   qa_advance_to(e, 0.0f, 1);
   le_engine_record(e, 1); /* arm the start */
   drain(e);
@@ -20415,10 +20435,10 @@ static void test_mode_switch_uses_one_queue_slot(void) {
   float before[750], after[750];
   CHECK(le_engine_export_track_lane(e, 1, 0, before, 750) == 750);
   for (int i = 0; i < LE_RING_CAPACITY - 2; ++i) {
-    CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK);
+    CHECK(le_push(e, 0, 0, 0) == LE_OK);
   }
   CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SONG) == LE_OK);
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_ERR_INVALID);
+  CHECK(le_push(e, 0, 0, 0) == LE_ERR_INVALID);
   tg_advance(e, 1);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
@@ -20489,7 +20509,7 @@ static void test_length_presets_batch_queue_atomicity(void) {
       int32_t bars[LE_MAX_TRACKS];
       for (int c = 0; c < LE_MAX_TRACKS; ++c) bars[c] = c % 3;
       for (int n = 0; n < LE_RING_CAPACITY - 1 - free_slots; ++n) {
-        CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK);
+        CHECK(le_push(e, 0, 0, 0) == LE_OK);
       }
       const uint32_t clock_before = e->clock_commands_posted;
       const int result = mode_edit
@@ -20498,7 +20518,7 @@ static void test_length_presets_batch_queue_atomicity(void) {
           : le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS);
       CHECK(result == (free_slots ? LE_OK : LE_ERR_INVALID));
       if (!free_slots) CHECK(e->clock_commands_posted == clock_before);
-      CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_ERR_INVALID);
+      CHECK(le_push(e, 0, 0, 0) == LE_ERR_INVALID);
       tg_advance(e, 1);
       le_snapshot s;
       le_engine_get_snapshot(e, &s);
@@ -22023,7 +22043,7 @@ static void test_one_shot_mask_is_all_or_nothing(void) {
   CHECK(le_engine_set_one_shot_mask(e, (1u << e->track_count) | 1u, 1) ==
         LE_ERR_INVALID);
   int posted = 0;
-  while (le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK) posted++;
+  while (le_push(e, 0, 0, 0) == LE_OK) posted++;
   CHECK(posted > 0);
   CHECK(le_engine_set_one_shot_mask(e, 5, 1) == LE_ERR_INVALID);
   le_snapshot snapshot;
@@ -22255,11 +22275,11 @@ static void test_one_shot_punch_out_arm_at_wrap_stops(void) {
   CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
   record_base_loop(e, 1.0f);
   process_const(e, 0.0f, LOOP_N, out); /* one full lap sounding */
+  CHECK(timing_gate(e, 1) == LE_OK); /* future capture policy, while idle */
   le_engine_record(e, 0);              /* punch in now */
   process_const(e, 1.0f, 1, out);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
   CHECK(le_engine_record(e, 0) == LE_OK); /* punch-out armed for the top */
   drain(e);
   le_engine_get_snapshot(e, &s);
@@ -22281,7 +22301,7 @@ static void test_one_shot_punch_in_arm_at_wrap_overdubs(void) {
   le_snapshot s;
   CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
   record_base_loop(e, 1.0f);
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
   CHECK(le_engine_record(e, 0) == LE_OK); /* punch-in armed for the top */
   drain(e);
   le_engine_get_snapshot(e, &s);
@@ -22310,7 +22330,7 @@ static void test_one_shot_stop_does_not_unpark_siblings(void) {
   CHECK(le_engine_stop_track(e, 1) == LE_OK);
   drain(e);
   CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
   CHECK(le_engine_record(e, 0) == LE_OK); /* punch-in armed for the top */
   drain(e);
   le_engine_get_snapshot(e, &s);
@@ -22357,7 +22377,7 @@ static void test_one_shot_not_stopped_by_a_finalize_at_the_wrap(void) {
   float out[64];
   le_snapshot s;
   record_base_loop(e, 1.0f);
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
   CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
   drain(e);
   le_engine_record(e, 1); /* armed for the loop top */
@@ -23004,7 +23024,7 @@ static void test_looper_mode_gate_queued_arm(void) {
   printf("test_looper_mode_gate_queued_arm\n");
   le_engine* e = make_configured_engine();
   le_snapshot s;
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
   drain(e);
   record_loop_on(e, 0);
   CHECK(le_engine_record(e, 1) == LE_OK); /* armed for the loop top */
@@ -24065,7 +24085,7 @@ static void test_record_behind_queued_restore_is_not_defining(void) {
   float out[64];
   le_snapshot s;
   record_base_loop(e, 1.0f);
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
   CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
   drain(e); /* the wire master reads 0: the only take is gone */
   le_engine_get_snapshot(e, &s);
@@ -25060,7 +25080,7 @@ static void test_band_section_pending_toggle_survives_record_press(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
 
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
   drain(e);
 
   tg_advance(e, 5); /* mid-cycle */
@@ -25108,7 +25128,7 @@ static void test_band_section_pending_record_survives_toggle_press(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
 
-  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(timing_gate(e, 1) == LE_OK);
   drain(e);
 
   tg_advance(e, 5); /* mid-cycle */
@@ -25228,7 +25248,7 @@ static void test_sync_force_arm_ignores_a_per_track_division(void) {
   CHECK(s.master_length_frames == 3000);
 
   /* The GLOBAL division stays off; only this track carries one. */
-  CHECK(le_engine_set_track_quantize_div(e, 1, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(timing_track_division(e, 1, LE_GRID_DIV_QUARTER) == LE_OK);
   drain(e);
 
   /* Press mid-loop, well clear of the top. */
@@ -25276,7 +25296,7 @@ static void test_band_section_toggle_ignores_subdivision_boundary(void) {
   CHECK(s.master_length_frames == 2000);
   CHECK(s.loop_bars == 1);
 
-  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_HALF) == LE_OK);
+  CHECK(timing_remember(e, LE_GRID_DIV_HALF) == LE_OK);
   drain(e);
 
   /* Track 1: the section under test. */
@@ -27417,7 +27437,7 @@ static void test_fx_recipe_atomic_admission_and_frozen_arm(void) {
   const float want = tanhf(.2f) * .5f;
   CHECK(fabsf(out[126] - want) < 1e-5f);
   CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_ALL_TRACKS, 0, 0) == 20);
-  while (le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK) {}
+  while (le_push(e, 0, 0, 0) == LE_OK) {}
   le_fx_recipe next = test_drive_recipe(1);
   CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_ALL_TRACKS, 0, 0, 21, &next) == LE_ERR_INVALID);
   CHECK(le_engine_set_all_tracks_fx(e, 0, LE_FX_DELAY) == LE_ERR_INVALID);
@@ -27466,7 +27486,7 @@ static le_engine* recipe_boundary_engine(int mode) {
   CHECK(le_engine_set_rec_dub(e, 0) == LE_OK);
   CHECK(le_engine_set_limiter(e, 0, 1) == LE_OK);
   CHECK(le_engine_set_fx_cache_cap(e, cached ? LE_CACHE_DEFAULT_CAP_BYTES : 0) == LE_OK);
-  CHECK(le_engine_set_quantize(e, 0) == LE_OK);
+  CHECK(timing_gate(e, 0) == LE_OK);
   drain(e);
   if (!sound) {
     float samples[4096];
@@ -27489,7 +27509,7 @@ static le_engine* recipe_boundary_engine(int mode) {
   if (sound) {
     CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
   } else {
-    CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+    CHECK(timing_gate(e, 1) == LE_OK);
     drain(e);
     /* Cache settlement can finish at any loop phase. Land 16 frames before
      * its next top without changing the already-engaged print. */
@@ -31599,7 +31619,7 @@ static void test_output_mix_is_atomic(void) {
   CHECK(s.mix_revision == 91 && s.output_level[0] == 0.25f);
   mix.output_level[1] = 0.2f;
   for (int n = 0; n < LE_RING_CAPACITY - 1; ++n)
-    CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK);
+    CHECK(le_push(e, 0, 0, 0) == LE_OK);
   CHECK(le_engine_set_mix(e, &mix) != LE_OK);
   drain(e);
   le_engine_get_snapshot(e, &s);
@@ -31814,7 +31834,7 @@ static void test_cut_cancels_empty_arms_and_preserves_stopped_audio(void) {
     if (trigger == 0) {
       CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
     } else {
-      CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+      CHECK(timing_gate(e, 1) == LE_OK);
     }
     drain(e); process_const(e, 0, 1, out);
     le_record_image image = {.revision = 44, .lane_mask = 1,
@@ -31935,7 +31955,194 @@ static void test_record_length_vector_capture_guard(void) {
   }
 }
 
+static void test_record_timing_default_waits_for_callback(void) {
+  printf("test_record_timing_default_waits_for_callback\n");
+  le_engine* e = tg_make_engine(8000);
+  le_snapshot before, pending, applied;
+  le_engine_get_snapshot(e, &before);
+  CHECK(before.quantize == 0);
+  CHECK(before.quantize_div == LE_GRID_DIV_OFF);
+  le_record_timing_settings timing = {.default_timing = 4,
+    .remembered_division = LE_GRID_DIV_QUARTER, .edit_mask = 0x1ff};
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) timing.track_timing[c] = -1;
+  CHECK(le_engine_set_record_timing_settings(e, &timing) == LE_OK);
+  le_engine_get_snapshot(e, &pending);
+  CHECK(pending.quantize == 0);
+  CHECK(pending.quantize_div == LE_GRID_DIV_OFF);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &applied);
+  CHECK(applied.quantize == 1);
+  CHECK(applied.quantize_div == LE_GRID_DIV_QUARTER);
+  le_engine_destroy(e);
+}
+
+static int timing_hook_event, timing_image_prepares;
+static le_snapshot timing_hook_snapshot;
+static void timing_observer(le_engine* e, int event) {
+  if (event == 4) timing_image_prepares++;
+  if (event != timing_hook_event) return;
+  le_test_record_timing_hook = NULL;
+  if (event == 3) {
+    float sample = 0;
+    le_engine_process(e, &sample, &sample, 0);
+  } else {
+    le_engine_get_snapshot(e, &timing_hook_snapshot);
+  }
+}
+
+static void test_record_timing_coherent_publication(void) {
+  printf("test_record_timing_coherent_publication\n");
+  for (int event = 1; event <= 3; ++event) {
+    le_engine* e = tg_make_engine(8000);
+    le_snapshot prior, published;
+    le_engine_get_snapshot(e, &prior);
+    le_record_timing_settings v = timing_vector(e);
+    v.default_timing = 4; v.remembered_division = 3; v.track_timing[7] = 6;
+    CHECK(le_engine_set_record_timing_settings(e, &v) == LE_OK);
+    timing_hook_event = event;
+    le_test_record_timing_hook = timing_observer;
+    if (event == 3) le_engine_get_snapshot(e, &timing_hook_snapshot);
+    else { float sample = 0; le_engine_process(e, &sample, &sample, 0); }
+    le_test_record_timing_hook = NULL;
+    CHECK(timing_hook_snapshot.record_timing_revision == prior.record_timing_revision);
+    CHECK(timing_hook_snapshot.quantize == 0);
+    CHECK(timing_hook_snapshot.quantize_div == 0);
+    CHECK(timing_hook_snapshot.record_timing_overrides[7] == -1);
+    /* Standalone track read sees the coherent tuple but cannot advance cache. */
+    const le_record_timing_readback cache = e->record_timing_cache;
+    le_track_snapshot track;
+    le_engine_get_track(e, 7, &track);
+    CHECK(track.quantize_div_override == 5);
+    CHECK(memcmp(&cache, &e->record_timing_cache, sizeof(cache)) == 0);
+    le_engine_get_snapshot(e, &published);
+    CHECK(published.record_timing_revision == 2);
+    CHECK(published.record_timing_result == LE_OK);
+    CHECK(published.quantize == 1 && published.quantize_div == 3);
+    CHECK(published.record_timing_overrides[7] == 6);
+    CHECK(published.tracks[7].quantize_div_override == 5);
+    le_engine_destroy(e);
+  }
+}
+
+static void test_record_timing_admission_and_capture_refusal(void) {
+  printf("test_record_timing_admission_and_capture_refusal\n");
+  le_fx_recipe recipes[LE_MAX_LANES] = {0};
+  recipes[0].count = 1;
+  recipes[0].pre_count = 1;
+  recipes[0].enabled = 1;
+  recipes[0].type[0] = LE_FX_DRIVE;
+  recipes[0].slot_enabled[0] = 1;
+  recipes[0].level[0] = 1.0f;
+  recipes[0].params[0][0] = 0.5f;
+  recipes[0].params[0][1] = 1.0f;
+  le_record_image image = {.revision = 91, .lane_mask = 1,
+    .fx_lane_mask = 1, .lane_fx = recipes};
+  image.gain[0] = 1.0f;
+  float sample = 0;
+
+  /* Positive control: this image really prepares and installs a nonempty
+   * recipe when acquisition is allowed. The rejected path must avoid that
+   * same work, not merely reject an inert revision-only image. */
+  le_engine* allowed = tg_make_engine(8000);
+  const uint64_t empty_fx = le_engine_lane_fx_fingerprint(allowed, 0, 0);
+  timing_image_prepares = 0; timing_hook_event = 0;
+  le_test_record_timing_hook = timing_observer;
+  CHECK(le_engine_record_with_image(allowed, 0, &image) == LE_OK);
+  CHECK(timing_image_prepares == 1);
+  CHECK(allowed->pending_fx_edits != NULL);
+  le_engine_process(allowed, &sample, &sample, 0);
+  le_track_snapshot track; le_engine_get_track(allowed, 0, &track);
+  CHECK(track.state == LE_TRACK_RECORDING);
+  CHECK(le_engine_lane_fx_fingerprint(allowed, 0, 0) != empty_fx);
+  le_test_record_timing_hook = NULL;
+  le_engine_destroy(allowed);
+
+  le_engine* e = tg_make_engine(8000);
+  le_record_timing_settings v = timing_vector(e);
+  v.default_timing = 2; v.remembered_division = 1;
+  CHECK(le_engine_set_record_timing_settings(e, &v) == LE_OK);
+  CHECK(le_engine_set_record_timing_settings(e, &v) == LE_ERR_NOT_READY);
+  const uint32_t posted = e->commands_posted;
+  const int shadows = e->tracks[0].outstanding_count;
+  const uint64_t prior_fx = le_engine_lane_fx_fingerprint(e, 0, 0);
+  CHECK(e->pending_fx_edits == NULL);
+  timing_image_prepares = 0; timing_hook_event = 0;
+  le_test_record_timing_hook = timing_observer;
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_ERR_NOT_READY);
+  CHECK(timing_image_prepares == 0);
+  CHECK(e->pending_fx_edits == NULL);
+  CHECK(e->record_fx_prepared == NULL);
+  CHECK(e->commands_posted == posted);
+  CHECK(e->tracks[0].outstanding_count == shadows);
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) == prior_fx);
+  CHECK(!e->armed[0]);
+  CHECK(le_engine_record(e, 0) == LE_ERR_NOT_READY);
+  le_test_record_timing_hook = NULL;
+  le_engine_process(e, &sample, &sample, 0);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  /* Raw callback ordering models an earlier acquisition ahead of the vector. */
+  v.default_timing = 4; v.remembered_division = 3;
+  le_command raw = {.code = LE_CMD_SET_RECORD_TIMING,
+    .timing = {.settings = v, .revision = 4}};
+  CHECK(le_push_cmd(e, raw) == LE_OK);
+  le_engine_process(e, &sample, &sample, 0);
+  le_snapshot s; le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.quantize_div == 1 && s.quantize == 1);
+  CHECK(s.record_timing_revision == 4 && s.record_timing_result == LE_ERR_INVALID);
+  CHECK(le_engine_set_record_timing_settings(e, &v) == LE_ERR_INVALID);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  le_engine_process(e, &sample, &sample, 0);
+  /* Wrapping an even publication is a new receipt, not an uninitialized flag. */
+  e->record_timing_posted_revision = UINT32_MAX - 1u;
+  CHECK(le_engine_set_record_timing_settings(e, &v) == LE_OK);
+  le_engine_process(e, &sample, &sample, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.record_timing_revision == 0 && s.record_timing_result == LE_OK);
+  CHECK(s.quantize_div == 3);
+  le_engine_destroy(e);
+}
+
+static int timing_cancel_result;
+static void timing_cancel_during_publication(le_engine* e, int event) {
+  if (event != 2) return;
+  le_test_record_timing_hook = NULL;
+  timing_cancel_result = le_engine_record(e, 1);
+}
+static void test_record_timing_partial_publication_keeps_owned_cancel(void) {
+  printf("test_record_timing_partial_publication_keeps_owned_cancel\n");
+  le_engine* e = qa_make_grid_engine();
+  qa_advance_to(e, 0, 100);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_snapshot s; le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+  le_record_timing_settings v = timing_vector(e);
+  v.default_timing = 0;
+  CHECK(le_engine_set_record_timing_settings(e, &v) == LE_OK);
+  timing_cancel_result = LE_ERR_INVALID;
+  le_test_record_timing_hook = timing_cancel_during_publication;
+  drain(e);
+  le_test_record_timing_hook = NULL;
+  CHECK(timing_cancel_result == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(e->armed[1] == 0);
+  /* A fresh press after cancellation acts now; no spent arm consumes it. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  le_engine_destroy(e);
+}
+
 int main(void) {
+  test_record_timing_default_waits_for_callback();
+  test_record_timing_coherent_publication();
+  test_record_timing_admission_and_capture_refusal();
+  test_record_timing_partial_publication_keeps_owned_cancel();
+  if (getenv("SEGNO_TIMING_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_record_length_vector_capture_guard();
   test_cut_erases_current_click_preserves_future_clicks();
   test_perf_render_validates_capture_identity();
@@ -32270,7 +32477,7 @@ int main(void) {
   test_quantize_div_overdub_start_quantized_end_layer();
   test_quantize_div_granularity_change_reevaluates();
   test_quantize_div_off_reverts_pending_to_loop_top();
-  test_quantize_div_min_one_unit_reevaluates_on_granularity_change();
+  test_quantize_div_capture_lock_preserves_pending_end();
   test_quantize_div_disarm_wins_at_boundary_block();
   test_quantize_div_handoff_clears_pending_end();
   test_quantize_boolean_handoff_clears_pending_end();

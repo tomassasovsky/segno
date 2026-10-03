@@ -711,7 +711,12 @@ void main() {
         expect(engine.tapTempo(), EngineResult.notRunning);
         expect(engine.setSyncTempo(on: false), EngineResult.notRunning);
         expect(
-          engine.setQuantizeDiv(GridDivision.bar),
+          engine.setRecordTimingSettings(
+            defaultTiming: RecordTiming.immediately,
+            rememberedDivision: GridDivision.bar,
+            trackOverrides: const {},
+            editMask: 1,
+          ),
           EngineResult.notRunning,
         );
         expect(
@@ -822,10 +827,15 @@ void main() {
         expect(engine.snapshot().syncTempo, isFalse);
       });
 
-      test('setQuantizeDiv surfaces in the snapshot', () {
+      test('record timing memory surfaces in the snapshot', () {
         engine.start(engine.defaultConfig);
         expect(
-          engine.setQuantizeDiv(GridDivision.eighth),
+          engine.setRecordTimingSettings(
+            defaultTiming: RecordTiming.immediately,
+            rememberedDivision: GridDivision.eighth,
+            trackOverrides: const {},
+            editMask: 1,
+          ),
           EngineResult.ok,
         );
         expect(engine.snapshot().quantizeDiv, GridDivision.eighth);

@@ -5728,10 +5728,20 @@
     "@recordLengthSharedInMulti": {"description": "Shared record length controls and recovery message."},
     "recordLengthCaptureLocked": "Finish recording to change record length.",
     "@recordLengthCaptureLocked": {"description": "Shared record length controls and recovery message."},
+    "recordTimingCaptureLocked": "Finish recording to change record timing.",
+    "@recordTimingCaptureLocked": {"description": "Reason a Record timing mapping cannot be edited during capture."},
     "recordLengthSettingsRecoveryTitle": "Record length needs recovery",
     "@recordLengthSettingsRecoveryTitle": {"description": "Shared record length controls and recovery message."},
     "recordLengthSettingsRefusedTitle": "Record length change was not applied",
     "@recordLengthSettingsRefusedTitle": {"description": "Shared record length controls and recovery message."},
     "recordLengthSettingsRecoveryBody": "Retry to recover the record length settings.",
-    "@recordLengthSettingsRecoveryBody": {"description": "Shared record length controls and recovery message."}
+    "@recordLengthSettingsRecoveryBody": {"description": "Shared record length controls and recovery message."},
+    "recordTimingSettingsRecoveryTitle": "Record timing needs recovery",
+    "@recordTimingSettingsRecoveryTitle": {"description": "Persistent shared recording timing recovery message."},
+    "recordTimingSettingsRefusedTitle": "Record timing change was not applied",
+    "@recordTimingSettingsRefusedTitle": {"description": "Brief feedback after a refused recording timing edit."},
+    "recordTimingSettingsRecoveryBody": "Retry to recover the record timing settings.",
+    "@recordTimingSettingsRecoveryBody": {"description": "Recovery action for recording timing."},
+    "recordTimingUnavailable": "Record timing is not ready",
+    "@recordTimingUnavailable": {"description": "Timing has no confirmed value during initialization or recovery."}
 }

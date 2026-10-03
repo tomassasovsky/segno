@@ -384,6 +384,15 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
 
   /* Lane buffers are mono: one input channel in, routed out via the mask. */
   engine->track_count = LE_MAX_TRACKS;
+  atomic_store_explicit(&engine->a_record_timing_default, 0, memory_order_seq_cst);
+  atomic_store_explicit(&engine->a_quantize_div, 0, memory_order_seq_cst);
+  atomic_store_explicit(&engine->a_record_timing_revision, 0, memory_order_seq_cst);
+  atomic_store_explicit(&engine->a_record_timing_result, LE_OK, memory_order_seq_cst);
+  engine->record_timing_posted_revision = 0;
+  engine->record_timing_command = 0;
+  engine->record_timing_publish_pending = 0;
+  engine->record_timing_cache = (le_record_timing_readback){.result = LE_OK};
+
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
     /* Track transport: one lane active by default, empty, one base loop. */
@@ -470,7 +479,9 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->pending_master_len = 0;
     store_i32(&tr->a_state_acks, 0);
     tr->dub_generation = 0;
-    engine->track_quantize[t] = -1; /* inherit the global quantize default */
+    atomic_store_explicit(&engine->a_record_timing_track[t], -1,
+                          memory_order_seq_cst);
+    engine->record_timing_cache.track_timing[t] = -1;
     engine->target_multiple[t] = 0; /* inherit the global default multiple */
 
     for (int l = 0; l < LE_MAX_LANES; ++l) {
@@ -939,7 +950,6 @@ le_engine* le_engine_create(void) {
   store_i32(&engine->a_ts_den, 4);
   store_i32(&engine->a_sync_tempo, 1);
   store_i32(&engine->a_quantize_div, LE_GRID_DIV_OFF);
-  engine->quantize_div = LE_GRID_DIV_OFF; /* the snapshot's half of the pair */
   store_i32(&engine->a_tempo_source, LE_TEMPO_SOURCE_NONE);
   engine->grid_prev_beat = -1;
   /* Click + count-in SETTINGS (A2): same seeded-once persistence as the tempo
@@ -1273,6 +1283,10 @@ int32_t le_engine_measure_latency(le_engine* engine) {
 }
 
 /* ---- looper control (push gated on `configured`, so tests work device-free) */
+
+#ifdef LE_NATIVE_TESTS
+void (*le_test_record_timing_hook)(le_engine*, int) = NULL;
+#endif
 
 int32_t le_push_cmd(le_engine* engine, le_command cmd) {
   if (engine == NULL) return LE_ERR_INVALID;

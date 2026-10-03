@@ -68,12 +68,9 @@ void main() {
     states = null;
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
-    when(
-      () => repository.setQuantize(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setRecordTiming(any()),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     // The input names follow the OPEN DEVICE, so the cubit reads the
     // repository's stream the moment it is built.
     when(

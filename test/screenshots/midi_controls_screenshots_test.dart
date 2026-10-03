@@ -25,6 +25,7 @@ import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
@@ -117,6 +118,9 @@ void main() {
   late _Store store;
   late ControlCubit control;
   late RecordOptionsCubit record;
+  late RecordTimingCubit timing;
+  late RecordTiming confirmedTiming;
+  late GridDivision rememberedDivision;
   late SettingsTrayCubit tray;
 
   setUp(() {
@@ -126,6 +130,8 @@ void main() {
     connections = StreamController<MidiConnection>.broadcast();
     messages = StreamController<MidiInputMessage>.broadcast();
     store = _Store();
+    confirmedTiming = RecordTiming.immediately;
+    rememberedDivision = GridDivision.off;
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     when(() => looper.state).thenReturn(
       LooperState(
@@ -154,10 +160,45 @@ void main() {
       (_) => const Stream<EngineResult>.empty(),
     );
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordTimingCaptureLocked).thenReturn(false);
+    when(() => looper.recordTimingSettingsSettled).thenReturn(true);
+    when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
+    when(() => looper.defaultRecordTiming).thenAnswer((_) => confirmedTiming);
+    when(() => looper.trackRecordTimingOverrides).thenReturn(const {});
+    when(() => looper.recordTimingRestartIntent).thenAnswer(
+      (_) => (
+        defaultTiming: confirmedTiming,
+        rememberedDivision: rememberedDivision,
+        trackOverrides: const <int, RecordTiming>{},
+      ),
+    );
+    when(() => looper.settleRecordTimingSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => looper.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      rememberedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      return EngineResult.ok;
+    });
     when(() => looper.lengthSettingsSettled).thenReturn(true);
     when(() => looper.lengthRecoveryRequired).thenReturn(false);
     when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
-    when(() => looper.sessionTransport).thenReturn(const TransportState());
+    when(() => looper.sessionTransport).thenAnswer(
+      (_) => TransportState(
+        recordTiming: confirmedTiming,
+        quantizeDiv: rememberedDivision,
+      ),
+    );
     when(() => looper.settleLengthSettings()).thenAnswer(
       (_) async => EngineResult.ok,
     );
@@ -182,7 +223,12 @@ void main() {
     when(() => devices.select(any())).thenAnswer((_) async {});
   });
 
-  setUpAll(() => registerFallbackValue(LooperMode.multi));
+  setUpAll(() {
+    registerFallbackValue(LooperMode.multi);
+    registerFallbackValue(RecordTiming.immediately);
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(<int, RecordTiming>{});
+  });
 
   tearDown(() async {
     await looperStates.close();
@@ -204,6 +250,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final settings = SettingsRepository(store: store);
+    await settings.saveQuantize(value: false);
+    await settings.saveQuantizeDiv(GridDivision.off.code);
     tray = SettingsTrayCubit(settings: settings);
     addTearDown(() => unawaited(tray.close()));
     if (malformed) {
@@ -235,6 +283,9 @@ void main() {
     record = RecordOptionsCubit(repository: looper, settings: settings);
     addTearDown(() => unawaited(record.close()));
     await record.load();
+    timing = RecordTimingCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(timing.close()));
+    await timing.load();
     when(() => tempo.clickVolumeLifetime).thenReturn((
       sessionRevision: 1,
       mixGeneration: 1,
@@ -243,6 +294,7 @@ void main() {
       decayControl: decay,
       oneShotControl: decay,
       recordLengthControl: record,
+      recordTimingControl: timing,
       clickVolumeControl: tempo,
       looper: looper,
       pedal: pedal,
@@ -269,6 +321,7 @@ void main() {
             BlocProvider<TempoCubit>.value(value: tempo),
             BlocProvider<PlaybackOptionsCubit>.value(value: decay),
             BlocProvider<RecordOptionsCubit>.value(value: record),
+            BlocProvider<RecordTimingCubit>.value(value: timing),
           ],
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
@@ -534,6 +587,33 @@ void main() {
       expect(find.text('Auto'), findsWidgets);
       expect(find.text('64 bars'), findsWidgets);
       await shot(tester, 'record_length_range');
+    });
+    testWidgets('Record timing range names both musical choices', (
+      tester,
+    ) async {
+      const target = DefaultRecordTimingTarget();
+      await pump(
+        tester,
+        savedMapping: MidiMapping(
+          id: 'm1',
+          source: _source,
+          behavior: MidiBehavior.continuous,
+          controls: [
+            MidiParameterControl(
+              key: target.canonicalString(),
+              low: 0,
+              high: 1,
+            ),
+          ],
+        ),
+      );
+      expect(timing.state.recordTimingReady, isTrue);
+      await tap(tester, 'midi_row_edit_m1');
+      final key = target.canonicalString();
+      expect(find.byKey(Key('midi_range_low_$key')), findsOneWidget);
+      expect(find.text('Immediately'), findsWidgets);
+      expect(find.text('1/16 note'), findsWidgets);
+      await shot(tester, 'record_timing_range');
     });
     testWidgets('Loop controls offers the default decay', (tester) async {
       await pump(tester, seeded: true);

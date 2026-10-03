@@ -7,6 +7,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -57,6 +58,9 @@ class SessionCubit extends Cubit<SessionState> {
     required Future<T> Function<T>(Future<T> Function() operation)
     runRecordExclusive,
     required RecordLengthSnapshot Function() currentDurableRecordLength,
+    required Future<T> Function<T>(Future<T> Function() operation)
+    runRecordTimingExclusive,
+    required RecordTimingSnapshot Function() currentDurableRecordTiming,
     required Future<String> Function() exportDirectory,
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
@@ -74,6 +78,8 @@ class SessionCubit extends Cubit<SessionState> {
        _currentDurableOneShot = currentDurableOneShot,
        _runRecordExclusive = runRecordExclusive,
        _currentDurableRecordLength = currentDurableRecordLength,
+       _runRecordTimingExclusive = runRecordTimingExclusive,
+       _currentDurableRecordTiming = currentDurableRecordTiming,
        _exportDirectory = exportDirectory,
        _currentPedalBindings = currentPedalBindings,
        _onPedalBindings = onPedalBindings,
@@ -108,16 +114,23 @@ class SessionCubit extends Cubit<SessionState> {
   final Future<T> Function<T>(Future<T> Function() operation)
   _runRecordExclusive;
   final RecordLengthSnapshot Function() _currentDurableRecordLength;
+  final Future<T> Function<T>(Future<T> Function() operation)
+  _runRecordTimingExclusive;
+  final RecordTimingSnapshot Function() _currentDurableRecordTiming;
   final Future<String> Function() _exportDirectory;
   final String Function() _currentPedalBindings;
   final void Function(String encoded) _onPedalBindings;
   final void Function() _releaseHeldBindings;
 
-  // Every session boundary locks Mixer, Click, Playback, then Record.
+  // Lock order: Mixer, Click, Playback, Record length, then Record timing.
   Future<T> _runSettingsExclusive<T>(Future<T> Function() operation) =>
       _mixSettings.runExclusive(
         () => _runClickVolumeExclusive(
-          () => _runPlaybackExclusive(() => _runRecordExclusive(operation)),
+          () => _runPlaybackExclusive(
+            () => _runRecordExclusive(
+              () => _runRecordTimingExclusive(operation),
+            ),
+          ),
         ),
       );
 
@@ -256,6 +269,7 @@ class SessionCubit extends Cubit<SessionState> {
         decay: _currentDurableDecay(),
         oneShot: _currentDurableOneShot(),
         recordLength: _currentDurableRecordLength(),
+        recordTiming: _currentDurableRecordTiming(),
       ),
       pedalBindings: _currentPedalBindings(),
       captureStillValid: stillOwned,

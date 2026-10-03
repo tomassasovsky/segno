@@ -75,7 +75,7 @@ void main() {
       },
     );
     test(
-      'autonomous restart deadline fires without a later owner call',
+      'first replay deadline stops a globally withheld startup',
       () async {
         repository.setLengthSettings(
           defaultBars: 4,
@@ -83,8 +83,35 @@ void main() {
           mode: LooperMode.free,
         );
         engine.commandsAreSettled = false;
-        final failure = repository.lengthSettingsFailures.first;
+        // The global callback fence is withheld for every family. Timing's
+        // earlier replay deadline stops the device and cancels later pending
+        // families; only that first failing family reports recovery.
+        final failure = repository.recordTimingFailures.first;
         repository.startEngine(const EngineConfig());
+        expect(
+          await failure.timeout(const Duration(seconds: 2)),
+          EngineResult.notReady,
+        );
+        expect(repository.recordTimingRecoveryRequired, isTrue);
+        expect(repository.lengthRecoveryRequired, isFalse);
+        expect(repository.startEngine(const EngineConfig()).isOk, isFalse);
+        engine.commandsAreSettled = true;
+        expect(repository.recoverRecordTimingSettings().isOk, isTrue);
+        repository.startEngine(const EngineConfig());
+        expect((await repository.settleLengthSettings()).isOk, isTrue);
+        expect(engine.publishedLengths, {
+          for (var c = 0; c < 7; c++) c: 4,
+          7: 0,
+        });
+      },
+    );
+    test(
+      'autonomous Length deadline fires without a later owner call',
+      () async {
+        await start();
+        engine.commandsAreSettled = false;
+        final failure = repository.lengthSettingsFailures.first;
+        expect(repository.setDefaultLengthPreset(4), EngineResult.ok);
         expect(
           await failure.timeout(const Duration(seconds: 2)),
           EngineResult.notReady,
@@ -95,10 +122,7 @@ void main() {
         expect(repository.recoverLengthSettings().isOk, isTrue);
         repository.startEngine(const EngineConfig());
         expect((await repository.settleLengthSettings()).isOk, isTrue);
-        expect(engine.publishedLengths, {
-          for (var c = 0; c < 7; c++) c: 4,
-          7: 0,
-        });
+        expect(engine.publishedLengths, {for (var c = 0; c < 8; c++) c: 0});
       },
     );
     test(

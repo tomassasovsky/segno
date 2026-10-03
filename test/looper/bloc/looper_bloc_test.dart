@@ -8,6 +8,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno_engine/segno_engine.dart'
     show EngineSnapshot, TrackSnapshot;
 import 'package:segno_engine/segno_engine.dart' as le show LatencyState;
@@ -19,6 +20,8 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockRecordLengthControl extends Mock implements RecordLengthControl {}
 
+class _MockRecordTimingControl extends Mock implements RecordTimingControl {}
+
 class _MockSettingsRepository extends Mock implements SettingsRepository {}
 
 const _playingState = LooperState(
@@ -29,6 +32,7 @@ const _playingState = LooperState(
 void main() {
   late LooperRepository repository;
   late _MockRecordLengthControl recordLength;
+  late _MockRecordTimingControl recordTiming;
   late StreamController<LooperState> stateController;
   late MixSettingsSnapshot currentMix;
   late int confirmedDecay;
@@ -48,6 +52,15 @@ void main() {
   setUp(() {
     repository = _MockLooperRepository();
     recordLength = _MockRecordLengthControl();
+    recordTiming = _MockRecordTimingControl();
+    when(
+      () => recordTiming.setTrackTiming(
+        channel: any(named: 'channel'),
+        timing: any(named: 'timing'),
+      ),
+    ).thenAnswer(
+      (_) async => const RecordTimingOutcome(RecordTimingStatus.applied),
+    );
     when(() => recordLength.setLooperMode(any())).thenAnswer(
       (_) async => const RecordLengthOutcome(RecordLengthStatus.rejected),
     );
@@ -437,6 +450,7 @@ void main() {
     decayControl: FakeDecayControl(),
     oneShotControl: FakeOneShotControl(),
     recordLengthControl: recordLength,
+    recordTimingControl: recordTiming,
     fxPersistence: FxChainPersistence(looper: repository),
     repository: repository,
     mixSettings: testMixSettings(repository),
@@ -497,6 +511,7 @@ void main() {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: recordLength,
+      recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -513,6 +528,7 @@ void main() {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: recordLength,
+      recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -681,6 +697,7 @@ void main() {
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: recordLength,
+      recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository, settings: trackSettings),
       repository: repository,
@@ -689,22 +706,25 @@ void main() {
   }
 
   blocTest<LooperBloc, LooperState>(
-    'LooperTrackRecordTimingChanged forwards the override to the repository '
-    'and persists its code',
+    'LooperTrackRecordTimingChanged delegates persistence to its shared owner',
     build: buildBlocWithSettings,
     act: (bloc) => bloc.add(
       const LooperTrackRecordTimingChanged(2, timing: RecordTiming.quarter),
     ),
-    verify: (_) async {
+    verify: (_) {
       verify(
-        () => repository.setTrackRecordTiming(
+        () => recordTiming.setTrackTiming(
           channel: 2,
           timing: RecordTiming.quarter,
         ),
       ).called(1);
-      expect(
-        await trackSettings.loadTrackRecordTiming(2),
-        RecordTiming.quarter.code,
+      // The actual App and Session suites prove the owner's persistence;
+      // this boundary must never duplicate those writes in the Bloc.
+      verifyNever(
+        () => repository.setTrackRecordTiming(
+          channel: any(named: 'channel'),
+          timing: any(named: 'timing'),
+        ),
       );
     },
   );
@@ -1574,6 +1594,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1624,6 +1645,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
+        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1644,6 +1666,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
+        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1676,6 +1699,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
+        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1694,6 +1718,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
+        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1720,6 +1745,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1765,6 +1791,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1795,6 +1822,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
+        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1823,6 +1851,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
+        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1907,6 +1936,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1944,6 +1974,7 @@ void main() {
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: recordLength,
+            recordTimingControl: recordTiming,
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -1978,6 +2009,7 @@ void main() {
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: recordLength,
+            recordTimingControl: recordTiming,
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -2041,6 +2073,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2084,6 +2117,7 @@ void main() {
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: recordLength,
+            recordTimingControl: recordTiming,
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -2113,6 +2147,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2150,6 +2185,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2196,6 +2232,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2247,6 +2284,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2303,6 +2341,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2347,6 +2386,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2400,6 +2440,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2454,6 +2495,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2512,6 +2554,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2569,6 +2612,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2605,6 +2649,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2639,6 +2684,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2675,6 +2721,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2708,6 +2755,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2729,6 +2777,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2756,6 +2805,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2778,6 +2828,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2803,6 +2854,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2830,6 +2882,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2855,6 +2908,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
+          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2933,6 +2987,7 @@ void main() {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: recordLength,
+      recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -3238,6 +3293,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
+        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: looper),
         mixSettings: testMixSettings(looper),
         repository: looper,
@@ -3444,6 +3500,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
+        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: looper),
         repository: looper,
         mixSettings: testMixSettings(looper),

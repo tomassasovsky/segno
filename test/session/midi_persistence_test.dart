@@ -16,6 +16,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/session/session_mapping.dart';
@@ -82,6 +83,13 @@ void main() {
           runClickVolumeExclusive: tempo.runClickVolumeExclusive,
           runPlaybackExclusive: playback.runPlaybackExclusive,
           runRecordExclusive: <T>(operation) => operation(),
+          runRecordTimingExclusive: <T>(operation) => operation(),
+          currentDurableRecordTiming: () => RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
           currentDurableRecordLength: () => RecordLengthSnapshot(
             defaultBars: looper.sessionTransport.defaultLengthPresetBars,
             trackOverrides: looper.trackLengthPresetOverrides,
@@ -177,6 +185,7 @@ void main() {
             decayControl: playback,
             oneShotControl: playback,
             recordLengthControl: FakeRecordLengthControl(),
+            recordTimingControl: FakeRecordTimingControl(),
             clickVolumeControl: tempo,
             looper: looper,
             pedal: pedal,

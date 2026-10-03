@@ -11,6 +11,7 @@ import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
@@ -101,6 +102,13 @@ void main() {
         runClickVolumeExclusive: tempo.runClickVolumeExclusive,
         runPlaybackExclusive: playback.runPlaybackExclusive,
         runRecordExclusive: <T>(operation) => operation(),
+        runRecordTimingExclusive: <T>(operation) => operation(),
+        currentDurableRecordTiming: () => RecordTimingSnapshot(
+          defaultTiming: looper.defaultRecordTiming,
+          rememberedDivision: looper.sessionTransport.quantizeDiv,
+          trackOverrides: looper.trackRecordTimingOverrides,
+          captureLocked: false,
+        ),
         currentDurableRecordLength: () => RecordLengthSnapshot(
           defaultBars: looper.sessionTransport.defaultLengthPresetBars,
           trackOverrides: looper.trackLengthPresetOverrides,

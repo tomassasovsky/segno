@@ -12,6 +12,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
@@ -144,6 +145,12 @@ void main() {
       ),
       settings: settingsFromLooper(
         looper,
+        recordTiming: RecordTimingSnapshot(
+          defaultTiming: looper.defaultRecordTiming,
+          rememberedDivision: looper.sessionTransport.quantizeDiv,
+          trackOverrides: looper.trackRecordTimingOverrides,
+          captureLocked: false,
+        ),
         recordLength: RecordLengthSnapshot(
           defaultBars: looper.sessionTransport.defaultLengthPresetBars,
           trackOverrides: looper.trackLengthPresetOverrides,

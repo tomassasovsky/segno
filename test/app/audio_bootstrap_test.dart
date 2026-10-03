@@ -84,6 +84,20 @@ class _LengthBootStore extends FakeKeyValueStore {
   }
 }
 
+class _TimingBootStore extends FakeKeyValueStore {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'track_record_timing.7') {
+      if (!entered.isCompleted) entered.complete();
+      await release.future;
+    }
+    return super.getInt(key);
+  }
+}
+
 class _OnceBootEngine extends FakeAudioEngine {
   bool refuseOnce = false;
 
@@ -147,6 +161,96 @@ void main() {
         ),
       );
     }
+
+    group('complete Record timing startup', () {
+      for (final hasAudioConfig in [false, true]) {
+        test('restores explicit Immediately and remembered division; '
+            'config=$hasAudioConfig', () async {
+          if (hasAudioConfig) {
+            await settings.saveAudioConfig(
+              const StoredAudioConfig(sampleRate: 48000, bufferFrames: 256),
+            );
+          }
+          store.values.addAll({
+            'looper.quantize': false,
+            'tempo.quantize_div': 3,
+            'track_record_timing.0': 0,
+            'track_record_timing.7': 5,
+          });
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            mixSettings: testMixSettings(repository, settings: settings),
+          );
+          expect(result.started, isTrue);
+          expect(repository.defaultRecordTiming, RecordTiming.immediately);
+          expect(repository.sessionTransport.quantizeDiv, GridDivision.quarter);
+          expect(repository.trackRecordTimingOverrides, {
+            0: RecordTiming.immediately,
+            7: RecordTiming.eighth,
+          });
+          expect(engine.snapshot().quantize, isFalse);
+          expect(engine.snapshot().quantizeDiv, GridDivision.quarter);
+        });
+      }
+
+      for (final bad in <Object>['invalid', 1.5, -1, 7]) {
+        test(
+          'invalid final timing scalar $bad prevents partial startup',
+          () async {
+            repository.setRecordTimingSettings(
+              defaultTiming: RecordTiming.half,
+              rememberedDivision: GridDivision.half,
+              trackOverrides: {1: RecordTiming.immediately},
+            );
+            store.values.addAll({
+              'looper.quantize': true,
+              'tempo.quantize_div': 3,
+              'track_record_timing.7': bad,
+            });
+            final result = await tryAutoStartEngine(
+              repository: repository,
+              settings: settings,
+              mixSettings: testMixSettings(repository, settings: settings),
+            );
+            expect(result.started, isFalse);
+            expect(engine.startCalls, 0);
+            expect(repository.defaultRecordTiming, RecordTiming.half);
+            expect(repository.trackRecordTimingOverrides, {
+              1: RecordTiming.immediately,
+            });
+            expect(store.values['track_record_timing.7'], bad);
+          },
+        );
+      }
+
+      test('the final timing read completes before opening audio', () async {
+        final delayed = _TimingBootStore();
+        delayed.values.addAll({
+          'looper.quantize': true,
+          'tempo.quantize_div': 3,
+          'track_record_timing.0': 0,
+          'track_record_timing.7': 5,
+        });
+        final saved = SettingsRepository(store: delayed);
+        final starting = tryAutoStartEngine(
+          repository: repository,
+          settings: saved,
+          mixSettings: testMixSettings(repository, settings: saved),
+        );
+        await delayed.entered.future;
+        expect(engine.startCalls, 0);
+        expect(repository.defaultRecordTiming, RecordTiming.immediately);
+        expect(repository.trackRecordTimingOverrides, isEmpty);
+        delayed.release.complete();
+        expect((await starting).started, isTrue);
+        expect(repository.defaultRecordTiming, RecordTiming.quarter);
+        expect(repository.trackRecordTimingOverrides, {
+          0: RecordTiming.immediately,
+          7: RecordTiming.eighth,
+        });
+      });
+    });
 
     group('saved playback initialization', () {
       for (final hasAudioConfig in [false, true]) {
@@ -1468,6 +1572,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: FakeRecordLengthControl(),
+        recordTimingControl: FakeRecordTimingControl(),
         fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: repository,

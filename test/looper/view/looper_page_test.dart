@@ -60,6 +60,12 @@ void main() {
       );
       await recordOptions.load();
       addTearDown(() => unawaited(recordOptions.close()));
+      final timing = RecordTimingCubit(
+        repository: repository,
+        settings: settings,
+      );
+      await timing.load();
+      addTearDown(() => unawaited(timing.close()));
       final pedal = _MockPedalCubit();
       when(() => pedal.state).thenReturn(const PedalState());
       whenListen(
@@ -97,6 +103,7 @@ void main() {
               BlocProvider<TempoCubit>.value(value: tempo),
               BlocProvider<PlaybackOptionsCubit>.value(value: playback),
               BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+              BlocProvider<RecordTimingCubit>.value(value: timing),
               // The stage status bar is now unconditional, and its clock
               // readout selects a TransportClockCubit.
               BlocProvider<TransportClockCubit>(
@@ -113,6 +120,7 @@ void main() {
                   decayControl: playback,
                   oneShotControl: playback,
                   recordLengthControl: recordOptions,
+                  recordTimingControl: timing,
                   clickVolumeControl: tempo,
                   fxPersistence: fxPersistence,
                   looper: repository,

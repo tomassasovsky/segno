@@ -266,17 +266,15 @@ abstract interface class LooperTransport {
   /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
   EngineResult setRecordOffset(int frames);
 
-  /// Enables or disables quantized recording. When enabled, a record/overdub
-  /// press over an existing master loop is deferred to the next loop top so
-  /// captures align to the grid; a second press before the boundary cancels the
-  /// pending action. The defining recording (no master yet) always acts
-  /// immediately.
-  EngineResult setQuantize({required bool enabled});
-
-  /// Sets track [channel]'s quantize override: `null` inherits the global
-  /// [setQuantize] default, `false` forces quantize off for the track, and
-  /// `true` forces it on.
-  EngineResult setTrackQuantize({required int channel, required bool? enabled});
+  /// Queues one complete recording timing vector. [editMask] identifies
+  /// ordinary scopes (default bit zero, tracks bits one through eight).
+  /// Acceptance is published by the callback with a new even receipt.
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
+  });
 
   /// Cancels track [channel]'s pending record arm, whatever armed it (the
   /// quantized loop-top arm, the signal-triggered one, or a Band section
@@ -319,17 +317,6 @@ abstract interface class LooperTransport {
   /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
   /// with a record press continues into overdub instead of playback.
   EngineResult setRecDub({required bool enabled});
-
-  /// Sets track [channel]'s musical quantization division override: `null`
-  /// inherits the global division (`setQuantizeDiv`), otherwise the track's
-  /// arms fire on that division's boundaries, read live, so a change while
-  /// armed takes effect at the next boundary. Only meaningful while the
-  /// track's quantize gate is effectively on ([setQuantize] /
-  /// [setTrackQuantize]).
-  EngineResult setTrackQuantizeDiv({
-    required int channel,
-    required GridDivision? div,
-  });
 
   /// Sets track [channel]'s overdub feedback override: `null` inherits the
   /// global [setOverdubFeedback], otherwise the coefficient (clamped to
@@ -478,11 +465,6 @@ abstract interface class TempoControl {
   /// stays free-form ([EngineSnapshot.loopBars] `0`, tempo untouched) — the
   /// tempo-free behavior.
   EngineResult setSyncTempo({required bool on});
-
-  /// Sets the musical quantization granularity. State only in this slice —
-  /// published in [EngineSnapshot.quantizeDiv]; the musical arm machinery
-  /// that consumes it is engine-side (A3).
-  EngineResult setQuantizeDiv(GridDivision div);
 
   /// Sets the click's audibility mode: WHEN the click voice sounds. WHERE it
   /// sounds is [setClickOutput] (default no outputs). Default

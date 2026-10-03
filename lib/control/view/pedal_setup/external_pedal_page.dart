@@ -27,6 +27,7 @@ import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
@@ -523,6 +524,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final recordLengthSnapshot = context
         .watch<RecordOptionsCubit>()
         .recordLengthSnapshot;
+    final recordTimingSnapshot = context
+        .watch<RecordTimingCubit>()
+        .recordTimingSnapshot;
     final names = context.watch<TracksCubit>().state.names;
     return [
       for (final mapping in expression.mappings)
@@ -541,12 +545,19 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             decaySnapshot: decaySnapshot,
             oneShotSnapshot: oneShotSnapshot,
             recordLengthSnapshot: recordLengthSnapshot,
+            recordTimingSnapshot: recordTimingSnapshot,
           ),
-          disabledReason: recordLengthDisabledReason(
-            l10n,
-            mapping.target,
-            recordLengthSnapshot,
-          ),
+          disabledReason:
+              recordLengthDisabledReason(
+                l10n,
+                mapping.target,
+                recordLengthSnapshot,
+              ) ??
+              recordTimingDisabledReason(
+                l10n,
+                mapping.target,
+                recordTimingSnapshot,
+              ),
           art: expressionTargetArt(looper, mapping.target),
         ),
     ];
@@ -561,6 +572,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final recordLengthSnapshot = context
         .watch<RecordOptionsCubit>()
         .recordLengthSnapshot;
+    final recordTimingSnapshot = context
+        .watch<RecordTimingCubit>()
+        .recordTimingSnapshot;
     return expressionDestinations(
       context.l10n,
       context.watch<TracksCubit>().state.names,
@@ -569,6 +583,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
       decaySnapshot: decaySnapshot,
       oneShotSnapshot: oneShotSnapshot,
       recordLengthSnapshot: recordLengthSnapshot,
+      recordTimingSnapshot: recordTimingSnapshot,
     );
   }
 
@@ -642,6 +657,13 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             true) {
       return;
     }
+    if (target is RecordTimingValueTarget &&
+        context.read<RecordTimingCubit>().recordTimingSnapshot?.canEdit(
+              target.address,
+            ) !=
+            true) {
+      return;
+    }
     final replacing = _replacing;
     final expression = jack.expression;
     if (target == replacing) {
@@ -699,6 +721,8 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final mapping = jack.expression.mappingFor(target);
     if (mapping == null) return;
     final canonical = !preserveRaw && target is RecordLengthValueTarget
+        ? target.fromDomain(target.toDomain(value))
+        : !preserveRaw && target is RecordTimingValueTarget
         ? target.fromDomain(target.toDomain(value))
         : value;
     final next = jack.expression.withMapping(
@@ -1051,6 +1075,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final recordLengthSnapshot = context
         .watch<RecordOptionsCubit>()
         .recordLengthSnapshot;
+    final recordTimingSnapshot = context
+        .watch<RecordTimingCubit>()
+        .recordTimingSnapshot;
     final names = context.watch<TracksCubit>().state.names;
     final controls = button.controls;
     final rows = [
@@ -1078,12 +1105,19 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             decaySnapshot: decaySnapshot,
             oneShotSnapshot: oneShotSnapshot,
             recordLengthSnapshot: recordLengthSnapshot,
+            recordTimingSnapshot: recordTimingSnapshot,
           ),
-          disabledReason: recordLengthDisabledReason(
-            l10n,
-            parameter.target,
-            recordLengthSnapshot,
-          ),
+          disabledReason:
+              recordLengthDisabledReason(
+                l10n,
+                parameter.target,
+                recordLengthSnapshot,
+              ) ??
+              recordTimingDisabledReason(
+                l10n,
+                parameter.target,
+                recordTimingSnapshot,
+              ),
           art: expressionTargetArt(looper, parameter.target),
         ),
     ];
@@ -1191,6 +1225,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final recordLengthSnapshot = context
         .watch<RecordOptionsCubit>()
         .recordLengthSnapshot;
+    final recordTimingSnapshot = context
+        .watch<RecordTimingCubit>()
+        .recordTimingSnapshot;
     final surface = context.surface;
     final destination = _buttonDestination;
     final choosingControl =
@@ -1292,6 +1329,17 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                               true) {
                         return;
                       }
+                      final acceptedTiming = context
+                          .read<RecordTimingCubit>()
+                          .recordTimingSnapshot;
+                      if (control.target is RecordTimingValueTarget &&
+                          acceptedTiming?.canEdit(
+                                (control.target as RecordTimingValueTarget)
+                                    .address,
+                              ) !=
+                              true) {
+                        return;
+                      }
                       final now =
                           context.read<LooperRepository>().readValueTarget(
                             control.target,
@@ -1299,6 +1347,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                             decaySnapshot: acceptedDecay,
                             oneShotSnapshot: acceptedOneShot,
                             recordLengthSnapshot: acceptedLength,
+                            recordTimingSnapshot: acceptedTiming,
                           ) ??
                           0;
                       _addButtonControl(
@@ -1331,6 +1380,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                       decaySnapshot: decaySnapshot,
                       oneShotSnapshot: oneShotSnapshot,
                       recordLengthSnapshot: recordLengthSnapshot,
+                      recordTimingSnapshot: recordTimingSnapshot,
                     ),
                     kind: _kind,
                     columns: 1,

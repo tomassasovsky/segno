@@ -20,6 +20,7 @@ import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/one_shot.dart';
@@ -46,7 +47,11 @@ void main() {
   late SettingsRepository settings;
   late ControlCubit control;
   late RecordOptionsCubit record;
+  late RecordTimingCubit timing;
   late TracksCubit tracks;
+  late RecordTiming confirmedTiming;
+  late GridDivision rememberedDivision;
+  late bool timingCapturing;
   late FakePedalLink transport;
   late PedalRepository pedal;
   late MixSettingsSnapshot currentMix;
@@ -70,6 +75,9 @@ void main() {
     looperStates = StreamController<LooperState>.broadcast();
     currentMix = MixSettingsSnapshot(trackLevels: const {0: 1, 1: 1});
     pendingMix = null;
+    confirmedTiming = RecordTiming.immediately;
+    rememberedDivision = GridDivision.off;
+    timingCapturing = false;
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     when(() => looper.state).thenReturn(
       LooperState(
@@ -107,10 +115,47 @@ void main() {
       (_) => const Stream<EngineResult>.empty(),
     );
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordTimingCaptureLocked).thenAnswer(
+      (_) => timingCapturing,
+    );
+    when(() => looper.recordTimingSettingsSettled).thenReturn(true);
+    when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
+    when(() => looper.defaultRecordTiming).thenAnswer((_) => confirmedTiming);
+    when(() => looper.trackRecordTimingOverrides).thenReturn(const {});
+    when(() => looper.recordTimingRestartIntent).thenAnswer(
+      (_) => (
+        defaultTiming: confirmedTiming,
+        rememberedDivision: rememberedDivision,
+        trackOverrides: const <int, RecordTiming>{},
+      ),
+    );
+    when(() => looper.settleRecordTimingSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => looper.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      rememberedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      return EngineResult.ok;
+    });
     when(() => looper.lengthSettingsSettled).thenReturn(true);
     when(() => looper.lengthRecoveryRequired).thenReturn(false);
     when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
-    when(() => looper.sessionTransport).thenReturn(const TransportState());
+    when(() => looper.sessionTransport).thenAnswer(
+      (_) => TransportState(
+        recordTiming: confirmedTiming,
+        quantizeDiv: rememberedDivision,
+      ),
+    );
     when(() => looper.settleLengthSettings()).thenAnswer(
       (_) async => EngineResult.ok,
     );
@@ -132,7 +177,12 @@ void main() {
     ).thenReturn(EngineResult.ok);
   });
 
-  setUpAll(() => registerFallbackValue(LooperMode.multi));
+  setUpAll(() {
+    registerFallbackValue(LooperMode.multi);
+    registerFallbackValue(RecordTiming.immediately);
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(<int, RecordTiming>{});
+  });
 
   tearDown(() async {
     await looperStates.close();
@@ -144,8 +194,15 @@ void main() {
     ExternalJackSetup? jack,
     double? clickVolume = 1,
     OneShotSnapshot? oneShotSnapshot,
+    RecordTiming currentTiming = RecordTiming.immediately,
+    bool captureLocked = false,
   }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
+    confirmedTiming = currentTiming;
+    rememberedDivision = currentTiming.division;
+    timingCapturing = captureLocked;
+    await settings.saveQuantize(value: currentTiming.quantize);
+    await settings.saveQuantizeDiv(rememberedDivision.code);
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -169,6 +226,9 @@ void main() {
     record = RecordOptionsCubit(repository: looper, settings: settings);
     addTearDown(() => unawaited(record.close()));
     await record.load();
+    timing = RecordTimingCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(timing.close()));
+    await timing.load();
     final controller = ControllerRepository(
       sources: [ConsoleCtrlSource(pedal)],
     );
@@ -177,6 +237,7 @@ void main() {
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,
+      recordTimingControl: timing,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       clickVolumeControl: tempo,
@@ -224,6 +285,7 @@ void main() {
               BlocProvider<TempoCubit>.value(value: tempo),
               BlocProvider<PlaybackOptionsCubit>.value(value: playback),
               BlocProvider<RecordOptionsCubit>.value(value: record),
+              BlocProvider<RecordTimingCubit>.value(value: timing),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -578,6 +640,105 @@ void main() {
     );
 
     expressionTestWidgets(
+      'Record timing saves Immediately to sixteenth without changing audio',
+      (tester) async {
+        await pump(tester);
+        expect(timing.state.recordTimingReady, isTrue);
+        clearInteractions(looper);
+        await tap(tester, 'expression_add');
+        await tap(tester, 'expression_kind_loopControls');
+        await tap(tester, 'expression_destination_loop:defaults');
+        await tap(tester, targetKey(const DefaultRecordTimingTarget()));
+        expect(textOf('expression_endpoint_heel_value'), 'Immediately');
+        expect(textOf('expression_endpoint_toe_value'), '1/16 note');
+        await tap(tester, 'external_save');
+        final mapping = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(mapping.target, const DefaultRecordTimingTarget());
+        expect((mapping.heel, mapping.toe), (0, 1));
+        verifyNever(
+          () => looper.setRecordTimingSettings(
+            defaultTiming: any(named: 'defaultTiming'),
+            rememberedDivision: any(named: 'rememberedDivision'),
+            trackOverrides: any(named: 'trackOverrides'),
+          ),
+        );
+      },
+    );
+
+    expressionTestWidgets(
+      'Multi offers independent track timing',
+      (tester) async {
+        const target = TrackRecordTimingTarget(0);
+        await pump(tester);
+        await tap(tester, 'expression_add');
+        await tap(tester, 'expression_kind_recordedTrack');
+        await tap(tester, 'expression_destination_track:0');
+        await tap(tester, targetKey(target));
+        expect(
+          tester
+              .widget<LoopSlider>(
+                find.byKey(const Key('expression_endpoint_heel')),
+              )
+              .enabled,
+          isTrue,
+        );
+        await tap(tester, 'external_save');
+        expect(
+          control.state.pedalSetup.external
+              .forJack(PedalCtrlJack.ctrl1)
+              .expression
+              .mappings
+              .single
+              .target,
+          target,
+        );
+      },
+    );
+
+    expressionTestWidgets(
+      'capture keeps a saved timing row visible but disables its edit',
+      (tester) async {
+        const target = TrackRecordTimingTarget(0);
+        await pump(
+          tester,
+          captureLocked: true,
+          jack: ExternalJackSetup(
+            type: ExternalJackType.expression,
+            expression: ExternalExpressionSetup(
+              mappings: [
+                ExpressionMapping(target: target, heel: 0.2, toe: 0.8),
+              ],
+            ),
+          ),
+        );
+        expect(timing.state.recordTimingReady, isTrue);
+        expect(
+          textOf('expression_range_title'),
+          'Finish recording to change record timing.',
+        );
+        expect(
+          tester
+              .widget<LoopSlider>(
+                find.byKey(const Key('expression_endpoint_heel')),
+              )
+              .enabled,
+          isFalse,
+        );
+        final saved = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(saved.target, target);
+        expect((saved.heel, saved.toe), (0.2, 0.8));
+      },
+    );
+
+    expressionTestWidgets(
       'Multi retains a saved Track length row with a clear lock reason',
       (tester) async {
         const target = TrackRecordLengthTarget(0);
@@ -927,6 +1088,61 @@ void main() {
             defaultBars: any(named: 'defaultBars'),
             overrides: any(named: 'overrides'),
             mode: any(named: 'mode'),
+          ),
+        );
+      },
+    );
+
+    expressionTestWidgets(
+      'Record timing repair and Escape keep exact authored endpoints',
+      (tester) async {
+        await pump(
+          tester,
+          jack: ExternalJackSetup(
+            type: ExternalJackType.expression,
+            expression: ExternalExpressionSetup(
+              mappings: [
+                ExpressionMapping(
+                  target: const TrackVolumeTarget(0),
+                  heel: 0.2,
+                  toe: 0.8,
+                ),
+              ],
+            ),
+          ),
+        );
+        clearInteractions(looper);
+        await tap(tester, 'expression_change');
+        await tap(tester, 'expression_kind_loopControls');
+        await tap(tester, 'expression_destination_loop:defaults');
+        await tap(tester, targetKey(const DefaultRecordTimingTarget()));
+        final slider = find.byKey(const Key('expression_endpoint_heel'));
+        Focus.of(
+          tester.element(
+            find
+                .descendant(of: slider, matching: find.byType(GestureDetector))
+                .first,
+          ),
+        ).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        await tap(tester, 'external_save');
+        final mapping = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(mapping.target, const DefaultRecordTimingTarget());
+        expect((mapping.heel, mapping.toe), (0.2, 0.8));
+        verifyNever(
+          () => looper.setRecordTimingSettings(
+            defaultTiming: any(named: 'defaultTiming'),
+            rememberedDivision: any(named: 'rememberedDivision'),
+            trackOverrides: any(named: 'trackOverrides'),
           ),
         );
       },

@@ -1212,7 +1212,7 @@ typedef struct le_track {
    * playback lap without changing the musical capture clock. */
   _Atomic int32_t a_one_shot;
   /* Musical quantization division override (accepted design, slice 2b): -1
-   * inherits the global a_quantize_div, else a le_grid_div. Control writes,
+   * inherits the global a_quantize_div, else a le_grid_div. Callback writes,
    * the audio thread reads it live (le_live_subdiv_ratio). Configure resets
    * it; clear does not (a setting, like a_one_shot). */
   _Atomic int32_t a_quantize_div_override;
@@ -1349,6 +1349,15 @@ typedef struct le_perf_capture {
  * which is exactly the range where refinement is needed. Below that the
  * coarse estimate is already sub-cent and the refinement declines to run. */
 #define LE_TUNER_RAW 2048
+
+/* Fixed readback copied under the timing sequence. Only a full control-thread
+ * snapshot refreshes the cache; standalone track reads are side-effect free. */
+typedef struct le_record_timing_readback {
+  int32_t default_timing, remembered_division;
+  int32_t track_timing[LE_MAX_TRACKS];
+  uint32_t revision;
+  int32_t result;
+} le_record_timing_readback;
 
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
@@ -1829,20 +1838,15 @@ struct le_engine {
    * an immediate record would) instead of acting now; the audio thread fires it
    * at the next loop top. Arming creates no undo layer (layers are captured
    * per pass on the audio thread), so cancelling is a plain disarm. */
-  int quantize; /* global default */
-  /* The control thread's mirror of a_quantize_div.
-   *
-   * The gate above is a plain control-side int the setter writes at once,
-   * while the DIVISION reaches the audio thread through the ring. Publishing
-   * one of each in the same snapshot let a reader see the gate move without
-   * its division — a session saved in that window recorded "quantize on, no
-   * division", which is a different record timing from the one chosen. The
-   * audio thread keeps reading a_quantize_div; this is what the snapshot
-   * publishes, so both halves come from one thread at one instant. */
-  int quantize_div;
-  /* Per-track quantize override: -1 inherit the global default, 0 force off,
-   * 1 force on. The effective value drives le_engine_record's arm decision. */
-  int track_quantize[LE_MAX_TRACKS];
+  _Atomic int32_t a_record_timing_default;
+  _Atomic int32_t a_record_timing_track[LE_MAX_TRACKS];
+  _Atomic uint32_t a_record_timing_revision;
+  _Atomic int32_t a_record_timing_result;
+  uint32_t record_timing_posted_revision; /* sole control producer */
+  uint32_t record_timing_command; /* existing end-of-block publication fence */
+  uint32_t record_timing_publish_revision; /* callback: even revision at tail */
+  int record_timing_publish_pending;
+  le_record_timing_readback record_timing_cache;
   int armed[LE_MAX_TRACKS];
   /* What each arm is waiting for: 0 = loop top (quantize), 1 = input level
    * (auto-record). Lets toggling one feature cancel only its own arms. */

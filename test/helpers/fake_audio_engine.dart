@@ -448,36 +448,35 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  /// The last value passed to [setQuantize].
+  /// The last value passed to [setRecordTimingSettings].
   bool? lastQuantize;
 
-  @override
-  EngineResult setQuantize({required bool enabled}) {
-    lastQuantize = enabled;
-    return EngineResult.ok;
-  }
-
-  /// Per-track quantize overrides passed to [setTrackQuantize].
+  /// Per-track quantize overrides passed to [setRecordTimingSettings].
   final Map<int, bool?> trackQuantize = {};
 
-  @override
-  EngineResult setTrackQuantize({
-    required int channel,
-    required bool? enabled,
-  }) {
-    trackQuantize[channel] = enabled;
-    return EngineResult.ok;
-  }
-
-  /// Per-track division overrides passed to [setTrackQuantizeDiv].
+  /// Per-track division overrides passed to [setRecordTimingSettings].
   final Map<int, GridDivision?> trackQuantizeDiv = {};
 
+  /// Complete callback receipt sequence for accepted timing vectors.
+  int recordTimingRevision = 0;
+
   @override
-  EngineResult setTrackQuantizeDiv({
-    required int channel,
-    required GridDivision? div,
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
   }) {
-    trackQuantizeDiv[channel] = div;
+    if (trackOverrides.keys.any((c) => c < 0 || c >= 8)) {
+      return EngineResult.invalid;
+    }
+    lastQuantize = defaultTiming.quantize;
+    lastQuantizeDiv = rememberedDivision;
+    for (var c = 0; c < 8; c++) {
+      trackQuantize[c] = trackOverrides[c]?.quantize;
+      trackQuantizeDiv[c] = trackOverrides[c]?.division;
+    }
+    recordTimingRevision = (recordTimingRevision + 2) & 0xffffffff;
     return EngineResult.ok;
   }
 
@@ -548,7 +547,7 @@ class FakeAudioEngine implements AudioEngine {
   /// The last value passed to [setSyncTempo].
   bool? lastSyncTempo;
 
-  /// The last value passed to [setQuantizeDiv].
+  /// The last value passed to [setRecordTimingSettings].
   GridDivision? lastQuantizeDiv;
 
   /// The last value passed to [setClickMode].
@@ -596,12 +595,6 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult setSyncTempo({required bool on}) {
     lastSyncTempo = on;
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setQuantizeDiv(GridDivision div) {
-    lastQuantizeDiv = div;
     return EngineResult.ok;
   }
 
@@ -1629,7 +1622,7 @@ class _LengthSnapshot extends EngineSnapshot {
          tsNum: source.tsNum,
          tsDen: source.tsDen,
          syncTempo: source.syncTempo,
-         quantizeDiv: source.quantizeDiv,
+         quantizeDiv: engine.lastQuantizeDiv ?? source.quantizeDiv,
          loopBars: source.loopBars,
          currentBeat: source.currentBeat,
          clickMode: source.clickMode,
@@ -1640,7 +1633,9 @@ class _LengthSnapshot extends EngineSnapshot {
          countInBeatsLeft: source.countInBeatsLeft,
          looperMode: mode ?? source.looperMode,
          primaryTrack: source.primaryTrack,
-         quantize: source.quantize,
+         quantize: engine.lastQuantize ?? source.quantize,
+         recordTimingRevision: engine.recordTimingRevision,
+         recordTimingResult: 0,
          autoRecord: source.autoRecord,
          overdubFeedback: source.overdubFeedback,
          mixRevision: mixRevision,
@@ -1655,6 +1650,12 @@ class _LengthSnapshot extends EngineSnapshot {
                imageRevision: engine.imageRevisions[channel],
                solo: engine.trackSolo[channel],
                oneShot: engine.trackOneShot[channel],
+               timing: engine.lastQuantize == null
+                   ? null
+                   : (
+                       enabled: engine.trackQuantize[channel],
+                       division: engine.trackQuantizeDiv[channel],
+                     ),
              ),
          ],
        );
@@ -1667,6 +1668,7 @@ class _LengthTrack extends TrackSnapshot {
     int? imageRevision,
     bool? solo,
     bool? oneShot,
+    ({bool? enabled, GridDivision? division})? timing,
   }) : super(
          imageRevision: imageRevision ?? source.imageRevision,
          solo: solo ?? source.solo,
@@ -1692,8 +1694,12 @@ class _LengthTrack extends TrackSnapshot {
          restoreState: source.restoreState,
          positionFrames: source.positionFrames,
          pendingTrigger: source.pendingTrigger,
-         quantizeOverride: source.quantizeOverride,
-         quantizeDivOverride: source.quantizeDivOverride,
+         quantizeOverride: timing == null
+             ? source.quantizeOverride
+             : timing.enabled,
+         quantizeDivOverride: timing == null
+             ? source.quantizeDivOverride
+             : timing.division,
          overdubFeedbackOverride: source.overdubFeedbackOverride,
          lanes: source.lanes,
        );
