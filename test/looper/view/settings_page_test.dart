@@ -106,6 +106,9 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     // The real control cubit: it owns the shared InteractionMode whose
     // persisted default the View section edits.
     pedalRepo = PedalRepository(NoopPedalLink());
@@ -120,6 +123,7 @@ void main() {
     control = ControlCubit(
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
+      recordLengthControl: FakeRecordLengthControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: fxPersistence,
       looper: repository,

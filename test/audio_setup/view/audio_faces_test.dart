@@ -108,9 +108,13 @@ void main() {
     engine = StreamController<LooperState>.broadcast();
     addTearDown(engine.close);
     when(() => repository.looperState).thenAnswer((_) => engine.stream);
+    when(() => repository.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     when(() => repository.state).thenReturn(const LooperState(status: _open));
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.recordLengthCaptureLocked).thenReturn(false);
     when(() => repository.clickVolumeSettled).thenReturn(true);
     when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
     when(() => repository.sessionTransport).thenAnswer(

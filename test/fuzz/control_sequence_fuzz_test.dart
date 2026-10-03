@@ -30,6 +30,7 @@ import '../helpers/fake_click_volume_control.dart';
 import '../helpers/fake_decay_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/fake_one_shot_control.dart';
+import '../helpers/fake_record_length_control.dart';
 import '../helpers/test_mix_settings.dart';
 
 /// The control-sequence fuzzer: the REAL native engine (device-free pump) +
@@ -727,6 +728,7 @@ class _Harness {
     bloc = LooperBloc(
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
+      recordLengthControl: FakeRecordLengthControl(),
       fxPersistence: fxPersistence,
       repository: repo,
       mixSettings: mixSettings,
@@ -745,6 +747,7 @@ class _Harness {
     control = ControlCubit(
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
+      recordLengthControl: FakeRecordLengthControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: fxPersistence,
       looper: repo,

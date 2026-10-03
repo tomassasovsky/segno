@@ -861,37 +861,99 @@ class SettingsRepository {
   /// `loadDefaultInteractionMode`'s opaque-string-token scheme: that key
   /// predates this plan and preserves pre-rename legacy tokens (D10), a
   /// concern this newly-introduced enum has no analog of.
-  Future<int> loadLooperMode() async =>
-      await _store.getInt(_looperModeKey) ?? 0;
+  Future<int> loadLooperMode() async => await readLooperModeCheckpoint() ?? 0;
 
   /// Saves the looper mode as its enum [code].
-  Future<void> saveLooperMode(int code) => _store.setInt(_looperModeKey, code);
+  Future<void> saveLooperMode(int code) => restoreLooperModeCheckpoint(code);
 
   // ---- track length presets (A6, D17) ----
 
   String _trackLengthPresetKey(int channel) => 'tempo.length_preset.$channel';
   static const String _defaultLengthPresetKey = 'looper.default_length_bars';
 
-  /// Loads track [channel]'s length preset override: `null` follows the
-  /// default, `0` is an explicit Auto,
-  /// `1..64` a fixed bar count.
+  String _recordLengthKey(int? channel) {
+    if (channel != null && (channel < 0 || channel >= 8)) {
+      throw ArgumentError.value(channel, 'channel');
+    }
+    return channel == null
+        ? _defaultLengthPresetKey
+        : _trackLengthPresetKey(channel);
+  }
+
+  /// Reads exact membership and refuses malformed saved bars without repair.
+  Future<int?> readRecordLengthCheckpoint({required int? channel}) async {
+    final key = _recordLengthKey(channel);
+    await _serializedWrite;
+    final value = await _store.getInt(key);
+    if (value != null && (value < 0 || value > 64)) {
+      throw const FormatException('Invalid Record length');
+    }
+    return value;
+  }
+
+  /// Writes and verifies one scalar, preserving absence versus explicit Auto.
+  Future<void> restoreRecordLengthCheckpoint({
+    required int? channel,
+    required int? bars,
+  }) {
+    final key = _recordLengthKey(channel);
+    if (bars != null && (bars < 0 || bars > 64)) {
+      throw ArgumentError.value(bars, 'bars');
+    }
+    return _serialize(() async {
+      if (bars == null) {
+        await _store.remove(key);
+      } else {
+        await _store.setInt(key, bars);
+      }
+      if (await _store.getInt(key) != bars) {
+        throw StateError('Record length scalar was not confirmed');
+      }
+    });
+  }
+
+  /// Reads the exact saved mode, refusing an unknown enum code.
+  Future<int?> readLooperModeCheckpoint() async {
+    await _serializedWrite;
+    final value = await _store.getInt(_looperModeKey);
+    if (value != null && (value < 0 || value > 4)) {
+      throw const FormatException('Invalid loop mode');
+    }
+    return value;
+  }
+
+  /// Restores and verifies the exact saved mode, including absence.
+  Future<void> restoreLooperModeCheckpoint(int? mode) {
+    if (mode != null && (mode < 0 || mode > 4)) {
+      throw ArgumentError.value(mode, 'mode');
+    }
+    return _serialize(() async {
+      if (mode == null) {
+        await _store.remove(_looperModeKey);
+      } else {
+        await _store.setInt(_looperModeKey, mode);
+      }
+      if (await _store.getInt(_looperModeKey) != mode) {
+        throw StateError('Loop mode scalar was not confirmed');
+      }
+    });
+  }
+
+  /// Reads a track override; null inherits and zero is explicit Auto.
   Future<int?> loadTrackLengthPreset(int channel) =>
-      _store.getInt(_trackLengthPresetKey(channel));
+      readRecordLengthCheckpoint(channel: channel);
 
-  /// Saves track [channel]'s length preset override (`null` => follow the
-  /// default, `0` = Auto, `1..64` = fixed bars).
-  Future<void> saveTrackLengthPreset(int channel, int? bars) => bars == null
-      ? _store.remove(_trackLengthPresetKey(channel))
-      : _store.setInt(_trackLengthPresetKey(channel), bars);
+  /// Writes a verified track override or removes it to inherit.
+  Future<void> saveTrackLengthPreset(int channel, int? bars) =>
+      restoreRecordLengthCheckpoint(channel: channel, bars: bars);
 
-  /// Loads the default length preset for a defining recording (`0` = Auto,
-  /// else bars); `0` when unset.
+  /// Reads the default preset, using Auto only when absent.
   Future<int> loadDefaultLengthPreset() async =>
-      await _store.getInt(_defaultLengthPresetKey) ?? 0;
+      await readRecordLengthCheckpoint(channel: null) ?? 0;
 
-  /// Saves the default length preset (`0` = Auto, `1..64` = fixed bars).
+  /// Writes and verifies the default preset.
   Future<void> saveDefaultLengthPreset(int bars) =>
-      _store.setInt(_defaultLengthPresetKey, bars);
+      restoreRecordLengthCheckpoint(channel: null, bars: bars);
 
   // Legacy single-route monitor keys (one route per input). No longer written
   // by the live app; read once by the v2 lane migration and then cleared. The

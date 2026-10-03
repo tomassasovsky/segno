@@ -25,6 +25,7 @@ import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -74,6 +75,7 @@ void main() {
   late _MockLooperRepository looper;
   late StreamController<LooperState> looperStates;
   late SettingsRepository settings;
+  late RecordOptionsCubit record;
 
   setUp(() {
     looper = _MockLooperRepository();
@@ -121,6 +123,30 @@ void main() {
     ]);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
+    when(() => looper.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.lengthSettingsSettled).thenReturn(true);
+    when(() => looper.lengthRecoveryRequired).thenReturn(false);
+    when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
+    when(() => looper.sessionTransport).thenReturn(const TransportState());
+    when(() => looper.settleLengthSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => looper.setLengthSettings(
+        defaultBars: any(named: 'defaultBars'),
+        overrides: any(named: 'overrides'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setRecDub(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
+    ).thenReturn(EngineResult.ok);
     when(
       () => looper.setTrackEffectParam(
         channel: any(named: 'channel'),
@@ -133,6 +159,8 @@ void main() {
       () => looper.setVolume(any(), channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
   });
+
+  setUpAll(() => registerFallbackValue(LooperMode.multi));
 
   tearDown(() async {
     await looperStates.close();
@@ -183,9 +211,13 @@ void main() {
       snapshot: DecaySnapshot(defaultPercent: 25, trackOverrides: const {0: 0}),
       oneShot: oneShotSnapshot,
     );
+    record = RecordOptionsCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(record.close()));
+    await record.load();
     final control = ControlCubit(
       decayControl: decay,
       oneShotControl: decay,
+      recordLengthControl: record,
       clickVolumeControl: tempo,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
@@ -235,6 +267,7 @@ void main() {
               BlocProvider.value(value: pedalCubit),
               BlocProvider<TempoCubit>.value(value: tempo),
               BlocProvider<PlaybackOptionsCubit>.value(value: decay),
+              BlocProvider<RecordOptionsCubit>.value(value: record),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -529,6 +562,37 @@ void main() {
     expect(find.text('Off · Keep layers'), findsWidgets);
     expect(find.text('75%'), findsWidgets);
     await shot(tester, 'decay_held_released');
+  }, skip: !hasScreenshotFonts);
+
+  screenshotTestWidgets('a button holds 32 bars and releases to Auto', (
+    tester,
+  ) async {
+    const target = DefaultRecordLengthTarget();
+    await pump(
+      tester,
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: target,
+                condition: ExternalValueCondition.heldReleased,
+                active: 0.5,
+                inactive: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    await tester.tap(
+      find.byKey(Key('external_control_value_${externalControlKey(target)}')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Auto'), findsWidgets);
+    expect(find.text('32 bars'), findsWidgets);
+    await shot(tester, 'record_length_held_released');
   }, skip: !hasScreenshotFonts);
 
   screenshotTestWidgets('a button holds Once and releases to Loop', (

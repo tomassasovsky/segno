@@ -44,6 +44,7 @@ void main() {
       fxPersistence: FxChainPersistence(looper: repository),
       decayControl: owner,
       oneShotControl: owner,
+      recordLengthControl: FakeRecordLengthControl(),
     );
     addTearDown(() async {
       if (!store.release.isCompleted) store.release.complete();

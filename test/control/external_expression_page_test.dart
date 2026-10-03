@@ -19,6 +19,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/one_shot.dart';
@@ -44,6 +45,7 @@ void main() {
   late StreamController<LooperState> looperStates;
   late SettingsRepository settings;
   late ControlCubit control;
+  late RecordOptionsCubit record;
   late TracksCubit tracks;
   late FakePedalLink transport;
   late PedalRepository pedal;
@@ -101,10 +103,36 @@ void main() {
     when(() => looper.allTrackChains()).thenReturn(const {});
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
+    when(() => looper.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.lengthSettingsSettled).thenReturn(true);
+    when(() => looper.lengthRecoveryRequired).thenReturn(false);
+    when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
+    when(() => looper.sessionTransport).thenReturn(const TransportState());
+    when(() => looper.settleLengthSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => looper.setLengthSettings(
+        defaultBars: any(named: 'defaultBars'),
+        overrides: any(named: 'overrides'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setRecDub(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
+    ).thenReturn(EngineResult.ok);
     when(
       () => looper.setVolume(any(), channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
   });
+
+  setUpAll(() => registerFallbackValue(LooperMode.multi));
 
   tearDown(() async {
     await looperStates.close();
@@ -138,6 +166,9 @@ void main() {
     addTearDown(() => unawaited(pedalCubit.close()));
     final tempo = MockClickTempoCubit(clickVolume: clickVolume);
     final playback = MockDecayPlaybackCubit(oneShot: oneShotSnapshot);
+    record = RecordOptionsCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(record.close()));
+    await record.load();
     final controller = ControllerRepository(
       sources: [ConsoleCtrlSource(pedal)],
     );
@@ -145,6 +176,7 @@ void main() {
     control = ControlCubit(
       decayControl: playback,
       oneShotControl: playback,
+      recordLengthControl: record,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       clickVolumeControl: tempo,
@@ -191,6 +223,7 @@ void main() {
               BlocProvider.value(value: pedalCubit),
               BlocProvider<TempoCubit>.value(value: tempo),
               BlocProvider<PlaybackOptionsCubit>.value(value: playback),
+              BlocProvider<RecordOptionsCubit>.value(value: record),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -515,6 +548,72 @@ void main() {
       },
     );
 
+    expressionTestWidgets(
+      'Record length saves Auto to 64 bars without touching playback',
+      (tester) async {
+        await pump(tester);
+        clearInteractions(looper);
+        await tap(tester, 'expression_add');
+        await tap(tester, 'expression_kind_loopControls');
+        await tap(tester, 'expression_destination_loop:defaults');
+        await tap(tester, targetKey(const DefaultRecordLengthTarget()));
+        expect(textOf('expression_endpoint_heel_value'), 'Auto');
+        expect(textOf('expression_endpoint_toe_value'), '64 bars');
+        await tap(tester, 'external_save');
+        final mapping = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(mapping.target, const DefaultRecordLengthTarget());
+        expect((mapping.heel, mapping.toe), (0, 1));
+        verifyNever(
+          () => looper.setLengthSettings(
+            defaultBars: any(named: 'defaultBars'),
+            overrides: any(named: 'overrides'),
+            mode: any(named: 'mode'),
+          ),
+        );
+      },
+    );
+
+    expressionTestWidgets(
+      'Multi retains a saved Track length row with a clear lock reason',
+      (tester) async {
+        const target = TrackRecordLengthTarget(0);
+        await pump(
+          tester,
+          jack: ExternalJackSetup(
+            type: ExternalJackType.expression,
+            expression: ExternalExpressionSetup(
+              mappings: [
+                ExpressionMapping(target: target, heel: 0.2, toe: 0.8),
+              ],
+            ),
+          ),
+        );
+        expect(
+          textOf('expression_range_title'),
+          'Track length follows Loop defaults in Multi.',
+        );
+        expect(
+          tester
+              .widget<LoopSlider>(
+                find.byKey(const Key('expression_endpoint_heel')),
+              )
+              .enabled,
+          isFalse,
+        );
+        final saved = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(saved.target, target);
+        expect((saved.heel, saved.toe), (0.2, 0.8));
+      },
+    );
+
     expressionTestWidgets('an endpoint moves, and the pedal writes it', (
       tester,
     ) async {
@@ -777,5 +876,60 @@ void main() {
       expect(mapping.heel, 0.25);
       expect(mapping.toe, 0.75);
     });
+
+    expressionTestWidgets(
+      'Record length repair and Escape preserve authored raw endpoints',
+      (tester) async {
+        await pump(
+          tester,
+          jack: ExternalJackSetup(
+            type: ExternalJackType.expression,
+            expression: ExternalExpressionSetup(
+              mappings: [
+                ExpressionMapping(
+                  target: const TrackVolumeTarget(0),
+                  heel: 0.2,
+                  toe: 0.8,
+                ),
+              ],
+            ),
+          ),
+        );
+        clearInteractions(looper);
+        await tap(tester, 'expression_change');
+        await tap(tester, 'expression_kind_loopControls');
+        await tap(tester, 'expression_destination_loop:defaults');
+        await tap(tester, targetKey(const DefaultRecordLengthTarget()));
+        final slider = find.byKey(const Key('expression_endpoint_heel'));
+        Focus.of(
+          tester.element(
+            find
+                .descendant(of: slider, matching: find.byType(GestureDetector))
+                .first,
+          ),
+        ).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        await tap(tester, 'external_save');
+        final mapping = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(mapping.target, const DefaultRecordLengthTarget());
+        expect((mapping.heel, mapping.toe), (0.2, 0.8));
+        verifyNever(
+          () => looper.setLengthSettings(
+            defaultBars: any(named: 'defaultBars'),
+            overrides: any(named: 'overrides'),
+            mode: any(named: 'mode'),
+          ),
+        );
+      },
+    );
   });
 }

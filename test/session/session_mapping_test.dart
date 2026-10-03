@@ -9,6 +9,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/session/session_mapping.dart';
 // The chains a performance arm records cross the boundary as ENGINE models
 // (the manifest embeds them as canonical JSON), so the assertions on them name
@@ -121,6 +122,12 @@ void main() {
         ),
         settings: settingsFromLooper(
           looper,
+          recordLength: RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
           clickVolume: 1,
           decay: DecaySnapshot(
             defaultPercent: looper.defaultOverdubDecay,
@@ -187,6 +194,12 @@ void main() {
       expect(
         settingsFromLooper(
           looper,
+          recordLength: RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
           clickVolume: 1,
           decay: DecaySnapshot(
             defaultPercent: looper.defaultOverdubDecay,
@@ -236,6 +249,12 @@ void main() {
         expect(engine.snapshot().tempoBpm, 0);
         final settings = settingsFromLooper(
           looper,
+          recordLength: RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
           clickVolume: .6,
           decay: DecaySnapshot(
             defaultPercent: looper.defaultOverdubDecay,
@@ -283,6 +302,12 @@ void main() {
           ..setAutoRecord(enabled: true);
         final inherited = settingsFromLooper(
           looper,
+          recordLength: RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
           clickVolume: 1,
           decay: DecaySnapshot(
             defaultPercent: looper.defaultOverdubDecay,

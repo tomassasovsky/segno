@@ -428,6 +428,12 @@ void main() {
       audio
         ..commandsAreSettled = true
         ..publishLengthCommands = true;
+      expect(repository.lengthRecoveryRequired, isTrue);
+      expect(
+        repository.startEngine(const EngineConfig()),
+        EngineResult.notReady,
+      );
+      expect(repository.recoverLengthSettings(), EngineResult.ok);
       expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
       expect(audio.publishedLengths, {for (var c = 0; c < 8; c++) c: 4});
       expect(await repository.settleLengthSettings(), EngineResult.ok);
