@@ -1,0 +1,202 @@
+{
+  "suites": [
+    {
+      "suite": "app",
+      "success": 2729,
+      "hidden": 225,
+      "skips": 114,
+      "covered": 25352,
+      "lines": 27859,
+      "percent": 91.00111274632974,
+      "result": {
+        "name": "app",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 76.7,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "--coverage",
+          "--exclude-tags",
+          "screenshots",
+          "--reporter",
+          "json"
+        ],
+        "coverage_sha256": "4ce6d160481c7857d2b9187b459075d7c4830a3197dfac636f1bb941fbbc13a0"
+      },
+      "bindingUnchanged": true,
+      "reusedFrom": null,
+      "logSha256": "3439ee5cf801a4b0f19bb21b37515bf6d2afb43dcf0a55a532a3e609f3aac916"
+    },
+    {
+      "suite": "looper_repository",
+      "success": 693,
+      "hidden": 25,
+      "skips": 12,
+      "covered": 4156,
+      "lines": 4348,
+      "percent": 95.58417663293469,
+      "result": {
+        "name": "looper_repository",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 8.0,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "--coverage",
+          "--exclude-tags",
+          "screenshots",
+          "--reporter",
+          "json"
+        ],
+        "coverage_sha256": "18b66838420361a7339ca71d3043f61be2f50e3afbd9c43ee3982f97bce55fa5"
+      },
+      "bindingUnchanged": true,
+      "reusedFrom": null,
+      "logSha256": "3679253f54bcec5ecbbfa7b8f72eedc69233c76bb9e585f772d8b94055172f13"
+    },
+    {
+      "suite": "settings_repository",
+      "success": 171,
+      "hidden": 4,
+      "skips": 0,
+      "covered": 749,
+      "lines": 829,
+      "percent": 90.34981905910736,
+      "result": {
+        "name": "settings_repository",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 2.0,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "--coverage",
+          "--exclude-tags",
+          "screenshots",
+          "--reporter",
+          "json"
+        ],
+        "coverage_sha256": "35f88dbb15c128a262857eb034f8b126b9819e0b76b8f887d76bfa23b22db171"
+      },
+      "bindingUnchanged": true,
+      "reusedFrom": "M3.14 v1",
+      "logSha256": "dc2e1de15f541e093475d2cde58dfc9021c0effec14be5b071905385586cad03"
+    }
+  ],
+  "appExclusions": [
+    "**/window_chrome.dart",
+    "**/waveform_window*.dart",
+    "**/run_segno.dart",
+    "**/bootstrap.dart",
+    "**/session_directory.dart",
+    "**/system_appliance_env.dart"
+  ],
+  "static": {
+    "results": [
+      {
+        "check": "format",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 1.86
+      },
+      {
+        "check": "analyze",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 26.34
+      },
+      {
+        "check": "bloc",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 3.63
+      },
+      {
+        "check": "whitespace",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 0.32
+      }
+    ],
+    "fileCount": 741,
+    "changed": []
+  },
+  "fuzz": {
+    "results": [
+      {
+        "name": "app",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 75.2,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "--tags",
+          "fuzz",
+          "--concurrency=1",
+          "--reporter",
+          "json"
+        ],
+        "successIncludingHidden": 197,
+        "hidden": 169,
+        "logSha256": "2a92b2bc2cdeb25b46e1428e4f4247bdaa840c323831215e30b170f9133a801d"
+      },
+      {
+        "name": "looper_repository",
+        "exit": 0,
+        "semanticPass": true,
+        "seconds": 9.3,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "--tags",
+          "fuzz",
+          "--concurrency=1",
+          "--reporter",
+          "json"
+        ],
+        "successIncludingHidden": 37,
+        "hidden": 25,
+        "logSha256": "df3f3dcfa89f97471840f91a022fe225bf407576b518f9152c6c9c8ac92e542e"
+      }
+    ],
+    "changedInputs": [],
+    "librarySha256": "8e980280f9fbe6e8ba89d432ba94635ac8e72ddbe1f6503fb7c27050af85bb65"
+  },
+  "native": {
+    "standard": {
+      "log": "native-guard-green-v4.log",
+      "exit": 0
+    },
+    "asan": {
+      "log": "native-asan-v1.log",
+      "exit": 0
+    },
+    "telemetryOff": {
+      "log": "native-telemetry-off-v1.log",
+      "exit": 0
+    },
+    "cppShim": {
+      "log": "native-shim-v1.log",
+      "exit": 0
+    },
+    "nativeSourceManifestSha256": "ae97a3180ebc9008e7a1d19fce0d0611c19f615ab0339ef3b3512c3c26c7bef4",
+    "runtimeManifestSha256": "4107fddf17cdcfa494269d1798db6cfbdaa7d0ec61de350b32d097bdcda52b38",
+    "sourceDrift": false
+  },
+  "spelling": {
+    "filesChecked": 12,
+    "issues": 0,
+    "scope": "New and modified Markdown, matching workflow inclusion.",
+    "config": ".github/cspell.json",
+    "logSha256": "f4ac1f31bf51605bea2ae7d0267f88fc22210a44413e1f08e6f59e3af98470cd",
+    "earlierAttempts": "First invocation omitted config; second included C/Dart outside workflow Markdown scope. Both logs retained; neither is the final Markdown gate."
+  }
+}

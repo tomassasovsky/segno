@@ -165,6 +165,7 @@ void main() {
     controlCubit = ControlCubit(
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
+      recordLengthControl: FakeRecordLengthControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: fxPersistence,
       looper: looper,

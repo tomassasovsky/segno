@@ -8,6 +8,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/common/write_debouncer.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
@@ -26,6 +27,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     required FxChainPersistence fxPersistence,
     required DecayControl decayControl,
     required OneShotControl oneShotControl,
+    required RecordLengthControl recordLengthControl,
     SettingsRepository? settings,
     Duration fxPersistDebounce = const Duration(milliseconds: 300),
     bool Function() takeLocked = _neverLocked,
@@ -34,17 +36,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
        _fxPersistence = fxPersistence,
        _decayControl = decayControl,
        _oneShotControl = oneShotControl,
+       _recordLengthControl = recordLengthControl,
        _settings = settings,
        _takeLocked = takeLocked,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
        super(const LooperState()) {
     on<LooperStateUpdated>((event, emit) {
-      // Persist only settled reports from a connected engine. A settlement
-      // can repeat the visible state after a rejected request or boot replay.
-      final settled = _repository.settledLooperMode;
-      if (event.state.status.isConnected && settled != null) {
-        _persistLooperMode(settled);
-      }
       emit(event.state);
     });
     on<LooperRecordPressed>((event, _) {
@@ -766,20 +763,16 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       }
     });
     on<LooperTrackLengthPresetChanged>((event, _) async {
-      final sessionRevision = _repository.sessionRevision;
-      final result = _repository.setTrackLengthPreset(
+      final write = _recordLengthControl.setTrackRecordLength(
         channel: event.channel,
         bars: event.bars,
       );
-      if (!result.isOk) return;
-      final settled = await _repository.settleLengthSettings();
-      if (!settled.isOk || sessionRevision != _repository.sessionRevision) {
-        return;
+      _recordLengthWrites.add(write);
+      try {
+        await write;
+      } finally {
+        _recordLengthWrites.remove(write);
       }
-      await _settings?.saveTrackLengthPreset(
-        event.channel,
-        _repository.trackLengthPresetOverrides[event.channel],
-      );
     });
     on<LooperOneShotToggled>((event, _) async {
       final write = _oneShotControl.setTrackOneShot(
@@ -852,13 +845,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
-    on<LooperModeChanged>((event, _) {
-      _repository.setLooperMode(event.mode);
-      // Offline choices are settled immediately. Running-engine choices
-      // reach persistence through the reported-state handler after acceptance.
-      final settled = _repository.settledLooperMode;
-      if (settled != null) {
-        _persistLooperMode(settled);
+    on<LooperModeChanged>((event, _) async {
+      final write = _recordLengthControl.setLooperMode(event.mode);
+      _recordLengthWrites.add(write);
+      try {
+        await write;
+      } finally {
+        _recordLengthWrites.remove(write);
       }
     });
     on<LooperPlayAllPressed>((_, _) {
@@ -891,6 +884,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       try {
         await Future.wait(_decayWrites.toList());
         await Future.wait(_oneShotWrites.toList());
+        await Future.wait(_recordLengthWrites.toList());
         _fxPersist.flush();
         await _fxPersistence.flush();
         event.receipt?.complete();
@@ -927,18 +921,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   final FxChainPersistence _fxPersistence;
   final DecayControl _decayControl;
   final OneShotControl _oneShotControl;
+  final RecordLengthControl _recordLengthControl;
+  final _recordLengthWrites = <Future<RecordLengthOutcome>>{};
   final _oneShotWrites = <Future<OneShotOutcome>>{};
   final _decayWrites = <Future<DecayOutcome>>{};
   final SettingsRepository? _settings;
   final bool Function() _takeLocked;
-
-  LooperMode? _persistedLooperMode;
-
-  void _persistLooperMode(LooperMode mode) {
-    if (mode == _persistedLooperMode) return;
-    _persistedLooperMode = mode;
-    unawaited(_settings?.saveLooperMode(mode.code));
-  }
 
   static bool _neverLocked() => false;
 
@@ -1386,23 +1374,4 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     unawaited(_fxReplaySubscription.cancel());
     return super.close();
   }
-}
-
-/// Restores the persisted looper mode (B5c) and dispatches it through
-/// [bloc] — the boot-time counterpart of the "seeded settings cubit" `load()`
-/// convention used elsewhere (`TempoCubit`/`TracksCubit`/etc, called via
-/// `app.dart`'s `unawaited(cubit.load())` wiring), but as a top-level
-/// function rather than a bloc method: `Bloc` instances are driven only
-/// through events (bloc_lint's `avoid_public_bloc_methods`), so this reads
-/// [settings] itself and dispatches [LooperModeChanged] rather than adding a
-/// second, non-event entry point to [LooperBloc]. Reuses the same event a
-/// user-driven mode change dispatches, so the boot restore also re-persists
-/// the value it just read — harmless (writing back the same value is a
-/// no-op on disk) and keeps this to one code path instead of two.
-Future<void> restoreLooperMode(
-  LooperBloc bloc,
-  SettingsRepository settings,
-) async {
-  final mode = LooperMode.fromCode(await settings.loadLooperMode());
-  bloc.add(LooperModeChanged(mode));
 }

@@ -21,6 +21,33 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
     confirmedLength = 0;
+    registerFallbackValue(LooperMode.multi);
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.recordLengthCaptureLocked).thenReturn(false);
+    when(() => repository.lengthSettingsSettled).thenReturn(true);
+    when(() => repository.lengthRecoveryRequired).thenReturn(false);
+    when(
+      () => repository.lengthSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.trackLengthPresetOverrides).thenReturn({});
+    when(() => repository.state).thenReturn(const LooperState());
+    when(() => repository.lengthRestartIntent).thenAnswer(
+      (_) => (
+        defaultBars: confirmedLength,
+        trackOverrides: <int, int>{},
+        mode: LooperMode.multi,
+      ),
+    );
+    when(
+      () => repository.setLengthSettings(
+        defaultBars: any(named: 'defaultBars'),
+        overrides: any(named: 'overrides'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenAnswer((call) {
+      confirmedLength = call.namedArguments[#defaultBars] as int;
+      return EngineResult.ok;
+    });
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.sessionTransport).thenAnswer(
       (_) => TransportState(defaultLengthPresetBars: confirmedLength),
@@ -63,7 +90,10 @@ void main() {
       },
       build: build,
       act: (cubit) => cubit.load(),
-      expect: () => [const RecordOptions(recDub: true)],
+      expect: () => [
+        const RecordOptions(recDub: true),
+        const RecordOptions(recDub: true, recordLengthReady: true),
+      ],
       verify: (_) {
         verify(() => repository.setRecDub(enabled: true)).called(1);
         verifyNever(
@@ -108,7 +138,10 @@ void main() {
       'setDefaultLengthBars emits, persists and applies the clamped default',
       build: build,
       act: (cubit) => cubit.setDefaultLengthBars(80),
-      expect: () => [const RecordOptions(defaultLengthBars: 64)],
+      expect: () => [
+        const RecordOptions(recordLengthReady: true),
+        const RecordOptions(defaultLengthBars: 64, recordLengthReady: true),
+      ],
       verify: (_) async {
         expect(await settings.loadDefaultLengthPreset(), 64);
         verify(() => repository.setDefaultLengthPreset(64)).called(1);
@@ -142,12 +175,22 @@ void main() {
         final cubit = build();
         addTearDown(cubit.close);
 
+        // Initialize before withholding the transaction receipt.
+        when(
+          () => repository.settleLengthSettings(),
+        ).thenAnswer((_) async => EngineResult.ok);
+        await cubit.load();
+        when(
+          () => repository.settleLengthSettings(),
+        ).thenAnswer((_) => pending.future);
         final accepted = cubit.setDefaultLengthBars(8);
-        await cubit.setDefaultLengthBars(12);
+        final rejected = cubit.setDefaultLengthBars(12);
+        await Future<void>.delayed(Duration.zero);
         await cubit.setRecDub(value: true);
         confirmedLength = 8;
         pending.complete(EngineResult.ok);
         await accepted;
+        await rejected;
 
         expect(cubit.state.defaultLengthBars, 8);
         expect(cubit.state.recDub, isTrue);
@@ -186,8 +229,9 @@ void main() {
       },
       expect: () => [
         const RecordOptions(),
-        const RecordOptions(autoRecord: true),
-        const RecordOptions(),
+        const RecordOptions(recordLengthReady: true),
+        const RecordOptions(autoRecord: true, recordLengthReady: true),
+        const RecordOptions(recordLengthReady: true),
       ],
       verify: (_) async => expect(await settings.loadAutoRecord(), isTrue),
     );

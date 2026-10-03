@@ -8,6 +8,23 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 shared Record length (#1026)
+
+Touch, MIDI and External controls now share Auto/1–64-bar choices for Loop
+defaults and fixed Tracks 1–8. Explicit Auto stays Custom; Multi retains latent
+track overrides. Capture blocks edits without stopping audio. Held values stay
+live while Save/restart preserve Released choices, and refused cleanup retries
+when safe. Startup and shutdown require confirmed state or explicit recovery.
+
+`docs/reviews/shared-record-length/` binds 88 source/test/render paths and saved
+Pen references. Ordinary app checks pass 2,729 results at 91.0011% coverage;
+Looper repository passes 693 at 95.5842%, Settings 171 at 90.3498%. The 44-case
+independent matrix and receipt-bypass negative control pass their expectations.
+Native configurations, native-backed fuzz and 741-file static checks pass.
+Review repaired startup Retry, raw endpoint cancellation and a clipped lock
+label. Published-head CI, human merge, physical proof and M5 live-Control full
+Session Load remain separate. Shared Record timing is the next bounded slice.
+
 ## October 2026 shared Playback Loop or Once (#1026)
 
 Touch, MIDI and External controls now share confirmed Loop/Once choices for

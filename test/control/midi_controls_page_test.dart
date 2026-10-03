@@ -26,6 +26,7 @@ import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
@@ -94,6 +95,7 @@ void main() {
   late StreamController<MidiInputMessage> messages;
   late _Store store;
   late ControlCubit control;
+  late RecordOptionsCubit record;
   var captureMicros = 0;
   late SettingsTrayCubit tray;
 
@@ -129,6 +131,30 @@ void main() {
     when(() => looper.allTracksChainEnabled).thenReturn(true);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
+    when(() => looper.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.lengthSettingsSettled).thenReturn(true);
+    when(() => looper.lengthRecoveryRequired).thenReturn(false);
+    when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
+    when(() => looper.sessionTransport).thenReturn(const TransportState());
+    when(() => looper.settleLengthSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => looper.setLengthSettings(
+        defaultBars: any(named: 'defaultBars'),
+        overrides: any(named: 'overrides'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setRecDub(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
+    ).thenReturn(EngineResult.ok);
     when(() => devices.connection).thenReturn(_connection);
     when(() => devices.session).thenReturn(const MidiInputSession('usb', 1));
     when(() => devices.connections).thenAnswer((_) => connections.stream);
@@ -136,6 +162,8 @@ void main() {
     when(() => devices.activity).thenAnswer((_) => const Stream<void>.empty());
     when(() => devices.select(any())).thenAnswer((_) async {});
   });
+
+  setUpAll(() => registerFallbackValue(LooperMode.multi));
 
   tearDown(() async {
     await looperStates.close();
@@ -187,11 +215,15 @@ void main() {
       snapshot: decaySnapshot,
       oneShot: oneShotSnapshot,
     );
+    record = RecordOptionsCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(record.close()));
+    await record.load();
     control = ControlCubit(
       looper: looper,
       clickVolumeControl: tempo,
       decayControl: playback,
       oneShotControl: playback,
+      recordLengthControl: record,
       pedal: pedal,
       settings: settings,
       performance: performance,
@@ -215,6 +247,7 @@ void main() {
             BlocProvider.value(value: midi),
             BlocProvider<TempoCubit>.value(value: tempo),
             BlocProvider<PlaybackOptionsCubit>.value(value: playback),
+            BlocProvider<RecordOptionsCubit>.value(value: record),
           ],
           child: MaterialApp(
             navigatorKey: routeEntry ? segnoNavigatorKey : null,
@@ -330,6 +363,49 @@ void main() {
         .singleWhere((control) => control.key == key);
     expect((saved.low, saved.high), (0, 1));
     verifyNever(() => looper.setOverdubDecay(any()));
+  });
+
+  testWidgets('Record length keeps Auto to 64 bars as a draft until Save', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    clearInteractions(looper);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_add_control');
+    await tap(tester, 'expression_kind_loopControls');
+    await tap(tester, 'expression_destination_loop:defaults');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const DefaultRecordLengthTarget())}',
+    );
+    final key = const DefaultRecordLengthTarget().canonicalString();
+    final low = find.byKey(Key('midi_range_low_$key'));
+    final high = find.byKey(Key('midi_range_high_$key'));
+    expect(low, findsOneWidget);
+    expect(high, findsOneWidget);
+    expect(
+      find.descendant(of: low, matching: find.text('Auto')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: high, matching: find.text('64 bars')),
+      findsOneWidget,
+    );
+    expect(control.state.midiMappings.byId('m1')!.controls, hasLength(1));
+    await tap(tester, 'midi_save');
+    final saved = control.state.midiMappings
+        .byId('m1')!
+        .controls
+        .whereType<MidiParameterControl>()
+        .singleWhere((control) => control.key == key);
+    expect((saved.low, saved.high), (0, 1));
+    verifyNever(
+      () => looper.setLengthSettings(
+        defaultBars: any(named: 'defaultBars'),
+        overrides: any(named: 'overrides'),
+        mode: any(named: 'mode'),
+      ),
+    );
   });
 
   testWidgets('Loop/Once range edits are draft-only and Escape restores low', (

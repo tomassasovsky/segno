@@ -5,6 +5,7 @@ import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -276,6 +277,69 @@ void main() {
           oneShotSnapshot: snapshot,
         ),
         1,
+      );
+    });
+
+    test('Record length keeps fixed slots and locked values readable', () {
+      const defaults = DefaultRecordLengthTarget();
+      const first = TrackRecordLengthTarget(0);
+      const last = TrackRecordLengthTarget(7);
+      expect(
+        looper.availableValueTargets().whereType<RecordLengthValueTarget>(),
+        isEmpty,
+      );
+      expect(looper.valueTargetResolves(defaults), isFalse);
+      expect(looper.readValueTarget(first), isNull);
+      final snapshot = RecordLengthSnapshot(
+        defaultBars: 0,
+        trackOverrides: const {0: 1, 7: 64},
+        mode: LooperMode.song,
+        captureLocked: true,
+      );
+      final offered = looper
+          .availableValueTargets(recordLengthSnapshot: snapshot)
+          .whereType<RecordLengthValueTarget>()
+          .toList();
+      expect(offered.first, defaults);
+      expect(
+        offered.whereType<TrackRecordLengthTarget>().map((t) => t.channel),
+        List.generate(8, (index) => index),
+      );
+      expect(snapshot.canEdit(first.address), isFalse);
+      expect(
+        looper.valueTargetResolves(last, recordLengthSnapshot: snapshot),
+        isTrue,
+      );
+      expect(
+        looper.valueTargetResolves(
+          const TrackRecordLengthTarget(8),
+          recordLengthSnapshot: snapshot,
+        ),
+        isFalse,
+      );
+      expect(
+        looper.readValueTarget(defaults, recordLengthSnapshot: snapshot),
+        0,
+      );
+      expect(
+        looper.readValueTarget(first, recordLengthSnapshot: snapshot),
+        1 / 64,
+      );
+      expect(
+        looper.readValueTarget(last, recordLengthSnapshot: snapshot),
+        1,
+      );
+      final multi = RecordLengthSnapshot(
+        defaultBars: 4,
+        trackOverrides: const {0: 1},
+        mode: LooperMode.multi,
+        captureLocked: false,
+      );
+      expect(multi.canEdit(defaults.address), isTrue);
+      expect(multi.canEdit(first.address), isFalse);
+      expect(
+        looper.readValueTarget(first, recordLengthSnapshot: multi),
+        4 / 64,
       );
     });
 

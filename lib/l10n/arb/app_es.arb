@@ -2606,5 +2606,10 @@
     "powerOffRetry": "Reintentar",
     "clickSettingsRecoveryTitle": "Hay que recuperar los ajustes del clic",
     "clickSettingsRefusedTitle": "No se aplicó el cambio del clic",
-    "clickSettingsRecoveryBody": "Reintenta recuperar el ajuste del clic."
+    "clickSettingsRecoveryBody": "Reintenta recuperar el ajuste del clic.",
+    "recordLengthSharedInMulti": "En Multi, la longitud de las pistas sigue el valor predeterminado.",
+    "recordLengthCaptureLocked": "Termina de grabar para cambiar la longitud de grabación.",
+    "recordLengthSettingsRecoveryTitle": "Hay que recuperar la longitud de grabación",
+    "recordLengthSettingsRefusedTitle": "No se aplicó el cambio de longitud de grabación",
+    "recordLengthSettingsRecoveryBody": "Reintenta recuperar los ajustes de longitud de grabación."
 }

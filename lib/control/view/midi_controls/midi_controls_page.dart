@@ -17,6 +17,7 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/midi_labels.dart';
 import 'package:segno/control/binding/midi_mapping_draft.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
+import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/midi_controls/midi_choice_grid.dart';
 import 'package:segno/control/view/midi_controls/midi_control_cards.dart';
 import 'package:segno/control/view/midi_controls/midi_device_cards.dart';
@@ -27,10 +28,12 @@ import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -393,6 +396,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     final oneShotSnapshot = context
         .watch<PlaybackOptionsCubit>()
         .oneShotSnapshot;
+    final recordLengthSnapshot = context
+        .watch<RecordOptionsCubit>()
+        .recordLengthSnapshot;
     final missing = mapping.controls.any(
       (control) => switch (control) {
         MidiParameterControl(:final key) => !_resolves(
@@ -401,6 +407,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
           clickVolume: clickVolume,
           decaySnapshot: decaySnapshot,
           oneShotSnapshot: oneShotSnapshot,
+          recordLengthSnapshot: recordLengthSnapshot,
         ),
         MidiActionControl(:final key) => ControlAction.tryParse(key) == null,
       },
@@ -635,8 +642,21 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                         oneShotSnapshot: context
                             .watch<PlaybackOptionsCubit>()
                             .oneShotSnapshot,
+                        recordLengthSnapshot: context
+                            .watch<RecordOptionsCubit>()
+                            .recordLengthSnapshot,
                       ),
                     },
+                    disabledReason: control is MidiParameterControl
+                        ? recordLengthDisabledReason(
+                            l10n,
+                            ControlValueTarget.tryParse(control.key) ??
+                                const MasterGainTarget(),
+                            context
+                                .watch<RecordOptionsCubit>()
+                                .recordLengthSnapshot,
+                          )
+                        : null,
                   ),
               ],
               behavior: draft.behavior,
@@ -667,6 +687,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                 oneShotSnapshot: context
                     .watch<PlaybackOptionsCubit>()
                     .oneShotSnapshot,
+                recordLengthSnapshot: context
+                    .watch<RecordOptionsCubit>()
+                    .recordLengthSnapshot,
               ),
               kind: _kind,
               onKind: (kind) => setState(() => _kind = kind),
@@ -941,6 +964,13 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         context.read<PlaybackOptionsCubit>().oneShotSnapshot == null) {
       return;
     }
+    if (target is RecordLengthValueTarget &&
+        context.read<RecordOptionsCubit>().recordLengthSnapshot?.canEdit(
+              target.address,
+            ) !=
+            true) {
+      return;
+    }
     final key = switch (target) {
       ControlValueTarget() => target.canonicalString(),
       FxBindingTarget() => target.canonicalString(),
@@ -957,6 +987,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
           clickVolume: context.read<TempoCubit>().clickVolume,
           decaySnapshot: context.read<PlaybackOptionsCubit>().decaySnapshot,
           oneShotSnapshot: context.read<PlaybackOptionsCubit>().oneShotSnapshot,
+          recordLengthSnapshot: context
+              .read<RecordOptionsCubit>()
+              .recordLengthSnapshot,
         );
     final l10n = context.l10n;
     setState(() {
@@ -1134,6 +1167,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     double? clickVolume,
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
+    RecordLengthSnapshot? recordLengthSnapshot,
   }) {
     final target = ControlValueTarget.tryParse(key);
     if (target != null) {
@@ -1142,6 +1176,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         clickVolume: clickVolume,
         decaySnapshot: decaySnapshot,
         oneShotSnapshot: oneShotSnapshot,
+        recordLengthSnapshot: recordLengthSnapshot,
       );
     }
     final activation = FxBindingTarget.tryParse(key);

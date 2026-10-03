@@ -119,7 +119,10 @@ void main() {
         ),
       );
       expect(quantize.state, RecordTiming.immediately);
-      expect(record.state, const RecordOptions(autoRecord: true));
+      expect(
+        record.state,
+        const RecordOptions(autoRecord: true, recordLengthReady: true),
+      );
       expect(tempo.state, const TempoSettings(bpm: 96, clickReady: true));
 
       delayed.ready.complete();
@@ -134,7 +137,10 @@ void main() {
         ),
       );
       expect(quantize.state, RecordTiming.immediately);
-      expect(record.state, const RecordOptions(autoRecord: true));
+      expect(
+        record.state,
+        const RecordOptions(autoRecord: true, recordLengthReady: true),
+      );
       expect(tempo.state, const TempoSettings(bpm: 96, clickReady: true));
       expect(repository.sessionTransport.overdubDecay, 35);
       expect(repository.sessionTransport.defaultOneShot, isFalse);
@@ -193,7 +199,7 @@ void main() {
         ),
       );
       expect(quantize.state, RecordTiming.immediately);
-      expect(record.state, const RecordOptions());
+      expect(record.state, const RecordOptions(recordLengthReady: true));
       expect(tempo.state, const TempoSettings());
       expect(repository.sessionTransport.overdubDecay, 80);
       expect(repository.sessionTransport.defaultOneShot, isFalse);

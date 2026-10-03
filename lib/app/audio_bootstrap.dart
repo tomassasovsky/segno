@@ -89,6 +89,39 @@ Future<AutoStartResult> tryAutoStartEngine({
     );
   }
 
+  // Mode and all fixed-track length scalars form one startup image. Stage it
+  // before starting audio, so no pedal can record against partial defaults.
+  try {
+    final savedMode = await settings.readLooperModeCheckpoint();
+    final lengths = await Future.wait([
+      settings.readRecordLengthCheckpoint(channel: null),
+      for (var channel = 0; channel < 8; channel++)
+        settings.readRecordLengthCheckpoint(channel: channel),
+    ]);
+    final request = repository.setLengthSettings(
+      defaultBars: lengths.first ?? 0,
+      overrides: {
+        for (var channel = 0; channel < 8; channel++)
+          if (lengths[channel + 1] != null) channel: lengths[channel + 1]!,
+      },
+      mode: LooperMode.fromCode(savedMode ?? 0),
+    );
+    final result = request.isOk
+        ? await repository.settleLengthSettings()
+        : request;
+    if (!result.isOk) {
+      throw StateError('Saved record length replay refused: ${result.name}');
+    }
+  } on Object catch (error) {
+    AppLog.error('audio auto-start: saved record length failed: $error');
+    repository.stopEngine();
+    return (
+      started: false,
+      asioDrivers: const <AudioDevice>[],
+      recoveryConfig: null,
+    );
+  }
+
   try {
     return await _tryAutoStartEngine(
       repository: repository,
@@ -288,30 +321,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
   // pedal triggers a recording, so without this a saved forced ×1 reverts to
   // auto-round-up and loops record at ×2/×4.
   repository.setDefaultMultiple(multiple: await settings.loadDefaultMultiple());
-
-  // Submit the saved default and every explicit track override together.
-  // Separate setters would race each other while the first vector waits for
-  // callback publication, and an explicit Auto override (zero) must survive.
-  final lengthOverrides = <int, int>{};
-  for (final track in repository.state.tracks) {
-    final preset = await settings.loadTrackLengthPreset(track.channel);
-    if (preset != null) lengthOverrides[track.channel] = preset;
-  }
-  final lengthRequest = repository.setLengthSettings(
-    defaultBars: await settings.loadDefaultLengthPreset(),
-    overrides: lengthOverrides,
-  );
-  final lengthResult = lengthRequest.isOk
-      ? await repository.settleLengthSettings()
-      : lengthRequest;
-  if (!lengthResult.isOk) {
-    AppLog.error(
-      'audio auto-start: saved length replay refused '
-      'result=${lengthResult.name}',
-    );
-    repository.stopEngine();
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
-  }
 
   // Replay every saved source, destination and mix control in one callback
   // transaction before loading lane effects that depend on active lane counts.

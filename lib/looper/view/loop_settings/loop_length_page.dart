@@ -20,7 +20,6 @@ typedef _LengthValues = ({
   int count,
   LooperMode mode,
   bool capturing,
-  int? trackBarsOverride,
   RecordTiming? trackTimingOverride,
 });
 
@@ -32,7 +31,6 @@ _LengthValues _lengthValues(LooperState state, int? channel) {
     count: state.tracks.length,
     mode: state.transport.looperMode,
     capturing: state.tracks.any((t) => t.isCapturing),
-    trackBarsOverride: track?.lengthPresetOverride,
     trackTimingOverride: track?.recordTimingOverride,
   );
 }
@@ -72,6 +70,12 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
 
   void _setBars(int? bars) {
     final scope = _scope;
+    final record = context.read<RecordOptionsCubit>();
+    if (!record.state.recordLengthReady ||
+        record.state.recordLengthCaptureLocked ||
+        (scope != null && record.state.recordLengthMode == LooperMode.multi)) {
+      return;
+    }
     if (bars == null || bars == 0) {
       setState(_discardCandidate);
     } else {
@@ -81,29 +85,28 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
         _candidateRefused = false;
       });
     }
-    if (scope == null) {
-      unawaited(
-        context.read<RecordOptionsCubit>().setDefaultLengthBars(bars ?? 0),
-      );
-    } else {
-      context.read<LooperBloc>().add(
-        LooperTrackLengthPresetChanged(scope, bars),
-      );
-    }
+    final lifetime = record.recordLengthLifetime;
+    unawaited(() async {
+      final outcome = scope == null
+          ? await record.setDefaultLengthBars(bars ?? 0)
+          : await record.setTrackRecordLength(channel: scope, bars: bars);
+      if (!mounted ||
+          scope != _scope ||
+          record.recordLengthLifetime != lifetime ||
+          _candidateBars != bars) {
+        return;
+      }
+      if (!outcome.isOk) setState(() => _candidateRefused = true);
+    }());
   }
 
   int _confirmedBars() {
-    final defaultBars = context
-        .read<RecordOptionsCubit>()
-        .state
-        .defaultLengthBars;
-    if (_scope == null) return defaultBars;
-    final looper = context.read<LooperBloc>().state;
-    if (looper.transport.looperMode == LooperMode.multi ||
-        _scope! >= looper.tracks.length) {
-      return defaultBars;
+    final record = context.read<RecordOptionsCubit>().state;
+    if (_scope == null || record.recordLengthMode == LooperMode.multi) {
+      return record.defaultLengthBars;
     }
-    return looper.tracks[_scope!].lengthPresetOverride ?? defaultBars;
+    return record.trackLengthPresetOverrides[_scope] ??
+        record.defaultLengthBars;
   }
 
   void _setTiming(RecordTiming? timing) {
@@ -123,21 +126,22 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
     final v = context.select<LooperBloc, _LengthValues>(
       (bloc) => _lengthValues(bloc.state, _scope),
     );
-    // The defaults are the cubits' own intent (what they persist and push);
-    // the overrides are the repository's projection.
-    final defaultBars = context.select<RecordOptionsCubit, int>(
-      (cubit) => cubit.state.defaultLengthBars,
-    );
+    // Length defaults and exact Custom membership share the confirmed owner.
+    final record = context.watch<RecordOptionsCubit>().state;
+    final defaultBars = record.defaultLengthBars;
     final sessionRevision = context.select<LoopSettingsFeedbackCubit, int>(
       (cubit) => cubit.state.sessionRevision,
     );
     final defaultTiming = context.watch<RecordTimingCubit>().state;
     final scope = _scope;
-    final shared = scope != null && v.mode == LooperMode.multi;
-    final barsCustom = scope != null && !shared && v.trackBarsOverride != null;
+    final shared = scope != null && record.recordLengthMode == LooperMode.multi;
+    final barsCustom =
+        scope != null &&
+        !shared &&
+        record.trackLengthPresetOverrides[scope] != null;
     final bars = shared || scope == null
         ? defaultBars
-        : v.trackBarsOverride ?? defaultBars;
+        : record.trackLengthPresetOverrides[scope] ?? defaultBars;
     final timingCustom = scope != null && v.trackTimingOverride != null;
     final timing = scope == null
         ? defaultTiming
@@ -154,8 +158,8 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
     }
     if (bars > 0 && !shared) _lastBars[scope] = bars;
     final shownBars = _candidateBars ?? bars;
-    final locked = v.capturing;
-    final lengthEnabled = !locked && !shared;
+    final locked = v.capturing || record.recordLengthCaptureLocked;
+    final lengthEnabled = record.recordLengthReady && !locked && !shared;
     final top = locked ? 441.0 : 349.0;
     return BlocListener<LoopSettingsFeedbackCubit, LoopSettingsFeedback>(
       listenWhen: (previous, current) => previous.refused != current.refused,

@@ -16,6 +16,7 @@ class MidiControlCard {
     required this.control,
     required this.label,
     required this.available,
+    this.disabledReason,
     this.activation = false,
   });
 
@@ -28,6 +29,9 @@ class MidiControlCard {
   /// Whether the rig still has it. A missing one keeps its card, to be
   /// repaired or removed, and is never quietly repointed.
   final bool available;
+
+  /// Temporary owner lock on an otherwise valid saved target.
+  final String? disabledReason;
 
   /// Whether this control switches an effect rather than sweeping a value.
   final bool activation;
@@ -218,6 +222,11 @@ class _Card extends StatelessWidget {
     final surface = context.surface;
     final control = card.control;
     final key = control.key;
+    final lengthTarget = ControlValueTarget.tryParse(key);
+    double canonical(double value) => lengthTarget is RecordLengthValueTarget
+        ? lengthTarget.fromDomain(lengthTarget.toDomain(value))
+        : value;
+    final editable = card.available && card.disabledReason == null;
     return Container(
       key: Key('midi_control_$key'),
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
@@ -279,6 +288,14 @@ class _Card extends StatelessWidget {
               ],
             ),
           ),
+          if (card.disabledReason case final reason?) ...[
+            AppText(
+              reason,
+              key: Key('midi_control_disabled_$key'),
+              style: TextStyle(color: surface.textSecondary, fontSize: 18),
+            ),
+            const SizedBox(height: 8),
+          ],
           const SizedBox(height: 18),
           switch (control) {
             MidiParameterControl(:final low, :final high)
@@ -290,7 +307,7 @@ class _Card extends StatelessWidget {
                       caption: lowCaption,
                       value: low >= 0.5,
                       width: _rangeWidth,
-                      enabled: card.available,
+                      enabled: editable,
                       keyPrefix: 'midi_activation_low_$key',
                       onChanged: (value) => onRange(key, low: value ? 1 : 0),
                     ),
@@ -300,7 +317,7 @@ class _Card extends StatelessWidget {
                     caption: captions.high,
                     value: high >= 0.5,
                     width: _rangeWidth,
-                    enabled: card.available,
+                    enabled: editable,
                     keyPrefix: 'midi_activation_high_$key',
                     onChanged: (value) => onRange(key, high: value ? 1 : 0),
                   ),
@@ -316,7 +333,7 @@ class _Card extends StatelessWidget {
                       caption: lowCaption,
                       value: low,
                       width: _rangeWidth,
-                      enabled: card.available,
+                      enabled: editable,
                       keyPrefix: 'midi_once_low_$key',
                       onChanged: (value) => onRange(key, low: value),
                     ),
@@ -327,7 +344,7 @@ class _Card extends StatelessWidget {
                     caption: captions.high,
                     value: high,
                     width: _rangeWidth,
-                    enabled: card.available,
+                    enabled: editable,
                     keyPrefix: 'midi_once_high_$key',
                     onChanged: (value) => onRange(key, high: value),
                   ),
@@ -343,8 +360,11 @@ class _Card extends StatelessWidget {
                     width: _rangeWidth,
                     semanticLabel: '${card.label} $lowCaption',
                     readout: (value) => _valueLabel(l10n, key, value),
-                    enabled: card.available,
-                    onChanged: (value) => onRange(key, low: value),
+                    enabled: editable,
+                    keyboardStep: lengthTarget is RecordLengthValueTarget
+                        ? 1 / 64
+                        : 0.01,
+                    onChanged: (value) => onRange(key, low: canonical(value)),
                     onDoubleTap: () => onRange(key, low: 0),
                     onEditCancel: (value) => onRange(key, low: value),
                   ),
@@ -357,8 +377,11 @@ class _Card extends StatelessWidget {
                   width: _rangeWidth,
                   semanticLabel: '${card.label} ${captions.high}',
                   readout: (value) => _valueLabel(l10n, key, value),
-                  enabled: card.available,
-                  onChanged: (value) => onRange(key, high: value),
+                  enabled: editable,
+                  keyboardStep: lengthTarget is RecordLengthValueTarget
+                      ? 1 / 64
+                      : 0.01,
+                  onChanged: (value) => onRange(key, high: canonical(value)),
                   onDoubleTap: () => onRange(key, high: 1),
                   onEditCancel: (value) => onRange(key, high: value),
                 ),
@@ -415,6 +438,7 @@ class _Range extends StatelessWidget {
     required this.onChanged,
     required this.onDoubleTap,
     required this.onEditCancel,
+    this.keyboardStep = 0.01,
     super.key,
   });
 
@@ -424,6 +448,7 @@ class _Range extends StatelessWidget {
   final String semanticLabel;
   final String Function(double) readout;
   final bool enabled;
+  final double keyboardStep;
   final ValueChanged<double> onChanged;
   final VoidCallback onDoubleTap;
   final ValueChanged<double> onEditCancel;
@@ -465,6 +490,7 @@ class _Range extends StatelessWidget {
             // Moving a value writes the draft, never the parameter: editing a
             // mapping dispatches nothing.
             enabled: enabled,
+            keyboardStep: keyboardStep,
             onChanged: onChanged,
             onDoubleTap: onDoubleTap,
             onEditCancel: onEditCancel,

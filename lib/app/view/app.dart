@@ -31,6 +31,7 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
@@ -183,6 +184,8 @@ class _AppState extends State<App> {
   late final TempoCubit _tempo;
   StreamSubscription<ClickVolumeOutcome>? _clickFailureSubscription;
   late final PlaybackOptionsCubit _playback;
+  late final RecordOptionsCubit _record;
+  StreamSubscription<RecordLengthOutcome>? _recordLengthFailureSubscription;
   StreamSubscription<DecayOutcome>? _decayFailureSubscription;
   StreamSubscription<OneShotOutcome>? _oneShotFailureSubscription;
 
@@ -213,6 +216,14 @@ class _AppState extends State<App> {
       _showOneShotFailure,
     );
     unawaited(_playback.load());
+    _record = RecordOptionsCubit(
+      repository: widget.repository,
+      settings: widget.settings,
+    );
+    _recordLengthFailureSubscription = _record.recordLengthFailures.listen(
+      _showRecordLengthFailure,
+    );
+    unawaited(_record.load());
     _powerKeySource =
         widget.powerKeySource ??
         openAppliancePowerKeySource(onAppliance: isAppliance());
@@ -225,6 +236,7 @@ class _AppState extends State<App> {
     unawaited(_clickFailureSubscription?.cancel());
     unawaited(_decayFailureSubscription?.cancel());
     unawaited(_oneShotFailureSubscription?.cancel());
+    unawaited(_recordLengthFailureSubscription?.cancel());
     unawaited(_closeControlOwners());
     super.dispose();
   }
@@ -233,6 +245,7 @@ class _AppState extends State<App> {
     // BlocProvider can also close Control; its memoized completion ensures
     // held cleanup finishes while the Click and Mixer owners are still alive.
     await _control?.close();
+    await _record.close();
     await _playback.close();
     await _tempo.close();
     await _mixSettings.close();
@@ -395,6 +408,47 @@ class _AppState extends State<App> {
     );
   }
 
+  void _showRecordLengthFailure(RecordLengthOutcome outcome) {
+    if (!mounted || outcome.status == RecordLengthStatus.superseded) return;
+    final recovery = outcome.status == RecordLengthStatus.recoveryRequired;
+    AppLog.error(
+      'Record length settings: ${outcome.status.name} ${outcome.error ?? ''}',
+    );
+    showAppToast(
+      id: AppToastId.recordLengthSettings,
+      type: ToastificationType.error,
+      dismissible: !recovery,
+      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
+      title: Builder(
+        builder: (context) => Text(
+          recovery
+              ? context.l10n.recordLengthSettingsRecoveryTitle
+              : context.l10n.recordLengthSettingsRefusedTitle,
+        ),
+      ),
+      description: recovery
+          ? Builder(
+              builder: (context) =>
+                  Text(context.l10n.recordLengthSettingsRecoveryBody),
+            )
+          : null,
+      actions: recovery
+          ? [
+              TextButton(
+                onPressed: () async {
+                  if ((await _record.recoverRecordLength()).isOk) {
+                    dismissAppToast(AppToastId.recordLengthSettings);
+                  }
+                },
+                child: Builder(
+                  builder: (context) => Text(context.l10n.powerOffRetry),
+                ),
+              ),
+            ]
+          : const [],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiRepositoryProvider(
@@ -458,16 +512,11 @@ class _AppState extends State<App> {
               final bloc = LooperBloc(
                 decayControl: _playback,
                 oneShotControl: _playback,
+                recordLengthControl: _record,
                 repository: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),
                 fxPersistence: context.read<FxChainPersistence>(),
                 settings: context.read<SettingsRepository>(),
-              );
-              // Boot-restore the persisted mode (B5c) — dispatched as an
-              // event, not a bloc method (bloc_lint's
-              // avoid_public_bloc_methods).
-              unawaited(
-                restoreLooperMode(bloc, context.read<SettingsRepository>()),
               );
               return bloc;
             },
@@ -632,17 +681,7 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
-          BlocProvider(
-            lazy: false,
-            create: (context) {
-              final cubit = RecordOptionsCubit(
-                repository: context.read<LooperRepository>(),
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
+          BlocProvider.value(value: _record),
           // Provided at the shell (not just the setup screen) so the device
           // picker, the persisted selection, and the connect/disconnect banner
           // stay live during normal looping, not only during first-run setup.
@@ -691,6 +730,10 @@ class _AppState extends State<App> {
                   if (!once.isOk) {
                     throw StateError('Playback settings still need recovery');
                   }
+                  final length = await _record.recoverRecordLength();
+                  if (!length.isOk) {
+                    throw StateError('Record length still needs recovery');
+                  }
                   await _control?.flushMidiConfiguration(retireControls: true);
                 }
                 await monitor.flushPersistence();
@@ -711,6 +754,11 @@ class _AppState extends State<App> {
                 if (!once.isOk) {
                   throw StateError('Playback settings were not confirmed');
                 }
+                final length = await _record.flushRecordLength();
+                if (!length.isOk) {
+                  throw StateError('Record length was not confirmed');
+                }
+                dismissAppToast(AppToastId.recordLengthSettings);
                 dismissAppToast(AppToastId.oneShotSettings);
                 dismissAppToast(AppToastId.clickSettings);
                 dismissAppToast(AppToastId.decaySettings);
@@ -732,6 +780,7 @@ class _AppState extends State<App> {
               final cubit = ControlCubit(
                 decayControl: _playback,
                 oneShotControl: _playback,
+                recordLengthControl: _record,
                 clickVolumeControl: _tempo,
                 looper: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),

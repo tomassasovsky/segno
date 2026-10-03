@@ -24,6 +24,7 @@ import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
@@ -115,6 +116,7 @@ void main() {
   late StreamController<MidiInputMessage> messages;
   late _Store store;
   late ControlCubit control;
+  late RecordOptionsCubit record;
   late SettingsTrayCubit tray;
 
   setUp(() {
@@ -148,6 +150,30 @@ void main() {
     ).thenReturn(const {0: FxChainEnvelope()});
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
+    when(() => looper.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.lengthSettingsSettled).thenReturn(true);
+    when(() => looper.lengthRecoveryRequired).thenReturn(false);
+    when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
+    when(() => looper.sessionTransport).thenReturn(const TransportState());
+    when(() => looper.settleLengthSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => looper.setLengthSettings(
+        defaultBars: any(named: 'defaultBars'),
+        overrides: any(named: 'overrides'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setRecDub(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
+    ).thenReturn(EngineResult.ok);
     when(() => devices.connection).thenReturn(_connection);
     when(() => devices.session).thenReturn(const MidiInputSession('usb', 1));
     when(() => devices.connections).thenAnswer((_) => connections.stream);
@@ -155,6 +181,8 @@ void main() {
     when(() => devices.activity).thenAnswer((_) => const Stream<void>.empty());
     when(() => devices.select(any())).thenAnswer((_) async {});
   });
+
+  setUpAll(() => registerFallbackValue(LooperMode.multi));
 
   tearDown(() async {
     await looperStates.close();
@@ -204,6 +232,9 @@ void main() {
       snapshot: DecaySnapshot(defaultPercent: 25, trackOverrides: const {0: 0}),
       oneShot: oneShotSnapshot,
     );
+    record = RecordOptionsCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(record.close()));
+    await record.load();
     when(() => tempo.clickVolumeLifetime).thenReturn((
       sessionRevision: 1,
       mixGeneration: 1,
@@ -211,6 +242,7 @@ void main() {
     control = ControlCubit(
       decayControl: decay,
       oneShotControl: decay,
+      recordLengthControl: record,
       clickVolumeControl: tempo,
       looper: looper,
       pedal: pedal,
@@ -236,6 +268,7 @@ void main() {
             BlocProvider.value(value: midi),
             BlocProvider<TempoCubit>.value(value: tempo),
             BlocProvider<PlaybackOptionsCubit>.value(value: decay),
+            BlocProvider<RecordOptionsCubit>.value(value: record),
           ],
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
@@ -477,6 +510,30 @@ void main() {
       expect(find.text('Off · Keep layers'), findsNWidgets(2));
       expect(find.text('100%'), findsNWidgets(2));
       await shot(tester, 'decay_ranges');
+    });
+    testWidgets('Record length range reads Auto to 64 bars', (tester) async {
+      const target = DefaultRecordLengthTarget();
+      await pump(
+        tester,
+        savedMapping: MidiMapping(
+          id: 'm1',
+          source: _source,
+          behavior: MidiBehavior.continuous,
+          controls: [
+            MidiParameterControl(
+              key: target.canonicalString(),
+              low: 0,
+              high: 1,
+            ),
+          ],
+        ),
+      );
+      await tap(tester, 'midi_row_edit_m1');
+      final key = target.canonicalString();
+      expect(find.byKey(Key('midi_range_low_$key')), findsOneWidget);
+      expect(find.text('Auto'), findsWidgets);
+      expect(find.text('64 bars'), findsWidgets);
+      await shot(tester, 'record_length_range');
     });
     testWidgets('Loop controls offers the default decay', (tester) async {
       await pump(tester, seeded: true);

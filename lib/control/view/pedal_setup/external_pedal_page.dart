@@ -16,6 +16,7 @@ import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
+import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/pedal_setup/expression_calibration_panel.dart';
 import 'package:segno/control/view/pedal_setup/expression_controls_panel.dart';
 import 'package:segno/control/view/pedal_setup/expression_position_panel.dart';
@@ -25,6 +26,7 @@ import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
@@ -426,6 +428,14 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                   onRemove: () => _removeControl(setup, jack),
                   onEndpoint: ({required isHeel, required value}) =>
                       _moveEndpoint(setup, jack, isHeel: isHeel, value: value),
+                  onEndpointCancel: ({required isHeel, required value}) =>
+                      _moveEndpoint(
+                        setup,
+                        jack,
+                        isHeel: isHeel,
+                        value: value,
+                        preserveRaw: true,
+                      ),
                 ),
               ),
             ],
@@ -510,6 +520,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final oneShotSnapshot = context
         .watch<PlaybackOptionsCubit>()
         .oneShotSnapshot;
+    final recordLengthSnapshot = context
+        .watch<RecordOptionsCubit>()
+        .recordLengthSnapshot;
     final names = context.watch<TracksCubit>().state.names;
     return [
       for (final mapping in expression.mappings)
@@ -527,6 +540,12 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             clickVolume: clickVolume,
             decaySnapshot: decaySnapshot,
             oneShotSnapshot: oneShotSnapshot,
+            recordLengthSnapshot: recordLengthSnapshot,
+          ),
+          disabledReason: recordLengthDisabledReason(
+            l10n,
+            mapping.target,
+            recordLengthSnapshot,
           ),
           art: expressionTargetArt(looper, mapping.target),
         ),
@@ -539,6 +558,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final oneShotSnapshot = context
         .watch<PlaybackOptionsCubit>()
         .oneShotSnapshot;
+    final recordLengthSnapshot = context
+        .watch<RecordOptionsCubit>()
+        .recordLengthSnapshot;
     return expressionDestinations(
       context.l10n,
       context.watch<TracksCubit>().state.names,
@@ -546,6 +568,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
       clickVolume: clickVolume,
       decaySnapshot: decaySnapshot,
       oneShotSnapshot: oneShotSnapshot,
+      recordLengthSnapshot: recordLengthSnapshot,
     );
   }
 
@@ -612,6 +635,13 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
         context.read<PlaybackOptionsCubit>().oneShotSnapshot == null) {
       return;
     }
+    if (target is RecordLengthValueTarget &&
+        context.read<RecordOptionsCubit>().recordLengthSnapshot?.canEdit(
+              target.address,
+            ) !=
+            true) {
+      return;
+    }
     final replacing = _replacing;
     final expression = jack.expression;
     if (target == replacing) {
@@ -662,13 +692,19 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     ExternalJackSetup jack, {
     required bool isHeel,
     required double value,
+    bool preserveRaw = false,
   }) {
     final target = _openTarget(jack.expression);
     if (target == null) return;
     final mapping = jack.expression.mappingFor(target);
     if (mapping == null) return;
+    final canonical = !preserveRaw && target is RecordLengthValueTarget
+        ? target.fromDomain(target.toDomain(value))
+        : value;
     final next = jack.expression.withMapping(
-      isHeel ? mapping.copyWith(heel: value) : mapping.copyWith(toe: value),
+      isHeel
+          ? mapping.copyWith(heel: canonical)
+          : mapping.copyWith(toe: canonical),
     );
     setState(() {
       _draft = setup.withJack(_jack, jack.copyWith(expression: next));
@@ -1012,6 +1048,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final oneShotSnapshot = context
         .watch<PlaybackOptionsCubit>()
         .oneShotSnapshot;
+    final recordLengthSnapshot = context
+        .watch<RecordOptionsCubit>()
+        .recordLengthSnapshot;
     final names = context.watch<TracksCubit>().state.names;
     final controls = button.controls;
     final rows = [
@@ -1038,6 +1077,12 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             clickVolume: clickVolume,
             decaySnapshot: decaySnapshot,
             oneShotSnapshot: oneShotSnapshot,
+            recordLengthSnapshot: recordLengthSnapshot,
+          ),
+          disabledReason: recordLengthDisabledReason(
+            l10n,
+            parameter.target,
+            recordLengthSnapshot,
           ),
           art: expressionTargetArt(looper, parameter.target),
         ),
@@ -1143,6 +1188,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final oneShotSnapshot = context
         .watch<PlaybackOptionsCubit>()
         .oneShotSnapshot;
+    final recordLengthSnapshot = context
+        .watch<RecordOptionsCubit>()
+        .recordLengthSnapshot;
     final surface = context.surface;
     final destination = _buttonDestination;
     final choosingControl =
@@ -1233,12 +1281,24 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                           acceptedOneShot == null) {
                         return;
                       }
+                      final acceptedLength = context
+                          .read<RecordOptionsCubit>()
+                          .recordLengthSnapshot;
+                      if (control.target is RecordLengthValueTarget &&
+                          acceptedLength?.canEdit(
+                                (control.target as RecordLengthValueTarget)
+                                    .address,
+                              ) !=
+                              true) {
+                        return;
+                      }
                       final now =
                           context.read<LooperRepository>().readValueTarget(
                             control.target,
                             clickVolume: acceptedClick,
                             decaySnapshot: acceptedDecay,
                             oneShotSnapshot: acceptedOneShot,
+                            recordLengthSnapshot: acceptedLength,
                           ) ??
                           0;
                       _addButtonControl(
@@ -1270,6 +1330,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                       clickVolume: clickVolume,
                       decaySnapshot: decaySnapshot,
                       oneShotSnapshot: oneShotSnapshot,
+                      recordLengthSnapshot: recordLengthSnapshot,
                     ),
                     kind: _kind,
                     columns: 1,

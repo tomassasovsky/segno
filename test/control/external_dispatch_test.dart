@@ -154,6 +154,7 @@ class _Rig {
     cubit = ControlCubit(
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
+      recordLengthControl: FakeRecordLengthControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       looper: looper,
       pedal: pedal,

@@ -10,6 +10,7 @@ import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
 
 /// Picker categories; Loop controls are separate from FX stage categories.
 enum ExpressionDestinationKind {
@@ -36,6 +37,7 @@ class ExpressionControl extends Equatable {
     required this.target,
     required this.label,
     this.art,
+    this.disabledReason,
   });
 
   /// What it writes.
@@ -48,8 +50,11 @@ class ExpressionControl extends Equatable {
   /// `null` for a control that is not an effect's.
   final String? art;
 
+  /// Temporary owner lock; the target still exists and remains identifiable.
+  final String? disabledReason;
+
   @override
-  List<Object?> get props => [target, label, art];
+  List<Object?> get props => [target, label, art, disabledReason];
 }
 
 /// A heading and the controls under it: one effect's parameters, or the
@@ -220,6 +225,16 @@ class ExpressionDestination extends Equatable {
     group: l10n.loopPlaybackLabel,
     control: '${l10n.loopPlaybackLoop} / ${l10n.loopPlaybackOnce}',
   ),
+  DefaultRecordLengthTarget() => (
+    destination: l10n.expressionDestinationLoopDefaults,
+    group: l10n.loopLengthLabel,
+    control: l10n.loopLengthBars,
+  ),
+  TrackRecordLengthTarget(:final channel) => (
+    destination: l10n.trackName(trackNames, channel),
+    group: l10n.loopLengthLabel,
+    control: l10n.loopLengthBars,
+  ),
   MasterGainTarget() => (
     destination: l10n.fxEditorMasterTitle,
     group: l10n.fxEditorMasterTitle,
@@ -268,6 +283,7 @@ List<ExpressionDestination> expressionDestinations(
   double? clickVolume,
   DecaySnapshot? decaySnapshot,
   OneShotSnapshot? oneShotSnapshot,
+  RecordLengthSnapshot? recordLengthSnapshot,
 }) {
   final drafts = <String, _Draft>{};
   _Draft draftFor(
@@ -287,6 +303,7 @@ List<ExpressionDestination> expressionDestinations(
     clickVolume: clickVolume,
     decaySnapshot: decaySnapshot,
     oneShotSnapshot: oneShotSnapshot,
+    recordLengthSnapshot: recordLengthSnapshot,
   )) {
     final place = _placeOf(target);
     if (place == null) continue;
@@ -298,6 +315,14 @@ List<ExpressionDestination> expressionDestinations(
             target: target,
             label: names.control,
             art: expressionTargetArt(looper, target),
+            disabledReason:
+                target is RecordLengthValueTarget &&
+                    recordLengthSnapshot != null &&
+                    !recordLengthSnapshot.canEdit(target.address)
+                ? recordLengthSnapshot.captureLocked
+                      ? l10n.recordLengthCaptureLocked
+                      : l10n.recordLengthSharedInMulti
+                : null,
           ),
         );
   }
@@ -403,7 +428,8 @@ String _addressLabel(
   TrackVolumeTarget(:final channel) ||
   TrackPanTarget(:final channel) => _trackPlace(channel),
   TrackDecayTarget(:final channel) ||
-  TrackOneShotTarget(:final channel) => _trackPlace(channel),
+  TrackOneShotTarget(:final channel) ||
+  TrackRecordLengthTarget(:final channel) => _trackPlace(channel),
   LaneVolumeTarget(:final channel, :final lane) => _placeOfAddress(
     FxAddress(stage: FxStage.loop, index: channel, lane: lane),
   ),
@@ -419,7 +445,9 @@ String _addressLabel(
     kind: ExpressionDestinationKind.output,
     order: _clickOrder,
   ),
-  DefaultDecayTarget() || DefaultOneShotTarget() => (
+  DefaultDecayTarget() ||
+  DefaultOneShotTarget() ||
+  DefaultRecordLengthTarget() => (
     id: 'loop:defaults',
     kind: ExpressionDestinationKind.loopControls,
     order: _loopControlsOrder,

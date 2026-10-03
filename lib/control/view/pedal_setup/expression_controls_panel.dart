@@ -17,6 +17,7 @@ class ExpressionRow {
     required this.destination,
     required this.control,
     required this.available,
+    this.disabledReason,
     this.art,
   });
 
@@ -35,6 +36,9 @@ class ExpressionRow {
   /// Whether the rig still has it. A mapping that lost its effect keeps its
   /// row and says so; it is never quietly repointed at whatever replaced it.
   final bool available;
+
+  /// A temporary owner lock; the target still exists and keeps its mapping.
+  final String? disabledReason;
 }
 
 /// Everything an expression pedal sweeps, and the endpoints of the one being
@@ -50,6 +54,7 @@ class ExpressionControlsPanel extends StatelessWidget {
     required this.onChange,
     required this.onRemove,
     required this.onEndpoint,
+    required this.onEndpointCancel,
     super.key,
   });
 
@@ -77,6 +82,10 @@ class ExpressionControlsPanel extends StatelessWidget {
 
   /// Moves one endpoint of the open row. `true` is the heel.
   final void Function({required bool isHeel, required double value}) onEndpoint;
+
+  /// Restores the exact opening endpoint after an unfinished keyboard edit.
+  final void Function({required bool isHeel, required double value})
+  onEndpointCancel;
 
   /// The pen's column width.
   static const double penWidth = 1290;
@@ -186,6 +195,8 @@ class ExpressionControlsPanel extends StatelessWidget {
           ),
           value: !row.available
               ? l10n.expressionUnavailable
+              : row.disabledReason != null
+              ? row.disabledReason!
               : at == null
               ? l10n.expressionNoReading
               : controlValueReadout(
@@ -213,7 +224,7 @@ class ExpressionControlsPanel extends StatelessWidget {
               Expanded(
                 child: AppText(
                   row.available
-                      ? l10n.expressionRange
+                      ? row.disabledReason ?? l10n.expressionRange
                       : l10n.expressionUnavailableNote,
                   key: const Key('expression_range_title'),
                   maxLines: 1,
@@ -305,7 +316,7 @@ class ExpressionControlsPanel extends StatelessWidget {
               ),
               value: value,
               width: 625,
-              enabled: row.available,
+              enabled: row.available && row.disabledReason == null,
               keyPrefix: 'expression_endpoint_$endpointId',
               onChanged: (next) => onEndpoint(isHeel: isHeel, value: next),
             )
@@ -323,10 +334,13 @@ class ExpressionControlsPanel extends StatelessWidget {
               // A control the rig no longer has cannot be auditioned, so its
               // endpoints are shown and not movable: the row is there to be
               // repointed or removed, not tuned.
-              enabled: row.available,
+              enabled: row.available && row.disabledReason == null,
+              keyboardStep: row.mapping.target is RecordLengthValueTarget
+                  ? 1 / 64
+                  : 0.01,
               onChanged: (next) => onEndpoint(isHeel: isHeel, value: next),
               onEditCancel: (opening) =>
-                  onEndpoint(isHeel: isHeel, value: opening),
+                  onEndpointCancel(isHeel: isHeel, value: opening),
             ),
         ],
       ),

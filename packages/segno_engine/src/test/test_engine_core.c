@@ -20616,16 +20616,25 @@ static void test_preset_edits_preserve_current_capture_and_mode_only_presets(voi
   bars[0] = 2;
   CHECK(le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_FREE,
                                               bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
-  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_OK);
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
   tg_advance(e, 1);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
-  CHECK(s.tracks[0].length_preset_bars == 2);
+  CHECK(s.tracks[0].length_preset_bars == 1);
   CHECK(e->tracks[0].length_preset_target_frames == 2000); /* latched take unchanged */
   tg_advance(e, 2010);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].length_frames == 2000); /* not the new 4000-frame preset */
+  CHECK(s.tracks[0].length_frames == 2000); /* the take is never resized */
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  tg_advance(e, 2010);
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_preset_bars == 2);
+  CHECK(s.tracks[0].length_frames == 2000);
   le_engine_destroy(e);
 
   e = fm_make_free_engine(1000);
@@ -31897,7 +31906,37 @@ static void test_perf_render_cut_erases_lane_and_output_delay_memory(void) {
   }
 }
 
+static void test_record_length_vector_capture_guard(void) {
+  printf("test_record_length_vector_capture_guard\n");
+  for (int kind = 0; kind < 3; ++kind) {
+    le_engine* e = tg_make_engine(1000);
+    int32_t bars[LE_MAX_TRACKS];
+    for (int c = 0; c < LE_MAX_TRACKS; ++c) bars[c] = 1;
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    if (kind == 0) {
+      CHECK(le_engine_set_track_length_presets(e, bars, e->track_count) == LE_OK);
+    } else {
+      /* A queued capture can precede a mode/vector by callback time even
+       * though control admission previously observed an idle rig. */
+      le_command cmd = {.code = LE_CMD_SET_LOOPER_MODE,
+        .presets = {.mode = kind == 1 ? LE_LOOPER_MODE_MULTI : LE_LOOPER_MODE_FREE,
+                    .count = e->track_count}};
+      memcpy(cmd.presets.bars, bars, sizeof(bars));
+      CHECK(le_push_cmd(e, cmd) == LE_OK);
+    }
+    tg_advance(e, 1);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+    CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+    for (int c = 0; c < e->track_count; ++c) CHECK(s.tracks[c].length_preset_bars == 0);
+    CHECK(le_engine_set_track_length_presets(e, bars, e->track_count) == LE_ERR_INVALID);
+    le_engine_destroy(e);
+  }
+}
+
 int main(void) {
+  test_record_length_vector_capture_guard();
   test_cut_erases_current_click_preserves_future_clicks();
   test_perf_render_validates_capture_identity();
   test_cut_cancels_empty_arms_and_preserves_stopped_audio();

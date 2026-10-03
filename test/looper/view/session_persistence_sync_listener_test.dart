@@ -79,6 +79,7 @@ void main() {
       bloc = LooperBloc(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: FakeRecordLengthControl(),
         fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: looper,

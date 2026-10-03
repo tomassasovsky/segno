@@ -240,22 +240,25 @@ class ExpressionControlPicker extends StatelessWidget {
   Widget _button(BuildContext context, ExpressionControl control) {
     final surface = context.surface;
     final already = taken.contains(control.target);
+    final enabled = !already && control.disabledReason == null;
     return SizedBox(
       width: _buttonWidth,
       height: _buttonHeight,
       child: Semantics(
         button: true,
-        enabled: !already,
-        label: control.label,
+        enabled: enabled,
+        label: control.disabledReason == null
+            ? control.label
+            : '${control.label}, ${control.disabledReason}',
         child: LoopFocusable(
-          enabled: !already,
+          enabled: enabled,
           onActivate: () => onPick(control.target),
           radius: 12,
           child: GestureDetector(
-            onTap: already ? null : () => onPick(control.target),
+            onTap: enabled ? () => onPick(control.target) : null,
             behavior: HitTestBehavior.opaque,
             child: Opacity(
-              opacity: already ? surface.disabledOpacity : 1,
+              opacity: enabled ? 1 : surface.disabledOpacity,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: surface.card,
@@ -284,21 +287,36 @@ class ExpressionControlPicker extends StatelessWidget {
                       ],
                       Expanded(
                         child: ExcludeSemantics(
-                          child: AppText(
-                            control.label,
-                            // Keyed by the canonical form itself: it IS the
-                            // target's identity, and two hashes that collided
-                            // would be two rows of one list sharing a key.
-                            key: Key(
-                              'expression_target_'
-                              '${control.target.canonicalString()}',
-                            ),
-                            maxLines: 1,
-                            style: TextStyle(
-                              color: surface.textPrimary,
-                              fontSize: 25,
-                              height: 1.15,
-                            ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              AppText(
+                                control.label,
+                                // Keyed by the canonical form itself: it IS the
+                                // target's identity, and colliding hashes
+                                // would give two rows the same key.
+                                key: Key(
+                                  'expression_target_'
+                                  '${control.target.canonicalString()}',
+                                ),
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: surface.textPrimary,
+                                  fontSize: 25,
+                                  height: 1.15,
+                                ),
+                              ),
+                              if (control.disabledReason case final reason?)
+                                AppText(
+                                  reason,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: surface.textSecondary,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),

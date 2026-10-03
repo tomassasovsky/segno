@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:segno_engine/segno_engine.dart'
     show EngineSnapshot, TrackSnapshot;
 import 'package:segno_engine/segno_engine.dart' as le show LatencyState;
@@ -15,6 +16,8 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
+
+class _MockRecordLengthControl extends Mock implements RecordLengthControl {}
 
 class _MockSettingsRepository extends Mock implements SettingsRepository {}
 
@@ -25,6 +28,7 @@ const _playingState = LooperState(
 
 void main() {
   late LooperRepository repository;
+  late _MockRecordLengthControl recordLength;
   late StreamController<LooperState> stateController;
   late MixSettingsSnapshot currentMix;
   late int confirmedDecay;
@@ -43,6 +47,18 @@ void main() {
 
   setUp(() {
     repository = _MockLooperRepository();
+    recordLength = _MockRecordLengthControl();
+    when(() => recordLength.setLooperMode(any())).thenAnswer(
+      (_) async => const RecordLengthOutcome(RecordLengthStatus.rejected),
+    );
+    when(
+      () => recordLength.setTrackRecordLength(
+        channel: any(named: 'channel'),
+        bars: any(named: 'bars'),
+      ),
+    ).thenAnswer(
+      (_) async => const RecordLengthOutcome(RecordLengthStatus.rejected),
+    );
     currentMix = MixSettingsSnapshot();
     confirmedDecay = 0;
     confirmedTrackDecay = {};
@@ -420,6 +436,7 @@ void main() {
   LooperBloc buildBloc() => LooperBloc(
     decayControl: FakeDecayControl(),
     oneShotControl: FakeOneShotControl(),
+    recordLengthControl: recordLength,
     fxPersistence: FxChainPersistence(looper: repository),
     repository: repository,
     mixSettings: testMixSettings(repository),
@@ -479,6 +496,7 @@ void main() {
     build: () => LooperBloc(
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
+      recordLengthControl: recordLength,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -494,6 +512,7 @@ void main() {
     build: () => LooperBloc(
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
+      recordLengthControl: recordLength,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -661,6 +680,7 @@ void main() {
     return LooperBloc(
       decayControl: playback,
       oneShotControl: playback,
+      recordLengthControl: recordLength,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository, settings: trackSettings),
       repository: repository,
@@ -1031,11 +1051,11 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperTrackLengthPresetChanged forwards bars to the repository',
+    'LooperTrackLengthPresetChanged uses the shared transaction owner',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperTrackLengthPresetChanged(1, 8)),
     verify: (_) => verify(
-      () => repository.setTrackLengthPreset(channel: 1, bars: 8),
+      () => recordLength.setTrackRecordLength(channel: 1, bars: 8),
     ).called(1),
   );
 
@@ -1082,12 +1102,12 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperModeChanged forwards the mode to the repository (D4, B5c) — '
+    'LooperModeChanged forwards the mode to its transaction owner — '
     "the confirmation flow is the UI's job, not the bloc's",
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.band)),
     verify: (_) =>
-        verify(() => repository.setLooperMode(LooperMode.band)).called(1),
+        verify(() => recordLength.setLooperMode(LooperMode.band)).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -1553,6 +1573,7 @@ void main() {
         return LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1602,6 +1623,7 @@ void main() {
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: recordLength,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1621,6 +1643,7 @@ void main() {
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: recordLength,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1652,6 +1675,7 @@ void main() {
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: recordLength,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1669,6 +1693,7 @@ void main() {
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: recordLength,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1694,6 +1719,7 @@ void main() {
         final bloc = LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1738,6 +1764,7 @@ void main() {
         return LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1767,6 +1794,7 @@ void main() {
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: recordLength,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1794,6 +1822,7 @@ void main() {
       build: () => LooperBloc(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: recordLength,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1877,6 +1906,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1913,6 +1943,7 @@ void main() {
           final bloc = LooperBloc(
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
+            recordLengthControl: recordLength,
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -1946,6 +1977,7 @@ void main() {
           final bloc = LooperBloc(
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
+            recordLengthControl: recordLength,
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -2008,6 +2040,7 @@ void main() {
         final bloc = LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2050,6 +2083,7 @@ void main() {
           final bloc = LooperBloc(
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
+            recordLengthControl: recordLength,
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -2078,6 +2112,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2114,6 +2149,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2159,6 +2195,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2209,6 +2246,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2264,6 +2302,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2307,6 +2346,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2359,6 +2399,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2412,6 +2453,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2469,6 +2511,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2525,6 +2568,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2560,6 +2604,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2593,6 +2638,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2628,6 +2674,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2660,6 +2707,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2680,6 +2728,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2706,6 +2755,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2727,6 +2777,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2751,6 +2802,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2777,6 +2829,7 @@ void main() {
         build: () => LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2794,62 +2847,14 @@ void main() {
     });
 
     blocTest<LooperBloc, LooperState>(
-      'LooperModeChanged persists what the REPOSITORY holds, not the event',
-      build: () {
-        when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
-        // The engine refused it, so the repository still holds the old mode.
-        when(() => repository.settledLooperMode).thenReturn(LooperMode.multi);
-        return LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
-          fxPersistence: FxChainPersistence(looper: repository),
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          settings: settings,
-        );
-      },
-      act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.free)),
-      verify: (_) {
-        verify(() => repository.setLooperMode(LooperMode.free)).called(1);
-        // A refused change writes the mode that is still standing, never the
-        // one the event asked for.
-        verify(
-          () => settings.saveLooperMode(LooperMode.multi.code),
-        ).called(1);
-      },
-    );
-
-    blocTest<LooperBloc, LooperState>(
-      'a mode chosen while the engine is closed is persisted anyway',
-      build: () {
-        when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
-        // A stopped repository caches the choice and replays it at the next
-        // start, so the engine never reports it and the reported-state guard
-        // below would write nothing at all.
-        when(() => repository.settledLooperMode).thenReturn(LooperMode.free);
-        return LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
-          fxPersistence: FxChainPersistence(looper: repository),
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          settings: settings,
-        );
-      },
-      act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.free)),
-      verify: (_) {
-        verify(() => settings.saveLooperMode(LooperMode.free.code)).called(1);
-      },
-    );
-
-    blocTest<LooperBloc, LooperState>(
-      'the mode the engine reports is what gets persisted',
+      'incoming ticks never bypass the record owner to persist mode',
       build: () {
         when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
         when(() => repository.settledLooperMode).thenReturn(LooperMode.band);
         return LooperBloc(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: recordLength,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2877,8 +2882,7 @@ void main() {
           ),
         ),
       verify: (_) {
-        // Once for the change, not again for a tick that keeps the mode.
-        verify(() => settings.saveLooperMode(LooperMode.band.code)).called(1);
+        verifyNever(() => settings.saveLooperMode(any()));
       },
     );
   });
@@ -2928,6 +2932,7 @@ void main() {
     LooperBloc buildDebounced() => LooperBloc(
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
+      recordLengthControl: recordLength,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -3180,61 +3185,6 @@ void main() {
     );
   });
 
-  group('restoreLooperMode() (B5c boot restore)', () {
-    late SettingsRepository settings;
-
-    setUp(() {
-      settings = _MockSettingsRepository();
-      when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
-    });
-
-    test(
-      'dispatches the persisted looper mode as a LooperModeChanged event '
-      "(a free function, not a bloc method — bloc_lint's "
-      'avoid_public_bloc_methods)',
-      () async {
-        when(() => settings.loadLooperMode()).thenAnswer((_) async => 2);
-        final bloc = LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
-          fxPersistence: FxChainPersistence(looper: repository),
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          settings: settings,
-        );
-        addTearDown(bloc.close);
-
-        await restoreLooperMode(bloc, settings);
-        // bloc.add() only enqueues the event; the on<LooperModeChanged>
-        // handler runs on a later microtask via the bloc package's internal
-        // event transformer — yield once so it has actually run before
-        // asserting its effect.
-        await Future<void>.delayed(Duration.zero);
-
-        // Code 2 == LooperMode.song (engine_snapshot.dart's code mapping).
-        verify(() => repository.setLooperMode(LooperMode.song)).called(1);
-      },
-    );
-
-    test('defaults to Multi when nothing was ever persisted', () async {
-      when(() => settings.loadLooperMode()).thenAnswer((_) async => 0);
-      final bloc = LooperBloc(
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
-        fxPersistence: FxChainPersistence(looper: repository),
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        settings: settings,
-      );
-      addTearDown(bloc.close);
-
-      await restoreLooperMode(bloc, settings);
-      await Future<void>.delayed(Duration.zero);
-
-      verify(() => repository.setLooperMode(LooperMode.multi)).called(1);
-    });
-  });
-
   blocTest<LooperBloc, LooperState>(
     'LooperPlayAllPressed plays every track with content',
     build: buildBloc,
@@ -3287,6 +3237,7 @@ void main() {
       bloc = LooperBloc(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: recordLength,
         fxPersistence: FxChainPersistence(looper: looper),
         mixSettings: testMixSettings(looper),
         repository: looper,
@@ -3492,6 +3443,7 @@ void main() {
       final blocWithoutSettings = LooperBloc(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: recordLength,
         fxPersistence: FxChainPersistence(looper: looper),
         repository: looper,
         mixSettings: testMixSettings(looper),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -66,6 +68,20 @@ class _DecayBootEngine extends FakeAudioEngine {
   }) => channel == refuseTrack
       ? EngineResult.invalid
       : super.setTrackOverdubFeedback(channel: channel, feedback: feedback);
+}
+
+class _LengthBootStore extends FakeKeyValueStore {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'tempo.length_preset.7') {
+      if (!entered.isCompleted) entered.complete();
+      await release.future;
+    }
+    return super.getInt(key);
+  }
 }
 
 class _OnceBootEngine extends FakeAudioEngine {
@@ -640,6 +656,62 @@ void main() {
       expect(engine.lastDefaultMultiple, 1);
     });
 
+    for (final key in [
+      'looper.mode',
+      'looper.default_length_bars',
+      for (var channel = 0; channel < 8; channel++)
+        'tempo.length_preset.$channel',
+    ]) {
+      test(
+        'invalid saved $key never starts audio or rewrites intent',
+        () async {
+          store.values['looper.default_length_bars'] = 4;
+          store.values[key] = key == 'looper.mode' ? 5 : 65;
+          final before = Map<String, Object>.of(store.values);
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            mixSettings: testMixSettings(repository, settings: settings),
+          );
+          expect(result.started, isFalse);
+          expect(engine.startCalls, 0);
+          expect(repository.sessionTransport.defaultLengthPresetBars, 0);
+          expect(repository.trackLengthPresetOverrides, isEmpty);
+          expect(store.values, before);
+        },
+      );
+    }
+
+    test('startup waits for the eighth fixed-track length read', () async {
+      final delayed = _LengthBootStore();
+      delayed.values.addAll({
+        'looper.mode': LooperMode.free.code,
+        'looper.default_length_bars': 4,
+        'tempo.length_preset.0': 0,
+        'tempo.length_preset.7': 8,
+      });
+      final saved = SettingsRepository(store: delayed);
+      engine.nextSnapshot = const EngineSnapshot.initial().copyWith(
+        tracks: _emptyTrackSlots,
+      );
+      final start = tryAutoStartEngine(
+        repository: repository,
+        settings: saved,
+        mixSettings: testMixSettings(repository, settings: saved),
+      );
+      await delayed.entered.future;
+      expect(engine.startCalls, 0);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 0);
+      expect(repository.trackLengthPresetOverrides, isEmpty);
+      delayed.release.complete();
+      expect((await start).started, isTrue);
+      expect(repository.sessionTransport.looperMode, LooperMode.free);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 4);
+      expect(repository.trackLengthPresetOverrides, {0: 0, 7: 8});
+      expect(engine.lastModeWithPresets?.$1, LooperMode.free);
+      expect(engine.lastModeWithPresets?.$2, [0, 4, 4, 4, 4, 4, 4, 8]);
+    });
+
     test('restores saved per-track length presets on launch', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
@@ -676,7 +748,8 @@ void main() {
       expect(repository.state.tracks[0].lengthPresetOverride, 0);
       expect(engine.trackLengthPreset[1], 4);
       expect(engine.trackLengthPreset[0], 4);
-      expect(engine.lastTrackLengthPresets, [4, 4, 4, 4, 4, 4, 4, 4]);
+      expect(engine.lastModeWithPresets?.$1, LooperMode.multi);
+      expect(engine.lastModeWithPresets?.$2, [4, 4, 4, 4, 4, 4, 4, 4]);
       repository.setLooperMode(LooperMode.song);
       expect((await repository.settleLengthSettings()).isOk, isTrue);
       expect(engine.trackLengthPreset[1], 8);
@@ -691,7 +764,7 @@ void main() {
         );
         await settings.saveDefaultLengthPreset(4);
         engine
-          ..trackLengthPresetsResult = EngineResult.invalid
+          ..modeWithPresetsResult = EngineResult.invalid
           ..nextSnapshot = const EngineSnapshot(
             isRunning: true,
             sampleRate: 48000,
@@ -715,7 +788,8 @@ void main() {
         expect(result.started, isFalse);
         expect(engine.stopCalls, greaterThan(0));
         expect(await settings.loadDefaultLengthPreset(), 4);
-        expect(repository.sessionTransport.defaultLengthPresetBars, 0);
+        // The validated offline intent survives for a later device reconnect.
+        expect(repository.sessionTransport.defaultLengthPresetBars, 4);
       },
     );
 
@@ -1393,6 +1467,7 @@ void main() {
       bloc = LooperBloc(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: FakeRecordLengthControl(),
         fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: repository,

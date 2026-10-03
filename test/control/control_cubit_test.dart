@@ -186,6 +186,13 @@ void main() {
       when(() => looper.laneCount(any())).thenReturn(1);
       when(() => looper.mixSettingsSettled).thenReturn(true);
       when(() => looper.fxRecipesSettled).thenReturn(true);
+      when(() => looper.lengthSettingsSettled).thenReturn(true);
+      when(() => looper.recordLengthCaptureLocked).thenAnswer(
+        (_) => looper.state.tracks.any((track) => track.isCapturing),
+      );
+      when(() => looper.sessionTransport).thenAnswer(
+        (_) => looper.state.transport,
+      );
       when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
       when(
         () => looper.settleFxRecipes(
@@ -296,6 +303,7 @@ void main() {
       cubit = ControlCubit(
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
+        recordLengthControl: FakeRecordLengthControl(),
         clickVolumeControl: FakeClickVolumeControl(),
         fxPersistence: FxChainPersistence(looper: looper),
         looper: looper,
@@ -1858,6 +1866,7 @@ void main() {
         final locked = ControlCubit(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: FakeRecordLengthControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -1876,6 +1885,7 @@ void main() {
         final locked = ControlCubit(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: FakeRecordLengthControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -1894,6 +1904,7 @@ void main() {
         final locked = ControlCubit(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: FakeRecordLengthControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -1917,6 +1928,7 @@ void main() {
         final locked = ControlCubit(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: FakeRecordLengthControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -2262,6 +2274,7 @@ void main() {
           final armedCubit = ControlCubit(
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
+            recordLengthControl: FakeRecordLengthControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
@@ -2307,6 +2320,7 @@ void main() {
         final unarmedCubit = ControlCubit(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: FakeRecordLengthControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -2339,6 +2353,7 @@ void main() {
           final armedCubit = ControlCubit(
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
+            recordLengthControl: FakeRecordLengthControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
@@ -2477,6 +2492,7 @@ void main() {
           final wired = ControlCubit(
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
+            recordLengthControl: FakeRecordLengthControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
@@ -3713,6 +3729,7 @@ void main() {
         final reloaded = ControlCubit(
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
+          recordLengthControl: FakeRecordLengthControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -3810,6 +3827,7 @@ void main() {
           final idle = ControlCubit(
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
+            recordLengthControl: FakeRecordLengthControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,

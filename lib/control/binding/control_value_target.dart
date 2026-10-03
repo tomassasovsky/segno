@@ -6,6 +6,7 @@ import 'package:segno/control/binding/mix_value_scale.dart';
 import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
 
 /// What a continuous binding sweeps: an FX parameter, Mixer control, or
 /// master gain.
@@ -51,6 +52,8 @@ sealed class ControlValueTarget extends Equatable {
     TrackDecayTarget(:final channel) => channel >= 0 && channel < 8,
     DefaultOneShotTarget() => true,
     TrackOneShotTarget(:final channel) => channel >= 0 && channel < 8,
+    DefaultRecordLengthTarget() => true,
+    TrackRecordLengthTarget(:final channel) => channel >= 0 && channel < 8,
   };
 
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
@@ -81,6 +84,9 @@ sealed class ControlValueTarget extends Equatable {
       if (ctl == 'defaultOneShot') {
         return raw.length == 1 ? const DefaultOneShotTarget() : null;
       }
+      if (ctl == 'defaultRecordLength') {
+        return raw.length == 1 ? const DefaultRecordLengthTarget() : null;
+      }
       final index = raw['index'];
       final lane = raw['lane'];
       if (index is! int || index < 0) return null;
@@ -99,6 +105,8 @@ sealed class ControlValueTarget extends Equatable {
           index,
         ),
         'trackOneShot' when indexed && index < 8 => TrackOneShotTarget(index),
+        'trackRecordLength' when indexed && index < 8 =>
+          TrackRecordLengthTarget(index),
         _ => null,
       };
     }
@@ -469,6 +477,63 @@ final class TrackOneShotTarget extends OneShotValueTarget {
   @override
   String canonicalString() =>
       jsonEncode({'ctl': 'trackOneShot', 'index': channel});
+
+  @override
+  List<Object?> get props => [channel];
+}
+
+/// A future-recording length: Auto or a whole number of bars.
+sealed class RecordLengthValueTarget extends ControlValueTarget {
+  /// Creates a length target.
+  const RecordLengthValueTarget();
+
+  /// Its stable default or fixed-track address.
+  RecordLengthAddress get address;
+
+  /// Decodes a normalized source position to Auto (0) or 1–64 bars.
+  int toDomain(double normalized) {
+    if (!normalized.isFinite) {
+      throw ArgumentError.value(normalized, 'normalized');
+    }
+    return (normalized.clamp(0.0, 1.0) * 64).round();
+  }
+
+  /// Encodes an accepted length as a canonical normalized endpoint.
+  double fromDomain(int bars) => bars.clamp(0, 64) / 64;
+
+  /// One bar per relative-controller detent.
+  double get relativeStep => 1 / 64;
+}
+
+/// The future-recording length inherited by tracks without an override.
+final class DefaultRecordLengthTarget extends RecordLengthValueTarget {
+  /// Creates the default length target.
+  const DefaultRecordLengthTarget();
+
+  @override
+  RecordLengthAddress get address => const RecordLengthAddress.defaults();
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'defaultRecordLength'});
+
+  @override
+  List<Object?> get props => ['defaultRecordLength'];
+}
+
+/// One fixed track's future-recording length, including an empty slot.
+final class TrackRecordLengthTarget extends RecordLengthValueTarget {
+  /// Creates a track length target for zero-based [channel].
+  const TrackRecordLengthTarget(this.channel);
+
+  /// The fixed track channel.
+  final int channel;
+
+  @override
+  RecordLengthAddress get address => RecordLengthAddress.track(channel);
+
+  @override
+  String canonicalString() =>
+      jsonEncode({'ctl': 'trackRecordLength', 'index': channel});
 
   @override
   List<Object?> get props => [channel];

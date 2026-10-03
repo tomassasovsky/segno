@@ -11,6 +11,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -117,6 +118,13 @@ void main() {
   SessionCubit build() => SessionCubit(
     runClickVolumeExclusive: _readyClick,
     runPlaybackExclusive: _readyClick,
+    runRecordExclusive: <T>(operation) => operation(),
+    currentDurableRecordLength: () => RecordLengthSnapshot(
+      defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+      trackOverrides: looper.trackLengthPresetOverrides,
+      mode: looper.sessionTransport.looperMode,
+      captureLocked: false,
+    ),
     currentDurableDecay: () => DecaySnapshot(
       defaultPercent: looper.defaultOverdubDecay,
       trackOverrides: looper.trackOverdubDecayOverrides,
@@ -1128,6 +1136,13 @@ void main() {
         final cubit = SessionCubit(
           runClickVolumeExclusive: _readyClick,
           runPlaybackExclusive: _readyClick,
+          runRecordExclusive: <T>(operation) => operation(),
+          currentDurableRecordLength: () => RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
           currentDurableDecay: () => DecaySnapshot(
             defaultPercent: looper.defaultOverdubDecay,
             trackOverrides: looper.trackOverdubDecayOverrides,
@@ -1187,6 +1202,13 @@ void main() {
         final cubit = SessionCubit(
           runClickVolumeExclusive: _readyClick,
           runPlaybackExclusive: _readyClick,
+          runRecordExclusive: <T>(operation) => operation(),
+          currentDurableRecordLength: () => RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
           currentDurableDecay: () => DecaySnapshot(
             defaultPercent: looper.defaultOverdubDecay,
             trackOverrides: looper.trackOverdubDecayOverrides,
@@ -1232,6 +1254,13 @@ void main() {
       final cubit = SessionCubit(
         runClickVolumeExclusive: _readyClick,
         runPlaybackExclusive: _readyClick,
+        runRecordExclusive: <T>(operation) => operation(),
+        currentDurableRecordLength: () => RecordLengthSnapshot(
+          defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+          trackOverrides: looper.trackLengthPresetOverrides,
+          mode: looper.sessionTransport.looperMode,
+          captureLocked: false,
+        ),
         currentDurableDecay: () => DecaySnapshot(
           defaultPercent: looper.defaultOverdubDecay,
           trackOverrides: looper.trackOverdubDecayOverrides,

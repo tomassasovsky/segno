@@ -32,6 +32,7 @@ void main() {
   late LooperRepository repository;
   late SettingsRepository settings;
   late LooperBloc bloc;
+  late RecordOptionsCubit record;
 
   Future<void> poll([int count = 1]) async {
     for (var i = 0; i < count; i++) {
@@ -40,14 +41,17 @@ void main() {
     }
   }
 
-  setUp(() {
+  setUp(() async {
     engine = FakeAudioEngine()..nextSnapshot = _stopped(LooperMode.multi);
     ticker = StreamController<void>.broadcast();
     repository = LooperRepository(engine: engine, ticker: ticker.stream);
     settings = SettingsRepository(store: FakeKeyValueStore());
+    record = RecordOptionsCubit(repository: repository, settings: settings);
+    await record.load();
     bloc = LooperBloc(
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
+      recordLengthControl: record,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -57,12 +61,40 @@ void main() {
 
   tearDown(() async {
     await bloc.close();
+    await record.close();
     await repository.dispose();
     await ticker.close();
   });
 
+  for (final mode in [LooperMode.multi, LooperMode.song]) {
+    test(
+      'startup restores ${mode.name} with the complete length image',
+      () async {
+        final bootEngine = FakeAudioEngine();
+        final bootRepository = LooperRepository(engine: bootEngine);
+        final bootSettings = SettingsRepository(store: FakeKeyValueStore());
+        if (mode != LooperMode.multi) {
+          await bootSettings.saveLooperMode(mode.code);
+        }
+        await bootSettings.saveDefaultLengthPreset(4);
+        await bootSettings.saveTrackLengthPreset(7, 0);
+        final bootOwner = RecordOptionsCubit(
+          repository: bootRepository,
+          settings: bootSettings,
+        );
+        addTearDown(bootRepository.dispose);
+        addTearDown(bootOwner.close);
+        await bootOwner.load();
+        expect(bootOwner.state.recordLengthReady, isTrue);
+        expect(bootRepository.sessionTransport.looperMode, mode);
+        expect(bootRepository.sessionTransport.defaultLengthPresetBars, 4);
+        expect(bootRepository.trackLengthPresetOverrides, {7: 0});
+      },
+    );
+  }
+
   test(
-    'persist modes only after callback acknowledgement and retain refusals',
+    'publish durable modes after callback acknowledgement and retain refusals',
     () async {
       repository.startEngine(const EngineConfig());
       await poll();
@@ -72,27 +104,32 @@ void main() {
       bloc.add(const LooperModeChanged(LooperMode.free));
       await pumpEventQueue();
       expect(repository.settledLooperMode, isNull);
-      expect(await settings.loadLooperMode(), LooperMode.multi.code);
+      // Storage stages the candidate before enqueue. Save and shutdown wait
+      // on the owner queue; its durable image stays at the confirmed mode.
+      expect(record.durableRecordLengthSnapshot.mode, LooperMode.multi);
 
       await poll(2);
       expect(repository.settledLooperMode, isNull);
-      expect(await settings.loadLooperMode(), LooperMode.multi.code);
+      expect(record.durableRecordLengthSnapshot.mode, LooperMode.multi);
       engine
         ..nextSnapshot = _stopped(LooperMode.free)
         ..commandsAreSettled = true;
       await poll();
+      await record.flushRecordLength();
       expect(await settings.loadLooperMode(), LooperMode.free.code);
+      expect(record.durableRecordLengthSnapshot.mode, LooperMode.free);
 
       engine.commandsAreSettled = false;
       bloc.add(const LooperModeChanged(LooperMode.band));
       await pumpEventQueue();
       expect(repository.settledLooperMode, isNull);
-      expect(await settings.loadLooperMode(), LooperMode.free.code);
+      expect(record.durableRecordLengthSnapshot.mode, LooperMode.free);
       await poll(2);
       expect(repository.settledLooperMode, isNull);
       // The callback consumed the request but kept the already-confirmed mode.
       engine.commandsAreSettled = true;
       await poll();
+      await record.flushRecordLength();
       expect(repository.settledLooperMode, LooperMode.free);
       expect(repository.sessionTransport.isRunning, isTrue);
       expect(bloc.state.transport.looperMode, LooperMode.free);
@@ -130,6 +167,14 @@ void main() {
       expect(repository.settledLooperMode, LooperMode.band);
       expect(await settings.loadLooperMode(), LooperMode.band.code);
 
+      // A refused length receipt leaves a recoverable obligation and blocks
+      // restart until the stopped repository explicitly adopts it.
+      expect(repository.lengthRecoveryRequired, isTrue);
+      expect(
+        repository.startEngine(const EngineConfig()),
+        EngineResult.notReady,
+      );
+      expect((await record.recoverRecordLength()).isOk, isTrue);
       engine.publishModeCommands = true;
       expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
       expect(await repository.settleLengthSettings(), EngineResult.ok);
