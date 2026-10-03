@@ -303134,6 +303134,200 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "GNTYj",
+      "x": 59568,
+      "y": 3744,
+      "name": "Native implementation / Shared Record length / M3.14",
+      "width": 4000,
+      "height": 2720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "j0tODS",
+          "name": "Shared Record length reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Record length · Auto / Bars · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "eoIrc",
+          "name": "c/ Record length, capture lock and durable settings",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Loop defaults and fixed Tracks 1–8 share confirmed Auto or 1–64 bars. Custom Auto remains explicit; Use default restores inheritance. Multi shares the default, and active recording locks length changes. Held choices stay live while Save and restart retain Released values. MIDI, external buttons and expression use the same owner. Native renders at 1920 × 1080; physical controls and appliance shutdown require device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "oqnS0",
+          "name": "Shared Record length reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "OZA9c",
+              "name": "MIDI · Record length endpoints reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "eypqg",
+                  "name": "MIDI · Record length endpoints caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Record length endpoints",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "TPeHS",
+                  "name": "MIDI · Record length endpoints native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_record_length_range.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "McWo1",
+              "name": "External button · Held bars, Released Auto reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "HOwqp",
+                  "name": "External button · Held bars, Released Auto caption",
+                  "fill": "#C7CDD6",
+                  "content": "External button · Held bars, Released Auto",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "eS2D5",
+                  "name": "External button · Held bars, Released Auto native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_record_length_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "zY7TX",
+          "name": "Shared Record length reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Y8SbVE",
+              "name": "Loop settings · Custom record length reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "VvVFB",
+                  "name": "Loop settings · Custom record length caption",
+                  "fill": "#C7CDD6",
+                  "content": "Loop settings · Custom record length",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "Xn9Y5",
+                  "name": "Loop settings · Custom record length native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/loop_settings_length_custom.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Xf7H2",
+              "name": "Shutdown · settings recovery reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "TXEJX",
+                  "name": "Shutdown · settings recovery caption",
+                  "fill": "#C7CDD6",
+                  "content": "Shutdown · settings recovery",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "inpcf",
+                  "name": "Shutdown · settings recovery native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/click_recovery_power_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {

@@ -101,6 +101,7 @@ void main() {
         onChange: () {},
         onRemove: () {},
         onEndpoint: ({required isHeel, required value}) {},
+        onEndpointCancel: ({required isHeel, required value}) {},
       ),
     );
 
@@ -151,6 +152,7 @@ void main() {
         onChange: () {},
         onRemove: () {},
         onEndpoint: ({required isHeel, required value}) {},
+        onEndpointCancel: ({required isHeel, required value}) {},
       ),
     );
     final heel = find.byKey(const Key('expression_endpoint_heel'));

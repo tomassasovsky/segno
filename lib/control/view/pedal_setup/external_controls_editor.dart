@@ -19,6 +19,7 @@ class ExternalControlRow {
     required this.destination,
     required this.name,
     required this.available,
+    this.disabledReason,
     this.art,
   }) : parameter = null;
 
@@ -28,6 +29,7 @@ class ExternalControlRow {
     required this.destination,
     required this.name,
     required this.available,
+    this.disabledReason,
     this.art,
   }) : activation = null;
 
@@ -45,6 +47,9 @@ class ExternalControlRow {
 
   /// Whether the rig still has it.
   final bool available;
+
+  /// Temporary owner lock; this saved target remains valid.
+  final String? disabledReason;
 
   /// The picture of the pedal or rack, in the catalogue package, or `null`.
   final String? art;
@@ -205,6 +210,8 @@ class ExternalControlsEditor extends StatelessWidget {
           valueKey: Key('external_control_value_${row.keyId}'),
           value: !row.available
               ? l10n.expressionUnavailable
+              : row.disabledReason != null
+              ? row.disabledReason!
               : switch (row) {
                   ExternalControlRow(:final ExternalActivation activation) =>
                     conditionLabel(l10n, activation.condition),
@@ -342,7 +349,7 @@ class ExternalControlsEditor extends StatelessWidget {
       children: [
         _ruleTitle(
           context,
-          l10n.externalButtonValues,
+          row.disabledReason ?? l10n.externalButtonValues,
           repair: !row.available,
         ),
         SizedBox(
@@ -449,7 +456,7 @@ class ExternalControlsEditor extends StatelessWidget {
               ),
               value: value,
               width: 500,
-              enabled: row.available,
+              enabled: row.available && row.disabledReason == null,
               keyPrefix: 'external_value_$id',
               onChanged: (next) => onValue(active: active, value: next),
             )
@@ -467,8 +474,20 @@ class ExternalControlsEditor extends StatelessWidget {
               // Moving a value writes the draft, never the parameter: the
               // accepted design is explicit that editing a mapping dispatches
               // nothing.
-              enabled: row.available,
-              onChanged: (next) => onValue(active: active, value: next),
+              enabled: row.available && row.disabledReason == null,
+              keyboardStep: parameter.target is RecordLengthValueTarget
+                  ? 1 / 64
+                  : 0.01,
+              onChanged: (next) => onValue(
+                active: active,
+                value: parameter.target is RecordLengthValueTarget
+                    ? (parameter.target as RecordLengthValueTarget).fromDomain(
+                        (parameter.target as RecordLengthValueTarget).toDomain(
+                          next,
+                        ),
+                      )
+                    : next,
+              ),
               onEditCancel: (opening) =>
                   onValue(active: active, value: opening),
             ),
@@ -528,13 +547,22 @@ class ExternalControlTargetList extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     final entries =
-        <({Object target, String name, String? art, VoidCallback pick})>[
+        <
+          ({
+            Object target,
+            String name,
+            String? art,
+            String? disabledReason,
+            VoidCallback pick,
+          })
+        >[
           for (final activation in destination.activations)
             if (replacing == null || replacing is FxBindingTarget)
               (
                 target: activation.target,
                 name: l10n.externalActivationRow(activation.label),
                 art: activation.art,
+                disabledReason: null,
                 pick: () => onActivation(activation),
               ),
           // One flat list, with no section headings to say which effect a
@@ -549,6 +577,7 @@ class ExternalControlTargetList extends StatelessWidget {
                       ? control.label
                       : '${group.label} · ${control.label}',
                   art: control.art,
+                  disabledReason: control.disabledReason,
                   pick: () => onParameter(control),
                 ),
         ];
@@ -575,6 +604,8 @@ class ExternalControlTargetList extends StatelessWidget {
           name: entry.name,
           art: entry.art,
           taken: taken.contains(entry.target),
+          enabled: entry.disabledReason == null,
+          value: entry.disabledReason,
           onTap: entry.pick,
         );
       },

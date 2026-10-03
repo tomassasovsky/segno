@@ -5723,5 +5723,15 @@
     "clickSettingsRefusedTitle": "Click change was not applied",
     "@clickSettingsRefusedTitle": {"description": "Click settings and safe shutdown recovery message."},
     "clickSettingsRecoveryBody": "Retry to recover the Click setting.",
-    "@clickSettingsRecoveryBody": {"description": "Click settings and safe shutdown recovery message."}
+    "@clickSettingsRecoveryBody": {"description": "Click settings and safe shutdown recovery message."},
+    "recordLengthSharedInMulti": "Track length follows Loop defaults in Multi.",
+    "@recordLengthSharedInMulti": {"description": "Shared record length controls and recovery message."},
+    "recordLengthCaptureLocked": "Finish recording to change record length.",
+    "@recordLengthCaptureLocked": {"description": "Shared record length controls and recovery message."},
+    "recordLengthSettingsRecoveryTitle": "Record length needs recovery",
+    "@recordLengthSettingsRecoveryTitle": {"description": "Shared record length controls and recovery message."},
+    "recordLengthSettingsRefusedTitle": "Record length change was not applied",
+    "@recordLengthSettingsRefusedTitle": {"description": "Shared record length controls and recovery message."},
+    "recordLengthSettingsRecoveryBody": "Retry to recover the record length settings.",
+    "@recordLengthSettingsRecoveryBody": {"description": "Shared record length controls and recovery message."}
 }

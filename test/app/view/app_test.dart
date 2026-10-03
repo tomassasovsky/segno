@@ -18,6 +18,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_gate.dart';
 import 'package:segno/control/control.dart';
@@ -224,6 +225,45 @@ class _OneShotStore extends FakeKeyValueStore {
   }
 }
 
+class _LengthStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+  bool refuseNextRead = false;
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'tempo.length_preset.7' && refuseNextRead) {
+      refuseNextRead = false;
+      throw StateError('Record length preference temporarily unavailable');
+    }
+    return super.getInt(key);
+  }
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    if (key == 'looper.default_length_bars' ||
+        key.startsWith('tempo.length_preset.')) {
+      writeEntered = true;
+      await pendingWrite?.future;
+      if (refuseWrite) throw StateError('Record length preference unavailable');
+    }
+    await super.setInt(key, value);
+  }
+}
+
+class _PowerKey implements PowerKeySource {
+  final _presses = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get presses => _presses.stream;
+
+  void press() => _presses.add(null);
+
+  @override
+  Future<void> close() => _presses.close();
+}
+
 class _ShutdownMidi extends MidiDeviceRepository {
   _ShutdownMidi(SettingsRepository settings)
     : super(source: null, settings: settings, pollInterval: Duration.zero);
@@ -315,6 +355,7 @@ void main() {
       WidgetTester tester,
       WaveformWindowService windowService, {
       Future<void> Function()? powerOff,
+      PowerKeySource? powerKeySource,
       Duration waveformWindowOpenDelay = Duration.zero,
       bool settle = true,
     }) async {
@@ -330,6 +371,7 @@ void main() {
           performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
           powerOff: powerOff,
+          powerKeySource: powerKeySource,
           waveformWindowOpenDelay: waveformWindowOpenDelay,
         ),
       );
@@ -490,6 +532,46 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     });
+
+    for (final malformed in [false, true]) {
+      testWidgets(
+        'Record length startup recovery stays reachable; malformed=$malformed',
+        (tester) async {
+          final store = _LengthStore()..refuseNextRead = !malformed;
+          store.values.addAll({
+            'looper.mode': LooperMode.free.code,
+            'looper.default_length_bars': 4,
+            'tempo.length_preset.7': malformed ? 65 : 0,
+          });
+          final before = Map<String, Object>.of(store.values);
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final context = tester.element(find.byType(TracksView));
+          final length = context.read<RecordOptionsCubit>();
+          expect(length.state.recordLengthReady, isFalse);
+          expect(find.text('Record length needs recovery'), findsOneWidget);
+          await tester.pump(const Duration(seconds: 6));
+          expect(find.text('Record length needs recovery'), findsOneWidget);
+          expect(find.text('Retry'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(length.state.recordLengthReady, !malformed);
+          expect(store.values, before);
+          if (malformed) {
+            // Retry does not turn invalid saved data into a guessed default.
+            expect(find.text('Record length needs recovery'), findsOneWidget);
+            expect(find.text('Retry'), findsOneWidget);
+            expect(repository.trackLengthPresetOverrides, isEmpty);
+          } else {
+            expect(find.text('Record length needs recovery'), findsNothing);
+            expect(length.state.defaultLengthBars, 4);
+            expect(length.state.trackLengthPresetOverrides, {7: 0});
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+        },
+      );
+    }
 
     for (final channel in <int?>[null, 7]) {
       testWidgets('power off waits for ordinary Decay at $channel', (
@@ -808,6 +890,296 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     });
+
+    for (final channel in <int?>[null, 7]) {
+      testWidgets('power off waits for ordinary Record length at $channel', (
+        tester,
+      ) async {
+        final store = _LengthStore();
+        settings = SettingsRepository(store: store);
+        store.values['looper.mode'] = LooperMode.free.code;
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final length = context.read<RecordOptionsCubit>();
+        final power = context.read<PowerOffCubit>();
+        store.pendingWrite = Completer<void>();
+        if (channel == null) {
+          unawaited(length.setDefaultLengthBars(4));
+        } else {
+          // Ordinary per-track editing uses the production Bloc -> owner path.
+          context.read<LooperBloc>().add(
+            LooperTrackLengthPresetChanged(channel, 4),
+          );
+        }
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        power.press(const PowerOffSnapshot());
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(power.state.phase, PowerOffPhase.flushing);
+        expect(halted, isFalse);
+        store.pendingWrite!.complete();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        final key = channel == null
+            ? 'looper.default_length_bars'
+            : 'tempo.length_preset.$channel';
+        expect(store.values[key], 4);
+      });
+    }
+
+    for (final retry in [false, true]) {
+      testWidgets(
+        'Record length refusal stays on; recovery choice retry=$retry',
+        (
+          tester,
+        ) async {
+          final store = _LengthStore();
+          settings = SettingsRepository(store: store);
+          store.values['looper.mode'] = LooperMode.free.code;
+          var halted = false;
+          await pumpApp(
+            tester,
+            NoopWaveformWindowService(),
+            powerOff: () async => halted = true,
+          );
+          final context = tester.element(find.byType(TracksView));
+          final length = context.read<RecordOptionsCubit>();
+          final power = context.read<PowerOffCubit>();
+          store.refuseWrite = true;
+          unawaited(length.setDefaultLengthBars(4));
+          await tester.pumpAndSettle();
+          expect(length.state.defaultLengthBars, 0);
+          power.press(const PowerOffSnapshot());
+          await tester.pumpAndSettle();
+          expect(power.state.phase, PowerOffPhase.flushFailed);
+          expect(find.text('Settings could not be confirmed'), findsOneWidget);
+          expect(find.byKey(const Key('power_off_discard')), findsNothing);
+          expect(halted, isFalse);
+          store.refuseWrite = false;
+          await tester.tap(
+            find.byKey(
+              Key(retry ? 'power_off_retry' : 'power_off_keep_playing'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.pump(const Duration(seconds: 6));
+          expect(halted, retry);
+          expect(
+            store.values.containsKey('looper.default_length_bars'),
+            isFalse,
+          );
+          if (!retry) {
+            unawaited(length.setDefaultLengthBars(4));
+            await tester.pumpAndSettle();
+            expect(length.state.defaultLengthBars, 4);
+            expect(store.values['looper.default_length_bars'], 4);
+          }
+        },
+      );
+    }
+
+    testWidgets(
+      'Record length release during capture keeps actual power key safe',
+      (tester) async {
+        final ticker = StreamController<void>.broadcast();
+        repository = LooperRepository(engine: engine, ticker: ticker.stream);
+        addTearDown(repository.dispose);
+        addTearDown(() => unawaited(ticker.close()));
+        final store = _LengthStore();
+        store.values['looper.mode'] = LooperMode.free.code;
+        settings = SettingsRepository(store: store);
+        final midi = _ShutdownMidi(settings);
+        midiDeviceRepository = midi;
+        addTearDown(() => unawaited(midi.dispose()));
+        final key = _PowerKey();
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerKeySource: key,
+          powerOff: () async => halted = true,
+        );
+        repository.startEngine(const EngineConfig());
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        final context = tester.element(find.byType(TracksView));
+        final control = context.read<ControlCubit>();
+        final length = context.read<RecordOptionsCubit>();
+        final power = context.read<PowerOffCubit>();
+        final editor = Object();
+        control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+        MidiSaveResult? saved;
+        unawaited(
+          control
+              .saveMidiMapping(
+                MidiMapping(
+                  id: 'capture-length',
+                  source: MidiSource(
+                    device: 'shutdown-test',
+                    kind: ControllerSourceKind.midiCc,
+                    number: 21,
+                  ),
+                  behavior: MidiBehavior.momentary,
+                  controls: [
+                    MidiParameterControl(
+                      key: '{"ctl":"defaultRecordLength"}',
+                      low: 0,
+                      high: 4 / 64,
+                    ),
+                  ],
+                ),
+                owner: editor,
+                create: true,
+              )
+              .then((result) => saved = result),
+        );
+        await tester.pumpAndSettle();
+        expect(saved?.saved, isTrue);
+        control.endMidiEdit(editor);
+        midi.push(127);
+        await tester.pumpAndSettle();
+        expect(length.state.defaultLengthBars, 4);
+        expect(length.durableRecordLengthSnapshot.defaultBars, 0);
+
+        // Only the engine seam is simulated. The live repository, owner,
+        // controller, Bloc, power-key host, gate and dialog are production.
+        engine.nextSnapshot = engine.snapshot().copyWith(
+          looperMode: LooperMode.free,
+          tracks: [
+            const le.TrackSnapshot(
+              state: le.TrackState.recording,
+              volume: 1,
+              muted: false,
+              lengthFrames: 1000,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+              lengthPresetBars: 4,
+            ),
+            for (var i = 1; i < 8; i++) const le.TrackSnapshot.empty(),
+          ],
+        );
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        expect(length.state.recordLengthCaptureLocked, isTrue);
+        midi.push(0);
+        await tester.pumpAndSettle();
+        expect(length.state.defaultLengthBars, 4);
+        expect(length.durableRecordLengthSnapshot.defaultBars, 0);
+        final stopCalls = engine.stopCalls;
+        key.press();
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.refuse);
+        expect(find.byKey(const Key('power_off_keep_playing')), findsOneWidget);
+        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        expect(halted, isFalse);
+        expect(engine.stopCalls, stopCalls);
+        expect(repository.state.tracks.first.isCapturing, isTrue);
+        await tester.tap(find.byKey(const Key('power_off_keep_playing')));
+        await tester.pumpAndSettle();
+
+        // The player ends capture; the owed release can now retire safely.
+        engine.nextSnapshot = engine.snapshot().copyWith(
+          tracks: [for (var i = 0; i < 8; i++) const le.TrackSnapshot.empty()],
+        );
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        expect(length.state.defaultLengthBars, 0);
+        expect(engine.stopCalls, stopCalls);
+        key.press();
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+    );
+
+    testWidgets(
+      'power off releases held Record length and rejects later MIDI',
+      (
+        tester,
+      ) async {
+        final store = _LengthStore();
+        settings = SettingsRepository(store: store);
+        store.values['looper.mode'] = LooperMode.free.code;
+        final midi = _ShutdownMidi(settings);
+        midiDeviceRepository = midi;
+        addTearDown(() => unawaited(midi.dispose()));
+        var haltCalls = 0;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => haltCalls++,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final control = context.read<ControlCubit>();
+        final length = context.read<RecordOptionsCubit>();
+        final power = context.read<PowerOffCubit>();
+        final editor = Object();
+        control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+        MidiSaveResult? saved;
+        unawaited(
+          control
+              .saveMidiMapping(
+                MidiMapping(
+                  id: 'shutdown-length',
+                  source: MidiSource(
+                    device: 'shutdown-test',
+                    kind: ControllerSourceKind.midiCc,
+                    number: 21,
+                  ),
+                  behavior: MidiBehavior.momentary,
+                  controls: [
+                    MidiParameterControl(
+                      key: '{"ctl":"defaultRecordLength"}',
+                      low: 0,
+                      high: 4 / 64,
+                    ),
+                    MidiParameterControl(
+                      key: '{"ctl":"trackRecordLength","index":7}',
+                      low: 0,
+                      high: 4 / 64,
+                    ),
+                  ],
+                ),
+                owner: editor,
+                create: true,
+              )
+              .then((result) => saved = result),
+        );
+        await tester.pumpAndSettle();
+        expect(saved?.saved, isTrue);
+        control.endMidiEdit(editor);
+        midi.push(127);
+        await tester.pumpAndSettle();
+        expect(length.state.defaultLengthBars, 4);
+        expect(length.state.trackLengthPresetOverrides, {7: 4});
+        power.press(const PowerOffSnapshot());
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.goodbye);
+        expect(length.state.defaultLengthBars, 0);
+        expect(length.state.trackLengthPresetOverrides, {7: 0});
+        expect(store.values['looper.default_length_bars'], 0);
+        expect(store.values['tempo.length_preset.7'], 0);
+        store.writeEntered = false;
+        midi.push(127);
+        await tester.pump();
+        expect(store.writeEntered, isFalse);
+        expect(length.state.defaultLengthBars, 0);
+        expect(length.state.trackLengthPresetOverrides, {7: 0});
+        await tester.pump(const Duration(seconds: 2));
+        expect(haltCalls, 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+    );
 
     for (final redo in [false, true]) {
       testWidgets('explains a refused ${redo ? 'redo' : 'undo'} without '

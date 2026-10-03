@@ -2633,6 +2633,15 @@ int32_t le_length_presets_check(le_engine* engine, const int32_t* bars,
   if (count != engine->track_count || count <= 0 || count > LE_MAX_TRACKS) {
     return LE_ERR_INVALID;
   }
+  /* Recheck at callback consumption too: capture can begin after enqueue.
+   * A vector controls future recordings and must not change during capture. */
+  for (int32_t c = 0; c < count; ++c) {
+    const int32_t state = atomic_load_explicit(
+        &engine->tracks[c].a_state, memory_order_acquire);
+    if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) {
+      return LE_ERR_INVALID;
+    }
+  }
   for (int32_t c = 0; c < count; ++c) {
     const int32_t result = le_length_preset_check(engine, bars[c]);
     if (result != LE_OK) return result;

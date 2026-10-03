@@ -23,6 +23,7 @@ class ControlRowTile extends StatelessWidget {
     this.selected = false,
     this.available = true,
     this.taken = false,
+    this.enabled = true,
     super.key,
   });
 
@@ -58,6 +59,9 @@ class ControlRowTile extends StatelessWidget {
   /// that has it.
   final bool taken;
 
+  /// Whether an offered choice may be selected under the current owner lock.
+  final bool enabled;
+
   /// Opens or chooses the row.
   final VoidCallback onTap;
 
@@ -71,17 +75,17 @@ class ControlRowTile extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      enabled: !taken,
-      label: '$destination $name',
+      enabled: !taken && enabled,
+      label: '$destination $name${shown == null ? '' : ', $shown'}',
       child: LoopFocusable(
-        enabled: !taken,
+        enabled: !taken && enabled,
         onActivate: onTap,
         radius: 12,
         child: GestureDetector(
-          onTap: taken ? null : onTap,
+          onTap: taken || !enabled ? null : onTap,
           behavior: HitTestBehavior.opaque,
           child: Opacity(
-            opacity: taken ? surface.disabledOpacity : 1,
+            opacity: taken || !enabled ? surface.disabledOpacity : 1,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: selected ? surface.accentSurface : surface.card,
@@ -145,15 +149,19 @@ class ControlRowTile extends StatelessWidget {
                       ),
                       if (shown != null) ...[
                         const SizedBox(width: 24),
-                        AppText(
-                          shown,
-                          key: valueKey,
-                          style: TextStyle(
-                            color: available
-                                ? surface.textPrimary
-                                : surface.textTertiary,
-                            fontSize: 27,
-                            height: 1.15,
+                        Flexible(
+                          child: AppText(
+                            shown,
+                            key: valueKey,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: available
+                                  ? surface.textPrimary
+                                  : surface.textTertiary,
+                              fontSize: 27,
+                              height: 1.15,
+                            ),
                           ),
                         ),
                       ],

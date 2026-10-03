@@ -3,6 +3,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:session_repository/session_repository.dart';
 
 /// Bloc-layer mapping between the session bundle (data) and the looper
@@ -102,6 +103,7 @@ SessionSettings settingsFromLooper(
   required double clickVolume,
   required DecaySnapshot decay,
   required OneShotSnapshot oneShot,
+  required RecordLengthSnapshot recordLength,
   MixSettingsSnapshot? mix,
 }) {
   final transport = looper.sessionTransport;
@@ -117,11 +119,11 @@ SessionSettings settingsFromLooper(
     recordTiming: looper.defaultRecordTiming,
     overdubDecay: decay.defaultPercent,
     defaultOneShot: oneShot.defaultOneShot,
-    defaultLengthPresetBars: transport.defaultLengthPresetBars,
+    defaultLengthPresetBars: recordLength.defaultBars,
     trackRecordTimingOverrides: looper.trackRecordTimingOverrides,
     trackOverdubDecayOverrides: decay.trackOverrides,
     trackOneShotOverrides: oneShot.trackOverrides,
-    trackLengthPresetOverrides: looper.trackLengthPresetOverrides,
+    trackLengthPresetOverrides: recordLength.trackOverrides,
     trackLevels: snapshot.trackLevels,
     trackPans: snapshot.trackPans,
     laneInputs: snapshot.laneInputs,

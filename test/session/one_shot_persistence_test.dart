@@ -10,6 +10,7 @@ import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/model/one_shot.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
@@ -96,6 +97,13 @@ void main() {
           runClickVolumeExclusive: tempo.runClickVolumeExclusive,
           currentDurableClickVolume: () => tempo.durableClickVolume,
           runPlaybackExclusive: playback.runPlaybackExclusive,
+          runRecordExclusive: <T>(operation) => operation(),
+          currentDurableRecordLength: () => RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
           currentDurableDecay: () => playback.durableDecaySnapshot,
           currentDurableOneShot: () => playback.durableOneShotSnapshot,
           exportDirectory: () async => directory.path,

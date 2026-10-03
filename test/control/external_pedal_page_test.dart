@@ -12,9 +12,11 @@ import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -48,10 +50,13 @@ void main() {
   late SettingsRepository settings;
   late _ControlledStore store;
   late ControlCubit control;
+  late RecordOptionsCubit record;
+  late int confirmedLength;
   late TracksCubit tracks;
 
   setUp(() {
     looper = _MockLooperRepository();
+    confirmedLength = 0;
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
@@ -65,16 +70,62 @@ void main() {
       ),
     );
     when(() => looper.trackEffects(any())).thenReturn(const []);
+    when(() => looper.monitorEffects(any())).thenReturn(const []);
+    when(() => looper.laneEffects(any(), any())).thenReturn(const []);
+    when(() => looper.outputEffects(any())).thenReturn(const []);
+    when(() => looper.allMonitors()).thenReturn(const {});
+    when(() => looper.allLaneChains()).thenReturn(const {});
     when(() => looper.allTrackChains()).thenReturn(const {});
+    when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
+    when(() => looper.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.lengthSettingsSettled).thenReturn(true);
+    when(() => looper.lengthRecoveryRequired).thenReturn(false);
+    when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
+    when(() => looper.sessionTransport).thenAnswer(
+      (_) => TransportState(defaultLengthPresetBars: confirmedLength),
+    );
+    when(() => looper.settleLengthSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => looper.setLengthSettings(
+        defaultBars: any(named: 'defaultBars'),
+        overrides: any(named: 'overrides'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenAnswer((call) {
+      confirmedLength = call.namedArguments[#defaultBars] as int;
+      return EngineResult.ok;
+    });
+    when(
+      () => looper.setDefaultLengthPreset(
+        any(),
+        releasedBars: any(named: 'releasedBars'),
+      ),
+    ).thenAnswer((call) {
+      confirmedLength = call.positionalArguments.single as int;
+      return EngineResult.ok;
+    });
+    when(
+      () => looper.setRecDub(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
+    ).thenReturn(EngineResult.ok);
   });
+
+  setUpAll(() => registerFallbackValue(LooperMode.multi));
 
   tearDown(() async {
     await looperStates.close();
   });
 
-  Future<void> pump(WidgetTester tester) async {
+  Future<void> pump(WidgetTester tester, {int currentBars = 0}) async {
     store = _ControlledStore();
     settings = SettingsRepository(store: store);
     tester.view
@@ -95,10 +146,17 @@ void main() {
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
     final playback = MockDecayPlaybackCubit();
+    record = RecordOptionsCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(record.close()));
+    await record.load();
+    if (currentBars != 0) {
+      expect((await record.setDefaultLengthBars(currentBars)).isOk, isTrue);
+    }
     control = ControlCubit(
       clickVolumeControl: FakeClickVolumeControl(),
       decayControl: playback,
       oneShotControl: playback,
+      recordLengthControl: record,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
@@ -137,6 +195,7 @@ void main() {
               BlocProvider.value(value: pedalCubit),
               BlocProvider<TempoCubit>.value(value: MockClickTempoCubit()),
               BlocProvider<PlaybackOptionsCubit>.value(value: playback),
+              BlocProvider<RecordOptionsCubit>.value(value: record),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -174,6 +233,35 @@ void main() {
       control.state.pedalSetup.external.forJack(jack);
 
   group('External pedals', () {
+    testWidgets('new button length holds accepted bars on both ends', (
+      tester,
+    ) async {
+      await pump(tester, currentBars: 4);
+      clearInteractions(looper);
+      await tap(tester, 'external_panel_controls');
+      await tap(tester, 'external_add_control');
+      await tap(tester, 'expression_kind_loopControls');
+      await tap(tester, 'expression_destination_loop:defaults');
+      final key = externalControlKey(const DefaultRecordLengthTarget());
+      await tap(
+        tester,
+        'external_pick_$key',
+      );
+      expect(saved(PedalCtrlJack.ctrl1).single.controls.parameters, isEmpty);
+      await tap(tester, 'external_save');
+      final parameter = saved(
+        PedalCtrlJack.ctrl1,
+      ).single.controls.parameters.single;
+      expect(parameter.target, const DefaultRecordLengthTarget());
+      expect((parameter.active, parameter.inactive), (4 / 64, 4 / 64));
+      verifyNever(
+        () => looper.setLengthSettings(
+          defaultBars: any(named: 'defaultBars'),
+          overrides: any(named: 'overrides'),
+          mode: any(named: 'mode'),
+        ),
+      );
+    });
     testWidgets('opens on CTRL 1 as a single switch, editing Button 1', (
       tester,
     ) async {

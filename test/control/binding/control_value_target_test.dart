@@ -167,6 +167,38 @@ void main() {
       }
     });
 
+    test('Record length keys and Auto/bar travel are exact', () {
+      const defaults = DefaultRecordLengthTarget();
+      const track = TrackRecordLengthTarget(7);
+      expect(defaults.canonicalString(), '{"ctl":"defaultRecordLength"}');
+      expect(track.canonicalString(), '{"ctl":"trackRecordLength","index":7}');
+      expect(ControlValueTarget.tryParse(defaults.canonicalString()), defaults);
+      expect(ControlValueTarget.tryParse(track.canonicalString()), track);
+      expect(track.address.channel, 7);
+      expect(const TrackRecordLengthTarget(8).isStructurallyValid, isFalse);
+      expect(defaults.toDomain(0), 0);
+      expect(defaults.toDomain(0.5 / 64), 1);
+      expect(defaults.toDomain(1 / 64), 1);
+      expect(defaults.toDomain(1), 64);
+      expect(defaults.fromDomain(0), 0);
+      expect(defaults.fromDomain(1), 1 / 64);
+      expect(defaults.fromDomain(64), 1);
+      expect(defaults.relativeStep, 1 / 64);
+      expect(() => defaults.toDomain(double.nan), throwsArgumentError);
+      expect(() => defaults.toDomain(double.infinity), throwsArgumentError);
+      for (final malformed in [
+        '{"ctl":"defaultRecordLength","index":0}',
+        '{"ctl":"trackRecordLength"}',
+        '{"ctl":"trackRecordLength","index":8}',
+        '{"ctl":"trackRecordLength","index":-1}',
+        '{"ctl":"trackRecordLength","index":0.5}',
+        '{"ctl":"trackRecordLength","index":"0"}',
+        '{"ctl":"trackRecordLength","index":0,"lane":0}',
+      ]) {
+        expect(ControlValueTarget.tryParse(malformed), isNull);
+      }
+    });
+
     test('equal targets encode byte-identically', () {
       const a = FxParamTarget(
         address: FxAddress(stage: FxStage.output),

@@ -15,6 +15,7 @@ import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/session/session_mapping.dart';
@@ -80,6 +81,13 @@ void main() {
         final cubit = SessionCubit(
           runClickVolumeExclusive: tempo.runClickVolumeExclusive,
           runPlaybackExclusive: playback.runPlaybackExclusive,
+          runRecordExclusive: <T>(operation) => operation(),
+          currentDurableRecordLength: () => RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
           currentDurableDecay: () => playback.durableDecaySnapshot,
           currentDurableOneShot: () => playback.durableOneShotSnapshot,
           currentDurableClickVolume: () => tempo.durableClickVolume,
@@ -168,6 +176,7 @@ void main() {
           control = ControlCubit(
             decayControl: playback,
             oneShotControl: playback,
+            recordLengthControl: FakeRecordLengthControl(),
             clickVolumeControl: tempo,
             looper: looper,
             pedal: pedal,

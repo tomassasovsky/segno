@@ -49,6 +49,9 @@ void main() {
   late StreamController<LooperState> states;
   late StreamController<void> rigReplaced;
   late int confirmedLength;
+  late LooperMode confirmedMode;
+  late Map<int, int> confirmedTrackLengths;
+  late LooperState currentRig;
   late int sessionRevision;
   late int confirmedDecay;
   late Map<int, int> confirmedTrackDecay;
@@ -71,6 +74,9 @@ void main() {
     store = FakeKeyValueStore();
     settings = SettingsRepository(store: store);
     confirmedLength = 0;
+    confirmedMode = LooperMode.song;
+    confirmedTrackLengths = {};
+    currentRig = _rig;
     sessionRevision = 0;
     confirmedDecay = 0;
     confirmedTrackDecay = {};
@@ -165,8 +171,30 @@ void main() {
     when(() => repository.clickVolumeSettled).thenReturn(true);
     when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
     when(() => repository.recordStartRevision).thenReturn(0);
+    when(() => repository.recordLengthCaptureLocked).thenAnswer(
+      (_) => currentRig.tracks.any(
+        (track) =>
+            track.state == TrackState.recording ||
+            track.state == TrackState.overdubbing,
+      ),
+    );
+    when(() => repository.lengthRecoveryRequired).thenReturn(false);
+    when(() => repository.lengthSettingsSettled).thenReturn(true);
+    when(() => repository.trackLengthPresetOverrides).thenAnswer(
+      (_) => Map.unmodifiable(confirmedTrackLengths),
+    );
+    when(() => repository.lengthRestartIntent).thenAnswer(
+      (_) => (
+        defaultBars: confirmedLength,
+        trackOverrides: Map<int, int>.unmodifiable(confirmedTrackLengths),
+        mode: confirmedMode,
+      ),
+    );
     when(() => repository.sessionTransport).thenAnswer(
-      (_) => TransportState(defaultLengthPresetBars: confirmedLength),
+      (_) => TransportState(
+        defaultLengthPresetBars: confirmedLength,
+        looperMode: confirmedMode,
+      ),
     );
     when(
       () => repository.settleLengthSettings(),
@@ -176,9 +204,44 @@ void main() {
     when(() => repository.looperModeGate(any())).thenReturn(
       LooperModeGate.open,
     );
-    when(() => repository.looperState).thenAnswer((_) => states.stream);
+    when(() => repository.looperState).thenAnswer(
+      (_) => states.stream.map((state) {
+        currentRig = state;
+        return state;
+      }),
+    );
     when(() => repository.rigReplaced).thenAnswer((_) => rigReplaced.stream);
-    when(() => repository.state).thenReturn(_rig);
+    when(() => repository.state).thenAnswer((_) => currentRig);
+    when(
+      () => repository.setLengthSettings(
+        defaultBars: any(named: 'defaultBars'),
+        overrides: any(named: 'overrides'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenAnswer((call) {
+      confirmedLength = call.namedArguments[#defaultBars] as int;
+      confirmedTrackLengths = Map.of(
+        call.namedArguments[#overrides] as Map<int, int>,
+      );
+      confirmedMode = call.namedArguments[#mode] as LooperMode;
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setTrackLengthPreset(
+        channel: any(named: 'channel'),
+        bars: any(named: 'bars'),
+        releasedBars: any(named: 'releasedBars'),
+      ),
+    ).thenAnswer((call) {
+      final channel = call.namedArguments[#channel] as int;
+      final bars = call.namedArguments[#bars] as int?;
+      if (bars == null) {
+        confirmedTrackLengths.remove(channel);
+      } else {
+        confirmedTrackLengths[channel] = bars;
+      }
+      return EngineResult.ok;
+    });
     for (final stub in <void Function()>[
       () => when(() => repository.setTempo(any())).thenReturn(EngineResult.ok),
       () => when(repository.tapTempo).thenReturn(EngineResult.ok),
@@ -248,6 +311,14 @@ void main() {
   });
 
   void seed(LooperState state) {
+    currentRig = state;
+    confirmedLength = state.transport.defaultLengthPresetBars;
+    confirmedMode = state.transport.looperMode;
+    confirmedTrackLengths = {
+      for (final track in state.tracks)
+        if (track.lengthPresetOverride != null)
+          track.channel: track.lengthPresetOverride!,
+    };
     confirmedDecay = state.transport.overdubDecay;
     confirmedTrackDecay = {};
     for (final track in state.tracks) {
@@ -287,6 +358,11 @@ void main() {
     // its zone. Rebind that writer inside testWidgets while retaining values
     // seeded before pump (for example the saved count-in choice).
     settings = SettingsRepository(store: store);
+    await settings.saveLooperMode(confirmedMode.code);
+    await settings.saveDefaultLengthPreset(confirmedLength);
+    for (final entry in confirmedTrackLengths.entries) {
+      await settings.saveTrackLengthPreset(entry.key, entry.value);
+    }
     await settings.saveOverdubDecay(confirmedDecay);
     for (final entry in confirmedTrackDecay.entries) {
       await settings.saveTrackOverdubDecay(entry.key, entry.value);
@@ -299,6 +375,7 @@ void main() {
     options = RecordOptionsCubit(repository: repository, settings: settings);
     playback = PlaybackOptionsCubit(repository: repository, settings: settings);
     await playback.load();
+    await options.load();
     timing = RecordTimingCubit(repository: repository, settings: settings);
     tracks = TracksCubit(settings: settings);
     tray = SettingsTrayCubit(settings: settings);
@@ -381,6 +458,7 @@ void main() {
       return EngineResult.invalid;
     });
     await pump(tester, initial: LoopSettingsPageId.length);
+    clearInteractions(repository);
 
     await tester.tap(find.byKey(const Key('loop_length_bars')));
     await tester.pumpAndSettle();
@@ -1039,9 +1117,9 @@ void main() {
       await tester.tap(find.byKey(const Key('loop_scope_track_1')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_length_bars')));
-      verify(
-        () => bloc.add(const LooperTrackLengthPresetChanged(1, 4)),
-      ).called(1);
+      await tester.pumpAndSettle();
+      expect(options.state.trackLengthPresetOverrides[1], 4);
+      expect(await settings.loadTrackLengthPreset(1), 4);
       await tester.tap(find.byKey(const Key('loop_scope_track_2')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_length_auto')));
@@ -1057,9 +1135,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_length_bars')));
-      verify(
-        () => bloc.add(const LooperTrackLengthPresetChanged(2, 6)),
-      ).called(1);
+      await tester.pumpAndSettle();
+      expect(options.state.trackLengthPresetOverrides[2], 6);
+      expect(await settings.loadTrackLengthPreset(2), 6);
     });
 
     testWidgets('bar draft cancels on Back and commits on Enter', (
@@ -1115,9 +1193,8 @@ void main() {
       ).called(1);
       await tester.tap(find.byKey(const Key('loop_length_auto')));
       await tester.pumpAndSettle();
-      verify(
-        () => bloc.add(const LooperTrackLengthPresetChanged(1, 0)),
-      ).called(1);
+      expect(options.state.trackLengthPresetOverrides[1], 0);
+      expect(await settings.loadTrackLengthPreset(1), 0);
     });
 
     testWidgets('the stepper moves a fixed default length', (tester) async {
@@ -1157,9 +1234,8 @@ void main() {
       expect(find.byKey(const Key('loop_stepper_value')), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_length_use_default')));
       await tester.pumpAndSettle();
-      verify(
-        () => bloc.add(const LooperTrackLengthPresetChanged(1, null)),
-      ).called(1);
+      expect(options.state.trackLengthPresetOverrides.containsKey(1), isFalse);
+      expect(await settings.loadTrackLengthPreset(1), isNull);
       await tester.tap(find.byKey(const Key('loop_timing_use_default')));
       await tester.pumpAndSettle();
       verify(

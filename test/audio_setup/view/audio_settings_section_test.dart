@@ -116,6 +116,9 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     when(repository.allOutputChains).thenReturn(const {});
     final settings = SettingsRepository(store: FakeKeyValueStore());
     monitor = MonitorCubit(

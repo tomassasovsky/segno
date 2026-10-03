@@ -9,6 +9,7 @@ import 'package:segno/appliance/power_off/power_off_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/view/session_persistence_sync_listener.dart';
 import 'package:segno/looper/view/tracks_view.dart';
@@ -41,6 +42,7 @@ class LooperPage extends StatelessWidget {
           create: (context) => LooperBloc(
             decayControl: context.read<PlaybackOptionsCubit>(),
             oneShotControl: context.read<PlaybackOptionsCubit>(),
+            recordLengthControl: context.read<RecordOptionsCubit>(),
             repository: context.read<LooperRepository>(),
             mixSettings: context.read<MixSettingsCoordinator>(),
             fxPersistence: context.read<FxChainPersistence>(),
@@ -74,6 +76,11 @@ class LooperPage extends StatelessWidget {
                 context.read<PlaybackOptionsCubit>().durableDecaySnapshot,
             currentDurableOneShot: () =>
                 context.read<PlaybackOptionsCubit>().durableOneShotSnapshot,
+            runRecordExclusive: context
+                .read<RecordOptionsCubit>()
+                .runRecordExclusive,
+            currentDurableRecordLength: () =>
+                context.read<RecordOptionsCubit>().durableRecordLengthSnapshot,
             exportDirectory: exportDirectory,
             // The session's pedal remap (part 6b) crossing as an opaque
             // string. Narrow functions rather than a cubit-to-cubit link:

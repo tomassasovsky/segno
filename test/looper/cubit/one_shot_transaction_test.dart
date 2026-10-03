@@ -14,11 +14,17 @@ import '../../helpers/fake_key_value_store.dart';
 
 class _Engine extends FakeAudioEngine {
   bool wrongBits = false;
+  void Function()? beforeStalledOnce;
   @override
-  EngineResult setOneShotMask({required int channels, required bool oneShot}) =>
-      wrongBits
-      ? EngineResult.ok
-      : super.setOneShotMask(channels: channels, oneShot: oneShot);
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) {
+    final beforeStall = beforeStalledOnce;
+    beforeStall?.call();
+    final result = wrongBits
+        ? EngineResult.ok
+        : super.setOneShotMask(channels: channels, oneShot: oneShot);
+    if (beforeStall != null) commandsAreSettled = false;
+    return result;
+  }
 }
 
 class _Store extends FakeKeyValueStore {
@@ -232,14 +238,29 @@ void main() {
       build: build,
       act: (owner) async {
         await owner.load();
-        engine.commandsAreSettled = false;
+        // Let the earlier healthy Length replay reach its receipt before
+        // stalling only the subsequent Once command. A globally stalled
+        // startup would time out Length first and cancel the Once request.
+        late Future<EngineResult> lengthReceipt;
+        engine.beforeStalledOnce = () {
+          lengthReceipt = repository.settleLengthSettings();
+          expect(repository.lengthSettingsSettled, isTrue);
+          expect(repository.lengthRecoveryRequired, isFalse);
+        };
+        final failure = owner.oneShotFailures.first;
         repository.startEngine(const EngineConfig());
-        await Future<void>.delayed(const Duration(milliseconds: 550));
+        expect(await lengthReceipt, EngineResult.ok);
+        expect(
+          (await failure.timeout(const Duration(seconds: 5))).status,
+          OneShotStatus.recoveryRequired,
+        );
         expect(repository.oneShotRecoveryRequired, isTrue);
         expect(engine.stopCalls, greaterThan(0));
         expect((await owner.flushOneShot()).isOk, isFalse);
         expect((await owner.recoverOneShot()).isOk, isTrue);
-        engine.commandsAreSettled = true;
+        engine
+          ..beforeStalledOnce = null
+          ..commandsAreSettled = true;
         expect(repository.startEngine(const EngineConfig()).isOk, isTrue);
         await repository.settleOneShot();
         expect((await owner.flushOneShot()).isOk, isTrue);
