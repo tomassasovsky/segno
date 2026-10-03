@@ -496,16 +496,11 @@ class FakeSessionEngine implements AudioEngine {
     required int mask,
   }) => EngineResult.ok;
   @override
-  EngineResult setQuantize({required bool enabled}) => EngineResult.ok;
-  @override
-  EngineResult setTrackQuantize({
-    required int channel,
-    required bool? enabled,
-  }) => EngineResult.ok;
-  @override
-  EngineResult setTrackQuantizeDiv({
-    required int channel,
-    required GridDivision? div,
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
   }) => EngineResult.ok;
   @override
   EngineResult setTrackOverdubFeedback({
@@ -539,8 +534,6 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult tapTempo() => EngineResult.ok;
   @override
   EngineResult setSyncTempo({required bool on}) => EngineResult.ok;
-  @override
-  EngineResult setQuantizeDiv(GridDivision div) => EngineResult.ok;
   @override
   EngineResult setClickMode(ClickMode mode) => EngineResult.ok;
   @override

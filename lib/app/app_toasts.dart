@@ -27,6 +27,7 @@ abstract final class AppToastId {
   static const decaySettings = 'app_decaySettings_error';
   static const oneShotSettings = 'app_oneShotSettings_error';
   static const recordLengthSettings = 'app_recordLengthSettings_error';
+  static const recordTimingSettings = 'app_recordTimingSettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};

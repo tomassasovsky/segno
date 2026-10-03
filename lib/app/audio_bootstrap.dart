@@ -122,6 +122,38 @@ Future<AutoStartResult> tryAutoStartEngine({
     );
   }
 
+  // Validate the complete timing image before audio starts. Immediately is
+  // an explicit choice; an absent track key alone means inheritance.
+  try {
+    final timing = await settings.readRecordTimingCheckpoint();
+    final division = GridDivision.fromCode(timing.division ?? 0);
+    final request = repository.setRecordTimingSettings(
+      defaultTiming: RecordTiming.of(
+        quantize: timing.quantize ?? false,
+        division: division,
+      ),
+      rememberedDivision: division,
+      trackOverrides: {
+        for (final entry in timing.trackOverrides.entries)
+          entry.key: RecordTiming.fromCode(entry.value)!,
+      },
+    );
+    final result = request.isOk
+        ? await repository.settleRecordTimingSettings()
+        : request;
+    if (!result.isOk) {
+      throw StateError('Saved record timing replay refused: ${result.name}');
+    }
+  } on Object catch (error) {
+    AppLog.error('audio auto-start: saved record timing failed: $error');
+    repository.stopEngine();
+    return (
+      started: false,
+      asioDrivers: const <AudioDevice>[],
+      recoveryConfig: null,
+    );
+  }
+
   try {
     return await _tryAutoStartEngine(
       repository: repository,
@@ -276,6 +308,14 @@ Future<AutoStartResult> _tryAutoStartEngine({
     repository.stopEngine();
     return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
+  final startupTiming = await repository.settleRecordTimingSettings();
+  if (!startupTiming.isOk) {
+    AppLog.error(
+      'audio auto-start: record timing replay refused ${startupTiming.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
   if (consolePinned) {
     await settings.saveAudioConfig(
       StoredAudioConfig(
@@ -377,12 +417,6 @@ Future<AutoStartResult> _tryAutoStartEngine({
   }
 
   for (final track in repository.state.tracks) {
-    final timing = RecordTiming.fromCode(
-      await settings.loadTrackRecordTiming(track.channel),
-    );
-    if (timing != null) {
-      repository.setTrackRecordTiming(channel: track.channel, timing: timing);
-    }
     final multiple = await settings.loadTrackMultiple(track.channel);
     if (multiple > 0) {
       repository.setTrackMultiple(channel: track.channel, multiple: multiple);
@@ -613,6 +647,14 @@ Future<bool> _firstRunAutoStart({
   if (!startupOnce.isOk) {
     AppLog.error(
       'audio first-run: playback replay refused ${startupOnce.name}',
+    );
+    repository.stopEngine();
+    return false;
+  }
+  final startupTiming = await repository.settleRecordTimingSettings();
+  if (!startupTiming.isOk) {
+    AppLog.error(
+      'audio first-run: record timing replay refused ${startupTiming.name}',
     );
     repository.stopEngine();
     return false;

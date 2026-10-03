@@ -108,7 +108,9 @@ class LoopSettingsHub extends StatelessWidget {
         l10n.loopHubLength,
         l10n.loopSummaryPair(
           lengthPresetLabel(l10n, options.defaultLengthBars),
-          recordTimingLabels(l10n)[timing]!,
+          timing.recordTimingReady
+              ? recordTimingLabels(l10n)[timing.defaultTiming]!
+              : l10n.recordTimingUnavailable,
         ),
       ),
       (

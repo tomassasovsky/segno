@@ -162,6 +162,17 @@ int le_image_valid(const le_engine* engine, int32_t channel,
                    const le_record_image* image);
 int32_t le_push_cmd(le_engine* engine, le_command cmd);
 
+/* One bounded timing read. refresh_cache is only true for full snapshots. */
+le_record_timing_readback le_record_timing_read(le_engine* engine,
+                                               int refresh_cache);
+int le_record_timing_valid(const le_record_timing_settings* settings);
+#ifdef LE_NATIVE_TESTS
+/* Deterministic test instrumentation: 1 odd, 2 partial write, 3 copied read,
+ * 4 image FX preparation. No hook exists in production builds. */
+extern void (*le_test_record_timing_hook)(le_engine*, int);
+#endif
+
+
 /* Resets a lane to defaults (routing / volume / mute / effects / metering),
  * clearing DSP state and freeing octaver buffers. Control-thread lifecycle helper
  * defined in engine.c, also called by le_engine_set_lane_count in

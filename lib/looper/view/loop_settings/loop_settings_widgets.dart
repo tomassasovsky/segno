@@ -194,8 +194,8 @@ class LoopChoiceRow<T> extends StatelessWidget {
   /// Each button's widget key.
   final Key Function(T value) keyOf;
 
-  /// The current choice.
-  final T selected;
+  /// The confirmed choice, or null while its value is unavailable.
+  final T? selected;
 
   /// Called with the tapped choice.
   final ValueChanged<T> onSelected;

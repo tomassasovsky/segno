@@ -34,6 +34,8 @@ class AudioSettingsSection extends StatelessWidget {
     final state = cubit.state;
     final status = state.engineStatus;
     final measuring = status.latencyState == LatencyState.measuring;
+    final timing = context.watch<RecordTimingCubit>().state;
+    final timingEnabled = timing.recordTimingReady && !timing.captureLocked;
 
     // The device picker re-enumerates only while it is on screen -- see
     // [AudioDeviceScanScope].
@@ -161,11 +163,17 @@ class AudioSettingsSection extends StatelessWidget {
           SetupToggleRow(
             toggleKey: const Key('audioSettings_quantize_switch'),
             title: l10n.quantizeRecording,
-            subtitle: l10n.quantizeRecordingSubtitle,
-            value: context.watch<RecordTimingCubit>().state.quantize,
-            onChanged: (on) => unawaited(
-              context.read<RecordTimingCubit>().setEnabled(value: on),
-            ),
+            subtitle: !timing.recordTimingReady
+                ? l10n.recordTimingUnavailable
+                : timing.captureLocked
+                ? l10n.recordTimingCaptureLocked
+                : l10n.quantizeRecordingSubtitle,
+            value: timing.defaultTiming.quantize,
+            onChanged: timingEnabled
+                ? (on) => unawaited(
+                    context.read<RecordTimingCubit>().setEnabled(value: on),
+                  )
+                : null,
           ),
           const SizedBox(height: 12),
           SetupToggleRow(

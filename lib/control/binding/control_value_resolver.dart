@@ -5,6 +5,7 @@ import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 
 /// Resolves a typed [ControlValueTarget] against the live rig — the app-side
 /// half of the continuous binding model, and the twin of part 6b's
@@ -39,6 +40,7 @@ extension ControlValueResolver on LooperRepository {
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordLengthSnapshot? recordLengthSnapshot,
+    RecordTimingSnapshot? recordTimingSnapshot,
   }) {
     final targets = <ControlValueTarget>[];
     void add(FxAddress address, List<TrackEffect> entries) {
@@ -100,6 +102,12 @@ extension ControlValueResolver on LooperRepository {
         targets.add(TrackRecordLengthTarget(channel));
       }
     }
+    if (recordTimingSnapshot != null) {
+      targets.add(const DefaultRecordTimingTarget());
+      for (var channel = 0; channel < 8; channel++) {
+        targets.add(TrackRecordTimingTarget(channel));
+      }
+    }
     // The master output always exists, so it is always offerable.
     targets.add(const MasterGainTarget());
     return targets;
@@ -147,6 +155,7 @@ extension ControlValueResolver on LooperRepository {
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordLengthSnapshot? recordLengthSnapshot,
+    RecordTimingSnapshot? recordTimingSnapshot,
   }) => switch (target) {
     FxParamTarget() => _paramSlot(target) != null,
     TrackVolumeTarget(:final channel) ||
@@ -170,6 +179,8 @@ extension ControlValueResolver on LooperRepository {
       oneShotSnapshot != null && target.isStructurallyValid,
     RecordLengthValueTarget() =>
       recordLengthSnapshot != null && target.isStructurallyValid,
+    RecordTimingValueTarget() =>
+      recordTimingSnapshot != null && target.isStructurallyValid,
   };
 
   /// The value [target] holds now (normalized `0..1`), or `null` when it does
@@ -183,6 +194,7 @@ extension ControlValueResolver on LooperRepository {
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordLengthSnapshot? recordLengthSnapshot,
+    RecordTimingSnapshot? recordTimingSnapshot,
   }) => switch (target) {
     FxParamTarget(:final param) => _paramSlot(target)?.effect.params[param],
     MixValueTarget() => _readMixValue(target),
@@ -204,6 +216,12 @@ extension ControlValueResolver on LooperRepository {
           ? null
           : target.fromDomain(
               recordLengthSnapshot.effectiveBars(target.address),
+            ),
+    RecordTimingValueTarget() =>
+      recordTimingSnapshot == null || !target.isStructurallyValid
+          ? null
+          : target.fromDomain(
+              recordTimingSnapshot.effectiveTiming(target.address),
             ),
   };
 

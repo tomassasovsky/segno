@@ -190,6 +190,10 @@ void main() {
       when(() => looper.recordLengthCaptureLocked).thenAnswer(
         (_) => looper.state.tracks.any((track) => track.isCapturing),
       );
+      when(() => looper.recordTimingCaptureLocked).thenAnswer(
+        (_) => looper.state.tracks.any((track) => track.isCapturing),
+      );
+      when(() => looper.recordTimingSettingsSettled).thenReturn(true);
       when(() => looper.sessionTransport).thenAnswer(
         (_) => looper.state.transport,
       );
@@ -304,6 +308,7 @@ void main() {
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: FakeRecordLengthControl(),
+        recordTimingControl: FakeRecordTimingControl(),
         clickVolumeControl: FakeClickVolumeControl(),
         fxPersistence: FxChainPersistence(looper: looper),
         looper: looper,
@@ -1867,6 +1872,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
+          recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -1886,6 +1892,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
+          recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -1905,6 +1912,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
+          recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -1929,6 +1937,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
+          recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -2275,6 +2284,7 @@ void main() {
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: FakeRecordLengthControl(),
+            recordTimingControl: FakeRecordTimingControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
@@ -2321,6 +2331,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
+          recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -2354,6 +2365,7 @@ void main() {
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: FakeRecordLengthControl(),
+            recordTimingControl: FakeRecordTimingControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
@@ -2493,6 +2505,7 @@ void main() {
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: FakeRecordLengthControl(),
+            recordTimingControl: FakeRecordTimingControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
@@ -3730,6 +3743,7 @@ void main() {
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
+          recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
@@ -3828,6 +3842,7 @@ void main() {
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: FakeRecordLengthControl(),
+            recordTimingControl: FakeRecordTimingControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,

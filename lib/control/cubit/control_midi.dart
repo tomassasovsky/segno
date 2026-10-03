@@ -1,26 +1,45 @@
 part of 'control_cubit.dart';
 
+/// Accepted controls still owe a release that their owner has not confirmed.
+final class ControlCleanupPending implements Exception {
+  /// Creates a retryable retirement failure without dropping the held claims.
+  const ControlCleanupPending();
+
+  @override
+  String toString() => 'Controller release is not yet confirmed';
+}
+
 /// MIDI configuration, capture and admission use the same control owner.
 extension MidiControlEditing on ControlCubit {
   /// Waits for in-flight confirmed configuration before an orderly halt.
   Future<void> flushMidiConfiguration({bool retireControls = false}) async {
     if (retireControls) {
-      final retry = _haltInputSuspended;
       _haltInputSuspended = true;
       _retireMidi();
       _retireAllExternal();
-      if (retry) {
-        unawaited(
-          _queueMidi(() => _applyMidiProposals(_midiEngine.retryCleanup())),
-        );
-        _externalReleaseEligibility = null;
-        _retryExternalReleases();
-      }
+      // A previous source retirement can already owe cleanup before this
+      // first halt. Retry it once at this explicit flush boundary as well.
+      unawaited(
+        _queueMidi(() => _applyMidiProposals(_midiEngine.retryCleanup())),
+      );
     }
     await _midiWrites;
     await _externalTail;
+    if (retireControls) {
+      // A device/editor retirement may predate this first halt. Retry only
+      // after queued work drains, so an old input queue cannot hide its debt.
+      _externalReleaseEligibility = null;
+      _retryExternalReleases();
+      await _externalTail;
+    }
     await _fxPersistence.flush();
     await _mixSettings.flush();
+    if (retireControls &&
+        (_midiEngine.retryCleanup().any((p) => p.operations.isNotEmpty) ||
+            _externalNumericReleases.values.any((v) => v.isNotEmpty) ||
+            _externalPowerReleases.values.any((v) => v.isNotEmpty))) {
+      throw const ControlCleanupPending();
+    }
   }
 
   Future<void> _loadMidiConfiguration() async {
@@ -397,6 +416,7 @@ extension MidiControlEditing on ControlCubit {
             decayOrigins: origins[event]!.decay,
             oneShotOrigins: origins[event]!.oneShot,
             recordLengthOrigins: origins[event]!.recordLength,
+            recordTimingOrigins: origins[event]!.recordTiming,
           );
         }
       }),
@@ -490,6 +510,7 @@ extension MidiControlEditing on ControlCubit {
     if (target is DecayValueTarget) return target.relativeStep;
     if (target is OneShotValueTarget) return target.relativeStep;
     if (target is RecordLengthValueTarget) return target.relativeStep;
+    if (target is RecordTimingValueTarget) return target.relativeStep;
     if (target is FxParamTarget) {
       final divisions = _midiParamDivisions(target);
       if (divisions != null && divisions > 0) return 1 / divisions;
@@ -502,6 +523,7 @@ extension MidiControlEditing on ControlCubit {
     Map<DecayValueTarget, _DecayOrigin>? decayOrigins,
     Map<OneShotValueTarget, _OneShotOrigin>? oneShotOrigins,
     Map<RecordLengthValueTarget, _RecordLengthOrigin>? recordLengthOrigins,
+    Map<RecordTimingValueTarget, _RecordTimingOrigin>? recordTimingOrigins,
   }) async {
     final session = _looper.sessionRevision;
     for (final proposal in proposals) {
@@ -515,6 +537,7 @@ extension MidiControlEditing on ControlCubit {
         decay: decayOrigins ?? captured.decay,
         oneShot: oneShotOrigins ?? captured.oneShot,
         recordLength: recordLengthOrigins ?? captured.recordLength,
+        recordTiming: recordTimingOrigins ?? captured.recordTiming,
       );
       if (session != _looper.sessionRevision || isClosed) return;
       Object? pending;
@@ -581,6 +604,13 @@ extension MidiControlEditing on ControlCubit {
                   )) {
                 continue;
               }
+              if (target is RecordTimingValueTarget &&
+                  !_recordTimingOriginCurrent(
+                    target,
+                    origins.recordTiming[target],
+                  )) {
+                continue;
+              }
               if (target == null) {
                 if (ending) accepted.add(op.controlIndex);
                 continue;
@@ -632,7 +662,7 @@ extension MidiControlEditing on ControlCubit {
                 }
                 if (value != null) powers[target] = value >= 0.5;
               } else if (target is ControlValueTarget) {
-                if (!_controlValueResolves(target)) {
+                if (!_controlValueResolves(target, cleanup: ending)) {
                   if (ending) {
                     _dropMidiHolder(row, target, holder);
                     accepted.add(op.controlIndex);
@@ -691,6 +721,15 @@ extension MidiControlEditing on ControlCubit {
                 continue;
               }
             }
+            if (record.target case final RecordTimingValueTarget target) {
+              if (!_recordTimingOriginCurrent(
+                target,
+                origins.recordTiming[target],
+              )) {
+                accepted.remove(index);
+                continue;
+              }
+            }
             final row = (proposal.mappingId, proposal.generation, index);
             if (record.ending) {
               _dropMidiHolder(row, record.target, record.holder);
@@ -719,7 +758,8 @@ extension MidiControlEditing on ControlCubit {
                       target is ClickVolumeTarget ||
                       target is DecayValueTarget ||
                       target is OneShotValueTarget ||
-                      target is RecordLengthValueTarget) {
+                      target is RecordLengthValueTarget ||
+                      target is RecordTimingValueTarget) {
                     _retireMixBaseline(target);
                   }
                   (_parameterHolders[target] ??= {})[holder] = (
@@ -936,6 +976,37 @@ extension MidiControlEditing on ControlCubit {
               if (outcome.isOk && _recordLengthOriginCurrent(target, origin)) {
                 accepted.add(entry.key);
               }
+            case RecordTimingValueTarget():
+              final origin = origins.recordTiming[target];
+              if (origin == null ||
+                  !value.isFinite ||
+                  !_recordTimingOriginCurrent(target, origin)) {
+                continue;
+              }
+              final op = proposal.operations.firstWhere(
+                (op) => op.controlIndex == entry.key,
+              );
+              final released = op is MidiParameterWrite && op.held == true
+                  ? _midiReleasedFor(proposal, entry.key)
+                  : entry.value.ending
+                  ? _survivingMidiReleased(
+                      target,
+                      excluding: entry.value.holder,
+                    )
+                  : null;
+              final outcome = await _recordTiming.setControllerTiming(
+                target.address,
+                target.toDomain(value),
+                lifetime: origin.lifetime,
+                revision: origin.revision,
+                releasedTiming: released == null
+                    ? null
+                    : target.toDomain(released),
+              );
+              if (cancelled()) return;
+              if (outcome.isOk && _recordTimingOriginCurrent(target, origin)) {
+                accepted.add(entry.key);
+              }
             case MasterGainTarget():
               if (_looper.setMasterGain(value).isOk) {
                 _masterGain = value;
@@ -990,6 +1061,9 @@ extension MidiControlEditing on ControlCubit {
           : value;
     }
     if (target is RecordLengthValueTarget) {
+      return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
+    }
+    if (target is RecordTimingValueTarget) {
       return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
     }
     final clamped = value.clamp(0.0, 1.0);
@@ -1087,15 +1161,25 @@ extension MidiControlEditing on ControlCubit {
         decaySnapshot: _decay.decaySnapshot,
         oneShotSnapshot: _oneShot.oneShotSnapshot,
         recordLengthSnapshot: _recordLength.recordLengthSnapshot,
+        recordTimingSnapshot: _recordTiming.recordTimingSnapshot,
       );
 
-  bool _controlValueResolves(ControlValueTarget target) =>
+  bool _controlValueResolves(
+    ControlValueTarget target, {
+    bool cleanup = false,
+  }) =>
+      // Fixed scopes remain structurally present during owner recovery. Their
+      // rejected release stays owed; new acquisitions still need readiness.
+      (cleanup &&
+          target is RecordTimingValueTarget &&
+          target.address.isValid) ||
       _looper.valueTargetResolves(
         target,
         clickVolume: _clickVolume.clickVolume,
         decaySnapshot: _decay.decaySnapshot,
         oneShotSnapshot: _oneShot.oneShotSnapshot,
         recordLengthSnapshot: _recordLength.recordLengthSnapshot,
+        recordTimingSnapshot: _recordTiming.recordTimingSnapshot,
       );
 
   _ControlOrigins _mixOrigins(
@@ -1124,6 +1208,13 @@ extension MidiControlEditing on ControlCubit {
         target: (
           lifetime: _recordLength.recordLengthLifetime,
           revision: _recordLength.recordLengthRevision(target.address),
+        ),
+    },
+    recordTiming: {
+      for (final target in targets.whereType<RecordTimingValueTarget>())
+        target: (
+          lifetime: _recordTiming.recordTimingLifetime,
+          revision: _recordTiming.recordTimingRevision(target.address),
         ),
     },
   );
@@ -1185,6 +1276,29 @@ extension MidiControlEditing on ControlCubit {
       origin.revision == _recordLength.recordLengthRevision(target.address);
 
   void _supersedeRecordLengthClaims(RecordLengthValueTarget target) {
+    _midiEngine.supersedeParameterClaims({target.canonicalString()});
+    for (final entry in _midiTargets.entries.toList()) {
+      if (entry.value == target) {
+        _dropMidiHolder(entry.key, target, _midiHolderKeys[entry.key]);
+      }
+    }
+    _parameterHolders.remove(target);
+    for (final input in PedalCtrlInput.values) {
+      (_externalInvalidatedMix[input] ??= {}).add(target);
+      _externalMixReleased[input]?.remove(target);
+      _externalNumericReleases[input]?.remove(target);
+    }
+  }
+
+  bool _recordTimingOriginCurrent(
+    RecordTimingValueTarget target,
+    _RecordTimingOrigin? origin,
+  ) =>
+      origin != null &&
+      origin.lifetime == _recordTiming.recordTimingLifetime &&
+      origin.revision == _recordTiming.recordTimingRevision(target.address);
+
+  void _supersedeRecordTimingClaims(RecordTimingValueTarget target) {
     _midiEngine.supersedeParameterClaims({target.canonicalString()});
     for (final entry in _midiTargets.entries.toList()) {
       if (entry.value == target) {

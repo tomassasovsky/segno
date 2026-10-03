@@ -66,6 +66,39 @@ class RecoveryRefusal {
   final EngineResult result;
 }
 
+class _TimingIntent {
+  _TimingIntent(
+    this.defaultTiming,
+    this.rememberedDivision,
+    Map<int, RecordTiming> overrides,
+  ) : overrides = Map.unmodifiable(overrides);
+  final RecordTiming defaultTiming;
+  final GridDivision rememberedDivision;
+  final Map<int, RecordTiming> overrides;
+}
+
+class _PendingTiming {
+  _PendingTiming({
+    required this.intent,
+    required this.restart,
+    required this.recovery,
+    required this.recoveryRestart,
+    required this.expectedRevision,
+    required this.prior,
+    required this.startup,
+  });
+  final _TimingIntent intent;
+  final _TimingIntent restart;
+  final _TimingIntent recovery;
+  final _TimingIntent recoveryRestart;
+  final int expectedRevision;
+  final EngineSnapshot prior;
+  final bool startup;
+  final completed = Completer<EngineResult>();
+  Timer? timer;
+  int polls = 0;
+}
+
 class _LengthIntent {
   _LengthIntent(this.defaultBars, Map<int, int> overrides, this.mode)
     : overrides = Map.unmodifiable(overrides);
@@ -715,6 +748,7 @@ class LooperRepository {
     bool replay = false,
     bool startup = false,
   }) {
+    if (recordTimingRecoveryRequired) return EngineResult.notReady;
     if (_pendingMix != null) return _mixFailure(EngineResult.notReady);
     if (!next.input.isValid || !next.output.isValid) {
       return _mixFailure(EngineResult.invalid);
@@ -1053,6 +1087,255 @@ class LooperRepository {
         _pendingImages.remove(ch);
       }
     }
+  }
+
+  _PendingTiming? _pendingTiming;
+  _TimingIntent _timingRestart = _TimingIntent(
+    RecordTiming.immediately,
+    GridDivision.off,
+    {},
+  );
+  _TimingIntent? _timingRecovery;
+  _TimingIntent? _timingRecoveryRestart;
+  EngineResult _lastTimingResult = EngineResult.ok;
+  final _timingFailures = StreamController<EngineResult>.broadcast();
+
+  /// Callback refusal or uncertainty from both explicit edits and reconnects.
+  Stream<EngineResult> get recordTimingFailures => _timingFailures.stream;
+
+  /// No timing vector is awaiting its complete callback receipt.
+  bool get recordTimingSettingsSettled => _pendingTiming == null;
+
+  /// Uncertain callback state must be explicitly recovered before new edits.
+  bool get recordTimingRecoveryRequired => _timingRecovery != null;
+
+  /// Capturing audio locks future timing; waiting arms alone do not.
+  bool get recordTimingCaptureLocked =>
+      _intendRunning &&
+      _engine.snapshot().tracks.any(
+        (t) =>
+            t.state == TrackState.recording ||
+            t.state == TrackState.overdubbing,
+      );
+
+  /// Released restart intent, independent of a temporary live Held value.
+  ({
+    RecordTiming defaultTiming,
+    GridDivision rememberedDivision,
+    Map<int, RecordTiming> trackOverrides,
+  })
+  get recordTimingRestartIntent => (
+    defaultTiming: _timingRestart.defaultTiming,
+    rememberedDivision: _timingRestart.rememberedDivision,
+    trackOverrides: _timingRestart.overrides,
+  );
+
+  EngineResult _reportTiming(EngineResult result) {
+    if (!_timingFailures.isClosed) _timingFailures.add(result);
+    return result;
+  }
+
+  void _cancelTiming() {
+    final pending = _pendingTiming;
+    _pendingTiming = null;
+    pending?.timer?.cancel();
+    if (pending != null) {
+      _lastTimingResult = EngineResult.notReady;
+      pending.completed.complete(EngineResult.notReady);
+    }
+  }
+
+  void _acceptTiming(_TimingIntent intent, _TimingIntent restart) {
+    _quantize = intent.defaultTiming.quantize;
+    _quantizeDiv = intent.rememberedDivision;
+    _trackRecordTiming
+      ..clear()
+      ..addAll(intent.overrides);
+    _timingRestart = restart;
+  }
+
+  EngineResult _requestTiming(
+    _TimingIntent intent, {
+    required int editMask,
+    _TimingIntent? restart,
+    bool startup = false,
+  }) {
+    if (_pendingTiming != null || recordTimingRecoveryRequired) {
+      return _reportTiming(EngineResult.notReady);
+    }
+    final durable = restart ?? intent;
+    if (!_intendRunning) {
+      _acceptTiming(intent, durable);
+      _lastTimingResult = EngineResult.ok;
+      _reproject();
+      return EngineResult.ok;
+    }
+    if (recordTimingCaptureLocked) return _reportTiming(EngineResult.invalid);
+    final prior = _engine.snapshot();
+    final result = _engine.setRecordTimingSettings(
+      defaultTiming: intent.defaultTiming,
+      rememberedDivision: intent.rememberedDivision,
+      trackOverrides: intent.overrides,
+      editMask: editMask,
+    );
+    if (!result.isOk) return _reportTiming(result);
+    final pending = _PendingTiming(
+      intent: intent,
+      restart: durable,
+      recovery: startup
+          ? intent
+          : _TimingIntent(
+              defaultRecordTiming,
+              _quantizeDiv,
+              _trackRecordTiming,
+            ),
+      recoveryRestart: startup ? durable : _timingRestart,
+      expectedRevision: (prior.recordTimingRevision + 2) & 0xffffffff,
+      prior: prior,
+      startup: startup,
+    );
+    _pendingTiming = pending;
+    pending.timer = Timer.periodic(const Duration(milliseconds: 10), (timer) {
+      if (!identical(_pendingTiming, pending)) {
+        timer.cancel();
+        return;
+      }
+      if (_settleTiming()) {
+        _reproject();
+      } else if (++pending.polls >= 50) {
+        _failTiming(pending, EngineResult.notReady);
+        _reproject();
+      }
+    });
+    if (!startup) _reproject();
+    return _pendingTiming == null ? _lastTimingResult : EngineResult.ok;
+  }
+
+  bool _timingMatches(EngineSnapshot snapshot, _TimingIntent intent) {
+    if (snapshot.tracks.length != 8 ||
+        snapshot.quantize != intent.defaultTiming.quantize ||
+        snapshot.quantizeDiv != intent.rememberedDivision) {
+      return false;
+    }
+    for (var c = 0; c < 8; c++) {
+      final track = snapshot.tracks[c];
+      final value = intent.overrides[c];
+      if (track.quantizeOverride != value?.quantize ||
+          track.quantizeDivOverride != value?.division) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _settleTiming() {
+    final pending = _pendingTiming;
+    if (pending == null || !_engine.commandsSettled) return false;
+    final snapshot = _engine.snapshot();
+    if (snapshot.recordTimingRevision != pending.expectedRevision) return false;
+    final result = EngineResult.fromCode(snapshot.recordTimingResult);
+    if (result.isOk && _timingMatches(snapshot, pending.intent)) {
+      _pendingTiming = null;
+      pending.timer?.cancel();
+      _acceptTiming(pending.intent, pending.restart);
+      _lastTimingResult = EngineResult.ok;
+      pending.completed.complete(EngineResult.ok);
+    } else if (!result.isOk &&
+        _timingMatches(
+          snapshot,
+          _TimingIntent(
+            RecordTiming.of(
+              quantize: pending.prior.quantize,
+              division: pending.prior.quantizeDiv,
+            ),
+            pending.prior.quantizeDiv,
+            {
+              for (var c = 0; c < pending.prior.tracks.length; c++)
+                if (pending.prior.tracks[c].quantizeOverride != null)
+                  c: RecordTiming.of(
+                    quantize: pending.prior.tracks[c].quantizeOverride!,
+                    division:
+                        pending.prior.tracks[c].quantizeDivOverride ??
+                        GridDivision.off,
+                  ),
+            },
+          ),
+        ) &&
+        !pending.startup) {
+      _pendingTiming = null;
+      pending.timer?.cancel();
+      _lastTimingResult = result;
+      pending.completed.complete(result);
+      _reportTiming(result);
+    } else {
+      _failTiming(pending, EngineResult.invalid);
+    }
+    return true;
+  }
+
+  void _failTiming(_PendingTiming pending, EngineResult result) {
+    if (!identical(_pendingTiming, pending)) return;
+    _pendingTiming = null;
+    pending.timer?.cancel();
+    _timingRecovery = pending.recovery;
+    _timingRecoveryRestart = pending.recoveryRestart;
+    _lastTimingResult = result;
+    pending.completed.complete(result);
+    // A take is never stopped to clean up future settings. Retry can repair
+    // after capture exits; a callback that resumes will refuse this vector.
+    if (!recordTimingCaptureLocked) stopEngine();
+    _reportTiming(result);
+  }
+
+  /// Awaits the exact revision/result/vector, with a bounded callback deadline.
+  Future<EngineResult> settleRecordTimingSettings({
+    Duration pollInterval = const Duration(milliseconds: 10),
+    int attempts = 50,
+  }) async {
+    final pending = _pendingTiming;
+    if (pending == null) return _lastTimingResult;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      if (pending.completed.isCompleted) return pending.completed.future;
+      if (_settleTiming()) _reproject();
+      if (pending.completed.isCompleted) return pending.completed.future;
+      await Future<void>.delayed(pollInterval);
+    }
+    if (!pending.completed.isCompleted) {
+      _failTiming(pending, EngineResult.notReady);
+      _reproject();
+    }
+    return pending.completed.future;
+  }
+
+  /// Explicit Retry repairs only the current lifetime's retained obligation.
+  EngineResult recoverRecordTimingSettings() {
+    final intent = _timingRecovery;
+    if (intent == null) return _lastTimingResult;
+    if (recordTimingCaptureLocked) return EngineResult.notReady;
+    if (_intendRunning) stopEngine();
+    _acceptTiming(intent, _timingRecoveryRestart!);
+    _timingRecovery = null;
+    _timingRecoveryRestart = null;
+    _lastTimingResult = EngineResult.ok;
+    _reproject();
+    return EngineResult.ok;
+  }
+
+  /// Stages the complete validated startup or recalled session vector.
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+  }) {
+    if (trackOverrides.keys.any((c) => c < 0 || c >= 8) ||
+        (defaultTiming.quantize &&
+            defaultTiming.division != rememberedDivision)) {
+      return EngineResult.invalid;
+    }
+    return _requestTiming(
+      _TimingIntent(defaultTiming, rememberedDivision, trackOverrides),
+      editMask: 0x1ff,
+    );
   }
 
   _PendingLengthSettings? _pendingLengthSettings;
@@ -1780,6 +2063,7 @@ class LooperRepository {
   void _poll() {
     final onceSettled = _settlePendingOneShot();
     final clickSettled = _settlePendingClickVolume();
+    final timingSettled = _settleTiming();
     final lengthSettled = _settlePendingLengthSettings();
     final mixSettled = _settlePendingMix();
     _drainHistoryFx();
@@ -1803,6 +2087,7 @@ class LooperRepository {
         !onceSettled &&
         !clickSettled &&
         !lengthSettled &&
+        !timingSettled &&
         !mixSettled) {
       return;
     }
@@ -1822,6 +2107,7 @@ class LooperRepository {
   void _reproject() {
     final onceSettled = _settlePendingOneShot();
     final clickSettled = _settlePendingClickVolume();
+    final timingSettled = _settleTiming();
     final lengthSettled = _settlePendingLengthSettings();
     final mixSettled = _settlePendingMix();
     final snapshot = _engine.snapshot();
@@ -1833,6 +2119,7 @@ class LooperRepository {
         !onceSettled &&
         !clickSettled &&
         !lengthSettled &&
+        !timingSettled &&
         !mixSettled) {
       return;
     }
@@ -1917,6 +2204,7 @@ class LooperRepository {
     // silently dropping the live rig on every reconnect. The new configure
     // discards queued commands, so cancel their waiter before replaying the
     // confirmed settings without disarming reconnect supervision.
+    _cancelTiming();
     _cancelLengthSettings();
     _engine.stop();
     _cancelMix();
@@ -2118,11 +2406,13 @@ class LooperRepository {
     if (_mixRecoveryStartBlocked ||
         _clickRecoveryStartBlocked ||
         oneShotRecoveryRequired ||
-        lengthRecoveryRequired) {
+        lengthRecoveryRequired ||
+        recordTimingRecoveryRequired) {
       return EngineResult.notReady;
     }
     _cancelClickVolume();
     _cancelOneShot();
+    _cancelTiming();
     _cancelLengthSettings();
     final replayedPriorEngine = _hasOpenedEngine;
     _mixGeneration++;
@@ -2148,8 +2438,15 @@ class LooperRepository {
       );
       // A fresh start resets the engine's quantize flag and monitor masks;
       // re-apply the desired state so it survives device changes / reconnects.
-      _engine.setQuantize(enabled: _quantize);
-      _trackRecordTiming.forEach(_pushTrackRecordTiming);
+      final timingResult = _requestTiming(
+        _timingRestart,
+        editMask: 0x1ff,
+        startup: true,
+      );
+      if (!timingResult.isOk) {
+        stopEngine();
+        return timingResult;
+      }
       _engine
         ..setRecDub(enabled: _recDub)
         ..setAutoRecord(enabled: _autoRecord)
@@ -2184,7 +2481,6 @@ class LooperRepository {
       _engine
         ..setTimeSignature(_tsNum, _tsDen)
         ..setSyncTempo(on: _syncTempo)
-        ..setQuantizeDiv(_quantizeDiv)
         ..setClickMode(_clickMode)
         ..setClickOutput(_clickMask)
         ..setCountIn(_countInBars);
@@ -2504,6 +2800,7 @@ class LooperRepository {
   /// Closes the audio device. A deliberate stop also cancels any in-flight
   /// reconnect supervision so the engine is not reopened behind the user.
   EngineResult stopEngine() {
+    _cancelTiming();
     _cancelLengthSettings();
     // Quiesce the callback before reconciling the final published take image.
     final result = _engine.stop();
@@ -2562,6 +2859,11 @@ class LooperRepository {
             state != TrackState.playing &&
             state != TrackState.stopped)) {
       return _engine.record(channel: channel);
+    }
+    // Fresh acquisition must not capture or prepare plugin state while timing
+    // admission is fenced. Owned cancellation and finishing remain available.
+    if (!recordTimingSettingsSettled || recordTimingRecoveryRequired) {
+      return EngineResult.notReady;
     }
     if (_pendingMix != null) return _mixFailure(EngineResult.notReady);
     if (_historyFx.keys.any((key) => key.$1 == channel) ||
@@ -3353,10 +3655,14 @@ class LooperRepository {
       counts: mix.laneCounts,
     );
     final revision = ++_sessionRevision;
+    _cancelTiming();
     _cancelLengthSettings();
     _lengthRecovery = null;
     _lengthRecoveryRestart = null;
     _lastLengthResult = EngineResult.ok;
+    _timingRecovery = null;
+    _timingRecoveryRestart = null;
+    _lastTimingResult = EngineResult.ok;
     _cancelMix();
     _oneShotRecoveryIntent = null;
     _oneShotRecoveryRestart = null;
@@ -3420,7 +3726,6 @@ class LooperRepository {
     _restartTrackOneShot.clear();
     // Same for the record timing and decay overrides (slice 2b): per-track
     // settings that survive `clear`, reset below and re-armed from the rig.
-    _trackRecordTiming.clear();
     _trackOverdubDecay.clear();
     _restartTrackOverdubDecay.clear();
     // The crown dies with the last take: the clear awaited below empties
@@ -3461,8 +3766,6 @@ class LooperRepository {
           ..setOneShot(channel: channel, oneShot: false)
           // The record timing and decay overrides survive `clear` the same
           // way: back to inherit here, re-armed from the rig below.
-          ..setTrackQuantize(channel: channel, enabled: null)
-          ..setTrackQuantizeDiv(channel: channel, div: null)
           ..setTrackOverdubFeedback(channel: channel, feedback: null);
       }
     }
@@ -3478,10 +3781,14 @@ class LooperRepository {
       );
     }
     _requireSessionSetting(setSyncTempo(on: rig.syncTempo));
-    _requireSessionSetting(setRecordTiming(rig.recordTiming));
-    if (!rig.recordTiming.quantize) {
-      _requireSessionSetting(setQuantizeDiv(rig.quantizeDiv));
-    }
+    _requireSessionSetting(
+      setRecordTimingSettings(
+        defaultTiming: rig.recordTiming,
+        rememberedDivision: rig.quantizeDiv,
+        trackOverrides: recordTimingOverrides,
+      ),
+    );
+    _requireSessionSetting(await settleRecordTimingSettings());
     _requireSessionSetting(setOverdubDecay(rig.overdubDecay));
 
     _requireSessionSetting(setDefaultMultiple(multiple: rig.defaultMultiple));
@@ -3645,12 +3952,6 @@ class LooperRepository {
     // product tracks still own settings that must be replayed on first start.
     final settingsTrackCount = _intendRunning ? trackCount : 8;
     for (var channel = 0; channel < settingsTrackCount; channel++) {
-      _requireSessionSetting(
-        setTrackRecordTiming(
-          channel: channel,
-          timing: recordTimingOverrides[channel],
-        ),
-      );
       _requireSessionSetting(
         setTrackOverdubDecay(
           channel: channel,
@@ -4722,34 +5023,27 @@ class LooperRepository {
   EngineResult setTrackRecordTiming({
     required int channel,
     required RecordTiming? timing,
+    RecordTiming? releasedTiming,
   }) {
     if (channel < 0 || channel >= 8) return EngineResult.invalid;
-    if (_intendRunning) {
-      final result = _pushTrackRecordTiming(channel, timing);
-      if (!result.isOk) return result;
-    }
+    final live = Map.of(_trackRecordTiming);
+    final durable = Map.of(_timingRestart.overrides);
     if (timing == null) {
-      _trackRecordTiming.remove(channel);
+      live.remove(channel);
+      durable.remove(channel);
     } else {
-      _trackRecordTiming[channel] = timing;
+      live[channel] = timing;
+      durable[channel] = releasedTiming ?? timing;
     }
-    _reproject();
-    return EngineResult.ok;
-  }
-
-  /// The engine's two per-track knobs for one timing: the division first,
-  /// so a gate that opens finds its division already set.
-  EngineResult _pushTrackRecordTiming(int channel, RecordTiming? timing) {
-    final div = _engine.setTrackQuantizeDiv(
-      channel: channel,
-      div: timing?.division,
+    return _requestTiming(
+      _TimingIntent(defaultRecordTiming, _quantizeDiv, live),
+      editMask: 2 << channel,
+      restart: _TimingIntent(
+        _timingRestart.defaultTiming,
+        _timingRestart.rememberedDivision,
+        durable,
+      ),
     );
-    if (!div.isOk) return div;
-    final gate = _engine.setTrackQuantize(
-      channel: channel,
-      enabled: timing?.quantize,
-    );
-    return gate.isOk ? div : gate;
   }
 
   /// Sets track [channel]'s overdub decay override in percent (`0..100`;
@@ -6584,19 +6878,26 @@ class LooperRepository {
   /// follow it unless they carry an override ([setTrackRecordTiming]).
   /// Remembered and re-applied on every (re)start; re-projects so the
   /// published default moves with the call.
-  EngineResult setRecordTiming(RecordTiming timing) {
-    if (_intendRunning) {
-      if (timing.quantize) {
-        final division = _engine.setQuantizeDiv(timing.division);
-        if (!division.isOk) return division;
-      }
-      final gate = _engine.setQuantize(enabled: timing.quantize);
-      if (!gate.isOk) return gate;
-    }
-    _quantize = timing.quantize;
-    if (timing.quantize) _quantizeDiv = timing.division;
-    _reproject();
-    return EngineResult.ok;
+  EngineResult setRecordTiming(
+    RecordTiming timing, {
+    RecordTiming? releasedTiming,
+  }) {
+    final remembered = timing.quantize
+        ? timing.division
+        : _timingRestart.rememberedDivision;
+    final durable = releasedTiming ?? timing;
+    final durableDivision = durable.quantize
+        ? durable.division
+        : _timingRestart.rememberedDivision;
+    return _requestTiming(
+      _TimingIntent(timing, remembered, _trackRecordTiming),
+      editMask: 1,
+      restart: _TimingIntent(
+        durable,
+        durableDivision,
+        _timingRestart.overrides,
+      ),
+    );
   }
 
   /// Sets the default overdub decay in percent (`0..100`; accepted design,
@@ -6614,23 +6915,9 @@ class LooperRepository {
     return EngineResult.ok;
   }
 
-  /// Enables or disables quantized recording (captures snap to the loop grid).
-  /// The value is remembered and re-applied on every engine (re)start — a fresh
-  /// start (device change, reconnect) resets the engine's flag — so it survives
-  /// restarts. Applied to the live engine only while running.
-  EngineResult setQuantize({required bool enabled}) {
-    if (_intendRunning) {
-      final result = _engine.setQuantize(enabled: enabled);
-      if (!result.isOk) return result;
-    }
-    _quantize = enabled;
-    _reproject();
-    return EngineResult.ok;
-  }
-
   // ---- tempo grid (A1) + click/count-in (A2) passthroughs ----
   //
-  // Every setter below remembers its value (mirroring [setQuantize] /
+  // Every setter below remembers its value (mirroring [setRecordTiming] /
   // [setMasterGain] above) so [startEngine] can re-apply it on every (re)start
   // — a fresh start resets the engine's tempo grid to the tempo-free defaults.
   // Takes effect immediately only while running, like every other remembered
@@ -6677,19 +6964,6 @@ class LooperRepository {
       if (!result.isOk) return result;
     }
     _syncTempo = on;
-    _reproject();
-    return EngineResult.ok;
-  }
-
-  /// Sets the musical quantization granularity (the arming grid consumed by
-  /// A3 — distinct from [setQuantize]'s loop-top record quantize). Remembered
-  /// and re-applied on every (re)start.
-  EngineResult setQuantizeDiv(GridDivision div) {
-    if (_intendRunning) {
-      final result = _engine.setQuantizeDiv(div);
-      if (!result.isOk) return result;
-    }
-    _quantizeDiv = div;
     _reproject();
     return EngineResult.ok;
   }
@@ -7201,6 +7475,7 @@ class LooperRepository {
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
+    _cancelTiming();
     _cancelLengthSettings();
     _cancelMix();
     await _stopPollingAndClose();
@@ -7221,6 +7496,7 @@ class LooperRepository {
     await _rigReplaced.close();
     await _recoveryRefusals.close();
     await _lengthSettingsFailures.close();
+    await _timingFailures.close();
     await _mixSettingsFailures.close();
     await _controller.close();
   }

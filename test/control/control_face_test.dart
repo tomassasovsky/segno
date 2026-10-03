@@ -28,6 +28,7 @@ import '../helpers/fake_decay_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/fake_one_shot_control.dart';
 import '../helpers/fake_record_length_control.dart';
+import '../helpers/fake_record_timing_control.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -138,6 +139,7 @@ void main() {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
+      recordTimingControl: FakeRecordTimingControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,

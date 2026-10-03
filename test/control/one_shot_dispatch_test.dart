@@ -26,6 +26,7 @@ import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_click_volume_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/fake_record_length_control.dart';
+import '../helpers/fake_record_timing_control.dart';
 
 const _once = TrackOneShotTarget(0);
 
@@ -119,6 +120,7 @@ class _Rig {
       decayControl: owner,
       oneShotControl: owner,
       recordLengthControl: FakeRecordLengthControl(),
+      recordTimingControl: FakeRecordTimingControl(),
       takeLocked: () => powerUp,
       controller: controller,
       midiDevices: midi,

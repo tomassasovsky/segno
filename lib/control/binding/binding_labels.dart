@@ -108,6 +108,10 @@ String valueTargetLabel(
     '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopLengthLabel}',
   TrackRecordLengthTarget(:final channel) =>
     '${l10n.trackName(trackNames, channel)} · ${l10n.loopLengthLabel}',
+  DefaultRecordTimingTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopTimingLabel}',
+  TrackRecordTimingTarget(:final channel) =>
+    '${l10n.trackName(trackNames, channel)} · ${l10n.loopTimingLabel}',
   MasterGainTarget() => l10n.midiLearnTargetMaster,
   FxParamTarget(:final address, :final slotId, :final param) =>
     l10n.midiLearnTargetParam(

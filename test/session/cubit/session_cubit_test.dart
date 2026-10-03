@@ -12,6 +12,7 @@ import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -119,6 +120,13 @@ void main() {
     runClickVolumeExclusive: _readyClick,
     runPlaybackExclusive: _readyClick,
     runRecordExclusive: <T>(operation) => operation(),
+    runRecordTimingExclusive: <T>(operation) => operation(),
+    currentDurableRecordTiming: () => RecordTimingSnapshot(
+      defaultTiming: looper.defaultRecordTiming,
+      rememberedDivision: looper.sessionTransport.quantizeDiv,
+      trackOverrides: looper.trackRecordTimingOverrides,
+      captureLocked: false,
+    ),
     currentDurableRecordLength: () => RecordLengthSnapshot(
       defaultBars: looper.sessionTransport.defaultLengthPresetBars,
       trackOverrides: looper.trackLengthPresetOverrides,
@@ -1137,6 +1145,13 @@ void main() {
           runClickVolumeExclusive: _readyClick,
           runPlaybackExclusive: _readyClick,
           runRecordExclusive: <T>(operation) => operation(),
+          runRecordTimingExclusive: <T>(operation) => operation(),
+          currentDurableRecordTiming: () => RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
           currentDurableRecordLength: () => RecordLengthSnapshot(
             defaultBars: looper.sessionTransport.defaultLengthPresetBars,
             trackOverrides: looper.trackLengthPresetOverrides,
@@ -1203,6 +1218,13 @@ void main() {
           runClickVolumeExclusive: _readyClick,
           runPlaybackExclusive: _readyClick,
           runRecordExclusive: <T>(operation) => operation(),
+          runRecordTimingExclusive: <T>(operation) => operation(),
+          currentDurableRecordTiming: () => RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
           currentDurableRecordLength: () => RecordLengthSnapshot(
             defaultBars: looper.sessionTransport.defaultLengthPresetBars,
             trackOverrides: looper.trackLengthPresetOverrides,
@@ -1255,6 +1277,13 @@ void main() {
         runClickVolumeExclusive: _readyClick,
         runPlaybackExclusive: _readyClick,
         runRecordExclusive: <T>(operation) => operation(),
+        runRecordTimingExclusive: <T>(operation) => operation(),
+        currentDurableRecordTiming: () => RecordTimingSnapshot(
+          defaultTiming: looper.defaultRecordTiming,
+          rememberedDivision: looper.sessionTransport.quantizeDiv,
+          trackOverrides: looper.trackRecordTimingOverrides,
+          captureLocked: false,
+        ),
         currentDurableRecordLength: () => RecordLengthSnapshot(
           defaultBars: looper.sessionTransport.defaultLengthPresetBars,
           trackOverrides: looper.trackLengthPresetOverrides,

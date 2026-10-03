@@ -343,6 +343,20 @@ jobs:
         run: |
           flutter pub get
           flutter test --tags fuzz
+      # These Session save checks need the real callback receipts and a real
+      # session file. The ordinary app job skips them without the native library.
+      - name: Run the native-backed recording timing session tests
+        run: |
+          test -s "$SEGNO_ENGINE_LIB"
+          flutter test test/session/record_timing_persistence_test.dart
+      # Root tests do not traverse package test directories. Exercise the Dart
+      # engine bridge here against the same native library built above.
+      - name: Run the segno_engine package tests
+        working-directory: packages/segno_engine
+        run: |
+          test -s "$SEGNO_ENGINE_LIB"
+          flutter pub get
+          flutter test
       # The looper_repository fingerprint agreement suite (R16) is fuzz-tagged
       # and self-skips without SEGNO_ENGINE_LIB — the per-package job above
       # skips it by design, so run it HERE against the engine library this job

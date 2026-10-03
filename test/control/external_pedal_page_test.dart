@@ -17,6 +17,7 @@ import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -51,12 +52,17 @@ void main() {
   late _ControlledStore store;
   late ControlCubit control;
   late RecordOptionsCubit record;
+  late RecordTimingCubit timing;
   late int confirmedLength;
+  late RecordTiming confirmedTiming;
+  late GridDivision rememberedDivision;
   late TracksCubit tracks;
 
   setUp(() {
     looper = _MockLooperRepository();
     confirmedLength = 0;
+    confirmedTiming = RecordTiming.immediately;
+    rememberedDivision = GridDivision.off;
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
@@ -83,11 +89,45 @@ void main() {
       (_) => const Stream<EngineResult>.empty(),
     );
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordTimingCaptureLocked).thenReturn(false);
+    when(() => looper.recordTimingSettingsSettled).thenReturn(true);
+    when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
+    when(() => looper.defaultRecordTiming).thenAnswer((_) => confirmedTiming);
+    when(() => looper.trackRecordTimingOverrides).thenReturn(const {});
+    when(() => looper.recordTimingRestartIntent).thenAnswer(
+      (_) => (
+        defaultTiming: confirmedTiming,
+        rememberedDivision: rememberedDivision,
+        trackOverrides: const <int, RecordTiming>{},
+      ),
+    );
+    when(() => looper.settleRecordTimingSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => looper.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      rememberedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      return EngineResult.ok;
+    });
     when(() => looper.lengthSettingsSettled).thenReturn(true);
     when(() => looper.lengthRecoveryRequired).thenReturn(false);
     when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
     when(() => looper.sessionTransport).thenAnswer(
-      (_) => TransportState(defaultLengthPresetBars: confirmedLength),
+      (_) => TransportState(
+        defaultLengthPresetBars: confirmedLength,
+        recordTiming: confirmedTiming,
+        quantizeDiv: rememberedDivision,
+      ),
     );
     when(() => looper.settleLengthSettings()).thenAnswer(
       (_) async => EngineResult.ok,
@@ -119,15 +159,28 @@ void main() {
     ).thenReturn(EngineResult.ok);
   });
 
-  setUpAll(() => registerFallbackValue(LooperMode.multi));
+  setUpAll(() {
+    registerFallbackValue(LooperMode.multi);
+    registerFallbackValue(RecordTiming.immediately);
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(<int, RecordTiming>{});
+  });
 
   tearDown(() async {
     await looperStates.close();
   });
 
-  Future<void> pump(WidgetTester tester, {int currentBars = 0}) async {
+  Future<void> pump(
+    WidgetTester tester, {
+    int currentBars = 0,
+    RecordTiming currentTiming = RecordTiming.immediately,
+  }) async {
     store = _ControlledStore();
     settings = SettingsRepository(store: store);
+    confirmedTiming = currentTiming;
+    rememberedDivision = currentTiming.division;
+    await settings.saveQuantize(value: currentTiming.quantize);
+    await settings.saveQuantizeDiv(rememberedDivision.code);
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -149,6 +202,9 @@ void main() {
     record = RecordOptionsCubit(repository: looper, settings: settings);
     addTearDown(() => unawaited(record.close()));
     await record.load();
+    timing = RecordTimingCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(timing.close()));
+    await timing.load();
     if (currentBars != 0) {
       expect((await record.setDefaultLengthBars(currentBars)).isOk, isTrue);
     }
@@ -157,6 +213,7 @@ void main() {
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,
+      recordTimingControl: timing,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
@@ -196,6 +253,7 @@ void main() {
               BlocProvider<TempoCubit>.value(value: MockClickTempoCubit()),
               BlocProvider<PlaybackOptionsCubit>.value(value: playback),
               BlocProvider<RecordOptionsCubit>.value(value: record),
+              BlocProvider<RecordTimingCubit>.value(value: timing),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -233,6 +291,35 @@ void main() {
       control.state.pedalSetup.external.forJack(jack);
 
   group('External pedals', () {
+    testWidgets('new timing button keeps the accepted choice on both ends', (
+      tester,
+    ) async {
+      await pump(tester, currentTiming: RecordTiming.bar);
+      expect(timing.state.recordTimingReady, isTrue);
+      clearInteractions(looper);
+      await tap(tester, 'external_panel_controls');
+      await tap(tester, 'external_add_control');
+      await tap(tester, 'expression_kind_loopControls');
+      await tap(tester, 'expression_destination_loop:defaults');
+      final key = externalControlKey(const DefaultRecordTimingTarget());
+      await tap(tester, 'external_pick_$key');
+      expect(saved(PedalCtrlJack.ctrl1).single.controls.parameters, isEmpty);
+      await tap(tester, 'external_save');
+      final parameter = saved(
+        PedalCtrlJack.ctrl1,
+      ).single.controls.parameters.single;
+      expect(parameter.target, const DefaultRecordTimingTarget());
+      expect((parameter.active, parameter.inactive), (2 / 6, 2 / 6));
+      expect(timing.state.defaultTiming, RecordTiming.bar);
+      verifyNever(
+        () => looper.setRecordTimingSettings(
+          defaultTiming: any(named: 'defaultTiming'),
+          rememberedDivision: any(named: 'rememberedDivision'),
+          trackOverrides: any(named: 'trackOverrides'),
+        ),
+      );
+    });
+
     testWidgets('new button length holds accepted bars on both ends', (
       tester,
     ) async {

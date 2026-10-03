@@ -311,7 +311,12 @@ void main() {
           maxLoopFrames: 48000,
         ),
       )
-      ..setQuantize(enabled: true)
+      ..setRecordTimingSettings(
+        defaultTiming: RecordTiming.loopStart,
+        rememberedDivision: GridDivision.off,
+        trackOverrides: const {},
+        editMask: 1,
+      )
       ..setAutoRecord(enabled: true)
       ..setOverdubFeedback(0.75)
       ..pump(frames: 0);
@@ -815,9 +820,17 @@ void main() {
       expect(engine.snapshot().syncTempo, isTrue);
     });
 
-    test('setQuantizeDiv publishes the granularity for every value', () {
+    test('record timing publishes each remembered granularity', () {
       for (final div in GridDivision.values) {
-        expect(engine.setQuantizeDiv(div), EngineResult.ok);
+        expect(
+          engine.setRecordTimingSettings(
+            defaultTiming: RecordTiming.immediately,
+            rememberedDivision: div,
+            trackOverrides: const {},
+            editMask: 1,
+          ),
+          EngineResult.ok,
+        );
         engine.pump(frames: 0);
         expect(engine.snapshot().quantizeDiv, div);
       }
@@ -985,7 +998,15 @@ void main() {
 
     void recordFreeTracks() {
       expect(engine.setLooperMode(LooperMode.free), EngineResult.ok);
-      expect(engine.setQuantize(enabled: false), EngineResult.ok);
+      expect(
+        engine.setRecordTimingSettings(
+          defaultTiming: RecordTiming.immediately,
+          rememberedDivision: GridDivision.off,
+          trackOverrides: const {},
+          editMask: 1,
+        ),
+        EngineResult.ok,
+      );
       engine.pump(frames: 0);
       for (final (channel, frames) in [(0, 500), (1, 750)]) {
         expect(engine.record(channel: channel), EngineResult.ok);

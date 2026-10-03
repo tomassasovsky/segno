@@ -32,6 +32,7 @@ import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
@@ -174,6 +175,9 @@ class App extends StatefulWidget {
 /// Resolves the optional pedal pair once so a replacement [App] keeps
 /// [ControlCubit], [PedalCubit], and dialog routes on one repository.
 class _AppState extends State<App> {
+  PowerOffCubit? _power;
+  StreamSubscription<PowerOffState>? _powerNoticeSubscription;
+  RecordTimingOutcome? _timingRecoveryNotice;
   late final PedalRepository _pedal;
   late final MixSettingsCoordinator _mixSettings;
   late final FxChainPersistence _fxPersistence;
@@ -185,7 +189,9 @@ class _AppState extends State<App> {
   StreamSubscription<ClickVolumeOutcome>? _clickFailureSubscription;
   late final PlaybackOptionsCubit _playback;
   late final RecordOptionsCubit _record;
+  late final RecordTimingCubit _timing;
   StreamSubscription<RecordLengthOutcome>? _recordLengthFailureSubscription;
+  StreamSubscription<RecordTimingOutcome>? _recordTimingFailureSubscription;
   StreamSubscription<DecayOutcome>? _decayFailureSubscription;
   StreamSubscription<OneShotOutcome>? _oneShotFailureSubscription;
 
@@ -224,6 +230,14 @@ class _AppState extends State<App> {
       _showRecordLengthFailure,
     );
     unawaited(_record.load());
+    _timing = RecordTimingCubit(
+      repository: widget.repository,
+      settings: widget.settings,
+    );
+    _recordTimingFailureSubscription = _timing.recordTimingFailures.listen(
+      _showRecordTimingFailure,
+    );
+    unawaited(_timing.load());
     _powerKeySource =
         widget.powerKeySource ??
         openAppliancePowerKeySource(onAppliance: isAppliance());
@@ -231,12 +245,14 @@ class _AppState extends State<App> {
 
   @override
   void dispose() {
+    unawaited(_powerNoticeSubscription?.cancel());
     unawaited(_powerKeySource?.close());
     unawaited(_mixFailureSubscription?.cancel());
     unawaited(_clickFailureSubscription?.cancel());
     unawaited(_decayFailureSubscription?.cancel());
     unawaited(_oneShotFailureSubscription?.cancel());
     unawaited(_recordLengthFailureSubscription?.cancel());
+    unawaited(_recordTimingFailureSubscription?.cancel());
     unawaited(_closeControlOwners());
     super.dispose();
   }
@@ -245,6 +261,7 @@ class _AppState extends State<App> {
     // BlocProvider can also close Control; its memoized completion ensures
     // held cleanup finishes while the Click and Mixer owners are still alive.
     await _control?.close();
+    await _timing.close();
     await _record.close();
     await _playback.close();
     await _tempo.close();
@@ -449,6 +466,64 @@ class _AppState extends State<App> {
     );
   }
 
+  void _showRecordTimingFailure(RecordTimingOutcome outcome) {
+    if (!mounted || outcome.status == RecordTimingStatus.superseded) return;
+    final recovery = outcome.status == RecordTimingStatus.recoveryRequired;
+    AppLog.error(
+      'Record timing settings: ${outcome.status.name} ${outcome.error ?? ''}',
+    );
+    if (recovery) _timingRecoveryNotice = outcome;
+    // The shutdown dialog owns this failure and its Retry action. A second
+    // toast can cover that action while held controls are being retired.
+    if (_power?.state.isUiUp ?? false) return;
+    showAppToast(
+      id: AppToastId.recordTimingSettings,
+      type: ToastificationType.error,
+      dismissible: !recovery,
+      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
+      title: Builder(
+        builder: (context) => Text(
+          recovery
+              ? context.l10n.recordTimingSettingsRecoveryTitle
+              : context.l10n.recordTimingSettingsRefusedTitle,
+        ),
+      ),
+      description: recovery
+          ? Builder(
+              builder: (context) =>
+                  Text(context.l10n.recordTimingSettingsRecoveryBody),
+            )
+          : null,
+      actions: recovery
+          ? [
+              TextButton(
+                onPressed: () async {
+                  if ((await _timing.recoverRecordTiming()).isOk) {
+                    dismissAppToast(AppToastId.recordTimingSettings);
+                  }
+                },
+                child: Builder(
+                  builder: (context) => Text(context.l10n.powerOffRetry),
+                ),
+              ),
+            ]
+          : const [],
+    );
+  }
+
+  void _syncTimingNoticeWithPower(PowerOffState state) {
+    if (!mounted) return;
+    if (state.isUiUp) {
+      dismissAppToast(AppToastId.recordTimingSettings);
+      return;
+    }
+    final notice = _timingRecoveryNotice;
+    _timingRecoveryNotice = null;
+    if (notice != null && !_timing.state.recordTimingReady) {
+      _showRecordTimingFailure(notice);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiRepositoryProvider(
@@ -513,6 +588,7 @@ class _AppState extends State<App> {
                 decayControl: _playback,
                 oneShotControl: _playback,
                 recordLengthControl: _record,
+                recordTimingControl: _timing,
                 repository: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),
                 fxPersistence: context.read<FxChainPersistence>(),
@@ -636,18 +712,7 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
-          BlocProvider(
-            // Restore defaults at startup, before a session can be recalled.
-            lazy: false,
-            create: (context) {
-              final cubit = RecordTimingCubit(
-                repository: context.read<LooperRepository>(),
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
+          BlocProvider<RecordTimingCubit>.value(value: _timing),
           BlocProvider<TempoCubit>.value(value: _tempo),
           BlocProvider<PlaybackOptionsCubit>.value(value: _playback),
           BlocProvider(
@@ -707,65 +772,90 @@ class _AppState extends State<App> {
           // cannot context.read a descendant — capture the instance below.
           BlocProvider(
             lazy: false,
-            create: (context) => PowerOffCubit(
-              flush: ({required retry}) async {
-                final monitor = context.read<MonitorCubit>();
-                final looper = context.read<LooperBloc>();
-                final controllers = _control?.flushMidiConfiguration(
-                  retireControls: true,
-                );
-                await controllers;
-                if (retry) {
-                  final mix = await _mixSettings.recover();
+            create: (context) {
+              final power = PowerOffCubit(
+                flush: ({required retry}) async {
+                  final monitor = context.read<MonitorCubit>();
+                  final looper = context.read<LooperBloc>();
+                  final controllers = _control?.flushMidiConfiguration(
+                    retireControls: true,
+                  );
+                  try {
+                    await controllers;
+                  } on ControlCleanupPending {
+                    // Retry repairs the owner before the owed release below.
+                    // Initial shutdown must remain blocked.
+                    if (!retry) rethrow;
+                  }
+                  if (retry) {
+                    final mix = await _mixSettings.recover();
+                    if (!mix.isOk) throw MixSettingsRecoveryException(mix);
+                    final click = await _tempo.recoverClickVolume();
+                    if (!click.isOk) {
+                      throw StateError('Click settings still need recovery');
+                    }
+                    final decay = await _playback.recoverDecay();
+                    if (!decay.isOk) {
+                      throw StateError('Decay settings still need recovery');
+                    }
+                    final once = await _playback.recoverOneShot();
+                    if (!once.isOk) {
+                      throw StateError('Playback settings still need recovery');
+                    }
+                    final length = await _record.recoverRecordLength();
+                    if (!length.isOk) {
+                      throw StateError('Record length still needs recovery');
+                    }
+                    final timing = await _timing.recoverRecordTiming();
+                    if (!timing.isOk) {
+                      throw StateError('Record timing still needs recovery');
+                    }
+                    await _control?.flushMidiConfiguration(
+                      retireControls: true,
+                    );
+                  }
+                  await monitor.flushPersistence();
+                  final receipt = Completer<void>();
+                  looper.add(LooperPersistFlush(receipt: receipt));
+                  await receipt.future;
+                  final mix = await _mixSettings.flush();
                   if (!mix.isOk) throw MixSettingsRecoveryException(mix);
-                  final click = await _tempo.recoverClickVolume();
+                  final click = await _tempo.flushClickVolume();
                   if (!click.isOk) {
-                    throw StateError('Click settings still need recovery');
+                    throw StateError('Click settings were not confirmed');
                   }
-                  final decay = await _playback.recoverDecay();
+                  final decay = await _playback.flushDecay();
                   if (!decay.isOk) {
-                    throw StateError('Decay settings still need recovery');
+                    throw StateError('Decay settings were not confirmed');
                   }
-                  final once = await _playback.recoverOneShot();
+                  final once = await _playback.flushOneShot();
                   if (!once.isOk) {
-                    throw StateError('Playback settings still need recovery');
+                    throw StateError('Playback settings were not confirmed');
                   }
-                  final length = await _record.recoverRecordLength();
+                  final length = await _record.flushRecordLength();
                   if (!length.isOk) {
-                    throw StateError('Record length still needs recovery');
+                    throw StateError('Record length was not confirmed');
                   }
-                  await _control?.flushMidiConfiguration(retireControls: true);
-                }
-                await monitor.flushPersistence();
-                final receipt = Completer<void>();
-                looper.add(LooperPersistFlush(receipt: receipt));
-                await receipt.future;
-                final mix = await _mixSettings.flush();
-                if (!mix.isOk) throw MixSettingsRecoveryException(mix);
-                final click = await _tempo.flushClickVolume();
-                if (!click.isOk) {
-                  throw StateError('Click settings were not confirmed');
-                }
-                final decay = await _playback.flushDecay();
-                if (!decay.isOk) {
-                  throw StateError('Decay settings were not confirmed');
-                }
-                final once = await _playback.flushOneShot();
-                if (!once.isOk) {
-                  throw StateError('Playback settings were not confirmed');
-                }
-                final length = await _record.flushRecordLength();
-                if (!length.isOk) {
-                  throw StateError('Record length was not confirmed');
-                }
-                dismissAppToast(AppToastId.recordLengthSettings);
-                dismissAppToast(AppToastId.oneShotSettings);
-                dismissAppToast(AppToastId.clickSettings);
-                dismissAppToast(AppToastId.decaySettings);
-              },
-              pedalGoodbye: () => context.read<PedalRepository>().goodbye(),
-              powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
-            ),
+                  final timing = await _timing.flushRecordTiming();
+                  if (!timing.isOk) {
+                    throw StateError('Record timing was not confirmed');
+                  }
+                  dismissAppToast(AppToastId.recordTimingSettings);
+                  dismissAppToast(AppToastId.recordLengthSettings);
+                  dismissAppToast(AppToastId.oneShotSettings);
+                  dismissAppToast(AppToastId.clickSettings);
+                  dismissAppToast(AppToastId.decaySettings);
+                },
+                pedalGoodbye: () => context.read<PedalRepository>().goodbye(),
+                powerOff:
+                    widget.powerOff ?? const SystemApplianceEnv().powerOff,
+              );
+              _power = power;
+              _powerNoticeSubscription = power.stream.listen(
+                _syncTimingNoticeWithPower,
+              );
+              return power;
+            },
           ),
           // Eager (not lazy): the ONE control-surface interpreter and owner
           // of stored user intent (mode / cursor / bank / play intent). The
@@ -781,6 +871,7 @@ class _AppState extends State<App> {
                 decayControl: _playback,
                 oneShotControl: _playback,
                 recordLengthControl: _record,
+                recordTimingControl: _timing,
                 clickVolumeControl: _tempo,
                 looper: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),

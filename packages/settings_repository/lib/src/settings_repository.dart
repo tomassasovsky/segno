@@ -4,6 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:local_storage_client/local_storage_client.dart';
 import 'package:pub_semver/pub_semver.dart';
 
+/// Exact recording timing scalars. Missing tracks inherit; zero does not.
+typedef RecordTimingCheckpoint = ({
+  bool? quantize,
+  int? division,
+  Map<int, int> trackOverrides,
+});
+
 /// The persisted device-backend intent. A settings-layer domain enum (mirroring
 /// the engine's backend) kept here so this repository holds no data-layer
 /// dependency; the presentation layer maps it to/from the engine backend.
@@ -1785,6 +1792,75 @@ class SettingsRepository {
             e.key: e.value.clamp(-1.0, 1.0),
       },
     );
+  }
+
+  void _validateRecordTimingCheckpoint(RecordTimingCheckpoint checkpoint) {
+    if ((checkpoint.division != null &&
+            (checkpoint.division! < 0 || checkpoint.division! > 5)) ||
+        checkpoint.trackOverrides.entries.any(
+          (entry) =>
+              entry.key < 0 ||
+              entry.key >= 8 ||
+              entry.value < 0 ||
+              entry.value > 6,
+        )) {
+      throw const FormatException('Invalid Record timing');
+    }
+  }
+
+  /// Stages all ten exact scalars before returning any usable startup intent.
+  Future<RecordTimingCheckpoint> readRecordTimingCheckpoint() async {
+    await _serializedWrite;
+    final quantize = await _store.getBool(_quantizeKey);
+    final division = await _store.getInt(_quantizeDivKey);
+    final overrides = <int, int>{};
+    for (var c = 0; c < 8; c++) {
+      final value = await _store.getInt(_trackRecordTimingKey(c));
+      if (value != null) overrides[c] = value;
+    }
+    final checkpoint = (
+      quantize: quantize,
+      division: division,
+      trackOverrides: Map<int, int>.unmodifiable(overrides),
+    );
+    _validateRecordTimingCheckpoint(checkpoint);
+    return checkpoint;
+  }
+
+  /// Restores the exact tuple, verifying changes and preserving absence.
+  Future<void> restoreRecordTimingCheckpoint(
+    RecordTimingCheckpoint checkpoint,
+  ) {
+    _validateRecordTimingCheckpoint(checkpoint);
+    return _serialize(() async {
+      final oldGate = await _store.getBool(_quantizeKey);
+      if (oldGate != checkpoint.quantize) {
+        if (checkpoint.quantize == null) {
+          await _store.remove(_quantizeKey);
+        } else {
+          await _store.setBool(_quantizeKey, value: checkpoint.quantize!);
+        }
+        if (await _store.getBool(_quantizeKey) != checkpoint.quantize) {
+          throw StateError('Record timing gate was not confirmed');
+        }
+      }
+      Future<void> write(String key, int? value) async {
+        if (await _store.getInt(key) == value) return;
+        if (value == null) {
+          await _store.remove(key);
+        } else {
+          await _store.setInt(key, value);
+        }
+        if (await _store.getInt(key) != value) {
+          throw StateError('Record timing scalar was not confirmed');
+        }
+      }
+
+      await write(_quantizeDivKey, checkpoint.division);
+      for (var c = 0; c < 8; c++) {
+        await write(_trackRecordTimingKey(c), checkpoint.trackOverrides[c]);
+      }
+    });
   }
 
   String _trackRecordTimingKey(int channel) => 'track_record_timing.$channel';

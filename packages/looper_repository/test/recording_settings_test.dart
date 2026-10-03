@@ -50,16 +50,19 @@ class RejectingEngine extends FakeAudioEngine {
       : super.setLooperModeWithPresets(mode, bars);
 
   @override
-  EngineResult setQuantizeDiv(GridDivision div) =>
-      rejectDivision ? EngineResult.invalid : super.setQuantizeDiv(div);
-
-  @override
-  EngineResult setTrackQuantizeDiv({
-    required int channel,
-    required GridDivision? div,
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
   }) => rejectDivision
       ? EngineResult.invalid
-      : super.setTrackQuantizeDiv(channel: channel, div: div);
+      : super.setRecordTimingSettings(
+          defaultTiming: defaultTiming,
+          rememberedDivision: rememberedDivision,
+          trackOverrides: trackOverrides,
+          editMask: editMask,
+        );
 
   @override
   EngineResult setOneShotMask({required int channels, required bool oneShot}) =>
@@ -531,6 +534,7 @@ void main() {
       const SessionRig(
         defaultOneShot: true,
         recordTiming: RecordTiming.quarter,
+        quantizeDiv: GridDivision.quarter,
         overdubDecay: 25,
         trackOneShotOverrides: {0: false, 1: true},
         trackRecordTimingOverrides: {0: RecordTiming.quarter},
@@ -658,7 +662,12 @@ void main() {
       expect(repository.defaultRecordTiming, RecordTiming.immediately);
       expect(repository.sessionTransport.quantizeDiv, GridDivision.quarter);
       expect(audio.lastQuantizeDiv, GridDivision.quarter);
-      repository.setQuantize(enabled: true);
+      repository.setRecordTiming(
+        RecordTiming.of(
+          quantize: true,
+          division: repository.sessionTransport.quantizeDiv,
+        ),
+      );
       expect(repository.defaultRecordTiming, RecordTiming.quarter);
     });
   }
@@ -672,7 +681,12 @@ void main() {
     expect(repository.defaultRecordTiming, RecordTiming.immediately);
     expect(repository.sessionTransport.quantizeDiv, GridDivision.bar);
     expect(audio.lastQuantize, isFalse);
-    repository.setQuantize(enabled: true);
+    repository.setRecordTiming(
+      RecordTiming.of(
+        quantize: true,
+        division: repository.sessionTransport.quantizeDiv,
+      ),
+    );
     expect(repository.defaultRecordTiming, RecordTiming.bar);
   });
 

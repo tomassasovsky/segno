@@ -50,7 +50,8 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
     final surface = context.surface;
     final audio = context.watch<AudioSetupCubit>();
     final options = context.watch<RecordOptionsCubit>().state;
-    final quantize = context.watch<RecordTimingCubit>().state.quantize;
+    final timing = context.watch<RecordTimingCubit>().state;
+    final timingEnabled = timing.recordTimingReady && !timing.captureLocked;
     final cap = audio.state.maxLoopMinutes;
 
     return KeyedSubtree(
@@ -98,14 +99,22 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
                   ConsoleRow(
                     key: const Key('audio_quantize_row'),
                     title: l10n.quantizeRecording,
-                    subtitle: l10n.quantizeRecordingSubtitle,
+                    subtitle: !timing.recordTimingReady
+                        ? l10n.recordTimingUnavailable
+                        : timing.captureLocked
+                        ? l10n.recordTimingCaptureLocked
+                        : l10n.quantizeRecordingSubtitle,
                     trailing: ConsoleSwitch(
                       key: const Key('audio_quantize_switch'),
-                      value: quantize,
+                      value: timing.defaultTiming.quantize,
                       semanticLabel: l10n.quantizeRecording,
-                      onChanged: (on) => unawaited(
-                        context.read<RecordTimingCubit>().setEnabled(value: on),
-                      ),
+                      onChanged: timingEnabled
+                          ? (on) => unawaited(
+                              context.read<RecordTimingCubit>().setEnabled(
+                                value: on,
+                              ),
+                            )
+                          : null,
                     ),
                   ),
                   ConsoleRow(

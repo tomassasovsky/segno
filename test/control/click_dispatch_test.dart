@@ -117,6 +117,7 @@ class _Rig {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
+      recordTimingControl: FakeRecordTimingControl(),
       looper: looper,
       pedal: pedal,
       settings: settings,
@@ -510,8 +511,17 @@ void main() {
       }
       r.powerUp = true;
       engine.refuseClick = true;
-      unawaited(r.cubit.flushMidiConfiguration(retireControls: true));
+      Object? cleanupFailure;
+      unawaited(
+        r.cubit
+            .flushMidiConfiguration(retireControls: true)
+            .then(
+              (_) => fail('refused Held release must block retiring flush'),
+              onError: (Object error) => cleanupFailure = error,
+            ),
+      );
       r.pump();
+      expect(cleanupFailure, isA<ControlCleanupPending>());
       ClickVolumeOutcome? outcome;
       unawaited(r.tempo.flushClickVolume().then((v) => outcome = v));
       r.pump();

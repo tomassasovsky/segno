@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -41,9 +43,17 @@ void main() {
   late TracksCubit tracks;
   late TempoCubit tempo;
   late LooperRepository looper;
+  late RecordTiming confirmedTiming;
+  late GridDivision rememberedDivision;
 
-  setUpAll(() => registerFallbackValue(MonitorMode.off));
+  setUpAll(() {
+    registerFallbackValue(MonitorMode.off);
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(<int, RecordTiming>{});
+  });
   setUp(() {
+    confirmedTiming = RecordTiming.immediately;
+    rememberedDivision = GridDivision.off;
     tracks = TracksCubit(
       settings: SettingsRepository(store: FakeKeyValueStore()),
     );
@@ -77,12 +87,56 @@ void main() {
         mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(() => repository.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordTimingSettingsSettled).thenReturn(true);
+    when(() => repository.recordTimingRecoveryRequired).thenReturn(false);
+    when(() => repository.recordTimingCaptureLocked).thenReturn(false);
     when(
-      () => repository.setQuantize(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
+      () => repository.defaultRecordTiming,
+    ).thenAnswer((_) => confirmedTiming);
+    when(() => repository.trackRecordTimingOverrides).thenReturn(const {});
+    when(() => repository.recordTimingRestartIntent).thenAnswer(
+      (_) => (
+        defaultTiming: confirmedTiming,
+        rememberedDivision: rememberedDivision,
+        trackOverrides: const <int, RecordTiming>{},
+      ),
+    );
+    when(() => repository.sessionTransport).thenAnswer(
+      (_) => TransportState(
+        recordTiming: confirmedTiming,
+        quantizeDiv: rememberedDivision,
+      ),
+    );
+    when(repository.settleRecordTimingSettings).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
     when(
-      () => repository.setRecordTiming(any()),
-    ).thenReturn(EngineResult.ok);
+      () => repository.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      rememberedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setRecordTiming(
+        any(),
+        releasedTiming: any(named: 'releasedTiming'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.positionalArguments.single as RecordTiming;
+      if (confirmedTiming.quantize) {
+        rememberedDivision = confirmedTiming.division;
+      }
+      return EngineResult.ok;
+    });
     when(
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
@@ -127,7 +181,6 @@ void main() {
       repository: repository,
       settings: settings,
     );
-    quantize = RecordTimingCubit(repository: repository, settings: settings);
     recordOptions = RecordOptionsCubit(
       repository: repository,
       settings: settings,
@@ -144,27 +197,36 @@ void main() {
     );
   }
 
-  Future<void> pumpSection(WidgetTester tester) => tester.pumpApp(
-    MultiBlocProvider(
-      providers: [
-        BlocProvider<AudioSetupCubit>.value(value: cubit),
-        BlocProvider<MidiSetupCubit>.value(value: midi),
-        BlocProvider<PedalCubit>.value(value: pedal),
-        BlocProvider<MonitorCubit>.value(value: monitor),
-        BlocProvider<RecordTimingCubit>.value(value: quantize),
-        BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
-        BlocProvider<ControlCubit>.value(value: control),
-        BlocProvider<TracksCubit>.value(value: tracks),
-        BlocProvider<TempoCubit>.value(value: tempo),
-      ],
-      child: RepositoryProvider<LooperRepository>.value(
-        value: looper,
-        child: const Material(
-          child: SingleChildScrollView(child: AudioSettingsSection()),
+  Future<void> pumpSection(WidgetTester tester) async {
+    final timingSettings = SettingsRepository(store: FakeKeyValueStore());
+    quantize = RecordTimingCubit(
+      repository: looper,
+      settings: timingSettings,
+    );
+    addTearDown(() => unawaited(quantize.close()));
+    await quantize.load();
+    await tester.pumpApp(
+      MultiBlocProvider(
+        providers: [
+          BlocProvider<AudioSetupCubit>.value(value: cubit),
+          BlocProvider<MidiSetupCubit>.value(value: midi),
+          BlocProvider<PedalCubit>.value(value: pedal),
+          BlocProvider<MonitorCubit>.value(value: monitor),
+          BlocProvider<RecordTimingCubit>.value(value: quantize),
+          BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+          BlocProvider<ControlCubit>.value(value: control),
+          BlocProvider<TracksCubit>.value(value: tracks),
+          BlocProvider<TempoCubit>.value(value: tempo),
+        ],
+        child: RepositoryProvider<LooperRepository>.value(
+          value: looper,
+          child: const Material(
+            child: SingleChildScrollView(child: AudioSettingsSection()),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   const runningState = AudioSetupState(
     status: AudioSetupStatus.running,
@@ -346,14 +408,14 @@ void main() {
   ) async {
     seed(runningState);
     await pumpSection(tester);
-    expect(quantize.state.quantize, isFalse);
+    expect(quantize.state.defaultTiming.quantize, isFalse);
 
     final toggle = find.byKey(const Key('audioSettings_quantize_switch'));
     await tester.ensureVisible(toggle);
     await tester.tap(toggle);
     await tester.pumpAndSettle();
 
-    expect(quantize.state.quantize, isTrue);
+    expect(quantize.state.defaultTiming.quantize, isTrue);
   });
 
   testWidgets('the rec/dub and sound-activated toggles forward to the cubit', (

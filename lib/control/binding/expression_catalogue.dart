@@ -11,6 +11,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 
 /// Picker categories; Loop controls are separate from FX stage categories.
 enum ExpressionDestinationKind {
@@ -235,6 +236,16 @@ class ExpressionDestination extends Equatable {
     group: l10n.loopLengthLabel,
     control: l10n.loopLengthBars,
   ),
+  DefaultRecordTimingTarget() => (
+    destination: l10n.expressionDestinationLoopDefaults,
+    group: l10n.loopTimingLabel,
+    control: l10n.loopTimingLabel,
+  ),
+  TrackRecordTimingTarget(:final channel) => (
+    destination: l10n.trackName(trackNames, channel),
+    group: l10n.loopTimingLabel,
+    control: l10n.loopTimingLabel,
+  ),
   MasterGainTarget() => (
     destination: l10n.fxEditorMasterTitle,
     group: l10n.fxEditorMasterTitle,
@@ -259,7 +270,8 @@ String expressionRowName(
   ControlValueTarget target,
 ) {
   final name = expressionTargetName(l10n, trackNames, looper, target);
-  return name.group == name.destination
+  return name.group == name.destination ||
+          (target is RecordTimingValueTarget && name.group == name.control)
       ? name.control
       : '${name.group} · ${name.control}';
 }
@@ -284,6 +296,7 @@ List<ExpressionDestination> expressionDestinations(
   DecaySnapshot? decaySnapshot,
   OneShotSnapshot? oneShotSnapshot,
   RecordLengthSnapshot? recordLengthSnapshot,
+  RecordTimingSnapshot? recordTimingSnapshot,
 }) {
   final drafts = <String, _Draft>{};
   _Draft draftFor(
@@ -304,6 +317,7 @@ List<ExpressionDestination> expressionDestinations(
     decaySnapshot: decaySnapshot,
     oneShotSnapshot: oneShotSnapshot,
     recordLengthSnapshot: recordLengthSnapshot,
+    recordTimingSnapshot: recordTimingSnapshot,
   )) {
     final place = _placeOf(target);
     if (place == null) continue;
@@ -322,6 +336,10 @@ List<ExpressionDestination> expressionDestinations(
                 ? recordLengthSnapshot.captureLocked
                       ? l10n.recordLengthCaptureLocked
                       : l10n.recordLengthSharedInMulti
+                : target is RecordTimingValueTarget &&
+                      recordTimingSnapshot != null &&
+                      !recordTimingSnapshot.canEdit(target.address)
+                ? l10n.recordTimingCaptureLocked
                 : null,
           ),
         );
@@ -429,7 +447,8 @@ String _addressLabel(
   TrackPanTarget(:final channel) => _trackPlace(channel),
   TrackDecayTarget(:final channel) ||
   TrackOneShotTarget(:final channel) ||
-  TrackRecordLengthTarget(:final channel) => _trackPlace(channel),
+  TrackRecordLengthTarget(:final channel) ||
+  TrackRecordTimingTarget(:final channel) => _trackPlace(channel),
   LaneVolumeTarget(:final channel, :final lane) => _placeOfAddress(
     FxAddress(stage: FxStage.loop, index: channel, lane: lane),
   ),
@@ -447,7 +466,8 @@ String _addressLabel(
   ),
   DefaultDecayTarget() ||
   DefaultOneShotTarget() ||
-  DefaultRecordLengthTarget() => (
+  DefaultRecordLengthTarget() ||
+  DefaultRecordTimingTarget() => (
     id: 'loop:defaults',
     kind: ExpressionDestinationKind.loopControls,
     order: _loopControlsOrder,

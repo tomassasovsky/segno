@@ -10,6 +10,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session_mapping.dart';
 // The chains a performance arm records cross the boundary as ENGINE models
 // (the manifest embeds them as canonical JSON), so the assertions on them name
@@ -122,6 +123,12 @@ void main() {
         ),
         settings: settingsFromLooper(
           looper,
+          recordTiming: RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
           recordLength: RecordLengthSnapshot(
             defaultBars: looper.sessionTransport.defaultLengthPresetBars,
             trackOverrides: looper.trackLengthPresetOverrides,
@@ -194,6 +201,12 @@ void main() {
       expect(
         settingsFromLooper(
           looper,
+          recordTiming: RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
           recordLength: RecordLengthSnapshot(
             defaultBars: looper.sessionTransport.defaultLengthPresetBars,
             trackOverrides: looper.trackLengthPresetOverrides,
@@ -249,6 +262,12 @@ void main() {
         expect(engine.snapshot().tempoBpm, 0);
         final settings = settingsFromLooper(
           looper,
+          recordTiming: RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
           recordLength: RecordLengthSnapshot(
             defaultBars: looper.sessionTransport.defaultLengthPresetBars,
             trackOverrides: looper.trackLengthPresetOverrides,
@@ -302,6 +321,12 @@ void main() {
           ..setAutoRecord(enabled: true);
         final inherited = settingsFromLooper(
           looper,
+          recordTiming: RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
           recordLength: RecordLengthSnapshot(
             defaultBars: looper.sessionTransport.defaultLengthPresetBars,
             trackOverrides: looper.trackLengthPresetOverrides,

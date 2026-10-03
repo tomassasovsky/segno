@@ -303328,6 +303328,122 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "dz7Wd",
+      "x": 63728,
+      "y": 3744,
+      "name": "Native implementation / Shared Record timing / M3.15",
+      "width": 4000,
+      "height": 1720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "Yz1AM",
+          "name": "Shared Record timing reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Record timing · Immediately / Musical grid · native references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "q7J7N",
+          "name": "c/ Confirmed timing, inheritance, capture and recovery",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Defaults and fixed Tracks 1–8 share seven choices: Immediately, Loop start, Bar, 1/2, 1/4, 1/8 and 1/16 note. Custom Immediately is explicit; Use default restores inheritance. All loop modes allow timing choices while not capturing. Held choices stay live; Save and restart retain Released values and the remembered division. Waiting starts are retimed or cancelled only for the edited scope. Uncertain storage or native confirmation stays unavailable until Retry; capture is never stopped to clean up a release. Native renders at 1920 × 1080; physical timing still needs device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "MMVp3",
+          "name": "Shared Record timing reference row",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "NvTOL",
+              "name": "MIDI · Record timing endpoints reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "W2aI7K",
+                  "name": "MIDI · Record timing endpoints caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Immediately to 1/16 note",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "Wi1nm",
+                  "name": "MIDI · Record timing endpoints native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_record_timing_range.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "QqUM7",
+              "name": "External button · Held and Released timing reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "iki0F",
+                  "name": "External button · Held and Released timing caption",
+                  "fill": "#C7CDD6",
+                  "content": "External button · Held 1/4 note, Released Immediately",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "fXp9e",
+                  "name": "External button · Held and Released timing native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_record_timing_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {

@@ -107,6 +107,7 @@ void main() {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
+      recordTimingControl: FakeRecordTimingControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,

@@ -487,35 +487,32 @@ class FakeAudioEngine implements AudioEngine {
 
   bool? lastQuantize;
 
-  @override
-  EngineResult setQuantize({required bool enabled}) {
-    lastQuantize = enabled;
-    calls.add('setQuantize');
-    return EngineResult.ok;
-  }
-
   final Map<int, bool?> trackQuantize = {};
 
-  @override
-  EngineResult setTrackQuantize({
-    required int channel,
-    required bool? enabled,
-  }) {
-    trackQuantize[channel] = enabled;
-    calls.add('setTrackQuantize');
-    return EngineResult.ok;
-  }
-
-  /// Per-track division overrides passed to [setTrackQuantizeDiv].
+  /// Per-track division overrides passed to [setRecordTimingSettings].
   final Map<int, GridDivision?> trackQuantizeDiv = {};
 
+  bool publishTimingCommands = true;
+  int recordTimingRevision = 0;
+  int recordTimingResult = 0;
   @override
-  EngineResult setTrackQuantizeDiv({
-    required int channel,
-    required GridDivision? div,
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
   }) {
-    trackQuantizeDiv[channel] = div;
-    calls.add('setTrackQuantizeDiv');
+    calls.add('setRecordTimingSettings');
+    recordTimingRevision = (recordTimingRevision + 2) & 0xffffffff;
+    recordTimingResult = publishTimingCommands ? 0 : -1;
+    if (publishTimingCommands) {
+      lastQuantize = defaultTiming.quantize;
+      lastQuantizeDiv = rememberedDivision;
+      for (var c = 0; c < 8; c++) {
+        trackQuantize[c] = trackOverrides[c]?.quantize;
+        trackQuantizeDiv[c] = trackOverrides[c]?.division;
+      }
+    }
     return EngineResult.ok;
   }
 
@@ -621,13 +618,6 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult setSyncTempo({required bool on}) {
     lastSyncTempo = on;
     calls.add('setSyncTempo');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setQuantizeDiv(GridDivision div) {
-    lastQuantizeDiv = div;
-    calls.add('setQuantizeDiv');
     return EngineResult.ok;
   }
 
@@ -1824,7 +1814,7 @@ class _LengthSnapshot extends EngineSnapshot {
         tsNum: source.tsNum,
         tsDen: source.tsDen,
         syncTempo: source.syncTempo,
-        quantizeDiv: source.quantizeDiv,
+        quantizeDiv: engine.lastQuantizeDiv ?? source.quantizeDiv,
         loopBars: source.loopBars,
         currentBeat: source.currentBeat,
         clickMode: source.clickMode,
@@ -1835,7 +1825,9 @@ class _LengthSnapshot extends EngineSnapshot {
         countInBeatsLeft: source.countInBeatsLeft,
         looperMode: mode ?? source.looperMode,
         primaryTrack: source.primaryTrack,
-        quantize: source.quantize,
+        quantize: engine.lastQuantize ?? source.quantize,
+        recordTimingRevision: engine.recordTimingRevision,
+        recordTimingResult: engine.recordTimingResult,
         autoRecord: source.autoRecord,
         overdubFeedback: source.overdubFeedback,
         tracks: [
@@ -1881,8 +1873,12 @@ class _LengthTrack extends TrackSnapshot {
         restoreState: source.restoreState,
         positionFrames: source.positionFrames,
         pendingTrigger: source.pendingTrigger,
-        quantizeOverride: source.quantizeOverride,
-        quantizeDivOverride: source.quantizeDivOverride,
+        quantizeOverride: engine.lastQuantize == null
+            ? source.quantizeOverride
+            : engine.trackQuantize[channel],
+        quantizeDivOverride: engine.lastQuantize == null
+            ? source.quantizeDivOverride
+            : engine.trackQuantizeDiv[channel],
         overdubFeedbackOverride: source.overdubFeedbackOverride,
         lanes: [
           for (var lane = 0; lane < source.lanes.length; lane++)

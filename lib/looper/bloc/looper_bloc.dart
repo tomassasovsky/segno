@@ -9,6 +9,7 @@ import 'package:segno/common/write_debouncer.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
@@ -28,6 +29,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     required DecayControl decayControl,
     required OneShotControl oneShotControl,
     required RecordLengthControl recordLengthControl,
+    required RecordTimingControl recordTimingControl,
     SettingsRepository? settings,
     Duration fxPersistDebounce = const Duration(milliseconds: 300),
     bool Function() takeLocked = _neverLocked,
@@ -37,6 +39,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
        _decayControl = decayControl,
        _oneShotControl = oneShotControl,
        _recordLengthControl = recordLengthControl,
+       _recordTimingControl = recordTimingControl,
        _settings = settings,
        _takeLocked = takeLocked,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
@@ -740,15 +743,17 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         index: event.index,
       );
     });
-    on<LooperTrackRecordTimingChanged>((event, _) {
-      final result = _repository.setTrackRecordTiming(
+    on<LooperTrackRecordTimingChanged>((event, _) async {
+      final write = _recordTimingControl.setTrackTiming(
         channel: event.channel,
         timing: event.timing,
       );
-      if (!result.isOk) return;
-      unawaited(
-        _settings?.saveTrackRecordTiming(event.channel, event.timing?.code),
-      );
+      _recordTimingWrites.add(write);
+      try {
+        await write;
+      } finally {
+        _recordTimingWrites.remove(write);
+      }
     });
     on<LooperTrackOverdubDecayChanged>((event, _) async {
       final write = _decayControl.setTrackOverdubDecay(
@@ -885,6 +890,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         await Future.wait(_decayWrites.toList());
         await Future.wait(_oneShotWrites.toList());
         await Future.wait(_recordLengthWrites.toList());
+        await Future.wait(_recordTimingWrites.toList());
         _fxPersist.flush();
         await _fxPersistence.flush();
         event.receipt?.complete();
@@ -922,6 +928,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   final DecayControl _decayControl;
   final OneShotControl _oneShotControl;
   final RecordLengthControl _recordLengthControl;
+  final RecordTimingControl _recordTimingControl;
+  final _recordTimingWrites = <Future<RecordTimingOutcome>>{};
   final _recordLengthWrites = <Future<RecordLengthOutcome>>{};
   final _oneShotWrites = <Future<OneShotOutcome>>{};
   final _decayWrites = <Future<DecayOutcome>>{};
