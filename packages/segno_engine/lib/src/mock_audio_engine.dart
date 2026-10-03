@@ -99,6 +99,7 @@ class MockAudioEngine implements AudioEngine {
   RecordTiming _recordTiming = RecordTiming.immediately;
   int _recordTimingRevision = 0;
   ClickMode _clickMode = ClickMode.off;
+  int _clickModeRevision = 0;
   int _clickMask = 0;
   double _clickVolume = 1;
   int _countInBars = 0;
@@ -225,6 +226,7 @@ class MockAudioEngine implements AudioEngine {
     if (_running) return EngineResult.alreadyRunning;
     _activeConfig = config;
     _running = true;
+    _clickModeRevision = 0;
     _framesProcessed = 0;
     _latencyState = LatencyState.idle;
     _measuredLatencyMs = -1;
@@ -325,6 +327,7 @@ class MockAudioEngine implements AudioEngine {
       // grid-off/idle defaults (0/false): the mock runs no real transport, so
       // there is no live loop or count-in to derive them from.
       clickMode: _clickMode,
+      clickModeRevision: _clickModeRevision,
       clickMask: _clickMask,
       clickVolume: _clickVolume,
       countInBars: _countInBars,
@@ -970,7 +973,10 @@ class MockAudioEngine implements AudioEngine {
   EngineResult setClickMode(ClickMode mode) {
     final result = _requireRunning();
     if (!result.isOk) return result;
+    // The mock has no capture state or callback; its receipt completes here.
+    // Actual capture refusal and deferred publication use PumpedNativeEngine.
     _clickMode = mode;
+    _clickModeRevision = (_clickModeRevision + 1) & 0xffffffff;
     return EngineResult.ok;
   }
 

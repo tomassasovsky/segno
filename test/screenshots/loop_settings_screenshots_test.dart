@@ -94,6 +94,8 @@ void main() {
   late _MockLooperRepository repository;
   late SettingsRepository settings;
   late int confirmedLength;
+  late ClickMode confirmedClickMode;
+  late int confirmedCountIn;
 
   setUp(() {
     bloc = _MockLooperBloc();
@@ -101,13 +103,43 @@ void main() {
     when(() => repository.lengthSettingsFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
-    settings = SettingsRepository(store: FakeKeyValueStore());
     confirmedLength = 0;
+    confirmedClickMode = ClickMode.off;
+    confirmedCountIn = 0;
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.sessionTransport).thenAnswer(
-      (_) => TransportState(defaultLengthPresetBars: confirmedLength),
+      (_) => TransportState(
+        defaultLengthPresetBars: confirmedLength,
+        clickMode: confirmedClickMode,
+        countInBars: confirmedCountIn,
+      ),
     );
+    when(() => repository.clickModeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.clickModeSettled).thenReturn(true);
+    when(() => repository.clickModeRecoveryRequired).thenReturn(false);
+    when(() => repository.clickModeCaptureLocked).thenReturn(false);
+    when(() => repository.clickModeRestartIntent).thenAnswer(
+      (_) => confirmedClickMode,
+    );
+    when(() => repository.clickVolumeSettled).thenReturn(true);
+    when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
+    when(() => repository.settleClickMode()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(() => repository.setClickMode(any())).thenAnswer((call) {
+      confirmedClickMode = call.positionalArguments.single as ClickMode;
+      return EngineResult.ok;
+    });
+    when(() => repository.setCountIn(any())).thenAnswer((call) {
+      confirmedCountIn = call.positionalArguments.single as int;
+      return EngineResult.ok;
+    });
     when(
       () => repository.settleLengthSettings(),
     ).thenAnswer((_) async => EngineResult.ok);
@@ -131,16 +163,11 @@ void main() {
         () => repository.setSyncTempo(on: any(named: 'on')),
       ).thenReturn(EngineResult.ok),
       () => when(
-        () => repository.setClickMode(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
         () => repository.setClickOutput(any()),
       ).thenReturn(EngineResult.ok),
       () => when(
         () => repository.setClickVolume(any()),
       ).thenReturn(EngineResult.ok),
-      () =>
-          when(() => repository.setCountIn(any())).thenReturn(EngineResult.ok),
       () => when(
         () => repository.setRecDub(enabled: any(named: 'enabled')),
       ).thenReturn(EngineResult.ok),
@@ -184,6 +211,8 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     when(() => bloc.state).thenReturn(state);
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
+    // The Click checkpoint and its initial writer must share testWidgets' zone.
+    settings = SettingsRepository(store: FakeKeyValueStore());
     final tempo = TempoCubit(repository: repository, settings: settings);
     final options = RecordOptionsCubit(
       repository: repository,
@@ -215,6 +244,8 @@ void main() {
     }
     await tempo.setTempo(84);
     await tempo.setCountInBars(1);
+    await tempo.loadClickMode();
+    expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
     await prepare?.call(tempo, options);
     await tester.pumpWidget(
       MaterialApp(
@@ -299,6 +330,8 @@ void main() {
 
   testWidgets('Tempo & click, and the time signature grid', (tester) async {
     await pump(tester, page: LoopSettingsPageId.tempo);
+    expect(find.byKey(const Key('loop_click_recFirst')), findsOneWidget);
+    expect(confirmedClickMode, ClickMode.recFirst);
     await expectLater(
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/loop_settings_tempo.png'),

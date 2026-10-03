@@ -125,6 +125,7 @@ class _Rig {
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: looper),
       clickVolumeControl: tempo,
+      clickModeControl: tempo,
       takeLocked: () => powerUp,
       controller: controller,
       midiDevices: midi,

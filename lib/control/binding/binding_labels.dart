@@ -96,6 +96,8 @@ String valueTargetLabel(
   OutputBalanceTarget(:final bus) =>
     '${l10n.pedalAssignStageOutput(bus + 1)} · ${l10n.routingBalance}',
   ClickVolumeTarget() => l10n.clickVolumeLabel,
+  ClickModeValueTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopTempoHearClick}',
   DefaultDecayTarget() =>
     '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopDecayLabel}',
   TrackDecayTarget(:final channel) =>

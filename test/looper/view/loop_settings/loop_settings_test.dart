@@ -60,6 +60,8 @@ void main() {
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
   late Map<int, RecordTiming> confirmedTrackTiming;
+  late ClickMode confirmedClickMode;
+  late bool clickModeCaptureLocked;
 
   setUpAll(() {
     registerFallbackValue(const LooperRecordPressed(0));
@@ -90,6 +92,8 @@ void main() {
     confirmedTiming = RecordTiming.immediately;
     rememberedDivision = GridDivision.off;
     confirmedTrackTiming = {};
+    confirmedClickMode = ClickMode.off;
+    clickModeCaptureLocked = false;
     when(() => repository.sessionRevision).thenAnswer((_) => sessionRevision);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
@@ -178,6 +182,33 @@ void main() {
     });
     when(() => repository.clickVolumeSettled).thenReturn(true);
     when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
+    when(() => repository.clickModeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.clickModeSettled).thenReturn(true);
+    when(() => repository.clickModeRecoveryRequired).thenReturn(false);
+    when(() => repository.clickModeCaptureLocked).thenAnswer(
+      (_) => clickModeCaptureLocked,
+    );
+    when(() => repository.clickModeRestartIntent).thenAnswer(
+      (_) => confirmedClickMode,
+    );
+    when(() => repository.settleClickMode()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(() => repository.setClickMode(any())).thenAnswer((call) {
+      confirmedClickMode = call.positionalArguments.single as ClickMode;
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setClickMode(
+        any(),
+        releasedMode: any(named: 'releasedMode'),
+      ),
+    ).thenAnswer((call) {
+      confirmedClickMode = call.positionalArguments.single as ClickMode;
+      return EngineResult.ok;
+    });
     when(() => repository.recordStartRevision).thenReturn(0);
     when(() => repository.recordTimingFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
@@ -275,6 +306,7 @@ void main() {
         looperMode: confirmedMode,
         recordTiming: confirmedTiming,
         quantizeDiv: rememberedDivision,
+        clickMode: confirmedClickMode,
       ),
     );
     when(
@@ -288,6 +320,11 @@ void main() {
     when(() => repository.looperState).thenAnswer(
       (_) => states.stream.map((state) {
         currentRig = state;
+        clickModeCaptureLocked = state.tracks.any(
+          (track) =>
+              track.state == TrackState.recording ||
+              track.state == TrackState.overdubbing,
+        );
         return state;
       }),
     );
@@ -331,9 +368,6 @@ void main() {
       ).thenReturn(EngineResult.ok),
       () => when(
         () => repository.setSyncTempo(on: any(named: 'on')),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setClickMode(any()),
       ).thenReturn(EngineResult.ok),
       () => when(
         () => repository.setClickOutput(any()),
@@ -410,6 +444,12 @@ void main() {
           track.channel: track.oneShotOverride!,
     };
     confirmedTiming = state.transport.recordTiming;
+    confirmedClickMode = state.transport.clickMode;
+    clickModeCaptureLocked = state.tracks.any(
+      (track) =>
+          track.state == TrackState.recording ||
+          track.state == TrackState.overdubbing,
+    );
     rememberedDivision = state.transport.quantizeDiv;
     confirmedTrackTiming = {
       for (final track in state.tracks)
@@ -432,6 +472,7 @@ void main() {
     LooperState state = _rig,
     LoopSettingsPageId initial = LoopSettingsPageId.hub,
     bool fromTray = false,
+    ClickMode? savedClickMode,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -443,6 +484,9 @@ void main() {
     // its zone. Rebind that writer inside testWidgets while retaining values
     // seeded before pump (for example the saved count-in choice).
     settings = SettingsRepository(store: store);
+    if (savedClickMode != null) {
+      await settings.restoreClickModeCheckpoint(savedClickMode.code);
+    }
     await settings.saveLooperMode(confirmedMode.code);
     await settings.saveDefaultLengthPreset(confirmedLength);
     for (final entry in confirmedTrackLengths.entries) {
@@ -462,6 +506,7 @@ void main() {
       await settings.saveTrackRecordTiming(entry.key, entry.value.code);
     }
     tempo = TempoCubit(repository: repository, settings: settings);
+    await tempo.loadClickMode();
     options = RecordOptionsCubit(repository: repository, settings: settings);
     playback = PlaybackOptionsCubit(repository: repository, settings: settings);
     await playback.load();
@@ -829,6 +874,7 @@ void main() {
     ) async {
       await pump(tester, initial: LoopSettingsPageId.tempo);
       expect(find.byKey(const Key('loop_tempo_readout')), findsOneWidget);
+      expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
       await tester.tap(find.byKey(const Key('loop_click_playRec')));
       await tester.pumpAndSettle();
       expect(tempo.state.clickMode, ClickMode.playRec);
@@ -837,6 +883,111 @@ void main() {
       expect(tempo.state.countInBars, 2);
       await tester.tap(find.byKey(const Key('loop_tempo_tap')));
       verify(repository.tapTempo).called(1);
+    });
+
+    testWidgets('explicit Off is ready; capture retains and locks the choice', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.tempo,
+        savedClickMode: ClickMode.off,
+      );
+      expect(tempo.clickModeSnapshot?.mode, ClickMode.off);
+      expect(
+        tester
+            .widget<LoopChoiceButton>(
+              find.byKey(const Key('loop_click_off')),
+            )
+            .selected,
+        isTrue,
+      );
+      states.add(
+        const LooperState(
+          tracks: [Track(state: TrackState.recording)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tempo.clickModeSnapshot?.captureLocked, isTrue);
+      expect(
+        tester
+            .widget<LoopChoiceButton>(
+              find.byKey(const Key('loop_click_off')),
+            )
+            .selected,
+        isTrue,
+      );
+      expect(
+        tester
+            .widget<LoopChoiceButton>(
+              find.byKey(const Key('loop_click_playRec')),
+            )
+            .enabled,
+        isFalse,
+      );
+      expect(
+        find.byKey(const Key('loop_click_disabled_reason')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('unconfirmed owner displays no provisional First selection', (
+      tester,
+    ) async {
+      when(() => repository.setClickMode(any())).thenReturn(
+        EngineResult.notReady,
+      );
+      await pump(tester, initial: LoopSettingsPageId.tempo);
+      expect(tempo.clickModeSnapshot, isNull);
+      expect(
+        tester
+            .widget<LoopChoiceButton>(
+              find.byKey(const Key('loop_click_recFirst')),
+            )
+            .selected,
+        isFalse,
+      );
+      expect(
+        tester
+            .widget<LoopChoiceButton>(
+              find.byKey(const Key('loop_click_recFirst')),
+            )
+            .enabled,
+        isFalse,
+      );
+      expect(find.text('Hear click is unavailable.'), findsOneWidget);
+    });
+
+    testWidgets('recovery dims the last confirmed Hear click choice', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.tempo,
+        savedClickMode: ClickMode.recFirst,
+      );
+      expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
+      when(() => repository.clickModeRecoveryRequired).thenReturn(true);
+      states.add(_rig);
+      await tester.pumpAndSettle();
+      expect(tempo.state.clickModeReady, isFalse);
+      expect(tempo.state.clickMode, ClickMode.recFirst);
+      final first = tester.widget<LoopChoiceButton>(
+        find.byKey(const Key('loop_click_recFirst')),
+      );
+      expect(first.selected, isTrue);
+      expect(first.enabled, isFalse);
+      expect(find.text('Hear click is unavailable.'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('loop_settings_back')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_hub_tempo')));
+      await tester.pumpAndSettle();
+      final reopened = tester.widget<LoopChoiceButton>(
+        find.byKey(const Key('loop_click_recFirst')),
+      );
+      expect(reopened.selected, isTrue);
+      expect(reopened.enabled, isFalse);
     });
 
     testWidgets('the signature button opens the grid and a pick returns', (

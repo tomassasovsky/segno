@@ -1623,13 +1623,13 @@ void main() {
   });
 
   group('click mode', () {
-    test('defaults to 0 (off) when unset', () async {
-      expect(await repository.loadClickMode(), 0);
+    test('preserves absence for the owner to apply First recording', () async {
+      expect(await repository.readClickModeCheckpoint(), isNull);
     });
 
     test('round-trips a saved enum code', () async {
-      await repository.saveClickMode(2);
-      expect(await repository.loadClickMode(), 2);
+      await repository.restoreClickModeCheckpoint(2);
+      expect(await repository.readClickModeCheckpoint(), 2);
     });
   });
 

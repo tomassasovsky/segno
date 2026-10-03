@@ -32,6 +32,7 @@ import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -394,6 +395,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
     final clickVolume = context.watch<TempoCubit>().clickVolume;
+    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
     final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
     final oneShotSnapshot = context
         .watch<PlaybackOptionsCubit>()
@@ -410,6 +412,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
           looper,
           key,
           clickVolume: clickVolume,
+          clickModeSnapshot: clickModeSnapshot,
           decaySnapshot: decaySnapshot,
           oneShotSnapshot: oneShotSnapshot,
           recordLengthSnapshot: recordLengthSnapshot,
@@ -642,6 +645,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                         context.read<LooperRepository>(),
                         key,
                         clickVolume: context.watch<TempoCubit>().clickVolume,
+                        clickModeSnapshot: context
+                            .watch<TempoCubit>()
+                            .clickModeSnapshot,
                         decaySnapshot: context
                             .watch<PlaybackOptionsCubit>()
                             .decaySnapshot,
@@ -657,7 +663,13 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                       ),
                     },
                     disabledReason: control is MidiParameterControl
-                        ? recordLengthDisabledReason(
+                        ? clickModeDisabledReason(
+                                l10n,
+                                ControlValueTarget.tryParse(control.key) ??
+                                    const MasterGainTarget(),
+                                context.watch<TempoCubit>().clickModeSnapshot,
+                              ) ??
+                              recordLengthDisabledReason(
                                 l10n,
                                 ControlValueTarget.tryParse(control.key) ??
                                     const MasterGainTarget(),
@@ -698,6 +710,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                 context.read<LooperRepository>(),
                 withActivations: true,
                 clickVolume: context.watch<TempoCubit>().clickVolume,
+                clickModeSnapshot: context
+                    .watch<TempoCubit>()
+                    .clickModeSnapshot,
                 decaySnapshot: context
                     .watch<PlaybackOptionsCubit>()
                     .decaySnapshot,
@@ -976,6 +991,10 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         context.read<TempoCubit>().clickVolume == null) {
       return;
     }
+    if (target is ClickModeValueTarget &&
+        context.read<TempoCubit>().clickModeSnapshot?.canEdit != true) {
+      return;
+    }
     if (target is DecayValueTarget &&
         context.read<PlaybackOptionsCubit>().decaySnapshot == null) {
       return;
@@ -1012,6 +1031,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
           context.read<LooperRepository>(),
           replacing,
           clickVolume: context.read<TempoCubit>().clickVolume,
+          clickModeSnapshot: context.read<TempoCubit>().clickModeSnapshot,
           decaySnapshot: context.read<PlaybackOptionsCubit>().decaySnapshot,
           oneShotSnapshot: context.read<PlaybackOptionsCubit>().oneShotSnapshot,
           recordLengthSnapshot: context
@@ -1195,6 +1215,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     LooperRepository looper,
     String key, {
     double? clickVolume,
+    ClickModeSnapshot? clickModeSnapshot,
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordLengthSnapshot? recordLengthSnapshot,
@@ -1205,6 +1226,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
       return looper.valueTargetResolves(
         target,
         clickVolume: clickVolume,
+        clickModeSnapshot: clickModeSnapshot,
         decaySnapshot: decaySnapshot,
         oneShotSnapshot: oneShotSnapshot,
         recordLengthSnapshot: recordLengthSnapshot,

@@ -170,6 +170,8 @@ int le_record_timing_valid(const le_record_timing_settings* settings);
 /* Deterministic test instrumentation: 1 odd, 2 partial write, 3 copied read,
  * 4 image FX preparation. No hook exists in production builds. */
 extern void (*le_test_record_timing_hook)(le_engine*, int);
+/* 1: Click mode/result applied, before command publication. */
+extern void (*le_test_click_mode_hook)(le_engine*, int);
 #endif
 
 

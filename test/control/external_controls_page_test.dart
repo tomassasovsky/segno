@@ -24,6 +24,7 @@ import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -164,6 +165,7 @@ void main() {
     registerFallbackValue(LooperMode.multi);
     registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(GridDivision.off);
+    registerFallbackValue(ClickMode.off);
     registerFallbackValue(<int, RecordTiming>{});
   });
 
@@ -175,6 +177,7 @@ void main() {
     WidgetTester tester, {
     ExternalJackSetup? jack,
     double? clickVolume = 1,
+    ClickModeSnapshot? clickModeSnapshot,
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
   }) async {
@@ -199,6 +202,7 @@ void main() {
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
     tempo = MockClickTempoCubit(clickVolume: clickVolume);
+    when(() => tempo.clickModeSnapshot).thenReturn(clickModeSnapshot);
     final playback = MockDecayPlaybackCubit(
       snapshot: decaySnapshot,
       oneShot: oneShotSnapshot,
@@ -213,6 +217,7 @@ void main() {
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       clickVolumeControl: tempo,
+      clickModeControl: tempo,
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,
@@ -467,6 +472,80 @@ void main() {
     expect(parameter.target, const DefaultDecayTarget());
     expect((parameter.active, parameter.inactive), (0.4, 0.4));
     verifyNever(() => looper.setOverdubDecay(any()));
+  });
+
+  testWidgets('Hear click button starts at accepted choice on both sides', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      clickModeSnapshot: const ClickModeSnapshot(
+        mode: ClickMode.recFirst,
+        captureLocked: false,
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    await tap(tester, 'external_add_control');
+    await tap(tester, 'expression_kind_loopControls');
+    await tap(tester, 'expression_destination_loop:defaults');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const ClickModeValueTarget())}',
+    );
+    expect(
+      find.byKey(const Key('external_value_active_recFirst')),
+      findsOneWidget,
+    );
+    await tap(tester, 'external_value_active_playRec');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tap(tester, 'external_save');
+    var parameter = saved().parameters.single;
+    expect(parameter.target, const ClickModeValueTarget());
+    expect((parameter.active, parameter.inactive), (1 / 3, 1 / 3));
+    await tap(tester, 'external_value_active_playRec');
+    await tap(tester, 'external_save');
+    parameter = saved().parameters.single;
+    expect((parameter.active, parameter.inactive), (1.0, 1 / 3));
+    verifyNever(() => tempo.setClickMode(any()));
+    verifyNever(() => looper.setClickMode(any()));
+  });
+
+  testWidgets('capture retains Hear click row but disables both endpoints', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      clickModeSnapshot: const ClickModeSnapshot(
+        mode: ClickMode.off,
+        captureLocked: true,
+      ),
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: const ClickModeValueTarget(),
+                active: 0.8,
+                inactive: 0.2,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    expect(saved().parameters.single.target, const ClickModeValueTarget());
+    expect(find.text('Finish recording to change Hear click.'), findsWidgets);
+    expect(
+      tester
+          .widget<LoopChoiceButton>(
+            find.byKey(const Key('external_value_active_playRec')),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(find.byKey(const Key('external_remove_control')), findsOneWidget);
   });
 
   for (final once in [false, true]) {

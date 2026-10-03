@@ -117,7 +117,7 @@ void main() {
   });
 
   SessionCubit build() => SessionCubit(
-    runClickVolumeExclusive: _readyClick,
+    runClickExclusive: _readyClick,
     runPlaybackExclusive: _readyClick,
     runRecordExclusive: <T>(operation) => operation(),
     runRecordTimingExclusive: <T>(operation) => operation(),
@@ -142,6 +142,7 @@ void main() {
       trackOverrides: looper.trackOneShotOverrides,
     ),
     currentDurableClickVolume: () => 1,
+    currentDurableClickMode: () => ClickMode.off,
     fxPersistence: FxChainPersistence(looper: looper),
     repository: repository,
     looper: looper,
@@ -1142,7 +1143,7 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
-          runClickVolumeExclusive: _readyClick,
+          runClickExclusive: _readyClick,
           runPlaybackExclusive: _readyClick,
           runRecordExclusive: <T>(operation) => operation(),
           runRecordTimingExclusive: <T>(operation) => operation(),
@@ -1167,6 +1168,7 @@ void main() {
             trackOverrides: looper.trackOneShotOverrides,
           ),
           currentDurableClickVolume: () => 1,
+          currentDurableClickMode: () => ClickMode.off,
           fxPersistence: FxChainPersistence(looper: looper),
           repository: repository,
           looper: looper,
@@ -1215,7 +1217,7 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
-          runClickVolumeExclusive: _readyClick,
+          runClickExclusive: _readyClick,
           runPlaybackExclusive: _readyClick,
           runRecordExclusive: <T>(operation) => operation(),
           runRecordTimingExclusive: <T>(operation) => operation(),
@@ -1240,6 +1242,7 @@ void main() {
             trackOverrides: looper.trackOneShotOverrides,
           ),
           currentDurableClickVolume: () => 1,
+          currentDurableClickMode: () => ClickMode.off,
           fxPersistence: FxChainPersistence(looper: looper),
           repository: repository,
           looper: looper,
@@ -1274,7 +1277,7 @@ void main() {
       ).thenAnswer((_) async => _session);
 
       final cubit = SessionCubit(
-        runClickVolumeExclusive: _readyClick,
+        runClickExclusive: _readyClick,
         runPlaybackExclusive: _readyClick,
         runRecordExclusive: <T>(operation) => operation(),
         runRecordTimingExclusive: <T>(operation) => operation(),
@@ -1299,6 +1302,7 @@ void main() {
           trackOverrides: looper.trackOneShotOverrides,
         ),
         currentDurableClickVolume: () => 1,
+        currentDurableClickMode: () => ClickMode.off,
         fxPersistence: FxChainPersistence(looper: looper),
         repository: repository,
         looper: looper,

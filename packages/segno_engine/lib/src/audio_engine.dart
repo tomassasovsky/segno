@@ -468,7 +468,10 @@ abstract interface class TempoControl {
 
   /// Sets the click's audibility mode: WHEN the click voice sounds. WHERE it
   /// sounds is [setClickOutput] (default no outputs). Default
-  /// [ClickMode.off].
+  /// [ClickMode.off]. Actual recording/overdubbing refuses; arms remain editable.
+  /// Enqueue success is not acceptance: acquire `commandsSettled`, then read
+  /// the exact snapshot mode/revision/result synchronously before posting
+  /// another mode request. Same-value requests also produce a new receipt.
   EngineResult setClickMode(ClickMode mode);
 
   /// Routes the click to the output channels set in [mask] (a bitmask; bit c

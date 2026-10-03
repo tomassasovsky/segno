@@ -28,6 +28,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
@@ -187,6 +188,8 @@ class _AppState extends State<App> {
   ControlCubit? _control;
   late final TempoCubit _tempo;
   StreamSubscription<ClickVolumeOutcome>? _clickFailureSubscription;
+  StreamSubscription<ClickModeOutcome>? _clickModeFailureSubscription;
+  ClickModeOutcome? _clickModeRecoveryNotice;
   late final PlaybackOptionsCubit _playback;
   late final RecordOptionsCubit _record;
   late final RecordTimingCubit _timing;
@@ -209,6 +212,9 @@ class _AppState extends State<App> {
     );
     _clickFailureSubscription = _tempo.clickVolumeFailures.listen(
       _showClickFailure,
+    );
+    _clickModeFailureSubscription = _tempo.clickModeFailures.listen(
+      _showClickModeFailure,
     );
     unawaited(_tempo.load());
     _playback = PlaybackOptionsCubit(
@@ -249,6 +255,7 @@ class _AppState extends State<App> {
     unawaited(_powerKeySource?.close());
     unawaited(_mixFailureSubscription?.cancel());
     unawaited(_clickFailureSubscription?.cancel());
+    unawaited(_clickModeFailureSubscription?.cancel());
     unawaited(_decayFailureSubscription?.cancel());
     unawaited(_oneShotFailureSubscription?.cancel());
     unawaited(_recordLengthFailureSubscription?.cancel());
@@ -298,6 +305,50 @@ class _AppState extends State<App> {
                 onPressed: () async {
                   if ((await _tempo.recoverClickVolume()).isOk) {
                     dismissAppToast(AppToastId.clickSettings);
+                  }
+                },
+                child: Builder(
+                  builder: (context) => Text(context.l10n.powerOffRetry),
+                ),
+              ),
+            ]
+          : const [],
+    );
+  }
+
+  void _showClickModeFailure(ClickModeOutcome outcome) {
+    if (!mounted || outcome.status == ClickModeStatus.superseded) return;
+    final recovery = outcome.status == ClickModeStatus.recoveryRequired;
+    AppLog.error(
+      'Hear click: ${outcome.status.name} ${outcome.error ?? ''}',
+    );
+    if (recovery) _clickModeRecoveryNotice = outcome;
+    if (_power?.state.isUiUp ?? false) return;
+    showAppToast(
+      id: AppToastId.clickModeSettings,
+      type: ToastificationType.error,
+      dismissible: !recovery,
+      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
+      title: Builder(
+        builder: (context) => Text(
+          recovery
+              ? context.l10n.clickModeSettingsRecoveryTitle
+              : context.l10n.clickModeSettingsRefusedTitle,
+        ),
+      ),
+      description: recovery
+          ? Builder(
+              builder: (context) =>
+                  Text(context.l10n.clickModeSettingsRecoveryBody),
+            )
+          : null,
+      actions: recovery
+          ? [
+              TextButton(
+                onPressed: () async {
+                  if ((await _tempo.recoverClickMode()).isOk) {
+                    _clickModeRecoveryNotice = null;
+                    dismissAppToast(AppToastId.clickModeSettings);
                   }
                 },
                 child: Builder(
@@ -511,16 +562,22 @@ class _AppState extends State<App> {
     );
   }
 
-  void _syncTimingNoticeWithPower(PowerOffState state) {
+  void _syncControlNoticesWithPower(PowerOffState state) {
     if (!mounted) return;
     if (state.isUiUp) {
       dismissAppToast(AppToastId.recordTimingSettings);
+      dismissAppToast(AppToastId.clickModeSettings);
       return;
     }
     final notice = _timingRecoveryNotice;
     _timingRecoveryNotice = null;
     if (notice != null && !_timing.state.recordTimingReady) {
       _showRecordTimingFailure(notice);
+    }
+    final clickNotice = _clickModeRecoveryNotice;
+    _clickModeRecoveryNotice = null;
+    if (clickNotice != null && !_tempo.state.clickModeReady) {
+      _showClickModeFailure(clickNotice);
     }
   }
 
@@ -794,6 +851,10 @@ class _AppState extends State<App> {
                     if (!click.isOk) {
                       throw StateError('Click settings still need recovery');
                     }
+                    final clickMode = await _tempo.recoverClickMode();
+                    if (!clickMode.isOk) {
+                      throw StateError('Hear click still needs recovery');
+                    }
                     final decay = await _playback.recoverDecay();
                     if (!decay.isOk) {
                       throw StateError('Decay settings still need recovery');
@@ -824,6 +885,10 @@ class _AppState extends State<App> {
                   if (!click.isOk) {
                     throw StateError('Click settings were not confirmed');
                   }
+                  final clickMode = await _tempo.flushClickMode();
+                  if (!clickMode.isOk) {
+                    throw StateError('Hear click was not confirmed');
+                  }
                   final decay = await _playback.flushDecay();
                   if (!decay.isOk) {
                     throw StateError('Decay settings were not confirmed');
@@ -844,6 +909,7 @@ class _AppState extends State<App> {
                   dismissAppToast(AppToastId.recordLengthSettings);
                   dismissAppToast(AppToastId.oneShotSettings);
                   dismissAppToast(AppToastId.clickSettings);
+                  dismissAppToast(AppToastId.clickModeSettings);
                   dismissAppToast(AppToastId.decaySettings);
                 },
                 pedalGoodbye: () => context.read<PedalRepository>().goodbye(),
@@ -852,7 +918,7 @@ class _AppState extends State<App> {
               );
               _power = power;
               _powerNoticeSubscription = power.stream.listen(
-                _syncTimingNoticeWithPower,
+                _syncControlNoticesWithPower,
               );
               return power;
             },
@@ -873,6 +939,7 @@ class _AppState extends State<App> {
                 recordLengthControl: _record,
                 recordTimingControl: _timing,
                 clickVolumeControl: _tempo,
+                clickModeControl: _tempo,
                 looper: context.read<LooperRepository>(),
                 mixSettings: context.read<MixSettingsCoordinator>(),
                 fxPersistence: context.read<FxChainPersistence>(),

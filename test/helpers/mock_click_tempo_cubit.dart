@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 
@@ -18,6 +19,15 @@ class MockClickTempoCubit extends MockCubit<TempoSettings>
       ),
     );
     when(() => stream).thenAnswer((_) => const Stream<TempoSettings>.empty());
+    when(() => clickModeSnapshot).thenReturn(null);
+    when(() => durableClickMode).thenReturn(ClickMode.off);
+    when(
+      () => clickModeLifetime,
+    ).thenReturn((sessionRevision: 0, mixGeneration: 0));
+    when(() => clickModeRevision).thenReturn(0);
+    when(
+      () => ordinaryClickModeChanges,
+    ).thenAnswer((_) => const Stream<ClickMode>.empty());
     when(() => this.clickVolume).thenReturn(clickVolume);
     when(() => durableClickVolume).thenReturn(clickVolume ?? 1);
     when(() => clickVolumeLifetime).thenReturn((

@@ -71,11 +71,11 @@ class LooperPage extends StatelessWidget {
             mixSettings: context.read<MixSettingsCoordinator>(),
             fxPersistence: context.read<FxChainPersistence>(),
             mixPersistence: context.read<MixSettingsPersistence>(),
-            runClickVolumeExclusive: context
-                .read<TempoCubit>()
-                .runClickVolumeExclusive,
+            runClickExclusive: context.read<TempoCubit>().runClickExclusive,
             currentDurableClickVolume: () =>
                 context.read<TempoCubit>().durableClickVolume,
+            currentDurableClickMode: () =>
+                context.read<TempoCubit>().durableClickMode,
             runPlaybackExclusive: context
                 .read<PlaybackOptionsCubit>()
                 .runPlaybackExclusive,

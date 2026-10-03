@@ -8,6 +8,7 @@ import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_timing.dart';
@@ -263,6 +264,48 @@ void main() {
       expect(click.controls.single.target, const ClickVolumeTarget());
       expect(click.controls.single.label, 'Volume');
       expect(present.map((destination) => destination.id), ['click', 'master']);
+    });
+
+    test('Hear click is one Loop control, retained but locked in capture', () {
+      const ready = ClickModeSnapshot(
+        mode: ClickMode.off,
+        captureLocked: false,
+      );
+      const locked = ClickModeSnapshot(
+        mode: ClickMode.recFirst,
+        captureLocked: true,
+      );
+      expect(
+        expressionDestinations(l10n, names, looper)
+            .expand((place) => place.controls)
+            .where((control) => control.target is ClickModeValueTarget),
+        isEmpty,
+      );
+      final places = expressionDestinations(
+        l10n,
+        names,
+        looper,
+        clickModeSnapshot: ready,
+      );
+      final loop = places.singleWhere((place) => place.id == 'loop:defaults');
+      expect(loop.kind, ExpressionDestinationKind.loopControls);
+      expect(loop.controls.single.target, const ClickModeValueTarget());
+      expect(loop.controls.single.disabledReason, isNull);
+      expect(
+        expressionRowName(l10n, names, looper, const ClickModeValueTarget()),
+        l10n.loopTempoHearClick,
+      );
+      final lockedLoop = expressionDestinations(
+        l10n,
+        names,
+        looper,
+        clickModeSnapshot: locked,
+      ).singleWhere((place) => place.id == 'loop:defaults');
+      expect(lockedLoop.controls.single.target, const ClickModeValueTarget());
+      expect(
+        lockedLoop.controls.single.disabledReason,
+        l10n.clickModeCaptureLocked,
+      );
     });
 
     test(

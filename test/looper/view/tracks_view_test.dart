@@ -165,6 +165,7 @@ void main() {
       recordLengthControl: FakeRecordLengthControl(),
       recordTimingControl: FakeRecordTimingControl(),
       clickVolumeControl: FakeClickVolumeControl(),
+      clickModeControl: FakeClickModeControl(),
       fxPersistence: fxPersistence,
       looper: repository,
       mixSettings: mixSettings,

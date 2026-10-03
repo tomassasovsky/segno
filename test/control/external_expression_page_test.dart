@@ -23,6 +23,7 @@ import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
@@ -46,6 +47,7 @@ void main() {
   late StreamController<LooperState> looperStates;
   late SettingsRepository settings;
   late ControlCubit control;
+  late MockClickTempoCubit tempo;
   late RecordOptionsCubit record;
   late RecordTimingCubit timing;
   late TracksCubit tracks;
@@ -72,6 +74,11 @@ void main() {
 
   setUp(() {
     looper = _MockLooperRepository();
+    when(() => looper.clickModeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.clickModeCaptureLocked).thenReturn(false);
+    when(() => looper.clickModeSettled).thenReturn(true);
     looperStates = StreamController<LooperState>.broadcast();
     currentMix = MixSettingsSnapshot(trackLevels: const {0: 1, 1: 1});
     pendingMix = null;
@@ -193,6 +200,7 @@ void main() {
     WidgetTester tester, {
     ExternalJackSetup? jack,
     double? clickVolume = 1,
+    ClickModeSnapshot? clickModeSnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordTiming currentTiming = RecordTiming.immediately,
     bool captureLocked = false,
@@ -221,7 +229,8 @@ void main() {
     addTearDown(() => unawaited(mixSettings.close()));
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
-    final tempo = MockClickTempoCubit(clickVolume: clickVolume);
+    tempo = MockClickTempoCubit(clickVolume: clickVolume);
+    when(() => tempo.clickModeSnapshot).thenReturn(clickModeSnapshot);
     final playback = MockDecayPlaybackCubit(oneShot: oneShotSnapshot);
     record = RecordOptionsCubit(repository: looper, settings: settings);
     addTearDown(() => unawaited(record.close()));
@@ -241,6 +250,7 @@ void main() {
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       clickVolumeControl: tempo,
+      clickModeControl: tempo,
       mixSettings: mixSettings,
       controller: controller,
       pedal: pedal,
@@ -666,6 +676,76 @@ void main() {
             trackOverrides: any(named: 'trackOverrides'),
           ),
         );
+      },
+    );
+
+    expressionTestWidgets(
+      'Hear click expression saves Off to Play & record without audio writes',
+      (tester) async {
+        await pump(
+          tester,
+          clickModeSnapshot: const ClickModeSnapshot(
+            mode: ClickMode.off,
+            captureLocked: false,
+          ),
+        );
+        await tap(tester, 'expression_add');
+        await tap(tester, 'expression_kind_loopControls');
+        await tap(tester, 'expression_destination_loop:defaults');
+        await tap(tester, targetKey(const ClickModeValueTarget()));
+        expect(textOf('expression_endpoint_heel_value'), 'Off');
+        expect(textOf('expression_endpoint_toe_value'), 'Play & record');
+        await tap(tester, 'external_save');
+        final mapping = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(mapping.target, const ClickModeValueTarget());
+        expect((mapping.heel, mapping.toe), (0, 1));
+        verifyNever(() => tempo.setClickMode(ClickMode.off));
+        verifyNever(() => looper.setClickMode(ClickMode.off));
+      },
+    );
+
+    expressionTestWidgets(
+      'Hear click repair Escape and Save retain raw endpoints',
+      (tester) async {
+        await pump(
+          tester,
+          clickModeSnapshot: const ClickModeSnapshot(
+            mode: ClickMode.recFirst,
+            captureLocked: false,
+          ),
+          jack: ExternalJackSetup(
+            type: ExternalJackType.expression,
+            expression: ExternalExpressionSetup(
+              mappings: [
+                ExpressionMapping(
+                  target: const TrackVolumeTarget(0),
+                  heel: 0.2,
+                  toe: 0.8,
+                ),
+              ],
+            ),
+          ),
+        );
+        await tap(tester, 'expression_change');
+        await tap(tester, 'expression_kind_loopControls');
+        await tap(tester, 'expression_destination_loop:defaults');
+        await tap(tester, targetKey(const ClickModeValueTarget()));
+        await tap(tester, 'expression_endpoint_heel_playRec');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        await tap(tester, 'external_save');
+        final mapping = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(mapping.target, const ClickModeValueTarget());
+        expect((mapping.heel, mapping.toe), (0.2, 0.8));
+        verifyNever(() => tempo.setClickMode(ClickMode.playRec));
       },
     );
 

@@ -80,6 +80,21 @@ void main() {
     }
   });
 
+  test('Hear click endpoints show named modes, never a percent', () async {
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    for (final (position, label) in <(double, String)>[
+      (0, l10n.loopClickOff),
+      (1 / 3, l10n.loopClickFirst),
+      (2 / 3, l10n.loopClickRecording),
+      (1, l10n.loopClickAlways),
+    ]) {
+      expect(
+        controlValueReadout(l10n, const ClickModeValueTarget(), position),
+        label,
+      );
+    }
+  });
+
   testWidgets('expression endpoint shows Mixer gain in dB', (tester) async {
     const target = TrackVolumeTarget(0);
     final semantics = tester.ensureSemantics();

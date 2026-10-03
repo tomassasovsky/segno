@@ -37,6 +37,10 @@ typedef struct le_command {
       int32_t arg_i;
       float arg_f;
     };
+    struct { /* SET_CLICK_MODE: one callback-confirmed scalar request. */
+      int32_t mode;
+      uint32_t revision;
+    } click;
     struct { /* SET_INPUT_MASK / SET_OUTPUT_MASK */
       int32_t channel;
       uint32_t mask;

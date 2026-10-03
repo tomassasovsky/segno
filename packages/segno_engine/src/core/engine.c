@@ -392,6 +392,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->record_timing_command = 0;
   engine->record_timing_publish_pending = 0;
   engine->record_timing_cache = (le_record_timing_readback){.result = LE_OK};
+  /* Mode is a persistent setting; only request receipts reset with the ring. */
+  atomic_store_explicit(&engine->a_click_mode_revision, 0, memory_order_relaxed);
+  store_i32(&engine->a_click_mode_result, LE_OK);
+  engine->click_mode_posted_revision = 0;
+  engine->click_mode_command = 0;
+  engine->click_mode_publish_pending = 0;
 
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
@@ -1260,6 +1266,9 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (!atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
+  /* Click mode requires the typed single-flight receipt. Raw posts cannot
+   * bypass that reservation or publish revisionless competing settings. */
+  if (code == LE_CMD_SET_CLICK_MODE) return LE_ERR_INVALID;
   /* Keep these coupled settings' control decisions consistent even through
    * the raw public entry point. Preserve SET_COUNT_IN's consumer clamping. */
   if (code == LE_CMD_SET_COUNT_IN) {
@@ -1286,6 +1295,7 @@ int32_t le_engine_measure_latency(le_engine* engine) {
 
 #ifdef LE_NATIVE_TESTS
 void (*le_test_record_timing_hook)(le_engine*, int) = NULL;
+void (*le_test_click_mode_hook)(le_engine*, int) = NULL;
 #endif
 
 int32_t le_push_cmd(le_engine* engine, le_command cmd) {

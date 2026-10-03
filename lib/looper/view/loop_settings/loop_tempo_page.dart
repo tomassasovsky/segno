@@ -75,6 +75,7 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
     );
     final settings = context.watch<TempoCubit>().state;
     final tempo = context.read<TempoCubit>();
+    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
     // The live tempo when the engine has one (a tap or a derived tempo
     // moves it without this page), else the cubit's own intent.
     final liveBpm = transport.bpm > 0 ? transport.bpm : settings.bpm;
@@ -230,11 +231,28 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                   ClickMode.playRec => l10n.loopClickAlways,
                 },
                 keyOf: (mode) => Key('loop_click_${mode.name}'),
-                selected: settings.clickMode,
+                selected: tempo.confirmedClickMode,
+                enabled: clickModeSnapshot?.canEdit ?? false,
                 onSelected: (mode) => unawaited(tempo.setClickMode(mode)),
                 width: 1392,
               ),
             ),
+            if (clickModeSnapshot?.canEdit != true)
+              Positioned(
+                left: 328,
+                top: 326,
+                child: AppText(
+                  clickModeSnapshot == null
+                      ? l10n.clickModeUnavailable
+                      : l10n.clickModeCaptureLocked,
+                  key: const Key('loop_click_disabled_reason'),
+                  style: TextStyle(
+                    color: surface.textSecondary,
+                    fontSize: 18,
+                    height: 1,
+                  ),
+                ),
+              ),
             // ---- count-in
             Positioned(
               left: 0,

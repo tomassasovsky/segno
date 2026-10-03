@@ -793,13 +793,32 @@ class SettingsRepository {
 
   static const String _clickModeKey = 'tempo.click_mode';
 
-  /// Loads the click audibility mode as the native `le_click_mode` enum code
-  /// (see `ClickMode.code` / `ClickMode.fromCode`). Defaults to `0`
-  /// (`ClickMode.off`) when unset.
-  Future<int> loadClickMode() async => await _store.getInt(_clickModeKey) ?? 0;
+  /// Reads the exact saved native enum, preserving absence and invalid data.
+  Future<int?> readClickModeCheckpoint() async {
+    await _serializedWrite;
+    final value = await _store.getInt(_clickModeKey);
+    if (value != null && (value < 0 || value > 3)) {
+      throw const FormatException('Invalid Hear click setting');
+    }
+    return value;
+  }
 
-  /// Saves the click audibility mode as its enum [code].
-  Future<void> saveClickMode(int code) => _store.setInt(_clickModeKey, code);
+  /// Writes and verifies a native mode, or restores the exact absent scalar.
+  Future<void> restoreClickModeCheckpoint(int? code) {
+    if (code != null && (code < 0 || code > 3)) {
+      throw const FormatException('Invalid Hear click setting');
+    }
+    return _serialize(() async {
+      if (code == null) {
+        await _store.remove(_clickModeKey);
+      } else {
+        await _store.setInt(_clickModeKey, code);
+      }
+      if (await _store.getInt(_clickModeKey) != code) {
+        throw StateError('Hear click checkpoint was not restored');
+      }
+    });
+  }
 
   static const String _clickOutputMaskKey = 'tempo.click_output_mask';
 
@@ -864,7 +883,7 @@ class SettingsRepository {
   /// Loads the five-mode axis as the native `le_looper_mode` enum code (see
   /// `LooperMode.code` / `LooperMode.fromCode`). Defaults to `0`
   /// (`LooperMode.multi`) when unset — the int-code convention matches this
-  /// enum's siblings ([loadQuantizeDiv] / [loadClickMode]), unlike
+  /// enum's siblings ([loadQuantizeDiv] / [readClickModeCheckpoint]), unlike
   /// `loadDefaultInteractionMode`'s opaque-string-token scheme: that key
   /// predates this plan and preserves pre-rename legacy tokens (D10), a
   /// concern this newly-introduced enum has no analog of.

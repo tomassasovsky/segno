@@ -23,6 +23,7 @@ import 'package:segno_engine/segno_engine.dart'
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
+import '../helpers/fake_click_mode_control.dart';
 import '../helpers/fake_click_volume_control.dart';
 import '../helpers/fake_decay_control.dart';
 import '../helpers/fake_key_value_store.dart';
@@ -114,6 +115,7 @@ class _Rig {
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: looper),
       clickVolumeControl: FakeClickVolumeControl(),
+      clickModeControl: FakeClickModeControl(),
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: owner,

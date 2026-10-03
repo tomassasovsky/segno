@@ -3,6 +3,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -165,6 +166,37 @@ void main() {
       expect(looper.readValueTarget(target, clickVolume: 0), 0);
       expect(looper.readValueTarget(target, clickVolume: 1), 0.5);
       expect(looper.readValueTarget(target, clickVolume: 2), 1);
+    });
+
+    test('Hear click is absent until confirmed, including explicit Off', () {
+      const target = ClickModeValueTarget();
+      const off = ClickModeSnapshot(mode: ClickMode.off, captureLocked: false);
+      const locked = ClickModeSnapshot(
+        mode: ClickMode.recFirst,
+        captureLocked: true,
+      );
+      expect(
+        looper.availableValueTargets().whereType<ClickModeValueTarget>(),
+        isEmpty,
+      );
+      expect(looper.valueTargetResolves(target), isFalse);
+      expect(looper.readValueTarget(target), isNull);
+      expect(
+        looper
+            .availableValueTargets(clickModeSnapshot: off)
+            .whereType<ClickModeValueTarget>(),
+        [target],
+      );
+      expect(
+        looper.valueTargetResolves(target, clickModeSnapshot: off),
+        isTrue,
+      );
+      expect(looper.readValueTarget(target, clickModeSnapshot: off), 0);
+      expect(
+        looper.valueTargetResolves(target, clickModeSnapshot: locked),
+        isTrue,
+      );
+      expect(looper.readValueTarget(target, clickModeSnapshot: locked), 1 / 3);
     });
 
     test('decay offers default and all fixed tracks only with an owner', () {

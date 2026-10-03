@@ -124,7 +124,14 @@ void main() {
         record.state,
         const RecordOptions(autoRecord: true, recordLengthReady: true),
       );
-      expect(tempo.state, const TempoSettings(bpm: 96, clickReady: true));
+      expect(
+        tempo.state,
+        const TempoSettings(
+          bpm: 96,
+          clickReady: true,
+          clickModeReady: true,
+        ),
+      );
 
       delayed.ready.complete();
       await loads;
@@ -142,7 +149,14 @@ void main() {
         record.state,
         const RecordOptions(autoRecord: true, recordLengthReady: true),
       );
-      expect(tempo.state, const TempoSettings(bpm: 96, clickReady: true));
+      expect(
+        tempo.state,
+        const TempoSettings(
+          bpm: 96,
+          clickReady: true,
+          clickModeReady: true,
+        ),
+      );
       expect(repository.sessionTransport.overdubDecay, 35);
       expect(repository.sessionTransport.defaultOneShot, isFalse);
       expect(repository.sessionTransport.defaultMultiple, 0);
@@ -186,6 +200,9 @@ void main() {
       final timingEdit = quantize.setEnabled(value: false);
       await record.setRecDub(value: false);
       await tempo.setClickMode(ClickMode.off);
+      // Hear click has independent initialization. A matching start-method
+      // edit still supersedes the pending generic Tempo restore.
+      await tempo.setCountInBars(0);
       delayed.ready.complete();
       await loads;
       await timingEdit;
@@ -202,11 +219,50 @@ void main() {
       );
       expect(quantize.state.defaultTiming, RecordTiming.immediately);
       expect(record.state, const RecordOptions(recordLengthReady: true));
-      expect(tempo.state, const TempoSettings());
+      expect(tempo.state, const TempoSettings(clickModeReady: true));
       expect(repository.sessionTransport.overdubDecay, 80);
       expect(repository.sessionTransport.defaultOneShot, isFalse);
       expect(repository.sessionTransport.defaultMultiple, 0);
       expect(repository.sessionTransport.tempoBpm, 0);
+    },
+  );
+
+  test(
+    'a Hear click edit preserves independent pending Tempo preferences',
+    () async {
+      final delayed = await delayedSettings();
+      final tempo = TempoCubit(repository: repository, settings: delayed);
+      addTearDown(tempo.close);
+      addTearDown(() {
+        if (!delayed.ready.isCompleted) delayed.ready.complete();
+      });
+      final loading = tempo.load();
+      await Future<void>.delayed(Duration.zero);
+
+      expect((await tempo.setClickMode(ClickMode.off)).isOk, isTrue);
+      expect(tempo.clickModeSnapshot?.mode, ClickMode.off);
+      expect(tempo.state.bpm, 0);
+      expect(tempo.state.countInBars, 0);
+      expect(tempo.state.clickReady, isFalse);
+
+      delayed.ready.complete();
+      await loading;
+      await poll();
+      expect(
+        tempo.state,
+        const TempoSettings(
+          bpm: 120,
+          countInBars: 2,
+          clickReady: true,
+          clickModeReady: true,
+        ),
+      );
+      expect(repository.sessionTransport.tempoBpm, 120);
+      expect(repository.sessionTransport.countInBars, 2);
+      expect(repository.sessionTransport.clickMode, ClickMode.off);
+      expect(await delayed.loadTempoBpm(), 120);
+      expect(await delayed.loadCountInBars(), 2);
+      expect(await delayed.readClickModeCheckpoint(), 0);
     },
   );
 
@@ -396,6 +452,7 @@ void main() {
           tsNum: 5,
           tsDen: 8,
           clickMode: ClickMode.playRec,
+          clickModeReady: true,
           clickOutputMask: 3,
           clickVolume: 0.5,
           clickReady: true,
@@ -410,8 +467,10 @@ void main() {
       await repository.applySession(const SessionRig());
       await poll();
     },
-    verify: (cubit) =>
-        expect(cubit.state, const TempoSettings(clickReady: true)),
+    verify: (cubit) => expect(
+      cubit.state,
+      const TempoSettings(clickReady: true, clickModeReady: true),
+    ),
   );
 
   blocTest<RecordOptionsCubit, RecordOptions>(

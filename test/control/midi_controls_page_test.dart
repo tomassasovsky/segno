@@ -31,6 +31,7 @@ import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -96,6 +97,7 @@ void main() {
   late StreamController<MidiInputMessage> messages;
   late _Store store;
   late ControlCubit control;
+  late MockClickTempoCubit tempo;
   late RecordOptionsCubit record;
   late RecordTimingCubit timing;
   late RecordTiming confirmedTiming;
@@ -224,6 +226,7 @@ void main() {
     bool routeEntry = false,
     MidiMapping? savedMapping,
     double? clickVolume = 1,
+    ClickModeSnapshot? clickModeSnapshot,
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordTiming currentTiming = RecordTiming.immediately,
@@ -261,7 +264,8 @@ void main() {
     addTearDown(() => unawaited(pedal.dispose()));
     final mix = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mix.close()));
-    final tempo = MockClickTempoCubit(clickVolume: clickVolume);
+    tempo = MockClickTempoCubit(clickVolume: clickVolume);
+    when(() => tempo.clickModeSnapshot).thenReturn(clickModeSnapshot);
     final playback = MockDecayPlaybackCubit(
       snapshot: decaySnapshot,
       oneShot: oneShotSnapshot,
@@ -275,6 +279,7 @@ void main() {
     control = ControlCubit(
       looper: looper,
       clickVolumeControl: tempo,
+      clickModeControl: tempo,
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,
@@ -419,6 +424,85 @@ void main() {
         .singleWhere((control) => control.key == key);
     expect((saved.low, saved.high), (0, 1));
     verifyNever(() => looper.setOverdubDecay(any()));
+  });
+
+  testWidgets('Hear click maps named Off to Play & record without Save audio', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      seeded: true,
+      clickModeSnapshot: const ClickModeSnapshot(
+        mode: ClickMode.off,
+        captureLocked: false,
+      ),
+    );
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_add_control');
+    await tap(tester, 'expression_kind_loopControls');
+    await tap(tester, 'expression_destination_loop:defaults');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const ClickModeValueTarget())}',
+    );
+    final key = const ClickModeValueTarget().canonicalString();
+    final low = find.byKey(Key('midi_range_low_$key'));
+    final high = find.byKey(Key('midi_range_high_$key'));
+    expect(
+      find.descendant(of: low, matching: find.text('Off')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: high, matching: find.text('Play & record')),
+      findsOneWidget,
+    );
+    await tap(tester, 'midi_save');
+    final saved = control.state.midiMappings
+        .byId('m1')!
+        .controls
+        .whereType<MidiParameterControl>()
+        .singleWhere((control) => control.key == key);
+    expect((saved.low, saved.high), (0, 1));
+    verifyNever(() => tempo.setClickMode(ClickMode.off));
+    verifyNever(() => looper.setClickMode(ClickMode.off));
+  });
+
+  testWidgets('Hear click MIDI repair Escape preserves raw range', (
+    tester,
+  ) async {
+    final oldKey = const TrackVolumeTarget(0).canonicalString();
+    final original = MidiMapping(
+      id: 'm1',
+      source: _source,
+      behavior: MidiBehavior.continuous,
+      controls: [MidiParameterControl(key: oldKey, low: 0.2, high: 0.8)],
+    );
+    await pump(
+      tester,
+      savedMapping: original,
+      clickModeSnapshot: const ClickModeSnapshot(
+        mode: ClickMode.recFirst,
+        captureLocked: false,
+      ),
+    );
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_control_change_$oldKey');
+    await tap(tester, 'expression_kind_loopControls');
+    await tap(tester, 'expression_destination_loop:defaults');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const ClickModeValueTarget())}',
+    );
+    final key = const ClickModeValueTarget().canonicalString();
+    await tap(tester, 'midi_click_mode_low_${key}_playRec');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tap(tester, 'midi_save');
+    final repaired =
+        control.state.midiMappings.byId('m1')!.controls.single
+            as MidiParameterControl;
+    expect(repaired.key, key);
+    expect((repaired.low, repaired.high), (0.2, 0.8));
   });
 
   testWidgets('Record length keeps Auto to 64 bars as a draft until Save', (

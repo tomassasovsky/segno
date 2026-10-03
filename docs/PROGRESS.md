@@ -8,6 +8,30 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 shared Hear click (#1026)
+
+Touch, encoder, MIDI and External controls now share Off, First recording,
+Recording and Play & record. New setups default to First recording; explicit
+Off is preserved. Native callback receipts confirm changes before publication.
+Recording and overdubbing refuse edits without stopping audio. Session Save and
+restart retain Released values while Held remains audible, and safe shutdown
+waits for owed releases or presents recovery.
+
+`docs/reviews/shared-hear-click/` binds the candidate and independent evidence.
+The app passes 2,611 tests at 91.069% coverage; Looper passes 691 at 95.261%.
+Engine passes 352 against the repaired native library. Native configurations,
+affected package suites and 757-file static checks pass. Independent review
+closed callback publication, command counter width, obsolete initialization,
+recovery readout and compensated-flush defects. Author renders include the
+repaired expression choice layout. The saved Pen section still needs its final
+composite visual check, and native desktop interaction remains unverified while
+the desktop is unavailable. Published-head CI and human merge remain separate.
+
+Count-in and its Sound-start interlock are next. The future capture journal must
+extend the capture lock before stopped failed-finalization takes ship; no such
+producer is implemented by this slice. M5 full live-Control Session Load and
+physical appliance checks remain open.
+
 ## October 2026 shared Record timing (#1026)
 
 Touch, MIDI and External controls share the seven recording-timing choices for

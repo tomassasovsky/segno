@@ -2616,5 +2616,10 @@
     "recordTimingSettingsRecoveryTitle": "Hay que recuperar el momento de grabación",
     "recordTimingSettingsRefusedTitle": "No se aplicó el cambio del momento de grabación",
     "recordTimingSettingsRecoveryBody": "Reintenta recuperar los ajustes del momento de grabación.",
-    "recordTimingUnavailable": "El momento de grabación aún no está listo"
+    "recordTimingUnavailable": "El momento de grabación aún no está listo",
+    "clickModeCaptureLocked": "Termina la grabación para cambiar cuándo suena el clic.",
+    "clickModeUnavailable": "El modo de clic no está disponible.",
+    "clickModeSettingsRecoveryTitle": "El modo de clic necesita atención",
+    "clickModeSettingsRefusedTitle": "No se cambió el modo de clic",
+    "clickModeSettingsRecoveryBody": "Reintenta para confirmar el ajuste de clic guardado."
 }

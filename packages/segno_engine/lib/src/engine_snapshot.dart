@@ -1142,6 +1142,8 @@ class EngineSnapshot {
     this.loopBars = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
+    this.clickModeRevision = 0,
+    this.clickModeResult = 0,
     this.clickMask = 0,
     this.clickVolume = 1,
     this.countInBars = 0,
@@ -1216,6 +1218,8 @@ class EngineSnapshot {
       loopBars = 0,
       currentBeat = 0,
       clickMode = ClickMode.off,
+      clickModeRevision = 0,
+      clickModeResult = 0,
       clickMask = 0,
       clickVolume = 1,
       countInBars = 0,
@@ -1305,6 +1309,8 @@ class EngineSnapshot {
       loopBars: native.loop_bars,
       currentBeat: native.current_beat,
       clickMode: ClickMode.fromCode(native.click_mode),
+      clickModeRevision: native.click_mode_revision,
+      clickModeResult: native.click_mode_result,
       clickMask: native.click_mask,
       clickVolume: native.click_volume,
       countInBars: native.count_in_bars,
@@ -1387,6 +1393,8 @@ class EngineSnapshot {
     int? loopBars,
     int? currentBeat,
     ClickMode? clickMode,
+    int? clickModeRevision,
+    int? clickModeResult,
     int? clickMask,
     double? clickVolume,
     int? countInBars,
@@ -1458,6 +1466,8 @@ class EngineSnapshot {
     loopBars: loopBars ?? this.loopBars,
     currentBeat: currentBeat ?? this.currentBeat,
     clickMode: clickMode ?? this.clickMode,
+    clickModeRevision: clickModeRevision ?? this.clickModeRevision,
+    clickModeResult: clickModeResult ?? this.clickModeResult,
     clickMask: clickMask ?? this.clickMask,
     clickVolume: clickVolume ?? this.clickVolume,
     countInBars: countInBars ?? this.countInBars,
@@ -1679,6 +1689,16 @@ class EngineSnapshot {
   /// Click audibility mode (default [ClickMode.off]).
   final ClickMode clickMode;
 
+  /// Callback completion revision; advances even for same-value refusals.
+  ///
+  /// Acquire `commandsSettled` before synchronously sampling this receipt;
+  /// keep the sole mode writer reserved until the snapshot read completes.
+  /// Resets on configure, while [clickMode] preserves its accepted value.
+  final int clickModeRevision;
+
+  /// Native result paired with [clickModeRevision]; prior mode on refusal.
+  final int clickModeResult;
+
   /// Bitmask of hardware output channels the click sounds on (bit c => out
   /// c). Default `0`: no outputs until explicitly routed.
   final int clickMask;
@@ -1878,6 +1898,8 @@ class EngineSnapshot {
           loopBars == other.loopBars &&
           currentBeat == other.currentBeat &&
           clickMode == other.clickMode &&
+          clickModeRevision == other.clickModeRevision &&
+          clickModeResult == other.clickModeResult &&
           clickMask == other.clickMask &&
           clickVolume == other.clickVolume &&
           countInBars == other.countInBars &&
@@ -1951,6 +1973,8 @@ class EngineSnapshot {
     loopBars,
     currentBeat,
     clickMode,
+    clickModeRevision,
+    clickModeResult,
     clickMask,
     clickVolume,
     countInBars,

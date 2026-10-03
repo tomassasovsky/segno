@@ -5631,8 +5631,8 @@ void main() {
     );
 
     test(
-      'TransportState projects every tempo-grid + click + count-in + '
-      'looper-mode field from the snapshot',
+      'TransportState projects snapshot fields while Hear click requires '
+      'an accepted receipt',
       () {
         engine.nextSnapshot = const EngineSnapshot(
           isRunning: true,
@@ -5688,7 +5688,10 @@ void main() {
         expect(transport.quantizeDiv, GridDivision.quarter);
         expect(transport.loopBars, 4);
         expect(transport.currentBeat, 2);
-        expect(transport.clickMode, ClickMode.playRec);
+        // Raw callback progress is not an accepted Hear click command. The
+        // repository has not settled any request, so retain its accepted Off.
+        // click_mode_receipt_test covers the pending-to-settled transition.
+        expect(transport.clickMode, ClickMode.off);
         expect(transport.clickMask, 0x3);
         expect(transport.clickVolume, closeTo(0.8, 1e-9));
         // The count-in is the repository's own held value (slice 2b), not

@@ -345,10 +345,10 @@ jobs:
           flutter test --tags fuzz
       # These Session save checks need the real callback receipts and a real
       # session file. The ordinary app job skips them without the native library.
-      - name: Run the native-backed recording timing session tests
+      - name: Run the native-backed shared control session tests
         run: |
           test -s "$SEGNO_ENGINE_LIB"
-          flutter test test/session/record_timing_persistence_test.dart
+          flutter test test/session/record_timing_persistence_test.dart test/session/click_persistence_test.dart
       # Root tests do not traverse package test directories. Exercise the Dart
       # engine bridge here against the same native library built above.
       - name: Run the segno_engine package tests

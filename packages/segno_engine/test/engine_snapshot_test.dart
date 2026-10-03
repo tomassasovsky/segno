@@ -1017,6 +1017,8 @@ void main() {
       int loopBars = 0,
       int currentBeat = 0,
       ClickMode clickMode = ClickMode.off,
+      int clickModeRevision = 0,
+      int clickModeResult = 0,
       int clickMask = 0,
       double clickVolume = 1,
       int countInBars = 0,
@@ -1066,6 +1068,8 @@ void main() {
       loopBars: loopBars,
       currentBeat: currentBeat,
       clickMode: clickMode,
+      clickModeRevision: clickModeRevision,
+      clickModeResult: clickModeResult,
       clickMask: clickMask,
       clickVolume: clickVolume,
       countInBars: countInBars,
@@ -1271,6 +1275,18 @@ void main() {
 
     test('clickMode participates in equality', () {
       expect(build(), isNot(equals(build(clickMode: ClickMode.rec))));
+    });
+
+    test('click receipt participates in equality and copyWith', () {
+      final changed = build(clickModeRevision: 3, clickModeResult: -1);
+      expect(build(), isNot(equals(changed)));
+      expect(build(), isNot(equals(build(clickModeRevision: 3))));
+      expect(build(), isNot(equals(build(clickModeResult: -1))));
+      expect(
+        build().copyWith(clickModeRevision: 3, clickModeResult: -1),
+        changed,
+      );
+      expect(changed.copyWith(), changed);
     });
 
     test('clickMask participates in equality', () {
@@ -1608,6 +1624,8 @@ void main() {
         'loopBars',
         'currentBeat',
         'clickMode',
+        'clickModeRevision',
+        'clickModeResult',
         'clickMask',
         'clickVolume',
         'countInBars',

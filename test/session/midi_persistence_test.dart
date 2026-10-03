@@ -80,7 +80,7 @@ void main() {
         );
         await playback.load();
         final cubit = SessionCubit(
-          runClickVolumeExclusive: tempo.runClickVolumeExclusive,
+          runClickExclusive: tempo.runClickExclusive,
           runPlaybackExclusive: playback.runPlaybackExclusive,
           runRecordExclusive: <T>(operation) => operation(),
           runRecordTimingExclusive: <T>(operation) => operation(),
@@ -99,6 +99,7 @@ void main() {
           currentDurableDecay: () => playback.durableDecaySnapshot,
           currentDurableOneShot: () => playback.durableOneShotSnapshot,
           currentDurableClickVolume: () => tempo.durableClickVolume,
+          currentDurableClickMode: () => tempo.durableClickMode,
           repository: sessions,
           looper: looper,
           performance: performance,
@@ -187,6 +188,7 @@ void main() {
             recordLengthControl: FakeRecordLengthControl(),
             recordTimingControl: FakeRecordTimingControl(),
             clickVolumeControl: tempo,
+            clickModeControl: tempo,
             looper: looper,
             pedal: pedal,
             settings: settings,

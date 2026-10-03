@@ -48,6 +48,7 @@ sealed class ControlValueTarget extends Equatable {
     OutputLevelTarget(:final bus) => bus >= 0,
     OutputBalanceTarget(:final bus) => bus >= 0,
     MasterGainTarget() => true,
+    ClickModeValueTarget() => true,
     ClickVolumeTarget() => true,
     DefaultDecayTarget() => true,
     TrackDecayTarget(:final channel) => channel >= 0 && channel < 8,
@@ -80,6 +81,9 @@ sealed class ControlValueTarget extends Equatable {
       }
       if (ctl == 'clickVolume') {
         return raw.length == 1 ? const ClickVolumeTarget() : null;
+      }
+      if (ctl == 'clickMode') {
+        return raw.length == 1 ? const ClickModeValueTarget() : null;
       }
       if (ctl == 'overdubDecay') {
         return raw.length == 1 ? const DefaultDecayTarget() : null;
@@ -374,6 +378,41 @@ final class ClickVolumeTarget extends ControlValueTarget {
 
   @override
   List<Object?> get props => ['clickVolume'];
+}
+
+/// The click's four audible policies in user order, independent of native
+/// enum codes. A mapping stores normalized travel, not the native code.
+final class ClickModeValueTarget extends ControlValueTarget {
+  /// Creates the global Hear click target.
+  const ClickModeValueTarget();
+
+  /// Choices in the order displayed by Loop settings and endpoint editors.
+  static const choices = <ClickMode>[
+    ClickMode.off,
+    ClickMode.recFirst,
+    ClickMode.rec,
+    ClickMode.playRec,
+  ];
+
+  /// The nearest choice for one finite normalized endpoint.
+  ClickMode toDomain(double normalized) {
+    if (!normalized.isFinite) {
+      throw ArgumentError.value(normalized, 'normalized');
+    }
+    return choices[(normalized.clamp(0.0, 1.0) * 3).round()];
+  }
+
+  /// The exact normalized position of an accepted choice.
+  double fromDomain(ClickMode mode) => choices.indexOf(mode) / 3;
+
+  /// One relative-controller detent moves exactly one choice.
+  double get relativeStep => 1 / 3;
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'clickMode'});
+
+  @override
+  List<Object?> get props => ['clickMode'];
 }
 
 /// A decay endpoint uses percent as its native domain and 0..1 in mappings.

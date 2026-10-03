@@ -1,6 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart'
@@ -27,6 +28,10 @@ String controlValueReadout(
   ClickVolumeTarget() => l10n.loopClickVolumeReadout(
     (target.toDomain(normalized) * 100).round(),
   ),
+  ClickModeValueTarget() => clickModeReadout(
+    l10n,
+    target.toDomain(normalized),
+  ),
   DecayValueTarget() => _decayReadout(l10n, target.toDomain(normalized)),
   OneShotValueTarget() =>
     target.toDomain(normalized) ? l10n.loopPlaybackOnce : l10n.loopPlaybackLoop,
@@ -47,6 +52,24 @@ String _decayReadout(AppLocalizations l10n, int percent) => percent == 0
 
 String _lengthReadout(AppLocalizations l10n, int bars) =>
     bars == 0 ? l10n.loopLengthAuto : l10n.lengthPresetBars(bars);
+
+/// The four Hear click choices in the same words as the Loop settings row.
+String clickModeReadout(AppLocalizations l10n, ClickMode mode) =>
+    switch (mode) {
+      ClickMode.off => l10n.loopClickOff,
+      ClickMode.recFirst => l10n.loopClickFirst,
+      ClickMode.rec => l10n.loopClickRecording,
+      ClickMode.playRec => l10n.loopClickAlways,
+    };
+
+/// A saved Hear click target remains visible while capture prevents edits.
+String? clickModeDisabledReason(
+  AppLocalizations l10n,
+  ControlValueTarget target,
+  ClickModeSnapshot? snapshot,
+) => target is ClickModeValueTarget && snapshot?.canEdit == false
+    ? l10n.clickModeCaptureLocked
+    : null;
 
 /// The same seven musical choices offered by Loop settings.
 String recordTimingReadout(AppLocalizations l10n, RecordTiming timing) =>

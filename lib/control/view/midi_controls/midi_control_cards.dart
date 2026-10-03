@@ -2,6 +2,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/view/click_mode_endpoint_choice.dart';
 import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/midi_controls/midi_segmented.dart';
 import 'package:segno/control/view/playback_endpoint_choice.dart';
@@ -322,6 +323,33 @@ class _Card extends StatelessWidget {
                     enabled: editable,
                     keyPrefix: 'midi_activation_high_$key',
                     onChanged: (value) => onRange(key, high: value ? 1 : 0),
+                  ),
+                ],
+              ),
+            MidiParameterControl(:final low, :final high)
+                when ControlValueTarget.tryParse(key) is ClickModeValueTarget =>
+              Row(
+                children: [
+                  if (captions.low case final lowCaption?) ...[
+                    ClickModeEndpointChoice(
+                      key: Key('midi_range_low_$key'),
+                      caption: lowCaption,
+                      value: low,
+                      width: _rangeWidth,
+                      enabled: editable,
+                      keyPrefix: 'midi_click_mode_low_$key',
+                      onChanged: (value) => onRange(key, low: value),
+                    ),
+                    const SizedBox(width: 36),
+                  ],
+                  ClickModeEndpointChoice(
+                    key: Key('midi_range_high_$key'),
+                    caption: captions.high,
+                    value: high,
+                    width: _rangeWidth,
+                    enabled: editable,
+                    keyPrefix: 'midi_click_mode_high_$key',
+                    onChanged: (value) => onRange(key, high: value),
                   ),
                 ],
               ),

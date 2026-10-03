@@ -12817,6 +12817,161 @@ static int ck_crossings(le_engine* e, int frames, int ch_out, int ch) {
   return crossings;
 }
 
+static int click_hook_count;
+static void click_publication_hook(le_engine* e, int event) {
+  CHECK(event == 1);
+  CHECK(!le_engine_commands_settled(e));
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == LE_CLICK_REC_FIRST);
+  CHECK(s.click_mode_revision == 0u);
+  CHECK(s.click_mode_result == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_OFF) == LE_ERR_NOT_READY);
+  ++click_hook_count;
+}
+
+static void test_click_mode_receipt_publication(void) {
+  printf("test_click_mode_receipt_publication\n");
+  le_engine* e = ck_make_engine(1);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == 0 && s.click_mode_revision == 0u && s.click_mode_result == LE_OK);
+  click_hook_count = 0;
+  le_test_click_mode_hook = click_publication_hook;
+  CHECK(le_engine_set_click_mode(e, 2) == LE_OK);
+  CHECK(!le_engine_commands_settled(e));
+  drain(e);
+  le_test_click_mode_hook = NULL;
+  CHECK(click_hook_count == 1);
+  CHECK(le_engine_commands_settled(e));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == 2 && s.click_mode_revision == 1u && s.click_mode_result == LE_OK);
+  CHECK(le_engine_set_click_mode(e, 2) == LE_OK); /* same value has a receipt */
+  drain(e);
+  CHECK(le_engine_commands_settled(e));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode_revision == 2u);
+  CHECK(le_engine_configure(e, CK_SR, 1, 1, CK_SR * 4) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == 2 && s.click_mode_revision == 0u && s.click_mode_result == LE_OK);
+  e->click_mode_posted_revision = UINT32_MAX;
+  CHECK(le_engine_set_click_mode(e, 3) == LE_OK);
+  drain(e);
+  CHECK(le_engine_commands_settled(e));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == 3 && s.click_mode_revision == 0u && s.click_mode_result == LE_OK);
+  le_engine_destroy(e);
+}
+
+static void test_click_mode_reservation_crosses_32_bit_boundary(void) {
+  printf("test_click_mode_reservation_crosses_32_bit_boundary\n");
+  le_engine* e = ck_make_engine(1);
+  e->commands_posted = UINT32_MAX;
+  e->commands_applied = UINT32_MAX;
+  atomic_store_explicit(&e->a_commands_published, UINT32_MAX, memory_order_release);
+  CHECK(le_engine_commands_settled(e));
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC_FIRST) == LE_OK);
+  CHECK(e->commands_posted == (uint64_t)UINT32_MAX + 1u);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_ERR_NOT_READY);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(le_engine_commands_settled(e));
+  CHECK(s.click_mode == LE_CLICK_REC_FIRST && s.click_mode_revision == 1u);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_OFF) == LE_ERR_NOT_READY);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == LE_CLICK_REC && s.click_mode_revision == 2u);
+  le_engine_destroy(e);
+}
+
+static void test_click_mode_queue_full_and_same_value_refusal(void) {
+  printf("test_click_mode_queue_full_and_same_value_refusal\n");
+  le_engine* e = ck_make_engine(1);
+  while (le_push_cmd(e, (le_command){.code = -100}) == LE_OK) {}
+  CHECK(le_engine_set_click_mode(e, 1) == LE_ERR_INVALID);
+  CHECK(e->click_mode_posted_revision == 0u && e->click_mode_command == 0u);
+  drain(e);
+  CHECK(le_engine_set_click_mode(e, 1) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == 1 && s.click_mode_revision == 1u);
+  /* Prior request settled, but Record queued first starts capture in callback. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, 1) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+  CHECK(le_engine_commands_settled(e));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.click_mode == 1 && s.click_mode_revision == 2u && s.click_mode_result == LE_ERR_INVALID);
+  CHECK(le_engine_set_click_mode(e, 1) == LE_ERR_INVALID);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode_revision == 2u); /* early refusal never fakes completion */
+  le_engine_destroy(e);
+}
+
+static void test_click_mode_armed_and_count_in_are_editable(void) {
+  printf("test_click_mode_armed_and_count_in_are_editable\n");
+  le_engine* e = ck_make_engine(1);
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending);
+  CHECK(le_engine_set_click_mode(e, 2) == LE_OK);
+  drain(e);
+  CHECK(le_engine_commands_settled(e));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending && s.click_mode == 2 && s.click_mode_result == LE_OK);
+  le_engine_destroy(e);
+
+  e = ck_make_engine(1);
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in);
+  CHECK(le_engine_set_click_mode(e, 3) == LE_OK);
+  drain(e);
+  CHECK(le_engine_commands_settled(e));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in && s.click_mode == 3 && s.click_mode_result == LE_OK);
+  le_engine_destroy(e);
+}
+
+static void test_click_mode_admission_and_capture_order(void) {
+  printf("test_click_mode_admission_and_capture_order\n");
+  le_engine* e = ck_make_engine(1);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC_FIRST) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_ERR_NOT_READY);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == LE_CLICK_REC_FIRST);
+  atomic_store_explicit(&e->a_running, 1, memory_order_release);
+  const uint32_t before = e->commands_posted;
+  CHECK(le_engine_post_command(e, LE_CMD_SET_CLICK_MODE, LE_CLICK_OFF, 0) == LE_ERR_INVALID);
+  CHECK(e->commands_posted == before);
+  atomic_store_explicit(&e->a_running, 0, memory_order_release);
+  le_engine_destroy(e);
+
+  e = ck_make_engine(1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.click_mode == LE_CLICK_OFF);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_OFF) == LE_ERR_INVALID);
+  le_engine_destroy(e);
+}
+
 static void test_click_defaults_and_validation(void) {
   printf("test_click_defaults_and_validation\n");
   le_engine* e = ck_make_engine(2);
@@ -32138,6 +32293,12 @@ static void test_record_timing_partial_publication_keeps_owned_cancel(void) {
 }
 
 int main(void) {
+  test_click_mode_receipt_publication();
+  test_click_mode_reservation_crosses_32_bit_boundary();
+  test_click_mode_queue_full_and_same_value_refusal();
+  test_click_mode_armed_and_count_in_are_editable();
+  test_click_mode_admission_and_capture_order();
+  if (getenv("SEGNO_CLICK_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_record_timing_default_waits_for_callback();
   test_record_timing_coherent_publication();
   test_record_timing_admission_and_capture_refusal();

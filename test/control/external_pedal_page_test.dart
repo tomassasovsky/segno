@@ -26,6 +26,7 @@ import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
+import '../helpers/fake_click_mode_control.dart';
 import '../helpers/fake_click_volume_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/mock_click_tempo_cubit.dart';
@@ -210,6 +211,7 @@ void main() {
     }
     control = ControlCubit(
       clickVolumeControl: FakeClickVolumeControl(),
+      clickModeControl: FakeClickModeControl(),
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,

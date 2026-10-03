@@ -10,6 +10,7 @@ import 'package:toastification/toastification.dart';
 /// event that flashes a transient toast ([midiLost]) and leaves no standing
 /// bar. Both hardware returns are *restored* events, each a short snack.
 abstract final class AppToastId {
+  static const clickModeSettings = 'app_clickModeSettings_banner';
   static const deviceRestored = 'app_deviceRestored_snackbar';
   static const midiLost = 'app_midiLost_toast';
   static const midiRestored = 'app_midiRestored_snackbar';

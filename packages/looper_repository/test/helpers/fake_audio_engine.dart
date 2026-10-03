@@ -17,6 +17,7 @@ class FakeAudioEngine implements AudioEngine {
   LooperMode? publishedMode;
   bool commandsAreSettled = true;
   bool publishClickCommands = true;
+  bool publishClickModeCommands = true;
   bool publishLengthCommands = true;
   bool publishModeCommands = true;
   final Map<int, int> publishedLengths = {};
@@ -45,6 +46,10 @@ class FakeAudioEngine implements AudioEngine {
     lastConfig = config;
     calls.add('start');
     if (startResult.isOk) {
+      _nextSnapshot = _nextSnapshot.copyWith(
+        clickModeRevision: 0,
+        clickModeResult: 0,
+      );
       pendingMix = null;
       pendingImages.clear();
       imageRevisions.clear();
@@ -625,6 +630,13 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult setClickMode(ClickMode mode) {
     lastClickMode = mode;
     calls.add('setClickMode');
+    if (publishClickModeCommands) {
+      _nextSnapshot = _nextSnapshot.copyWith(
+        clickMode: mode,
+        clickModeRevision: (_nextSnapshot.clickModeRevision + 1) & 0xffffffff,
+        clickModeResult: 0,
+      );
+    }
     return EngineResult.ok;
   }
 
@@ -1818,6 +1830,8 @@ class _LengthSnapshot extends EngineSnapshot {
         loopBars: source.loopBars,
         currentBeat: source.currentBeat,
         clickMode: source.clickMode,
+        clickModeRevision: source.clickModeRevision,
+        clickModeResult: source.clickModeResult,
         clickMask: source.clickMask,
         clickVolume: source.clickVolume,
         countInBars: source.countInBars,

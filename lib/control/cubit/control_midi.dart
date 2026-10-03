@@ -417,6 +417,7 @@ extension MidiControlEditing on ControlCubit {
             oneShotOrigins: origins[event]!.oneShot,
             recordLengthOrigins: origins[event]!.recordLength,
             recordTimingOrigins: origins[event]!.recordTiming,
+            clickModeOrigins: origins[event]!.clickMode,
           );
         }
       }),
@@ -511,6 +512,7 @@ extension MidiControlEditing on ControlCubit {
     if (target is OneShotValueTarget) return target.relativeStep;
     if (target is RecordLengthValueTarget) return target.relativeStep;
     if (target is RecordTimingValueTarget) return target.relativeStep;
+    if (target is ClickModeValueTarget) return target.relativeStep;
     if (target is FxParamTarget) {
       final divisions = _midiParamDivisions(target);
       if (divisions != null && divisions > 0) return 1 / divisions;
@@ -524,6 +526,7 @@ extension MidiControlEditing on ControlCubit {
     Map<OneShotValueTarget, _OneShotOrigin>? oneShotOrigins,
     Map<RecordLengthValueTarget, _RecordLengthOrigin>? recordLengthOrigins,
     Map<RecordTimingValueTarget, _RecordTimingOrigin>? recordTimingOrigins,
+    Map<ClickModeValueTarget, _ClickModeOrigin>? clickModeOrigins,
   }) async {
     final session = _looper.sessionRevision;
     for (final proposal in proposals) {
@@ -538,6 +541,7 @@ extension MidiControlEditing on ControlCubit {
         oneShot: oneShotOrigins ?? captured.oneShot,
         recordLength: recordLengthOrigins ?? captured.recordLength,
         recordTiming: recordTimingOrigins ?? captured.recordTiming,
+        clickMode: clickModeOrigins ?? captured.clickMode,
       );
       if (session != _looper.sessionRevision || isClosed) return;
       Object? pending;
@@ -608,6 +612,13 @@ extension MidiControlEditing on ControlCubit {
                   !_recordTimingOriginCurrent(
                     target,
                     origins.recordTiming[target],
+                  )) {
+                continue;
+              }
+              if (target is ClickModeValueTarget &&
+                  !_clickModeOriginCurrent(
+                    target,
+                    origins.clickMode[target],
                   )) {
                 continue;
               }
@@ -730,6 +741,15 @@ extension MidiControlEditing on ControlCubit {
                 continue;
               }
             }
+            if (record.target case final ClickModeValueTarget target) {
+              if (!_clickModeOriginCurrent(
+                target,
+                origins.clickMode[target],
+              )) {
+                accepted.remove(index);
+                continue;
+              }
+            }
             final row = (proposal.mappingId, proposal.generation, index);
             if (record.ending) {
               _dropMidiHolder(row, record.target, record.holder);
@@ -759,7 +779,8 @@ extension MidiControlEditing on ControlCubit {
                       target is DecayValueTarget ||
                       target is OneShotValueTarget ||
                       target is RecordLengthValueTarget ||
-                      target is RecordTimingValueTarget) {
+                      target is RecordTimingValueTarget ||
+                      target is ClickModeValueTarget) {
                     _retireMixBaseline(target);
                   }
                   (_parameterHolders[target] ??= {})[holder] = (
@@ -1007,6 +1028,36 @@ extension MidiControlEditing on ControlCubit {
               if (outcome.isOk && _recordTimingOriginCurrent(target, origin)) {
                 accepted.add(entry.key);
               }
+            case ClickModeValueTarget():
+              final origin = origins.clickMode[target];
+              if (origin == null ||
+                  !value.isFinite ||
+                  !_clickModeOriginCurrent(target, origin)) {
+                continue;
+              }
+              final op = proposal.operations.firstWhere(
+                (op) => op.controlIndex == entry.key,
+              );
+              final released = op is MidiParameterWrite && op.held == true
+                  ? _midiReleasedFor(proposal, entry.key)
+                  : entry.value.ending
+                  ? _survivingMidiReleased(
+                      target,
+                      excluding: entry.value.holder,
+                    )
+                  : null;
+              final outcome = await _clickMode.setControllerClickMode(
+                target.toDomain(value),
+                lifetime: origin.lifetime,
+                revision: origin.revision,
+                releasedMode: released == null
+                    ? null
+                    : target.toDomain(released),
+              );
+              if (cancelled()) return;
+              if (outcome.isOk && _clickModeOriginCurrent(target, origin)) {
+                accepted.add(entry.key);
+              }
             case MasterGainTarget():
               if (_looper.setMasterGain(value).isOk) {
                 _masterGain = value;
@@ -1064,6 +1115,9 @@ extension MidiControlEditing on ControlCubit {
       return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
     }
     if (target is RecordTimingValueTarget) {
+      return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
+    }
+    if (target is ClickModeValueTarget) {
       return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
     }
     final clamped = value.clamp(0.0, 1.0);
@@ -1162,6 +1216,7 @@ extension MidiControlEditing on ControlCubit {
         oneShotSnapshot: _oneShot.oneShotSnapshot,
         recordLengthSnapshot: _recordLength.recordLengthSnapshot,
         recordTimingSnapshot: _recordTiming.recordTimingSnapshot,
+        clickModeSnapshot: _clickMode.clickModeSnapshot,
       );
 
   bool _controlValueResolves(
@@ -1171,8 +1226,8 @@ extension MidiControlEditing on ControlCubit {
       // Fixed scopes remain structurally present during owner recovery. Their
       // rejected release stays owed; new acquisitions still need readiness.
       (cleanup &&
-          target is RecordTimingValueTarget &&
-          target.address.isValid) ||
+          (target is ClickModeValueTarget ||
+              target is RecordTimingValueTarget && target.address.isValid)) ||
       _looper.valueTargetResolves(
         target,
         clickVolume: _clickVolume.clickVolume,
@@ -1180,6 +1235,7 @@ extension MidiControlEditing on ControlCubit {
         oneShotSnapshot: _oneShot.oneShotSnapshot,
         recordLengthSnapshot: _recordLength.recordLengthSnapshot,
         recordTimingSnapshot: _recordTiming.recordTimingSnapshot,
+        clickModeSnapshot: _clickMode.clickModeSnapshot,
       );
 
   _ControlOrigins _mixOrigins(
@@ -1215,6 +1271,13 @@ extension MidiControlEditing on ControlCubit {
         target: (
           lifetime: _recordTiming.recordTimingLifetime,
           revision: _recordTiming.recordTimingRevision(target.address),
+        ),
+    },
+    clickMode: {
+      for (final target in targets.whereType<ClickModeValueTarget>())
+        target: (
+          lifetime: _clickMode.clickModeLifetime,
+          revision: _clickMode.clickModeRevision,
         ),
     },
   );
@@ -1298,7 +1361,30 @@ extension MidiControlEditing on ControlCubit {
       origin.lifetime == _recordTiming.recordTimingLifetime &&
       origin.revision == _recordTiming.recordTimingRevision(target.address);
 
+  bool _clickModeOriginCurrent(
+    ClickModeValueTarget target,
+    _ClickModeOrigin? origin,
+  ) =>
+      origin != null &&
+      origin.lifetime == _clickMode.clickModeLifetime &&
+      origin.revision == _clickMode.clickModeRevision;
+
   void _supersedeRecordTimingClaims(RecordTimingValueTarget target) {
+    _midiEngine.supersedeParameterClaims({target.canonicalString()});
+    for (final entry in _midiTargets.entries.toList()) {
+      if (entry.value == target) {
+        _dropMidiHolder(entry.key, target, _midiHolderKeys[entry.key]);
+      }
+    }
+    _parameterHolders.remove(target);
+    for (final input in PedalCtrlInput.values) {
+      (_externalInvalidatedMix[input] ??= {}).add(target);
+      _externalMixReleased[input]?.remove(target);
+      _externalNumericReleases[input]?.remove(target);
+    }
+  }
+
+  void _supersedeClickModeClaims(ClickModeValueTarget target) {
     _midiEngine.supersedeParameterClaims({target.canonicalString()});
     for (final entry in _midiTargets.entries.toList()) {
       if (entry.value == target) {

@@ -77,6 +77,28 @@ class _TimingIntent {
   final Map<int, RecordTiming> overrides;
 }
 
+class _PendingClickMode {
+  _PendingClickMode({
+    required this.mode,
+    required this.restart,
+    required this.recovery,
+    required this.recoveryRestart,
+    required this.prior,
+    required this.expectedRevision,
+    required this.startup,
+  });
+  final ClickMode mode;
+  final ClickMode restart;
+  final ClickMode recovery;
+  final ClickMode recoveryRestart;
+  final ClickMode prior;
+  final int expectedRevision;
+  final bool startup;
+  final completed = Completer<EngineResult>();
+  Timer? timer;
+  int polls = 0;
+}
+
 class _PendingTiming {
   _PendingTiming({
     required this.intent,
@@ -384,6 +406,11 @@ class LooperRepository {
   bool _syncTempo = true;
   GridDivision _quantizeDiv = GridDivision.off;
   ClickMode _clickMode = ClickMode.off;
+  ClickMode _clickModeRestart = ClickMode.off;
+  _PendingClickMode? _pendingClickMode;
+  ({ClickMode mode, ClickMode restart})? _clickModeRecovery;
+  EngineResult _lastClickModeResult = EngineResult.ok;
+  final _clickModeFailures = StreamController<EngineResult>.broadcast();
   int _clickMask = 0;
   double _clickVolume = 1;
   double _clickRestartVolume = 1;
@@ -2063,6 +2090,7 @@ class LooperRepository {
   void _poll() {
     final onceSettled = _settlePendingOneShot();
     final clickSettled = _settlePendingClickVolume();
+    final modeSettled = _settleClickMode();
     final timingSettled = _settleTiming();
     final lengthSettled = _settlePendingLengthSettings();
     final mixSettled = _settlePendingMix();
@@ -2086,6 +2114,7 @@ class LooperRepository {
     if (next == _last &&
         !onceSettled &&
         !clickSettled &&
+        !modeSettled &&
         !lengthSettled &&
         !timingSettled &&
         !mixSettled) {
@@ -2104,9 +2133,10 @@ class LooperRepository {
   /// supervision the periodic poll does. Used so a local edit — e.g. a lane FX
   /// param the UI drives — reflects on the next frame rather than waiting for
   /// the next poll tick (which would make a dragged knob feel a tick behind).
-  void _reproject() {
+  void _reproject({bool forcePublication = false}) {
     final onceSettled = _settlePendingOneShot();
     final clickSettled = _settlePendingClickVolume();
+    final modeSettled = _settleClickMode();
     final timingSettled = _settleTiming();
     final lengthSettled = _settlePendingLengthSettings();
     final mixSettled = _settlePendingMix();
@@ -2115,9 +2145,11 @@ class LooperRepository {
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (next == _last &&
+    if (!forcePublication &&
+        next == _last &&
         !onceSettled &&
         !clickSettled &&
+        !modeSettled &&
         !lengthSettled &&
         !timingSettled &&
         !mixSettled) {
@@ -2205,6 +2237,7 @@ class LooperRepository {
     // discards queued commands, so cancel their waiter before replaying the
     // confirmed settings without disarming reconnect supervision.
     _cancelTiming();
+    _cancelClickMode();
     _cancelLengthSettings();
     _engine.stop();
     _cancelMix();
@@ -2241,7 +2274,9 @@ class LooperRepository {
       quantizeDiv: s.quantizeDiv,
       loopBars: s.loopBars,
       currentBeat: s.currentBeat,
-      clickMode: s.clickMode,
+      // Raw mode may change before the callback publishes its command fence.
+      // Every repository consumer observes the same receipt-confirmed choice.
+      clickMode: _clickMode,
       clickMask: s.clickMask,
       clickVolume: s.clickVolume,
       // The repository's own re-apply cache, like the record start settings
@@ -2407,12 +2442,14 @@ class LooperRepository {
         _clickRecoveryStartBlocked ||
         oneShotRecoveryRequired ||
         lengthRecoveryRequired ||
-        recordTimingRecoveryRequired) {
+        recordTimingRecoveryRequired ||
+        clickModeRecoveryRequired) {
       return EngineResult.notReady;
     }
     _cancelClickVolume();
     _cancelOneShot();
     _cancelTiming();
+    _cancelClickMode();
     _cancelLengthSettings();
     final replayedPriorEngine = _hasOpenedEngine;
     _mixGeneration++;
@@ -2481,9 +2518,16 @@ class LooperRepository {
       _engine
         ..setTimeSignature(_tsNum, _tsDen)
         ..setSyncTempo(on: _syncTempo)
-        ..setClickMode(_clickMode)
         ..setClickOutput(_clickMask)
         ..setCountIn(_countInBars);
+      final modeResult = _requestClickMode(
+        _clickModeRestart,
+        startup: true,
+      );
+      if (!modeResult.isOk) {
+        stopEngine();
+        return modeResult;
+      }
       final lengthResult = _requestLengthSettings(
         defaultBars: _lengthRestart.defaultBars,
         overrides: _lengthRestart.overrides,
@@ -2801,6 +2845,7 @@ class LooperRepository {
   /// reconnect supervision so the engine is not reopened behind the user.
   EngineResult stopEngine() {
     _cancelTiming();
+    _cancelClickMode();
     _cancelLengthSettings();
     // Quiesce the callback before reconciling the final published take image.
     final result = _engine.stop();
@@ -3656,6 +3701,7 @@ class LooperRepository {
     );
     final revision = ++_sessionRevision;
     _cancelTiming();
+    _cancelClickMode();
     _cancelLengthSettings();
     _lengthRecovery = null;
     _lengthRecoveryRestart = null;
@@ -3663,6 +3709,8 @@ class LooperRepository {
     _timingRecovery = null;
     _timingRecoveryRestart = null;
     _lastTimingResult = EngineResult.ok;
+    _clickModeRecovery = null;
+    _lastClickModeResult = EngineResult.ok;
     _cancelMix();
     _oneShotRecoveryIntent = null;
     _oneShotRecoveryRestart = null;
@@ -3796,6 +3844,7 @@ class LooperRepository {
     _requireSessionSetting(setAutoRecord(enabled: rig.autoRecord));
     _requireSessionSetting(setCountIn(rig.countInBars));
     _requireSessionSetting(setClickMode(rig.clickMode));
+    _requireSessionSetting(await settleClickMode());
     _requireSessionSetting(setClickOutput(rig.clickMask));
     _requireSessionSetting(setClickVolume(rig.clickVolume));
     _requireSessionSetting(await settleClickVolume());
@@ -6968,14 +7017,166 @@ class LooperRepository {
     return EngineResult.ok;
   }
 
-  /// Sets the click's audibility mode (WHEN it sounds; WHERE is
-  /// [setClickOutput]). Remembered and re-applied on every (re)start.
-  EngineResult setClickMode(ClickMode mode) {
-    if (_intendRunning) {
-      final result = _engine.setClickMode(mode);
-      if (!result.isOk) return result;
+  /// Accepted Released choice used on a device restart.
+  ClickMode get clickModeRestartIntent => _clickModeRestart;
+
+  /// No Hear click request is awaiting its callback receipt.
+  bool get clickModeSettled => _pendingClickMode == null;
+
+  /// Native uncertainty requires explicit recovery before more mode edits.
+  bool get clickModeRecoveryRequired => _clickModeRecovery != null;
+
+  /// Actual capture locks Hear click; armed/count-in alone remains editable.
+  bool get clickModeCaptureLocked =>
+      _intendRunning &&
+      _engine.snapshot().tracks.any(
+        (t) =>
+            t.state == TrackState.recording ||
+            t.state == TrackState.overdubbing,
+      );
+
+  /// Refusals/uncertainty from explicit edits and autonomous replay.
+  Stream<EngineResult> get clickModeFailures => _clickModeFailures.stream;
+
+  EngineResult _reportClickMode(EngineResult result) {
+    if (!_clickModeFailures.isClosed) _clickModeFailures.add(result);
+    return result;
+  }
+
+  void _cancelClickMode() {
+    final pending = _pendingClickMode;
+    _pendingClickMode = null;
+    pending?.timer?.cancel();
+    if (pending != null) {
+      _lastClickModeResult = EngineResult.notReady;
+      pending.completed.complete(EngineResult.notReady);
     }
-    _clickMode = mode;
+  }
+
+  /// Stages or enqueues Hear click, with separate durable Released intent.
+  EngineResult setClickMode(ClickMode mode, {ClickMode? releasedMode}) =>
+      _requestClickMode(mode, releasedMode: releasedMode);
+
+  EngineResult _requestClickMode(
+    ClickMode mode, {
+    ClickMode? releasedMode,
+    bool startup = false,
+  }) {
+    if (_pendingClickMode != null || clickModeRecoveryRequired) {
+      return EngineResult.notReady;
+    }
+    final restart = releasedMode ?? mode;
+    if (!_intendRunning) {
+      _clickMode = mode;
+      _clickModeRestart = restart;
+      _lastClickModeResult = EngineResult.ok;
+      _reproject();
+      return EngineResult.ok;
+    }
+    if (clickModeCaptureLocked) return EngineResult.invalid;
+    final prior = _engine.snapshot();
+    final result = _engine.setClickMode(mode);
+    if (!result.isOk) return result;
+    final pending = _PendingClickMode(
+      mode: mode,
+      restart: restart,
+      recovery: startup ? restart : _clickMode,
+      recoveryRestart: startup ? restart : _clickModeRestart,
+      prior: prior.clickMode,
+      expectedRevision: (prior.clickModeRevision + 1) & 0xffffffff,
+      startup: startup,
+    );
+    _pendingClickMode = pending;
+    pending.timer = Timer.periodic(const Duration(milliseconds: 10), (timer) {
+      if (!identical(_pendingClickMode, pending)) {
+        timer.cancel();
+        return;
+      }
+      if (_settleClickMode()) {
+        _reproject(forcePublication: true);
+      } else if (++pending.polls >= 50) {
+        _failClickMode(pending, EngineResult.notReady);
+        _reproject();
+      }
+    });
+    if (!startup) _reproject();
+    return _pendingClickMode == null ? _lastClickModeResult : EngineResult.ok;
+  }
+
+  bool _settleClickMode() {
+    final pending = _pendingClickMode;
+    // Acquire BEFORE sampling; no await, publication, or next writer until
+    // this exact receipt has been read and classified under the reservation.
+    if (pending == null || !_engine.commandsSettled) return false;
+    final snapshot = _engine.snapshot();
+    if (snapshot.clickModeRevision != pending.expectedRevision) return false;
+    final result = EngineResult.fromCode(snapshot.clickModeResult);
+    if (result.isOk && snapshot.clickMode == pending.mode) {
+      _pendingClickMode = null;
+      pending.timer?.cancel();
+      _clickMode = pending.mode;
+      _clickModeRestart = pending.restart;
+      _lastClickModeResult = EngineResult.ok;
+      pending.completed.complete(EngineResult.ok);
+    } else if (!result.isOk &&
+        snapshot.clickMode == pending.prior &&
+        !pending.startup) {
+      _pendingClickMode = null;
+      pending.timer?.cancel();
+      _lastClickModeResult = result;
+      pending.completed.complete(result);
+      _reportClickMode(result);
+    } else {
+      _failClickMode(pending, EngineResult.invalid);
+    }
+    return true;
+  }
+
+  void _failClickMode(_PendingClickMode pending, EngineResult result) {
+    if (!identical(_pendingClickMode, pending)) return;
+    _pendingClickMode = null;
+    pending.timer?.cancel();
+    _clickModeRecovery = (
+      mode: pending.recovery,
+      restart: pending.recoveryRestart,
+    );
+    _lastClickModeResult = result;
+    pending.completed.complete(result);
+    // Never stop an active take to repair a future Click policy.
+    if (!clickModeCaptureLocked) stopEngine();
+    _reportClickMode(result);
+  }
+
+  /// Bounded exact revision/result/actual-mode confirmation.
+  Future<EngineResult> settleClickMode({
+    Duration pollInterval = const Duration(milliseconds: 10),
+    int attempts = 50,
+  }) async {
+    final pending = _pendingClickMode;
+    if (pending == null) return _lastClickModeResult;
+    for (var i = 0; i < attempts; i++) {
+      if (pending.completed.isCompleted) return pending.completed.future;
+      if (_settleClickMode()) _reproject(forcePublication: true);
+      if (pending.completed.isCompleted) return pending.completed.future;
+      await Future<void>.delayed(pollInterval);
+    }
+    if (!pending.completed.isCompleted) {
+      _failClickMode(pending, EngineResult.notReady);
+      _reproject();
+    }
+    return pending.completed.future;
+  }
+
+  /// Explicit Retry repairs only the current repository obligation.
+  EngineResult recoverClickMode() {
+    final recovery = _clickModeRecovery;
+    if (recovery == null) return EngineResult.ok;
+    if (clickModeCaptureLocked) return EngineResult.notReady;
+    if (_intendRunning) stopEngine();
+    _clickMode = recovery.mode;
+    _clickModeRestart = recovery.restart;
+    _clickModeRecovery = null;
+    _lastClickModeResult = EngineResult.ok;
     _reproject();
     return EngineResult.ok;
   }
@@ -7476,6 +7677,7 @@ class LooperRepository {
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
     _cancelTiming();
+    _cancelClickMode();
     _cancelLengthSettings();
     _cancelMix();
     await _stopPollingAndClose();
@@ -7497,6 +7699,7 @@ class LooperRepository {
     await _recoveryRefusals.close();
     await _lengthSettingsFailures.close();
     await _timingFailures.close();
+    await _clickModeFailures.close();
     await _mixSettingsFailures.close();
     await _controller.close();
   }

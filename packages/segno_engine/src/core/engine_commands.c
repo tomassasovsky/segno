@@ -2590,8 +2590,22 @@ int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode) {
 /* ---- click + count-in (A2; see segno_engine_api.h's click section) ---- */
 
 int32_t le_engine_set_click_mode(le_engine* engine, int32_t mode) {
-  if (mode < LE_CLICK_OFF || mode > LE_CLICK_PLAY_REC) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_CLICK_MODE, mode, 0.0f);
+  if (!engine || mode < LE_CLICK_OFF || mode > LE_CLICK_PLAY_REC) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  if (engine->click_mode_command != 0 && engine->click_mode_command >
+      atomic_load_explicit(&engine->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
+  for (int c = 0; c < engine->track_count; ++c) {
+    const int state = load_i32(&engine->tracks[c].a_state);
+    if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) return LE_ERR_INVALID;
+  }
+  const uint32_t revision = engine->click_mode_posted_revision + 1u;
+  const int32_t result = le_push_cmd(engine, (le_command){
+      .code = LE_CMD_SET_CLICK_MODE, .click = {.mode = mode, .revision = revision}});
+  if (result == LE_OK) {
+    engine->click_mode_posted_revision = revision;
+    engine->click_mode_command = engine->commands_posted;
+  }
+  return result;
 }
 
 int32_t le_engine_set_click_output(le_engine* engine, int32_t mask) {

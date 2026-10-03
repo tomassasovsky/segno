@@ -235,7 +235,7 @@ typedef enum le_command_code {
    * performance tap, so it bypasses master gain / limiter / metering and is
    * excluded from performance capture and export by construction. None of
    * these commands is therefore perf-logged. */
-  LE_CMD_SET_CLICK_MODE = 19, /* arg_i = le_click_mode (0..3). Default off. */
+  LE_CMD_SET_CLICK_MODE = 19, /* typed mode + revision; raw posts rejected. */
   LE_CMD_SET_LANE_FX = 20, /* set a lane chain entry's type (and reset its DSP
                             * state). arg_i = (channel << 16) | (lane << 8) |
                             * index, arg_f = le_fx_type. */
@@ -1223,6 +1223,12 @@ typedef struct le_snapshot {
    * mask 0 (unrouted), volume 1, count-in 0 bars — the untouched engine is
    * bit-identical to the click-free build. */
   int32_t click_mode;   /* le_click_mode (default 0 = off) */
+  /* Exact command receipt: acquire commands_settled BEFORE a synchronous
+   * snapshot read; do not admit another mode write until the read completes.
+   * Revision advances on callback acceptance/refusal, including same-value
+   * requests. It resets on configure; the actual mode survives configure. */
+  uint32_t click_mode_revision;
+  int32_t click_mode_result; /* LE_OK or LE_ERR_INVALID; prior mode on refusal */
   uint32_t click_mask;  /* click output bitmask (default 0 = no outputs) */
   float click_volume;   /* 0..LE_MAX_GAIN (default 1); the click's only gain */
   int32_t count_in_bars; /* count-in length in measures; 0 = off (default) */
@@ -2110,7 +2116,10 @@ LE_EXPORT int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode);
  * it never appears in performance captures, bounces, or exports. It defaults
  * to NO outputs: nothing sounds until a mask is assigned. */
 
-/* Sets the click audibility mode (le_click_mode, 0..3). Values outside the
+/* Enqueues one callback-confirmed click mode; capturing refuses, arms do not.
+ * One request at a time. Confirm via commands_settled then snapshot receipt.
+ * Raw LE_CMD_SET_CLICK_MODE posts are invalid. Sets mode (le_click_mode, 0..3).
+ * Values outside the
  * enum return LE_ERR_INVALID. Default off. */
 LE_EXPORT int32_t le_engine_set_click_mode(le_engine* engine, int32_t mode);
 
