@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_expression.dart';
+import 'package:segno/control/view/click_mode_endpoint_choice.dart';
 import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/control/view/playback_endpoint_choice.dart';
@@ -213,10 +214,11 @@ class ExpressionControlsPanel extends StatelessWidget {
   Widget _range(BuildContext context, ExpressionRow row) {
     final l10n = context.l10n;
     final surface = context.surface;
+    final compactChoices = row.mapping.target is ClickModeValueTarget;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 27),
+        SizedBox(height: compactChoices ? 10 : 27),
         SizedBox(
           height: 58,
           child: Row(
@@ -253,7 +255,7 @@ class ExpressionControlsPanel extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 30),
+        SizedBox(height: compactChoices ? 10 : 30),
         Row(
           children: [
             _endpoint(context, row, isHeel: true),
@@ -308,8 +310,19 @@ class ExpressionControlsPanel extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
-          if (row.mapping.target is OneShotValueTarget)
+          SizedBox(
+            height: row.mapping.target is ClickModeValueTarget ? 9 : 14,
+          ),
+          if (row.mapping.target is ClickModeValueTarget)
+            ClickModeEndpointChoice(
+              key: Key('expression_endpoint_${endpointId}_$targetKey'),
+              value: value,
+              width: 625,
+              enabled: row.available && row.disabledReason == null,
+              keyPrefix: 'expression_endpoint_$endpointId',
+              onChanged: (next) => onEndpoint(isHeel: isHeel, value: next),
+            )
+          else if (row.mapping.target is OneShotValueTarget)
             PlaybackEndpointChoice(
               key: Key(
                 'expression_endpoint_${endpointId}_$targetKey',

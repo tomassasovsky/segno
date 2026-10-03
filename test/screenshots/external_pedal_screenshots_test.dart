@@ -29,6 +29,7 @@ import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
@@ -232,6 +233,7 @@ void main() {
     WidgetTester tester, {
     ExternalJackSetup? jack,
     OneShotSnapshot? oneShotSnapshot,
+    ClickModeSnapshot? clickModeSnapshot,
   }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
     await settings.saveQuantize(value: false);
@@ -255,6 +257,7 @@ void main() {
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     final tempo = MockClickTempoCubit();
+    when(() => tempo.clickModeSnapshot).thenReturn(clickModeSnapshot);
     final decay = MockDecayPlaybackCubit(
       snapshot: DecaySnapshot(defaultPercent: 25, trackOverrides: const {0: 0}),
       oneShot: oneShotSnapshot,
@@ -271,6 +274,7 @@ void main() {
       recordLengthControl: record,
       recordTimingControl: timing,
       clickVolumeControl: tempo,
+      clickModeControl: tempo,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
@@ -584,6 +588,49 @@ void main() {
       findsOneWidget,
     );
     await shot(tester, 'click_held_released');
+  }, skip: !hasScreenshotFonts);
+
+  screenshotTestWidgets('a button holds Play & record and releases to First', (
+    tester,
+  ) async {
+    const target = ClickModeValueTarget();
+    await pump(
+      tester,
+      clickModeSnapshot: const ClickModeSnapshot(
+        mode: ClickMode.recFirst,
+        captureLocked: false,
+      ),
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: target,
+                condition: ExternalValueCondition.heldReleased,
+                active: 1,
+                inactive: 1 / 3,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    await tester.tap(
+      find.byKey(Key('external_control_value_${externalControlKey(target)}')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('First recording'), findsWidgets);
+    expect(find.text('Play & record'), findsWidgets);
+    expect(
+      find.byKey(const Key('external_value_inactive_label')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('external_value_active_label')),
+      findsOneWidget,
+    );
+    await shot(tester, 'hear_click_held_released');
   }, skip: !hasScreenshotFonts);
 
   screenshotTestWidgets('a button holds decay and releases to explicit zero', (

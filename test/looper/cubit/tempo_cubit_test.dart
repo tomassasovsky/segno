@@ -11,10 +11,30 @@ import '../../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+TransportState _updated(
+  TransportState prior, {
+  double? tempoBpm,
+  int? tsNum,
+  int? tsDen,
+  ClickMode? clickMode,
+  int? clickMask,
+  double? clickVolume,
+  int? countInBars,
+}) => TransportState(
+  tempoBpm: tempoBpm ?? prior.tempoBpm,
+  tsNum: tsNum ?? prior.tsNum,
+  tsDen: tsDen ?? prior.tsDen,
+  clickMode: clickMode ?? prior.clickMode,
+  clickMask: clickMask ?? prior.clickMask,
+  clickVolume: clickVolume ?? prior.clickVolume,
+  countInBars: countInBars ?? prior.countInBars,
+);
+
 void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
   late StreamController<LooperState> looperStates;
+  late TransportState accepted;
 
   setUpAll(() {
     registerFallbackValue(Duration.zero);
@@ -25,6 +45,19 @@ void main() {
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    accepted = const TransportState();
+    when(
+      () => repository.clickModeFailures,
+    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.clickModeSettled).thenReturn(true);
+    when(() => repository.clickModeRecoveryRequired).thenReturn(false);
+    when(() => repository.clickModeCaptureLocked).thenReturn(false);
+    when(
+      () => repository.clickModeRestartIntent,
+    ).thenAnswer((_) => accepted.clickMode);
+    when(
+      () => repository.settleClickMode(),
+    ).thenAnswer((_) async => EngineResult.ok);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.clickVolumeSettled).thenReturn(true);
@@ -41,7 +74,7 @@ void main() {
     ).thenReturn(EngineResult.ok);
     looperStates = StreamController<LooperState>.broadcast();
     when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
-    when(() => repository.sessionTransport).thenReturn(const TransportState());
+    when(() => repository.sessionTransport).thenAnswer((_) => accepted);
     for (final stub in <void Function()>[
       () => when(() => repository.setTempo(any())).thenReturn(EngineResult.ok),
       () => when(
@@ -63,6 +96,49 @@ void main() {
     ]) {
       stub();
     }
+    when(() => repository.setClickMode(any())).thenAnswer((call) {
+      accepted = _updated(
+        accepted,
+        clickMode: call.positionalArguments[0] as ClickMode,
+      );
+      return EngineResult.ok;
+    });
+    when(() => repository.setTempo(any())).thenAnswer((call) {
+      accepted = _updated(
+        accepted,
+        tempoBpm: call.positionalArguments[0] as double,
+      );
+      return EngineResult.ok;
+    });
+    when(() => repository.setTimeSignature(any(), any())).thenAnswer((call) {
+      accepted = _updated(
+        accepted,
+        tsNum: call.positionalArguments[0] as int,
+        tsDen: call.positionalArguments[1] as int,
+      );
+      return EngineResult.ok;
+    });
+    when(() => repository.setClickOutput(any())).thenAnswer((call) {
+      accepted = _updated(
+        accepted,
+        clickMask: call.positionalArguments[0] as int,
+      );
+      return EngineResult.ok;
+    });
+    when(() => repository.setClickVolume(any())).thenAnswer((call) {
+      accepted = _updated(
+        accepted,
+        clickVolume: call.positionalArguments[0] as double,
+      );
+      return EngineResult.ok;
+    });
+    when(() => repository.setCountIn(any())).thenAnswer((call) {
+      accepted = _updated(
+        accepted,
+        countInBars: call.positionalArguments[0] as int,
+      );
+      return EngineResult.ok;
+    });
   });
 
   group('TempoCubit', () {
@@ -77,26 +153,28 @@ void main() {
       setUp: () async {
         await settings.saveTempoBpm(140);
         await settings.saveTimeSignature(7, 8);
-        await settings.saveClickMode(ClickMode.playRec.code);
+        await settings.restoreClickModeCheckpoint(ClickMode.playRec.code);
         await settings.saveClickOutputMask(0x3);
         await settings.saveClickVolume(0.5);
         await settings.saveCountInBars(2);
       },
       build: () => TempoCubit(repository: repository, settings: settings),
       act: (cubit) => cubit.load(),
-      expect: () => [
-        const TempoSettings(
-          bpm: 140,
-          tsNum: 7,
-          tsDen: 8,
-          clickMode: ClickMode.playRec,
-          clickOutputMask: 0x3,
-          clickVolume: 0.5,
-          clickReady: true,
-          countInBars: 2,
-        ),
-      ],
-      verify: (_) {
+      verify: (cubit) {
+        expect(
+          cubit.state,
+          const TempoSettings(
+            bpm: 140,
+            tsNum: 7,
+            tsDen: 8,
+            clickMode: ClickMode.playRec,
+            clickOutputMask: 0x3,
+            clickVolume: 0.5,
+            clickReady: true,
+            clickModeReady: true,
+            countInBars: 2,
+          ),
+        );
         verify(() => repository.setTempo(140)).called(1);
         verify(() => repository.setTimeSignature(7, 8)).called(1);
         verify(() => repository.setClickMode(ClickMode.playRec)).called(1);
@@ -157,11 +235,16 @@ void main() {
         await cubit.setClickVolume(0.5);
         await cubit.setCountInBars(2);
       },
-      expect: () => <TempoSettings>[],
+      expect: () => [
+        const TempoSettings(
+          clickMode: ClickMode.recFirst,
+          clickModeReady: true,
+        ),
+      ],
       verify: (_) async {
         expect(await settings.loadTempoBpm(), 0);
         expect(await settings.loadTimeSignature(), (4, 4));
-        expect(await settings.loadClickMode(), ClickMode.off.code);
+        expect(await settings.readClickModeCheckpoint(), isNull);
         expect(await settings.loadClickOutputMask(), 0);
         expect(await settings.loadClickVolume(), 1);
         expect(await settings.loadCountInBars(), 0);
@@ -229,9 +312,15 @@ void main() {
       'setClickMode emits, persists, and applies the new mode',
       build: () => TempoCubit(repository: repository, settings: settings),
       act: (cubit) => cubit.setClickMode(ClickMode.rec),
-      expect: () => [const TempoSettings(clickMode: ClickMode.rec)],
+      expect: () => [
+        const TempoSettings(
+          clickMode: ClickMode.recFirst,
+          clickModeReady: true,
+        ),
+        const TempoSettings(clickMode: ClickMode.rec, clickModeReady: true),
+      ],
       verify: (_) async {
-        expect(await settings.loadClickMode(), ClickMode.rec.code);
+        expect(await settings.readClickModeCheckpoint(), ClickMode.rec.code);
         verify(() => repository.setClickMode(ClickMode.rec)).called(1);
       },
     );
@@ -325,13 +414,13 @@ void main() {
     build: () => TempoCubit(repository: repository, settings: settings),
     act: (cubit) async {
       await cubit.load();
+      expect(cubit.state.countInBars, 2);
+      accepted = _updated(accepted, countInBars: 0);
       looperStates.add(const LooperState());
       await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.countInBars, 0);
+      expect(cubit.state.clickModeReady, isTrue);
     },
-    expect: () => [
-      const TempoSettings(countInBars: 2, clickReady: true),
-      const TempoSettings(clickReady: true),
-    ],
     verify: (_) async => expect(await settings.loadCountInBars(), 2),
   );
 
@@ -355,27 +444,31 @@ void main() {
       );
       looperStates.add(const LooperState());
       await Future<void>.delayed(Duration.zero);
+      expect(
+        cubit.state,
+        const TempoSettings(
+          bpm: 96,
+          tsNum: 5,
+          tsDen: 8,
+          clickMode: ClickMode.playRec,
+          clickOutputMask: 3,
+          clickVolume: .5,
+          clickReady: true,
+          clickModeReady: true,
+          countInBars: 2,
+        ),
+      );
       when(
         () => repository.sessionTransport,
       ).thenReturn(const TransportState());
       looperStates.add(const LooperState());
       await Future<void>.delayed(Duration.zero);
       await cubit.load();
+      expect(
+        cubit.state,
+        const TempoSettings(clickReady: true, clickModeReady: true),
+      );
     },
-    expect: () => [
-      const TempoSettings(clickReady: true),
-      const TempoSettings(
-        bpm: 96,
-        tsNum: 5,
-        tsDen: 8,
-        clickMode: ClickMode.playRec,
-        clickOutputMask: 3,
-        clickVolume: 0.5,
-        clickReady: true,
-        countInBars: 2,
-      ),
-      const TempoSettings(clickReady: true),
-    ],
     verify: (_) async {
       expect(await settings.loadTempoBpm(), 0);
       expect(await settings.loadQuantizeDiv(), GridDivision.off.code);

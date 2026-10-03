@@ -186,10 +186,64 @@ class _ClickStore extends FakeKeyValueStore {
     if (key == 'tempo.click_volume') {
       writeEntered = true;
       await pendingWrite?.future;
-      if (refuseWrite) throw StateError('Click preference unavailable');
     }
     await super.setDouble(key, value);
+    if (key == 'tempo.click_volume' && refuseWrite) {
+      throw StateError('Click write failed after mutation');
+    }
   }
+
+  @override
+  Future<void> remove(String key) async {
+    if (key == 'tempo.click_volume' && refuseWrite) {
+      throw StateError('Click compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
+class _ClickModeStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+  bool refuseNextRead = false;
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'tempo.click_mode' && refuseNextRead) {
+      refuseNextRead = false;
+      throw StateError('Hear click temporarily unreadable');
+    }
+    return super.getInt(key);
+  }
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    if (key == 'tempo.click_mode') {
+      writeEntered = true;
+      await pendingWrite?.future;
+    }
+    await super.setInt(key, value);
+    if (key == 'tempo.click_mode' && refuseWrite) {
+      throw StateError('Hear click write failed after mutation');
+    }
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if (key == 'tempo.click_mode' && refuseWrite) {
+      throw StateError('Hear click compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
+class _RefusingClickModeEngine extends FakeAudioEngine {
+  bool refuseMode = false;
+
+  @override
+  EngineResult setClickMode(ClickMode mode) =>
+      refuseMode ? EngineResult.invalid : super.setClickMode(mode);
 }
 
 class _DecayStore extends FakeKeyValueStore {
@@ -679,6 +733,252 @@ void main() {
           }
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump();
+        },
+      );
+    }
+
+    for (final malformed in [false, true]) {
+      testWidgets(
+        'Hear click startup recovery remains actionable; malformed=$malformed',
+        (tester) async {
+          final store = _ClickModeStore()..refuseNextRead = !malformed;
+          store.values['tempo.click_mode'] = malformed ? 4 : 0;
+          final before = Map<String, Object>.of(store.values);
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final tempo = tester
+              .element(find.byType(TracksView))
+              .read<TempoCubit>();
+          expect(tempo.clickModeSnapshot, isNull);
+          expect(find.text('Hear click needs attention'), findsOneWidget);
+          await tester.pump(const Duration(seconds: 6));
+          expect(find.text('Hear click needs attention'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(tempo.state.clickModeReady, !malformed);
+          expect(store.values, before);
+          if (malformed) {
+            expect(find.text('Hear click needs attention'), findsOneWidget);
+          } else {
+            expect(tempo.clickModeSnapshot?.mode, ClickMode.off);
+            expect(find.text('Hear click needs attention'), findsNothing);
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+        },
+      );
+    }
+
+    testWidgets('power off waits for ordinary Hear click persistence', (
+      tester,
+    ) async {
+      final store = _ClickModeStore();
+      settings = SettingsRepository(store: store);
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerOffCubit>();
+      expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
+      store.pendingWrite = Completer<void>();
+      unawaited(tempo.setClickMode(ClickMode.playRec));
+      await tester.pump();
+      expect(store.writeEntered, isTrue);
+      power.press(const PowerOffSnapshot());
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(power.state.phase, PowerOffPhase.flushing);
+      expect(haltCalls, 0);
+      expect(tempo.state.clickMode, ClickMode.recFirst);
+      store.pendingWrite!.complete();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 6));
+      expect(haltCalls, 1);
+      expect(store.values['tempo.click_mode'], 3);
+      expect(tempo.durableClickMode, ClickMode.playRec);
+    });
+
+    for (final retry in [false, true]) {
+      testWidgets('uncertain Hear click keeps power on; retry=$retry', (
+        tester,
+      ) async {
+        final store = _ClickModeStore();
+        settings = SettingsRepository(store: store);
+        var haltCalls = 0;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => haltCalls++,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final tempo = context.read<TempoCubit>();
+        final power = context.read<PowerOffCubit>();
+        store.refuseWrite = true;
+        unawaited(tempo.setClickMode(ClickMode.playRec));
+        await tester.pumpAndSettle();
+        expect(tempo.state.clickMode, ClickMode.recFirst);
+        expect(tempo.clickModeSnapshot, isNull);
+        power.press(const PowerOffSnapshot());
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.flushFailed);
+        expect(haltCalls, 0);
+        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
+        store.refuseWrite = false;
+        await tester.tap(
+          find.byKey(Key(retry ? 'power_off_retry' : 'power_off_keep_playing')),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(haltCalls, retry ? 1 : 0);
+        if (!retry) {
+          expect(find.text('Hear click needs attention'), findsOneWidget);
+          expect(tempo.clickModeSnapshot, isNull);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(find.text('Hear click needs attention'), findsNothing);
+        }
+        expect(store.values.containsKey('tempo.click_mode'), isFalse);
+        expect(tempo.durableClickMode, ClickMode.recFirst);
+      });
+    }
+
+    testWidgets('compensated Hear click refusal permits normal shutdown', (
+      tester,
+    ) async {
+      final rejectingEngine = _RefusingClickModeEngine();
+      engine = rejectingEngine;
+      repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      );
+      final store = FakeKeyValueStore();
+      settings = SettingsRepository(store: store);
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      repository.startEngine(const EngineConfig());
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(TracksView));
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerOffCubit>();
+      rejectingEngine.refuseMode = true;
+      bool? accepted;
+      unawaited(
+        tempo.setClickMode(ClickMode.rec).then((v) => accepted = v.isOk),
+      );
+      await tester.pumpAndSettle();
+      expect(accepted, isFalse);
+      expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
+      expect(store.values.containsKey('tempo.click_mode'), isFalse);
+      expect(repository.clickModeRecoveryRequired, isFalse);
+      power.press(const PowerOffSnapshot());
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerOffPhase.goodbye);
+      await tester.pump(const Duration(seconds: 6));
+      expect(haltCalls, 1);
+    });
+
+    for (final releasedBeforeShutdown in [false, true]) {
+      testWidgets(
+        'owed click release blocks power off; prior=$releasedBeforeShutdown',
+        (tester) async {
+          final rejectingEngine = _RefusingClickModeEngine();
+          engine = rejectingEngine;
+          repository = LooperRepository(
+            engine: engine,
+            ticker: const Stream<void>.empty(),
+          );
+          final store = FakeKeyValueStore();
+          settings = SettingsRepository(store: store);
+          final midi = _ShutdownMidi(settings);
+          midiDeviceRepository = midi;
+          addTearDown(() => unawaited(midi.dispose()));
+          var haltCalls = 0;
+          await pumpApp(
+            tester,
+            NoopWaveformWindowService(),
+            powerOff: () async => haltCalls++,
+          );
+          repository.startEngine(const EngineConfig());
+          await tester.pumpAndSettle();
+          final context = tester.element(find.byType(TracksView));
+          final control = context.read<ControlCubit>();
+          final tempo = context.read<TempoCubit>();
+          final power = context.read<PowerOffCubit>();
+          final editor = Object();
+          control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+          MidiSaveResult? saved;
+          final beforeSave = engine.clickModeRequests.length;
+          unawaited(
+            control
+                .saveMidiMapping(
+                  MidiMapping(
+                    id: 'held-click-mode-shutdown',
+                    source: MidiSource(
+                      device: 'shutdown-test',
+                      kind: ControllerSourceKind.midiCc,
+                      number: 21,
+                    ),
+                    behavior: MidiBehavior.momentary,
+                    controls: [
+                      MidiParameterControl(
+                        key: '{"ctl":"clickMode"}',
+                        low: 0,
+                        high: 1,
+                      ),
+                    ],
+                  ),
+                  owner: editor,
+                  create: true,
+                )
+                .then((result) => saved = result),
+          );
+          await tester.pumpAndSettle();
+          expect(saved?.saved, isTrue);
+          expect(engine.clickModeRequests.length, beforeSave);
+          control.endMidiEdit(editor);
+          midi.push(127);
+          await tester.pumpAndSettle();
+          expect(tempo.clickModeSnapshot?.mode, ClickMode.playRec);
+          expect(tempo.durableClickMode, ClickMode.off);
+          rejectingEngine.refuseMode = true;
+          if (releasedBeforeShutdown) {
+            midi.push(0);
+            await tester.pumpAndSettle();
+            expect(debugAppToastActive(AppToastId.clickModeSettings), isTrue);
+            expect(tempo.state.clickMode, ClickMode.playRec);
+          }
+          final stopCalls = engine.stopCalls;
+          power.press(const PowerOffSnapshot());
+          await tester.pumpAndSettle();
+          expect(power.state.phase, PowerOffPhase.flushFailed);
+          expect(haltCalls, 0);
+          expect(engine.stopCalls, stopCalls);
+          expect(tempo.state.clickMode, ClickMode.playRec);
+          expect(store.values['tempo.click_mode'], 0);
+          expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
+          expect(
+            find.byKey(const Key('power_off_retry')).hitTestable(),
+            findsOneWidget,
+          );
+          final commandsBeforeLateInput = engine.clickModeRequests.length;
+          midi.push(127);
+          await tester.pumpAndSettle();
+          expect(engine.clickModeRequests.length, commandsBeforeLateInput);
+          rejectingEngine.refuseMode = false;
+          await tester.tap(find.byKey(const Key('power_off_retry')));
+          await tester.pumpAndSettle();
+          expect(tempo.state.clickMode, ClickMode.off);
+          expect(power.state.phase, PowerOffPhase.goodbye);
+          await tester.pump(const Duration(seconds: 6));
+          expect(haltCalls, 1);
         },
       );
     }

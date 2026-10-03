@@ -123,6 +123,7 @@ void main() {
         ),
         settings: settingsFromLooper(
           looper,
+          clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
             defaultTiming: looper.defaultRecordTiming,
             rememberedDivision: looper.sessionTransport.quantizeDiv,
@@ -201,6 +202,7 @@ void main() {
       expect(
         settingsFromLooper(
           looper,
+          clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
             defaultTiming: looper.defaultRecordTiming,
             rememberedDivision: looper.sessionTransport.quantizeDiv,
@@ -262,6 +264,7 @@ void main() {
         expect(engine.snapshot().tempoBpm, 0);
         final settings = settingsFromLooper(
           looper,
+          clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
             defaultTiming: looper.defaultRecordTiming,
             rememberedDivision: looper.sessionTransport.quantizeDiv,
@@ -321,6 +324,7 @@ void main() {
           ..setAutoRecord(enabled: true);
         final inherited = settingsFromLooper(
           looper,
+          clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
             defaultTiming: looper.defaultRecordTiming,
             rememberedDivision: looper.sessionTransport.quantizeDiv,

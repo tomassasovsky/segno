@@ -49,8 +49,9 @@ class SessionCubit extends Cubit<SessionState> {
     required FxChainPersistence fxPersistence,
     required MixSettingsPersistence mixPersistence,
     required Future<T> Function<T>(Future<T> Function() operation)
-    runClickVolumeExclusive,
+    runClickExclusive,
     required double Function() currentDurableClickVolume,
+    required ClickMode Function() currentDurableClickMode,
     required Future<T> Function<T>(Future<T> Function() operation)
     runPlaybackExclusive,
     required DecaySnapshot Function() currentDurableDecay,
@@ -71,8 +72,9 @@ class SessionCubit extends Cubit<SessionState> {
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
        _mixPersistence = mixPersistence,
-       _runClickVolumeExclusive = runClickVolumeExclusive,
+       _runClickExclusive = runClickExclusive,
        _currentDurableClickVolume = currentDurableClickVolume,
+       _currentDurableClickMode = currentDurableClickMode,
        _runPlaybackExclusive = runPlaybackExclusive,
        _currentDurableDecay = currentDurableDecay,
        _currentDurableOneShot = currentDurableOneShot,
@@ -105,8 +107,9 @@ class SessionCubit extends Cubit<SessionState> {
   final FxChainPersistence _fxPersistence;
   final MixSettingsPersistence _mixPersistence;
   final Future<T> Function<T>(Future<T> Function() operation)
-  _runClickVolumeExclusive;
+  _runClickExclusive;
   final double Function() _currentDurableClickVolume;
+  final ClickMode Function() _currentDurableClickMode;
   final Future<T> Function<T>(Future<T> Function() operation)
   _runPlaybackExclusive;
   final DecaySnapshot Function() _currentDurableDecay;
@@ -125,7 +128,7 @@ class SessionCubit extends Cubit<SessionState> {
   // Lock order: Mixer, Click, Playback, Record length, then Record timing.
   Future<T> _runSettingsExclusive<T>(Future<T> Function() operation) =>
       _mixSettings.runExclusive(
-        () => _runClickVolumeExclusive(
+        () => _runClickExclusive(
           () => _runPlaybackExclusive(
             () => _runRecordExclusive(
               () => _runRecordTimingExclusive(operation),
@@ -266,6 +269,7 @@ class SessionCubit extends Cubit<SessionState> {
         _looper,
         mix: _mixSettings.durableSnapshot,
         clickVolume: _currentDurableClickVolume(),
+        clickMode: _currentDurableClickMode(),
         decay: _currentDurableDecay(),
         oneShot: _currentDurableOneShot(),
         recordLength: _currentDurableRecordLength(),

@@ -303444,6 +303444,122 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "qhTEW",
+      "x": 67888,
+      "y": 3744,
+      "name": "Native implementation / Shared Hear click / M3.16",
+      "width": 4000,
+      "height": 1820,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "ulo7t",
+          "name": "Shared Hear click reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Hear click · one confirmed choice across controls",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "Tvxr0",
+          "name": "c/ Hear click default, capture, durable release and recovery",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Hear click offers Off, First recording, Recording and Play & record in Loop controls. A new setup uses First recording; an explicitly saved Off remains Off. Recording or overdubbing disables changes without stopping audio. Touch, encoder, MIDI and external pedals share the confirmed choice. Held stays live; Session Save and restart retain Released. Uncertain settings stay unavailable until Retry. Adding or saving a mapping alone changes no audio. Native references at 1920 × 1080; physical timing still needs device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "Hlarl",
+          "name": "Shared Hear click reference row",
+          "width": "fill_container",
+          "height": 1240,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "XPZQP",
+              "name": "Tempo & click · confirmed First recording reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "b0zMLx",
+                  "name": "Tempo & click · confirmed First recording caption",
+                  "fill": "#F1F2F4",
+                  "content": "Tempo & click · confirmed First recording",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "zf8IJ",
+                  "name": "Tempo & click · confirmed First recording native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/loop_settings_tempo.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "x45oW",
+              "name": "External button · Held and Released Hear click reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "BQUHQ",
+                  "name": "External button · Held and Released Hear click caption",
+                  "fill": "#F1F2F4",
+                  "content": "External button · Held and Released Hear click",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "n1f8R",
+                  "name": "External button · Held and Released Hear click native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_hear_click_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {

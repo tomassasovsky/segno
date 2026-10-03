@@ -2462,7 +2462,10 @@ class SegnoEngineBindings {
   late final _le_engine_set_clock_mode = _le_engine_set_clock_modePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
-  /// Sets the click audibility mode (le_click_mode, 0..3). Values outside the
+  /// Enqueues one callback-confirmed click mode; capturing refuses, arms do not.
+  /// One request at a time. Confirm via commands_settled then snapshot receipt.
+  /// Raw LE_CMD_SET_CLICK_MODE posts are invalid. Sets mode (le_click_mode, 0..3).
+  /// Values outside the
   /// enum return LE_ERR_INVALID. Default off.
   int le_engine_set_click_mode(
     ffi.Pointer<le_engine> engine,
@@ -5670,7 +5673,7 @@ enum le_command_code {
   /// (any trigger).
   LE_CMD_DISARM(17),
 
-  /// arg_i = le_click_mode (0..3). Default off.
+  /// typed mode + revision; raw posts rejected.
   LE_CMD_SET_CLICK_MODE(19),
 
   /// set a lane chain entry's type (and reset its DSP
@@ -6899,6 +6902,17 @@ final class le_snapshot extends ffi.Struct {
   /// le_click_mode (default 0 = off)
   @ffi.Int32()
   external int click_mode;
+
+  /// Exact command receipt: acquire commands_settled BEFORE a synchronous
+  /// snapshot read; do not admit another mode write until the read completes.
+  /// Revision advances on callback acceptance/refusal, including same-value
+  /// requests. It resets on configure; the actual mode survives configure.
+  @ffi.Uint32()
+  external int click_mode_revision;
+
+  /// LE_OK or LE_ERR_INVALID; prior mode on refusal
+  @ffi.Int32()
+  external int click_mode_result;
 
   /// click output bitmask (default 0 = no outputs)
   @ffi.Uint32()

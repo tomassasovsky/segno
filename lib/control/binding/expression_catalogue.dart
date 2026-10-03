@@ -8,6 +8,7 @@ import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -206,6 +207,11 @@ class ExpressionDestination extends Equatable {
     group: l10n.routingSourceClick,
     control: l10n.expressionControlVolume,
   ),
+  ClickModeValueTarget() => (
+    destination: l10n.expressionDestinationLoopDefaults,
+    group: l10n.loopTempoHearClick,
+    control: l10n.loopTempoHearClick,
+  ),
   DefaultDecayTarget() => (
     destination: l10n.expressionDestinationLoopDefaults,
     group: l10n.loopPlaybackLabel,
@@ -271,7 +277,9 @@ String expressionRowName(
 ) {
   final name = expressionTargetName(l10n, trackNames, looper, target);
   return name.group == name.destination ||
-          (target is RecordTimingValueTarget && name.group == name.control)
+          ((target is RecordTimingValueTarget ||
+                  target is ClickModeValueTarget) &&
+              name.group == name.control)
       ? name.control
       : '${name.group} · ${name.control}';
 }
@@ -292,6 +300,7 @@ List<ExpressionDestination> expressionDestinations(
   List<String> trackNames,
   LooperRepository looper, {
   bool withActivations = false,
+  ClickModeSnapshot? clickModeSnapshot,
   double? clickVolume,
   DecaySnapshot? decaySnapshot,
   OneShotSnapshot? oneShotSnapshot,
@@ -313,6 +322,7 @@ List<ExpressionDestination> expressionDestinations(
   );
 
   for (final target in looper.availableValueTargets(
+    clickModeSnapshot: clickModeSnapshot,
     clickVolume: clickVolume,
     decaySnapshot: decaySnapshot,
     oneShotSnapshot: oneShotSnapshot,
@@ -330,9 +340,13 @@ List<ExpressionDestination> expressionDestinations(
             label: names.control,
             art: expressionTargetArt(looper, target),
             disabledReason:
-                target is RecordLengthValueTarget &&
-                    recordLengthSnapshot != null &&
-                    !recordLengthSnapshot.canEdit(target.address)
+                target is ClickModeValueTarget &&
+                    clickModeSnapshot != null &&
+                    !clickModeSnapshot.canEdit
+                ? l10n.clickModeCaptureLocked
+                : target is RecordLengthValueTarget &&
+                      recordLengthSnapshot != null &&
+                      !recordLengthSnapshot.canEdit(target.address)
                 ? recordLengthSnapshot.captureLocked
                       ? l10n.recordLengthCaptureLocked
                       : l10n.recordLengthSharedInMulti
@@ -463,6 +477,11 @@ String _addressLabel(
     id: 'click',
     kind: ExpressionDestinationKind.output,
     order: _clickOrder,
+  ),
+  ClickModeValueTarget() => (
+    id: 'loop:defaults',
+    kind: ExpressionDestinationKind.loopControls,
+    order: _loopControlsOrder,
   ),
   DefaultDecayTarget() ||
   DefaultOneShotTarget() ||

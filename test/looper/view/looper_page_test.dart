@@ -122,6 +122,7 @@ void main() {
                   recordLengthControl: recordOptions,
                   recordTimingControl: timing,
                   clickVolumeControl: tempo,
+                  clickModeControl: tempo,
                   fxPersistence: fxPersistence,
                   looper: repository,
                   mixSettings: mixSettings,

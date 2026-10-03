@@ -2987,14 +2987,22 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     /* ---- click + count-in (A2; see the helper block above finalize_master).
      * Not perf-logged: the click never reaches the performance capture (it
      * sums after the perf tap by design), so its configuration is invisible
-     * to a replay of the captured performance. Each value is re-clamped here
-     * (the exported wrappers already validate) so a raw le_engine_post_command
-     * can never publish an out-of-range value. */
+     * to a replay of the captured performance. Click mode has an explicit
+     * callback receipt; output and gain retain their existing validation. */
     case LE_CMD_SET_CLICK_MODE: {
-      int32_t m = cmd->arg_i;
-      if (m < LE_CLICK_OFF) m = LE_CLICK_OFF;
-      if (m > LE_CLICK_PLAY_REC) m = LE_CLICK_PLAY_REC;
-      store_i32(&e->a_click_mode, m);
+      const int32_t m = cmd->click.mode;
+      int accepted = m >= LE_CLICK_OFF && m <= LE_CLICK_PLAY_REC;
+      for (int c = 0; c < e->track_count && accepted; ++c) {
+        const int state = load_i32(&e->tracks[c].a_state);
+        if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) accepted = 0;
+      }
+      if (accepted) store_i32(&e->a_click_mode, m);
+      store_i32(&e->a_click_mode_result, accepted ? LE_OK : LE_ERR_INVALID);
+      e->click_mode_publish_revision = cmd->click.revision;
+      e->click_mode_publish_pending = 1;
+#ifdef LE_NATIVE_TESTS
+      if (le_test_click_mode_hook) le_test_click_mode_hook(e, 1);
+#endif
       break;
     }
     case LE_CMD_SET_CLICK_OUTPUT:
@@ -6314,6 +6322,11 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     atomic_store_explicit(&e->a_record_timing_revision,
                           e->record_timing_publish_revision, memory_order_seq_cst);
     e->record_timing_publish_pending = 0;
+  }
+  if (e->click_mode_publish_pending) {
+    atomic_store_explicit(&e->a_click_mode_revision,
+                          e->click_mode_publish_revision, memory_order_relaxed);
+    e->click_mode_publish_pending = 0;
   }
   atomic_store_explicit(&e->a_commands_published, e->commands_applied,
                          memory_order_release);

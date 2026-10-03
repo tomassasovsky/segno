@@ -73,6 +73,11 @@ void main() {
       initialState: const PedalState(),
     );
     final repository = _MockLooperRepository();
+    when(() => repository.clickModeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.clickModeCaptureLocked).thenReturn(false);
+    when(() => repository.clickModeSettled).thenReturn(true);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());

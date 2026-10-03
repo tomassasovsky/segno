@@ -2,6 +2,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_chain_lookup.dart';
+import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -36,6 +37,7 @@ extension ControlValueResolver on LooperRepository {
   /// and have no setter at every stage, so v1 leaves them to the on-screen
   /// controls.
   List<ControlValueTarget> availableValueTargets({
+    ClickModeSnapshot? clickModeSnapshot,
     double? clickVolume,
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
@@ -84,6 +86,7 @@ extension ControlValueResolver on LooperRepository {
     }
     targets.addAll(availableMixValueTargets());
     if (clickVolume != null) targets.add(const ClickVolumeTarget());
+    if (clickModeSnapshot != null) targets.add(const ClickModeValueTarget());
     if (decaySnapshot != null) {
       targets.add(const DefaultDecayTarget());
       for (var channel = 0; channel < 8; channel++) {
@@ -151,6 +154,7 @@ extension ControlValueResolver on LooperRepository {
   /// Whether [target] names something that exists in the live rig.
   bool valueTargetResolves(
     ControlValueTarget target, {
+    ClickModeSnapshot? clickModeSnapshot,
     double? clickVolume,
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
@@ -173,6 +177,7 @@ extension ControlValueResolver on LooperRepository {
     OutputLevelTarget(:final bus) ||
     OutputBalanceTarget(:final bus) => bus >= 0 && bus < state.outputBusCount,
     MasterGainTarget() => true,
+    ClickModeValueTarget() => clickModeSnapshot != null,
     ClickVolumeTarget() => clickVolume != null,
     DecayValueTarget() => decaySnapshot != null && target.isStructurallyValid,
     OneShotValueTarget() =>
@@ -190,6 +195,7 @@ extension ControlValueResolver on LooperRepository {
   /// adding the mapping invents no sound change.
   double? readValueTarget(
     ControlValueTarget target, {
+    ClickModeSnapshot? clickModeSnapshot,
     double? clickVolume,
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
@@ -199,6 +205,10 @@ extension ControlValueResolver on LooperRepository {
     FxParamTarget(:final param) => _paramSlot(target)?.effect.params[param],
     MixValueTarget() => _readMixValue(target),
     MasterGainTarget() => masterGain,
+    ClickModeValueTarget() =>
+      clickModeSnapshot == null
+          ? null
+          : target.fromDomain(clickModeSnapshot.mode),
     ClickVolumeTarget() =>
       clickVolume == null ? null : target.fromDomain(clickVolume),
     DecayValueTarget() =>

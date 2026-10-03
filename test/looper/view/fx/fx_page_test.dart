@@ -241,6 +241,11 @@ void main() {
       }
     });
     repository = _MockLooperRepository();
+    when(() => repository.clickModeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.clickModeCaptureLocked).thenReturn(false);
+    when(() => repository.clickModeSettled).thenReturn(true);
     settings = SettingsRepository(store: FakeKeyValueStore());
     monitorChanges = StreamController<int>.broadcast();
     monitorParams = StreamController<int>.broadcast();
