@@ -1,6 +1,8 @@
+import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart'
     show routingPlacementLabel;
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
@@ -32,6 +34,10 @@ String controlValueReadout(
     l10n,
     target.toDomain(normalized),
   ),
+  RecordTimingValueTarget() => recordTimingReadout(
+    l10n,
+    target.toDomain(normalized),
+  ),
   MasterGainTarget() => signalGainReadout(normalized),
 };
 
@@ -41,6 +47,18 @@ String _decayReadout(AppLocalizations l10n, int percent) => percent == 0
 
 String _lengthReadout(AppLocalizations l10n, int bars) =>
     bars == 0 ? l10n.loopLengthAuto : l10n.lengthPresetBars(bars);
+
+/// The same seven musical choices offered by Loop settings.
+String recordTimingReadout(AppLocalizations l10n, RecordTiming timing) =>
+    switch (timing) {
+      RecordTiming.immediately => l10n.loopTimingImmediately,
+      RecordTiming.loopStart => l10n.loopTimingLoopStart,
+      RecordTiming.bar => l10n.loopTimingBar,
+      RecordTiming.half => l10n.loopTimingHalf,
+      RecordTiming.quarter => l10n.loopTimingQuarter,
+      RecordTiming.eighth => l10n.loopTimingEighth,
+      RecordTiming.sixteenth => l10n.loopTimingSixteenth,
+    };
 
 /// Why an initialized Record length target cannot accept a new edit now.
 String? recordLengthDisabledReason(
@@ -53,4 +71,16 @@ String? recordLengthDisabledReason(
   return snapshot.captureLocked
       ? l10n.recordLengthCaptureLocked
       : l10n.recordLengthSharedInMulti;
+}
+
+/// A timing row remains identifiable while capture temporarily blocks edits.
+String? recordTimingDisabledReason(
+  AppLocalizations l10n,
+  ControlValueTarget target,
+  RecordTimingSnapshot? snapshot,
+) {
+  if (target is! RecordTimingValueTarget || snapshot == null) return null;
+  return snapshot.canEdit(target.address)
+      ? null
+      : l10n.recordTimingCaptureLocked;
 }

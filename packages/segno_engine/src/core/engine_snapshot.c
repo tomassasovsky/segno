@@ -18,6 +18,39 @@
 #include "engine_private.h" /* le_engine, le_track, le_lane, load/store helpers */
 #include "segno_engine_api.h"
 
+/* SC sequence + SC tuple fields give one bounded, race-free copy. A full
+ * snapshot alone refreshes the sole control thread's last coherent cache. */
+le_record_timing_readback le_record_timing_read(le_engine* e, int refresh_cache) {
+  le_record_timing_readback result = e->record_timing_cache;
+  const uint32_t first = atomic_load_explicit(&e->a_record_timing_revision,
+                                              memory_order_seq_cst);
+  if (first & 1u) return result;
+  le_record_timing_readback candidate = {
+    .default_timing = atomic_load_explicit(&e->a_record_timing_default, memory_order_seq_cst),
+    .remembered_division = atomic_load_explicit(&e->a_quantize_div, memory_order_seq_cst),
+    .revision = first,
+    .result = atomic_load_explicit(&e->a_record_timing_result, memory_order_seq_cst),
+  };
+  for (int c = 0; c < LE_MAX_TRACKS; ++c)
+    candidate.track_timing[c] = atomic_load_explicit(&e->a_record_timing_track[c],
+                                                    memory_order_seq_cst);
+#ifdef LE_NATIVE_TESTS
+  if (le_test_record_timing_hook) le_test_record_timing_hook(e, 3);
+#endif
+  const uint32_t last = atomic_load_explicit(&e->a_record_timing_revision,
+                                             memory_order_seq_cst);
+  if (first == last && !(last & 1u)) {
+    result = candidate;
+    if (refresh_cache) e->record_timing_cache = candidate;
+  }
+  return result;
+}
+
+static void le_timing_track_fields(le_track_snapshot* out, int code) {
+  out->quantize_override = code < 0 ? -1 : code != 0;
+  out->quantize_div_override = code < 0 ? -1 : code > 0 ? code - 1 : 0;
+}
+
 /* Lane 0's input channel as a legacy track input bitmask (1 << channel, or 0
  * when lane 0 records no input). */
 static uint32_t le_lane_input_bits(le_lane* ln) {
@@ -58,10 +91,8 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->length_preset_bars = load_i32(&tr->a_length_preset_bars);
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
   out->one_shot = load_i32(&tr->a_one_shot);
-  /* Record timing and decay overrides (slice 2b): the quantize gate override
-   * is a control-side plain int, read on the thread that writes it. */
-  out->quantize_override = engine->track_quantize[ch];
-  out->quantize_div_override = load_i32(&tr->a_quantize_div_override);
+  /* Timing fields are filled below from one coherent callback tuple. */
+  /* The caller fills timing from one coherent family tuple. */
   out->overdub_feedback_override = load_f32(&tr->a_overdub_fb_bits);
   /* Mixer facts (slice 3): solo and the post-fader stereo peaks. */
   out->solo = load_i32(&tr->a_solo);
@@ -289,6 +320,9 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   /* Collect retired per-pass undo layers (and replenish shadow spares) on the
    * UI's poll cadence, so undo depths stay fresh and queued undo taps apply. */
   le_engine_drain_events(engine);
+  const le_record_timing_readback timing = le_record_timing_read(engine, 1);
+  out->record_timing_revision = timing.revision;
+  out->record_timing_result = timing.result;
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
   out->device_present =
       atomic_load_explicit(&engine->a_device_present, memory_order_acquire);
@@ -333,16 +367,15 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(engine, t, t < engine->track_count,
                            &out->tracks[t]);
+    le_timing_track_fields(&out->tracks[t], timing.track_timing[t]);
+    out->record_timing_overrides[t] = timing.track_timing[t];
   }
   /* Tempo grid (trailing block; grid-off defaults read 0/4/4/1/0/0/0/0). */
   out->tempo_bpm = load_f32(&engine->a_tempo_bpm_bits);
   out->ts_num = load_i32(&engine->a_ts_num);
   out->ts_den = load_i32(&engine->a_ts_den);
   out->sync_tempo = load_i32(&engine->a_sync_tempo);
-  /* The control thread's mirror, not the wire value: the gate beside it is a
-   * plain control-side int, and publishing one of each let a reader see the
-   * gate move without its division. */
-  out->quantize_div = engine->quantize_div;
+  out->quantize_div = timing.remembered_division;
   out->tempo_source = load_i32(&engine->a_tempo_source);
   out->loop_bars = load_i32(&engine->a_loop_bars);
   out->current_beat = load_i32(&engine->a_current_beat);
@@ -381,7 +414,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->output_peak = load_f32(&engine->a_out_peak_bits);
   /* Record start settings (slice 2b; trailing block): control-side plain
    * ints, read on the same thread that writes them. */
-  out->quantize = engine->quantize ? 1 : 0;
+  out->quantize = timing.default_timing != 0;
   out->overdub_feedback = load_f32(&engine->a_overdub_fb_bits);
   /* Output buses (slice 3b; trailing block). */
   out->output_bus_count = (out->output_channels + 1) / 2;
@@ -477,7 +510,9 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->overdub_feedback_override = -1.0f;
     return;
   }
+  const le_record_timing_readback timing = le_record_timing_read(engine, 0);
   le_fill_track_snapshot(engine, channel, 1, out);
+  le_timing_track_fields(out, timing.track_timing[channel]);
 }
 
 void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,

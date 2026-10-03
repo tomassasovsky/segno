@@ -230,10 +230,6 @@ typedef enum le_command_code {
                        * action; see le_engine_toggle_section. */
   LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record
                        * (any trigger). */
-  LE_CMD_SET_QUANTIZE_DIV = 18, /* arg_i = le_grid_div (tempo_grid.h): 0 off /
-                                 * 1 bar / 2..5 = 1/2..1/16 note. State only in
-                                 * this part — the musical arm machinery that
-                                 * consumes it lands in A3. Default off. */
   /* ---- click + count-in (A2, D5/D9). The click is its own routable source:
    * it sums into the channels of its output mask AFTER the master bus and the
    * performance tap, so it bypasses master gain / limiter / metering and is
@@ -520,6 +516,7 @@ typedef enum le_command_code {
                                 * the restore point the control thread left
                                 * pending (0 len: a void take, no way back). */
   LE_CMD_SET_FX_RECIPE = 77,
+  LE_CMD_SET_RECORD_TIMING = 78, /* one complete timing vector and receipt */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -641,6 +638,17 @@ typedef struct le_config {
 /* Maximum number of simultaneous looper tracks (two banks of four). */
 #define LE_MAX_TRACKS 8
 
+/* Default and fixed-track recording choices: 0 immediately, 1 loop start,
+ * 2 bar, 3 half, 4 quarter, 5 eighth, 6 sixteenth. Track -1 inherits. */
+typedef struct le_record_timing_settings {
+  int32_t default_timing;
+  int32_t remembered_division;
+  int32_t track_timing[LE_MAX_TRACKS];
+  uint32_t edit_mask; /* bit 0 default, bits 1..8 track intentions */
+} le_record_timing_settings;
+
+
+
 /* Lanes a single track may own: one lane per hardware input it records. A lane
  * is the fundamental recordable unit — one clean mono buffer fed by one input —
  * and a track owns up to this many, all sharing one transport and undo span.
@@ -726,6 +734,12 @@ typedef struct le_mix_settings {
 } le_mix_settings;
 
 typedef struct le_engine le_engine;
+
+/* One bounded command; enqueue is not application. The full snapshot carries
+ * the coherent applied tuple and its even receipt revision/result. */
+LE_EXPORT int32_t le_engine_set_record_timing_settings(
+    le_engine* engine, const le_record_timing_settings* settings);
+
 typedef struct le_plugin_slot le_plugin_slot;
 
 /* Complete structural recipe, copied before admission. Hosted pointers must
@@ -891,9 +905,9 @@ typedef struct le_track_snapshot {
    * slice 2b; trailing). What the engine holds, so a surface and a session
    * capture read the setting back rather than what was last sent. */
   int32_t quantize_override; /* -1 inherit, 0 forced off, 1 forced on
-                              * (le_engine_set_track_quantize) */
+                              * (record timing vector) */
   int32_t quantize_div_override; /* -1 inherit, else le_grid_div
-                                  * (le_engine_set_track_quantize_div) */
+                                  * (record timing vector) */
   float overdub_feedback_override; /* negative = inherit, else 0..1
                                     * (le_engine_set_track_overdub_feedback) */
   /* Trailing (accepted design, slice 3): the Mixer's per-track facts. */
@@ -1307,6 +1321,10 @@ typedef struct le_snapshot {
   uint32_t perf_output_enabled_mask;
   /* NOTE: the audio-callback telemetry (#722) is deliberately NOT here — see
    * le_callback_telemetry and le_engine_get_callback_telemetry. */
+  /* One coherent applied timing tuple, never producer desired state. */
+  uint32_t record_timing_revision;
+  int32_t record_timing_result;
+  int32_t record_timing_overrides[LE_MAX_TRACKS];
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -1836,32 +1854,6 @@ LE_EXPORT void le_engine_get_lane(le_engine* engine, int32_t channel,
 LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,
                                               int32_t frames);
 
-/* Enables or disables quantized recording. When enabled, a record/overdub press
- * over an existing master loop is deferred to the next base-loop top, so
- * captures start and finalize aligned to the loop grid; a second press before
- * the boundary cancels the pending action. The defining recording (no master
- * yet) always acts immediately. Disabling cancels any pending arms. */
-LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled);
-
-/* Sets track [channel]'s quantize override: a negative [mode] inherits the
- * global default (le_engine_set_quantize), 0 forces quantize off for the track,
- * and a positive value forces it on. */
-LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
-                                               int32_t channel, int32_t mode);
-
-/* Sets track [channel]'s musical quantization division override (accepted
- * design, slice 2b): a negative [div] inherits the global default
- * (le_engine_set_quantize_div); 0 = the loop top only; 1..5 = bar .. 1/16
- * note (le_grid_div). Read live wherever the global division is read, so a
- * pending arm on this track fires on this track's own boundaries and a change
- * while armed re-evaluates on the next boundary of the new division. Only
- * meaningful while the track's quantize gate is effectively on
- * (le_engine_set_quantize / le_engine_set_track_quantize): the gate decides
- * whether a press waits at all, the division decides for what. */
-LE_EXPORT int32_t le_engine_set_track_quantize_div(le_engine* engine,
-                                                   int32_t channel,
-                                                   int32_t div);
-
 /* Cancels track [channel]'s pending record arm, whatever armed it — the
  * quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
  * section toggle. No-op (LE_OK) when the track is not armed.
@@ -1962,12 +1954,6 @@ LE_EXPORT int32_t le_engine_tap_tempo(le_engine* engine);
  * The loop's AUDIO length is never altered either way. When off, the loop
  * stays free-form (loop_bars 0, tempo untouched) — the tempo-free behavior. */
 LE_EXPORT int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on);
-
-/* Sets the musical quantization granularity (le_grid_div, tempo_grid.h):
- * 0 = off (default), 1 = bar, 2..5 = 1/2..1/16 note. Values outside 0..5
- * return LE_ERR_INVALID. State only in this part (published in the snapshot;
- * consumed by the musical arm machinery in a later part). */
-LE_EXPORT int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div);
 
 /* ---- looper mode (B2a; content rules per the accepted design, slice 2) ----
  * The five architectural looper modes (le_looper_mode). Mode is a

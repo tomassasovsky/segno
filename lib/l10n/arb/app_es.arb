@@ -2609,7 +2609,12 @@
     "clickSettingsRecoveryBody": "Reintenta recuperar el ajuste del clic.",
     "recordLengthSharedInMulti": "En Multi, la longitud de las pistas sigue el valor predeterminado.",
     "recordLengthCaptureLocked": "Termina de grabar para cambiar la longitud de grabación.",
+    "recordTimingCaptureLocked": "Termina de grabar para cambiar el momento de grabación.",
     "recordLengthSettingsRecoveryTitle": "Hay que recuperar la longitud de grabación",
     "recordLengthSettingsRefusedTitle": "No se aplicó el cambio de longitud de grabación",
-    "recordLengthSettingsRecoveryBody": "Reintenta recuperar los ajustes de longitud de grabación."
+    "recordLengthSettingsRecoveryBody": "Reintenta recuperar los ajustes de longitud de grabación.",
+    "recordTimingSettingsRecoveryTitle": "Hay que recuperar el momento de grabación",
+    "recordTimingSettingsRefusedTitle": "No se aplicó el cambio del momento de grabación",
+    "recordTimingSettingsRecoveryBody": "Reintenta recuperar los ajustes del momento de grabación.",
+    "recordTimingUnavailable": "El momento de grabación aún no está listo"
 }

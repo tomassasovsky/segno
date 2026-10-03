@@ -96,6 +96,8 @@ class MockAudioEngine implements AudioEngine {
   int _tsDen = 4;
   bool _syncTempo = true;
   GridDivision _quantizeDiv = GridDivision.off;
+  RecordTiming _recordTiming = RecordTiming.immediately;
+  int _recordTimingRevision = 0;
   ClickMode _clickMode = ClickMode.off;
   int _clickMask = 0;
   double _clickVolume = 1;
@@ -317,6 +319,8 @@ class MockAudioEngine implements AudioEngine {
       tsDen: _tsDen,
       syncTempo: _syncTempo,
       quantizeDiv: _quantizeDiv,
+      quantize: _recordTiming.quantize,
+      recordTimingRevision: _recordTimingRevision,
       // loopBars/currentBeat/countingIn/countInBeatsLeft stay at their
       // grid-off/idle defaults (0/false): the mock runs no real transport, so
       // there is no live loop or count-in to derive them from.
@@ -822,19 +826,28 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setQuantize({required bool enabled}) => _requireRunning();
-
-  @override
-  EngineResult setTrackQuantize({
-    required int channel,
-    required bool? enabled,
-  }) => _requireRunning();
-
-  @override
-  EngineResult setTrackQuantizeDiv({
-    required int channel,
-    required GridDivision? div,
-  }) => _requireRunning();
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
+  }) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (trackOverrides.keys.any((c) => c < 0 || c >= 8) ||
+        (editMask & ~0x1ff) != 0 ||
+        (defaultTiming.quantize &&
+            defaultTiming.division != rememberedDivision)) {
+      return EngineResult.invalid;
+    }
+    _recordTiming = defaultTiming;
+    _quantizeDiv = rememberedDivision;
+    for (var channel = 0; channel < _tracks.length; channel++) {
+      _tracks[channel].recordTiming = trackOverrides[channel];
+    }
+    _recordTimingRevision = (_recordTimingRevision + 2) & 0xffffffff;
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setTrackOverdubFeedback({
@@ -950,14 +963,6 @@ class MockAudioEngine implements AudioEngine {
     final result = _requireRunning();
     if (!result.isOk) return result;
     _syncTempo = on;
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setQuantizeDiv(GridDivision div) {
-    final result = _requireRunning();
-    if (!result.isOk) return result;
-    _quantizeDiv = div;
     return EngineResult.ok;
   }
 
@@ -1726,6 +1731,7 @@ class _MockLane {
 }
 
 class _MockTrack {
+  RecordTiming? recordTiming;
   double volume = 1;
   int laneCount = 1;
   final List<_MockLane> _lanes = List<_MockLane>.generate(
@@ -1784,6 +1790,8 @@ class _MockTrack {
       outputMask: lane0.outputMask,
       lengthPresetBars: lengthPresetBars,
       oneShot: oneShot,
+      quantizeOverride: recordTiming?.quantize,
+      quantizeDivOverride: recordTiming?.division,
       settledTakeId: settledTakeId,
       solo: solo,
       imageRevision: imageRevision,

@@ -24,7 +24,8 @@ class _DelayedSettingsRepository extends SettingsRepository {
       _delay(super.readDecayCheckpoint(channel: channel));
 
   @override
-  Future<bool> loadQuantize() => _delay(super.loadQuantize());
+  Future<RecordTimingCheckpoint> readRecordTimingCheckpoint() =>
+      _delay(super.readRecordTimingCheckpoint());
 
   @override
   Future<bool> loadRecDub() => _delay(super.loadRecDub());
@@ -118,7 +119,7 @@ void main() {
           oneShotReady: true,
         ),
       );
-      expect(quantize.state, RecordTiming.immediately);
+      expect(quantize.state.defaultTiming, RecordTiming.immediately);
       expect(
         record.state,
         const RecordOptions(autoRecord: true, recordLengthReady: true),
@@ -136,7 +137,7 @@ void main() {
           oneShotReady: true,
         ),
       );
-      expect(quantize.state, RecordTiming.immediately);
+      expect(quantize.state.defaultTiming, RecordTiming.immediately);
       expect(
         record.state,
         const RecordOptions(autoRecord: true, recordLengthReady: true),
@@ -182,11 +183,12 @@ void main() {
       ]);
       await Future<void>.delayed(Duration.zero);
       await playback.setDefaultOneShot(value: false);
-      await quantize.setEnabled(value: false);
+      final timingEdit = quantize.setEnabled(value: false);
       await record.setRecDub(value: false);
       await tempo.setClickMode(ClickMode.off);
       delayed.ready.complete();
       await loads;
+      await timingEdit;
       await poll();
 
       // An ordinary Once edit does not discard the independent saved Decay.
@@ -198,7 +200,7 @@ void main() {
           oneShotReady: true,
         ),
       );
-      expect(quantize.state, RecordTiming.immediately);
+      expect(quantize.state.defaultTiming, RecordTiming.immediately);
       expect(record.state, const RecordOptions(recordLengthReady: true));
       expect(tempo.state, const TempoSettings());
       expect(repository.sessionTransport.overdubDecay, 80);
@@ -303,7 +305,7 @@ void main() {
     ),
   );
 
-  blocTest<RecordTimingCubit, RecordTiming>(
+  blocTest<RecordTimingCubit, RecordTimingState>(
     'offline quantize follows recalled timing and toggles from that value',
     build: () => RecordTimingCubit(
       repository: repository,
@@ -313,18 +315,18 @@ void main() {
       await cubit.load();
       await cubit.setEnabled(value: true);
       await poll();
-      expect(cubit.state, RecordTiming.loopStart);
+      expect(cubit.state.defaultTiming, RecordTiming.loopStart);
 
       await repository.applySession(const SessionRig());
       await poll();
-      expect(cubit.state, RecordTiming.immediately);
+      expect(cubit.state.defaultTiming, RecordTiming.immediately);
       expect(await settings.loadQuantize(), isTrue);
       await cubit.load();
       await cubit.setEnabled(value: true);
       await poll();
     },
     verify: (cubit) {
-      expect(cubit.state, RecordTiming.loopStart);
+      expect(cubit.state.defaultTiming, RecordTiming.loopStart);
       expect(repository.sessionTransport.quantize, isTrue);
     },
   );

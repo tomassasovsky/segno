@@ -477,12 +477,20 @@ class ExternalControlsEditor extends StatelessWidget {
               enabled: row.available && row.disabledReason == null,
               keyboardStep: parameter.target is RecordLengthValueTarget
                   ? 1 / 64
+                  : parameter.target is RecordTimingValueTarget
+                  ? 1 / 6
                   : 0.01,
               onChanged: (next) => onValue(
                 active: active,
                 value: parameter.target is RecordLengthValueTarget
                     ? (parameter.target as RecordLengthValueTarget).fromDomain(
                         (parameter.target as RecordLengthValueTarget).toDomain(
+                          next,
+                        ),
+                      )
+                    : parameter.target is RecordTimingValueTarget
+                    ? (parameter.target as RecordTimingValueTarget).fromDomain(
+                        (parameter.target as RecordTimingValueTarget).toDomain(
                           next,
                         ),
                       )

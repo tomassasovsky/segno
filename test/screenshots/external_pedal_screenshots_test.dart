@@ -26,6 +26,7 @@ import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -76,9 +77,14 @@ void main() {
   late StreamController<LooperState> looperStates;
   late SettingsRepository settings;
   late RecordOptionsCubit record;
+  late RecordTimingCubit timing;
+  late RecordTiming confirmedTiming;
+  late GridDivision rememberedDivision;
 
   setUp(() {
     looper = _MockLooperRepository();
+    confirmedTiming = RecordTiming.immediately;
+    rememberedDivision = GridDivision.off;
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.laneCount(any())).thenReturn(1);
@@ -127,10 +133,45 @@ void main() {
       (_) => const Stream<EngineResult>.empty(),
     );
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordTimingCaptureLocked).thenReturn(false);
+    when(() => looper.recordTimingSettingsSettled).thenReturn(true);
+    when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
+    when(() => looper.defaultRecordTiming).thenAnswer((_) => confirmedTiming);
+    when(() => looper.trackRecordTimingOverrides).thenReturn(const {});
+    when(() => looper.recordTimingRestartIntent).thenAnswer(
+      (_) => (
+        defaultTiming: confirmedTiming,
+        rememberedDivision: rememberedDivision,
+        trackOverrides: const <int, RecordTiming>{},
+      ),
+    );
+    when(() => looper.settleRecordTimingSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => looper.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      rememberedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      return EngineResult.ok;
+    });
     when(() => looper.lengthSettingsSettled).thenReturn(true);
     when(() => looper.lengthRecoveryRequired).thenReturn(false);
     when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
-    when(() => looper.sessionTransport).thenReturn(const TransportState());
+    when(() => looper.sessionTransport).thenAnswer(
+      (_) => TransportState(
+        recordTiming: confirmedTiming,
+        quantizeDiv: rememberedDivision,
+      ),
+    );
     when(() => looper.settleLengthSettings()).thenAnswer(
       (_) async => EngineResult.ok,
     );
@@ -160,7 +201,12 @@ void main() {
     ).thenReturn(EngineResult.ok);
   });
 
-  setUpAll(() => registerFallbackValue(LooperMode.multi));
+  setUpAll(() {
+    registerFallbackValue(LooperMode.multi);
+    registerFallbackValue(RecordTiming.immediately);
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(<int, RecordTiming>{});
+  });
 
   tearDown(() async {
     await looperStates.close();
@@ -188,6 +234,8 @@ void main() {
     OneShotSnapshot? oneShotSnapshot,
   }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
+    await settings.saveQuantize(value: false);
+    await settings.saveQuantizeDiv(GridDivision.off.code);
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -214,10 +262,14 @@ void main() {
     record = RecordOptionsCubit(repository: looper, settings: settings);
     addTearDown(() => unawaited(record.close()));
     await record.load();
+    timing = RecordTimingCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(timing.close()));
+    await timing.load();
     final control = ControlCubit(
       decayControl: decay,
       oneShotControl: decay,
       recordLengthControl: record,
+      recordTimingControl: timing,
       clickVolumeControl: tempo,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
@@ -268,6 +320,7 @@ void main() {
               BlocProvider<TempoCubit>.value(value: tempo),
               BlocProvider<PlaybackOptionsCubit>.value(value: decay),
               BlocProvider<RecordOptionsCubit>.value(value: record),
+              BlocProvider<RecordTimingCubit>.value(value: timing),
             ],
             child: const ExternalPedalPage(),
           ),
@@ -593,6 +646,46 @@ void main() {
     expect(find.text('Auto'), findsWidgets);
     expect(find.text('32 bars'), findsWidgets);
     await shot(tester, 'record_length_held_released');
+  }, skip: !hasScreenshotFonts);
+
+  screenshotTestWidgets('a button holds quarter and releases Immediately', (
+    tester,
+  ) async {
+    const target = DefaultRecordTimingTarget();
+    await pump(
+      tester,
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: target,
+                condition: ExternalValueCondition.heldReleased,
+                active: 4 / 6,
+                inactive: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(timing.state.recordTimingReady, isTrue);
+    await tap(tester, 'external_panel_controls');
+    await tester.tap(
+      find.byKey(Key('external_control_value_${externalControlKey(target)}')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Immediately'), findsWidgets);
+    expect(find.text('1/4 note'), findsWidgets);
+    expect(
+      find.byKey(const Key('external_value_inactive_label')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('external_value_active_label')),
+      findsOneWidget,
+    );
+    await shot(tester, 'record_timing_held_released');
   }, skip: !hasScreenshotFonts);
 
   screenshotTestWidgets('a button holds Once and releases to Loop', (

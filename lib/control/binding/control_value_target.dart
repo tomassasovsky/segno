@@ -7,6 +7,7 @@ import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 
 /// What a continuous binding sweeps: an FX parameter, Mixer control, or
 /// master gain.
@@ -54,6 +55,8 @@ sealed class ControlValueTarget extends Equatable {
     TrackOneShotTarget(:final channel) => channel >= 0 && channel < 8,
     DefaultRecordLengthTarget() => true,
     TrackRecordLengthTarget(:final channel) => channel >= 0 && channel < 8,
+    DefaultRecordTimingTarget() => true,
+    TrackRecordTimingTarget(:final channel) => channel >= 0 && channel < 8,
   };
 
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
@@ -87,6 +90,9 @@ sealed class ControlValueTarget extends Equatable {
       if (ctl == 'defaultRecordLength') {
         return raw.length == 1 ? const DefaultRecordLengthTarget() : null;
       }
+      if (ctl == 'defaultRecordTiming') {
+        return raw.length == 1 ? const DefaultRecordTimingTarget() : null;
+      }
       final index = raw['index'];
       final lane = raw['lane'];
       if (index is! int || index < 0) return null;
@@ -107,6 +113,8 @@ sealed class ControlValueTarget extends Equatable {
         'trackOneShot' when indexed && index < 8 => TrackOneShotTarget(index),
         'trackRecordLength' when indexed && index < 8 =>
           TrackRecordLengthTarget(index),
+        'trackRecordTiming' when indexed && index < 8 =>
+          TrackRecordTimingTarget(index),
         _ => null,
       };
     }
@@ -534,6 +542,63 @@ final class TrackRecordLengthTarget extends RecordLengthValueTarget {
   @override
   String canonicalString() =>
       jsonEncode({'ctl': 'trackRecordLength', 'index': channel});
+
+  @override
+  List<Object?> get props => [channel];
+}
+
+/// A future Record/Overdub timing choice on the established musical grid.
+sealed class RecordTimingValueTarget extends ControlValueTarget {
+  /// Creates a timing target.
+  const RecordTimingValueTarget();
+
+  /// Its stable default or fixed-track address.
+  RecordTimingAddress get address;
+
+  /// Seven accepted choices, with Immediately distinct from inheritance.
+  RecordTiming toDomain(double normalized) {
+    if (!normalized.isFinite) {
+      throw ArgumentError.value(normalized, 'normalized');
+    }
+    return RecordTiming.values[(normalized.clamp(0.0, 1.0) * 6).round()];
+  }
+
+  /// Encodes a confirmed choice as its canonical normalized endpoint.
+  double fromDomain(RecordTiming timing) => timing.code / 6;
+
+  /// One musical choice per relative-controller detent.
+  double get relativeStep => 1 / 6;
+}
+
+/// The timing inherited by tracks without an explicit override.
+final class DefaultRecordTimingTarget extends RecordTimingValueTarget {
+  /// Creates the default timing target.
+  const DefaultRecordTimingTarget();
+
+  @override
+  RecordTimingAddress get address => const RecordTimingAddress.defaults();
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'defaultRecordTiming'});
+
+  @override
+  List<Object?> get props => ['defaultRecordTiming'];
+}
+
+/// One fixed track's future timing, including an empty track slot.
+final class TrackRecordTimingTarget extends RecordTimingValueTarget {
+  /// Creates a track timing target for zero-based [channel].
+  const TrackRecordTimingTarget(this.channel);
+
+  /// The fixed track channel.
+  final int channel;
+
+  @override
+  RecordTimingAddress get address => RecordTimingAddress.track(channel);
+
+  @override
+  String canonicalString() =>
+      jsonEncode({'ctl': 'trackRecordTiming', 'index': channel});
 
   @override
   List<Object?> get props => [channel];

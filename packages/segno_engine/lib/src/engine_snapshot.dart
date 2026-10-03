@@ -709,12 +709,12 @@ class TrackSnapshot {
 
   /// This track's quantize gate override (slice 2b): `null` inherits the
   /// global gate, `false` forces the press immediate, `true` forces it to
-  /// wait. Read back from the engine (`LooperTransport.setTrackQuantize`).
+  /// wait. Read back from the coherent engine timing snapshot.
   final bool? quantizeOverride;
 
   /// This track's musical division override (slice 2b): `null` inherits the
-  /// global division. Read back from the engine
-  /// (`LooperTransport.setTrackQuantizeDiv`).
+  /// global division. Read back from the same coherent timing snapshot as
+  /// [quantizeOverride].
   final GridDivision? quantizeDivOverride;
 
   /// This track's overdub feedback override in `0..1` (slice 2b): `null`
@@ -1150,6 +1150,8 @@ class EngineSnapshot {
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
     this.quantize = false,
+    this.recordTimingRevision = 0,
+    this.recordTimingResult = 0,
     this.autoRecord = false,
     this.overdubFeedback = 1,
     this.mixRevision = 0,
@@ -1222,6 +1224,8 @@ class EngineSnapshot {
       looperMode = LooperMode.multi,
       primaryTrack = -1,
       quantize = false,
+      recordTimingRevision = 0,
+      recordTimingResult = 0,
       autoRecord = false,
       overdubFeedback = 1,
       mixRevision = 0,
@@ -1309,6 +1313,8 @@ class EngineSnapshot {
       looperMode: LooperMode.fromCode(native.looper_mode),
       primaryTrack: native.primary_track,
       quantize: native.quantize != 0,
+      recordTimingRevision: native.record_timing_revision,
+      recordTimingResult: native.record_timing_result,
       autoRecord: native.auto_record != 0,
       overdubFeedback: native.overdub_feedback,
       mixRevision: native.mix_revision,
@@ -1389,6 +1395,8 @@ class EngineSnapshot {
     LooperMode? looperMode,
     int? primaryTrack,
     bool? quantize,
+    int? recordTimingRevision,
+    int? recordTimingResult,
     bool? autoRecord,
     double? overdubFeedback,
     int? mixRevision,
@@ -1458,6 +1466,8 @@ class EngineSnapshot {
     looperMode: looperMode ?? this.looperMode,
     primaryTrack: primaryTrack ?? this.primaryTrack,
     quantize: quantize ?? this.quantize,
+    recordTimingRevision: recordTimingRevision ?? this.recordTimingRevision,
+    recordTimingResult: recordTimingResult ?? this.recordTimingResult,
     autoRecord: autoRecord ?? this.autoRecord,
     overdubFeedback: overdubFeedback ?? this.overdubFeedback,
     mixRevision: mixRevision ?? this.mixRevision,
@@ -1711,6 +1721,12 @@ class EngineSnapshot {
   /// the engine rather than from what was last sent.
   final bool quantize;
 
+  /// Even callback publication sequence, wrapping modulo 32 bits.
+  final int recordTimingRevision;
+
+  /// Native result paired with [recordTimingRevision] and the complete tuple.
+  final int recordTimingResult;
+
   /// Whether recording is sound-activated (slice 2b). Published because the
   /// engine clears it when a count-in is set, and clears the count-in when
   /// it is set: the two exclude each other at the engine boundary (D9).
@@ -1870,6 +1886,8 @@ class EngineSnapshot {
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
           quantize == other.quantize &&
+          recordTimingRevision == other.recordTimingRevision &&
+          recordTimingResult == other.recordTimingResult &&
           autoRecord == other.autoRecord &&
           overdubFeedback == other.overdubFeedback &&
           mixRevision == other.mixRevision &&
@@ -1941,6 +1959,8 @@ class EngineSnapshot {
     looperMode,
     primaryTrack,
     quantize,
+    recordTimingRevision,
+    recordTimingResult,
     autoRecord,
     overdubFeedback,
     mixRevision,

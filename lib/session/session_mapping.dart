@@ -4,6 +4,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:session_repository/session_repository.dart';
 
 /// Bloc-layer mapping between the session bundle (data) and the looper
@@ -104,6 +105,7 @@ SessionSettings settingsFromLooper(
   required DecaySnapshot decay,
   required OneShotSnapshot oneShot,
   required RecordLengthSnapshot recordLength,
+  required RecordTimingSnapshot recordTiming,
   MixSettingsSnapshot? mix,
 }) {
   final transport = looper.sessionTransport;
@@ -114,13 +116,13 @@ SessionSettings settingsFromLooper(
     tsNum: transport.tsNum,
     tsDen: transport.tsDen,
     syncTempo: transport.syncTempo,
-    quantizeDiv: transport.quantizeDiv,
+    quantizeDiv: recordTiming.rememberedDivision,
     loopBars: transport.loopBars,
-    recordTiming: looper.defaultRecordTiming,
+    recordTiming: recordTiming.defaultTiming,
     overdubDecay: decay.defaultPercent,
     defaultOneShot: oneShot.defaultOneShot,
     defaultLengthPresetBars: recordLength.defaultBars,
-    trackRecordTimingOverrides: looper.trackRecordTimingOverrides,
+    trackRecordTimingOverrides: recordTiming.trackOverrides,
     trackOverdubDecayOverrides: decay.trackOverrides,
     trackOneShotOverrides: oneShot.trackOverrides,
     trackLengthPresetOverrides: recordLength.trackOverrides,

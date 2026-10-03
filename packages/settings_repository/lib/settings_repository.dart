@@ -11,6 +11,7 @@ export 'src/settings_repository.dart'
         AudioBackend,
         MidiSettingsSaveException,
         PedalSetupSaveException,
+        RecordTimingCheckpoint,
         SettingsRepository,
         StoredAudioConfig,
         StoredInputSetup,

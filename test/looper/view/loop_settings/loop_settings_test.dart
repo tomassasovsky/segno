@@ -57,11 +57,16 @@ void main() {
   late Map<int, int> confirmedTrackDecay;
   late bool confirmedOneShot;
   late Map<int, bool> confirmedTrackOneShot;
+  late RecordTiming confirmedTiming;
+  late GridDivision rememberedDivision;
+  late Map<int, RecordTiming> confirmedTrackTiming;
 
   setUpAll(() {
     registerFallbackValue(const LooperRecordPressed(0));
     registerFallbackValue(LooperMode.multi);
     registerFallbackValue(RecordTiming.immediately);
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(<int, RecordTiming>{});
     registerFallbackValue(ClickMode.off);
   });
 
@@ -82,6 +87,9 @@ void main() {
     confirmedTrackDecay = {};
     confirmedOneShot = false;
     confirmedTrackOneShot = {};
+    confirmedTiming = RecordTiming.immediately;
+    rememberedDivision = GridDivision.off;
+    confirmedTrackTiming = {};
     when(() => repository.sessionRevision).thenAnswer((_) => sessionRevision);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
@@ -171,6 +179,77 @@ void main() {
     when(() => repository.clickVolumeSettled).thenReturn(true);
     when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
     when(() => repository.recordStartRevision).thenReturn(0);
+    when(() => repository.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordTimingCaptureLocked).thenAnswer(
+      (_) => currentRig.tracks.any(
+        (track) =>
+            track.state == TrackState.recording ||
+            track.state == TrackState.overdubbing,
+      ),
+    );
+    when(() => repository.recordTimingSettingsSettled).thenReturn(true);
+    when(() => repository.recordTimingRecoveryRequired).thenReturn(false);
+    when(
+      () => repository.defaultRecordTiming,
+    ).thenAnswer((_) => confirmedTiming);
+    when(() => repository.trackRecordTimingOverrides).thenAnswer(
+      (_) => Map.unmodifiable(confirmedTrackTiming),
+    );
+    when(() => repository.recordTimingRestartIntent).thenAnswer(
+      (_) => (
+        defaultTiming: confirmedTiming,
+        rememberedDivision: rememberedDivision,
+        trackOverrides: Map.unmodifiable(confirmedTrackTiming),
+      ),
+    );
+    when(() => repository.settleRecordTimingSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => repository.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      rememberedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      confirmedTrackTiming = Map.of(
+        call.namedArguments[#trackOverrides] as Map<int, RecordTiming>,
+      );
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setRecordTiming(
+        any(),
+        releasedTiming: any(named: 'releasedTiming'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.positionalArguments.single as RecordTiming;
+      if (confirmedTiming.quantize) {
+        rememberedDivision = confirmedTiming.division;
+      }
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setTrackRecordTiming(
+        channel: any(named: 'channel'),
+        timing: any(named: 'timing'),
+        releasedTiming: any(named: 'releasedTiming'),
+      ),
+    ).thenAnswer((call) {
+      final channel = call.namedArguments[#channel] as int;
+      final value = call.namedArguments[#timing] as RecordTiming?;
+      if (value == null) {
+        confirmedTrackTiming.remove(channel);
+      } else {
+        confirmedTrackTiming[channel] = value;
+      }
+      return EngineResult.ok;
+    });
     when(() => repository.recordLengthCaptureLocked).thenAnswer(
       (_) => currentRig.tracks.any(
         (track) =>
@@ -194,6 +273,8 @@ void main() {
       (_) => TransportState(
         defaultLengthPresetBars: confirmedLength,
         looperMode: confirmedMode,
+        recordTiming: confirmedTiming,
+        quantizeDiv: rememberedDivision,
       ),
     );
     when(
@@ -280,9 +361,6 @@ void main() {
         confirmedLength = call.positionalArguments.single as int;
         return EngineResult.ok;
       }),
-      () => when(
-        () => repository.setRecordTiming(any()),
-      ).thenReturn(EngineResult.ok),
       () =>
           when(
             () => repository.setOverdubDecay(any()),
@@ -331,6 +409,13 @@ void main() {
         if (track.oneShotOverride != null)
           track.channel: track.oneShotOverride!,
     };
+    confirmedTiming = state.transport.recordTiming;
+    rememberedDivision = state.transport.quantizeDiv;
+    confirmedTrackTiming = {
+      for (final track in state.tracks)
+        if (track.recordTimingOverride != null)
+          track.channel: track.recordTimingOverride!,
+    };
     when(() => bloc.state).thenReturn(state);
     whenListen(bloc, states.stream, initialState: state);
   }
@@ -371,12 +456,18 @@ void main() {
     for (final entry in confirmedTrackOneShot.entries) {
       await settings.saveTrackOneShot(entry.key, oneShot: entry.value);
     }
+    await settings.saveQuantize(value: confirmedTiming.quantize);
+    await settings.saveQuantizeDiv(rememberedDivision.code);
+    for (final entry in confirmedTrackTiming.entries) {
+      await settings.saveTrackRecordTiming(entry.key, entry.value.code);
+    }
     tempo = TempoCubit(repository: repository, settings: settings);
     options = RecordOptionsCubit(repository: repository, settings: settings);
     playback = PlaybackOptionsCubit(repository: repository, settings: settings);
     await playback.load();
     await options.load();
     timing = RecordTimingCubit(repository: repository, settings: settings);
+    await timing.load();
     tracks = TracksCubit(settings: settings);
     tray = SettingsTrayCubit(settings: settings);
     if (fromTray) tray.open();
@@ -1177,7 +1268,8 @@ void main() {
       await pump(tester, initial: LoopSettingsPageId.length);
       await tester.tap(find.byKey(const Key('loop_timing_quarter')));
       await tester.pumpAndSettle();
-      expect(timing.state, RecordTiming.quarter);
+      expect(timing.state.defaultTiming, RecordTiming.quarter);
+      expect(timing.state.recordTimingReady, isTrue);
       await tester.tap(find.byKey(const Key('loop_length_bars')));
       await tester.pumpAndSettle();
       expect(options.state.defaultLengthBars, 4);
@@ -1276,7 +1368,7 @@ void main() {
       expect(find.byKey(const Key('loop_lock_banner')), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_timing_quarter')));
       await tester.pumpAndSettle();
-      expect(timing.state, RecordTiming.immediately);
+      expect(timing.state.defaultTiming, RecordTiming.immediately);
     });
   });
 

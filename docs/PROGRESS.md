@@ -8,6 +8,29 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 shared Record timing (#1026)
+
+Touch, MIDI and External controls share the seven recording-timing choices for
+Loop defaults and fixed Tracks 1–8. Explicit Immediately remains Custom; null
+restores inheritance. Waiting requests can be rescheduled or cancelled without
+changing unrelated arms. Capture refuses edits without stopping audio. One
+native vector and coherent receipt replace the split timing writers; record
+acquisition is fenced before plugin, layer or history preparation.
+
+Held timing stays live while Save/restart retain Released intent and remembered
+division. Exact rollback preserves absent settings. Shutdown refuses unfinished
+release cleanup; Retry and Keep playing retain their distinct recovery behavior.
+The shared owner composes startup, session capture and the existing settings UI.
+
+`docs/reviews/shared-record-timing/` binds the implementation, independent review,
+tests and saved Pen references. Full app: 2,552 passed at 90.989% coverage; Looper:
+675 passed at 95.344%. Native variants, snapshot/preparation negative controls,
+affected independent replay, Engine/Settings/Session/Performance packages and
+748-file static checks pass. Author-only renders and native desktop interaction
+are recorded separately. Published-head CI, human merge, appliance verification
+and M5 full live-Control Session Load remain separate gates. Hear click is the
+next bounded shared-control slice.
+
 ## October 2026 shared Record length (#1026)
 
 Touch, MIDI and External controls now share Auto/1–64-bar choices for Loop

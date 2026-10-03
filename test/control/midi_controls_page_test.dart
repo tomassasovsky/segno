@@ -27,6 +27,7 @@ import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
@@ -96,6 +97,9 @@ void main() {
   late _Store store;
   late ControlCubit control;
   late RecordOptionsCubit record;
+  late RecordTimingCubit timing;
+  late RecordTiming confirmedTiming;
+  late GridDivision rememberedDivision;
   var captureMicros = 0;
   late SettingsTrayCubit tray;
 
@@ -107,6 +111,8 @@ void main() {
     connections = StreamController<MidiConnection>.broadcast();
     messages = StreamController<MidiInputMessage>.broadcast();
     store = _Store();
+    confirmedTiming = RecordTiming.immediately;
+    rememberedDivision = GridDivision.off;
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     when(() => looper.state).thenReturn(
       LooperState(
@@ -135,10 +141,45 @@ void main() {
       (_) => const Stream<EngineResult>.empty(),
     );
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordTimingCaptureLocked).thenReturn(false);
+    when(() => looper.recordTimingSettingsSettled).thenReturn(true);
+    when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
+    when(() => looper.defaultRecordTiming).thenAnswer((_) => confirmedTiming);
+    when(() => looper.trackRecordTimingOverrides).thenReturn(const {});
+    when(() => looper.recordTimingRestartIntent).thenAnswer(
+      (_) => (
+        defaultTiming: confirmedTiming,
+        rememberedDivision: rememberedDivision,
+        trackOverrides: const <int, RecordTiming>{},
+      ),
+    );
+    when(() => looper.settleRecordTimingSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => looper.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      rememberedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      return EngineResult.ok;
+    });
     when(() => looper.lengthSettingsSettled).thenReturn(true);
     when(() => looper.lengthRecoveryRequired).thenReturn(false);
     when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
-    when(() => looper.sessionTransport).thenReturn(const TransportState());
+    when(() => looper.sessionTransport).thenAnswer(
+      (_) => TransportState(
+        recordTiming: confirmedTiming,
+        quantizeDiv: rememberedDivision,
+      ),
+    );
     when(() => looper.settleLengthSettings()).thenAnswer(
       (_) async => EngineResult.ok,
     );
@@ -163,7 +204,12 @@ void main() {
     when(() => devices.select(any())).thenAnswer((_) async {});
   });
 
-  setUpAll(() => registerFallbackValue(LooperMode.multi));
+  setUpAll(() {
+    registerFallbackValue(LooperMode.multi);
+    registerFallbackValue(RecordTiming.immediately);
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(<int, RecordTiming>{});
+  });
 
   tearDown(() async {
     await looperStates.close();
@@ -180,6 +226,7 @@ void main() {
     double? clickVolume = 1,
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
+    RecordTiming currentTiming = RecordTiming.immediately,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -187,6 +234,10 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final settings = SettingsRepository(store: store);
+    confirmedTiming = currentTiming;
+    rememberedDivision = currentTiming.division;
+    await settings.saveQuantize(value: currentTiming.quantize);
+    await settings.saveQuantizeDiv(rememberedDivision.code);
     tray = SettingsTrayCubit(settings: settings);
     addTearDown(() => unawaited(tray.close()));
     if (malformed) {
@@ -218,12 +269,16 @@ void main() {
     record = RecordOptionsCubit(repository: looper, settings: settings);
     addTearDown(() => unawaited(record.close()));
     await record.load();
+    timing = RecordTimingCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(timing.close()));
+    await timing.load();
     control = ControlCubit(
       looper: looper,
       clickVolumeControl: tempo,
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,
+      recordTimingControl: timing,
       pedal: pedal,
       settings: settings,
       performance: performance,
@@ -248,6 +303,7 @@ void main() {
             BlocProvider<TempoCubit>.value(value: tempo),
             BlocProvider<PlaybackOptionsCubit>.value(value: playback),
             BlocProvider<RecordOptionsCubit>.value(value: record),
+            BlocProvider<RecordTimingCubit>.value(value: timing),
           ],
           child: MaterialApp(
             navigatorKey: routeEntry ? segnoNavigatorKey : null,
@@ -404,6 +460,50 @@ void main() {
         defaultBars: any(named: 'defaultBars'),
         overrides: any(named: 'overrides'),
         mode: any(named: 'mode'),
+      ),
+    );
+  });
+
+  testWidgets('Record timing keeps Immediately to sixteenth draft-only', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    expect(timing.state.recordTimingReady, isTrue);
+    clearInteractions(looper);
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_add_control');
+    await tap(tester, 'expression_kind_loopControls');
+    await tap(tester, 'expression_destination_loop:defaults');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const DefaultRecordTimingTarget())}',
+    );
+    final key = const DefaultRecordTimingTarget().canonicalString();
+    final low = find.byKey(Key('midi_range_low_$key'));
+    final high = find.byKey(Key('midi_range_high_$key'));
+    expect(low, findsOneWidget);
+    expect(high, findsOneWidget);
+    expect(
+      find.descendant(of: low, matching: find.text('Immediately')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: high, matching: find.text('1/16 note')),
+      findsOneWidget,
+    );
+    expect(control.state.midiMappings.byId('m1')!.controls, hasLength(1));
+    await tap(tester, 'midi_save');
+    final saved = control.state.midiMappings
+        .byId('m1')!
+        .controls
+        .whereType<MidiParameterControl>()
+        .singleWhere((control) => control.key == key);
+    expect((saved.low, saved.high), (0, 1));
+    verifyNever(
+      () => looper.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
       ),
     );
   });
