@@ -334,10 +334,6 @@ abstract interface class LooperTransport {
   /// `1.0` decays older layers each pass so the loop self-limits. Plain
   /// playback is untouched.
   EngineResult setOverdubFeedback(double feedback);
-
-  /// Enables sound-activated recording: a record press on an empty track waits
-  /// and begins capturing once the input level crosses the threshold.
-  EngineResult setAutoRecord({required bool enabled});
 }
 
 /// Per-lane channel routing, volume, mute and pan (a track's recordable
@@ -484,15 +480,16 @@ abstract interface class TempoControl {
   /// the limiter never touch it.
   EngineResult setClickVolume(double volume);
 
-  /// Sets the count-in length in measures (`0` = off, up to
-  /// `LE_COUNT_IN_MAX_BARS`). With count-in on and a tempo set, a record
-  /// press on an idle, empty looper first clicks [bars] measures — published
-  /// via [EngineSnapshot.countingIn] / [EngineSnapshot.countInBeatsLeft] —
-  /// then recording starts on the downbeat. A record or stop press during the
-  /// count-in cancels it, as does setting this to `0`. Mutually exclusive
-  /// with [LooperTransport.setAutoRecord]: enabling count-in disables
-  /// auto-record and vice versa; count-in wins if both are somehow set.
-  EngineResult setCountIn(int bars);
+  /// Enqueues one coherent recording-start pair with distinct edit semantics.
+  ///
+  /// Confirm [EngineMetering.commandsSettled] before synchronously reading
+  /// the snapshot's new receipt. No competing pair writer may run between
+  /// those reads.
+  EngineResult setRecordStartSettings({
+    required int countInBars,
+    required bool soundStart,
+    required RecordStartEditKind editKind,
+  });
 
   /// Sets track [channel]'s length preset (A6, D17): `0` = AUTO, or `1..64`
   /// to fix the DEFINING (first/master) recording to [bars] bars. Orthogonal

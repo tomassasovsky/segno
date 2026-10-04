@@ -58,6 +58,8 @@ void main() {
   late UpdateCubit updates;
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
+  var confirmedCountIn = 1;
+  var confirmedSoundStart = false;
 
   setUpAll(() {
     registerFallbackValue(RecordTiming.immediately);
@@ -65,11 +67,14 @@ void main() {
     registerFallbackValue(MonitorMode.off);
     registerFallbackValue(ClickMode.off);
     registerFallbackValue(const LooperRecordPressed(0));
+    registerFallbackValue(RecordStartEditKind.restore);
   });
 
   Future<void> prepare() async {
     confirmedTiming = RecordTiming.immediately;
     rememberedDivision = GridDivision.off;
+    confirmedCountIn = 1;
+    confirmedSoundStart = false;
     settings = SettingsRepository(store: FakeKeyValueStore());
     updates = UpdateCubit(
       updates: const UpdateRepository(backend: UnsupportedPlatformBackend()),
@@ -93,6 +98,38 @@ void main() {
     );
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
     when(() => repository.clickModeSettled).thenReturn(true);
+    when(() => repository.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordStartSettingsSettled).thenReturn(true);
+    when(() => repository.recordStartRecoveryRequired).thenReturn(false);
+    when(() => repository.recordStartCaptureLocked).thenReturn(false);
+    when(() => repository.recordStartSettings).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.recordStartRestartIntent).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.settleRecordStartSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => repository.setRecordStartSettings(
+        countInBars: any(named: 'countInBars'),
+        soundStart: any(named: 'soundStart'),
+        editKind: any(named: 'editKind'),
+      ),
+    ).thenAnswer((call) {
+      confirmedCountIn = call.namedArguments[#countInBars] as int;
+      confirmedSoundStart = call.namedArguments[#soundStart] as bool;
+      return EngineResult.ok;
+    });
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
@@ -139,6 +176,8 @@ void main() {
       (_) => TransportState(
         recordTiming: confirmedTiming,
         quantizeDiv: rememberedDivision,
+        countInBars: confirmedCountIn,
+        autoRecord: confirmedSoundStart,
       ),
     );
     when(repository.settleRecordTimingSettings).thenAnswer(
@@ -229,9 +268,6 @@ void main() {
     when(
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setAutoRecord(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
     recordOptions = RecordOptionsCubit(
       repository: repository,
       settings: settings,
@@ -264,14 +300,12 @@ void main() {
       () => when(
         () => repository.setClickVolume(any()),
       ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setCountIn(any()),
-      ).thenReturn(EngineResult.ok),
       () => when(repository.tapTempo).thenReturn(EngineResult.ok),
     ]) {
       stub();
     }
     tempo = TempoCubit(repository: repository, settings: settings);
+    await tempo.loadRecordStart();
   }
 
   Future<void> pump(WidgetTester tester) async {

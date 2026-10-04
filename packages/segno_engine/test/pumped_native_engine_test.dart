@@ -317,7 +317,11 @@ void main() {
         trackOverrides: const {},
         editMask: 1,
       )
-      ..setAutoRecord(enabled: true)
+      ..setRecordStartSettings(
+        countInBars: 0,
+        soundStart: true,
+        editKind: RecordStartEditKind.sound,
+      )
       ..setOverdubFeedback(0.75)
       ..pump(frames: 0);
     final snapshot = engine.snapshot();
@@ -866,18 +870,46 @@ void main() {
       expect(engine.snapshot().clickVolume, closeTo(LE_MAX_GAIN, 1e-3));
     });
 
-    test('setCountIn publishes bars and rejects out-of-range values', () {
-      expect(engine.setCountIn(2), EngineResult.ok);
+    test('record-start pair publishes bars and rejects unsupported values', () {
+      expect(
+        engine.setRecordStartSettings(
+          countInBars: 2,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        ),
+        EngineResult.ok,
+      );
       engine.pump(frames: 0);
       expect(engine.snapshot().countInBars, 2);
 
-      expect(engine.setCountIn(-1), EngineResult.invalid);
-      expect(engine.setCountIn(LE_COUNT_IN_MAX_BARS + 1), EngineResult.invalid);
+      expect(
+        engine.setRecordStartSettings(
+          countInBars: -1,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        engine.setRecordStartSettings(
+          countInBars: LE_COUNT_IN_MAX_BARS + 1,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        ),
+        EngineResult.invalid,
+      );
       engine.pump(frames: 0);
       // Rejected calls leave the published count-in length untouched.
       expect(engine.snapshot().countInBars, 2);
 
-      expect(engine.setCountIn(0), EngineResult.ok);
+      expect(
+        engine.setRecordStartSettings(
+          countInBars: 0,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        ),
+        EngineResult.ok,
+      );
       engine.pump(frames: 0);
       expect(engine.snapshot().countInBars, 0);
     });

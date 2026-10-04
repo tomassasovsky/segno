@@ -100,6 +100,8 @@ class MockAudioEngine implements AudioEngine {
   int _recordTimingRevision = 0;
   ClickMode _clickMode = ClickMode.off;
   int _clickModeRevision = 0;
+  int _recordStartRevision = 0;
+  bool _soundStart = false;
   int _clickMask = 0;
   double _clickVolume = 1;
   int _countInBars = 0;
@@ -227,6 +229,7 @@ class MockAudioEngine implements AudioEngine {
     _activeConfig = config;
     _running = true;
     _clickModeRevision = 0;
+    _recordStartRevision = 0;
     _framesProcessed = 0;
     _latencyState = LatencyState.idle;
     _measuredLatencyMs = -1;
@@ -331,6 +334,8 @@ class MockAudioEngine implements AudioEngine {
       clickMask: _clickMask,
       clickVolume: _clickVolume,
       countInBars: _countInBars,
+      autoRecord: _soundStart,
+      recordStartRevision: _recordStartRevision,
       looperMode: _looperMode,
       primaryTrack: _primaryTrack,
       // One entry per negotiated channel, like the native projection; all
@@ -897,9 +902,6 @@ class MockAudioEngine implements AudioEngine {
   @override
   EngineResult setOverdubFeedback(double feedback) => _requireRunning();
 
-  @override
-  EngineResult setAutoRecord({required bool enabled}) => _requireRunning();
-
   // ---- tempo grid + click/count-in (TempoControl) ----
 
   @override
@@ -997,11 +999,20 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setCountIn(int bars) {
+  EngineResult setRecordStartSettings({
+    required int countInBars,
+    required bool soundStart,
+    required RecordStartEditKind editKind,
+  }) {
     final result = _requireRunning();
     if (!result.isOk) return result;
-    if (bars < 0 || bars > LE_COUNT_IN_MAX_BARS) return EngineResult.invalid;
-    _countInBars = bars;
+    if (!const [0, 1, 2, 4].contains(countInBars) ||
+        countInBars > 0 && soundStart) {
+      return EngineResult.invalid;
+    }
+    _countInBars = countInBars;
+    _soundStart = soundStart;
+    _recordStartRevision = (_recordStartRevision + 1) & 0xffffffff;
     return EngineResult.ok;
   }
 

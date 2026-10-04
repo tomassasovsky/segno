@@ -10,6 +10,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session_mapping.dart';
 // The chains a performance arm records cross the boundary as ENGINE models
@@ -123,6 +124,7 @@ void main() {
         ),
         settings: settingsFromLooper(
           looper,
+          recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
           clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
             defaultTiming: looper.defaultRecordTiming,
@@ -202,6 +204,7 @@ void main() {
       expect(
         settingsFromLooper(
           looper,
+          recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
           clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
             defaultTiming: looper.defaultRecordTiming,
@@ -252,7 +255,11 @@ void main() {
           ..setClickMode(ClickMode.rec)
           ..setClickOutput(0x2)
           ..setClickVolume(0.6)
-          ..setCountIn(2)
+          ..setRecordStartSettings(
+            countInBars: 2,
+            soundStart: false,
+            editKind: RecordStartEditKind.restore,
+          )
           ..setLooperMode(LooperMode.free)
           ..setTrackRecordTiming(channel: 0, timing: RecordTiming.eighth)
           ..setTrackOverdubDecay(channel: 0, percent: 30)
@@ -264,6 +271,7 @@ void main() {
         expect(engine.snapshot().tempoBpm, 0);
         final settings = settingsFromLooper(
           looper,
+          recordStart: RecordStartSettings(countInBars: 2, soundStart: false),
           clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
             defaultTiming: looper.defaultRecordTiming,
@@ -321,9 +329,14 @@ void main() {
           ..setTrackOverdubDecay(channel: 0, percent: null)
           ..setOneShot(channel: 0, oneShot: null)
           ..setTrackLengthPreset(channel: 0, bars: null)
-          ..setAutoRecord(enabled: true);
+          ..setRecordStartSettings(
+            countInBars: 0,
+            soundStart: true,
+            editKind: RecordStartEditKind.restore,
+          );
         final inherited = settingsFromLooper(
           looper,
+          recordStart: RecordStartSettings(countInBars: 0, soundStart: true),
           clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
             defaultTiming: looper.defaultRecordTiming,

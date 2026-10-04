@@ -11,6 +11,7 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/pedal.dart';
+import 'package:segno/setup/setup_surface.dart';
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
 
 import '../../helpers/helpers.dart';
@@ -45,13 +46,25 @@ void main() {
   late LooperRepository looper;
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
+  var confirmedCountIn = 1;
+  var confirmedSoundStart = false;
+  var startRecovering = false;
+  var startCaptureLocked = false;
+  late StreamController<LooperState> stateChanges;
 
   setUpAll(() {
     registerFallbackValue(MonitorMode.off);
     registerFallbackValue(GridDivision.off);
     registerFallbackValue(<int, RecordTiming>{});
+    registerFallbackValue(RecordStartEditKind.restore);
   });
   setUp(() {
+    confirmedCountIn = 1;
+    confirmedSoundStart = false;
+    startRecovering = false;
+    startCaptureLocked = false;
+    stateChanges = StreamController<LooperState>.broadcast();
+    addTearDown(stateChanges.close);
     confirmedTiming = RecordTiming.immediately;
     rememberedDivision = GridDivision.off;
     tracks = TracksCubit(
@@ -78,6 +91,47 @@ void main() {
     );
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
     when(() => repository.clickModeSettled).thenReturn(true);
+    when(() => repository.clickVolumeSettled).thenReturn(true);
+    when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
+    when(() => repository.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordStartSettingsSettled).thenReturn(true);
+    when(() => repository.recordStartRecoveryRequired).thenAnswer(
+      (_) => startRecovering,
+    );
+    when(() => repository.recordStartCaptureLocked).thenAnswer(
+      (_) => startCaptureLocked,
+    );
+    when(() => repository.recordLengthCaptureLocked).thenAnswer(
+      (_) => startCaptureLocked,
+    );
+    when(() => repository.recordStartSettings).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.recordStartRestartIntent).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(repository.settleRecordStartSettings).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => repository.setRecordStartSettings(
+        countInBars: any(named: 'countInBars'),
+        soundStart: any(named: 'soundStart'),
+        editKind: any(named: 'editKind'),
+      ),
+    ).thenAnswer((call) {
+      confirmedCountIn = call.namedArguments[#countInBars] as int;
+      confirmedSoundStart = call.namedArguments[#soundStart] as bool;
+      return EngineResult.ok;
+    });
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
@@ -113,6 +167,8 @@ void main() {
       (_) => TransportState(
         recordTiming: confirmedTiming,
         quantizeDiv: rememberedDivision,
+        countInBars: confirmedCountIn,
+        autoRecord: confirmedSoundStart,
       ),
     );
     when(repository.settleRecordTimingSettings).thenAnswer(
@@ -146,9 +202,6 @@ void main() {
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setAutoRecord(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
       () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
     when(() => repository.setClickOutput(any())).thenReturn(EngineResult.ok);
@@ -172,9 +225,7 @@ void main() {
     when(() => repository.outputEffects(0)).thenReturn(const []);
     when(() => repository.allTracksEffects).thenReturn(const []);
     when(() => repository.state).thenReturn(const LooperState());
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.looperState).thenAnswer((_) => stateChanges.stream);
     when(() => repository.lengthSettingsFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
@@ -190,7 +241,6 @@ void main() {
       repository: repository,
       settings: settings,
     );
-    tempo = TempoCubit(repository: repository, settings: settings);
   });
 
   void seed(AudioSetupState state) {
@@ -202,8 +252,14 @@ void main() {
     );
   }
 
-  Future<void> pumpSection(WidgetTester tester) async {
+  Future<void> pumpSection(
+    WidgetTester tester, {
+    bool loadRecordStart = true,
+  }) async {
     final timingSettings = SettingsRepository(store: FakeKeyValueStore());
+    tempo = TempoCubit(repository: looper, settings: timingSettings);
+    addTearDown(() => unawaited(tempo.close()));
+    if (loadRecordStart) await tempo.loadRecordStart();
     quantize = RecordTimingCubit(
       repository: looper,
       settings: timingSettings,
@@ -429,7 +485,8 @@ void main() {
     seed(runningState);
     await pumpSection(tester);
     expect(recordOptions.state.recDub, isFalse);
-    expect(recordOptions.state.autoRecord, isFalse);
+    expect(tempo.confirmedRecordStart?.soundStart, isFalse);
+    expect(tempo.recordStartSnapshot?.canEdit, isTrue);
 
     final recDub = find.byKey(const Key('audioSettings_recDub_switch'));
     await tester.ensureVisible(recDub);
@@ -443,7 +500,85 @@ void main() {
     await tester.ensureVisible(autoRecord);
     await tester.tap(autoRecord);
     await tester.pumpAndSettle();
-    expect(recordOptions.state.autoRecord, isTrue);
+    await tester.runAsync(tempo.flushRecordStart);
+    await tester.pump();
+    expect(tempo.confirmedRecordStart?.soundStart, isTrue);
+    expect(tempo.confirmedRecordStart?.countInBars, 0);
+  });
+
+  testWidgets('unconfirmed Sound shows an unavailable readout, not Off', (
+    tester,
+  ) async {
+    seed(runningState);
+    await pumpSection(tester, loadRecordStart: false);
+    final control = find.byKey(const Key('audioSettings_autoRecord_switch'));
+    await tester.ensureVisible(control);
+    expect(control, findsOneWidget);
+    expect(control.evaluate().single.widget, isNot(isA<Switch>()));
+    expect(tempo.confirmedRecordStart, isNull);
+    expect(find.text('—'), findsWidgets);
+  });
+
+  testWidgets('Sound retains its choice but refuses edits during recovery', (
+    tester,
+  ) async {
+    seed(runningState);
+    await pumpSection(tester);
+    final control = find.byKey(const Key('audioSettings_autoRecord_switch'));
+    await tester.ensureVisible(control);
+    await tester.tap(control);
+    await tester.pumpAndSettle();
+    expect(tempo.confirmedRecordStart?.soundStart, isTrue);
+
+    startRecovering = true;
+    stateChanges.add(const LooperState());
+    await tester.pumpAndSettle();
+    expect(tempo.recordStartSnapshot, isNull);
+    final toggle = tester.widget<SetupToggleRow>(
+      find.ancestor(of: control, matching: find.byType(SetupToggleRow)),
+    );
+    expect(toggle.value, isTrue);
+    expect(toggle.onChanged, isNull);
+    expect(find.text('Recording start is unavailable.'), findsOneWidget);
+    clearInteractions(looper);
+    await tester.ensureVisible(control);
+    await tester.tap(control);
+    await tester.pumpAndSettle();
+    verifyNever(
+      () => looper.setRecordStartSettings(
+        countInBars: any(named: 'countInBars'),
+        soundStart: any(named: 'soundStart'),
+        editKind: any(named: 'editKind'),
+      ),
+    );
+  });
+
+  testWidgets('Sound is disabled during capture without changing the pair', (
+    tester,
+  ) async {
+    seed(runningState);
+    await pumpSection(tester);
+    final control = find.byKey(const Key('audioSettings_autoRecord_switch'));
+    startCaptureLocked = true;
+    stateChanges.add(const LooperState());
+    await tester.pumpAndSettle();
+    final toggle = tester.widget<SetupToggleRow>(
+      find.ancestor(of: control, matching: find.byType(SetupToggleRow)),
+    );
+    expect(toggle.value, isFalse);
+    expect(toggle.onChanged, isNull);
+    expect(tempo.recordStartSnapshot?.captureLocked, isTrue);
+    clearInteractions(looper);
+    await tester.ensureVisible(control);
+    await tester.tap(control);
+    await tester.pumpAndSettle();
+    verifyNever(
+      () => looper.setRecordStartSettings(
+        countInBars: any(named: 'countInBars'),
+        soundStart: any(named: 'soundStart'),
+        editKind: any(named: 'editKind'),
+      ),
+    );
   });
 
   testWidgets('choosing a default loop length forwards to the cubit', (

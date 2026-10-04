@@ -60,12 +60,14 @@ void main() {
   // Author-machine goldens, like the other screenshot suites here: the
   // Material fonts come from the local SDK, so everywhere else this skips.
   final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
+  final authorCaptureDir = Platform.environment['SEGNO_AUTHOR_CAPTURE_DIR'];
 
   setUpAll(() async {
     registerFallbackValue(const LooperRecordPressed(0));
     registerFallbackValue(LooperMode.multi);
     registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(ClickMode.off);
+    registerFallbackValue(RecordStartEditKind.restore);
     if (!hasScreenshotFonts) return;
     await loadScreenshotFont('Roboto', [
       '$fontDir/Roboto-Regular.ttf',
@@ -96,6 +98,9 @@ void main() {
   late int confirmedLength;
   late ClickMode confirmedClickMode;
   late int confirmedCountIn;
+  late bool confirmedSoundStart;
+  late bool recordStartCaptureLocked;
+  late bool recordStartRecoveryRequired;
 
   setUp(() {
     bloc = _MockLooperBloc();
@@ -105,7 +110,10 @@ void main() {
     );
     confirmedLength = 0;
     confirmedClickMode = ClickMode.off;
-    confirmedCountIn = 0;
+    confirmedCountIn = 1;
+    confirmedSoundStart = false;
+    recordStartCaptureLocked = false;
+    recordStartRecoveryRequired = false;
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.sessionTransport).thenAnswer(
@@ -113,6 +121,7 @@ void main() {
         defaultLengthPresetBars: confirmedLength,
         clickMode: confirmedClickMode,
         countInBars: confirmedCountIn,
+        autoRecord: confirmedSoundStart,
       ),
     );
     when(() => repository.clickModeFailures).thenAnswer(
@@ -122,6 +131,42 @@ void main() {
       (_) => const Stream<EngineResult>.empty(),
     );
     when(() => repository.clickModeSettled).thenReturn(true);
+    when(() => repository.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordStartSettingsSettled).thenReturn(true);
+    when(
+      () => repository.recordStartRecoveryRequired,
+    ).thenAnswer((_) => recordStartRecoveryRequired);
+    when(
+      () => repository.recordStartCaptureLocked,
+    ).thenAnswer((_) => recordStartCaptureLocked);
+    when(() => repository.recordStartSettings).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.recordStartRestartIntent).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.settleRecordStartSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => repository.setRecordStartSettings(
+        countInBars: any(named: 'countInBars'),
+        soundStart: any(named: 'soundStart'),
+        editKind: any(named: 'editKind'),
+      ),
+    ).thenAnswer((call) {
+      confirmedCountIn = call.namedArguments[#countInBars] as int;
+      confirmedSoundStart = call.namedArguments[#soundStart] as bool;
+      return EngineResult.ok;
+    });
     when(() => repository.clickModeRecoveryRequired).thenReturn(false);
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
     when(() => repository.clickModeRestartIntent).thenAnswer(
@@ -134,10 +179,6 @@ void main() {
     );
     when(() => repository.setClickMode(any())).thenAnswer((call) {
       confirmedClickMode = call.positionalArguments.single as ClickMode;
-      return EngineResult.ok;
-    });
-    when(() => repository.setCountIn(any())).thenAnswer((call) {
-      confirmedCountIn = call.positionalArguments.single as int;
       return EngineResult.ok;
     });
     when(
@@ -170,9 +211,6 @@ void main() {
       ).thenReturn(EngineResult.ok),
       () => when(
         () => repository.setRecDub(enabled: any(named: 'enabled')),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setAutoRecord(enabled: any(named: 'enabled')),
       ).thenReturn(EngineResult.ok),
       () => when(
         () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
@@ -209,6 +247,7 @@ void main() {
       ..devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    recordStartCaptureLocked = state.tracks.any((track) => track.isCapturing);
     when(() => bloc.state).thenReturn(state);
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
     // The Click checkpoint and its initial writer must share testWidgets' zone.
@@ -243,7 +282,7 @@ void main() {
       addTearDown(() => unawaited(cubit.close()));
     }
     await tempo.setTempo(84);
-    await tempo.setCountInBars(1);
+    await tempo.loadRecordStart();
     await tempo.loadClickMode();
     expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
     await prepare?.call(tempo, options);
@@ -328,6 +367,41 @@ void main() {
     );
   }, skip: !hasScreenshotFonts);
 
+  testWidgets('Author recording-start Sound and recovery captures', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      page: LoopSettingsPageId.recording,
+      prepare: (tempo, _) async {
+        expect((await tempo.setCountInBars(0)).isOk, isTrue);
+      },
+    );
+    await expectLater(
+      find.byType(LoopSettingsPage),
+      matchesGoldenFile('$authorCaptureDir/recording_pedal_off.png'),
+    );
+    final tempo = tester
+        .element(find.byType(LoopSettingsPage))
+        .read<TempoCubit>();
+    expect((await tempo.setSoundStart(enabled: true)).isOk, isTrue);
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(LoopSettingsPage),
+      matchesGoldenFile('$authorCaptureDir/recording_sound_on.png'),
+    );
+    recordStartRecoveryRequired = true;
+    expect(
+      (await tempo.setCountInBars(0)).isOk,
+      isFalse,
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(LoopSettingsPage),
+      matchesGoldenFile('$authorCaptureDir/recording_sound_recovery.png'),
+    );
+  }, skip: !hasScreenshotFonts || authorCaptureDir == null);
+
   testWidgets('Tempo & click, and the time signature grid', (tester) async {
     await pump(tester, page: LoopSettingsPageId.tempo);
     expect(find.byKey(const Key('loop_click_recFirst')), findsOneWidget);
@@ -343,6 +417,25 @@ void main() {
       matchesGoldenFile('goldens/loop_settings_signature.png'),
     );
   }, skip: !hasScreenshotFonts);
+
+  testWidgets('Author Count-in Off and 2-bar captures', (tester) async {
+    await pump(tester, page: LoopSettingsPageId.tempo);
+    final tempo = tester
+        .element(find.byType(LoopSettingsPage))
+        .read<TempoCubit>();
+    expect((await tempo.setCountInBars(0)).isOk, isTrue);
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(LoopSettingsPage),
+      matchesGoldenFile('$authorCaptureDir/tempo_count_in_off.png'),
+    );
+    expect((await tempo.setCountInBars(2)).isOk, isTrue);
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(LoopSettingsPage),
+      matchesGoldenFile('$authorCaptureDir/tempo_count_in_2.png'),
+    );
+  }, skip: !hasScreenshotFonts || authorCaptureDir == null);
 
   testWidgets('Length & quantize, defaults and a custom track', (
     tester,

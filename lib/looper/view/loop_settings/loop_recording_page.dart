@@ -21,16 +21,18 @@ class LoopRecordingPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final options = context.watch<RecordOptionsCubit>().state;
-    final countIn = context.select<TempoCubit, int>(
-      (cubit) => cubit.state.countInBars,
-    );
+    final tempo = context.watch<TempoCubit>();
+    final confirmed = tempo.confirmedRecordStart;
+    final recordStart = tempo.recordStartSnapshot;
     final capturing = context.select<LooperBloc, bool>(
       (bloc) => bloc.state.tracks.any((t) => t.isCapturing),
     );
-    final note = options.autoRecord
+    final note = recordStart == null || confirmed == null
+        ? l10n.recordStartUnavailable
+        : confirmed.soundStart
         ? l10n.loopRecordingNoteSound
-        : countIn > 0
-        ? l10n.loopRecordingNoteCountIn(countIn)
+        : confirmed.countInBars > 0
+        ? l10n.loopRecordingNoteCountIn(confirmed.countInBars)
         : l10n.loopRecordingNotePedal;
     return Positioned.fill(
       child: Stack(
@@ -68,11 +70,11 @@ class LoopRecordingPage extends StatelessWidget {
                       keyOf: (sound) => Key(
                         sound ? 'loop_recording_sound' : 'loop_recording_pedal',
                       ),
-                      selected: options.autoRecord,
-                      enabled: !capturing,
+                      selected: confirmed?.soundStart,
+                      enabled: recordStart?.canEdit ?? false,
                       onSelected: (sound) => unawaited(
-                        context.read<RecordOptionsCubit>().setAutoRecord(
-                          value: sound,
+                        context.read<TempoCubit>().setSoundStart(
+                          enabled: sound,
                         ),
                       ),
                       width: 1032,

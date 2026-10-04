@@ -2529,41 +2529,41 @@ class SegnoEngineBindings {
   late final _le_engine_set_click_volume = _le_engine_set_click_volumePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
 
-  /// Sets the count-in length in measures (0 = off .. LE_COUNT_IN_MAX_BARS;
-  /// values outside return LE_ERR_INVALID). Default 0 = off on the wire — the
-  /// manual's 1-bar default is applied by the app layer when the user enables
-  /// counting in. With count-in on and a tempo set, a record press on an idle,
-  /// empty looper (the DEFINING recording) first clicks [bars] measures — the
-  /// counting state is published via counting_in / count_in_beats_left — and
-  /// recording then starts exactly on the downbeat. A record press during the
-  /// count-in cancels it (back to idle); so does a stop press, and so does
-  /// setting this to 0. With no tempo set there is nothing to click against and
-  /// recording starts immediately. Once anything is recorded, record presses
-  /// behave exactly as without count-in (quantize governs — D9). Mutually
-  /// exclusive with sound-activated recording: enabling count-in disables
-  /// auto-record (and cancels its threshold arms), and enabling auto-record
-  /// clears the count-in. Each setter posts one command; an unconfigured engine
-  /// returns LE_ERR_NOT_RUNNING and a full ring returns LE_ERR_INVALID without
-  /// changing either setting or pending arms. Snapshots publish the applied pair
-  /// together after processing; accepted control decisions take effect at once.
-  int le_engine_set_count_in(
+  /// Enqueues a coherent Count-in/Sound-start pair. Bars must be 0, 1, 2 or 4;
+  /// sound_start must be 0/1 and cannot be enabled with positive bars. Actual
+  /// capture refuses, including capture begun earlier in the same callback.
+  /// Count edits cancel a countdown; positive Count also cancels Sound arms.
+  /// Sound-on cancels countdowns, Sound-off cancels Sound arms. Restore cancels
+  /// both. One unpublished request is reserved; raw posts are invalid.
+  /// Acquire commands_settled BEFORE a synchronous snapshot read to classify its
+  /// new revision/result; no other mode writer may run between those calls.
+  int le_engine_set_record_start(
     ffi.Pointer<le_engine> engine,
     int bars,
+    int sound_start,
+    int edit_kind,
   ) {
-    return _le_engine_set_count_in(
+    return _le_engine_set_record_start(
       engine,
       bars,
+      sound_start,
+      edit_kind,
     );
   }
 
-  late final _le_engine_set_count_inPtr =
+  late final _le_engine_set_record_startPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
         >
-      >('le_engine_set_count_in');
-  late final _le_engine_set_count_in = _le_engine_set_count_inPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+      >('le_engine_set_record_start');
+  late final _le_engine_set_record_start = _le_engine_set_record_startPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
   /// Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
   /// 0 to inherit the global default (le_engine_set_default_multiple). Applies to
@@ -2838,30 +2838,6 @@ class SegnoEngineBindings {
   late final _le_engine_set_track_overdub_feedback =
       _le_engine_set_track_overdub_feedbackPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
-
-  /// Enables sound-activated recording: a record press on an empty track waits and
-  /// begins capturing the first frame the input level crosses the threshold. A
-  /// second press before then cancels. Disabling cancels tracks still waiting.
-  /// Enabling clears and cancels count-in. Queue/configuration refusal leaves
-  /// both settings and pending arms unchanged; see le_engine_set_count_in.
-  int le_engine_set_auto_record(
-    ffi.Pointer<le_engine> engine,
-    int enabled,
-  ) {
-    return _le_engine_set_auto_record(
-      engine,
-      enabled,
-    );
-  }
-
-  late final _le_engine_set_auto_recordPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
-        >
-      >('le_engine_set_auto_record');
-  late final _le_engine_set_auto_record = _le_engine_set_auto_recordPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// Sets chain entry [index] (0..LE_FX_MAX-1) on lane [lane] of track [channel] to
   /// [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY lazily
@@ -5699,11 +5675,8 @@ enum le_command_code {
   /// gain stage — master gain never applies).
   LE_CMD_SET_CLICK_VOLUME(24),
 
-  /// arg_i = count-in length in measures
-  /// (0 = off, up to LE_COUNT_IN_MAX_BARS).
-  /// Cancels an in-progress count-in; positive
-  /// bars disable sound start and its arms.
-  LE_CMD_SET_COUNT_IN(25),
+  /// typed pair + edit kind + callback receipt
+  LE_CMD_SET_RECORD_START(25),
 
   /// lane records this input channel (-1 = none).
   /// arg_f = channel*LE_MAX_LANES + lane,
@@ -5869,10 +5842,6 @@ enum le_command_code {
   /// bitmask, arg_f = 0/1; uses the same pass semantics as SET_ONE_SHOT.
   LE_CMD_SET_ONE_SHOT_MASK(59),
 
-  /// arg_i = sound-start enabled (0/1). Enabling cancels count-in;
-  /// disabling cancels pending signal-triggered recording arms.
-  LE_CMD_SET_AUTO_RECORD(60),
-
   /// Named bounded payload: all configured tracks' future length presets.
   LE_CMD_SET_LENGTH_PRESETS(61),
 
@@ -5976,7 +5945,7 @@ enum le_command_code {
     22 => LE_CMD_SET_CLICK_OUTPUT,
     23 => LE_CMD_COMMIT_SESSION,
     24 => LE_CMD_SET_CLICK_VOLUME,
-    25 => LE_CMD_SET_COUNT_IN,
+    25 => LE_CMD_SET_RECORD_START,
     26 => LE_CMD_SET_LANE_INPUT,
     27 => LE_CMD_SET_LANE_OUTPUT,
     28 => LE_CMD_SET_LANE_VOLUME,
@@ -6009,7 +5978,6 @@ enum le_command_code {
     57 => LE_CMD_CANCEL_TAKE,
     58 => LE_CMD_RESTORE_TEMPO,
     59 => LE_CMD_SET_ONE_SHOT_MASK,
-    60 => LE_CMD_SET_AUTO_RECORD,
     61 => LE_CMD_SET_LENGTH_PRESETS,
     62 => LE_CMD_SET_LANE_PAN,
     63 => LE_CMD_SET_TRACK_SOLO,
@@ -6926,6 +6894,13 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int count_in_bars;
 
+  @ffi.Uint32()
+  external int record_start_revision;
+
+  /// prior pair remains on callback refusal
+  @ffi.Int32()
+  external int record_start_result;
+
   /// 0/1: a count-in is currently running
   @ffi.Int32()
   external int counting_in;
@@ -7315,7 +7290,7 @@ final class le_midi_out extends ffi.Opaque {}
 
 const int LE_MAX_CHANNELS = 32;
 
-const int LE_COUNT_IN_MAX_BARS = 64;
+const int LE_COUNT_IN_MAX_BARS = 4;
 
 const int LE_LENGTH_PRESET_MAX_BARS = 64;
 

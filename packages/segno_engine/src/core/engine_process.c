@@ -2498,6 +2498,14 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       break;
     }
     case LE_CMD_RECORD:
+      if (cmd->clock.cancel_count_in && e->count_in_total <= 0 &&
+          e->count_in_grace_channel != cmd->arg_i) {
+        /* Its countdown was already canceled. The exact same press cannot
+         * create a new countdown/capture under a newly applied pair. */
+        if (cmd->clock.sequence != 0) atomic_store_explicit(
+            &e->a_clock_commands_applied, cmd->clock.sequence, memory_order_release);
+        break;
+      }
       if (!preserve_image && valid_channel(e, cmd->arg_i))
         e->tracks[cmd->arg_i].pending_image.revision = 0;
       le_plog_push(e, frame, *cmd);
@@ -3020,37 +3028,31 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       store_f32(&e->a_click_volume_bits, v);
       break;
     }
-    case LE_CMD_SET_COUNT_IN: {
-      int32_t bars = cmd->arg_i;
-      if (bars < 0) bars = 0;
-      if (bars > LE_COUNT_IN_MAX_BARS) bars = LE_COUNT_IN_MAX_BARS;
-      if (bars > 0 || load_i32(&e->a_record_start) >= 0) {
-        store_i32(&e->a_record_start, bars);
+    case LE_CMD_SET_RECORD_START: {
+      const int value = cmd->record_start.value;
+      const int kind = cmd->record_start.edit_kind;
+      int accepted = (value == -1 || value == 0 || value == 1 || value == 2 || value == 4) &&
+          kind >= LE_RECORD_START_COUNT_IN && kind <= LE_RECORD_START_RESTORE;
+      for (int c = 0; c < e->track_count && accepted; ++c) {
+        const int state = load_i32(&e->tracks[c].a_state);
+        if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) accepted = 0;
       }
-      if (bars > 0) le_cancel_signal_arms(e);
-      /* ANY mid-count-in change cancels the count-in in flight — not just a
-       * change to 0 (code-review fix). The running countdown was frozen at
-       * le_count_in_begin from whatever bars was in effect THEN
-       * (count_in_total/count_in_beats/count_in_fpb); republishing a
-       * different nonzero value here would leave the published setting and
-       * the actually-counting schedule silently diverged until the count-in
-       * ends on the STALE value. Cancelling and letting the next record
-       * press pick up the freshly-published value is simpler and consistent
-       * with the existing 0-cancels precedent. */
-      if (e->count_in_total > 0) le_count_in_reset(e);
+      if (accepted) {
+        store_i32(&e->a_record_start, value);
+        if (kind == LE_RECORD_START_RESTORE ||
+            (kind == LE_RECORD_START_COUNT_IN && value > 0) ||
+            (kind == LE_RECORD_START_SOUND && value >= 0)) le_cancel_signal_arms(e);
+        if (e->count_in_total > 0 && (kind != LE_RECORD_START_SOUND || value < 0))
+          le_count_in_reset(e);
+      }
+      store_i32(&e->a_record_start_result, accepted ? LE_OK : LE_ERR_INVALID);
+      e->record_start_publish_revision = cmd->record_start.revision;
+      e->record_start_publish_pending = 1;
+#ifdef LE_NATIVE_TESTS
+      if (le_test_record_start_hook) le_test_record_start_hook(e, 1);
+#endif
       break;
     }
-    case LE_CMD_SET_AUTO_RECORD:
-      if (cmd->arg_i) {
-        store_i32(&e->a_record_start, -1);
-        if (e->count_in_total > 0) le_count_in_reset(e);
-      } else {
-        if (load_i32(&e->a_record_start) < 0) {
-          store_i32(&e->a_record_start, 0);
-        }
-        le_cancel_signal_arms(e);
-      }
-      break;
     /* ---- track length presets (A6, D17; see the helper block above
      * finalize_master). Not perf-logged, like the tempo grid / click block
      * above — state only, no direct audible effect at the moment it's set. */
@@ -4788,14 +4790,6 @@ static inline int process_input_frame(le_engine* e, const float* in,
                                       uint64_t perf_frame_base) {
   float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
   float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
-  /* Conditioned magnitude (input conditioning, S1): the sound-activated
-   * record trigger deliberately reads the CONDITIONED buffer so mains hum
-   * can no longer false-arm a threshold recording; metering (frame_mag /
-   * in_peak / in_sumsq) and the latency harness stay on the RAW buffer —
-   * HOT must reflect the ADC, not the post-notch signal. When no stage ran
-   * this block in_c == in and the extra abs pass is skipped. */
-  const int conditioned = in_c != in;
-  float cond_mag = 0.0f;
   for (int c = 0; c < ch_in; ++c) {
     const float s = in ? in[f * ch_in + c] : 0.0f;
     const float a = fabsf(s);
@@ -4808,24 +4802,28 @@ static inline int process_input_frame(le_engine* e, const float* in,
     if (a > frame_mag) frame_mag = a;
     if (a > in_peak_ch[c]) in_peak_ch[c] = a;
     *in_sumsq += s * s;
-    if (conditioned) {
-      const float ca = fabsf(in_c[f * ch_in + c]);
-      if (ca > cond_mag) cond_mag = ca;
-    }
   }
   if (frame_mag > *in_peak) *in_peak = frame_mag;
-  const float trig_mag = conditioned ? cond_mag : frame_mag;
 
-  /* Sound-activated recording: a track armed for the input-level trigger starts
-   * the moment the input crosses the threshold. Fired here — after the input
-   * magnitude is known but before st[] is sampled — so this very frame is
-   * captured. */
+  /* Signal arms listen only to their selected, real recording sources. Input
+   * conditioning precedes this buffer; meters/latency above remain raw. Never
+   * substitute input zero when a route disappears. Cancellation remains a
+   * control action even when no selected source is currently usable. */
   for (int qt = 0; qt < tc; ++qt) {
-    if (e->tracks[qt].pending_record && e->tracks[qt].pending_trigger == 1 &&
-        trig_mag > LE_AUTO_RECORD_THRESHOLD) {
-      e->tracks[qt].pending_record = 0;
-      e->tracks[qt].pending_trigger = 0;
-      store_i32(&e->tracks[qt].a_pending, 0);
+    le_track* t = &e->tracks[qt];
+    if (!t->pending_record || t->pending_trigger != 1) continue;
+    float magnitude = 0.0f;
+    for (int l = 0; l < le_lanes_active(t); ++l) {
+      const int source = load_i32(&t->lanes[l].a_input_channel);
+      if (source < 0 || source >= ch_in || source >= 32 ||
+          (excluded & (1u << source))) continue;
+      const float value = in_c ? fabsf(in_c[f * ch_in + source]) : 0.0f;
+      if (value > magnitude) magnitude = value;
+    }
+    if (magnitude > LE_AUTO_RECORD_THRESHOLD) {
+      t->pending_record = 0;
+      t->pending_trigger = 0;
+      store_i32(&t->a_pending, 0);
       handle_record(e, qt, perf_frame_base + f);
     }
   }
@@ -6327,6 +6325,11 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     atomic_store_explicit(&e->a_click_mode_revision,
                           e->click_mode_publish_revision, memory_order_relaxed);
     e->click_mode_publish_pending = 0;
+  }
+  if (e->record_start_publish_pending) {
+    atomic_store_explicit(&e->a_record_start_revision,
+                          e->record_start_publish_revision, memory_order_relaxed);
+    e->record_start_publish_pending = 0;
   }
   atomic_store_explicit(&e->a_commands_published, e->commands_applied,
                          memory_order_release);

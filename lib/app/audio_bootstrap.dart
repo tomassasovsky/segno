@@ -3,6 +3,7 @@ import 'package:segno/app/console_audio_devices.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/model/record_start.dart';
 // Settings owns its own AudioBackend; the looper domain backend is the
 // unprefixed one here.
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
@@ -32,6 +33,33 @@ Future<AutoStartResult> tryAutoStartEngine({
   required SettingsRepository settings,
   required MixSettingsCoordinator mixSettings,
 }) => mixSettings.runExclusive(() async {
+  // Validate both start preferences before opening audio; absent defaults
+  // never override an explicit Sound choice or materialize new stored keys.
+  try {
+    final start = RecordStartSettings.fromCheckpoint(
+      await settings.readRecordStartCheckpoint(),
+    );
+    final request = repository.setRecordStartSettings(
+      countInBars: start.countInBars,
+      soundStart: start.soundStart,
+      editKind: RecordStartEditKind.restore,
+    );
+    final result = request.isOk
+        ? await repository.settleRecordStartSettings()
+        : request;
+    if (!result.isOk) {
+      throw StateError('Saved recording start replay refused: ${result.name}');
+    }
+  } on Object catch (error) {
+    AppLog.error('audio auto-start: saved recording start failed: $error');
+    repository.stopEngine();
+    return (
+      started: false,
+      asioDrivers: const <AudioDevice>[],
+      recoveryConfig: null,
+    );
+  }
+
   // Read exact intent before starting audio. An absent preference selects
   // First recording without writing a preference or changing click routing.
   try {
@@ -312,6 +340,15 @@ Future<AutoStartResult> _tryAutoStartEngine({
   }
   // A successful enqueue is not a callback confirmation. Finish the engine's
   // initial mode/length replay before applying saved choices.
+  final startupRecordStart = await repository.settleRecordStartSettings();
+  if (!startupRecordStart.isOk) {
+    AppLog.error(
+      'audio startup: recording start replay refused '
+      '${startupRecordStart.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
   final startupClick = await repository.settleClickMode();
   if (!startupClick.isOk) {
     AppLog.error(
@@ -661,6 +698,15 @@ Future<bool> _firstRunAutoStart({
   }
   if (!result.isOk) {
     AppLog.error('audio first-run: open failed result=${result.name}');
+    return false;
+  }
+  final startupRecordStart = await repository.settleRecordStartSettings();
+  if (!startupRecordStart.isOk) {
+    AppLog.error(
+      'audio startup: recording start replay refused '
+      '${startupRecordStart.name}',
+    );
+    repository.stopEngine();
     return false;
   }
   final startupClick = await repository.settleClickMode();

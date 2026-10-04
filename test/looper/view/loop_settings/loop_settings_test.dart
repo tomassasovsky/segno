@@ -62,6 +62,10 @@ void main() {
   late Map<int, RecordTiming> confirmedTrackTiming;
   late ClickMode confirmedClickMode;
   late bool clickModeCaptureLocked;
+  late int confirmedCountIn;
+  late bool confirmedSoundStart;
+  late bool recordStartRecovery;
+  late bool recordStartSettled;
 
   setUpAll(() {
     registerFallbackValue(const LooperRecordPressed(0));
@@ -70,6 +74,7 @@ void main() {
     registerFallbackValue(GridDivision.off);
     registerFallbackValue(<int, RecordTiming>{});
     registerFallbackValue(ClickMode.off);
+    registerFallbackValue(RecordStartEditKind.restore);
   });
 
   setUp(() {
@@ -94,6 +99,10 @@ void main() {
     confirmedTrackTiming = {};
     confirmedClickMode = ClickMode.off;
     clickModeCaptureLocked = false;
+    confirmedCountIn = 1;
+    confirmedSoundStart = false;
+    recordStartRecovery = false;
+    recordStartSettled = true;
     when(() => repository.sessionRevision).thenAnswer((_) => sessionRevision);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
@@ -209,7 +218,44 @@ void main() {
       confirmedClickMode = call.positionalArguments.single as ClickMode;
       return EngineResult.ok;
     });
-    when(() => repository.recordStartRevision).thenReturn(0);
+    when(() => repository.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordStartSettingsSettled).thenAnswer(
+      (_) => recordStartSettled,
+    );
+    when(
+      () => repository.recordStartRecoveryRequired,
+    ).thenAnswer((_) => recordStartRecovery);
+    when(() => repository.recordStartCaptureLocked).thenAnswer(
+      (_) => currentRig.tracks.any((track) => track.isCapturing),
+    );
+    when(() => repository.recordStartSettings).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.recordStartRestartIntent).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.settleRecordStartSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => repository.setRecordStartSettings(
+        countInBars: any(named: 'countInBars'),
+        soundStart: any(named: 'soundStart'),
+        editKind: any(named: 'editKind'),
+      ),
+    ).thenAnswer((call) {
+      confirmedCountIn = call.namedArguments[#countInBars] as int;
+      confirmedSoundStart = call.namedArguments[#soundStart] as bool;
+      return EngineResult.ok;
+    });
     when(() => repository.recordTimingFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
@@ -307,6 +353,8 @@ void main() {
         recordTiming: confirmedTiming,
         quantizeDiv: rememberedDivision,
         clickMode: confirmedClickMode,
+        countInBars: confirmedCountIn,
+        autoRecord: confirmedSoundStart,
       ),
     );
     when(
@@ -378,13 +426,8 @@ void main() {
       () => when(
         () => repository.settleClickVolume(),
       ).thenAnswer((_) async => EngineResult.ok),
-      () =>
-          when(() => repository.setCountIn(any())).thenReturn(EngineResult.ok),
       () => when(
         () => repository.setRecDub(enabled: any(named: 'enabled')),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setAutoRecord(enabled: any(named: 'enabled')),
       ).thenReturn(EngineResult.ok),
       () => when(
         () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
@@ -473,6 +516,8 @@ void main() {
     LoopSettingsPageId initial = LoopSettingsPageId.hub,
     bool fromTray = false,
     ClickMode? savedClickMode,
+    int? savedCountIn,
+    bool loadRecordStart = true,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -486,6 +531,12 @@ void main() {
     settings = SettingsRepository(store: store);
     if (savedClickMode != null) {
       await settings.restoreClickModeCheckpoint(savedClickMode.code);
+    }
+    if (savedCountIn != null) {
+      await settings.saveRecordStartSettings(
+        countInBars: savedCountIn,
+        soundStart: false,
+      );
     }
     await settings.saveLooperMode(confirmedMode.code);
     await settings.saveDefaultLengthPreset(confirmedLength);
@@ -507,6 +558,7 @@ void main() {
     }
     tempo = TempoCubit(repository: repository, settings: settings);
     await tempo.loadClickMode();
+    if (loadRecordStart) await tempo.loadRecordStart();
     options = RecordOptionsCubit(repository: repository, settings: settings);
     playback = PlaybackOptionsCubit(repository: repository, settings: settings);
     await playback.load();
@@ -827,15 +879,36 @@ void main() {
   });
 
   group('Recording', () {
+    testWidgets('unknown start has no selected method or provisional Pedal', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.recording,
+        loadRecordStart: false,
+      );
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.recordStartUnavailable), findsOneWidget);
+      for (final key in const [
+        'loop_recording_pedal',
+        'loop_recording_sound',
+      ]) {
+        final button = tester.widget<LoopChoiceButton>(find.byKey(Key(key)));
+        expect(button.selected, isFalse);
+        expect(button.enabled, isFalse);
+      }
+    });
+
     testWidgets('the choices write the record options and the note follows', (
       tester,
     ) async {
       await pump(tester, initial: LoopSettingsPageId.recording);
       final l10n = l10nOf(tester);
-      expect(find.text(l10n.loopRecordingNotePedal), findsOneWidget);
+      expect(find.text(l10n.loopRecordingNoteCountIn(1)), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_recording_sound')));
       await tester.pumpAndSettle();
-      expect(options.state.autoRecord, isTrue);
+      expect(tempo.confirmedRecordStart?.soundStart, isTrue);
+      expect(tempo.confirmedRecordStart?.countInBars, 0);
       expect(find.text(l10n.loopRecordingNoteSound), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_recording_overdub')));
       await tester.pumpAndSettle();
@@ -843,14 +916,36 @@ void main() {
     });
 
     testWidgets('a count-in names itself in the note', (tester) async {
-      await settings.saveCountInBars(2);
-      await pump(tester, initial: LoopSettingsPageId.recording);
-      await tempo.load();
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.recording,
+        savedCountIn: 2,
+      );
       await tester.pumpAndSettle();
       expect(
         find.text(l10nOf(tester).loopRecordingNoteCountIn(2)),
         findsOneWidget,
       );
+    });
+
+    testWidgets('recovery keeps the last Sound selection but blocks edits', (
+      tester,
+    ) async {
+      await pump(tester, initial: LoopSettingsPageId.recording);
+      await tester.tap(find.byKey(const Key('loop_recording_sound')));
+      await tester.pumpAndSettle();
+      expect(tempo.confirmedRecordStart?.soundStart, isTrue);
+
+      recordStartRecovery = true;
+      states.add(currentRig);
+      await tester.pumpAndSettle();
+      expect(tempo.recordStartSnapshot, isNull);
+      final sound = tester.widget<LoopChoiceButton>(
+        find.byKey(const Key('loop_recording_sound')),
+      );
+      expect(sound.selected, isTrue);
+      expect(sound.enabled, isFalse);
+      expect(find.text(l10nOf(tester).recordStartUnavailable), findsOneWidget);
     });
 
     testWidgets('a capture locks the rows behind the banner', (tester) async {
@@ -864,7 +959,7 @@ void main() {
       expect(find.byKey(const Key('loop_lock_banner')), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_recording_sound')));
       await tester.pumpAndSettle();
-      expect(options.state.autoRecord, isFalse);
+      expect(tempo.confirmedRecordStart?.soundStart, isFalse);
     });
   });
 
@@ -883,6 +978,102 @@ void main() {
       expect(tempo.state.countInBars, 2);
       await tester.tap(find.byKey(const Key('loop_tempo_tap')));
       verify(repository.tapTempo).called(1);
+    });
+
+    testWidgets('unknown count-in has no provisional bar selected', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.tempo,
+        loadRecordStart: false,
+      );
+      expect(tempo.confirmedRecordStart, isNull);
+      for (final bars in const [0, 1, 2, 4]) {
+        final choice = tester.widget<LoopChoiceButton>(
+          find.byKey(Key('loop_count_in_$bars')),
+        );
+        expect(choice.selected, isFalse);
+        expect(choice.enabled, isFalse);
+      }
+      expect(
+        find.byKey(const Key('loop_count_in_disabled_reason')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('pending and recovery retain but disable Count-in 2', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.tempo,
+        savedCountIn: 2,
+      );
+      expect(tempo.confirmedRecordStart?.countInBars, 2);
+      for (final recovering in const [false, true]) {
+        recordStartSettled = recovering;
+        recordStartRecovery = recovering;
+        states.add(currentRig);
+        await tester.pumpAndSettle();
+        expect(tempo.recordStartSnapshot, isNull);
+        final selected = tester.widget<LoopChoiceButton>(
+          find.byKey(const Key('loop_count_in_2')),
+        );
+        expect(selected.selected, isTrue);
+        expect(selected.enabled, isFalse);
+        clearInteractions(repository);
+        await tester.tap(find.byKey(const Key('loop_count_in_4')));
+        await tester.pumpAndSettle();
+        verifyNever(
+          () => repository.setRecordStartSettings(
+            countInBars: any(named: 'countInBars'),
+            soundStart: any(named: 'soundStart'),
+            editKind: any(named: 'editKind'),
+          ),
+        );
+      }
+      await tester.tap(find.byKey(const Key('loop_settings_back')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_hub_tempo')));
+      await tester.pumpAndSettle();
+      final reopened = tester.widget<LoopChoiceButton>(
+        find.byKey(const Key('loop_count_in_2')),
+      );
+      expect(reopened.selected, isTrue);
+      expect(reopened.enabled, isFalse);
+    });
+
+    testWidgets('capture retains and locks Count-in without a write', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.tempo,
+        savedCountIn: 2,
+      );
+      states.add(
+        const LooperState(
+          tracks: [Track(state: TrackState.recording)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tempo.recordStartSnapshot?.captureLocked, isTrue);
+      final selected = tester.widget<LoopChoiceButton>(
+        find.byKey(const Key('loop_count_in_2')),
+      );
+      expect(selected.selected, isTrue);
+      expect(selected.enabled, isFalse);
+      clearInteractions(repository);
+      await tester.tap(find.byKey(const Key('loop_count_in_4')));
+      await tester.pumpAndSettle();
+      verifyNever(
+        () => repository.setRecordStartSettings(
+          countInBars: any(named: 'countInBars'),
+          soundStart: any(named: 'soundStart'),
+          editKind: any(named: 'editKind'),
+        ),
+      );
     });
 
     testWidgets('explicit Off is ready; capture retains and locks the choice', (

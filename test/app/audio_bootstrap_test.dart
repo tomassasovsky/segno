@@ -98,6 +98,33 @@ class _TimingBootStore extends FakeKeyValueStore {
   }
 }
 
+class _RecordStartBootStore extends FakeKeyValueStore {
+  _RecordStartBootStore(this.blockedKey);
+
+  final String blockedKey;
+  final entered = Completer<void>();
+  final release = Completer<void>();
+
+  Future<void> _wait(String key) async {
+    if (key == blockedKey) {
+      if (!entered.isCompleted) entered.complete();
+      await release.future;
+    }
+  }
+
+  @override
+  Future<int?> getInt(String key) async {
+    await _wait(key);
+    return super.getInt(key);
+  }
+
+  @override
+  Future<bool?> getBool(String key) async {
+    await _wait(key);
+    return super.getBool(key);
+  }
+}
+
 class _ClickModeBootStore extends FakeKeyValueStore {
   final entered = Completer<void>();
   final release = Completer<void>();
@@ -183,6 +210,135 @@ void main() {
         ),
       );
     }
+
+    group('confirmed recording-start startup', () {
+      for (final hasAudioConfig in [false, true]) {
+        for (final (savedCount, savedSound, bars, sound)
+            in <(int?, bool?, int, bool)>[
+              (null, null, 1, false),
+              (0, null, 0, false),
+              (null, true, 0, true),
+              (null, false, 1, false),
+              (0, true, 0, true),
+              (2, false, 2, false),
+              (4, null, 4, false),
+            ]) {
+          test(
+            'config=$hasAudioConfig count=$savedCount sound=$savedSound',
+            () async {
+              if (hasAudioConfig) {
+                await settings.saveAudioConfig(
+                  const StoredAudioConfig(sampleRate: 48000, bufferFrames: 256),
+                );
+              }
+              if (savedCount != null) {
+                store.values['tempo.count_in_bars'] = savedCount;
+              }
+              if (savedSound != null) {
+                store.values['looper.auto_record'] = savedSound;
+              }
+              final result = await tryAutoStartEngine(
+                repository: repository,
+                settings: settings,
+                mixSettings: testMixSettings(repository, settings: settings),
+              );
+              expect(result.started, isTrue);
+              expect(repository.recordStartSettingsSettled, isTrue);
+              expect(repository.recordStartRecoveryRequired, isFalse);
+              expect(engine.snapshot().countInBars, bars);
+              expect(engine.snapshot().autoRecord, sound);
+              expect(repository.sessionTransport.countInBars, bars);
+              expect(repository.sessionTransport.autoRecord, sound);
+              expect(store.values['tempo.count_in_bars'], savedCount);
+              expect(store.values['looper.auto_record'], savedSound);
+              expect(
+                store.values.containsKey('tempo.count_in_bars'),
+                savedCount != null,
+              );
+              expect(
+                store.values.containsKey('looper.auto_record'),
+                savedSound != null,
+              );
+            },
+          );
+        }
+
+        for (final refused in [false, true]) {
+          test('unconfirmed pair blocks both start paths; '
+              'config=$hasAudioConfig refused=$refused', () async {
+            if (hasAudioConfig) {
+              await settings.saveAudioConfig(
+                const StoredAudioConfig(sampleRate: 48000, bufferFrames: 256),
+              );
+            }
+            engine
+              ..recordStartResult = refused
+                  ? EngineResult.invalid
+                  : EngineResult.ok
+              ..publishRecordStartCommands = false;
+            store.values['tempo.count_in_bars'] = 4;
+            store.values['looper.auto_record'] = false;
+            final result = await tryAutoStartEngine(
+              repository: repository,
+              settings: settings,
+              mixSettings: testMixSettings(repository, settings: settings),
+            );
+            expect(result.started, isFalse);
+            expect(engine.startCalls, 1);
+            expect(engine.stopCalls, greaterThan(0));
+            expect(store.values['tempo.count_in_bars'], 4);
+            expect(store.values['looper.auto_record'], isFalse);
+          });
+        }
+      }
+
+      for (final raw in <Map<String, Object>>[
+        {'tempo.count_in_bars': 3},
+        {'tempo.count_in_bars': 16},
+        {'tempo.count_in_bars': '2'},
+        {'tempo.count_in_bars': -1},
+        {'looper.auto_record': 1},
+        {'looper.auto_record': 'true'},
+        {'tempo.count_in_bars': 2, 'looper.auto_record': true},
+      ]) {
+        test(
+          'invalid start pair stays intact before device open: $raw',
+          () async {
+            store.values.addAll(raw);
+            final before = Map<String, Object>.of(store.values);
+            final result = await tryAutoStartEngine(
+              repository: repository,
+              settings: settings,
+              mixSettings: testMixSettings(repository, settings: settings),
+            );
+            expect(result.started, isFalse);
+            expect(result.recoveryConfig, isNull);
+            expect(engine.startCalls, 0);
+            expect(engine.recordStartRequests, isEmpty);
+            expect(store.values, before);
+          },
+        );
+      }
+
+      for (final key in ['tempo.count_in_bars', 'looper.auto_record']) {
+        test('pending start pair read cannot open audio: $key', () async {
+          final delayed = _RecordStartBootStore(key);
+          final saved = SettingsRepository(store: delayed);
+          final starting = tryAutoStartEngine(
+            repository: repository,
+            settings: saved,
+            mixSettings: testMixSettings(repository, settings: saved),
+          );
+          await delayed.entered.future;
+          expect(engine.startCalls, 0);
+          expect(engine.recordStartRequests, isEmpty);
+          delayed.release.complete();
+          expect((await starting).started, isTrue);
+          expect(engine.snapshot().countInBars, 1);
+          expect(engine.snapshot().autoRecord, isFalse);
+        });
+      }
+    });
 
     group('confirmed Hear click startup', () {
       for (final hasAudioConfig in [false, true]) {
