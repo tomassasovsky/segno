@@ -910,6 +910,12 @@ class FakeSessionEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  @override
+  EngineResult stopRecordControl({required int channel}) => EngineResult.ok;
+
+  @override
+  EngineResult cancelCountIn() => EngineResult.ok;
+
   /// Channels passed to [finalizeTake], in call order.
   final List<int> finalizedTakes = [];
 

@@ -143,6 +143,7 @@ void main() {
       () => repository.record(channel: any(named: 'channel')),
       () => repository.play(channel: any(named: 'channel')),
       () => repository.stopTrack(channel: any(named: 'channel')),
+      () => repository.cancelArm(channel: any(named: 'channel')),
       () => repository.clear(channel: any(named: 'channel')),
     ]) {
       when(stub).thenReturn(EngineResult.ok);

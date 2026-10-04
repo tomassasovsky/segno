@@ -125,6 +125,9 @@ void main() {
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
+    when(
+      () => repository.cancelArm(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenAnswer((call) {

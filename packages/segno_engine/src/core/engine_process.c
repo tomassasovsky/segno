@@ -157,6 +157,7 @@ static void le_unpark_stopped(le_engine* e, uint64_t frame) {
   for (int32_t c = 0; c < e->track_count; ++c) {
     le_track* t = &e->tracks[c];
     if (load_i32(&t->a_state) != LE_TRACK_STOPPED) continue;
+    if (e->launch_committing && (e->launch_stopped_mask & (1u << c))) continue;
     if (t->once_ended) continue; /* an automatic end needs its own launch */
     if (load_i32(&t->lanes[0].a_len) <= 0) continue;
     store_i32(&t->a_state, LE_TRACK_PLAYING);
@@ -248,6 +249,17 @@ static void trigger_click(le_engine* e, int downbeat) {
  * through here). The current click burst, if any, decays out naturally — only
  * future beats stop. */
 static void le_count_in_reset(le_engine* e) {
+  for (int c = 0; c < e->track_count; ++c) {
+    if (e->launch_action[c]) {
+      e->tracks[c].pending_image.revision = 0;
+      e->tracks[c].pending_fx = NULL;
+      e->tracks[c].pending_capture_shadow = 0;
+    }
+    e->launch_action[c] = 0;
+    store_i32(&e->tracks[c].a_pending_launch, 0);
+  }
+  e->launch_count = 0;
+  e->launch_stopped_mask = 0;
   e->count_in_total = 0;
   e->count_in_elapsed = 0;
   e->count_in_beats = 0;
@@ -256,13 +268,11 @@ static void le_count_in_reset(le_engine* e) {
   store_i32(&e->a_count_in_beats_left, 0);
 }
 
-/* Starts a count-in for the DEFINING record press on `ch` (D9; the caller —
- * handle_record's EMPTY branch — has verified no master exists, count-in is
- * enabled, and a tempo is set). Beat boundaries render from their index
+/* Starts the common stopped-launch clock. Beat boundaries render from their index
  * against the frozen nominal frames-per-beat, so the recording starts exactly
  * bars * ts_num * fpb frames after the press — the bar-1 downbeat. Returns 1
  * when counting began, 0 on a degenerate grid (caller records immediately). */
-static int le_count_in_begin(le_engine* e, int32_t ch, int32_t bars) {
+static int le_count_in_begin(le_engine* e, int32_t bars) {
   const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   int32_t num = load_i32(&e->a_ts_num);
   if (num <= 0) num = 4;
@@ -277,9 +287,44 @@ static int le_count_in_begin(le_engine* e, int32_t ch, int32_t bars) {
   if (e->count_in_total < 1) e->count_in_total = 1;
   e->count_in_elapsed = 0;
   e->count_in_beat = 0;
-  e->count_in_channel = ch;
   store_i32(&e->a_counting_in, 1);
   store_i32(&e->a_count_in_beats_left, beats);
+  return 1;
+}
+
+/* Retire exactly one pending launch. Keep the shared phase while siblings
+ * remain; cancel/requeue is a new insertion, never a reused array position. */
+static int le_launch_remove(le_engine* e, int32_t ch) {
+  if (!valid_channel(e, ch) || !e->launch_action[ch]) return 0;
+  if (e->launch_action[ch] == 2 || e->launch_action[ch] == 3) e->launch_stopped_mask |= 1u << ch;
+  e->launch_action[ch] = 0;
+  store_i32(&e->tracks[ch].a_pending_launch, 0);
+  e->tracks[ch].pending_image.revision = 0;
+  e->tracks[ch].pending_fx = NULL;
+  e->tracks[ch].pending_capture_shadow = 0;
+  for (int i = 0; i < e->launch_count; ++i) {
+    if (e->launch_order[i] != ch) continue;
+    for (int j = i + 1; j < e->launch_count; ++j)
+      e->launch_order[j - 1] = e->launch_order[j];
+    --e->launch_count;
+    break;
+  }
+  if (e->launch_count == 0) le_count_in_reset(e);
+  return 1;
+}
+
+static int le_launch_defer(le_engine* e, int32_t ch, int action) {
+  if (e->launch_committing) return 0;
+  if (le_launch_remove(e, ch)) return 1;
+  if (e->count_in_total == 0) {
+    const int bars = load_i32(&e->a_record_start);
+    if (!le_transport_held(e) || bars <= 0 || !le_count_in_begin(e, bars))
+      return 0;
+  }
+  e->launch_action[ch] = action;
+  e->launch_order[e->launch_count++] = ch;
+  e->launch_stopped_mask &= ~(1u << ch);
+  store_i32(&e->tracks[ch].a_pending_launch, action);
   return 1;
 }
 
@@ -1592,6 +1637,12 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
     tr->pending_trigger = 0;
     store_i32(&tr->a_pending, 0);
     if (st == LE_TRACK_RECORDING) {
+      if (e->launch_committing && e->launch_grace[t] == 1) {
+        apply_undo_to_empty(e, t, frame);
+        e->launch_grace[t] = 0;
+        store_i32(&tr->a_launch_grace, 0);
+        continue;
+      }
       if (e->clock.length == 0) {
         /* Hand-off is immediate (one capturer): if this master was mid seam-
          * crossfade deferral, lock its intended length and finalize now without
@@ -1620,42 +1671,22 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
  * hand-off), then advances this track's state machine. */
 static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
-  /* A record press during a count-in CANCELS it outright — back to idle, no
-   * recording (D9). Any track's press cancels: the count-in is global
-   * transport state, not a per-track arm. */
-  if (e->count_in_total > 0) {
-    e->tracks[e->count_in_channel].pending_image.revision = 0;
-    le_count_in_reset(e);
+  if (!e->launch_committing && le_launch_remove(e, ch)) return;
+  if (!e->launch_committing && e->launch_grace[ch]) {
+    const int action = e->launch_grace[ch];
+    e->launch_grace[ch] = 0;
+    store_i32(&e->tracks[ch].a_launch_grace, 0);
+    if (action == 1 && load_i32(&e->tracks[ch].a_state) == LE_TRACK_RECORDING) {
+      apply_undo_to_empty(e, ch, frame);
+    } else if (action == 2 || action == 3) {
+      store_i32(&e->tracks[ch].a_state, LE_TRACK_STOPPED);
+    }
     return;
   }
-  /* Cancel-vs-auto-commit race grace window (code-review fix; engine_private.h
-   * / le_count_in_commit have the full rationale). A press that lands here
-   * with count_in_grace_channel == ch arrived one block too late to see
-   * count_in_total > 0 above: the count-in's own sample-accurate auto-commit
-   * already landed mid the PREVIOUS block and flipped this track to
-   * RECORDING. Without this check the press would fall through to the
-   * LE_TRACK_RECORDING case below and finalize a near-zero-length defining
-   * loop — not what a press racing the commit meant. Treat it as the
-   * original cancel-intent instead: abort the just-started take back to
-   * EMPTY (handle_clear — the whole rig, since the defining take is the
-   * only content that can exist at this point) rather than finalizing it.
-   * This is indistinguishable, within one block, from a genuine "count in,
-   * then immediately finalize a near-zero loop" double-press; the
-   * deliberate choice is cancel-wins, since a press was already in flight
-   * before the commit landed. Consumed unconditionally (one-shot) whether
-   * or not the state still matches what the commit left. */
-  if (e->count_in_grace_channel == ch) {
-    e->count_in_grace_channel = -1;
-    if (load_i32(&e->tracks[ch].a_state) == LE_TRACK_RECORDING &&
-        e->clock.length == 0) {
-      /* Back to empty without handle_clear's layer-generation bump (only a
-       * control-side clear matches that bump; a mismatch would drop every
-       * later retired layer on this track). Nothing else was established:
-       * the take never finalized, so no grid needs resetting. */
-      apply_undo_to_empty(e, ch, frame);
-      return;
-    }
-  }
+  const int initial = load_i32(&e->tracks[ch].a_state);
+  if ((initial == LE_TRACK_EMPTY || initial == LE_TRACK_STOPPED ||
+       initial == LE_TRACK_PLAYING) &&
+      le_launch_defer(e, ch, initial == LE_TRACK_EMPTY ? 1 : 3)) return;
   /* Latched BEFORE any state mutation: a capture start from a held transport
    * unparks the whole loop (le_unpark_stopped) after it lands. */
   const int was_held = le_transport_held(e);
@@ -1672,19 +1703,6 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
        * the new track records freely from the loop top. Both are RECORDING,
        * distinguished by clock.length. */
       if (e->clock.length == 0) {
-        /* The DEFINING press is where a count-in fires (D9: idle transport,
-         * no master — with a master this branch isn't taken, and count-in
-         * never applies once anything plays). It needs a tempo to click
-         * against; with none set, recording starts immediately as always.
-         * No RECORD_START / unmute here — the commit at the count-in's
-         * downbeat does both when the capture actually begins. */
-        {
-          const int32_t ci_bars = load_i32(&e->a_record_start);
-          if (ci_bars > 0 && load_f32(&e->a_tempo_bpm_bits) > 0.0f &&
-              le_count_in_begin(e, ch, ci_bars)) {
-            break;
-          }
-        }
         t->record_pos = 0;
         t->record_start = 0;
         le_loop_clock_reset(&e->clock);
@@ -1756,6 +1774,19 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
   }
 }
 
+/* Logical Stop's cancellation half. Unlike the FX handoff's DISARM sweep,
+ * this leaves unrelated grid/Sound arms and older live captures alone. */
+static int le_cancel_count_in(le_engine* e, uint64_t frame) {
+  int canceled = e->count_in_total > 0;
+  if (canceled) le_count_in_reset(e);
+  for (int c = 0; c < e->track_count; ++c) {
+    if (!e->launch_grace[c]) continue;
+    canceled = 1;
+    handle_record(e, c, frame);
+  }
+  return canceled;
+}
+
 /* The audio-thread body of an undo past the base take (LE_CMD_UNDO_TO_EMPTY,
  * and the cancelled take of LE_CMD_CANCEL_TAKE): the track reads content-less
  * while its live slot keeps the audio for redo, and the master grid survives
@@ -1803,13 +1834,6 @@ static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
  * fixed-multiple auto-finalize, an arm firing, or a count-in commit could
  * have moved the state. Where LE_CMD_RECORD's meaning depends on the state it
  * lands on, every branch here either ends a capture or does nothing:
- * - count-in running: cancel it back to idle (global transport state; the
- *   addressed channel is irrelevant, matching the D9 press-cancel) and log
- *   LE_PLOG_RECORD_ABORT for the counting channel — the take-in-gestation
- *   died having captured nothing, and without the row an events.log reader
- *   would see a count-in that silently evaporated. No RECORD_START ever
- *   preceded it (the commit is what logs the start), so this is the one
- *   place an unpaired ABORT can originate — events.log header version 3.
  * - RECORDING, non-defining (clock.length > 0): finalize_new_track, the exact
  *   quantize-off second-press finalize — round UP to whole base loops, the
  *   silence tail seam-treated (#730), RECORD_END logged there. Always to
@@ -1821,14 +1845,6 @@ static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
  *   documented defining-take fallback.
  * - anything else: strict no-op. */
 static void handle_finalize_take(le_engine* e, int32_t ch, uint64_t frame) {
-  if (e->count_in_total > 0) {
-    const int32_t counting_ch = e->count_in_channel;
-    le_count_in_reset(e);
-    le_plog_push(
-        e, frame,
-        (le_command){.code = LE_PLOG_RECORD_ABORT, .arg_i = counting_ch});
-    return;
-  }
   if (!valid_channel(e, ch)) return;
   le_track* t = &e->tracks[ch];
   if (load_i32(&t->a_state) != LE_TRACK_RECORDING) return;
@@ -1958,6 +1974,13 @@ static void handle_cut_sound(le_engine* e, uint64_t frame) {
 
 static void handle_play(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
+  if (!e->launch_committing && le_launch_remove(e, ch)) return;
+  if (!e->launch_committing && e->launch_grace[ch]) {
+    handle_record(e, ch, frame); /* the same cancellation-only grace */
+    return;
+  }
+  if (load_i32(&e->tracks[ch].a_state) == LE_TRACK_STOPPED &&
+      le_launch_defer(e, ch, 2)) return;
   const int was_held = le_transport_held(e);
   le_track* t = &e->tracks[ch];
   if (load_i32(&t->a_state) == LE_TRACK_STOPPED) {
@@ -2009,6 +2032,9 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
 
 static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
+  le_launch_remove(e, ch);
+  e->launch_grace[ch] = 0;
+  store_i32(&e->tracks[ch].a_launch_grace, 0);
   le_track* t = &e->tracks[ch];
   le_reset_track_playback(t);
   /* A user clear on a capturing track (accepted design, slice 2): freeze the
@@ -2357,7 +2383,7 @@ static int le_apply_routing(le_engine* e, const le_mix_settings* mix,
     const int st = load_i32(&t->a_state);
     if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
         t->pending_record || load_i32(&t->a_layer_in_flight) ||
-        (e->count_in_total > 0 && e->count_in_channel == ch)) blocked = 1;
+        (e->launch_action[ch] != 0)) blocked = 1;
   }
   if (blocked) return 0; /* refuse the whole batch before any observable write */
   for (int i = 0; i < LE_MAX_TRACKS * LE_MAX_LANES; ++i) {
@@ -2498,8 +2524,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       break;
     }
     case LE_CMD_RECORD:
-      if (cmd->clock.cancel_count_in && e->count_in_total <= 0 &&
-          e->count_in_grace_channel != cmd->arg_i) {
+      if (cmd->clock.cancel_count_in &&
+          !e->launch_action[cmd->arg_i] && !e->launch_grace[cmd->arg_i]) {
         /* Its countdown was already canceled. The exact same press cannot
          * create a new countdown/capture under a newly applied pair. */
         if (cmd->clock.sequence != 0) atomic_store_explicit(
@@ -2519,6 +2545,24 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                               memory_order_release);
       }
       break;
+    case LE_CMD_CANCEL_COUNT_IN:
+      le_cancel_count_in(e, frame);
+      break;
+    case LE_CMD_STOP_RECORD_CONTROL: {
+      if (!valid_channel(e, cmd->arg_i)) break;
+      if (le_cancel_count_in(e, frame)) break;
+      le_track* t = &e->tracks[cmd->arg_i];
+      const int state = load_i32(&t->a_state);
+      if (state != LE_TRACK_RECORDING && state != LE_TRACK_OVERDUBBING) break;
+      /* Reuse the existing grid-end rounding/arming body, not a new scheduler.
+       * Refused/stale end intents cannot turn a completed capture into a start. */
+      le_command finish = {.code = LE_CMD_RECORD, .arg_i = cmd->arg_i};
+      if (cmd->arg_f == 1.0f) finish.code = LE_CMD_ARM;
+      else if (cmd->arg_f == 2.0f) finish.code = LE_CMD_DISARM;
+      else if (cmd->arg_f != 0.0f) break;
+      apply_command(e, &finish, frame);
+      break;
+    }
     case LE_CMD_FINALIZE_TAKE:
       /* Not logged verbatim (the ARM/DISARM rationale in the audited-subset
        * note above): the transport fact it causes — RECORD_END, or
@@ -2630,6 +2674,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       break;
     case LE_CMD_DISARM:
       if (valid_channel(e, cmd->arg_i)) {
+        if (e->launch_action[cmd->arg_i] == 1)
+          le_plog_push(e, frame, (le_command){.code = LE_PLOG_RECORD_ABORT,
+                                             .arg_i = cmd->arg_i});
+        le_launch_remove(e, cmd->arg_i);
+        if (e->launch_grace[cmd->arg_i]) handle_record(e, cmd->arg_i, frame);
         e->tracks[cmd->arg_i].pending_image.revision = 0;
         e->tracks[cmd->arg_i].pending_capture_shadow = 0;
         e->tracks[cmd->arg_i].pending_record = 0;
@@ -2664,8 +2713,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         /* A count-in still running, or a take that already ended: nothing to
          * cancel, but the control thread's state command wants its ack and
          * its report (a 0 length: nothing to redo, the flag clears). */
-        if (e->count_in_total > 0 && e->count_in_channel == ch) {
-          le_count_in_reset(e);
+        if (e->launch_action[ch] != 0) {
+          le_launch_remove(e, ch);
         }
         const le_command none = {.code = LE_EVT_TAKE_CANCELLED,
                                  .lanei = {ch, 0, 0}};
@@ -2716,7 +2765,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (load_i32(&t->a_state) == LE_TRACK_EMPTY &&
           t->pending_image.revision != 0 &&
           (t->pending_record ||
-           (e->count_in_total > 0 && e->count_in_channel == ch))) {
+           (e->launch_action[ch] != 0))) {
         t->pending_capture_shadow = slot + 1;
         break;
       }
@@ -3869,41 +3918,54 @@ static inline int le_click_gate(const le_engine* e, int32_t mode, int tc,
   }
 }
 
-/* Completes a count-in: the counting state drops and the DEFINING recording
- * begins on count_in_channel — the same start the immediate press would have
- * done, deferred to land exactly on the bar-1 downbeat (the NEXT frame is the
- * first one captured: mix_tracks_frame has already run for this frame, so the
- * capture window opens at press + count_in_total frames precisely). The
- * free-run click phase re-anchors here so the recording's first frame carries
- * the downbeat click when the mode gates it in.
- *
- * count_in_grace_channel opens a one-block cancel-vs-commit race window
- * (code-review fix, engine_private.h has the full rationale): this can fire
- * MID-block, one block before commands next drain, so a cancel press already
- * in flight when this lands would otherwise arrive at handle_record too late
- * to see count_in_total > 0. le_engine_process clears the window back to -1
- * right after every block's command-drain loop, so it survives for exactly
- * the one drain immediately following this commit's block. */
+/* Clear the table before invoking normal start bodies: no re-arm, one
+ * sample boundary, insertion order independent of track index. Earlier fresh
+ * captures are retired without finalization by close_active_capture. */
 static void le_count_in_commit(le_engine* e, uint64_t frame) {
-  const int32_t ch = e->count_in_channel;
+  int32_t order[LE_MAX_TRACKS], actions[LE_MAX_TRACKS];
+  const int count = e->launch_count;
+  const uint32_t stopped = e->launch_stopped_mask;
+  for (int i = 0; i < count; ++i) {
+    order[i] = e->launch_order[i];
+    actions[i] = e->launch_action[order[i]];
+    e->launch_action[order[i]] = 0; /* keep the member's prepared image */
+  }
   le_count_in_reset(e);
-  if (!valid_channel(e, ch)) return;
-  le_track* t = &e->tracks[ch];
-  /* Both re-checked: a clear/undo cannot have made this stale (counting only
-   * ever starts against an empty rig), but the commit must never stomp state
-   * if some future path breaks that invariant. */
-  if (load_i32(&t->a_state) != LE_TRACK_EMPTY || e->clock.length != 0) return;
-  e->count_in_grace_channel = ch; /* open the one-block cancel-race window */
-  le_start_capture_shadows(t);
-  t->record_pos = 0;
-  t->record_start = 0;
-  le_loop_clock_reset(&e->clock);
-  store_i32(&t->a_state, LE_TRACK_RECORDING);
-  le_arm_length_preset_target(e, t); /* A6: may arm an N-bars target */
-  t->take_seq++; /* #819: the count-in's downbeat begins a new take */
-  le_plog_push(e, frame,
-               (le_command){.code = LE_PLOG_RECORD_START, .arg_i = ch});
-  le_capture_start_unmute(e, t, frame);
+  e->launch_stopped_mask = stopped;
+  const int mode = load_i32(&e->a_looper_mode);
+  const int primary = mode == LE_LOOPER_MODE_BAND
+      ? load_i32(&e->a_primary_track) : -1;
+  int section = -1;
+  if (mode == LE_LOOPER_MODE_SONG || mode == LE_LOOPER_MODE_BAND) {
+    for (int i = 0; i < count; ++i)
+      if (order[i] != primary) section = order[i];
+    if (section >= 0) for (int c = 0; c < e->track_count; ++c)
+      if (c != section && c != primary) e->launch_stopped_mask |= 1u << c;
+  }
+  e->launch_committing = 1;
+  for (int i = 0; i < count; ++i) {
+    const int ch = order[i], action = actions[i];
+    const int state = load_i32(&e->tracks[ch].a_state);
+    if ((action == 1 && state != LE_TRACK_EMPTY) ||
+        (action != 1 && state != LE_TRACK_STOPPED && state != LE_TRACK_PLAYING))
+      continue;
+    if (action == 2) handle_play(e, ch, frame);
+    else handle_record(e, ch, frame);
+    e->launch_grace[ch] = action;
+    store_i32(&e->tracks[ch].a_launch_grace, action);
+  }
+  /* Section exclusion changes playback, not capture ownership. A later Play
+   * must not finalize an earlier capture; only a subsequent capture does so. */
+  if (section >= 0) for (int c = 0; c < e->track_count; ++c) {
+    if (c != section && c != primary &&
+        load_i32(&e->tracks[c].a_state) == LE_TRACK_PLAYING) {
+      store_i32(&e->tracks[c].a_state, LE_TRACK_STOPPED);
+      e->launch_grace[c] = 0;
+      store_i32(&e->tracks[c].a_launch_grace, 0);
+    }
+  }
+  e->launch_committing = 0;
+  e->launch_stopped_mask = 0;
   e->click_free_running = 1;
   e->click_free_frame = 0;
   e->click_free_beat = 0;
@@ -5761,7 +5823,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * worth of draining — the block immediately following the commit that set
    * it (engine_private.h / le_count_in_commit have the full rationale) —
    * whether or not a matching press showed up to consume it. */
-  e->count_in_grace_channel = -1;
+  for (int c = 0; c < tc; ++c) {
+    e->launch_grace[c] = 0;
+    store_i32(&e->tracks[c].a_launch_grace, 0);
+  }
 
   /* Per-pass undo layer maintenance: retry parked retires and advance the
    * post-punch-out drain. Runs every call — including frames == 0 pumps (the
@@ -6227,7 +6292,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
               frames ? sqrtf(trk_sumsq[t] / (float)frames) : 0.0f);
     store_f32(&e->tracks[t].a_trk_peak_bits, trk_peak[t]);
     if (!e->tracks[t].pending_record &&
-        !(e->count_in_total > 0 && e->count_in_channel == t)) {
+        !(e->launch_action[t] != 0)) {
       e->tracks[t].pending_image.revision = 0;
       e->tracks[t].pending_capture_shadow = 0;
     }
@@ -6308,7 +6373,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         (state == LE_TRACK_PLAYING || state == LE_TRACK_STOPPED) &&
         !tr->pending_record && !tr->seam_capture && !tr->xfade_capture &&
         tr->od_gain == 0.0f && !load_i32(&tr->a_layer_in_flight) &&
-        !(e->count_in_total > 0 && e->count_in_channel == t);
+        !(e->launch_action[t] != 0);
     atomic_store_explicit(&tr->a_pending_image_revision, tr->pending_image.revision, memory_order_release);
     atomic_store_explicit(&tr->a_cache_source_readable, readable,
                            memory_order_release);

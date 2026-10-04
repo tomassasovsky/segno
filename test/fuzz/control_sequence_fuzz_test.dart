@@ -60,6 +60,109 @@ void main() {
       ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
       : null;
 
+  group('shared Count-in through real pedal controls', () {
+    void prepare(_Harness h, FakeAsync fa) {
+      expect(h.repo.setTempo(120), EngineResult.ok);
+      h.settle(fa);
+      expect(
+        h.repo.setRecordStartSettings(
+          countInBars: 1,
+          soundStart: false,
+          editKind: RecordStartEditKind.restore,
+        ),
+        EngineResult.ok,
+      );
+      h.settle(fa);
+      expect(h.repo.recordStartSettingsSettled, isTrue);
+    }
+
+    test('last queued capture starts only at the shared downbeat', () {
+      _inHarness((h, fa) {
+        prepare(h, fa);
+        expect(h.repo.record(channel: 6), EngineResult.ok);
+        expect(h.repo.record(channel: 1), EngineResult.ok);
+        h.settle(fa);
+        expect(h.looper.transport.countingIn, isTrue);
+        // 48 kHz, 120 BPM, four beats: literal 96000-frame deadline.
+        h.engine.pump(frames: 95999, input: 0.5);
+        h.settle(fa);
+        expect(h.looper.transport.countingIn, isTrue);
+        expect(h.looper.tracks.every((t) => !t.isCapturing), isTrue);
+        h.engine.pump(frames: 2, input: 0.5);
+        h.settle(fa);
+        expect(h.looper.transport.countingIn, isFalse);
+        expect(h.looper.tracks[1].state, TrackState.recording);
+        expect(h.looper.tracks[6].state, TrackState.empty);
+        expect(h.looper.tracks[6].undoDepth, 0);
+      });
+    }, skip: skip);
+
+    for (final mode in [
+      InteractionMode.fx,
+      InteractionMode.record,
+      InteractionMode.mute,
+    ]) {
+      test(
+        '${mode.name} cancels unpublished count-in without acquiring audio',
+        () {
+          _inHarness((h, fa) {
+            prepare(h, fa);
+            if (mode == InteractionMode.mute) h.control.setMode(mode);
+            expect(h.repo.record(channel: 6), EngineResult.ok);
+            expect(h.repo.record(channel: 1), EngineResult.ok);
+            // No callback or snapshot has published these admitted commands.
+            expect(h.looper.transport.countingIn, isFalse);
+            if (mode == InteractionMode.fx) {
+              h.control.setMode(mode);
+            } else {
+              h.run(const [_Tap(PedalButton.stop)], fa);
+            }
+            h.settle(fa);
+            h.engine.pump(frames: 96001, input: 0.5);
+            h.settle(fa);
+            expect(h.looper.transport.countingIn, isFalse);
+            expect(
+              h.looper.tracks.every((t) => t.state == TrackState.empty),
+              isTrue,
+            );
+            expect(
+              h.looper.tracks.every(
+                (t) => t.lengthFrames == 0 && t.undoDepth == 0,
+              ),
+              isTrue,
+            );
+            expect(h.looper.transport.primaryTrack, -1);
+          });
+        },
+        skip: skip,
+      );
+    }
+
+    test(
+      'Rec Stop after downbeat but before polling never reacquires the take',
+      () {
+        _inHarness((h, fa) {
+          prepare(h, fa);
+          h.control.selectTrack(1);
+          expect(h.repo.record(channel: 1), EngineResult.ok);
+          h.settle(fa);
+          h.engine.pump(frames: 96001, input: 0.5);
+          // UI still sees the countdown; Stop must resolve on callback truth.
+          expect(h.bloc.state.transport.countingIn, isTrue);
+          h
+            ..run(const [_Tap(PedalButton.stop)], fa)
+            ..settle(fa);
+          h.engine.pump(frames: 96001, input: 0.5);
+          h.settle(fa);
+          expect(h.looper.transport.countingIn, isFalse);
+          expect(h.looper.tracks[1].state, TrackState.empty);
+          expect(h.looper.tracks[1].undoDepth, 0);
+        });
+      },
+      skip: skip,
+    );
+  });
+
   group('corpus (found-bug regressions, replayed every run)', () {
     test('redo after undo-to-empty relights the LED (2026-07-04)', () {
       _inHarness((h, fa) {

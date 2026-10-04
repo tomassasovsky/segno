@@ -1174,7 +1174,8 @@ static int le_prepare_routing(le_engine* e, const le_mix_settings* mix) {
       le_track* t = &e->tracks[ch];
       const int st = le_effective_state(t);
       if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
-          load_i32(&t->a_pending) || load_i32(&t->a_layer_in_flight)) return LE_ERR_INVALID;
+          load_i32(&t->a_pending) || load_i32(&t->a_pending_launch) ||
+          load_i32(&t->a_layer_in_flight)) return LE_ERR_INVALID;
       const int old_count = le_lanes_active(t);
       if (mix->lane_count[ch] > old_count)
         le_cache_evict_lanes(e, ch, old_count, mix->lane_count[ch]);
@@ -1311,8 +1312,9 @@ typedef enum le_record_admission {
 static le_record_admission le_classify_record(le_engine* e, int channel) {
   le_track* t = &e->tracks[channel];
   const int state = le_effective_state(t);
+  if (load_i32(&t->a_pending_launch) || load_i32(&t->a_launch_grace))
+    return LE_RECORD_CANCEL;
   if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) return LE_RECORD_FINISH;
-  if (load_i32(&e->a_counting_in)) return LE_RECORD_CANCEL;
   if (e->armed[channel] && load_i32(&t->a_pending) &&
       e->record_timing_command > atomic_load_explicit(&e->a_commands_published, memory_order_acquire)) {
     const int trigger = e->armed_trigger[channel];
@@ -1368,7 +1370,8 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
                                 const le_record_image* image) {
   const int32_t admission = le_record_preflight(engine, channel, image);
   if (admission != LE_OK) return admission;
-  if (load_i32(&engine->a_counting_in)) {
+  if (load_i32(&engine->tracks[channel].a_pending_launch) ||
+      load_i32(&engine->tracks[channel].a_launch_grace)) {
     /* Keep cancellation intent even if an earlier pair command removes the
      * countdown before this command drains. Never reinterpret it as acquire. */
     uint32_t sequence = engine->clock_commands_posted + 1u;
@@ -1410,13 +1413,11 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
    * would allocate shadows for the old lane count. The callback could then
    * activate more lanes before RECORD, making their first Undo lose audio.
    * Existing captures can still finish/punch out. Published owned arms and
-   * the global count-in can still cancel, without preparing any new image,
+   * addressed stopped launches can still cancel, without preparing any new image,
    * buffer, shadow or history mutation. */
   if (engine->lane_growth_command > atomic_load_explicit(
           &engine->a_commands_published, memory_order_acquire) &&
       st != LE_TRACK_RECORDING && st != LE_TRACK_OVERDUBBING) {
-    if (load_i32(&engine->a_counting_in))
-      return le_push(engine, LE_CMD_RECORD, channel, 0.0f);
     const int cancelling_arm = engine->armed[channel] &&
         load_i32(&t->a_pending) &&
         ((sound_arm && engine->armed_trigger[channel] == 1) ||
@@ -1425,7 +1426,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     return LE_ERR_INVALID;
   }
   if (st != LE_TRACK_RECORDING && st != LE_TRACK_OVERDUBBING &&
-      !load_i32(&engine->a_counting_in) &&
+      !load_i32(&t->a_pending_launch) &&
       !(engine->armed[channel] && load_i32(&t->a_pending))) {
     for (int lane = 0; lane < le_lanes_active(t); ++lane)
       if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane))
@@ -1667,6 +1668,10 @@ int32_t le_engine_stop_track(le_engine* engine, int32_t channel) {
   return le_push(engine, LE_CMD_STOP, channel, 0.0f);
 }
 int32_t le_engine_play(le_engine* engine, int32_t channel) {
+  if (!engine || channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (load_i32(&engine->tracks[channel].a_pending_launch) ||
+      load_i32(&engine->tracks[channel].a_launch_grace))
+    return le_engine_cancel_arm(engine, channel);
   if (engine && engine->record_start_command > atomic_load_explicit(
       &engine->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
   return le_push(engine, LE_CMD_PLAY, channel, 0.0f);
@@ -1996,6 +2001,7 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
+  if (load_i32(&t->a_pending_launch)) return le_engine_cancel_arm(engine, channel);
   if (t->clear_restore_pending || t->cancel_pending) return LE_ERR_NOT_READY;
   const int32_t st = le_effective_state(t);
   if (st == LE_TRACK_OVERDUBBING) {
@@ -2255,12 +2261,44 @@ int32_t le_engine_set_record_timing_settings(
 int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  /* Trigger-agnostic on purpose: the caller is saying "nothing may fire on
-   * this track later", not "undo my own press". le_cancel_arm is a no-op on
-   * an unarmed track (LE_OK), and otherwise reports whether the DISARM
-   * actually reached the ring — a caller promised "nothing fires later" must
-   * be able to see when it did not. */
-  return le_cancel_arm(engine, channel);
+  /* Always publish: a launch may be queued ahead of us but not yet visible
+   * in the polled snapshot. DISARM is cancellation-only, so it cannot stop old
+   * playback/capture or erase audio, and cannot consume a later FIFO request. */
+  const int result = le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+  if (result == LE_OK) engine->armed[channel] = 0;
+  return result;
+}
+
+int32_t le_engine_cancel_count_in(le_engine* engine) {
+  return le_push(engine, LE_CMD_CANCEL_COUNT_IN, 0, 0.0f);
+}
+
+int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
+  if (!engine || channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire))
+    return LE_ERR_NOT_RUNNING;
+  le_engine_drain_events(engine);
+  le_track* t = &engine->tracks[channel];
+  const int state = le_effective_state(t);
+  int action = 0; /* immediate capture finish; callback never acquires */
+  int cohort = load_i32(&engine->a_counting_in);
+  for (int c = 0; c < engine->track_count; ++c)
+    cohort |= load_i32(&engine->tracks[c].a_launch_grace);
+  if (!cohort && (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING)) {
+    const int quantized = le_effective_quantize(engine, channel) &&
+        le_rig_effective_master_len(engine) > 0 && le_transport_active(engine);
+    const int pending = engine->armed[channel] && load_i32(&t->a_pending);
+    if (pending && (quantized ? engine->armed_trigger[channel] != 0
+                              : engine->armed_trigger[channel] == 2))
+      return LE_ERR_INVALID;
+    if (quantized) action = pending ? 2 : 1;
+  }
+  const int result = le_push(engine, LE_CMD_STOP_RECORD_CONTROL, channel, (float)action);
+  if (result == LE_OK && action) {
+    engine->armed[channel] = action == 1;
+    engine->armed_trigger[channel] = 0;
+  }
+  return result;
 }
 
 int32_t le_engine_finalize_take(le_engine* engine, int32_t channel) {
@@ -2270,16 +2308,6 @@ int32_t le_engine_finalize_take(le_engine* engine, int32_t channel) {
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   le_engine_drain_events(engine);
-  /* A running count-in is global transport state that has captured nothing:
-   * the call is accepted for any valid channel and posts the abort. The audio
-   * thread's count-in branch (handle_finalize_take) does the teardown and
-   * logs LE_PLOG_RECORD_ABORT for the counting channel — and if the count-in
-   * commits in the one-block window before this applies, the command lands on
-   * a DEFINING recording and the apply-side guard refuses it, so the race
-   * degrades to capture-survives, never to a finalize that sets the grid. */
-  if (load_i32(&engine->a_counting_in)) {
-    return le_push(engine, LE_CMD_FINALIZE_TAKE, channel, 0.0f);
-  }
   le_track* t = &engine->tracks[channel];
   if (le_effective_state(t) != LE_TRACK_RECORDING) return LE_ERR_INVALID;
   /* The DEFINING take (nothing else holds the grid) is refused: finalizing it
