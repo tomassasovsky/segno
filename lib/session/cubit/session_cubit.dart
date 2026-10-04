@@ -232,18 +232,18 @@ class SessionCubit extends Cubit<SessionState> {
       var applied = false;
       try {
         return await _captureSettings.runExclusive(() async {
-          final disarmed = await _performance.disarmAndFinalize();
-          if (!disarmed.isOk) {
-            throw StateError(
-              'performance capture did not stop before session load',
-            );
-          }
           final bundle = await _repository.read(
             await _repository.bundlePath(name),
           );
           final rig = rigFromBundle(bundle);
           final candidate = MixSettingsSnapshot.fromRig(rig);
           if (!candidate.isValid) throw StateError('session mix is invalid');
+          final disarmed = await _performance.disarmAndFinalize();
+          if (!disarmed.isOk) {
+            throw StateError(
+              'performance capture did not stop before session load',
+            );
+          }
           final loadedName = _slugOf(name);
           final sessions = await _repository.listSessions();
           final generation = _looper.mixGeneration;

@@ -131,6 +131,45 @@ void main() {
   });
 
   test(
+    'monitor ordinary gain refuses invalid values without a write',
+    () async {
+      for (final value in [-0.01, 1.01, double.nan, double.infinity]) {
+        final result = await coordinator.setMonitorVolume(
+          input: 0,
+          volume: value,
+        );
+        expect(result.isOk, isFalse);
+      }
+      expect(persistence.candidates, isEmpty);
+      expect(audio.calls, isEmpty);
+      expect(repository.monitorVolume(0), 1);
+    },
+  );
+
+  test(
+    'monitor Held is live while save retains linear Released gain',
+    () async {
+      const target = MonitorVolumeTarget(0);
+      expect(
+        (await coordinator.setControllerValues(
+          {target: 0.75},
+          releasedValues: {target: 0.25},
+        )).isOk,
+        isTrue,
+      );
+      expect(repository.monitorVolume(0), 0.75);
+      expect(coordinator.durableSnapshot.monitorLevels[0], 0.25);
+      expect(persistence.candidates.last.monitorLevels[0], 0.25);
+      expect(
+        (await coordinator.setMonitorVolume(input: 0, volume: 1)).isOk,
+        isTrue,
+      );
+      expect(repository.monitorVolume(0), 1);
+      expect(coordinator.durableSnapshot.monitorLevels[0], 1);
+    },
+  );
+
+  test(
     'one confirmed batch projects every available numeric mix field',
     () async {
       const targets = <MixValueTarget>[
@@ -162,7 +201,7 @@ void main() {
       final live = repository.mixSettingsSnapshot;
       expect(live.trackLevels[0], closeTo(2, 1e-12));
       expect(live.laneLevels[(0, 0)], closeTo(2, 1e-12));
-      expect(live.monitorLevels[0], closeTo(2, 1e-12));
+      expect(live.monitorLevels[0], 1);
       expect(live.trackPans[0], 1);
       expect(live.inputSetup.panOf(0), 1);
       expect(live.outputSetup.of(0).level, 1);

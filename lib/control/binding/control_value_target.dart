@@ -204,9 +204,8 @@ sealed class MixValueTarget extends ControlValueTarget {
   double toDomain(double normalized) {
     final value = normalized.clamp(0.0, 1.0);
     return switch (this) {
-      TrackVolumeTarget() ||
-      LaneVolumeTarget() ||
-      MonitorVolumeTarget() => mixerGainAt(value),
+      TrackVolumeTarget() || LaneVolumeTarget() => mixerGainAt(value),
+      MonitorVolumeTarget() => value,
       TrackPanTarget() ||
       InputPanTarget() ||
       PairBalanceTarget() ||
@@ -217,9 +216,8 @@ sealed class MixValueTarget extends ControlValueTarget {
 
   /// Converts the accepted Mixer value back to a normalized source position.
   double fromDomain(double domain) => switch (this) {
-    TrackVolumeTarget() ||
-    LaneVolumeTarget() ||
-    MonitorVolumeTarget() => mixerTravelFor(domain),
+    TrackVolumeTarget() || LaneVolumeTarget() => mixerTravelFor(domain),
+    MonitorVolumeTarget() => domain.clamp(0.0, 1.0),
     TrackPanTarget() ||
     InputPanTarget() ||
     PairBalanceTarget() ||

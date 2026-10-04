@@ -3767,7 +3767,7 @@ class LooperRepository {
               m.input >= kMaxChannels ||
               !m.volume.isFinite ||
               m.volume < 0 ||
-              m.volume > 2,
+              m.volume > 1,
         )) {
       throw StateError('session mix cannot be restored');
     }
@@ -5113,15 +5113,19 @@ class LooperRepository {
     return _engine.setMonitorInputOutput(input: input, mask: mask);
   }
 
-  /// Sets monitor [input]'s output gain ([volume], `0..LE_MAX_GAIN`, 2.0,
-  /// +6.02 dB headroom above unity). Remembered and re-applied on every
+  /// Sets monitor [input]'s output gain ([volume], silence to unity).
+  /// Remembered and re-applied on every
   /// (re)start; takes effect immediately while running.
   EngineResult setMonitorVolume({required int input, required double volume}) {
-    if (input < 0 || input >= kMaxChannels || !volume.isFinite) {
+    if (input < 0 ||
+        input >= kMaxChannels ||
+        !volume.isFinite ||
+        volume < 0 ||
+        volume > 1) {
       return _mixFailure(EngineResult.invalid);
     }
     final next = _mixIntent();
-    next.monitorLevels[input] = volume.clamp(0.0, 2.0);
+    next.monitorLevels[input] = volume;
     return _requestMix(next);
   }
 
