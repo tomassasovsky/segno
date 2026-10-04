@@ -21,7 +21,9 @@ selection and current facts; it does not introduce another timer, stream,
 persisted mix, controller parser or save queue. Control only admits gestures,
 delegates their semantic actions and publishes returned selection. The view
 renders state and sends intents. The existing mix owner continues to serialize
-all gain writes; monitor muting joins the confirmed monitor-envelope save path.
+all gain writes; monitor muting uses the existing confirmed-save queue, writing
+only its mute field. A mute edit cannot replace routing or effects that startup
+has not successfully restored.
 
 Relative volume steps must compose at the owner boundary, including three or
 more rapid taps while a prior save is blocked. The current replace-by-target
@@ -80,6 +82,14 @@ Do not hide a generic state-owner rewrite inside this feature. No new DSP,
 firmware, settings format or Session schema is planned.
 
 ## Success Criteria
+
+The final recovery review found that a refused saved mute can leave Monitor
+restore incomplete while the connected input remains selectable in Foot Mixer.
+A later accepted mute must preserve the saved mode, output and effect envelope.
+Extend the existing lane-mute-only save mechanism to input mute, retaining full
+FX save obligations when edits coalesce. Reproduce the failed-restore sequence
+before repair and test both orderings with delayed full-envelope storage. This
+requires no additional owner, queue or stored format.
 
 ```success-criteria
 GOAL: Adjust one recorded track or live input by foot through the accepted complete Mixer flow without changing capture or unrelated transport.

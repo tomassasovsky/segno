@@ -17,8 +17,5 @@ Future<void> applyMonitorMute({
     throw StateError('monitor mute was refused: ${result.name}');
   }
   onAccepted?.call();
-  await persistence.saveConfirmed(
-    FxAddress(stage: FxStage.input, index: input),
-    settings,
-  );
+  await persistence.saveMonitorMuteConfirmed(input, settings);
 }

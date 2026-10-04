@@ -129,12 +129,20 @@ void main() {
         mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
+    final monitorMutes = <int, bool>{};
+    when(() => repository.monitorMuted(any())).thenAnswer(
+      (call) => monitorMutes[call.positionalArguments.first as int] ?? false,
+    );
     when(
       () => repository.setMonitorMute(
         input: any(named: 'input'),
         muted: any(named: 'muted'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorMutes[call.namedArguments[#input]! as int] =
+          call.namedArguments[#muted]! as bool;
+      return EngineResult.ok;
+    });
     when(() => repository.setClickOutput(any())).thenReturn(EngineResult.ok);
   });
 
@@ -1110,6 +1118,12 @@ void main() {
     await monitors.setMute(0, muted: true);
     await tester.pump();
     expect(find.text(l10n.routingHearMuted), findsOneWidget);
+    expect(await settings.loadMonitorMute(0), isTrue);
+
+    await monitors.setMute(0, muted: false);
+    await tester.pump();
+    expect(find.text(l10n.routingHearMuted), findsNothing);
+    expect(await settings.loadMonitorMute(0), isFalse);
   });
 
   testWidgets('a slider previews under the finger and commits once on '

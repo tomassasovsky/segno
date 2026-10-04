@@ -5,6 +5,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/monitor_mute.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -98,9 +99,25 @@ class _RefusingMuteEngine extends FakeAudioEngine {
 
 class _FailingMuteStore extends FakeKeyValueStore {
   bool failMute = false;
+  String? blockedKey;
+  final entered = Completer<void>();
+  final release = Completer<void>();
+
+  Future<void> _waitForRelease(String key) async {
+    if (key != blockedKey || entered.isCompleted) return;
+    entered.complete();
+    await release.future;
+  }
+
+  @override
+  Future<void> setString(String key, String value) async {
+    await _waitForRelease(key);
+    await super.setString(key, value);
+  }
 
   @override
   Future<void> setBool(String key, {required bool value}) async {
+    await _waitForRelease(key);
     if (failMute && key == 'monitor_mute.0') {
       throw StateError('mute storage failed');
     }
@@ -131,6 +148,9 @@ void main() {
     final monitorModes = <int, MonitorMode>{};
     final monitorOutputs = <int, int>{};
     final monitorMutes = <int, bool>{};
+    when(() => repository.monitorMuted(any())).thenAnswer(
+      (call) => monitorMutes[call.positionalArguments.first] ?? false,
+    );
     final monitorChains = <int, List<TrackEffect>>{};
     final monitorChainFlags = <int, bool>{};
     when(repository.allMonitors).thenAnswer(
@@ -393,6 +413,156 @@ void main() {
       mixSettings: mix,
       fxPersistence: fx,
     );
+
+    for (final shared in [false, true]) {
+      final encoded = encodeFxChain(
+        FxChainEnvelope(
+          entries: [
+            BuiltInEffect(
+              type: TrackEffectType.drive,
+              slotId: 'saved-monitor',
+              params: const [.7, .4, .5, 0],
+            ),
+          ],
+          chainEnabled: false,
+        ),
+      );
+      blocTest<MonitorCubit, MonitorState>(
+        'mute after failed restore preserves unrelated monitor settings '
+        '(shared: $shared)',
+        setUp: () async {
+          await saved.saveMonitorInputMode(0, mode: 'on');
+          await saved.saveMonitorOutput(0, 1);
+          await saved.saveMonitorMute(0, muted: true);
+          await saved.saveMonitorEffects(0, encoded);
+          engine.refuseMute = true;
+        },
+        build: buildLive,
+        act: (cubit) async {
+          await cubit.load();
+          expect(cubit.state.inputs, isEmpty);
+          expect(live.monitorMode(0), MonitorMode.off);
+          expect(live.monitorOutput(0), 3);
+          expect(live.monitorEffects(0), isEmpty);
+          engine.refuseMute = false;
+          Future<void> mute({required bool muted}) => shared
+              ? applyMonitorMute(
+                  repository: live,
+                  settings: saved,
+                  persistence: fx,
+                  input: 0,
+                  muted: muted,
+                )
+              : cubit.setMute(0, muted: muted);
+          await mute(muted: true);
+          await fx.flush();
+          expect(engine.monitorMute[0], isTrue);
+          expect(await saved.loadMonitorMute(0), isTrue);
+          expect(
+            (
+              await saved.loadMonitorInputMode(0),
+              await saved.loadMonitorOutput(0),
+              await saved.loadMonitorEffects(0),
+            ),
+            ('on', 1, encoded),
+          );
+          store.failMute = true;
+          await expectLater(mute(muted: false), throwsStateError);
+          expect(live.monitorMuted(0), isFalse);
+          expect(await saved.loadMonitorMute(0), isTrue);
+          await expectLater(fx.flush(), throwsStateError);
+          store.failMute = false;
+          await fx.flush();
+          expect(await saved.loadMonitorMute(0), isFalse);
+          expect(
+            (
+              await saved.loadMonitorInputMode(0),
+              await saved.loadMonitorOutput(0),
+              await saved.loadMonitorEffects(0),
+            ),
+            ('on', 1, encoded),
+          );
+        },
+        errors: () => allOf(isNotEmpty, everyElement(isA<StateError>())),
+      );
+    }
+
+    test('monitor mute retains an earlier failed full-envelope save', () async {
+      final effect = BuiltInEffect(
+        type: TrackEffectType.drive,
+        slotId: 'retry-monitor',
+        params: const [.6, .4, .5, 0],
+      );
+      live
+        ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+        ..setMonitorOutput(input: 0, mask: 2)
+        ..setMonitorEffects(input: 0, effects: [effect], chainEnabled: false);
+      store.failMute = true;
+      await expectLater(
+        saveFxOwner(
+          settings: saved,
+          projection: fx,
+          address: const FxAddress(stage: FxStage.input),
+        ),
+        throwsStateError,
+      );
+      expect(await saved.loadMonitorEffects(0), isNull);
+      store.failMute = false;
+      await applyMonitorMute(
+        repository: live,
+        settings: saved,
+        persistence: fx,
+        input: 0,
+        muted: true,
+      );
+      await fx.flush();
+      expect(await saved.loadMonitorMute(0), isTrue);
+      expect(await saved.loadMonitorInputMode(0), 'on');
+      expect(await saved.loadMonitorOutput(0), 2);
+      final chain = decodeFxChain(await saved.loadMonitorEffects(0));
+      expect(chain.entries, [effect]);
+      expect(chain.chainEnabled, isFalse);
+    });
+
+    for (final fxFirst in [true, false]) {
+      test('monitor FX and mute overlap without loss during close '
+          '(FX first: $fxFirst)', () async {
+        final effect = BuiltInEffect(
+          type: TrackEffectType.drive,
+          slotId: 'live-monitor',
+          params: const [.8, .4, .5, 0],
+        );
+        live
+          ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+          ..setMonitorOutput(input: 0, mask: 2)
+          ..setMonitorEffects(input: 0, effects: [effect], chainEnabled: false);
+        store.blockedKey = fxFirst ? 'monitor_fx.0' : 'monitor_mute.0';
+        Future<void> saveFx() => saveFxOwner(
+          settings: saved,
+          projection: fx,
+          address: const FxAddress(stage: FxStage.input),
+        );
+        Future<void> mute() => applyMonitorMute(
+          repository: live,
+          settings: saved,
+          persistence: fx,
+          input: 0,
+          muted: true,
+        );
+        final first = fxFirst ? saveFx() : mute();
+        await store.entered.future;
+        final second = fxFirst ? mute() : saveFx();
+        final closing = fx.close();
+        store.release.complete();
+        await Future.wait([first, second, closing]);
+        expect(await saved.loadMonitorMute(0), isTrue);
+        expect(await saved.loadMonitorInputMode(0), 'on');
+        expect(await saved.loadMonitorOutput(0), 2);
+        final chain = decodeFxChain(await saved.loadMonitorEffects(0));
+        expect(chain.entries, [effect]);
+        expect(chain.chainEnabled, isFalse);
+      });
+    }
 
     blocTest<MonitorCubit, MonitorState>(
       'refused mute stays absent from view and unrelated saves; retry persists',
