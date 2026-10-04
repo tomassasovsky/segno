@@ -34,6 +34,7 @@ class FakeAudioEngine implements AudioEngine {
   bool commandsAreSettled = true;
   bool publishClickCommands = true;
   bool publishClickModeCommands = true;
+  bool publishRecordStartCommands = true;
   bool publishLengthCommands = true;
   bool publishModeCommands = true;
   bool publishMixCommands = true;
@@ -108,6 +109,8 @@ class FakeAudioEngine implements AudioEngine {
       _nextSnapshot = _nextSnapshot.copyWith(
         clickModeRevision: 0,
         clickModeResult: 0,
+        recordStartRevision: 0,
+        recordStartResult: 0,
       );
     }
     return result;
@@ -505,7 +508,7 @@ class FakeAudioEngine implements AudioEngine {
   /// The last value passed to [setDefaultMultiple].
   int? lastDefaultMultiple;
 
-  /// The last values passed to [setRecDub] / [setAutoRecord].
+  /// The last values passed to [setRecDub] / [setRecordStartSettings].
   bool? lastRecDub;
   bool? lastAutoRecord;
 
@@ -536,12 +539,6 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  @override
-  EngineResult setAutoRecord({required bool enabled}) {
-    lastAutoRecord = enabled;
-    return EngineResult.ok;
-  }
-
   /// The last value passed to [setTempo].
   double? lastTempoBpm;
 
@@ -567,8 +564,42 @@ class FakeAudioEngine implements AudioEngine {
   /// The last value passed to [setClickVolume].
   double? lastClickVolume;
 
-  /// The last value passed to [setCountIn].
+  /// The last count-in value passed to [setRecordStartSettings].
   int? lastCountIn;
+
+  /// Atomic recording-start requests admitted by this fixture.
+  final List<({int countInBars, bool soundStart, RecordStartEditKind editKind})>
+  recordStartRequests = [];
+  EngineResult recordStartResult = EngineResult.ok;
+
+  @override
+  EngineResult setRecordStartSettings({
+    required int countInBars,
+    required bool soundStart,
+    required RecordStartEditKind editKind,
+  }) {
+    if (![0, 1, 2, 4].contains(countInBars) || countInBars > 0 && soundStart) {
+      return EngineResult.invalid;
+    }
+    if (!recordStartResult.isOk) return recordStartResult;
+    recordStartRequests.add((
+      countInBars: countInBars,
+      soundStart: soundStart,
+      editKind: editKind,
+    ));
+    lastCountIn = countInBars;
+    lastAutoRecord = soundStart;
+    if (publishRecordStartCommands) {
+      _nextSnapshot = _nextSnapshot.copyWith(
+        countInBars: countInBars,
+        autoRecord: soundStart,
+        recordStartRevision:
+            (_nextSnapshot.recordStartRevision + 1) & 0xffffffff,
+        recordStartResult: 0,
+      );
+    }
+    return EngineResult.ok;
+  }
 
   /// Exact session tempo restores in call order.
   final List<({double bpm, TempoSource source})> tempoRestores = [];
@@ -632,12 +663,6 @@ class FakeAudioEngine implements AudioEngine {
     if (publishClickCommands) {
       nextSnapshot = nextSnapshot.copyWith(clickVolume: volume);
     }
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setCountIn(int bars) {
-    lastCountIn = bars;
     return EngineResult.ok;
   }
 
@@ -1647,6 +1672,8 @@ class _LengthSnapshot extends EngineSnapshot {
          clickMask: source.clickMask,
          clickVolume: source.clickVolume,
          countInBars: source.countInBars,
+         recordStartRevision: source.recordStartRevision,
+         recordStartResult: source.recordStartResult,
          countingIn: source.countingIn,
          countInBeatsLeft: source.countInBeatsLeft,
          looperMode: mode ?? source.looperMode,

@@ -162,8 +162,15 @@ typedef enum le_clock_mode {
                          * setter rejects this value until then) */
 } le_clock_mode;
 
-/* Maximum count-in length in measures (le_engine_set_count_in). */
-#define LE_COUNT_IN_MAX_BARS 64
+/* Atomic recording-start edits retain their distinct transient semantics. */
+typedef enum le_record_start_edit_kind {
+  LE_RECORD_START_COUNT_IN = 0,
+  LE_RECORD_START_SOUND = 1,
+  LE_RECORD_START_RESTORE = 2,
+} le_record_start_edit_kind;
+
+/* Supported count-in lengths are exactly 0, 1, 2 and 4 bars. */
+#define LE_COUNT_IN_MAX_BARS 4
 
 /* Maximum track length preset in bars (A6, D17;
  * le_engine_set_track_length_preset). 0 is AUTO, not a bar count. */
@@ -249,10 +256,7 @@ typedef enum le_command_code {
                                   * publish grid and start imported tracks */
   LE_CMD_SET_CLICK_VOLUME = 24,  /* arg_f = 0..LE_MAX_GAIN (the click's ONLY
                                   * gain stage — master gain never applies). */
-  LE_CMD_SET_COUNT_IN = 25,      /* arg_i = count-in length in measures
-                                  * (0 = off, up to LE_COUNT_IN_MAX_BARS).
-                                  * Cancels an in-progress count-in; positive
-                                  * bars disable sound start and its arms. */
+  LE_CMD_SET_RECORD_START = 25, /* typed pair + edit kind + callback receipt */
   /* ---- multi-lane recording (a track owns an array of lanes) ----
    * Each lane records one hardware input into its own clean mono buffer; all
    * lanes of a track share one transport and one undo span. Count activation
@@ -458,9 +462,6 @@ typedef enum le_command_code {
   /* One queued command updates a subset of tracks together. arg_i = track
    * bitmask, arg_f = 0/1; uses the same pass semantics as SET_ONE_SHOT. */
   LE_CMD_SET_ONE_SHOT_MASK = 59,
-  /* arg_i = sound-start enabled (0/1). Enabling cancels count-in;
-   * disabling cancels pending signal-triggered recording arms. */
-  LE_CMD_SET_AUTO_RECORD = 60,
   /* Named bounded payload: all configured tracks' future length presets. */
   LE_CMD_SET_LENGTH_PRESETS = 61,
   /* Lane pan (accepted design, slice 3). lanef arm: channel, lane, value in
@@ -1232,6 +1233,8 @@ typedef struct le_snapshot {
   uint32_t click_mask;  /* click output bitmask (default 0 = no outputs) */
   float click_volume;   /* 0..LE_MAX_GAIN (default 1); the click's only gain */
   int32_t count_in_bars; /* count-in length in measures; 0 = off (default) */
+  uint32_t record_start_revision;
+  int32_t record_start_result; /* prior pair remains on callback refusal */
   int32_t counting_in;   /* 0/1: a count-in is currently running */
   /* Beat countdown while counting in: the number of count-in beats still to
    * come, INCLUSIVE of the one currently sounding (a one-bar 4/4 count-in
@@ -1284,7 +1287,7 @@ typedef struct le_snapshot {
   /* ---- record start settings (accepted design, slice 2b; trailing).
    * Quantize is the control-side gate; auto_record and count_in_bars are
    * decoded together from the callback's applied recording-start choice.
-   * le_engine_set_count_in and le_engine_set_auto_record exclude each other. */
+   * le_engine_set_record_start publishes the exclusive pair together. */
   int32_t quantize;    /* 0/1: the global loop-grid record quantize gate */
   int32_t auto_record; /* 0/1: sound-activated record start */
   float overdub_feedback; /* the global coefficient, 0..1 (default 1) */
@@ -2132,24 +2135,16 @@ LE_EXPORT int32_t le_engine_set_click_output(le_engine* engine, int32_t mask);
  * click's only gain stage — master gain and the limiter never touch it. */
 LE_EXPORT int32_t le_engine_set_click_volume(le_engine* engine, float volume);
 
-/* Sets the count-in length in measures (0 = off .. LE_COUNT_IN_MAX_BARS;
- * values outside return LE_ERR_INVALID). Default 0 = off on the wire — the
- * manual's 1-bar default is applied by the app layer when the user enables
- * counting in. With count-in on and a tempo set, a record press on an idle,
- * empty looper (the DEFINING recording) first clicks [bars] measures — the
- * counting state is published via counting_in / count_in_beats_left — and
- * recording then starts exactly on the downbeat. A record press during the
- * count-in cancels it (back to idle); so does a stop press, and so does
- * setting this to 0. With no tempo set there is nothing to click against and
- * recording starts immediately. Once anything is recorded, record presses
- * behave exactly as without count-in (quantize governs — D9). Mutually
- * exclusive with sound-activated recording: enabling count-in disables
- * auto-record (and cancels its threshold arms), and enabling auto-record
- * clears the count-in. Each setter posts one command; an unconfigured engine
- * returns LE_ERR_NOT_RUNNING and a full ring returns LE_ERR_INVALID without
- * changing either setting or pending arms. Snapshots publish the applied pair
- * together after processing; accepted control decisions take effect at once. */
-LE_EXPORT int32_t le_engine_set_count_in(le_engine* engine, int32_t bars);
+/* Enqueues a coherent Count-in/Sound-start pair. Bars must be 0, 1, 2 or 4;
+ * sound_start must be 0/1 and cannot be enabled with positive bars. Actual
+ * capture refuses, including capture begun earlier in the same callback.
+ * Count edits cancel a countdown; positive Count also cancels Sound arms.
+ * Sound-on cancels countdowns, Sound-off cancels Sound arms. Restore cancels
+ * both. One unpublished request is reserved; raw posts are invalid.
+ * Acquire commands_settled BEFORE a synchronous snapshot read to classify its
+ * new revision/result; no other mode writer may run between those calls. */
+LE_EXPORT int32_t le_engine_set_record_start(le_engine* engine, int32_t bars,
+    int32_t sound_start, int32_t edit_kind);
 
 /* Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
  * 0 to inherit the global default (le_engine_set_default_multiple). Applies to
@@ -2273,13 +2268,6 @@ LE_EXPORT int32_t le_engine_set_overdub_feedback(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_track_overdub_feedback(le_engine* engine,
                                                        int32_t channel,
                                                        float feedback);
-
-/* Enables sound-activated recording: a record press on an empty track waits and
- * begins capturing the first frame the input level crosses the threshold. A
- * second press before then cancels. Disabling cancels tracks still waiting.
- * Enabling clears and cancels count-in. Queue/configuration refusal leaves
- * both settings and pending arms unchanged; see le_engine_set_count_in. */
-LE_EXPORT int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled);
 
 /* Sets chain entry [index] (0..LE_FX_MAX-1) on lane [lane] of track [channel] to
  * [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY lazily

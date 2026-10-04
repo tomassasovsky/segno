@@ -246,6 +246,20 @@ void main() {
     );
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
     when(() => repository.clickModeSettled).thenReturn(true);
+    // These pages do not initialize or edit recording-start preferences. The
+    // repository still exposes its coherent, stopped native-safe pair.
+    when(() => repository.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordStartSettingsSettled).thenReturn(true);
+    when(() => repository.recordStartRecoveryRequired).thenReturn(false);
+    when(() => repository.recordStartCaptureLocked).thenReturn(false);
+    when(() => repository.recordStartSettings).thenReturn(
+      (countInBars: 0, soundStart: false),
+    );
+    when(() => repository.recordStartRestartIntent).thenReturn(
+      (countInBars: 0, soundStart: false),
+    );
     settings = SettingsRepository(store: FakeKeyValueStore());
     monitorChanges = StreamController<int>.broadcast();
     monitorParams = StreamController<int>.broadcast();

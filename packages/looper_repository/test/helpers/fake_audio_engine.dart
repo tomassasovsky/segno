@@ -18,6 +18,7 @@ class FakeAudioEngine implements AudioEngine {
   bool commandsAreSettled = true;
   bool publishClickCommands = true;
   bool publishClickModeCommands = true;
+  bool publishRecordStartCommands = true;
   bool publishLengthCommands = true;
   bool publishModeCommands = true;
   final Map<int, int> publishedLengths = {};
@@ -49,6 +50,8 @@ class FakeAudioEngine implements AudioEngine {
       _nextSnapshot = _nextSnapshot.copyWith(
         clickModeRevision: 0,
         clickModeResult: 0,
+        recordStartRevision: 0,
+        recordStartResult: 0,
       );
       pendingMix = null;
       pendingImages.clear();
@@ -568,13 +571,6 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  @override
-  EngineResult setAutoRecord({required bool enabled}) {
-    lastAutoRecord = enabled;
-    calls.add('setAutoRecord');
-    return EngineResult.ok;
-  }
-
   // ---- TempoControl ----
 
   double? lastTempoBpm;
@@ -658,9 +654,23 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setCountIn(int bars) {
-    lastCountIn = bars;
-    calls.add('setCountIn');
+  EngineResult setRecordStartSettings({
+    required int countInBars,
+    required bool soundStart,
+    required RecordStartEditKind editKind,
+  }) {
+    lastCountIn = countInBars;
+    lastAutoRecord = soundStart;
+    calls.add('setRecordStartSettings');
+    if (publishRecordStartCommands) {
+      nextSnapshot = nextSnapshot.copyWith(
+        countInBars: countInBars,
+        autoRecord: soundStart,
+        recordStartRevision:
+            (_nextSnapshot.recordStartRevision + 1) & 0xffffffff,
+        recordStartResult: 0,
+      );
+    }
     return EngineResult.ok;
   }
 
@@ -1832,6 +1842,8 @@ class _LengthSnapshot extends EngineSnapshot {
         clickMode: source.clickMode,
         clickModeRevision: source.clickModeRevision,
         clickModeResult: source.clickModeResult,
+        recordStartRevision: source.recordStartRevision,
+        recordStartResult: source.recordStartResult,
         clickMask: source.clickMask,
         clickVolume: source.clickVolume,
         countInBars: source.countInBars,

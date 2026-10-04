@@ -12,7 +12,6 @@ class RecordOptions extends Equatable {
   /// Creates a [RecordOptions].
   const RecordOptions({
     this.recDub = false,
-    this.autoRecord = false,
     this.defaultMultiple = 0,
     this.defaultLengthBars = 0,
     this.recordLengthReady = false,
@@ -24,10 +23,6 @@ class RecordOptions extends Equatable {
   /// When `true`, a record press finalizing a recording continues into overdub
   /// instead of playback (the second-press "rec/dub" mode).
   final bool recDub;
-
-  /// When `true`, recording is sound-activated: a record press on an empty
-  /// track waits and starts when the input crosses the threshold.
-  final bool autoRecord;
 
   /// The global default loop length used by inheriting tracks (`0` = auto).
   final int defaultMultiple;
@@ -44,7 +39,6 @@ class RecordOptions extends Equatable {
   /// Returns a copy with the given overrides.
   RecordOptions copyWith({
     bool? recDub,
-    bool? autoRecord,
     int? defaultMultiple,
     int? defaultLengthBars,
     bool? recordLengthReady,
@@ -53,7 +47,6 @@ class RecordOptions extends Equatable {
     bool? recordLengthCaptureLocked,
   }) => RecordOptions(
     recDub: recDub ?? this.recDub,
-    autoRecord: autoRecord ?? this.autoRecord,
     defaultMultiple: defaultMultiple ?? this.defaultMultiple,
     defaultLengthBars: defaultLengthBars ?? this.defaultLengthBars,
     recordLengthReady: recordLengthReady ?? this.recordLengthReady,
@@ -67,7 +60,6 @@ class RecordOptions extends Equatable {
   @override
   List<Object?> get props => [
     recDub,
-    autoRecord,
     defaultMultiple,
     defaultLengthBars,
     recordLengthReady,
@@ -78,7 +70,7 @@ class RecordOptions extends Equatable {
 }
 
 /// Owns the global record-behavior options: applies them to the repository and
-/// persists them. Defaults to both off (the classic rec → play behavior).
+/// persists them. Defaults to rec → play behavior.
 class RecordOptionsCubit extends Cubit<RecordOptions>
     implements RecordLengthControl {
   RecordOptionsCubit({
@@ -187,7 +179,6 @@ class RecordOptionsCubit extends Cubit<RecordOptions>
     emit(
       state.copyWith(
         recDub: looper.transport.recDub,
-        autoRecord: looper.transport.autoRecord,
         defaultMultiple: looper.transport.defaultMultiple,
         recordLengthCaptureLocked: _repository.recordLengthCaptureLocked,
       ),
@@ -619,20 +610,6 @@ class RecordOptionsCubit extends Cubit<RecordOptions>
     emit(state.copyWith(recDub: value));
 
     await _settings.saveRecDub(value: value);
-  }
-
-  /// Sets and persists sound-activated recording, applying it now. Turning
-  /// it on clears the count-in (the engine's rule, D9), persisted here too
-  /// so a restart does not bring the count-in back over it.
-  Future<void> setAutoRecord({required bool value}) async {
-    _userEditRevision++;
-    if (!_repository.setAutoRecord(enabled: value).isOk) return;
-    emit(state.copyWith(autoRecord: value));
-
-    await Future.wait([
-      _settings.saveAutoRecord(value: value),
-      if (value) _settings.saveCountInBars(0),
-    ]);
   }
 
   /// Sets and persists the global default loop length, applying it now.

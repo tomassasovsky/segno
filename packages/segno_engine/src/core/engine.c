@@ -398,6 +398,11 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->click_mode_posted_revision = 0;
   engine->click_mode_command = 0;
   engine->click_mode_publish_pending = 0;
+  atomic_store_explicit(&engine->a_record_start_revision, 0, memory_order_relaxed);
+  store_i32(&engine->a_record_start_result, LE_OK);
+  engine->record_start_posted_revision = 0;
+  engine->record_start_command = 0;
+  engine->record_start_publish_pending = 0;
 
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
@@ -522,6 +527,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_primary_track, -1);
   atomic_store(&engine->a_mix_revision, 0);
   engine->lane_growth_command = 0;
+  engine->input_routing_command = 0;
   engine->clock_commands_posted = 0;
   atomic_store_explicit(&engine->a_clock_commands_applied, 0, memory_order_relaxed);
   engine->commands_posted = 0;
@@ -529,9 +535,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   atomic_store_explicit(&engine->a_commands_published, 0, memory_order_relaxed);
   /* Configure discarded the queue: accepted-but-unapplied recording-start
    * edits must not survive only in control-side record decisions. */
-  const int32_t record_start = load_i32(&engine->a_record_start);
-  engine->count_in_bars = record_start > 0 ? record_start : 0;
-  engine->auto_record = record_start < 0;
+  /* Preserve the last callback-confirmed recording-start pair. */
 
   engine->sample_rate = sample_rate;
   engine->in_channels = input_channels;
@@ -1269,19 +1273,10 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   /* Click mode requires the typed single-flight receipt. Raw posts cannot
    * bypass that reservation or publish revisionless competing settings. */
   if (code == LE_CMD_SET_CLICK_MODE) return LE_ERR_INVALID;
-  /* Keep these coupled settings' control decisions consistent even through
-   * the raw public entry point. Preserve SET_COUNT_IN's consumer clamping. */
-  if (code == LE_CMD_SET_COUNT_IN) {
-    if (arg_i < 0) arg_i = 0;
-    if (arg_i > LE_COUNT_IN_MAX_BARS) arg_i = LE_COUNT_IN_MAX_BARS;
-    return le_engine_set_count_in(engine, arg_i);
-  }
+  if (code == LE_CMD_SET_RECORD_START) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_LOOPER_MODE) {
     return le_push_cmd(engine, (le_command){.code = code,
                                            .presets = {.mode = arg_i}});
-  }
-  if (code == LE_CMD_SET_AUTO_RECORD) {
-    return le_engine_set_auto_record(engine, arg_i);
   }
   const le_command cmd = {.code = code, .arg_i = arg_i, .arg_f = arg_f};
   return le_push_cmd(engine, cmd);
@@ -1296,6 +1291,7 @@ int32_t le_engine_measure_latency(le_engine* engine) {
 #ifdef LE_NATIVE_TESTS
 void (*le_test_record_timing_hook)(le_engine*, int) = NULL;
 void (*le_test_click_mode_hook)(le_engine*, int) = NULL;
+void (*le_test_record_start_hook)(le_engine*, int) = NULL;
 #endif
 
 int32_t le_push_cmd(le_engine* engine, le_command cmd) {
@@ -1305,6 +1301,8 @@ int32_t le_push_cmd(le_engine* engine, le_command cmd) {
   }
   if (!le_ring_push(&engine->ring, cmd)) return LE_ERR_INVALID;
   engine->commands_posted++;
+  if (cmd.code == LE_CMD_SET_INPUT_MASK || cmd.code == LE_CMD_SET_LANE_INPUT ||
+      cmd.code == LE_CMD_SET_MIX) engine->input_routing_command = engine->commands_posted;
   return LE_OK;
 }
 

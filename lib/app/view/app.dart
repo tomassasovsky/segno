@@ -33,6 +33,7 @@ import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
@@ -190,6 +191,9 @@ class _AppState extends State<App> {
   StreamSubscription<ClickVolumeOutcome>? _clickFailureSubscription;
   StreamSubscription<ClickModeOutcome>? _clickModeFailureSubscription;
   ClickModeOutcome? _clickModeRecoveryNotice;
+  StreamSubscription<RecordStartOutcome>? _recordStartFailureSubscription;
+  StreamSubscription<int>? _recordingInputRequiredSubscription;
+  RecordStartOutcome? _recordStartRecoveryNotice;
   late final PlaybackOptionsCubit _playback;
   late final RecordOptionsCubit _record;
   late final RecordTimingCubit _timing;
@@ -216,6 +220,13 @@ class _AppState extends State<App> {
     _clickModeFailureSubscription = _tempo.clickModeFailures.listen(
       _showClickModeFailure,
     );
+    _recordStartFailureSubscription = _tempo.recordStartFailures.listen(
+      _showRecordStartFailure,
+    );
+    _recordingInputRequiredSubscription = widget
+        .repository
+        .recordingInputRequired
+        .listen(_showRecordingInputRequired);
     unawaited(_tempo.load());
     _playback = PlaybackOptionsCubit(
       repository: widget.repository,
@@ -256,6 +267,8 @@ class _AppState extends State<App> {
     unawaited(_mixFailureSubscription?.cancel());
     unawaited(_clickFailureSubscription?.cancel());
     unawaited(_clickModeFailureSubscription?.cancel());
+    unawaited(_recordStartFailureSubscription?.cancel());
+    unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_decayFailureSubscription?.cancel());
     unawaited(_oneShotFailureSubscription?.cancel());
     unawaited(_recordLengthFailureSubscription?.cancel());
@@ -357,6 +370,70 @@ class _AppState extends State<App> {
               ),
             ]
           : const [],
+    );
+  }
+
+  void _showRecordStartFailure(RecordStartOutcome outcome) {
+    if (!mounted || outcome.status == RecordStartStatus.superseded) return;
+    final recovery = outcome.status == RecordStartStatus.recoveryRequired;
+    AppLog.error(
+      'Recording start: ${outcome.status.name} ${outcome.error ?? ''}',
+    );
+    if (recovery) _recordStartRecoveryNotice = outcome;
+    if (_power?.state.isUiUp ?? false) return;
+    showAppToast(
+      id: AppToastId.recordStartSettings,
+      type: ToastificationType.error,
+      dismissible: !recovery,
+      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
+      title: Builder(
+        builder: (context) => Text(
+          recovery
+              ? context.l10n.recordStartSettingsRecoveryTitle
+              : context.l10n.recordStartSettingsRefusedTitle,
+        ),
+      ),
+      description: recovery
+          ? Builder(
+              builder: (context) =>
+                  Text(context.l10n.recordStartSettingsRecoveryBody),
+            )
+          : null,
+      actions: recovery
+          ? [
+              TextButton(
+                onPressed: () async {
+                  if ((await _tempo.recoverRecordStart()).isOk) {
+                    _recordStartRecoveryNotice = null;
+                    dismissAppToast(AppToastId.recordStartSettings);
+                  }
+                },
+                child: Builder(
+                  builder: (context) => Text(context.l10n.powerOffRetry),
+                ),
+              ),
+            ]
+          : const [],
+    );
+  }
+
+  void _showRecordingInputRequired(int channel) {
+    if (!mounted || (_power?.state.isUiUp ?? false)) return;
+    showAppToast(
+      id: AppToastId.recordingInputRequired,
+      type: ToastificationType.warning,
+      autoCloseDuration: const Duration(seconds: 5),
+      title: Builder(
+        builder: (context) => Text(context.l10n.recordingInputRequiredTitle),
+      ),
+      description: Builder(
+        builder: (context) => Text(
+          context.l10n.trackName(
+            context.read<TracksCubit>().state.names,
+            channel,
+          ),
+        ),
+      ),
     );
   }
 
@@ -567,6 +644,8 @@ class _AppState extends State<App> {
     if (state.isUiUp) {
       dismissAppToast(AppToastId.recordTimingSettings);
       dismissAppToast(AppToastId.clickModeSettings);
+      dismissAppToast(AppToastId.recordStartSettings);
+      dismissAppToast(AppToastId.recordingInputRequired);
       return;
     }
     final notice = _timingRecoveryNotice;
@@ -578,6 +657,11 @@ class _AppState extends State<App> {
     _clickModeRecoveryNotice = null;
     if (clickNotice != null && !_tempo.state.clickModeReady) {
       _showClickModeFailure(clickNotice);
+    }
+    final startNotice = _recordStartRecoveryNotice;
+    _recordStartRecoveryNotice = null;
+    if (startNotice != null && !_tempo.state.recordStartReady) {
+      _showRecordStartFailure(startNotice);
     }
   }
 
@@ -855,6 +939,10 @@ class _AppState extends State<App> {
                     if (!clickMode.isOk) {
                       throw StateError('Hear click still needs recovery');
                     }
+                    final recordStart = await _tempo.recoverRecordStart();
+                    if (!recordStart.isOk) {
+                      throw StateError('Recording start still needs recovery');
+                    }
                     final decay = await _playback.recoverDecay();
                     if (!decay.isOk) {
                       throw StateError('Decay settings still need recovery');
@@ -889,6 +977,10 @@ class _AppState extends State<App> {
                   if (!clickMode.isOk) {
                     throw StateError('Hear click was not confirmed');
                   }
+                  final recordStart = await _tempo.flushRecordStart();
+                  if (!recordStart.isOk) {
+                    throw StateError('Recording start was not confirmed');
+                  }
                   final decay = await _playback.flushDecay();
                   if (!decay.isOk) {
                     throw StateError('Decay settings were not confirmed');
@@ -910,6 +1002,7 @@ class _AppState extends State<App> {
                   dismissAppToast(AppToastId.oneShotSettings);
                   dismissAppToast(AppToastId.clickSettings);
                   dismissAppToast(AppToastId.clickModeSettings);
+                  dismissAppToast(AppToastId.recordStartSettings);
                   dismissAppToast(AppToastId.decaySettings);
                 },
                 pedalGoodbye: () => context.read<PedalRepository>().goodbye(),

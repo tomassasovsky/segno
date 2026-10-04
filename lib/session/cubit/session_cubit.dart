@@ -7,6 +7,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
@@ -49,9 +50,10 @@ class SessionCubit extends Cubit<SessionState> {
     required FxChainPersistence fxPersistence,
     required MixSettingsPersistence mixPersistence,
     required Future<T> Function<T>(Future<T> Function() operation)
-    runClickExclusive,
+    runTempoExclusive,
     required double Function() currentDurableClickVolume,
     required ClickMode Function() currentDurableClickMode,
+    required RecordStartSettings Function() currentDurableRecordStart,
     required Future<T> Function<T>(Future<T> Function() operation)
     runPlaybackExclusive,
     required DecaySnapshot Function() currentDurableDecay,
@@ -72,9 +74,10 @@ class SessionCubit extends Cubit<SessionState> {
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
        _mixPersistence = mixPersistence,
-       _runClickExclusive = runClickExclusive,
+       _runTempoExclusive = runTempoExclusive,
        _currentDurableClickVolume = currentDurableClickVolume,
        _currentDurableClickMode = currentDurableClickMode,
+       _currentDurableRecordStart = currentDurableRecordStart,
        _runPlaybackExclusive = runPlaybackExclusive,
        _currentDurableDecay = currentDurableDecay,
        _currentDurableOneShot = currentDurableOneShot,
@@ -107,9 +110,10 @@ class SessionCubit extends Cubit<SessionState> {
   final FxChainPersistence _fxPersistence;
   final MixSettingsPersistence _mixPersistence;
   final Future<T> Function<T>(Future<T> Function() operation)
-  _runClickExclusive;
+  _runTempoExclusive;
   final double Function() _currentDurableClickVolume;
   final ClickMode Function() _currentDurableClickMode;
+  final RecordStartSettings Function() _currentDurableRecordStart;
   final Future<T> Function<T>(Future<T> Function() operation)
   _runPlaybackExclusive;
   final DecaySnapshot Function() _currentDurableDecay;
@@ -125,10 +129,10 @@ class SessionCubit extends Cubit<SessionState> {
   final void Function(String encoded) _onPedalBindings;
   final void Function() _releaseHeldBindings;
 
-  // Lock order: Mixer, Click, Playback, Record length, then Record timing.
+  // Lock order: Mixer, Tempo, Playback, Record length, then Record timing.
   Future<T> _runSettingsExclusive<T>(Future<T> Function() operation) =>
       _mixSettings.runExclusive(
-        () => _runClickExclusive(
+        () => _runTempoExclusive(
           () => _runPlaybackExclusive(
             () => _runRecordExclusive(
               () => _runRecordTimingExclusive(operation),
@@ -270,6 +274,7 @@ class SessionCubit extends Cubit<SessionState> {
         mix: _mixSettings.durableSnapshot,
         clickVolume: _currentDurableClickVolume(),
         clickMode: _currentDurableClickMode(),
+        recordStart: _currentDurableRecordStart(),
         decay: _currentDurableDecay(),
         oneShot: _currentDurableOneShot(),
         recordLength: _currentDurableRecordLength(),

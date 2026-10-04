@@ -79,7 +79,9 @@ class SetupToggleRow extends StatelessWidget {
   final Key toggleKey;
   final String title;
   final String subtitle;
-  final bool value;
+
+  /// Null means no accepted value is available yet.
+  final bool? value;
   final ValueChanged<bool>? onChanged;
 
   @override
@@ -119,16 +121,27 @@ class SetupToggleRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Switch(
-            key: toggleKey,
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: surface.onAccent,
-            activeTrackColor: surface.accent,
-            inactiveThumbColor: surface.textSecondary,
-            inactiveTrackColor: surface.cardHigh,
-            trackOutlineColor: WidgetStatePropertyAll(surface.line),
-          ),
+          if (value == null)
+            Semantics(
+              label: subtitle,
+              excludeSemantics: true,
+              child: AppText(
+                '—',
+                key: toggleKey,
+                style: TextStyle(color: surface.textSecondary, fontSize: 20),
+              ),
+            )
+          else
+            Switch(
+              key: toggleKey,
+              value: value!,
+              onChanged: onChanged,
+              activeThumbColor: surface.onAccent,
+              activeTrackColor: surface.accent,
+              inactiveThumbColor: surface.textSecondary,
+              inactiveTrackColor: surface.cardHigh,
+              trackOutlineColor: WidgetStatePropertyAll(surface.line),
+            ),
         ],
       ),
     );

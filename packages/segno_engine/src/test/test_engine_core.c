@@ -61,6 +61,22 @@
 #include "segno_engine_api.h"
 #include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
 
+/* Ordinary musical setup awaits the pair's zero-frame publication. Tests of
+ * admission, FIFO and pending receipts use the production entrypoint below. */
+static int record_start_count(le_engine* e, int bars) {
+  const int sound = e && bars == 0 && load_i32(&e->a_record_start) < 0;
+  const int result = le_engine_set_record_start(e, bars, sound, LE_RECORD_START_COUNT_IN);
+  if (result == LE_OK) { float z = 0; le_engine_process(e, &z, &z, 0); }
+  return result;
+}
+static int record_start_sound(le_engine* e, int sound) {
+  const int current = e ? load_i32(&e->a_record_start) : 0;
+  const int result = le_engine_set_record_start(e, sound || current < 0 ? 0 : current,
+                                               sound, LE_RECORD_START_SOUND);
+  if (result == LE_OK) { float z = 0; le_engine_process(e, &z, &z, 0); }
+  return result;
+}
+
 /* Ordinary musical fixtures apply a complete timing vector and pump a zero-
  * frame callback; this changes no sample position. Receipt tests below use the
  * production producer directly and deliberately withhold that callback. */
@@ -5547,7 +5563,7 @@ static void test_length_preset_n_bars_click_on_arms_through_count_in(void) {
   le_snapshot s;
 
   le_engine_set_tempo(e, 120.0f); /* 500 frames/beat, 2000 frames/bar (4/4) */
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK); /* 1 bar = 4*500 = 2000 frames */
+  CHECK(record_start_count(e, 1) == LE_OK); /* 1 bar = 4*500 = 2000 frames */
   CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
   CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK); /* target 8000 */
   tg_advance(e, 1);
@@ -7042,19 +7058,19 @@ static void test_snapshot_publishes_record_start_settings(void) {
   CHECK(s.quantize == 0);
   CHECK(s.auto_record == 0);
   CHECK(timing_gate(e, 1) == LE_OK);
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(le_engine_set_record_start(e, 0, 1, LE_RECORD_START_SOUND) == LE_OK);
   le_engine_get_snapshot(e, &s);
   CHECK(s.quantize == 1);
   CHECK(s.auto_record == 0); /* accepted, not callback-published yet */
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.auto_record == 1);
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK); /* clears sound start */
+  CHECK(record_start_count(e, 1) == LE_OK); /* clears sound start */
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.auto_record == 0);
   CHECK(s.count_in_bars == 1);
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK); /* clears the count-in */
+  CHECK(record_start_sound(e, 1) == LE_OK); /* clears the count-in */
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.auto_record == 1);
@@ -12702,7 +12718,7 @@ static void test_deferred_arm_first_wrap_shadow_fits_loop(void) {
   le_snapshot s;
 
   CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
   drain(e);
   CHECK(le_engine_record(e, 0) == LE_OK); /* deferred arm: no immediate pre-arm */
   drain(e);
@@ -12915,7 +12931,7 @@ static void test_click_mode_queue_full_and_same_value_refusal(void) {
 static void test_click_mode_armed_and_count_in_are_editable(void) {
   printf("test_click_mode_armed_and_count_in_are_editable\n");
   le_engine* e = ck_make_engine(1);
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
   drain(e);
   CHECK(le_engine_record(e, 0) == LE_OK);
   drain(e);
@@ -12931,7 +12947,7 @@ static void test_click_mode_armed_and_count_in_are_editable(void) {
 
   e = ck_make_engine(1);
   CHECK(le_engine_set_tempo(e, 120) == LE_OK);
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
   drain(e);
   CHECK(le_engine_record(e, 0) == LE_OK);
   ck_run(e, 1, 1, NULL, NULL);
@@ -12990,10 +13006,10 @@ static void test_click_defaults_and_validation(void) {
   /* Wrapper validation. */
   CHECK(le_engine_set_click_mode(e, -1) == LE_ERR_INVALID);
   CHECK(le_engine_set_click_mode(e, 4) == LE_ERR_INVALID);
-  CHECK(le_engine_set_count_in(e, -1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_count_in(e, LE_COUNT_IN_MAX_BARS + 1) ==
+  CHECK(record_start_count(e, -1) == LE_ERR_INVALID);
+  CHECK(record_start_count(e, LE_COUNT_IN_MAX_BARS + 1) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_set_count_in(NULL, 1) == LE_ERR_INVALID);
+  CHECK(record_start_count(NULL, 1) == LE_ERR_INVALID);
 
   /* Settings publish, the volume clamps to LE_MAX_GAIN on apply, and all of
    * it persists across a reconfigure (create-seeded, like the tempo
@@ -13001,7 +13017,7 @@ static void test_click_defaults_and_validation(void) {
   CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_OK);
   CHECK(le_engine_set_click_output(e, 0x2) == LE_OK);
   CHECK(le_engine_set_click_volume(e, 5.0f) == LE_OK);
-  CHECK(le_engine_set_count_in(e, 2) == LE_OK);
+  CHECK(record_start_count(e, 2) == LE_OK);
   ck_run(e, 1, 2, NULL, NULL);
   le_engine_get_snapshot(e, &s);
   CHECK(s.click_mode == LE_CLICK_PLAY_REC);
@@ -13379,7 +13395,7 @@ static void test_click_mode_off_stays_silent(void) {
   le_engine* e2 = ck_make_engine(1);
   CHECK(le_engine_set_tempo(e2, 300.0f) == LE_OK);
   CHECK(le_engine_set_click_output(e2, 0x1) == LE_OK);
-  CHECK(le_engine_set_count_in(e2, 1) == LE_OK);
+  CHECK(record_start_count(e2, 1) == LE_OK);
   double energy2[1] = {0};
   CHECK(le_engine_record(e2, 0) == LE_OK);
   ck_run(e2, 1, 1, energy2, NULL); /* drain the RECORD command */
@@ -13413,7 +13429,7 @@ static void test_click_count_in_downbeat_vs_beat_frequency(void) {
   CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
   CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
   CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
   ck_run(e, 1, 1, NULL, NULL);
 
   /* Count in one 4/4 bar. Beat 0 is the bar downbeat: 1500 Hz — ~45 cycles
@@ -13590,7 +13606,7 @@ static void test_count_in_delays_defining_record(void) {
   le_snapshot s;
 
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames per beat */
-  CHECK(le_engine_set_count_in(e, 2) == LE_OK);   /* 2 bars * 4 * 500 = 4000 */
+  CHECK(record_start_count(e, 2) == LE_OK);   /* 2 bars * 4 * 500 = 4000 */
   tg_advance(e, 1);
 
   CHECK(le_engine_record(e, 0) == LE_OK);
@@ -13634,7 +13650,7 @@ static void test_count_in_record_press_cancels(void) {
   le_snapshot s;
 
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
   tg_advance(e, 1);
   CHECK(le_engine_record(e, 0) == LE_OK);
   tg_advance(e, 500);
@@ -13671,7 +13687,7 @@ static void test_count_in_stop_and_disable_cancel(void) {
   le_snapshot s;
 
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
   tg_advance(e, 1);
 
   /* Stop cancels (D9). */
@@ -13691,7 +13707,7 @@ static void test_count_in_stop_and_disable_cancel(void) {
   tg_advance(e, 500);
   le_engine_get_snapshot(e, &s);
   CHECK(s.counting_in == 1);
-  CHECK(le_engine_set_count_in(e, 0) == LE_OK);
+  CHECK(record_start_count(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.counting_in == 0);
@@ -13716,7 +13732,7 @@ static void test_count_in_bars_change_mid_count_cancels(void) {
   le_snapshot s;
 
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames/beat */
-  CHECK(le_engine_set_count_in(e, 2) == LE_OK);   /* 2 bars = 4000 frames */
+  CHECK(record_start_count(e, 2) == LE_OK);   /* 2 bars = 4000 frames */
   tg_advance(e, 1);
 
   CHECK(le_engine_record(e, 0) == LE_OK);
@@ -13725,7 +13741,7 @@ static void test_count_in_bars_change_mid_count_cancels(void) {
   CHECK(s.counting_in == 1);
 
   /* Changing to a DIFFERENT nonzero value mid-count cancels outright. */
-  CHECK(le_engine_set_count_in(e, 4) == LE_OK);
+  CHECK(record_start_count(e, 4) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.counting_in == 0);
@@ -13769,7 +13785,7 @@ static void test_tempo_lock_during_count_in(void) {
   le_snapshot s;
 
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames/beat */
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);   /* 1 bar = 2000 frames */
+  CHECK(record_start_count(e, 1) == LE_OK);   /* 1 bar = 2000 frames */
   tg_advance(e, 1);
 
   CHECK(le_engine_record(e, 0) == LE_OK); /* begins counting in */
@@ -13830,7 +13846,7 @@ static void test_count_in_cancel_race_across_block_boundary(void) {
   le_snapshot s;
 
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames/beat */
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);   /* 1 bar = 2000 frames */
+  CHECK(record_start_count(e, 1) == LE_OK);   /* 1 bar = 2000 frames */
   tg_advance(e, 1);
 
   CHECK(le_engine_record(e, 0) == LE_OK); /* begins counting in */
@@ -13880,7 +13896,7 @@ static void test_count_in_without_tempo_records_immediately(void) {
 
   /* Count-in enabled but NO tempo set: nothing to click against — the press
    * records immediately, exactly as without count-in. */
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
   tg_advance(e, 1);
   CHECK(le_engine_record(e, 0) == LE_OK);
   tg_advance(e, 1);
@@ -13899,7 +13915,7 @@ static void test_count_in_never_fires_with_content(void) {
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
   tg_advance(e, 1);
   tg_record_defining_loop(e, 2000); /* track 0 defines and plays a bar */
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
   tg_advance(e, 1);
 
   /* With the loop playing, a press on an empty sibling records immediately
@@ -13923,16 +13939,16 @@ static void test_count_in_auto_record_mutual_exclusion(void) {
 
   /* Direction 1: enabling count-in while a track waits on the input
    * threshold clears BOTH the auto-record mode and the pending arm (D9). */
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
   CHECK(le_engine_record(e, 0) == LE_OK); /* arms the input-level trigger */
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].pending == 1);
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].pending == 0); /* threshold arm cancelled */
-  CHECK(e->auto_record == 0);      /* mode cleared (white-box) */
+  CHECK(s.auto_record == 0);      /* mode cleared (white-box) */
   CHECK(s.count_in_bars == 1);
 
   /* A press now counts in — auto-record is gone. */
@@ -13945,11 +13961,11 @@ static void test_count_in_auto_record_mutual_exclusion(void) {
 
   /* Direction 2: enabling auto-record clears the count-in setting; a press
    * then threshold-arms instead of counting in. */
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.count_in_bars == 0);
-  CHECK(e->count_in_bars == 0);
+  CHECK(s.count_in_bars == 0);
   CHECK(le_engine_record(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
@@ -13960,12 +13976,12 @@ static void test_count_in_auto_record_mutual_exclusion(void) {
 
   /* Direction 2, mid-count: enabling auto-record during an active count-in
    * cancels the counting as well (its SET_COUNT_IN(0) cancels in flight). */
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK); /* clears auto-record again */
+  CHECK(record_start_count(e, 1) == LE_OK); /* clears auto-record again */
   CHECK(le_engine_record(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.counting_in == 1);
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.counting_in == 0);
@@ -13979,10 +13995,10 @@ static void test_count_in_auto_record_mutual_exclusion(void) {
  * The second press proves its control-side arm identity survived too. */
 static void test_record_start_refusal_preserves_settings_and_arms(void) {
   printf("test_record_start_refusal_preserves_settings_and_arms\n");
-  CHECK(le_engine_set_auto_record(NULL, 1) == LE_ERR_INVALID);
+  CHECK(record_start_sound(NULL, 1) == LE_ERR_INVALID);
   le_engine* unconfigured = le_engine_create();
-  CHECK(le_engine_set_auto_record(unconfigured, 1) == LE_ERR_NOT_RUNNING);
-  CHECK(le_engine_set_count_in(unconfigured, 2) == LE_ERR_NOT_RUNNING);
+  CHECK(record_start_sound(unconfigured, 1) == LE_ERR_NOT_RUNNING);
+  CHECK(record_start_count(unconfigured, 2) == LE_ERR_NOT_RUNNING);
   le_snapshot s;
   le_engine_get_snapshot(unconfigured, &s);
   CHECK(s.auto_record == 0 && s.count_in_bars == 0);
@@ -13991,18 +14007,18 @@ static void test_record_start_refusal_preserves_settings_and_arms(void) {
   for (int variant = 0; variant < 3; ++variant) {
     le_engine* e = tg_make_engine(1000);
     if (variant == 0) {
-      CHECK(le_engine_set_count_in(e, 2) == LE_OK);
+      CHECK(record_start_count(e, 2) == LE_OK);
     } else {
-      CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+      CHECK(record_start_sound(e, 1) == LE_OK);
       CHECK(le_engine_record(e, 0) == LE_OK);
     }
     tg_advance(e, 1);
     int filled = 0;
     while (le_push(e, 0, 0, 0) == LE_OK) filled++;
     CHECK(filled > 0);
-    const int result = variant == 0 ? le_engine_set_auto_record(e, 1)
-                       : variant == 1 ? le_engine_set_count_in(e, 2)
-                                      : le_engine_set_auto_record(e, 0);
+    const int result = variant == 0 ? record_start_sound(e, 1)
+                       : variant == 1 ? record_start_count(e, 2)
+                                      : record_start_sound(e, 0);
     CHECK(result == LE_ERR_INVALID);
     /* The old report is still coherent, both before and after draining. */
     for (int publication = 0; publication < 2; ++publication) {
@@ -14031,7 +14047,7 @@ static void test_record_start_edit_cancels_arms_with_one_queue_slot(void) {
   printf("test_record_start_edit_cancels_arms_with_one_queue_slot\n");
   for (int enable_count_in = 0; enable_count_in < 2; ++enable_count_in) {
     le_engine* e = tg_make_engine(1000);
-    CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+    CHECK(record_start_sound(e, 1) == LE_OK);
     CHECK(le_engine_record(e, 0) == LE_OK);
     CHECK(le_engine_record(e, 1) == LE_OK);
     tg_advance(e, 1);
@@ -14041,8 +14057,8 @@ static void test_record_start_edit_cancels_arms_with_one_queue_slot(void) {
     for (int n = 0; n < LE_RING_CAPACITY - 2; ++n) {
       CHECK(le_push(e, 0, 0, 0) == LE_OK);
     }
-    CHECK((enable_count_in ? le_engine_set_count_in(e, 2)
-                           : le_engine_set_auto_record(e, 0)) == LE_OK);
+    CHECK(le_engine_set_record_start(e, enable_count_in ? 2 : 0, 0,
+                           enable_count_in ? LE_RECORD_START_COUNT_IN : LE_RECORD_START_SOUND) == LE_OK);
     CHECK(le_push(e, 0, 0, 0) == LE_ERR_INVALID);
     le_engine_get_snapshot(e, &s);
     CHECK(s.auto_record == 1 && s.count_in_bars == 0); /* old applied pair */
@@ -14063,22 +14079,22 @@ static void test_disabling_inactive_record_start_preserves_active_choice(void) {
   printf("test_disabling_inactive_record_start_preserves_active_choice\n");
   le_engine* e = tg_make_engine(1000);
   CHECK(le_engine_set_tempo(e, 120) == LE_OK);
-  CHECK(le_engine_set_count_in(e, 2) == LE_OK);
+  CHECK(record_start_count(e, 2) == LE_OK);
   CHECK(le_engine_record(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.counting_in == 1);
-  CHECK(le_engine_set_auto_record(e, 0) == LE_OK);
+  CHECK(record_start_sound(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.counting_in == 1 && s.count_in_bars == 2 && s.auto_record == 0);
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
-  CHECK(le_engine_set_count_in(e, 0) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  CHECK(record_start_count(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.counting_in == 0 && s.count_in_bars == 0 && s.auto_record == 1);
-  CHECK(le_engine_set_count_in(e, 2) == LE_OK); /* accepted, still queued */
+  CHECK(le_engine_set_record_start(e, 2, 0, LE_RECORD_START_COUNT_IN) == LE_OK); /* accepted, still queued */
   CHECK(le_engine_configure(e, 1000, 1, 1, 20000) == LE_OK);
   le_engine_get_snapshot(e, &s);
   CHECK(s.auto_record == 1 && s.count_in_bars == 0); /* applied setting kept */
@@ -14100,7 +14116,7 @@ static void test_count_in_click_captured_when_routed(void) {
   CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
   CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_OK);
   CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
   ck_run(e, 1, 1, NULL, NULL);
 
   char path[600];
@@ -14540,7 +14556,7 @@ static void test_auto_record_starts_on_signal(void) {
   le_snapshot s;
 
   le_engine* e = make_configured_engine();
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
   le_engine_record(e, 0); /* arms; waits for signal */
   drain(e);
   le_engine_get_snapshot(e, &s);
@@ -14557,7 +14573,7 @@ static void test_auto_record_starts_on_signal(void) {
 
   /* A second press before the signal cancels the arm. */
   le_engine* e2 = make_configured_engine();
-  le_engine_set_auto_record(e2, 1);
+  record_start_sound(e2, 1);
   le_engine_record(e2, 0); /* arm */
   drain(e2);
   le_engine_record(e2, 0); /* cancel */
@@ -16132,7 +16148,7 @@ static void test_atomic_routing_admission(void) {
   CHECK(load_i32(&e->tracks[0].lanes[1].a_input_channel) == -1);
   /* A preceding arm reaches the callback after control preflight. All fields,
    * including output routes and revision, must refuse together. */
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
   CHECK(le_engine_record(e, 0) == LE_OK);
   mix.revision = 52; mix.lane_count_mask = 0;
   mix.lane_input[0] = 1;
@@ -16226,10 +16242,10 @@ static void test_structural_record_fence_keeps_cancellation(void) {
       image.gain[0] = 1;
       int ch = 0;
       if (trigger == 0) {
-        CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+        CHECK(record_start_sound(e, 1) == LE_OK);
       } else if (trigger == 1) {
         CHECK(le_engine_set_tempo(e, 120) == LE_OK);
-        CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+        CHECK(record_start_count(e, 1) == LE_OK);
       } else {
         float pcm[128] = {0}, out[1];
         CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 128) == LE_OK);
@@ -16517,7 +16533,7 @@ static void test_record_image_deferred_shadow_survives_until_capture(void) {
       CHECK(le_engine_set_lane_input(e, 1, 0, 0) == LE_OK);
       CHECK(le_engine_play(e, 0) == LE_OK);
       CHECK(timing_gate(e, !sound) == LE_OK);
-      CHECK(le_engine_set_auto_record(e, sound) == LE_OK);
+      CHECK(record_start_sound(e, sound) == LE_OK);
       drain(e);
       if (!sound) pump_frames(e, 0, 64);
       le_record_image image = {.revision = 97};
@@ -16613,7 +16629,7 @@ static void test_record_image_acceptance_and_arm(void) {
   CHECK(le_engine_record_with_image(e, 0, &image) != LE_OK);
   drain(e);
   le_engine_get_lane(e, 0, 0, &lane); CHECK(lane.pan == 0 && lane.volume == 1);
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK); drain(e);
+  CHECK(record_start_sound(e, 1) == LE_OK); drain(e);
   CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK); drain(e);
   le_engine_get_snapshot(e, &s); CHECK(s.tracks[0].pending);
   le_engine_get_lane(e, 0, 0, &lane); CHECK(lane.pan == 0 && lane.volume == 1);
@@ -16640,7 +16656,7 @@ static void test_armed_image_keeps_live_faders_and_cancel_drops_context(void) {
   printf("test_armed_image_keeps_live_faders_and_cancel_drops_context\n");
   le_engine* e = le_engine_create();
   CHECK(le_engine_configure(e, 48000, 2, 2, 1000) == LE_OK);
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK); drain(e);
+  CHECK(record_start_sound(e, 1) == LE_OK); drain(e);
   le_record_image image = {.revision = 17, .lane_mask = 1,
                             .gain = {.5f}, .pan = {-.75f}};
   CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK); drain(e);
@@ -16665,7 +16681,7 @@ static void test_armed_image_keeps_live_faders_and_cancel_drops_context(void) {
   le_engine_destroy(e);
 
   e = le_engine_create(); le_engine_configure(e, 48000, 2, 2, 1000);
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK); drain(e);
+  CHECK(record_start_sound(e, 1) == LE_OK); drain(e);
   CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK); drain(e);
   /* Both commands drain in one callback: end-of-block cleanup is too late. */
   CHECK(le_push_cmd(e, (le_command){.code = LE_CMD_CLEAR, .arg_i = 0}) == LE_OK);
@@ -19998,7 +20014,7 @@ static void test_finalize_take_aborts_count_in(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 1000, 1, 1, 20000);
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames per beat */
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);   /* 4 beats = 2000 frames */
+  CHECK(record_start_count(e, 1) == LE_OK);   /* 4 beats = 2000 frames */
   CHECK(le_perf_arm(e, dir) == LE_OK);
   tg_advance(e, 1);
 
@@ -20727,7 +20743,7 @@ static void test_mode_presets_recheck_before_stopping(void) {
     int32_t bars[LE_MAX_TRACKS] = {1};
     if (count_in) {
       CHECK(le_engine_set_tempo(e, 120) == LE_OK);
-      CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+      CHECK(record_start_count(e, 1) == LE_OK);
     }
     CHECK(le_engine_record(e, 0) == LE_OK); /* not yet published */
     CHECK(le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_FREE,
@@ -20766,7 +20782,7 @@ static void test_length_presets_recheck_capacity_and_preserve_capture(void) {
   }
   le_engine* e = tg_make_engine(1000);
   int32_t bars[LE_MAX_TRACKS] = {1};
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
   CHECK(le_engine_record(e, 0) == LE_OK);
   CHECK(le_engine_set_looper_mode_with_presets(e, LE_LOOPER_MODE_FREE,
                                               bars, LE_MAX_TRACKS) == LE_ERR_INVALID);
@@ -25749,7 +25765,7 @@ static void test_clock_start_not_at_count_in_start(void) {
   le_snapshot s;
 
   le_engine_set_tempo(e, 120.0f); /* 500 frames/beat, 2000 frames/bar (4/4) */
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK); /* 1 bar = 2000 frames */
+  CHECK(record_start_count(e, 1) == LE_OK); /* 1 bar = 2000 frames */
   CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
   tg_advance(e, 1);
 
@@ -27612,7 +27628,7 @@ static void test_fx_recipe_atomic_admission_and_frozen_arm(void) {
   le_engine_destroy(e);
 
   e = le_engine_create(); le_engine_configure(e, 48000, 1, 2, 1000);
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
   wt_pump(e, 64, out);
   le_fx_recipe lanes[LE_MAX_LANES] = {0}; lanes[0] = test_drive_recipe(.25f);
   le_record_image image = {.revision = 50, .lane_mask = 1, .gain = {1},
@@ -27662,7 +27678,7 @@ static le_engine* recipe_boundary_engine(int mode) {
     CHECK(wt_wait_engaged(e, out));
   }
   if (sound) {
-    CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+    CHECK(record_start_sound(e, 1) == LE_OK);
   } else {
     CHECK(timing_gate(e, 1) == LE_OK);
     drain(e);
@@ -28554,7 +28570,7 @@ static void test_cut_sound_stops_tracks_and_clears_tails(void) {
 
   /* A count-in under way is cancelled by the cut. */
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
-  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
   CHECK(le_engine_clear(e, 0) == LE_OK);
   drain(e);
   CHECK(le_engine_record(e, 0) == LE_OK);
@@ -30145,7 +30161,7 @@ static void test_cond_auto_trigger_reads_conditioned(void) {
 
   /* Conditioned: 50 Hz at 0.3 (15x the 0.02 threshold raw) must NOT fire. */
   le_engine* e = cond_engine();
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
   CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
   cond_sections(e, 0.0f, 50.0f, 1.0f); /* notch bank only */
   long idx = 0;
@@ -30163,7 +30179,7 @@ static void test_cond_auto_trigger_reads_conditioned(void) {
   /* Raw (stage disabled): the same hum DOES fire — the trigger change is the
    * conditioning, not a threshold move. */
   le_engine* e2 = cond_engine();
-  CHECK(le_engine_set_auto_record(e2, 1) == LE_OK);
+  CHECK(record_start_sound(e2, 1) == LE_OK);
   CHECK(le_engine_record(e2, 0) == LE_OK);
   drain(e2);
   long idx2 = 0;
@@ -31987,7 +32003,7 @@ static void test_cut_cancels_empty_arms_and_preserves_stopped_audio(void) {
     process_const(e, .4f, 16, out);
     CHECK(le_engine_record(e, 0) == LE_OK); drain(e);
     if (trigger == 0) {
-      CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+      CHECK(record_start_sound(e, 1) == LE_OK);
     } else {
       CHECK(timing_gate(e, 1) == LE_OK);
     }
@@ -32292,7 +32308,175 @@ static void test_record_timing_partial_publication_keeps_owned_cancel(void) {
   le_engine_destroy(e);
 }
 
+static void test_record_start_capture_and_no_source_refusal(void) {
+  printf("test_record_start_capture_and_no_source_refusal\n");
+  le_engine* e = ck_make_engine(1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot before, after;
+  le_engine_get_snapshot(e, &before);
+  CHECK(before.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(record_start_count(e, 2) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &after);
+  CHECK(after.count_in_bars == before.count_in_bars);
+  CHECK(after.tracks[0].state == LE_TRACK_RECORDING);
+  le_engine_destroy(e);
+
+  e = ck_make_engine(1);
+  CHECK(le_engine_set_lane_input(e, 0, 0, -1) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &after);
+  CHECK(!after.tracks[0].pending);
+  CHECK(after.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(after.tracks[0].undo_depth == 0);
+  le_engine_destroy(e);
+}
+
+static void test_record_start_selected_source_triggers(void) {
+  printf("test_record_start_selected_source_triggers\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 1000, 2, 1, 20000) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 0, 1) == LE_OK); drain(e);
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); drain(e);
+  le_snapshot s; le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 1);
+  /* A disappearing input does not make this owned cancellation unavailable. */
+  CHECK(le_engine_set_lane_input(e, 0, 0, -1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); drain(e);
+  le_engine_get_snapshot(e, &s); CHECK(!s.tracks[0].pending);
+  CHECK(le_engine_set_lane_input(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_ERR_NOT_READY); drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK); drain(e);
+  float input[2] = {.9f, 0}; float out = 0;
+  le_engine_process(e, &out, input, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 1);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  input[0] = 0; input[1] = .9f;
+  le_engine_process(e, &out, input, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(e->tracks[0].record_pos == 1);
+  le_engine_destroy(e);
+}
+
+static int start_hook_saw_pending;
+static void record_start_publication_hook(le_engine* e, int event) {
+  CHECK(event == 1);
+  CHECK(le_engine_commands_settled(e) == 0);
+  le_snapshot s; le_engine_get_snapshot(e, &s);
+  CHECK(s.count_in_bars == 2 && s.auto_record == 0);
+  CHECK(s.record_start_revision == 0);
+  start_hook_saw_pending++;
+}
+static void test_record_start_receipt_and_reservation(void) {
+  printf("test_record_start_receipt_and_reservation\n");
+  le_engine* e = ck_make_engine(1);
+  le_snapshot s;
+  CHECK(le_engine_set_record_start(e, 3, 0, LE_RECORD_START_COUNT_IN) == LE_ERR_INVALID);
+  CHECK(le_engine_set_record_start(e, 2, 1, LE_RECORD_START_SOUND) == LE_ERR_INVALID);
+  store_i32(&e->a_running, 1);
+  CHECK(le_engine_post_command(e, LE_CMD_SET_RECORD_START, 1, 0) == LE_ERR_INVALID);
+  store_i32(&e->a_running, 0);
+  e->commands_posted = UINT32_MAX; e->commands_applied = UINT32_MAX;
+  atomic_store_explicit(&e->a_commands_published, UINT32_MAX, memory_order_relaxed);
+  CHECK(le_engine_set_record_start(e, 2, 0, LE_RECORD_START_COUNT_IN) == LE_OK);
+  CHECK(le_engine_set_record_start(e, 0, 1, LE_RECORD_START_SOUND) == LE_ERR_NOT_READY);
+  CHECK(le_engine_record(e, 0) == LE_ERR_NOT_READY);
+  CHECK(le_engine_play(e, 0) == LE_ERR_NOT_READY);
+  start_hook_saw_pending = 0; le_test_record_start_hook = record_start_publication_hook;
+  drain(e); le_test_record_start_hook = NULL;
+  CHECK(start_hook_saw_pending == 1);
+  CHECK(le_engine_commands_settled(e));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.record_start_revision == 1 && s.record_start_result == LE_OK);
+  CHECK(s.count_in_bars == 2 && !s.auto_record);
+  CHECK(le_engine_set_record_start(e, 0, 1, LE_RECORD_START_SOUND) == LE_OK);
+  CHECK(le_engine_configure(e, CK_SR, 1, 1, CK_SR * 4) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.count_in_bars == 2 && !s.auto_record);
+  CHECK(s.record_start_revision == 0 && s.record_start_result == LE_OK);
+  CHECK(le_engine_set_record_start(e, 0, 0, LE_RECORD_START_RESTORE) == LE_OK); drain(e);
+  /* Accepted Record earlier in the same callback wins over a later setting. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(le_engine_set_record_start(e, 4, 0, LE_RECORD_START_COUNT_IN) == LE_OK);
+  drain(e); le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.count_in_bars == 0 && !s.auto_record);
+  CHECK(s.record_start_revision == 2 && s.record_start_result == LE_ERR_INVALID);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK); drain(e);
+  le_engine_destroy(e);
+}
+
+static void test_record_start_same_value_transient_intent(void) {
+  printf("test_record_start_same_value_transient_intent\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); tg_advance(e, 100);
+  const int remaining = e->count_in_total;
+  CHECK(remaining > 0);
+  CHECK(record_start_sound(e, 0) == LE_OK);
+  CHECK(e->count_in_total == remaining);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  le_engine_get_snapshot(e, &s); CHECK(!s.counting_in);
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); drain(e);
+  CHECK(record_start_count(e, 0) == LE_OK);
+  le_engine_get_snapshot(e, &s); CHECK(s.tracks[0].pending && s.auto_record);
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  le_engine_get_snapshot(e, &s); CHECK(s.tracks[0].pending && s.auto_record);
+  CHECK(le_engine_set_record_start(e, 0, 1, LE_RECORD_START_RESTORE) == LE_OK); drain(e);
+  le_engine_get_snapshot(e, &s); CHECK(!s.tracks[0].pending && s.auto_record);
+  CHECK(le_engine_record(e, 0) == LE_OK); drain(e);
+  CHECK(record_start_sound(e, 0) == LE_OK);
+  le_engine_get_snapshot(e, &s); CHECK(!s.tracks[0].pending && !s.auto_record);
+  le_engine_destroy(e);
+}
+
+static void test_record_start_owned_cancel_survives_queued_pair(void) {
+  printf("test_record_start_owned_cancel_survives_queued_pair\n");
+  for (int image = 0; image < 2; ++image) {
+    le_engine* e = tg_make_engine(1000);
+    CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+    CHECK(record_start_count(e, 2) == LE_OK);
+    CHECK(le_engine_record(e, 0) == LE_OK); drain(e);
+    le_snapshot s; le_engine_get_snapshot(e, &s); CHECK(s.counting_in);
+    const uint64_t sequence = e->tracks[0].take_seq;
+    CHECK(le_engine_set_record_start(e, 4, 0, LE_RECORD_START_COUNT_IN) == LE_OK);
+    le_record_image take = {.revision = 9, .lane_mask = 1, .gain = {1}};
+    CHECK((image ? le_engine_record_with_image(e, 0, &take) : le_engine_record(e, 0)) == LE_OK);
+    drain(e); le_engine_get_snapshot(e, &s);
+    CHECK(!s.counting_in);
+    CHECK(s.count_in_bars == 4);
+    CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+    CHECK(e->tracks[0].take_seq == sequence);
+    tg_advance(e, 9000); le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+    CHECK(!s.counting_in);
+    le_engine_destroy(e);
+  }
+}
+
 int main(void) {
+  test_record_start_owned_cancel_survives_queued_pair();
+  test_record_start_capture_and_no_source_refusal();
+  test_record_start_selected_source_triggers();
+  test_record_start_receipt_and_reservation();
+  test_record_start_same_value_transient_intent();
+  test_record_start_refusal_preserves_settings_and_arms();
+  test_record_start_edit_cancels_arms_with_one_queue_slot();
+  test_disabling_inactive_record_start_preserves_active_choice();
+  test_count_in_bars_change_mid_count_cancels();
+  test_count_in_auto_record_mutual_exclusion();
+  if (getenv("SEGNO_RECORD_START_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_click_mode_receipt_publication();
   test_click_mode_reservation_crosses_32_bit_boundary();
   test_click_mode_queue_full_and_same_value_refusal();
@@ -32382,15 +32566,10 @@ int main(void) {
   test_count_in_delays_defining_record();
   test_count_in_record_press_cancels();
   test_count_in_stop_and_disable_cancel();
-  test_count_in_bars_change_mid_count_cancels();
   test_tempo_lock_during_count_in();
   test_count_in_cancel_race_across_block_boundary();
   test_count_in_without_tempo_records_immediately();
   test_count_in_never_fires_with_content();
-  test_count_in_auto_record_mutual_exclusion();
-  test_record_start_refusal_preserves_settings_and_arms();
-  test_record_start_edit_cancels_arms_with_one_queue_slot();
-  test_disabling_inactive_record_start_preserves_active_choice();
   test_count_in_click_captured_when_routed();
   test_first_wrap_prearm_footprint_bounded();
   test_rec_dub_long_loop_first_wrap_undo();

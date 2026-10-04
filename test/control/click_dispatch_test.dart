@@ -526,7 +526,21 @@ void main() {
       ClickVolumeOutcome? outcome;
       unawaited(r.tempo.flushClickVolume().then((v) => outcome = v));
       r.pump();
-      expect(outcome!.isOk, isFalse);
+      // Exact compensation leaves the value owner healthy (M3.16 F1).
+      // Retained release debt belongs to Control and still blocks halt (F3).
+      expect(outcome!.isOk, isTrue);
+      cleanupFailure = null;
+      unawaited(
+        r.cubit
+            .flushMidiConfiguration(retireControls: true)
+            .then(
+              (_) => fail('owed release must still block while refused'),
+              onError: (Object error) => cleanupFailure = error,
+            ),
+      );
+      r.pump();
+      expect(cleanupFailure, isA<ControlCleanupPending>());
+      expect(r.live, closeTo(midi ? 1.5 : .75, 1e-6));
       engine.refuseClick = false;
       unawaited(r.tempo.recoverClickVolume());
       r.pump();

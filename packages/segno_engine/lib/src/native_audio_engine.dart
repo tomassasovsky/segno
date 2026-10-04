@@ -1556,14 +1556,6 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
-  @override
-  EngineResult setAutoRecord({required bool enabled}) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_auto_record(_engine, enabled ? 1 : 0),
-    );
-  }
-
   // ---- tempo grid + click/count-in (TempoControl, A4a) ----
 
   @override
@@ -1630,10 +1622,19 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setCountIn(int bars) {
+  EngineResult setRecordStartSettings({
+    required int countInBars,
+    required bool soundStart,
+    required RecordStartEditKind editKind,
+  }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_count_in(_engine, bars),
+      _bindings.le_engine_set_record_start(
+        _engine,
+        countInBars,
+        soundStart ? 1 : 0,
+        editKind.index,
+      ),
     );
   }
 

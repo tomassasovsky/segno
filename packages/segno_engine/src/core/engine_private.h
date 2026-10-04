@@ -1582,6 +1582,12 @@ struct le_engine {
   /* Callback-published exclusive recording-start choice: positive = count-in
    * measures, 0 = neither, -1 = sound start. One load reports a coherent pair. */
   _Atomic int32_t a_record_start;
+  _Atomic uint32_t a_record_start_revision;
+  _Atomic int32_t a_record_start_result;
+  uint32_t record_start_posted_revision;
+  uint64_t record_start_command; /* same width as commands_posted/published */
+  uint32_t record_start_publish_revision;
+  int record_start_publish_pending;
   _Atomic int32_t a_counting_in;        /* 0/1: a count-in is in progress */
   _Atomic int32_t a_count_in_beats_left; /* countdown beats remaining; 0 idle */
 
@@ -1607,6 +1613,7 @@ struct le_engine {
    * a_commands_published releases it after the entire callback, on success
    * or refusal. Configure resets it with the command counters. */
   uint64_t lane_growth_command;
+  uint64_t input_routing_command; /* fresh Sound admission reads only applied routes */
   uint64_t commands_posted;
   uint64_t commands_applied;
   /* Callback-only: image publication invalidates the current frame snapshots. */
@@ -1874,18 +1881,6 @@ struct le_engine {
    * Control-thread default, read on the audio thread via the finalize
    * end-state. */
   int rec_dub;
-
-  /* When `auto_record` is set, a record press on an empty track arms a
-   * signal-triggered start: the audio thread begins recording the first frame
-   * the input level crosses LE_AUTO_RECORD_THRESHOLD. Reuses the arm/pending
-   * machinery with a per-track trigger type (see le_track.pending_trigger). */
-  int auto_record;
-
-  /* Control-side mirror of the count-in setting (the published a_record_start
-   * only updates when the audio thread drains the ring, so the D9 auto-record
-   * mutual exclusion and le_engine_record's precedence check read this plain
-   * control-thread int instead of racing the atomic). */
-  int count_in_bars;
 
   /* Loop-viz bucketing (audio-thread-local): peaks accumulate within the
    * current loop bucket and publish when the playhead crosses into the next. */

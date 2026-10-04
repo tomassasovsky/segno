@@ -279,6 +279,18 @@ enum RecordTiming {
   }
 }
 
+/// The ordinary intent whose transient cancellation rules accompany a pair.
+enum RecordStartEditKind {
+  /// Count-in edits cancel countdowns, including a same-value edit.
+  countIn,
+
+  /// Sound-on cancels countdowns; Sound-off cancels waiting signal arms.
+  sound,
+
+  /// Startup/session restoration clears all recording-start transients.
+  restore,
+}
+
 /// Click (metronome) audibility mode — a 4-value mode (Sheeran manual
 /// §5.9.1) that gates WHEN the click voice sounds; WHERE it sounds is the
 /// click output mask (`TempoControl.setClickOutput`, default no outputs).
@@ -1143,7 +1155,9 @@ class EngineSnapshot {
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
     this.clickModeRevision = 0,
+    this.recordStartRevision = 0,
     this.clickModeResult = 0,
+    this.recordStartResult = 0,
     this.clickMask = 0,
     this.clickVolume = 1,
     this.countInBars = 0,
@@ -1219,7 +1233,9 @@ class EngineSnapshot {
       currentBeat = 0,
       clickMode = ClickMode.off,
       clickModeRevision = 0,
+      recordStartRevision = 0,
       clickModeResult = 0,
+      recordStartResult = 0,
       clickMask = 0,
       clickVolume = 1,
       countInBars = 0,
@@ -1310,7 +1326,9 @@ class EngineSnapshot {
       currentBeat: native.current_beat,
       clickMode: ClickMode.fromCode(native.click_mode),
       clickModeRevision: native.click_mode_revision,
+      recordStartRevision: native.record_start_revision,
       clickModeResult: native.click_mode_result,
+      recordStartResult: native.record_start_result,
       clickMask: native.click_mask,
       clickVolume: native.click_volume,
       countInBars: native.count_in_bars,
@@ -1394,7 +1412,9 @@ class EngineSnapshot {
     int? currentBeat,
     ClickMode? clickMode,
     int? clickModeRevision,
+    int? recordStartRevision,
     int? clickModeResult,
+    int? recordStartResult,
     int? clickMask,
     double? clickVolume,
     int? countInBars,
@@ -1467,7 +1487,9 @@ class EngineSnapshot {
     currentBeat: currentBeat ?? this.currentBeat,
     clickMode: clickMode ?? this.clickMode,
     clickModeRevision: clickModeRevision ?? this.clickModeRevision,
+    recordStartRevision: recordStartRevision ?? this.recordStartRevision,
     clickModeResult: clickModeResult ?? this.clickModeResult,
+    recordStartResult: recordStartResult ?? this.recordStartResult,
     clickMask: clickMask ?? this.clickMask,
     clickVolume: clickVolume ?? this.clickVolume,
     countInBars: countInBars ?? this.countInBars,
@@ -1699,6 +1721,12 @@ class EngineSnapshot {
   /// Native result paired with [clickModeRevision]; prior mode on refusal.
   final int clickModeResult;
 
+  /// Callback-completed recording-start pair revision; wraps as uint32.
+  final int recordStartRevision;
+
+  /// Native result paired with [recordStartRevision]; prior pair on refusal.
+  final int recordStartResult;
+
   /// Bitmask of hardware output channels the click sounds on (bit c => out
   /// c). Default `0`: no outputs until explicitly routed.
   final int clickMask;
@@ -1899,7 +1927,9 @@ class EngineSnapshot {
           currentBeat == other.currentBeat &&
           clickMode == other.clickMode &&
           clickModeRevision == other.clickModeRevision &&
+          recordStartRevision == other.recordStartRevision &&
           clickModeResult == other.clickModeResult &&
+          recordStartResult == other.recordStartResult &&
           clickMask == other.clickMask &&
           clickVolume == other.clickVolume &&
           countInBars == other.countInBars &&
@@ -1974,7 +2004,9 @@ class EngineSnapshot {
     currentBeat,
     clickMode,
     clickModeRevision,
+    recordStartRevision,
     clickModeResult,
+    recordStartResult,
     clickMask,
     clickVolume,
     countInBars,

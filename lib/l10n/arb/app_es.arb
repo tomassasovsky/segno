@@ -2621,5 +2621,11 @@
     "clickModeUnavailable": "El modo de clic no está disponible.",
     "clickModeSettingsRecoveryTitle": "El modo de clic necesita atención",
     "clickModeSettingsRefusedTitle": "No se cambió el modo de clic",
-    "clickModeSettingsRecoveryBody": "Reintenta para confirmar el ajuste de clic guardado."
+    "clickModeSettingsRecoveryBody": "Reintenta para confirmar el ajuste de clic guardado.",
+    "recordStartUnavailable": "El inicio de la grabación no está disponible.",
+    "recordStartCaptureLocked": "El inicio de la grabación no se puede cambiar mientras se graba.",
+    "recordStartSettingsRecoveryTitle": "El inicio de la grabación necesita recuperación",
+    "recordStartSettingsRefusedTitle": "No se pudo cambiar el inicio de la grabación",
+    "recordStartSettingsRecoveryBody": "No se pudo confirmar el inicio de la grabación. Reintenta antes de guardar o apagar.",
+    "recordingInputRequiredTitle": "Elige las entradas de grabación"
 }

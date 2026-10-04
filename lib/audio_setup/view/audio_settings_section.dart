@@ -10,6 +10,7 @@ import 'package:segno/audio_setup/view/click_volume_section.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/theme.dart';
@@ -36,6 +37,9 @@ class AudioSettingsSection extends StatelessWidget {
     final measuring = status.latencyState == LatencyState.measuring;
     final timing = context.watch<RecordTimingCubit>().state;
     final timingEnabled = timing.recordTimingReady && !timing.captureLocked;
+    final tempo = context.watch<TempoCubit>();
+    final confirmedStart = tempo.confirmedRecordStart;
+    final startSnapshot = tempo.recordStartSnapshot;
 
     // The device picker re-enumerates only while it is on screen -- see
     // [AudioDeviceScanScope].
@@ -189,11 +193,15 @@ class AudioSettingsSection extends StatelessWidget {
           SetupToggleRow(
             toggleKey: const Key('audioSettings_autoRecord_switch'),
             title: l10n.soundActivatedRecordingTitle,
-            subtitle: l10n.soundActivatedRecordingSubtitle,
-            value: context.watch<RecordOptionsCubit>().state.autoRecord,
-            onChanged: (on) => unawaited(
-              context.read<RecordOptionsCubit>().setAutoRecord(value: on),
-            ),
+            subtitle: startSnapshot == null
+                ? l10n.recordStartUnavailable
+                : !startSnapshot.canEdit
+                ? l10n.recordStartCaptureLocked
+                : l10n.soundActivatedRecordingSubtitle,
+            value: confirmedStart?.soundStart,
+            onChanged: startSnapshot?.canEdit == true
+                ? (on) => unawaited(tempo.setSoundStart(enabled: on))
+                : null,
           ),
           const SizedBox(height: 16),
           AppText(l10n.defaultLoopLengthIntro, style: context.setupBody),

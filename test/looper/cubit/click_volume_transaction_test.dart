@@ -131,7 +131,7 @@ void main() {
     unawaited(r.owner.load());
     double? captured;
     unawaited(
-      r.owner.runClickExclusive(() async {
+      r.owner.runTempoExclusive(() async {
         captured = r.owner.durableClickVolume;
       }),
     );
@@ -481,7 +481,7 @@ void main() {
       ..onReadFailure = () {
         unawaited(
           r.owner
-              .runClickExclusive(() async {
+              .runTempoExclusive(() async {
                 captured = true;
               })
               .catchError((Object error) {
@@ -497,7 +497,7 @@ void main() {
     unawaited(r.owner.recoverClickVolume());
     r.pump();
     unawaited(
-      r.owner.runClickExclusive(() async {
+      r.owner.runTempoExclusive(() async {
         captured = true;
       }),
     );

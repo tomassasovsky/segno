@@ -508,7 +508,11 @@ void main() {
       ..setRecDub(enabled: true)
       ..setClickOutput(3)
       ..setClickVolume(0.4)
-      ..setCountIn(2);
+      ..setRecordStartSettings(
+        countInBars: 2,
+        soundStart: false,
+        editKind: RecordStartEditKind.countIn,
+      );
     final reads = audio.snapshotCalls;
     final settings = repository.sessionTransport;
     expect(settings.tempoBpm, 97.5);

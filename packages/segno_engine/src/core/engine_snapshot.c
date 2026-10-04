@@ -393,6 +393,9 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   const int32_t record_start = load_i32(&engine->a_record_start);
   out->count_in_bars = record_start > 0 ? record_start : 0;
   out->auto_record = record_start < 0;
+  out->record_start_revision = atomic_load_explicit(&engine->a_record_start_revision,
+                                                   memory_order_relaxed);
+  out->record_start_result = load_i32(&engine->a_record_start_result);
   out->counting_in = load_i32(&engine->a_counting_in);
   out->count_in_beats_left = load_i32(&engine->a_count_in_beats_left);
   /* Looper mode (B2a, D4; trailing block; default reads 0 = MULTI). */

@@ -10,6 +10,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -119,6 +120,7 @@ void main() {
       ),
       settings: settingsFromLooper(
         looper,
+        recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
         clickMode: looper.sessionTransport.clickMode,
         recordTiming: RecordTimingSnapshot(
           defaultTiming: looper.defaultRecordTiming,

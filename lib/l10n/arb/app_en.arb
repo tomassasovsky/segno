@@ -5748,5 +5748,13 @@
     "clickModeUnavailable": "Hear click is unavailable.",
     "clickModeSettingsRecoveryTitle": "Hear click needs attention",
     "clickModeSettingsRefusedTitle": "Hear click was not changed",
-    "clickModeSettingsRecoveryBody": "Retry to confirm the saved click setting."
+    "clickModeSettingsRecoveryBody": "Retry to confirm the saved click setting.",
+    "recordStartUnavailable": "Recording start is unavailable.",
+    "@recordStartUnavailable": {"description": "No confirmed Count-in and Sound pair is available during initialization or recovery."},
+    "recordStartCaptureLocked": "Recording start cannot change during capture.",
+    "@recordStartCaptureLocked": {"description": "Count-in and Sound controls are locked only while audio is being captured."},
+    "recordStartSettingsRecoveryTitle": "Recording start needs recovery",
+    "recordStartSettingsRefusedTitle": "Recording start could not change",
+    "recordStartSettingsRecoveryBody": "Recording start could not be confirmed. Retry before saving or switching off.",
+    "recordingInputRequiredTitle": "Choose recording inputs"
 }

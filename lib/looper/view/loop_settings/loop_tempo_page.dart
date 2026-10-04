@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_labels.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -76,6 +77,8 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
     final settings = context.watch<TempoCubit>().state;
     final tempo = context.read<TempoCubit>();
     final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
+    final recordStartSnapshot = tempo.recordStartSnapshot;
+    final confirmedRecordStart = tempo.confirmedRecordStart;
     // The live tempo when the engine has one (a tap or a derived tempo
     // moves it without this page), else the cubit's own intent.
     final liveBpm = transport.bpm > 0 ? transport.bpm : settings.bpm;
@@ -266,11 +269,28 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                 values: kCountInBarOptions,
                 labelOf: (bars) => countInLabels(l10n)[bars]!,
                 keyOf: (bars) => Key('loop_count_in_$bars'),
-                selected: settings.countInBars,
+                selected: confirmedRecordStart?.countInBars,
+                enabled: recordStartSnapshot?.canEdit ?? false,
                 onSelected: (bars) => unawaited(tempo.setCountInBars(bars)),
                 width: 1392,
               ),
             ),
+            if (recordStartSnapshot?.canEdit != true)
+              Positioned(
+                left: 0,
+                top: 430,
+                child: AppText(
+                  recordStartSnapshot == null
+                      ? l10n.recordStartUnavailable
+                      : l10n.recordStartCaptureLocked,
+                  key: const Key('loop_count_in_disabled_reason'),
+                  style: TextStyle(
+                    color: surface.textSecondary,
+                    fontSize: 14,
+                    height: 1,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

@@ -8,6 +8,31 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 recording-start pair (#1026)
+
+Count-in and Sound-start now share one confirmed setting across Recording,
+Tempo, both Audio setup surfaces, startup and Session save/recall. Count-in
+above zero disables Sound; enabling Sound turns Count-in off. Explicit Off
+remains Off, while a new setup defaults to one bar. Capture refuses edits;
+unknown or failed acceptance stays visibly unavailable until recovery.
+
+Storage writes preserve exact prior keys on failure, and native callback
+receipts confirm changes before publication. Fresh recordings wait for a
+confirmed pair; cancellation and finishing remain available. Sound-start
+requires a usable selected input before arming and reports the affected track
+when one is missing. Session save and shutdown wait for settlement.
+
+The [part-one plan](plan/2026-10-03-feat-count-in-part-1-plan.md) defines this
+boundary. Native standard, sanitizer, telemetry-disabled and C++ checks pass.
+Independent tests caught and repaired a countdown-cancellation ordering defect.
+The saved Pen section contains five checked native captures. The full app
+passes 2,789 tests at 91.927% coverage; all five affected package suites meet
+their required gates. Static checks cover 763 Dart files, and independent review
+has no unresolved finding. A bound native desktop build passes the paired
+Count-in/Sound interaction and all 182 FFI symbol lookups. Exact-head CI and
+human merge remain separate. Shared launch countdowns and mapped
+Count-in are the next two parts; they are not implemented by this part.
+
 ## October 2026 shared Hear click (#1026)
 
 Touch, encoder, MIDI and External controls now share Off, First recording,
@@ -23,9 +48,9 @@ Engine passes 352 against the repaired native library. Native configurations,
 affected package suites and 757-file static checks pass. Independent review
 closed callback publication, command counter width, obsolete initialization,
 recovery readout and compensated-flush defects. Author renders include the
-repaired expression choice layout. The saved Pen section still needs its final
-composite visual check, and native desktop interaction remains unverified while
-the desktop is unavailable. Published-head CI and human merge remain separate.
+repaired expression choice layout. The saved Pen section has passed its final
+composite visual check. Native desktop interaction still needs verification
+against a bound build. Published-head CI and human merge remain separate.
 
 Count-in and its Sound-start interlock are next. The future capture journal must
 extend the capture lock before stopped failed-finalization takes ship; no such

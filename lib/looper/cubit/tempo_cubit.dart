@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/click_volume.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// The tempo range the engine accepts, inclusive.
@@ -14,14 +15,6 @@ import 'package:settings_repository/settings_repository.dart';
 /// surface that submits outside it closes on a value the rig never took.
 /// Stated here so every tempo control can clamp before it writes.
 const (double, double) kTempoRange = (30, 300);
-
-/// The count-in lengths offered, in measures; `0` is off.
-///
-/// Beside the cubit that writes the value rather than in a picker, for the
-/// same reason [kMaxClickGain] is: two surfaces offer this setting — the
-/// Settings section and the console's Loop face — and a set known to only one
-/// of them is two pickers that can drift into offering different lengths.
-const List<int> kCountInBarOptions = [0, 1, 2, 4];
 
 /// What each [ClickMode] is called. One table, both surfaces.
 Map<ClickMode, String> clickModeLabels(AppLocalizations l10n) => {
@@ -78,6 +71,9 @@ class TempoSettings extends Equatable {
     this.clickVolume = 1,
     this.clickReady = false,
     this.countInBars = 0,
+    this.soundStart = false,
+    this.recordStartReady = false,
+    this.recordStartCaptureLocked = false,
   });
 
   /// The tempo in BPM; `0` means no tempo has been established.
@@ -110,6 +106,15 @@ class TempoSettings extends Equatable {
   /// Count-in length in measures (`0` = off).
   final int countInBars;
 
+  /// Confirmed Sound-start choice, mutually exclusive with positive Count-in.
+  final bool soundStart;
+
+  /// The pair has independently initialized and has no pending recovery.
+  final bool recordStartReady;
+
+  /// Actual recording or overdubbing prevents pair edits.
+  final bool recordStartCaptureLocked;
+
   /// Returns a copy with the given overrides.
   TempoSettings copyWith({
     double? bpm,
@@ -122,6 +127,9 @@ class TempoSettings extends Equatable {
     double? clickVolume,
     bool? clickReady,
     int? countInBars,
+    bool? soundStart,
+    bool? recordStartReady,
+    bool? recordStartCaptureLocked,
   }) => TempoSettings(
     bpm: bpm ?? this.bpm,
     tsNum: tsNum ?? this.tsNum,
@@ -134,6 +142,10 @@ class TempoSettings extends Equatable {
     clickVolume: clickVolume ?? this.clickVolume,
     clickReady: clickReady ?? this.clickReady,
     countInBars: countInBars ?? this.countInBars,
+    soundStart: soundStart ?? this.soundStart,
+    recordStartReady: recordStartReady ?? this.recordStartReady,
+    recordStartCaptureLocked:
+        recordStartCaptureLocked ?? this.recordStartCaptureLocked,
   );
 
   @override
@@ -148,6 +160,9 @@ class TempoSettings extends Equatable {
     clickVolume,
     clickReady,
     countInBars,
+    soundStart,
+    recordStartReady,
+    recordStartCaptureLocked,
   ];
 }
 
@@ -163,7 +178,7 @@ class TempoSettings extends Equatable {
 /// there is nothing meaningful to remember; the resulting tempo, if any, is
 /// the engine's own runtime state).
 class TempoCubit extends Cubit<TempoSettings>
-    implements ClickVolumeControl, ClickModeControl {
+    implements ClickVolumeControl, ClickModeControl, RecordStartControl {
   /// Creates a [TempoCubit] driving [repository], persisted through
   /// [settings]. Starts at the tempo-free defaults until [load] restores the
   /// saved values.
@@ -177,6 +192,21 @@ class TempoCubit extends Cubit<TempoSettings>
        _clickPollInterval = clickPollInterval,
        _clickPollAttempts = clickPollAttempts,
        super(const TempoSettings()) {
+    _startFailureSubscription = _repository.recordStartSettingsFailures.listen((
+      result,
+    ) {
+      if (!_closing &&
+          (!_startApplying || _repository.recordStartRecoveryRequired)) {
+        _reportStart(
+          RecordStartOutcome(
+            _repository.recordStartRecoveryRequired
+                ? RecordStartStatus.recoveryRequired
+                : RecordStartStatus.rejected,
+            engineResult: result,
+          ),
+        );
+      }
+    });
     _acceptedClickLifetime = clickVolumeLifetime;
     _subscription = _repository.looperState.listen(_onLooperState);
     _modeFailureSubscription = _repository.clickModeFailures.listen((result) {
@@ -272,7 +302,7 @@ class TempoCubit extends Cubit<TempoSettings>
       }
       while (!_closing && !isClosed) {
         final origin = clickModeLifetime;
-        final done = await _queueClick(() async {
+        final done = await _queueTempo(() async {
           if (_closing || isClosed) return true;
           if (origin != clickModeLifetime) return false;
           _modeApplying = true;
@@ -349,7 +379,7 @@ class TempoCubit extends Cubit<TempoSettings>
   }) async {
     final origin = lifetime ?? clickModeLifetime;
     await loadClickMode();
-    return _queueClick(() async {
+    return _queueTempo(() async {
       bool current() =>
           origin == clickModeLifetime &&
           (revision == null || revision == _modeRevision);
@@ -441,7 +471,7 @@ class TempoCubit extends Cubit<TempoSettings>
   /// Healthy compensated refusals do not poison the orderly shutdown barrier.
   Future<ClickModeOutcome> flushClickMode() async {
     await loadClickMode();
-    await _clickTail;
+    await _tempoTail;
     final wasSettled = _repository.clickModeSettled;
     final result = await _repository.settleClickMode();
     if (!_modeInitialized || _modeRecoveryPending) {
@@ -467,7 +497,7 @@ class TempoCubit extends Cubit<TempoSettings>
   /// Explicit recovery repairs storage and the current native obligation.
   Future<ClickModeOutcome> recoverClickMode() async {
     await loadClickMode();
-    final outcome = await _queueClick(() async {
+    final outcome = await _queueTempo(() async {
       if (_closing || isClosed) {
         return const ClickModeOutcome(ClickModeStatus.rejected);
       }
@@ -523,6 +553,341 @@ class TempoCubit extends Cubit<TempoSettings>
     return outcome;
   }
 
+  late final StreamSubscription<EngineResult> _startFailureSubscription;
+  Future<void>? _startLoadFuture;
+  bool _startInitialized = false;
+  bool _startApplying = false;
+  ({int? countInBars, bool? soundStart})? _startStoreRecovery;
+  final _startFailures = StreamController<RecordStartOutcome>.broadcast(
+    sync: true,
+  );
+  RecordStartOutcome _lastStartOutcome = const RecordStartOutcome(
+    RecordStartStatus.rejected,
+  );
+
+  @override
+  RecordStartSettings? get confirmedRecordStart => _startInitialized
+      ? RecordStartSettings(
+          countInBars: state.countInBars,
+          soundStart: state.soundStart,
+        )
+      : null;
+
+  @override
+  RecordStartSnapshot? get recordStartSnapshot =>
+      state.recordStartReady && !_closing && !isClosed
+      ? RecordStartSnapshot(
+          settings: confirmedRecordStart!,
+          captureLocked: state.recordStartCaptureLocked,
+        )
+      : null;
+
+  /// Current accepted pair for named-session persistence and shutdown.
+  RecordStartSettings get durableRecordStartSettings {
+    final pair = _repository.recordStartRestartIntent;
+    return RecordStartSettings(
+      countInBars: pair.countInBars,
+      soundStart: pair.soundStart,
+    );
+  }
+
+  /// Failed writes and persistent recovery obligations for the pair.
+  Stream<RecordStartOutcome> get recordStartFailures => _startFailures.stream;
+
+  bool get _startRecoveryPending =>
+      _startStoreRecovery != null || _repository.recordStartRecoveryRequired;
+  bool get _startReady =>
+      _startInitialized &&
+      !_startApplying &&
+      !_startRecoveryPending &&
+      _repository.recordStartSettingsSettled;
+  ({int sessionRevision, int mixGeneration}) get _startLifetime => (
+    sessionRevision: _repository.sessionRevision,
+    mixGeneration: _repository.mixGeneration,
+  );
+
+  RecordStartOutcome _reportStart(RecordStartOutcome outcome) {
+    if (outcome.status == RecordStartStatus.superseded) return outcome;
+    _lastStartOutcome = outcome;
+    if (!_closing && !isClosed) {
+      if (outcome.status == RecordStartStatus.recoveryRequired) {
+        emit(state.copyWith(recordStartReady: false));
+      }
+      if (!outcome.isOk) _startFailures.add(outcome);
+    }
+    return outcome;
+  }
+
+  /// Validates both saved scalars independently of miscellaneous Tempo load.
+  Future<void> loadRecordStart() => _startLoadFuture ??= _restoreRecordStart();
+
+  Future<void> _restoreRecordStart() async {
+    final session = _repository.sessionRevision;
+    try {
+      RecordStartSettings? saved;
+      try {
+        saved = RecordStartSettings.fromCheckpoint(
+          await _settings.readRecordStartCheckpoint(),
+        );
+      } on Object {
+        if (session == _repository.sessionRevision) rethrow;
+      }
+      while (!_closing && !isClosed) {
+        final origin = _startLifetime;
+        final done = await _queueTempo(() async {
+          if (_closing || isClosed) return true;
+          if (origin != _startLifetime) return false;
+          _startApplying = true;
+          try {
+            await _repository.settleRecordStartSettings();
+            if (_closing || isClosed) return true;
+            if (origin != _startLifetime) return false;
+            if (_repository.recordStartRecoveryRequired) {
+              _reportStart(
+                const RecordStartOutcome(RecordStartStatus.recoveryRequired),
+              );
+              return true;
+            }
+            if (origin.sessionRevision == session) {
+              final settings = saved!;
+              var result = _repository.setRecordStartSettings(
+                countInBars: settings.countInBars,
+                soundStart: settings.soundStart,
+                editKind: RecordStartEditKind.restore,
+              );
+              if (result.isOk) {
+                result = await _repository.settleRecordStartSettings();
+              }
+              if (_closing || isClosed) return true;
+              if (origin != _startLifetime) return false;
+              if (!result.isOk) {
+                _reportStart(
+                  RecordStartOutcome(
+                    RecordStartStatus.recoveryRequired,
+                    engineResult: result,
+                  ),
+                );
+                return true;
+              }
+            }
+            _startInitialized = true;
+            _reportStart(const RecordStartOutcome(RecordStartStatus.applied));
+            return true;
+          } finally {
+            _startApplying = false;
+            _syncFromRepository();
+          }
+        });
+        if (done) return;
+      }
+    } on Object catch (error) {
+      if (!_closing && !isClosed) {
+        _reportStart(
+          RecordStartOutcome(RecordStartStatus.recoveryRequired, error: error),
+        );
+      }
+    }
+  }
+
+  @override
+  Future<RecordStartOutcome> setCountInBars(int bars) =>
+      _writeRecordStart(countInBars: bars);
+
+  @override
+  Future<RecordStartOutcome> setSoundStart({required bool enabled}) =>
+      _writeRecordStart(soundStart: enabled);
+
+  Future<RecordStartOutcome> _writeRecordStart({
+    int? countInBars,
+    bool? soundStart,
+  }) async {
+    final origin = _startLifetime;
+    await loadRecordStart();
+    return _queueTempo(() async {
+      bool current() => origin == _startLifetime && !_closing && !isClosed;
+      if (!current()) {
+        return const RecordStartOutcome(RecordStartStatus.superseded);
+      }
+      if (!_startInitialized ||
+          _startRecoveryPending ||
+          !_repository.recordStartSettingsSettled ||
+          _repository.recordStartCaptureLocked ||
+          countInBars != null && !kCountInBarOptions.contains(countInBars)) {
+        return _reportStart(
+          RecordStartOutcome(
+            _startRecoveryPending
+                ? RecordStartStatus.recoveryRequired
+                : RecordStartStatus.rejected,
+            engineResult: EngineResult.notReady,
+          ),
+        );
+      }
+      final prior = _repository.recordStartSettings;
+      final next = RecordStartSettings(
+        countInBars: soundStart == true ? 0 : countInBars ?? prior.countInBars,
+        soundStart:
+            !(countInBars != null && countInBars > 0) &&
+            (soundStart ?? prior.soundStart),
+      );
+      ({int? countInBars, bool? soundStart})? checkpoint;
+      var attempted = false;
+      _startApplying = true;
+      try {
+        checkpoint = await _settings.readRecordStartCheckpoint();
+        if (!current()) {
+          return const RecordStartOutcome(RecordStartStatus.superseded);
+        }
+        attempted = true;
+        await _settings.saveRecordStartSettings(
+          countInBars: next.countInBars,
+          soundStart: next.soundStart,
+        );
+        if (!current()) {
+          throw const _RecordStartRefusal(RecordStartStatus.superseded);
+        }
+        if (_repository.recordStartCaptureLocked) {
+          throw const _RecordStartRefusal(RecordStartStatus.rejected);
+        }
+        var result = _repository.setRecordStartSettings(
+          countInBars: next.countInBars,
+          soundStart: next.soundStart,
+          editKind: countInBars != null
+              ? RecordStartEditKind.countIn
+              : RecordStartEditKind.sound,
+        );
+        if (result.isOk) result = await _repository.settleRecordStartSettings();
+        if (!current()) {
+          throw const _RecordStartRefusal(RecordStartStatus.superseded);
+        }
+        if (!result.isOk) {
+          throw _RecordStartRefusal(RecordStartStatus.rejected, result: result);
+        }
+        return _reportStart(
+          RecordStartOutcome(
+            RecordStartStatus.applied,
+            deferred: !_repository.sessionTransport.isRunning,
+          ),
+        );
+      } on Object catch (error) {
+        if (attempted) {
+          try {
+            await _settings.restoreRecordStartCheckpoint(checkpoint!);
+          } on Object catch (rollbackError) {
+            _startStoreRecovery = checkpoint;
+            return _reportStart(
+              RecordStartOutcome(
+                RecordStartStatus.recoveryRequired,
+                error: rollbackError,
+              ),
+            );
+          }
+        }
+        if (!current()) {
+          return const RecordStartOutcome(RecordStartStatus.superseded);
+        }
+        return _reportStart(
+          RecordStartOutcome(
+            _repository.recordStartRecoveryRequired
+                ? RecordStartStatus.recoveryRequired
+                : error is _RecordStartRefusal
+                ? error.status
+                : RecordStartStatus.rejected,
+            engineResult: error is _RecordStartRefusal ? error.result : null,
+            error: error,
+          ),
+        );
+      } finally {
+        _startApplying = false;
+        _syncFromRepository();
+      }
+    });
+  }
+
+  /// A confirmed rollback remains a healthy barrier; uncertainty does not.
+  Future<RecordStartOutcome> flushRecordStart() async {
+    await loadRecordStart();
+    await _tempoTail;
+    final wasSettled = _repository.recordStartSettingsSettled;
+    final result = await _repository.settleRecordStartSettings();
+    if (!_startInitialized || _startRecoveryPending) {
+      return _reportStart(
+        RecordStartOutcome(
+          RecordStartStatus.recoveryRequired,
+          engineResult: result,
+        ),
+      );
+    }
+    if (!wasSettled && !result.isOk) {
+      return _reportStart(
+        RecordStartOutcome(RecordStartStatus.rejected, engineResult: result),
+      );
+    }
+    _syncFromRepository();
+    return RecordStartOutcome(
+      RecordStartStatus.applied,
+      deferred: !_repository.sessionTransport.isRunning,
+    );
+  }
+
+  /// Explicit retry repairs exact scalar membership and this native lifetime.
+  Future<RecordStartOutcome> recoverRecordStart() async {
+    await loadRecordStart();
+    final outcome = await _queueTempo(() async {
+      if (_closing || isClosed) {
+        return const RecordStartOutcome(RecordStartStatus.rejected);
+      }
+      try {
+        final checkpoint = _startStoreRecovery;
+        if (checkpoint != null) {
+          await _settings.restoreRecordStartCheckpoint(checkpoint);
+          if (_closing || isClosed) {
+            return const RecordStartOutcome(RecordStartStatus.superseded);
+          }
+          _startStoreRecovery = null;
+        }
+        if (_repository.recordStartRecoveryRequired) {
+          final result = _repository.recoverRecordStartSettings();
+          if (!result.isOk) {
+            return _reportStart(
+              RecordStartOutcome(
+                RecordStartStatus.recoveryRequired,
+                engineResult: result,
+              ),
+            );
+          }
+        }
+        if (!_startInitialized) {
+          return const RecordStartOutcome(RecordStartStatus.applied);
+        }
+        final result = await _repository.settleRecordStartSettings();
+        if (!_repository.recordStartSettingsSettled || _startRecoveryPending) {
+          return _reportStart(
+            RecordStartOutcome(
+              RecordStartStatus.recoveryRequired,
+              engineResult: result,
+            ),
+          );
+        }
+        _syncFromRepository();
+        return _reportStart(
+          RecordStartOutcome(
+            RecordStartStatus.applied,
+            deferred: !_repository.sessionTransport.isRunning,
+          ),
+        );
+      } on Object catch (error) {
+        return _reportStart(
+          RecordStartOutcome(RecordStartStatus.recoveryRequired, error: error),
+        );
+      }
+    });
+    if (outcome.isOk && !_startInitialized) {
+      await _restoreRecordStart();
+      return _lastStartOutcome;
+    }
+    return outcome;
+  }
+
   final LooperRepository _repository;
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
@@ -530,7 +895,7 @@ class TempoCubit extends Cubit<TempoSettings>
   int _userEditRevision = 0;
   final Duration _clickPollInterval;
   final int _clickPollAttempts;
-  Future<void> _clickTail = Future<void>.value();
+  Future<void> _tempoTail = Future<void>.value();
   final _ordinaryClick = StreamController<double>.broadcast(sync: true);
   final _clickFailures = StreamController<ClickVolumeOutcome>.broadcast();
   bool _closing = false;
@@ -563,9 +928,9 @@ class TempoCubit extends Cubit<TempoSettings>
   /// Refusals and recovery obligations shared by both touch and controllers.
   Stream<ClickVolumeOutcome> get clickVolumeFailures => _clickFailures.stream;
 
-  Future<T> _queueClick<T>(Future<T> Function() operation) {
-    final result = _clickTail.then((_) => operation());
-    _clickTail = result.then<void>(
+  Future<T> _queueTempo<T>(Future<T> Function() operation) {
+    final result = _tempoTail.then((_) => operation());
+    _tempoTail = result.then<void>(
       (_) {},
       onError: (Object _, StackTrace _) {},
     );
@@ -576,8 +941,8 @@ class TempoCubit extends Cubit<TempoSettings>
   Future<ClickVolumeOutcome> flushClickVolume() async {
     try {
       await _loadFuture;
-      await _clickTail;
-      await _queueClick(_observeClickReplay);
+      await _tempoTail;
+      await _queueTempo(_observeClickReplay);
     } on Object catch (error) {
       return _reportClick(
         ClickVolumeOutcome(ClickVolumeStatus.rejected, error: error),
@@ -602,9 +967,15 @@ class TempoCubit extends Cubit<TempoSettings>
   }
 
   /// Session callers acquire Mixer before this gate, never the reverse.
-  Future<T> runClickExclusive<T>(Future<T> Function() operation) async {
+  Future<T> runTempoExclusive<T>(Future<T> Function() operation) async {
     await load();
-    return _queueClick(() async {
+    return _queueTempo(() async {
+      await _repository.settleRecordStartSettings();
+      if (!_startInitialized ||
+          _startRecoveryPending ||
+          !_repository.recordStartSettingsSettled) {
+        throw StateError('Recording start is unavailable for session capture');
+      }
       await _repository.settleClickMode();
       if (!_modeInitialized ||
           _modeRecoveryPending ||
@@ -643,7 +1014,7 @@ class TempoCubit extends Cubit<TempoSettings>
   }
 
   /// Reestablishes the exact preference and deferred runtime intent, stopped.
-  Future<ClickVolumeOutcome> recoverClickVolume() => _queueClick(() async {
+  Future<ClickVolumeOutcome> recoverClickVolume() => _queueTempo(() async {
     if (_clickRecovery == null && _repository.clickVolumeRecoveryRequired) {
       await _adoptClickRecovery();
     }
@@ -742,7 +1113,7 @@ class TempoCubit extends Cubit<TempoSettings>
         !_clickObservationQueued) {
       _clickObservationQueued = true;
       unawaited(
-        _queueClick(_observeClickReplay).whenComplete(() {
+        _queueTempo(_observeClickReplay).whenComplete(() {
           _clickObservationQueued = false;
         }),
       );
@@ -767,7 +1138,14 @@ class TempoCubit extends Cubit<TempoSettings>
             ? transport.clickVolume
             : state.clickVolume,
         clickReady: state.clickReady || changed && clickSettled,
-        countInBars: transport.countInBars,
+        countInBars: !_startApplying && _startInitialized
+            ? transport.countInBars
+            : state.countInBars,
+        soundStart: !_startApplying && _startInitialized
+            ? transport.autoRecord
+            : state.soundStart,
+        recordStartReady: _startReady,
+        recordStartCaptureLocked: _repository.recordStartCaptureLocked,
       ),
     );
   }
@@ -811,9 +1189,12 @@ class TempoCubit extends Cubit<TempoSettings>
   @override
   Future<void> close() async {
     _closing = true;
-    await _clickTail;
+    await _tempoTail;
     await _subscription.cancel();
     await _modeFailureSubscription.cancel();
+    await _startFailureSubscription.cancel();
+    await _startLoadFuture;
+    await _startFailures.close();
     await _modeLoadFuture;
     await _ordinaryMode.close();
     await _modeFailures.close();
@@ -827,18 +1208,16 @@ class TempoCubit extends Cubit<TempoSettings>
   Future<void> load() => _loadFuture ??= Future.wait<void>([
     _restore(),
     loadClickMode(),
+    loadRecordStart(),
   ]).then((_) {});
 
   Future<void> _restore() async {
     final sessionRevision = _repository.sessionRevision;
     final userEditRevision = _userEditRevision;
-    final recordStartRevision = _repository.recordStartRevision;
     final bpm = await _settings.loadTempoBpm();
     final (tsNum, tsDen) = await _settings.loadTimeSignature();
     final clickOutputMask = await _settings.loadClickOutputMask();
     final clickVolume = await _settings.loadClickVolume();
-    final countInBars = await _settings.loadCountInBars();
-    final autoRecord = await _settings.loadAutoRecord();
     if (isClosed) return;
     if (sessionRevision != _repository.sessionRevision ||
         userEditRevision != _userEditRevision) {
@@ -857,7 +1236,7 @@ class TempoCubit extends Cubit<TempoSettings>
       restored = restored.copyWith(clickOutputMask: clickOutputMask);
     }
     ClickVolumeOutcome? restoredClick;
-    await _queueClick(() async {
+    await _queueTempo(() async {
       if (sessionRevision != _repository.sessionRevision ||
           userEditRevision != _userEditRevision ||
           _closing ||
@@ -883,24 +1262,12 @@ class TempoCubit extends Cubit<TempoSettings>
           : state.clickVolume,
       clickReady: (restoredClick?.isOk ?? false) || state.clickReady,
     );
-    // One startup owner restores the mutually exclusive start methods. A
-    // later Sound start edit in RecordOptionsCubit also takes precedence.
-    if (recordStartRevision == _repository.recordStartRevision) {
-      if (countInBars > 0) {
-        if (_repository.setCountIn(countInBars).isOk) {
-          restored = restored.copyWith(countInBars: countInBars);
-        }
-      } else if (_repository.setAutoRecord(enabled: autoRecord).isOk &&
-          _repository.setCountIn(0).isOk) {
-        restored = restored.copyWith(countInBars: 0);
-      }
-    } else {
-      restored = restored.copyWith(
-        countInBars: _repository.sessionTransport.countInBars,
-      );
-    }
     emit(
       restored.copyWith(
+        countInBars: state.countInBars,
+        soundStart: state.soundStart,
+        recordStartReady: state.recordStartReady,
+        recordStartCaptureLocked: state.recordStartCaptureLocked,
         clickMode: state.clickMode,
         clickModeReady: state.clickModeReady,
         clickModeCaptureLocked: state.clickModeCaptureLocked,
@@ -954,7 +1321,7 @@ class TempoCubit extends Cubit<TempoSettings>
   Future<ClickVolumeOutcome> setClickVolume(double volume) {
     _userEditRevision++;
     final lifetime = clickVolumeLifetime;
-    return _queueClick(
+    return _queueTempo(
       () => _writeClickVolume(volume, lifetime: lifetime, ordinary: true),
     );
   }
@@ -964,7 +1331,7 @@ class TempoCubit extends Cubit<TempoSettings>
     double volume, {
     required ClickVolumeLifetime lifetime,
     double? releasedVolume,
-  }) => _queueClick(
+  }) => _queueTempo(
     () => _writeClickVolume(
       volume,
       releasedVolume: releasedVolume,
@@ -1149,22 +1516,6 @@ class TempoCubit extends Cubit<TempoSettings>
     );
   }
 
-  /// Sets and persists the count-in length in measures (`0` = off), applying
-  /// it now. Unconditional repository call — see [setTempo]'s doc. A
-  /// count-in clears Sound start (the engine's rule, D9), persisted here too
-  /// so a restart does not bring Sound start back over it.
-  Future<void> setCountInBars(int bars) async {
-    final clamped = bars < 0 ? 0 : bars;
-    _userEditRevision++;
-    if (!_repository.setCountIn(clamped).isOk) return;
-    emit(state.copyWith(countInBars: clamped));
-
-    await Future.wait([
-      _settings.saveCountInBars(clamped),
-      if (clamped > 0) _settings.saveAutoRecord(value: false),
-    ]);
-  }
-
   /// Registers a tempo tap; two taps within the engine's window set the
   /// tempo from their interval. A momentary action forwarded straight to the
   /// repository — never persisted (see the class doc).
@@ -1177,5 +1528,11 @@ class TempoCubit extends Cubit<TempoSettings>
 final class _ClickModeRefusal implements Exception {
   const _ClickModeRefusal(this.status, {this.result});
   final ClickModeStatus status;
+  final EngineResult? result;
+}
+
+final class _RecordStartRefusal implements Exception {
+  const _RecordStartRefusal(this.status, {this.result});
+  final RecordStartStatus status;
   final EngineResult? result;
 }

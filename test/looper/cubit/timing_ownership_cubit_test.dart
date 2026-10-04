@@ -66,7 +66,7 @@ void main() {
     await delayed.saveRecDub(value: true);
     await delayed.saveDefaultMultiple(4);
     await delayed.saveTempoBpm(120);
-    await delayed.saveCountInBars(2);
+    await delayed.saveRecordStartSettings(countInBars: 2, soundStart: false);
     return delayed;
   }
 
@@ -122,12 +122,14 @@ void main() {
       expect(quantize.state.defaultTiming, RecordTiming.immediately);
       expect(
         record.state,
-        const RecordOptions(autoRecord: true, recordLengthReady: true),
+        const RecordOptions(recordLengthReady: true),
       );
       expect(
         tempo.state,
         const TempoSettings(
           bpm: 96,
+          soundStart: true,
+          recordStartReady: true,
           clickReady: true,
           clickModeReady: true,
         ),
@@ -147,12 +149,14 @@ void main() {
       expect(quantize.state.defaultTiming, RecordTiming.immediately);
       expect(
         record.state,
-        const RecordOptions(autoRecord: true, recordLengthReady: true),
+        const RecordOptions(recordLengthReady: true),
       );
       expect(
         tempo.state,
         const TempoSettings(
           bpm: 96,
+          soundStart: true,
+          recordStartReady: true,
           clickReady: true,
           clickModeReady: true,
         ),
@@ -200,8 +204,8 @@ void main() {
       final timingEdit = quantize.setEnabled(value: false);
       await record.setRecDub(value: false);
       await tempo.setClickMode(ClickMode.off);
-      // Hear click has independent initialization. A matching start-method
-      // edit still supersedes the pending generic Tempo restore.
+      // Recording start has its own owner. Editing it must preserve the
+      // independent Tempo preference read that is still pending.
       await tempo.setCountInBars(0);
       delayed.ready.complete();
       await loads;
@@ -219,11 +223,19 @@ void main() {
       );
       expect(quantize.state.defaultTiming, RecordTiming.immediately);
       expect(record.state, const RecordOptions(recordLengthReady: true));
-      expect(tempo.state, const TempoSettings(clickModeReady: true));
+      expect(
+        tempo.state,
+        const TempoSettings(
+          bpm: 120,
+          clickReady: true,
+          clickModeReady: true,
+          recordStartReady: true,
+        ),
+      );
       expect(repository.sessionTransport.overdubDecay, 80);
       expect(repository.sessionTransport.defaultOneShot, isFalse);
       expect(repository.sessionTransport.defaultMultiple, 0);
-      expect(repository.sessionTransport.tempoBpm, 0);
+      expect(repository.sessionTransport.tempoBpm, 120);
     },
   );
 
@@ -242,7 +254,7 @@ void main() {
       expect((await tempo.setClickMode(ClickMode.off)).isOk, isTrue);
       expect(tempo.clickModeSnapshot?.mode, ClickMode.off);
       expect(tempo.state.bpm, 0);
-      expect(tempo.state.countInBars, 0);
+      expect(tempo.state.countInBars, 2);
       expect(tempo.state.clickReady, isFalse);
 
       delayed.ready.complete();
@@ -253,6 +265,7 @@ void main() {
         const TempoSettings(
           bpm: 120,
           countInBars: 2,
+          recordStartReady: true,
           clickReady: true,
           clickModeReady: true,
         ),
@@ -261,13 +274,13 @@ void main() {
       expect(repository.sessionTransport.countInBars, 2);
       expect(repository.sessionTransport.clickMode, ClickMode.off);
       expect(await delayed.loadTempoBpm(), 120);
-      expect(await delayed.loadCountInBars(), 2);
+      expect((await delayed.readRecordStartCheckpoint()).countInBars, 2);
       expect(await delayed.readClickModeCheckpoint(), 0);
     },
   );
 
   test(
-    'a matching Sound start edit invalidates delayed count-in restore',
+    'a Sound start edit preserves independent delayed Tempo preferences',
     () async {
       final delayed = await delayedSettings();
       final record = RecordOptionsCubit(
@@ -279,21 +292,20 @@ void main() {
       addTearDown(tempo.close);
       final loading = tempo.load();
       await Future<void>.delayed(Duration.zero);
-      await record.setAutoRecord(value: false);
+      expect((await tempo.setSoundStart(enabled: false)).isOk, isTrue);
       delayed.ready.complete();
       await loading;
       await poll();
 
       expect(tempo.state.bpm, 120);
-      expect(tempo.state.countInBars, 0);
-      expect(record.state.autoRecord, isFalse);
-      expect(repository.sessionTransport.countInBars, 0);
+      expect(tempo.state.countInBars, 2);
+      expect(tempo.state.soundStart, isFalse);
+      expect(repository.sessionTransport.countInBars, 2);
     },
   );
 
   test('only Tempo restores the coupled startup start methods', () async {
-    await settings.saveAutoRecord(value: true);
-    await settings.saveCountInBars(2);
+    await settings.saveRecordStartSettings(countInBars: 2, soundStart: false);
     final record = RecordOptionsCubit(
       repository: repository,
       settings: settings,
@@ -304,10 +316,34 @@ void main() {
     await Future.wait([record.load(), tempo.load()]);
     await poll();
     expect(tempo.state.countInBars, 2);
-    expect(record.state.autoRecord, isFalse);
+    expect(tempo.state.soundStart, isFalse);
+    expect(tempo.state.recordStartReady, isTrue);
     expect(repository.sessionTransport.countInBars, 2);
     expect(repository.sessionTransport.autoRecord, isFalse);
   });
+
+  test(
+    'contradictory saved start methods require recovery without coercion',
+    () async {
+      final store = FakeKeyValueStore()
+        ..values['tempo.count_in_bars'] = 2
+        ..values['looper.auto_record'] = true;
+      final invalid = SettingsRepository(store: store);
+      final record = RecordOptionsCubit(
+        repository: repository,
+        settings: invalid,
+      );
+      final tempo = TempoCubit(repository: repository, settings: invalid);
+      addTearDown(record.close);
+      addTearDown(tempo.close);
+      await Future.wait([record.load(), tempo.load()]);
+      await poll();
+      expect(tempo.recordStartSnapshot, isNull);
+      expect(tempo.state.recordStartReady, isFalse);
+      expect(store.values['tempo.count_in_bars'], 2);
+      expect(store.values['looper.auto_record'], isTrue);
+    },
+  );
 
   blocTest<PlaybackOptionsCubit, PlaybackOptions>(
     'offline playback defaults survive polling, recall and explicit reset',
@@ -387,32 +423,33 @@ void main() {
     },
   );
 
-  blocTest<RecordOptionsCubit, RecordOptions>(
-    'offline count-in and Sound start clear each other in both controls',
-    build: () => RecordOptionsCubit(repository: repository, settings: settings),
+  blocTest<TempoCubit, TempoSettings>(
+    'offline count-in and Sound edits use the same confirmed owner',
+    build: () => TempoCubit(repository: repository, settings: settings),
     act: (cubit) async {
-      final tempo = TempoCubit(repository: repository, settings: settings);
-      addTearDown(tempo.close);
-      await Future.wait([cubit.load(), tempo.load()]);
-
-      await cubit.setAutoRecord(value: true);
+      await cubit.load();
+      expect((await cubit.setSoundStart(enabled: true)).isOk, isTrue);
       await poll();
-      expect(cubit.state.autoRecord, isTrue);
-      expect(tempo.state.countInBars, 0);
-
-      await tempo.setCountInBars(2);
+      expect(cubit.state.soundStart, isTrue);
+      expect(cubit.state.countInBars, 0);
+      expect((await cubit.setCountInBars(2)).isOk, isTrue);
       await poll();
-      expect(cubit.state.autoRecord, isFalse);
-      expect(tempo.state.countInBars, 2);
-      expect(await settings.loadAutoRecord(), isFalse);
-
-      await cubit.setAutoRecord(value: true);
+      expect(cubit.state.soundStart, isFalse);
+      expect(cubit.state.countInBars, 2);
+      expect(await settings.readRecordStartCheckpoint(), (
+        countInBars: 2,
+        soundStart: false,
+      ));
+      expect((await cubit.setSoundStart(enabled: true)).isOk, isTrue);
       await poll();
-      expect(tempo.state.countInBars, 0);
-      expect(await settings.loadCountInBars(), 0);
+      expect(cubit.state.countInBars, 0);
+      expect(await settings.readRecordStartCheckpoint(), (
+        countInBars: 0,
+        soundStart: true,
+      ));
     },
     verify: (cubit) {
-      expect(cubit.state.autoRecord, isTrue);
+      expect(cubit.state.soundStart, isTrue);
       expect(repository.sessionTransport.autoRecord, isTrue);
       expect(repository.sessionTransport.countInBars, 0);
     },
@@ -457,10 +494,11 @@ void main() {
           clickVolume: 0.5,
           clickReady: true,
           countInBars: 2,
+          recordStartReady: true,
         ),
       );
       expect(await settings.loadTempoBpm(), 120);
-      expect(await settings.loadCountInBars(), 1);
+      expect((await settings.readRecordStartCheckpoint()).countInBars, 1);
       await cubit.load();
       expect(cubit.state.bpm, 96);
 
@@ -469,37 +507,43 @@ void main() {
     },
     verify: (cubit) => expect(
       cubit.state,
-      const TempoSettings(clickReady: true, clickModeReady: true),
+      const TempoSettings(
+        clickReady: true,
+        clickModeReady: true,
+        recordStartReady: true,
+      ),
     ),
   );
 
-  blocTest<RecordOptionsCubit, RecordOptions>(
+  blocTest<TempoCubit, TempoSettings>(
     'rapid start-method edits persist the last choice in both directions',
-    build: () => RecordOptionsCubit(repository: repository, settings: settings),
+    build: () => TempoCubit(repository: repository, settings: settings),
     act: (cubit) async {
-      final tempo = TempoCubit(repository: repository, settings: settings);
-      addTearDown(tempo.close);
-      await Future.wait([cubit.load(), tempo.load()]);
-
-      await Future.wait([
-        cubit.setAutoRecord(value: true),
-        tempo.setCountInBars(2),
+      await cubit.load();
+      final first = await Future.wait([
+        cubit.setSoundStart(enabled: true),
+        cubit.setCountInBars(2),
       ]);
+      expect(first.every((outcome) => outcome.isOk), isTrue);
       await poll();
-      expect(cubit.state.autoRecord, isFalse);
-      expect(tempo.state.countInBars, 2);
-      expect(await settings.loadAutoRecord(), isFalse);
-      expect(await settings.loadCountInBars(), 2);
-
-      await Future.wait([
-        tempo.setCountInBars(1),
-        cubit.setAutoRecord(value: true),
+      expect(cubit.state.soundStart, isFalse);
+      expect(cubit.state.countInBars, 2);
+      expect(await settings.readRecordStartCheckpoint(), (
+        countInBars: 2,
+        soundStart: false,
+      ));
+      final second = await Future.wait([
+        cubit.setCountInBars(1),
+        cubit.setSoundStart(enabled: true),
       ]);
+      expect(second.every((outcome) => outcome.isOk), isTrue);
       await poll();
-      expect(tempo.state.countInBars, 0);
-      expect(await settings.loadAutoRecord(), isTrue);
-      expect(await settings.loadCountInBars(), 0);
+      expect(cubit.state.countInBars, 0);
+      expect(await settings.readRecordStartCheckpoint(), (
+        countInBars: 0,
+        soundStart: true,
+      ));
     },
-    verify: (cubit) => expect(cubit.state.autoRecord, isTrue),
+    verify: (cubit) => expect(cubit.state.soundStart, isTrue),
   );
 }

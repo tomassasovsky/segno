@@ -74,13 +74,15 @@ void main() {
         );
         final tempo = TempoCubit(repository: looper, settings: settings);
         await tempo.load();
+        expect((await tempo.setCountInBars(0)).isOk, isTrue);
         final playback = PlaybackOptionsCubit(
           repository: looper,
           settings: settings,
         );
         await playback.load();
         final cubit = SessionCubit(
-          runClickExclusive: tempo.runClickExclusive,
+          runTempoExclusive: tempo.runTempoExclusive,
+          currentDurableRecordStart: () => tempo.durableRecordStartSettings,
           runPlaybackExclusive: playback.runPlaybackExclusive,
           runRecordExclusive: <T>(operation) => operation(),
           runRecordTimingExclusive: <T>(operation) => operation(),

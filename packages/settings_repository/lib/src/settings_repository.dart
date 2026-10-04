@@ -205,7 +205,7 @@ class SettingsRepository {
   final KeyValueStore _store;
   Future<void> _serializedWrite = Future<void>.value();
 
-  Future<void> _serialize(Future<void> Function() write) {
+  Future<T> _serialize<T>(Future<T> Function() write) {
     final operation = _serializedWrite.then((_) => write());
     _serializedWrite = operation.then<void>(
       (_) {},
@@ -728,15 +728,6 @@ class SettingsRepository {
 
   static const String _autoRecordKey = 'looper.auto_record';
 
-  /// Whether recording is sound-activated (starts on input). Defaults to
-  /// `false`.
-  Future<bool> loadAutoRecord() async =>
-      await _store.getBool(_autoRecordKey) ?? false;
-
-  /// Saves the sound-activated recording preference.
-  Future<void> saveAutoRecord({required bool value}) =>
-      _store.setBool(_autoRecordKey, value: value);
-
   String _trackMultipleKey(int channel) => 'track_multiple.$channel';
 
   /// Loads track [channel]'s forced loop multiple (`0` = auto; `0` if unset).
@@ -866,15 +857,58 @@ class SettingsRepository {
 
   static const String _countInBarsKey = 'tempo.count_in_bars';
 
-  /// Loads the count-in length in measures (`0` = off). Defaults to `0`
-  /// (off) when unset — the wire default per A2, not the UI-suggested
-  /// starting point of one bar.
-  Future<int> loadCountInBars() async =>
-      await _store.getInt(_countInBarsKey) ?? 0;
+  /// Reads both exact scalar memberships under the shared storage barrier.
+  /// Absence is left undecoded; the application owns its default choice.
+  Future<({int? countInBars, bool? soundStart})> readRecordStartCheckpoint() =>
+      _serialize(_readRecordStartCheckpoint);
 
-  /// Saves the count-in length in measures (`0` = off).
-  Future<void> saveCountInBars(int bars) =>
-      _store.setInt(_countInBarsKey, bars);
+  Future<({int? countInBars, bool? soundStart})>
+  _readRecordStartCheckpoint() async {
+    final bars = await _store.getInt(_countInBarsKey);
+    final sound = await _store.getBool(_autoRecordKey);
+    _validateRecordStart(bars, sound);
+    return (countInBars: bars, soundStart: sound);
+  }
+
+  void _validateRecordStart(int? bars, bool? sound) {
+    if (bars != null && !const [0, 1, 2, 4].contains(bars) ||
+        bars != null && bars > 0 && sound == true) {
+      throw const FormatException('Invalid recording-start pair');
+    }
+  }
+
+  /// Saves and verifies the complete ordinary recording-start choice.
+  Future<void> saveRecordStartSettings({
+    required int countInBars,
+    required bool soundStart,
+  }) => restoreRecordStartCheckpoint((
+    countInBars: countInBars,
+    soundStart: soundStart,
+  ));
+
+  /// Restores both scalars, including their exact independent absence.
+  Future<void> restoreRecordStartCheckpoint(
+    ({int? countInBars, bool? soundStart}) checkpoint,
+  ) {
+    _validateRecordStart(checkpoint.countInBars, checkpoint.soundStart);
+    return _serialize(() async {
+      final bars = checkpoint.countInBars;
+      final sound = checkpoint.soundStart;
+      if (bars == null) {
+        await _store.remove(_countInBarsKey);
+      } else {
+        await _store.setInt(_countInBarsKey, bars);
+      }
+      if (sound == null) {
+        await _store.remove(_autoRecordKey);
+      } else {
+        await _store.setBool(_autoRecordKey, value: sound);
+      }
+      if (await _readRecordStartCheckpoint() != checkpoint) {
+        throw StateError('Recording-start checkpoint was not restored');
+      }
+    });
+  }
 
   // ---- looper mode (B2a, D4) ----
 

@@ -4,6 +4,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -103,6 +104,7 @@ SessionSettings settingsFromLooper(
   LooperRepository looper, {
   required double clickVolume,
   required ClickMode clickMode,
+  required RecordStartSettings recordStart,
   required DecaySnapshot decay,
   required OneShotSnapshot oneShot,
   required RecordLengthSnapshot recordLength,
@@ -152,9 +154,9 @@ SessionSettings settingsFromLooper(
     clickMode: clickMode,
     clickMask: transport.clickMask,
     clickVolume: clickVolume,
-    countInBars: transport.countInBars,
+    countInBars: recordStart.countInBars,
     recDub: transport.recDub,
-    autoRecord: transport.autoRecord,
+    autoRecord: recordStart.soundStart,
     defaultMultiple: transport.defaultMultiple,
     looperMode: transport.looperMode,
     primaryTrack: transport.primaryTrack,

@@ -59,9 +59,6 @@ void main() {
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setAutoRecord(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
       () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
     when(() => repository.setDefaultLengthPreset(any())).thenAnswer((call) {
@@ -78,7 +75,7 @@ void main() {
       RecordOptionsCubit(repository: repository, settings: settings);
 
   group('RecordOptionsCubit', () {
-    test('defaults to both off', () {
+    test('defaults to RecDub off', () {
       expect(build().state, const RecordOptions());
     });
 
@@ -86,7 +83,6 @@ void main() {
       'load restores persisted options and applies them',
       setUp: () async {
         await settings.saveRecDub(value: true);
-        await settings.saveAutoRecord(value: true);
       },
       build: build,
       act: (cubit) => cubit.load(),
@@ -96,9 +92,6 @@ void main() {
       ],
       verify: (_) {
         verify(() => repository.setRecDub(enabled: true)).called(1);
-        verifyNever(
-          () => repository.setAutoRecord(enabled: any(named: 'enabled')),
-        );
       },
     );
 
@@ -110,17 +103,6 @@ void main() {
       verify: (_) async {
         verify(() => repository.setRecDub(enabled: true)).called(1);
         expect(await settings.loadRecDub(), isTrue);
-      },
-    );
-
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'setAutoRecord emits, applies, and persists',
-      build: build,
-      act: (cubit) => cubit.setAutoRecord(value: true),
-      expect: () => [const RecordOptions(autoRecord: true)],
-      verify: (_) async {
-        verify(() => repository.setAutoRecord(enabled: true)).called(1);
-        expect(await settings.loadAutoRecord(), isTrue);
       },
     );
 
@@ -200,52 +182,15 @@ void main() {
     );
 
     blocTest<RecordOptionsCubit, RecordOptions>(
-      'turning Sound start on persists the count-in as off (the engine '
-      'clears it, D9)',
-      setUp: () => settings.saveCountInBars(2),
-      build: build,
-      act: (cubit) => cubit.setAutoRecord(value: true),
-      expect: () => [const RecordOptions(autoRecord: true)],
-      verify: (_) async {
-        expect(await settings.loadAutoRecord(), isTrue);
-        expect(await settings.loadCountInBars(), 0);
-      },
-    );
-
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'follows repository Sound start changes without persisting a recall',
-      setUp: () => settings.saveAutoRecord(value: true),
-      build: build,
-      act: (cubit) async {
-        await cubit.load();
-        looperStates.add(
-          const LooperState(transport: TransportState(autoRecord: true)),
-        );
-        await Future<void>.delayed(Duration.zero);
-        looperStates.add(
-          const LooperState(transport: TransportState(countInBars: 1)),
-        );
-        await Future<void>.delayed(Duration.zero);
-      },
-      expect: () => [
-        const RecordOptions(),
-        const RecordOptions(recordLengthReady: true),
-        const RecordOptions(autoRecord: true, recordLengthReady: true),
-        const RecordOptions(recordLengthReady: true),
-      ],
-      verify: (_) async => expect(await settings.loadAutoRecord(), isTrue),
-    );
-
-    blocTest<RecordOptionsCubit, RecordOptions>(
       'follows the repository before load without overwriting saved defaults',
-      setUp: () => settings.saveAutoRecord(value: true),
+      setUp: () => settings.saveRecDub(value: true),
       build: build,
       act: (cubit) async {
         looperStates.add(const LooperState());
         await Future<void>.delayed(Duration.zero);
       },
       expect: () => [const RecordOptions()],
-      verify: (_) async => expect(await settings.loadAutoRecord(), isTrue),
+      verify: (_) async => expect(await settings.loadRecDub(), isTrue),
     );
 
     blocTest<RecordOptionsCubit, RecordOptions>(
@@ -253,26 +198,20 @@ void main() {
       build: build,
       act: (cubit) async {
         await cubit.setRecDub(value: false);
-        await cubit.setAutoRecord(value: false);
         await cubit.setDefaultMultiple(0);
       },
       expect: () => [const RecordOptions()],
       verify: (_) {
         verify(() => repository.setRecDub(enabled: false)).called(1);
-        verify(() => repository.setAutoRecord(enabled: false)).called(1);
         verify(() => repository.setDefaultMultiple(multiple: 0)).called(1);
       },
     );
 
     blocTest<RecordOptionsCubit, RecordOptions>(
-      'refused edits preserve displayed choices and both saved start methods',
-      setUp: () async {
-        await settings.saveCountInBars(2);
+      'refused edits preserve displayed and saved recording options',
+      setUp: () {
         when(
           () => repository.setRecDub(enabled: true),
-        ).thenReturn(EngineResult.invalid);
-        when(
-          () => repository.setAutoRecord(enabled: true),
         ).thenReturn(EngineResult.invalid);
         when(
           () => repository.setDefaultMultiple(multiple: 2),
@@ -281,15 +220,12 @@ void main() {
       build: build,
       act: (cubit) async {
         await cubit.setRecDub(value: true);
-        await cubit.setAutoRecord(value: true);
         await cubit.setDefaultMultiple(2);
       },
       expect: () => <RecordOptions>[],
       verify: (_) async {
         expect(await settings.loadRecDub(), isFalse);
-        expect(await settings.loadAutoRecord(), isFalse);
         expect(await settings.loadDefaultMultiple(), 0);
-        expect(await settings.loadCountInBars(), 2);
       },
     );
 
@@ -301,7 +237,6 @@ void main() {
           const LooperState(
             transport: TransportState(
               recDub: true,
-              autoRecord: true,
               defaultMultiple: 3,
             ),
           ),
@@ -311,7 +246,7 @@ void main() {
         await Future<void>.delayed(Duration.zero);
       },
       expect: () => [
-        const RecordOptions(recDub: true, autoRecord: true, defaultMultiple: 3),
+        const RecordOptions(recDub: true, defaultMultiple: 3),
         const RecordOptions(),
       ],
       verify: (_) async {

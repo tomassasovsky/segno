@@ -348,7 +348,7 @@ jobs:
       - name: Run the native-backed shared control session tests
         run: |
           test -s "$SEGNO_ENGINE_LIB"
-          flutter test test/session/record_timing_persistence_test.dart test/session/click_persistence_test.dart
+          flutter test test/session/record_timing_persistence_test.dart test/session/click_persistence_test.dart test/session/record_start_persistence_test.dart
       # Root tests do not traverse package test directories. Exercise the Dart
       # engine bridge here against the same native library built above.
       - name: Run the segno_engine package tests

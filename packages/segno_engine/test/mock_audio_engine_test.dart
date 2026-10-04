@@ -725,7 +725,14 @@ void main() {
         );
         expect(engine.setClickOutput(0x3), EngineResult.notRunning);
         expect(engine.setClickVolume(0.5), EngineResult.notRunning);
-        expect(engine.setCountIn(2), EngineResult.notRunning);
+        expect(
+          engine.setRecordStartSettings(
+            countInBars: 2,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+          ),
+          EngineResult.notRunning,
+        );
         expect(
           engine.setTrackLengthPreset(channel: 0, bars: 4),
           EngineResult.notRunning,
@@ -871,19 +878,50 @@ void main() {
         },
       );
 
-      test('setCountIn accepts 0..LE_COUNT_IN_MAX_BARS and rejects beyond', () {
-        engine.start(engine.defaultConfig);
-        expect(engine.setCountIn(2), EngineResult.ok);
-        expect(engine.snapshot().countInBars, 2);
+      test(
+        'record-start pair accepts supported bars and rejects other values',
+        () {
+          engine.start(engine.defaultConfig);
+          expect(
+            engine.setRecordStartSettings(
+              countInBars: 2,
+              soundStart: false,
+              editKind: RecordStartEditKind.countIn,
+            ),
+            EngineResult.ok,
+          );
+          expect(engine.snapshot().countInBars, 2);
 
-        expect(engine.setCountIn(0), EngineResult.ok);
-        expect(engine.snapshot().countInBars, 0);
+          expect(
+            engine.setRecordStartSettings(
+              countInBars: 0,
+              soundStart: false,
+              editKind: RecordStartEditKind.countIn,
+            ),
+            EngineResult.ok,
+          );
+          expect(engine.snapshot().countInBars, 0);
 
-        expect(engine.setCountIn(-1), EngineResult.invalid);
-        expect(engine.setCountIn(65), EngineResult.invalid);
-        // A rejected value does not change the published state.
-        expect(engine.snapshot().countInBars, 0);
-      });
+          expect(
+            engine.setRecordStartSettings(
+              countInBars: -1,
+              soundStart: false,
+              editKind: RecordStartEditKind.countIn,
+            ),
+            EngineResult.invalid,
+          );
+          expect(
+            engine.setRecordStartSettings(
+              countInBars: 65,
+              soundStart: false,
+              editKind: RecordStartEditKind.countIn,
+            ),
+            EngineResult.invalid,
+          );
+          // A rejected value does not change the published state.
+          expect(engine.snapshot().countInBars, 0);
+        },
+      );
 
       test(
         'setTrackLengthPreset accepts 0..LE_LENGTH_PRESET_MAX_BARS and '
@@ -983,7 +1021,11 @@ void main() {
           ..start(engine.defaultConfig)
           ..setTempo(150)
           ..setClickMode(ClickMode.rec)
-          ..setCountIn(2)
+          ..setRecordStartSettings(
+            countInBars: 2,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+          )
           ..stop()
           ..start(engine.defaultConfig);
         final s = engine.snapshot();

@@ -80,6 +80,7 @@ class LoopSettingsHub extends StatelessWidget {
     // Tempo page's slider holds; the live transport value only differs
     // while a tap or a derived tempo has moved the engine.
     final tempo = context.watch<TempoCubit>().state;
+    final confirmedStart = context.watch<TempoCubit>().confirmedRecordStart;
     final bpm = values.bpm > 0 ? values.bpm : tempo.bpm;
     final signature = timeSignatureLabel(values.tsNum, values.tsDen);
     final order = options.recDub
@@ -94,7 +95,11 @@ class LoopSettingsHub extends StatelessWidget {
       (
         LoopSettingsPageId.recording,
         l10n.loopHubRecording,
-        options.autoRecord ? l10n.loopSummarySound(order) : order,
+        confirmedStart == null
+            ? l10n.recordStartUnavailable
+            : confirmedStart.soundStart
+            ? l10n.loopSummarySound(order)
+            : order,
       ),
       (
         LoopSettingsPageId.tempo,
