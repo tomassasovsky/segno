@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -32,7 +33,7 @@ void main() {
     final store = _GatedLengthStore();
     final settings = SettingsRepository(store: store);
     await settings.saveLooperMode(LooperMode.free.code);
-    final owner = RecordOptionsCubit(
+    final owner = RecordSettings(
       repository: repository,
       settings: settings,
     );

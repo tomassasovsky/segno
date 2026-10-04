@@ -19,6 +19,8 @@ import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
@@ -34,8 +36,8 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_key_value_store.dart';
-import '../helpers/mock_click_tempo_cubit.dart';
-import '../helpers/mock_decay_playback_cubit.dart';
+import '../helpers/mock_click_tempo_settings.dart';
+import '../helpers/mock_decay_playback_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -47,11 +49,11 @@ void main() {
   late StreamController<LooperState> looperStates;
   late SettingsRepository settings;
   late ControlCubit control;
-  late RecordOptionsCubit record;
+  late RecordSettings record;
   late RecordTimingCubit timing;
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
-  late MockClickTempoCubit tempo;
+  late MockClickTempoSettings tempo;
 
   const drive = FxSlotTarget(
     address: FxAddress(stage: FxStage.track),
@@ -182,8 +184,11 @@ void main() {
     OneShotSnapshot? oneShotSnapshot,
   }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
-    await settings.saveQuantize(value: false);
-    await settings.saveQuantizeDiv(GridDivision.off.code);
+    await settings.restoreRecordTimingCheckpoint((
+      quantize: false,
+      division: GridDivision.off.code,
+      trackOverrides: {},
+    ));
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -201,18 +206,26 @@ void main() {
     addTearDown(() => unawaited(mixSettings.close()));
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
-    tempo = MockClickTempoCubit(clickVolume: clickVolume);
+    tempo = MockClickTempoSettings(clickVolume: clickVolume);
+    final closeTempo = tempo.close;
+    addTearDown(() => unawaited(closeTempo()));
     when(() => tempo.clickModeSnapshot).thenReturn(clickModeSnapshot);
-    final playback = MockDecayPlaybackCubit(
+    final playback = MockDecayPlaybackSettings(
       snapshot: decaySnapshot,
       oneShot: oneShotSnapshot,
     );
-    record = RecordOptionsCubit(repository: looper, settings: settings);
+    addTearDown(playback.close);
+    record = RecordSettings(repository: looper, settings: settings);
     addTearDown(() => unawaited(record.close()));
     await record.load();
-    timing = RecordTimingCubit(repository: looper, settings: settings);
+    final timingOwner = RecordTimingSettings(
+      repository: looper,
+      settings: settings,
+    );
+    addTearDown(() => unawaited(timingOwner.close()));
+    timing = RecordTimingCubit(settings: timingOwner);
     addTearDown(() => unawaited(timing.close()));
-    await timing.load();
+    await timingOwner.load();
     control = ControlCubit(
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
@@ -221,7 +234,7 @@ void main() {
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,
-      recordTimingControl: timing,
+      recordTimingControl: timingOwner,
       mixSettings: mixSettings,
       pedal: pedal,
       settings: settings,
@@ -264,9 +277,15 @@ void main() {
               BlocProvider.value(value: control),
               BlocProvider.value(value: tracks),
               BlocProvider.value(value: pedalCubit),
-              BlocProvider<TempoCubit>.value(value: tempo),
-              BlocProvider<PlaybackOptionsCubit>.value(value: playback),
-              BlocProvider<RecordOptionsCubit>.value(value: record),
+              BlocProvider<TempoCubit>(
+                create: (_) => TempoCubit(settings: tempo),
+              ),
+              BlocProvider<PlaybackOptionsCubit>(
+                create: (_) => PlaybackOptionsCubit(settings: playback),
+              ),
+              BlocProvider<RecordOptionsCubit>(
+                create: (_) => RecordOptionsCubit(settings: record),
+              ),
               BlocProvider<RecordTimingCubit>.value(value: timing),
             ],
             child: const ExternalPedalPage(),
@@ -333,6 +352,17 @@ void main() {
       saved().activations.single,
       const ExternalActivation(target: drive),
     );
+  });
+
+  testWidgets('a removed effect cannot be added from an open picker', (
+    tester,
+  ) async {
+    await pump(tester);
+    await openPicker(tester);
+    when(() => looper.trackEffects(0)).thenReturn(const []);
+    await tap(tester, 'external_pick_${externalControlKey(drive)}');
+    expect(find.byKey(const Key('external_condition_on')), findsNothing);
+    expect(saved().activations, isEmpty);
   });
 
   testWidgets('keyboard opens destination, picks control, and selects row', (
@@ -696,6 +726,7 @@ void main() {
     await tap(tester, 'expression_kind_output');
     await tap(tester, 'expression_destination_click');
     when(() => tempo.clickVolume).thenReturn(null);
+    tempo.publish();
     await tap(
       tester,
       'external_pick_${externalControlKey(const ClickVolumeTarget())}',

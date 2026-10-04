@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno_engine/segno_engine.dart'
     show EngineSnapshot, TrackSnapshot;
@@ -91,7 +91,7 @@ void main() {
     late _Engine engine;
     late LooperRepository repository;
     late _Store store;
-    late RecordOptionsCubit owner;
+    late RecordSettings owner;
     setUp(() {
       engine = _Engine();
       repository = LooperRepository(
@@ -99,7 +99,7 @@ void main() {
         ticker: const Stream.empty(),
       );
       store = _Store()..values['looper.mode'] = LooperMode.free.code;
-      owner = RecordOptionsCubit(
+      owner = RecordSettings(
         repository: repository,
         settings: SettingsRepository(store: store),
       );

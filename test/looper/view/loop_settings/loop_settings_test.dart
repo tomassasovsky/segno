@@ -9,6 +9,10 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
@@ -42,6 +46,7 @@ const _rig = LooperState(
 );
 
 void main() {
+  late TempoSettings tempoOwner;
   late _MockLooperBloc bloc;
   late _MockLooperRepository repository;
   late FakeKeyValueStore store;
@@ -504,7 +509,8 @@ void main() {
   }
 
   late TempoCubit tempo;
-  late RecordOptionsCubit options;
+  late RecordSettings options;
+  late PlaybackSettings playbackOwner;
   late PlaybackOptionsCubit playback;
   late RecordTimingCubit timing;
   late TracksCubit tracks;
@@ -518,6 +524,7 @@ void main() {
     ClickMode? savedClickMode,
     int? savedCountIn,
     bool loadRecordStart = true,
+    ValueNotifier<Key>? pageIdentity,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -543,36 +550,69 @@ void main() {
     for (final entry in confirmedTrackLengths.entries) {
       await settings.saveTrackLengthPreset(entry.key, entry.value);
     }
-    await settings.saveOverdubDecay(confirmedDecay);
+    await settings.restoreDecayCheckpoint(
+      channel: null,
+      percent: confirmedDecay,
+    );
     for (final entry in confirmedTrackDecay.entries) {
-      await settings.saveTrackOverdubDecay(entry.key, entry.value);
+      await settings.restoreDecayCheckpoint(
+        channel: entry.key,
+        percent: entry.value,
+      );
     }
-    await settings.saveDefaultOneShot(oneShot: confirmedOneShot);
+    await settings.restoreOneShotCheckpoint(
+      channel: null,
+      oneShot: confirmedOneShot,
+    );
     for (final entry in confirmedTrackOneShot.entries) {
-      await settings.saveTrackOneShot(entry.key, oneShot: entry.value);
+      await settings.restoreOneShotCheckpoint(
+        channel: entry.key,
+        oneShot: entry.value,
+      );
     }
-    await settings.saveQuantize(value: confirmedTiming.quantize);
-    await settings.saveQuantizeDiv(rememberedDivision.code);
-    for (final entry in confirmedTrackTiming.entries) {
-      await settings.saveTrackRecordTiming(entry.key, entry.value.code);
-    }
-    tempo = TempoCubit(repository: repository, settings: settings);
-    await tempo.loadClickMode();
-    if (loadRecordStart) await tempo.loadRecordStart();
-    options = RecordOptionsCubit(repository: repository, settings: settings);
-    playback = PlaybackOptionsCubit(repository: repository, settings: settings);
-    await playback.load();
+    await settings.restoreRecordTimingCheckpoint((
+      quantize: confirmedTiming.quantize,
+      division: rememberedDivision.code,
+      trackOverrides: {
+        for (final entry in confirmedTrackTiming.entries)
+          entry.key: entry.value.code,
+      },
+    ));
+    tempoOwner = TempoSettings(
+      repository: repository,
+      settings: settings,
+    );
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    tempo = TempoCubit(settings: tempoOwner);
+    await tempoOwner.loadClickMode();
+    if (loadRecordStart) await tempoOwner.loadRecordStart();
+    options = RecordSettings(repository: repository, settings: settings);
+    playbackOwner = PlaybackSettings(
+      repository: repository,
+      settings: settings,
+    );
+    final closePlaybackOwner = playbackOwner.close;
+    addTearDown(() => unawaited(closePlaybackOwner()));
+    await playbackOwner.load();
+    playback = PlaybackOptionsCubit(settings: playbackOwner);
     await options.load();
-    timing = RecordTimingCubit(repository: repository, settings: settings);
-    await timing.load();
+    final timingOwner = RecordTimingSettings(
+      repository: repository,
+      settings: settings,
+    );
+    addTearDown(() => unawaited(timingOwner.close()));
+    timing = RecordTimingCubit(settings: timingOwner);
+    await timingOwner.load();
     tracks = TracksCubit(settings: settings);
     tray = SettingsTrayCubit(settings: settings);
     if (fromTray) tray.open();
     addTearDown(tray.close);
     resetSegnoNavigatorForTest();
+    final closeRecordOwner = options.close;
+    addTearDown(() => unawaited(closeRecordOwner()));
     for (final cubit in <BlocBase<Object?>>[
       tempo,
-      options,
       playback,
       timing,
       tracks,
@@ -586,7 +626,7 @@ void main() {
           providers: [
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider.value(value: tempo),
-            BlocProvider.value(value: options),
+            BlocProvider(create: (_) => RecordOptionsCubit(settings: options)),
             BlocProvider.value(value: playback),
             BlocProvider.value(value: timing),
             BlocProvider.value(value: tracks),
@@ -622,7 +662,13 @@ void main() {
                       ],
                     ),
                   )
-                : LoopSettingsPage(initial: initial),
+                : pageIdentity == null
+                ? LoopSettingsPage(initial: initial)
+                : ValueListenableBuilder<Key>(
+                    valueListenable: pageIdentity,
+                    builder: (_, key, _) =>
+                        LoopSettingsPage(key: key, initial: initial),
+                  ),
           ),
         ),
       ),
@@ -670,6 +716,60 @@ void main() {
     expect(await settings.loadDefaultLengthPreset(), 0);
     verifyNever(() => repository.settleLengthSettings());
   });
+
+  for (final remount in [false, true]) {
+    testWidgets(
+      'late Use default refusal belongs only to its page (remount $remount)',
+      (tester) async {
+        final pageIdentity = ValueNotifier<Key>(UniqueKey());
+        addTearDown(pageIdentity.dispose);
+        await pump(
+          tester,
+          initial: LoopSettingsPageId.length,
+          pageIdentity: pageIdentity,
+          state: const LooperState(
+            tracks: [Track(lengthPresetOverride: 6)],
+            transport: TransportState(looperMode: LooperMode.song),
+          ),
+        );
+        await tester.tap(find.byKey(const Key('loop_scope_track_0')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('loop_length_use_default')),
+          findsOneWidget,
+        );
+        final receipt = Completer<EngineResult>();
+        var observedReceipt = false;
+        when(
+          () => repository.setTrackLengthPreset(channel: 0, bars: null),
+        ).thenReturn(EngineResult.ok);
+        when(() => repository.settleLengthSettings()).thenAnswer((_) {
+          observedReceipt = true;
+          return receipt.future;
+        });
+        await tester.tap(find.byKey(const Key('loop_length_use_default')));
+        await tester.pumpAndSettle();
+        expect(observedReceipt, isTrue);
+        expect(options.state.trackLengthPresetOverrides, {0: 6});
+        if (remount) {
+          pageIdentity.value = UniqueKey();
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('loop_scope_track_0')));
+          await tester.pumpAndSettle();
+        }
+        receipt.complete(EngineResult.invalid);
+        await tester.pumpAndSettle();
+        final l10n = l10nOf(tester);
+        expect(options.state.trackLengthPresetOverrides, {0: 6});
+        expect(await settings.loadTrackLengthPreset(0), 6);
+        expect(
+          find.text(l10n.loopLengthNotApplied(l10n.lengthPresetBars(6))),
+          remount ? findsNothing : findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('callback refusal is visible on the mode page', (tester) async {
     final failures = StreamController<EngineResult>.broadcast();
@@ -907,8 +1007,8 @@ void main() {
       expect(find.text(l10n.loopRecordingNoteCountIn(1)), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_recording_sound')));
       await tester.pumpAndSettle();
-      expect(tempo.confirmedRecordStart?.soundStart, isTrue);
-      expect(tempo.confirmedRecordStart?.countInBars, 0);
+      expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
+      expect(tempo.state.confirmedRecordStart?.countInBars, 0);
       expect(find.text(l10n.loopRecordingNoteSound), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_recording_overdub')));
       await tester.pumpAndSettle();
@@ -934,12 +1034,12 @@ void main() {
       await pump(tester, initial: LoopSettingsPageId.recording);
       await tester.tap(find.byKey(const Key('loop_recording_sound')));
       await tester.pumpAndSettle();
-      expect(tempo.confirmedRecordStart?.soundStart, isTrue);
+      expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
 
       recordStartRecovery = true;
       states.add(currentRig);
       await tester.pumpAndSettle();
-      expect(tempo.recordStartSnapshot, isNull);
+      expect(tempo.state.recordStartSnapshot, isNull);
       final sound = tester.widget<LoopChoiceButton>(
         find.byKey(const Key('loop_recording_sound')),
       );
@@ -959,7 +1059,7 @@ void main() {
       expect(find.byKey(const Key('loop_lock_banner')), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_recording_sound')));
       await tester.pumpAndSettle();
-      expect(tempo.confirmedRecordStart?.soundStart, isFalse);
+      expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
     });
   });
 
@@ -969,7 +1069,7 @@ void main() {
     ) async {
       await pump(tester, initial: LoopSettingsPageId.tempo);
       expect(find.byKey(const Key('loop_tempo_readout')), findsOneWidget);
-      expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
+      expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
       await tester.tap(find.byKey(const Key('loop_click_playRec')));
       await tester.pumpAndSettle();
       expect(tempo.state.clickMode, ClickMode.playRec);
@@ -988,7 +1088,7 @@ void main() {
         initial: LoopSettingsPageId.tempo,
         loadRecordStart: false,
       );
-      expect(tempo.confirmedRecordStart, isNull);
+      expect(tempo.state.confirmedRecordStart, isNull);
       for (final bars in const [0, 1, 2, 4]) {
         final choice = tester.widget<LoopChoiceButton>(
           find.byKey(Key('loop_count_in_$bars')),
@@ -1010,13 +1110,13 @@ void main() {
         initial: LoopSettingsPageId.tempo,
         savedCountIn: 2,
       );
-      expect(tempo.confirmedRecordStart?.countInBars, 2);
+      expect(tempo.state.confirmedRecordStart?.countInBars, 2);
       for (final recovering in const [false, true]) {
         recordStartSettled = recovering;
         recordStartRecovery = recovering;
         states.add(currentRig);
         await tester.pumpAndSettle();
-        expect(tempo.recordStartSnapshot, isNull);
+        expect(tempo.state.recordStartSnapshot, isNull);
         final selected = tester.widget<LoopChoiceButton>(
           find.byKey(const Key('loop_count_in_2')),
         );
@@ -1058,7 +1158,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(tempo.recordStartSnapshot?.captureLocked, isTrue);
+      expect(tempo.state.recordStartSnapshot?.captureLocked, isTrue);
       final selected = tester.widget<LoopChoiceButton>(
         find.byKey(const Key('loop_count_in_2')),
       );
@@ -1084,7 +1184,7 @@ void main() {
         initial: LoopSettingsPageId.tempo,
         savedClickMode: ClickMode.off,
       );
-      expect(tempo.clickModeSnapshot?.mode, ClickMode.off);
+      expect(tempo.state.clickModeSnapshot?.mode, ClickMode.off);
       expect(
         tester
             .widget<LoopChoiceButton>(
@@ -1099,7 +1199,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(tempo.clickModeSnapshot?.captureLocked, isTrue);
+      expect(tempo.state.clickModeSnapshot?.captureLocked, isTrue);
       expect(
         tester
             .widget<LoopChoiceButton>(
@@ -1129,7 +1229,7 @@ void main() {
         EngineResult.notReady,
       );
       await pump(tester, initial: LoopSettingsPageId.tempo);
-      expect(tempo.clickModeSnapshot, isNull);
+      expect(tempo.state.clickModeSnapshot, isNull);
       expect(
         tester
             .widget<LoopChoiceButton>(
@@ -1157,7 +1257,7 @@ void main() {
         initial: LoopSettingsPageId.tempo,
         savedClickMode: ClickMode.recFirst,
       );
-      expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
+      expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
       when(() => repository.clickModeRecoveryRequired).thenReturn(true);
       states.add(_rig);
       await tester.pumpAndSettle();

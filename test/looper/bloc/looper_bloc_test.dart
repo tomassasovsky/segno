@@ -6,12 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_timing.dart';
-import 'package:segno_engine/segno_engine.dart'
-    show EngineSnapshot, TrackSnapshot;
-import 'package:segno_engine/segno_engine.dart' as le show LatencyState;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -688,7 +686,7 @@ void main() {
   late SettingsRepository trackSettings;
   LooperBloc buildBlocWithSettings() {
     trackSettings = SettingsRepository(store: FakeKeyValueStore());
-    final playback = PlaybackOptionsCubit(
+    final playback = PlaybackSettings(
       repository: repository,
       settings: trackSettings,
     );
@@ -736,7 +734,7 @@ void main() {
     act: (bloc) => bloc.add(const LooperOneShotToggled(2, oneShot: true)),
     verify: (_) async {
       verify(() => repository.setOneShot(channel: 2, oneShot: true)).called(1);
-      expect(await trackSettings.loadTrackOneShot(2), isTrue);
+      expect(await trackSettings.readOneShotCheckpoint(channel: 2), isTrue);
     },
   );
 
@@ -1066,7 +1064,7 @@ void main() {
       verify(
         () => repository.setTrackOverdubDecay(channel: 1, percent: 40),
       ).called(1);
-      expect(await trackSettings.loadTrackOverdubDecay(1), 40);
+      expect(await trackSettings.readDecayCheckpoint(channel: 1), 40);
     },
   );
 
@@ -1108,8 +1106,11 @@ void main() {
       ..add(const LooperTrackRecordTimingChanged(2, timing: RecordTiming.bar))
       ..add(const LooperTrackOverdubDecayChanged(2, percent: 40)),
     verify: (_) async {
-      expect(await trackSettings.loadTrackRecordTiming(2), isNull);
-      expect(await trackSettings.loadTrackOverdubDecay(2), isNull);
+      expect(
+        (await trackSettings.readRecordTimingCheckpoint()).trackOverrides[2],
+        isNull,
+      );
+      expect(await trackSettings.readDecayCheckpoint(channel: 2), isNull);
     },
   );
 
@@ -3191,7 +3192,7 @@ void main() {
         try {
           clock.flushMicrotasks();
 
-          bloc.add(const LooperSessionLoaded());
+          when(() => repository.sessionRevision).thenReturn(1);
           clock
             ..flushMicrotasks()
             ..elapse(debounce * 3);
@@ -3257,264 +3258,4 @@ void main() {
       verifyNever(() => repository.play(channel: 2));
     },
   );
-
-  // A REAL repository over the fake engine, not the mock the rest of this file
-  // uses: the resync reads the repository's own chain enumerations and writes
-  // real envelopes, so stubbing them would assert the fixture instead of the
-  // encoding — and the shrink case is about a key the enumeration OMITS, which
-  // a stub cannot express honestly.
-  group('LooperSessionLoaded', () {
-    late FakeAudioEngine engine;
-    late LooperRepository looper;
-    late SettingsRepository settings;
-    late LooperBloc bloc;
-
-    setUp(() {
-      engine = FakeAudioEngine()
-        ..nextSnapshot = const EngineSnapshot(
-          isRunning: true,
-          sampleRate: 48000,
-          bufferFrames: 128,
-          framesProcessed: 0,
-          xrunCount: 0,
-          inputRms: 0,
-          inputPeak: 0,
-          outputRms: 0,
-          latencyState: le.LatencyState.idle,
-          measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
-        );
-      looper = LooperRepository(
-        engine: engine,
-        ticker: const Stream<void>.empty(),
-      )..startEngine(const EngineConfig());
-      settings = SettingsRepository(store: FakeKeyValueStore());
-      bloc = LooperBloc(
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
-        recordLengthControl: recordLength,
-        recordTimingControl: recordTiming,
-        fxPersistence: FxChainPersistence(looper: looper),
-        mixSettings: testMixSettings(looper),
-        repository: looper,
-        settings: settings,
-      );
-    });
-
-    tearDown(() async {
-      await bloc.close();
-      await looper.dispose();
-    });
-
-    /// Dispatches the resync and lets the bloc's event stream drain.
-    Future<void> resync() async {
-      bloc.add(const LooperSessionLoaded());
-      await pumpEventQueue();
-    }
-
-    test(
-      'persists the chains the repository holds, on all three stages',
-      () async {
-        looper
-          ..setLaneEffects(
-            channel: 0,
-            lane: 1,
-            effects: [BuiltInEffect(type: TrackEffectType.drive)],
-          )
-          ..setTrackEffects(
-            channel: 1,
-            effects: [BuiltInEffect(type: TrackEffectType.reverb)],
-          )
-          ..setOutputEffects(
-            bus: 0,
-            effects: [BuiltInEffect(type: TrackEffectType.delay)],
-          );
-
-        await resync();
-
-        expect(
-          decodeFxChain(await settings.loadLaneEffects(0, 1)).entries.single,
-          isA<BuiltInEffect>().having(
-            (e) => e.type,
-            'type',
-            TrackEffectType.drive,
-          ),
-        );
-        expect(
-          decodeFxChain(await settings.loadTrackFxChain(1)).entries.single,
-          isA<BuiltInEffect>().having(
-            (e) => e.type,
-            'type',
-            TrackEffectType.reverb,
-          ),
-        );
-        expect(
-          decodeFxChain(await settings.loadOutputFxChain(0)).entries.single,
-          isA<BuiltInEffect>().having(
-            (e) => e.type,
-            'type',
-            TrackEffectType.delay,
-          ),
-        );
-      },
-    );
-
-    test('persists the chain-enabled flag inside the envelope, not just the '
-        'entries', () async {
-      looper
-        ..setLaneEffects(
-          channel: 0,
-          lane: 0,
-          effects: [BuiltInEffect(type: TrackEffectType.drive)],
-        )
-        ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
-        ..setOutputChainEnabled(bus: 0, enabled: false);
-
-      await resync();
-
-      expect(
-        decodeFxChain(await settings.loadLaneEffects(0, 0)).chainEnabled,
-        isFalse,
-      );
-      expect(
-        decodeFxChain(await settings.loadOutputFxChain(0)).chainEnabled,
-        isFalse,
-      );
-    });
-
-    test(
-      'session load replaces a stale All tracks key, including empty',
-      () async {
-        await settings.saveAllTracksFxChain(
-          encodeFxChain(
-            FxChainEnvelope(
-              entries: [BuiltInEffect(type: TrackEffectType.delay)],
-            ),
-          ),
-        );
-        looper.setAllTracksEffects(
-          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
-        );
-        await resync();
-        expect(
-          decodeFxChain(await settings.loadAllTracksFxChain()).entries.single,
-          isA<BuiltInEffect>().having(
-            (fx) => fx.type,
-            'type',
-            TrackEffectType.reverb,
-          ),
-        );
-
-        looper.setAllTracksEffects(effects: const []);
-        await resync();
-        expect(
-          decodeFxChain(await settings.loadAllTracksFxChain()).entries,
-          isEmpty,
-        );
-      },
-    );
-
-    test('persists the slot ids the load minted, so a pedal binding stored '
-        'against one survives a restart', () async {
-      looper.setLaneEffects(
-        channel: 0,
-        lane: 0,
-        effects: [BuiltInEffect(type: TrackEffectType.drive)],
-      );
-      final live = looper.laneEffects(0, 0).single.slotId;
-
-      await resync();
-
-      expect(live, isNotNull);
-      expect(
-        decodeFxChain(
-          await settings.loadLaneEffects(0, 0),
-        ).entries.single.slotId,
-        live,
-      );
-    });
-
-    test('CLEARS the keys a shrinking load dropped, rather than leaving them '
-        'stale', () async {
-      // The pre-load rig, persisted through the edit paths.
-      bloc
-        ..add(const LooperLaneEffectAdded(0, 0, type: TrackEffectType.drive))
-        ..add(
-          LooperTrackEffectsChanged(0, [
-            BuiltInEffect(type: TrackEffectType.reverb),
-          ]),
-        );
-      await pumpEventQueue();
-      expect(await settings.loadLaneEffects(0, 0), isNotNull);
-      expect(await settings.loadTrackFxChain(0), isNotNull);
-
-      // The loaded session defines neither chain: the repository drops both,
-      // so the enumerations omit them and there is no envelope to overwrite
-      // the keys with.
-      looper
-        ..setLaneEffects(channel: 0, lane: 0, effects: const [])
-        ..setTrackEffects(channel: 0, effects: const []);
-
-      await resync();
-
-      expect(await settings.loadLaneEffects(0, 0), isNull);
-      expect(await settings.loadTrackFxChain(0), isNull);
-    });
-
-    test(
-      'FX resync leaves canonical mix ownership with SessionCubit',
-      () async {
-        // The pre-load persistence: a pan and a setup the load supersedes.
-        await settings.seedTrackPan(1, -1);
-        await settings.seedInputSetup('Fake Device', (
-          trimDb: {3: 12},
-          pan: {1: 1},
-          pairs: {},
-        ));
-        looper
-          ..setTrackPan(0.25)
-          ..setInputSetup(
-            InputSetup(
-              trimDb: const {0: -6},
-              pan: const {2: -0.5},
-              pairs: const {0: 0.2},
-            ),
-          );
-
-        await resync();
-
-        expect((await settings.loadMixSettings('test')).trackPans[0] ?? 0, 0);
-        expect((await settings.loadMixSettings('test')).trackPans[1], -1);
-        final stored = await settings.loadInputSetup(
-          device: 'Fake Device',
-          inputCount: 4,
-        );
-        expect(stored.trimDb, {3: 12});
-        expect(stored.pan, {1: 1});
-        expect(stored.pairs, isEmpty);
-      },
-    );
-
-    test('is a no-op without a settings dependency', () async {
-      final blocWithoutSettings = LooperBloc(
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
-        recordLengthControl: recordLength,
-        recordTimingControl: recordTiming,
-        fxPersistence: FxChainPersistence(looper: looper),
-        repository: looper,
-        mixSettings: testMixSettings(looper),
-      );
-      addTearDown(blocWithoutSettings.close);
-      looper.setOutputEffects(
-        bus: 0,
-        effects: [BuiltInEffect(type: TrackEffectType.delay)],
-      );
-
-      blocWithoutSettings.add(const LooperSessionLoaded());
-      await pumpEventQueue();
-
-      expect(await settings.loadOutputFxChain(0), isNull);
-    });
-  });
 }

@@ -38,8 +38,8 @@ class AudioSettingsSection extends StatelessWidget {
     final timing = context.watch<RecordTimingCubit>().state;
     final timingEnabled = timing.recordTimingReady && !timing.captureLocked;
     final tempo = context.watch<TempoCubit>();
-    final confirmedStart = tempo.confirmedRecordStart;
-    final startSnapshot = tempo.recordStartSnapshot;
+    final confirmedStart = tempo.state.confirmedRecordStart;
+    final startSnapshot = tempo.state.recordStartSnapshot;
 
     // The device picker re-enumerates only while it is on screen -- see
     // [AudioDeviceScanScope].
@@ -184,7 +184,7 @@ class AudioSettingsSection extends StatelessWidget {
             toggleKey: const Key('audioSettings_recDub_switch'),
             title: l10n.overdubOnSecondPressTitle,
             subtitle: l10n.overdubOnSecondPressSubtitle,
-            value: context.watch<RecordOptionsCubit>().state.recDub,
+            value: context.watch<RecordOptionsCubit>().state.options.recDub,
             onChanged: (on) => unawaited(
               context.read<RecordOptionsCubit>().setRecDub(value: on),
             ),
@@ -207,7 +207,11 @@ class AudioSettingsSection extends StatelessWidget {
           AppText(l10n.defaultLoopLengthIntro, style: context.setupBody),
           const SizedBox(height: 12),
           SetupOptionRow<int>(
-            selected: context.watch<RecordOptionsCubit>().state.defaultMultiple,
+            selected: context
+                .watch<RecordOptionsCubit>()
+                .state
+                .options
+                .defaultMultiple,
             onSelected: (m) => unawaited(
               context.read<RecordOptionsCubit>().setDefaultMultiple(m),
             ),

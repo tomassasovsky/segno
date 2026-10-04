@@ -177,6 +177,11 @@ void main() {
             recalledEngine.exportLayer(0, 0, 0).first,
         closeTo(0.2, 1e-6),
       );
+      // Reopening must clear the previous import before publishing this one.
+      await recalled.applySession(rig, clearPollInterval: Duration.zero);
+      expect(recalled.state.tracks.first.lengthFrames, 4);
+      expect(recalledEngine.exportLayer(0, 0, 0), pcm);
+      expect(recalledEngine.laneVol[(0, 0)], closeTo(0.5, 1e-6));
     },
   );
 

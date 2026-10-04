@@ -14,6 +14,9 @@ import 'package:segno/audio_setup/view/console/audio_tray_panel.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/tray/tray.dart';
@@ -82,13 +85,14 @@ const _open = EngineStatus(
 );
 
 void main() {
+  late TempoSettings tempoOwner;
   late _MockLooperBloc bloc;
   late _MockLooperRepository repository;
   late SettingsRepository settings;
   late AudioSetupCubit audio;
   late InputsCubit inputs;
   late RecordTimingCubit quantize;
-  late RecordOptionsCubit options;
+  late RecordSettings options;
   late TempoCubit tempo;
   late SettingsTrayCubit tray;
   late RecordTiming confirmedTiming;
@@ -287,11 +291,22 @@ void main() {
       deviceRefreshInterval: Duration.zero,
     );
     inputs = InputsCubit(settings: settings, repository: repository);
-    quantize = RecordTimingCubit(repository: repository, settings: settings);
-    await quantize.load();
-    options = RecordOptionsCubit(repository: repository, settings: settings);
-    tempo = TempoCubit(repository: repository, settings: settings);
-    if (loadRecordStart) await tempo.loadRecordStart();
+    final quantizeOwner = RecordTimingSettings(
+      repository: repository,
+      settings: settings,
+    );
+    addTearDown(() => unawaited(quantizeOwner.close()));
+    quantize = RecordTimingCubit(settings: quantizeOwner);
+    await quantizeOwner.load();
+    options = RecordSettings(repository: repository, settings: settings);
+    tempoOwner = TempoSettings(
+      repository: repository,
+      settings: settings,
+    );
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    tempo = TempoCubit(settings: tempoOwner);
+    if (loadRecordStart) await tempoOwner.loadRecordStart();
     tray = SettingsTrayCubit(settings: settings)
       ..showAudioTab(tab)
       ..showDestination(destination);
@@ -322,7 +337,9 @@ void main() {
               BlocProvider.value(value: audio),
               BlocProvider.value(value: inputs),
               BlocProvider.value(value: quantize),
-              BlocProvider.value(value: options),
+              BlocProvider(
+                create: (_) => RecordOptionsCubit(settings: options),
+              ),
               BlocProvider.value(value: tempo),
               BlocProvider.value(value: tray),
             ],
@@ -747,11 +764,22 @@ void main() {
         deviceRefreshInterval: Duration.zero,
       );
       inputs = InputsCubit(settings: settings, repository: repository);
-      quantize = RecordTimingCubit(repository: repository, settings: settings);
-      await quantize.load();
-      options = RecordOptionsCubit(repository: repository, settings: settings);
-      tempo = TempoCubit(repository: repository, settings: settings);
-      await tempo.loadRecordStart();
+      final quantizeOwner = RecordTimingSettings(
+        repository: repository,
+        settings: settings,
+      );
+      addTearDown(() => unawaited(quantizeOwner.close()));
+      quantize = RecordTimingCubit(settings: quantizeOwner);
+      await quantizeOwner.load();
+      options = RecordSettings(repository: repository, settings: settings);
+      tempoOwner = TempoSettings(
+        repository: repository,
+        settings: settings,
+      );
+      final closeTempoOwner = tempoOwner.close;
+      addTearDown(() => unawaited(closeTempoOwner()));
+      tempo = TempoCubit(settings: tempoOwner);
+      await tempoOwner.loadRecordStart();
       tray = SettingsTrayCubit(settings: settings)
         ..showDestination(SettingsTrayDestination.audio);
       addTearDown(() => unawaited(audio.close()));
@@ -779,7 +807,9 @@ void main() {
                 BlocProvider.value(value: audio),
                 BlocProvider.value(value: inputs),
                 BlocProvider.value(value: quantize),
-                BlocProvider.value(value: options),
+                BlocProvider(
+                  create: (_) => RecordOptionsCubit(settings: options),
+                ),
                 BlocProvider.value(value: tempo),
                 BlocProvider.value(value: tray),
               ],
@@ -925,10 +955,10 @@ void main() {
 
       await tester.tap(find.byKey(const Key('audio_auto_record_switch')));
       await tester.pumpAndSettle();
-      await tester.runAsync(tempo.flushRecordStart);
+      await tester.runAsync(tempoOwner.flushRecordStart);
       await tester.pump();
-      expect(tempo.confirmedRecordStart?.soundStart, isTrue);
-      expect(tempo.confirmedRecordStart?.countInBars, 0);
+      expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
+      expect(tempo.state.confirmedRecordStart?.countInBars, 0);
     });
 
     testWidgets('unknown Sound is a dash, never a provisional Off switch', (
@@ -940,7 +970,7 @@ void main() {
         loadRecordStart: false,
       );
       final row = rowOf(tester, const Key('audio_auto_record_row'));
-      expect(tempo.confirmedRecordStart, isNull);
+      expect(tempo.state.confirmedRecordStart, isNull);
       expect(row.trailing, isA<Semantics>());
       expect(
         find.byKey(const Key('audio_auto_record_unavailable')),
@@ -963,12 +993,12 @@ void main() {
       final control = find.byKey(const Key('audio_auto_record_switch'));
       await tester.tap(control);
       await tester.pumpAndSettle();
-      expect(tempo.confirmedRecordStart?.soundStart, isTrue);
+      expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
 
       startRecovering = true;
       engine.add(const LooperState());
       await tester.pumpAndSettle();
-      expect(tempo.recordStartSnapshot, isNull);
+      expect(tempo.state.recordStartSnapshot, isNull);
       final row = rowOf(tester, const Key('audio_auto_record_row'));
       expect(row.subtitle, l10nOf(tester).recordStartUnavailable);
       final toggle = tester.widget<ConsoleSwitch>(control);

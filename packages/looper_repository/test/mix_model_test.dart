@@ -675,13 +675,15 @@ void main() {
         SessionRig(
           baseLengthFrames: 4,
           trackPans: const {0: -0.25},
-          tracks: const [
+          tracks: [
             SessionRigTrack(
               channel: 0,
               lanes: [
                 SessionRigLane(
                   lane: 0,
-                  layers: [],
+                  layers: [
+                    Float32List.fromList([.25, .25, .25, .25]),
+                  ],
                   volume: 1,
                   muted: false,
                   outputMask: 0x3,
@@ -733,7 +735,7 @@ void main() {
       () async {
         final repo = start();
         await repo.applySession(
-          const SessionRig(
+          SessionRig(
             baseLengthFrames: 4,
             tracks: [
               SessionRigTrack(
@@ -741,7 +743,9 @@ void main() {
                 lanes: [
                   SessionRigLane(
                     lane: 0,
-                    layers: [],
+                    layers: [
+                      Float32List.fromList([.25, .25, .25, .25]),
+                    ],
                     volume: 1,
                     muted: false,
                     outputMask: 0x3,

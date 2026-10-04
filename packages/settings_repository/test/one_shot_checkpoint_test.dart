@@ -28,8 +28,8 @@ void main() {
       () async {
         store.values['sentinel'] = 17;
         expect(await settings.readOneShotCheckpoint(channel: null), isNull);
-        await settings.saveDefaultOneShot(oneShot: false);
-        await settings.saveTrackOneShot(7, oneShot: false);
+        await settings.restoreOneShotCheckpoint(channel: null, oneShot: false);
+        await settings.restoreOneShotCheckpoint(channel: 7, oneShot: false);
         expect(await settings.readOneShotCheckpoint(channel: null), isFalse);
         expect(await settings.readOneShotCheckpoint(channel: 7), isFalse);
         await settings.restoreOneShotCheckpoint(channel: null, oneShot: null);
@@ -40,12 +40,12 @@ void main() {
     test('discarded writes refuse and later writers still work', () async {
       store.discard = true;
       await expectLater(
-        settings.saveDefaultOneShot(oneShot: true),
+        settings.restoreOneShotCheckpoint(channel: null, oneShot: true),
         throwsStateError,
       );
       store.discard = false;
-      await settings.saveDefaultOneShot(oneShot: false);
-      expect(await settings.loadDefaultOneShot(), isFalse);
+      await settings.restoreOneShotCheckpoint(channel: null, oneShot: false);
+      expect(await settings.readOneShotCheckpoint(channel: null), isFalse);
     });
     test('malformed stored values remain preserved', () async {
       store.values['track_one_shot.7'] = 'broken';

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/click_volume.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -51,7 +51,7 @@ class _Rig {
     if (running) {
       expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
     }
-    owner = TempoCubit(
+    owner = TempoSettings(
       repository: repository,
       settings: SettingsRepository(store: store),
     );
@@ -60,7 +60,7 @@ class _Rig {
   final engine = _Engine();
   final store = _Store();
   late final LooperRepository repository;
-  late final TempoCubit owner;
+  late final TempoSettings owner;
   void pump() {
     clock
       ..flushMicrotasks()

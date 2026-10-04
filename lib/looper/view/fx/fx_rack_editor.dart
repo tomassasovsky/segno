@@ -90,15 +90,10 @@ class FxRackEditor extends StatelessWidget {
             top: 32,
             child: _RackActions(
               enabled: group.anyEnabled,
-              onToggle: () {
-                // A rack's power is every pedal's power. See the editor's own
-                // note: this build has no rack-level bypass bit, so turning a
-                // rack back on turns every pedal on.
-                final on = !group.anyEnabled;
-                for (var i = group.start; i < group.end; i++) {
-                  edits.setEnabled(i, enabled: on);
-                }
-              },
+              onToggle: () => edits.setGroupEnabled(
+                fxGroupId(group),
+                enabled: !group.anyEnabled,
+              ),
               onOptions: onOptions,
               onSavePreset: onSavePreset,
               onAddEffect: onAddEffect,
@@ -119,12 +114,16 @@ class FxRackEditor extends StatelessWidget {
                     FxPedalColumn(
                       key: Key('fx_pedal_${entries[i].slotId ?? i}'),
                       effect: entries[i],
-                      onTogglePower: () => edits.setEnabled(
-                        group.start + i,
-                        enabled: !entries[i].enabled,
-                      ),
-                      onParam: (param, value) =>
-                          edits.setParam(group.start + i, param, value),
+                      onTogglePower: () {
+                        final id = entries[i].slotId;
+                        if (id != null) {
+                          edits.setEnabled(id, enabled: !entries[i].enabled);
+                        }
+                      },
+                      onParam: (param, value) {
+                        final id = entries[i].slotId;
+                        if (id != null) edits.setParam(id, param, value);
+                      },
                     ),
                   ],
                 ],
@@ -139,22 +138,10 @@ class FxRackEditor extends StatelessWidget {
             child: FxChannelFooter(
               group: group,
               destination: destination,
-              onPlacement: (placement) => edits.setChain(
-                fxSetGroupPlacement(
-                  group.chain,
-                  group.start,
-                  group.end,
-                  placement,
-                ),
-              ),
-              onChannels: (channels) {
-                for (final write in fxGroupChannelWrites(
-                  group,
-                  channels,
-                ).entries) {
-                  edits.setChannels(write.key, write.value);
-                }
-              },
+              onPlacement: (placement) =>
+                  edits.setPlacement(fxGroupId(group), placement),
+              onChannels: (channels) =>
+                  edits.setChannels(fxGroupId(group), channels),
             ),
           ),
         ],

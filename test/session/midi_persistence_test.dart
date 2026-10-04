@@ -13,11 +13,12 @@ import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
-import 'package:segno/looper/cubit/playback_options_cubit.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
-import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_timing.dart';
+import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
+import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
@@ -72,36 +73,32 @@ void main() {
           engine: engine,
           exportsRoot: () async => directory.path,
         );
-        final tempo = TempoCubit(repository: looper, settings: settings);
+        final tempo = TempoSettings(repository: looper, settings: settings);
         await tempo.load();
         expect((await tempo.setCountInBars(0)).isOk, isTrue);
-        final playback = PlaybackOptionsCubit(
+        final playback = PlaybackSettings(
           repository: looper,
           settings: settings,
         );
         await playback.load();
+        final record = RecordSettings(repository: looper, settings: settings);
+        await record.load();
+        final timing = RecordTimingSettings(
+          repository: looper,
+          settings: settings,
+        );
+        await timing.load();
         final cubit = SessionCubit(
-          runTempoExclusive: tempo.runTempoExclusive,
-          currentDurableRecordStart: () => tempo.durableRecordStartSettings,
-          runPlaybackExclusive: playback.runPlaybackExclusive,
-          runRecordExclusive: <T>(operation) => operation(),
-          runRecordTimingExclusive: <T>(operation) => operation(),
-          currentDurableRecordTiming: () => RecordTimingSnapshot(
-            defaultTiming: looper.defaultRecordTiming,
-            rememberedDivision: looper.sessionTransport.quantizeDiv,
-            trackOverrides: looper.trackRecordTimingOverrides,
-            captureLocked: false,
+          settings: settings,
+          captureSettings: SessionSettingsCoordinator(
+            looper: looper,
+            mix: mix,
+            fx: projection,
+            tempo: tempo,
+            playback: playback,
+            record: record,
+            timing: timing,
           ),
-          currentDurableRecordLength: () => RecordLengthSnapshot(
-            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
-            trackOverrides: looper.trackLengthPresetOverrides,
-            mode: looper.sessionTransport.looperMode,
-            captureLocked: false,
-          ),
-          currentDurableDecay: () => playback.durableDecaySnapshot,
-          currentDurableOneShot: () => playback.durableOneShotSnapshot,
-          currentDurableClickVolume: () => tempo.durableClickVolume,
-          currentDurableClickMode: () => tempo.durableClickMode,
           repository: sessions,
           looper: looper,
           performance: performance,
@@ -141,9 +138,12 @@ void main() {
           await controller?.dispose();
           await pedal?.dispose();
           await cubit.close();
+          await timing.close();
+          await record.close();
           await playback.close();
           await tempo.close();
           await mix.close();
+          await projection.close();
           performance.dispose();
           pump.cancel();
           await looper.dispose();
@@ -187,8 +187,8 @@ void main() {
           control = ControlCubit(
             decayControl: playback,
             oneShotControl: playback,
-            recordLengthControl: FakeRecordLengthControl(),
-            recordTimingControl: FakeRecordTimingControl(),
+            recordLengthControl: record,
+            recordTimingControl: timing,
             clickVolumeControl: tempo,
             clickModeControl: tempo,
             looper: looper,

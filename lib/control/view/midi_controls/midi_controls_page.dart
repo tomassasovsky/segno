@@ -9,15 +9,13 @@ import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/control/binding/binding_labels.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
-import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
-import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/midi_labels.dart';
 import 'package:segno/control/binding/midi_mapping_draft.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
-import 'package:segno/control/view/control_value_readout.dart';
+import 'package:segno/control/view/control_availability_view.dart';
 import 'package:segno/control/view/midi_controls/midi_choice_grid.dart';
 import 'package:segno/control/view/midi_controls/midi_control_cards.dart';
 import 'package:segno/control/view/midi_controls/midi_device_cards.dart';
@@ -27,16 +25,7 @@ import 'package:segno/control/view/pedal_setup/expression_target_picker.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/playback_options_cubit.dart';
-import 'package:segno/looper/cubit/record_options_cubit.dart';
-import 'package:segno/looper/cubit/record_timing_cubit.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
-import 'package:segno/looper/model/click_mode.dart';
-import 'package:segno/looper/model/one_shot.dart';
-import 'package:segno/looper/model/overdub_decay.dart';
-import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -428,31 +417,10 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     bool connected,
   ) {
     final l10n = context.l10n;
-    final looper = context.read<LooperRepository>();
-    final clickVolume = context.watch<TempoCubit>().clickVolume;
-    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
-    final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
-    final oneShotSnapshot = context
-        .watch<PlaybackOptionsCubit>()
-        .oneShotSnapshot;
-    final recordLengthSnapshot = context
-        .watch<RecordOptionsCubit>()
-        .recordLengthSnapshot;
-    final recordTimingSnapshot = context
-        .watch<RecordTimingCubit>()
-        .recordTimingSnapshot;
+    final availability = controlAvailability(context, watch: true);
     final missing = mapping.controls.any(
       (control) => switch (control) {
-        MidiParameterControl(:final key) => !_resolves(
-          looper,
-          key,
-          clickVolume: clickVolume,
-          clickModeSnapshot: clickModeSnapshot,
-          decaySnapshot: decaySnapshot,
-          oneShotSnapshot: oneShotSnapshot,
-          recordLengthSnapshot: recordLengthSnapshot,
-          recordTimingSnapshot: recordTimingSnapshot,
-        ),
+        MidiParameterControl(:final key) => !availability.resolvesKey(key),
         MidiActionControl(:final key) => ControlAction.tryParse(key) == null,
       },
     );
@@ -622,6 +590,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     MidiMappingDraft draft,
   ) {
     final state = control.state;
+    final availability = controlAvailability(context, watch: true);
     final l10n = context.l10n;
     Widget placed(Widget child) => Positioned(
       left: _left,
@@ -676,50 +645,16 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                     available: switch (control) {
                       MidiActionControl(:final key) =>
                         ControlAction.tryParse(key) != null,
-                      MidiParameterControl(:final key) => _resolves(
-                        context.read<LooperRepository>(),
-                        key,
-                        clickVolume: context.watch<TempoCubit>().clickVolume,
-                        clickModeSnapshot: context
-                            .watch<TempoCubit>()
-                            .clickModeSnapshot,
-                        decaySnapshot: context
-                            .watch<PlaybackOptionsCubit>()
-                            .decaySnapshot,
-                        oneShotSnapshot: context
-                            .watch<PlaybackOptionsCubit>()
-                            .oneShotSnapshot,
-                        recordLengthSnapshot: context
-                            .watch<RecordOptionsCubit>()
-                            .recordLengthSnapshot,
-                        recordTimingSnapshot: context
-                            .watch<RecordTimingCubit>()
-                            .recordTimingSnapshot,
-                      ),
+                      MidiParameterControl(:final key) =>
+                        availability.resolvesKey(key),
                     },
                     disabledReason: control is MidiParameterControl
-                        ? clickModeDisabledReason(
-                                l10n,
-                                ControlValueTarget.tryParse(control.key) ??
-                                    const MasterGainTarget(),
-                                context.watch<TempoCubit>().clickModeSnapshot,
-                              ) ??
-                              recordLengthDisabledReason(
-                                l10n,
-                                ControlValueTarget.tryParse(control.key) ??
-                                    const MasterGainTarget(),
-                                context
-                                    .watch<RecordOptionsCubit>()
-                                    .recordLengthSnapshot,
-                              ) ??
-                              recordTimingDisabledReason(
-                                l10n,
-                                ControlValueTarget.tryParse(control.key) ??
-                                    const MasterGainTarget(),
-                                context
-                                    .watch<RecordTimingCubit>()
-                                    .recordTimingSnapshot,
-                              )
+                        ? controlEditBlockLabel(
+                            l10n,
+                            availability.blockedBy(
+                              ControlValueTarget.tryParse(control.key),
+                            ),
+                          )
                         : null,
                   ),
               ],
@@ -739,27 +674,11 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         return [
           placed(
             ExpressionDestinationPicker(
-              destinations: expressionDestinations(
+              destinations: controlDestinations(
                 l10n,
                 context.watch<TracksCubit>().state.names,
-                context.read<LooperRepository>(),
+                availability,
                 withActivations: true,
-                clickVolume: context.watch<TempoCubit>().clickVolume,
-                clickModeSnapshot: context
-                    .watch<TempoCubit>()
-                    .clickModeSnapshot,
-                decaySnapshot: context
-                    .watch<PlaybackOptionsCubit>()
-                    .decaySnapshot,
-                oneShotSnapshot: context
-                    .watch<PlaybackOptionsCubit>()
-                    .oneShotSnapshot,
-                recordLengthSnapshot: context
-                    .watch<RecordOptionsCubit>()
-                    .recordLengthSnapshot,
-                recordTimingSnapshot: context
-                    .watch<RecordTimingCubit>()
-                    .recordTimingSnapshot,
               ),
               kind: _kind,
               onKind: (kind) => setState(() => _kind = kind),
@@ -1022,36 +941,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         )) {
       return;
     }
-    if (target is ClickVolumeTarget &&
-        context.read<TempoCubit>().clickVolume == null) {
-      return;
-    }
-    if (target is ClickModeValueTarget &&
-        context.read<TempoCubit>().clickModeSnapshot?.canEdit != true) {
-      return;
-    }
-    if (target is DecayValueTarget &&
-        context.read<PlaybackOptionsCubit>().decaySnapshot == null) {
-      return;
-    }
-    if (target is OneShotValueTarget &&
-        context.read<PlaybackOptionsCubit>().oneShotSnapshot == null) {
-      return;
-    }
-    if (target is RecordLengthValueTarget &&
-        context.read<RecordOptionsCubit>().recordLengthSnapshot?.canEdit(
-              target.address,
-            ) !=
-            true) {
-      return;
-    }
-    if (target is RecordTimingValueTarget &&
-        context.read<RecordTimingCubit>().recordTimingSnapshot?.canEdit(
-              target.address,
-            ) !=
-            true) {
-      return;
-    }
+    if (!controlAvailability(context).canAssign(target)) return;
     final key = switch (target) {
       ControlValueTarget() => target.canonicalString(),
       FxBindingTarget() => target.canonicalString(),
@@ -1062,20 +952,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     // looks whole again reads as already done.
     final repaired =
         replacing != null &&
-        !_resolves(
-          context.read<LooperRepository>(),
-          replacing,
-          clickVolume: context.read<TempoCubit>().clickVolume,
-          clickModeSnapshot: context.read<TempoCubit>().clickModeSnapshot,
-          decaySnapshot: context.read<PlaybackOptionsCubit>().decaySnapshot,
-          oneShotSnapshot: context.read<PlaybackOptionsCubit>().oneShotSnapshot,
-          recordLengthSnapshot: context
-              .read<RecordOptionsCubit>()
-              .recordLengthSnapshot,
-          recordTimingSnapshot: context
-              .read<RecordTimingCubit>()
-              .recordTimingSnapshot,
-        );
+        !controlAvailability(context).resolvesKey(replacing);
     final l10n = context.l10n;
     setState(() {
       _draft = replacing == null
@@ -1244,32 +1121,6 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         }
         return l10n.midiMissingControl;
     }
-  }
-
-  static bool _resolves(
-    LooperRepository looper,
-    String key, {
-    double? clickVolume,
-    ClickModeSnapshot? clickModeSnapshot,
-    DecaySnapshot? decaySnapshot,
-    OneShotSnapshot? oneShotSnapshot,
-    RecordLengthSnapshot? recordLengthSnapshot,
-    RecordTimingSnapshot? recordTimingSnapshot,
-  }) {
-    final target = ControlValueTarget.tryParse(key);
-    if (target != null) {
-      return looper.valueTargetResolves(
-        target,
-        clickVolume: clickVolume,
-        clickModeSnapshot: clickModeSnapshot,
-        decaySnapshot: decaySnapshot,
-        oneShotSnapshot: oneShotSnapshot,
-        recordLengthSnapshot: recordLengthSnapshot,
-        recordTimingSnapshot: recordTimingSnapshot,
-      );
-    }
-    final activation = FxBindingTarget.tryParse(key);
-    return activation != null && looper.bindingResolves(activation);
   }
 
   static Object? _parameterTarget(String key) =>

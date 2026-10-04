@@ -1,29 +1,31 @@
 import 'dart:async';
 
-import 'package:bloc_test/bloc_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/playback_options.dart';
 
 /// A page fixture for the same accepted Decay snapshot shown by its owner.
-class MockDecayPlaybackCubit extends MockCubit<PlaybackOptions>
-    implements PlaybackOptionsCubit {
+class MockDecayPlaybackSettings extends Mock implements PlaybackSettings {
   /// Creates an available accepted owner, or one still uninitialized.
-  MockDecayPlaybackCubit({DecaySnapshot? snapshot, OneShotSnapshot? oneShot}) {
+  MockDecayPlaybackSettings({
+    DecaySnapshot? snapshot,
+    OneShotSnapshot? oneShot,
+  }) {
     registerFallbackValue(const DecayAddress.defaults());
     registerFallbackValue(const OneShotAddress.defaults());
-    when(() => state).thenReturn(
-      PlaybackOptions(
-        overdubDecay: snapshot?.defaultPercent ?? 0,
-        trackOverdubDecayOverrides: snapshot?.trackOverrides ?? const {},
-        decayReady: snapshot != null,
-        defaultOneShot: oneShot?.defaultOneShot ?? false,
-        trackOneShotOverrides: oneShot?.trackOverrides ?? const {},
-        oneShotReady: oneShot != null,
+    when(() => state).thenAnswer(
+      (_) => PlaybackOptions(
+        overdubDecay: decaySnapshot?.defaultPercent ?? 0,
+        trackOverdubDecayOverrides: decaySnapshot?.trackOverrides ?? const {},
+        decayReady: decaySnapshot != null,
+        defaultOneShot: oneShotSnapshot?.defaultOneShot ?? false,
+        trackOneShotOverrides: oneShotSnapshot?.trackOverrides ?? const {},
+        oneShotReady: oneShotSnapshot != null,
       ),
     );
-    when(() => stream).thenAnswer((_) => const Stream<PlaybackOptions>.empty());
+    when(() => stream).thenAnswer((_) => _states.stream);
     when(() => decaySnapshot).thenReturn(snapshot);
     when(
       () => decayLifetime,
@@ -45,4 +47,11 @@ class MockDecayPlaybackCubit extends MockCubit<PlaybackOptions>
     );
     when(() => oneShotRevision(any())).thenReturn(0);
   }
+  final _states = StreamController<PlaybackOptions>.broadcast(sync: true);
+
+  /// Publishes a changed fixture through the same projection seam as the owner.
+  void publish() => _states.add(state);
+
+  @override
+  Future<void> close() => _states.close();
 }

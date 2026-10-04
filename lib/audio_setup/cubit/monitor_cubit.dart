@@ -5,7 +5,6 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
-import 'package:segno/common/write_debouncer.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Per-hardware-input live-monitor configuration.
@@ -54,7 +53,7 @@ class MonitorCubit extends Cubit<MonitorState> {
        _settings = settings,
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
-       _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
+       _fxPersistDebounce = fxPersistDebounce,
        super(const MonitorState()) {
     // Subscribed at construction, not in [load]: this cubit is a cache of
     // state another writer can change from the first frame, and a session
@@ -63,7 +62,6 @@ class MonitorCubit extends Cubit<MonitorState> {
     // [_readMonitor].
     _monitorWatch = _repository.monitorChanges.listen(_readMonitor);
     _paramWatch = _repository.monitorParamChanges.listen(_readMonitorParams);
-    _fxReplayWatch = _repository.fxReplayConfirmed.listen(_onFxReplayConfirmed);
   }
 
   final LooperRepository _repository;
@@ -71,9 +69,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   final MixSettingsCoordinator _mixSettings;
   final FxChainPersistence _fxPersistence;
 
-  /// Coalesces the chain-envelope write a knob drag would otherwise emit per
-  /// pointer move — see [_schedulePersist]. Flushed in [close].
-  final WriteDebouncer _fxPersist;
+  final Duration _fxPersistDebounce;
 
   Future<void>? _loadFuture;
 
@@ -103,10 +99,6 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// announces, so a CC sweeping an input-stage param moves the console knob
   /// as it moves the audio — not at the next structural announce (#605).
   late final StreamSubscription<int> _paramWatch;
-  late final StreamSubscription<({int mixGeneration, int sessionRevision})>
-  _fxReplayWatch;
-  final Map<int, ({int sessionRevision, Object token})> _pendingFxSaves = {};
-  final Set<int> _savingFxInputs = {};
 
   /// Whether [_restore] has pushed the saved monitors into the repository.
   bool _restored = false;
@@ -178,7 +170,7 @@ class MonitorCubit extends Cubit<MonitorState> {
       if (applied.isEmpty) continue;
       emit(state.withInput(monitor.copyWith(effects: applied)));
       if (!monitor.effects.any((fx) => fx.slotId == null)) continue;
-      await _saveProjectedMonitor(monitor.input);
+      await _persistMonitor(monitor);
     }
     // And keep reading it. The engine starts before the app, with a cold
     // plugin cache, so by now every hosted entry has just failed to load and
@@ -261,85 +253,14 @@ class MonitorCubit extends Cubit<MonitorState> {
     unawaited(_fxPersistence.trackSave(_persistMonitorAfterFx(applied)));
   }
 
-  Future<void> _persistMonitorAfterFx(InputMonitor monitor) async {
-    final sessionRevision = _repository.sessionRevision;
-    _pendingFxSaves[monitor.input] = (
-      sessionRevision: sessionRevision,
-      token: Object(),
-    );
-    final result = await _repository.settleFxRecipes(
-      waitForCallback: true,
-      cancelled: () => isClosed,
-    );
-    if (!result.isOk || isClosed || state.forInput(monitor.input) != monitor) {
-      return;
-    }
-    await _savePendingFx(monitor.input, sessionRevision);
-  }
-
-  void _onFxReplayConfirmed(
-    ({int mixGeneration, int sessionRevision}) replay,
-  ) {
-    if (isClosed ||
-        replay.mixGeneration != _repository.mixGeneration ||
-        replay.sessionRevision != _repository.sessionRevision) {
-      return;
-    }
-    for (final entry in _pendingFxSaves.entries.toList()) {
-      if (entry.value.sessionRevision == replay.sessionRevision) {
-        unawaited(
-          _savePendingFx(entry.key, replay.sessionRevision, replay: true),
-        );
-      }
-    }
-  }
-
-  Future<void> _savePendingFx(
-    int input,
-    int sessionRevision, {
-    bool replay = false,
-  }) async {
-    if (!_savingFxInputs.add(input)) return;
-    Object? attemptedToken;
-    try {
-      while (true) {
-        final pending = _pendingFxSaves[input];
-        if (pending == null ||
-            pending.sessionRevision != sessionRevision ||
-            sessionRevision != _repository.sessionRevision ||
-            isClosed ||
-            !_repository.fxRecipesSettled) {
-          return;
-        }
-        attemptedToken = pending.token;
-        final applied = replay
-            ? (_repository.allMonitors()[input] ?? InputMonitor(input: input))
-            : state.forInput(input);
-        try {
-          await _persistMonitor(applied);
-        } on Object catch (error, stackTrace) {
-          addError(error, stackTrace);
-          return;
-        }
-        if (identical(_pendingFxSaves[input]?.token, pending.token)) {
-          _pendingFxSaves.remove(input);
-          return;
-        }
-      }
-    } finally {
-      _savingFxInputs.remove(input);
-      final next = _pendingFxSaves[input];
-      if (next != null &&
-          !identical(next.token, attemptedToken) &&
-          next.sessionRevision == _repository.sessionRevision &&
-          !isClosed &&
-          _repository.fxRecipesSettled) {
-        unawaited(
-          _fxPersistence.trackSave(_savePendingFx(input, next.sessionRevision)),
-        );
-      }
-    }
-  }
+  Future<void> _persistMonitorAfterFx(InputMonitor monitor) => _fxPersistence
+      .saveConfirmed(
+        FxAddress(stage: FxStage.input, index: monitor.input),
+        _settings,
+      )
+      .catchError((Object error, StackTrace stack) {
+        if (!isClosed) addError(error, stack);
+      });
 
   /// Re-reads only [input]'s chain, following a throttled param announce.
   ///
@@ -451,54 +372,22 @@ class MonitorCubit extends Cubit<MonitorState> {
     );
   }
 
-  /// Re-projects the per-input monitors from the [LooperRepository] (the single
-  /// owner) after a session load applied them straight to the engine, past this
-  /// cubit. Without this the dock would keep showing the PREVIOUS session's
-  /// monitors and re-apply them on the next edit, and the persisted settings
-  /// would drift from the loaded session (a wrong boot restore).
-  ///
-  /// Re-persists every configured monitor and resets inputs dropped since the
-  /// last state to the disabled default — the same value-level reset
-  /// `LooperRepository.applySession` applies to undefined monitors, so the next
-  /// boot restores an inert (disabled, unrouted-to-nothing) monitor rather than
-  /// the pre-load leftover. Reads only from the repository; never re-applies to
-  /// the engine (the load already did), so it cannot desync engine vs cache.
-  Future<void> syncFromRepository() async {
-    _pendingFxSaves.clear();
-    // A loaded session supersedes every knob edit still in flight; the sweep
-    // below writes the loaded truth for both the applied and the dropped
-    // inputs, so a pending write has nothing left to say.
-    _fxPersist.cancelAll();
-    final applied = _repository.allMonitors();
-    final dropped = state.inputs.keys
-        .where((input) => !applied.containsKey(input))
-        .toList();
-    // Any open editor-sync poll is keyed to a chain index the load reseated.
+  /// Re-projects a loaded session's monitor display from the repository.
+  /// Boot persistence is awaited by the session application boundary; this
+  /// display owner must not start a second, unawaited settings sweep.
+  void projectFromRepository() {
+    if (isClosed) return;
     state.inputs.keys.forEach(_cancelEditorTimers);
-    emit(MonitorState(inputs: applied));
-    _followRepository();
-    await Future.wait([
-      for (final monitor in applied.values) _persistMonitor(monitor),
-      for (final input in dropped) _persistMonitor(InputMonitor(input: input)),
-    ]);
+    _heldReads.clear();
+    _restored = true;
+    emit(MonitorState(inputs: _repository.allMonitors()));
   }
 
-  /// Persists every field of [monitor] (the five monitor settings keys). Shared
-  /// by [syncFromRepository]'s apply + reset paths so they never diverge from
-  /// the set of persisted fields.
-  Future<void> _persistMonitor(InputMonitor monitor) async {
-    final session = _repository.sessionRevision;
-    await _settings.saveMonitorInputMode(
-      monitor.input,
-      mode: monitor.mode.name,
-    );
-    if (session != _repository.sessionRevision) return;
-    await _settings.saveMonitorOutput(monitor.input, monitor.outputMask);
-    if (session != _repository.sessionRevision) return;
-    await _settings.saveMonitorMute(monitor.input, muted: monitor.muted);
-    if (session != _repository.sessionRevision) return;
-    await _saveProjectedMonitor(monitor.input);
-  }
+  Future<void> _persistMonitor(InputMonitor monitor) =>
+      _fxPersistence.saveConfirmed(
+        FxAddress(stage: FxStage.input, index: monitor.input),
+        _settings,
+      );
 
   /// Enables or disables monitoring of hardware [input], applying and
   /// persisting the change.
@@ -506,7 +395,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     final monitor = state.forInput(input).copyWith(mode: mode);
     emit(state.withInput(monitor));
     _repository.setMonitorInputMode(input: input, mode: mode);
-    await _settings.saveMonitorInputMode(input, mode: mode.name);
+    await _persistMonitor(monitor);
   }
 
   /// Sets and persists monitor [input]'s output bitmask.
@@ -514,7 +403,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     final next = state.forInput(input).copyWith(outputMask: mask);
     emit(state.withInput(next));
     _repository.setMonitorOutput(input: input, mask: mask);
-    await _settings.saveMonitorOutput(input, mask);
+    await _persistMonitor(next);
   }
 
   /// Sets and persists monitor [input]'s output gain (`0..LE_MAX_GAIN`, 2.0,
@@ -534,7 +423,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     final next = state.forInput(input).copyWith(muted: muted);
     emit(state.withInput(next));
     _repository.setMonitorMute(input: input, muted: muted);
-    await _settings.saveMonitorMute(input, muted: muted);
+    await _persistMonitor(next);
   }
 
   /// Appends a default effect (drive) to monitor [input]'s chain, Pre.
@@ -825,7 +714,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     emit(state.withInput(monitor.copyWith(effects: next)));
     unawaited(
       _fxPersistence.trackSave(
-        _saveProjectedMonitor(input),
+        _persistMonitorAfterFx(state.forInput(input)),
       ),
     );
   }
@@ -853,7 +742,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     );
     emit(state.withInput(monitor.copyWith(chainEnabled: enabled)));
     unawaited(
-      _saveProjectedMonitor(input),
+      _persistMonitorAfterFx(state.forInput(input)),
     );
   }
 
@@ -922,68 +811,18 @@ class MonitorCubit extends Cubit<MonitorState> {
     return result;
   }
 
-  Future<void> _persistAppliedFx(int input) async {
-    final sessionRevision = _repository.sessionRevision;
-    _pendingFxSaves[input] = (
-      sessionRevision: sessionRevision,
-      token: Object(),
-    );
-    final result = await _repository.settleFxRecipes(
-      waitForCallback: true,
-      cancelled: () => isClosed,
-    );
-    if (!result.isOk || isClosed) return;
-    await _savePendingFx(input, sessionRevision);
-  }
+  Future<void> _persistAppliedFx(int input) =>
+      _persistMonitorAfterFx(state.forInput(input));
 
   /// Trailing-debounced persistence of monitor [input]'s chain, for the two
   /// knob-drag entry points ([setEffectParam] / [setPluginParam]). The engine
   /// write stays per-move and immediate; only the envelope rewrite waits.
   ///
-  /// Re-reads the chain from the cubit's state at flush time rather than
-  /// closing over the list that scheduled it, so a coalesced burst persists
-  /// the value the user let go on.
-  void _schedulePersist(int input) =>
-      _fxPersist.schedule(input, () => _persistScheduledFx(input));
-
-  void _persistScheduledFx(int input) {
-    final sessionRevision = _repository.sessionRevision;
-    _pendingFxSaves[input] = (
-      sessionRevision: sessionRevision,
-      token: Object(),
-    );
-    if (_repository.fxRecipesSettled) {
-      unawaited(
-        _fxPersistence.trackSave(_savePendingFx(input, sessionRevision)),
-      );
-    } else {
-      unawaited(
-        _fxPersistence.trackSave(
-          _waitAndPersistScheduledFx(input, sessionRevision),
-        ),
-      );
-    }
-  }
-
-  Future<void> _waitAndPersistScheduledFx(
-    int input,
-    int sessionRevision,
-  ) async {
-    final result = await _repository.settleFxRecipes(
-      waitForCallback: true,
-      cancelled: () => isClosed,
-    );
-    if (!result.isOk || isClosed) return;
-    await _savePendingFx(input, sessionRevision);
-  }
-
-  /// Reads the acknowledged live chain after pending receipts, so an unrelated
-  /// delayed monitor settings write cannot resurrect an earlier Held snapshot.
-  Future<void> _saveProjectedMonitor(int input) => saveFxOwner(
-    settings: _settings,
-    looper: _repository,
-    projection: _fxPersistence,
-    address: FxAddress(stage: FxStage.input, index: input),
+  /// The shared owner reads confirmed repository state when storage starts.
+  void _schedulePersist(int input) => _fxPersistence.scheduleSave(
+    FxAddress(stage: FxStage.input, index: input),
+    _settings,
+    debounce: _fxPersistDebounce,
   );
 
   /// Cancels every editor-sync poll timer for monitor [input].
@@ -1016,7 +855,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   Future<void> close() {
     // A drag that ended inside the debounce window and was followed by a
     // shutdown must still reach the store.
-    _fxPersist.flush();
+    _fxPersistence.flushScheduled();
     for (final timer in _editorTimers.values) {
       timer.cancel();
     }
@@ -1024,14 +863,9 @@ class MonitorCubit extends Cubit<MonitorState> {
     unawaited(_catalogWatch?.cancel());
     unawaited(_monitorWatch.cancel());
     unawaited(_paramWatch.cancel());
-    unawaited(_fxReplayWatch.cancel());
-    _pendingFxSaves.clear();
     return super.close();
   }
 
   /// Commits pending monitor FX writes now. Called on a clean halt.
-  Future<void> flushPersistence() async {
-    _fxPersist.flush();
-    await _fxPersistence.flush();
-  }
+  Future<void> flushPersistence() => _fxPersistence.flush();
 }

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/click_volume.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -63,7 +63,7 @@ class _Rig {
     if (running) {
       expect(looper.startEngine(const EngineConfig()), EngineResult.ok);
     }
-    owner = TempoCubit(
+    owner = TempoSettings(
       repository: looper,
       settings: SettingsRepository(store: store),
       clickPollAttempts: 3,
@@ -73,7 +73,7 @@ class _Rig {
   final engine = _Engine();
   final store = _Store();
   late final LooperRepository looper;
-  late final TempoCubit owner;
+  late final TempoSettings owner;
   void load() {
     unawaited(owner.load());
     pump();
@@ -342,7 +342,7 @@ void main() {
     final looper = LooperRepository(engine: engine);
     expect(looper.startEngine(const EngineConfig()), EngineResult.ok);
     final store = _Store();
-    final owner = TempoCubit(
+    final owner = TempoSettings(
       repository: looper,
       settings: SettingsRepository(store: store),
     );

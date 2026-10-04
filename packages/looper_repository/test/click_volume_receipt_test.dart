@@ -61,6 +61,10 @@ void main() {
     expect(repository.clickVolumeSettled, isFalse);
     expect(repository.sessionTransport.clickVolume, 1);
     engine.commandsAreSettled = true;
+    // Querying readiness does not consume a receipt or mutate accepted state.
+    expect(repository.clickVolumeSettled, isFalse);
+    expect(repository.sessionTransport.clickVolume, 1);
+    clock.elapse(const Duration(milliseconds: 10));
     expect(repository.clickVolumeSettled, isTrue);
     expect(repository.sessionTransport.clickVolume, 1.5);
   });

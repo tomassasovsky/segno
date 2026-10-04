@@ -73,14 +73,17 @@ class LoopSettingsHub extends StatelessWidget {
     // The defaults are the cubits' own intent (what they persist and push),
     // the same source the pages read, so the hub and a page never show two
     // numbers for one setting.
-    final options = context.watch<RecordOptionsCubit>().state;
+    final options = context.watch<RecordOptionsCubit>().state.options;
     final playback = context.watch<PlaybackOptionsCubit>().state;
     final timing = context.watch<RecordTimingCubit>().state;
     // The tempo cubit's own intent, so the hub reads the same number the
     // Tempo page's slider holds; the live transport value only differs
     // while a tap or a derived tempo has moved the engine.
     final tempo = context.watch<TempoCubit>().state;
-    final confirmedStart = context.watch<TempoCubit>().confirmedRecordStart;
+    final confirmedStart = context
+        .watch<TempoCubit>()
+        .state
+        .confirmedRecordStart;
     final bpm = values.bpm > 0 ? values.bpm : tempo.bpm;
     final signature = timeSignatureLabel(values.tsNum, values.tsDen);
     final order = options.recDub

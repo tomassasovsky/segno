@@ -7,11 +7,12 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
-import 'package:segno/looper/cubit/playback_options_cubit.dart';
-import 'package:segno/looper/cubit/record_options_cubit.dart';
-import 'package:segno/looper/cubit/record_timing_cubit.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/record_timing.dart';
+import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
@@ -52,10 +53,11 @@ void main() {
     () {
       late PumpedNativeEngine engine;
       late LooperRepository looper;
-      late TempoCubit tempo;
-      late PlaybackOptionsCubit playback;
-      late RecordOptionsCubit record;
-      late RecordTimingCubit timing;
+      late TempoSettings tempo;
+      late PlaybackSettings playback;
+      late RecordSettings record;
+      late RecordTimingSettings timing;
+      late FxChainPersistence projection;
       late SessionCubit session;
       late SessionRepository sessions;
       late PerformanceRepository performance;
@@ -86,16 +88,17 @@ void main() {
         store = _TimingSaveStore();
         store.values['tempo.quantize_div'] = 3;
         final settings = SettingsRepository(store: store);
-        tempo = TempoCubit(repository: looper, settings: settings);
+        tempo = TempoSettings(repository: looper, settings: settings);
         await tempo.load();
         expect((await tempo.setCountInBars(0)).isOk, isTrue);
-        playback = PlaybackOptionsCubit(repository: looper, settings: settings);
+        playback = PlaybackSettings(repository: looper, settings: settings);
         await playback.load();
         await settings.saveLooperMode(LooperMode.free.code);
-        record = RecordOptionsCubit(repository: looper, settings: settings);
+        record = RecordSettings(repository: looper, settings: settings);
         await record.load();
-        timing = RecordTimingCubit(repository: looper, settings: settings);
+        timing = RecordTimingSettings(repository: looper, settings: settings);
         await timing.load();
+        projection = FxChainPersistence(looper: looper);
         mix = MixSettingsCoordinator(
           repository: looper,
           persistence: SettingsMixPersistence(settings),
@@ -110,23 +113,22 @@ void main() {
           exportsRoot: () async => directory.path,
         );
         session = SessionCubit(
+          settings: settings,
           repository: sessions,
           looper: looper,
           performance: performance,
           mixSettings: mix,
           mixPersistence: SettingsMixPersistence(settings),
-          fxPersistence: FxChainPersistence(looper: looper),
-          runTempoExclusive: tempo.runTempoExclusive,
-          currentDurableRecordStart: () => tempo.durableRecordStartSettings,
-          currentDurableClickVolume: () => tempo.durableClickVolume,
-          currentDurableClickMode: () => tempo.durableClickMode,
-          runPlaybackExclusive: playback.runPlaybackExclusive,
-          runRecordExclusive: record.runRecordExclusive,
-          runRecordTimingExclusive: timing.runRecordTimingExclusive,
-          currentDurableRecordTiming: () => timing.durableRecordTimingSnapshot,
-          currentDurableRecordLength: () => record.durableRecordLengthSnapshot,
-          currentDurableDecay: () => playback.durableDecaySnapshot,
-          currentDurableOneShot: () => playback.durableOneShotSnapshot,
+          fxPersistence: projection,
+          captureSettings: SessionSettingsCoordinator(
+            looper: looper,
+            mix: mix,
+            fx: projection,
+            tempo: tempo,
+            playback: playback,
+            record: record,
+            timing: timing,
+          ),
           exportDirectory: () async => directory.path,
         );
         expect(looper.record(), EngineResult.ok);
@@ -149,6 +151,7 @@ void main() {
         await playback.close();
         await tempo.close();
         await mix.close();
+        await projection.close();
         performance.dispose();
         pump.cancel();
         await looper.dispose();
@@ -182,14 +185,22 @@ void main() {
             );
           }
           await session.saveAs('Record timing held');
-          expect(session.state.status, SessionStatus.success);
+          expect(
+            session.state.status,
+            SessionStatus.success,
+            reason: session.state.errorMessage,
+          );
           for (var pass = 0; pass < 2; pass++) {
             if (pass == 1) {
               // A changed field proves Save wrote a new bundle; rereading the
               // earlier Save As file must not pass if the second write fails.
               expect((await tempo.setClickVolume(.4)).isOk, isTrue);
               await session.save();
-              expect(session.state.status, SessionStatus.success);
+              expect(
+                session.state.status,
+                SessionStatus.success,
+                reason: session.state.errorMessage,
+              );
             }
             final bundle = await sessions.read(
               await sessions.bundlePath('Record timing held'),
@@ -230,11 +241,15 @@ void main() {
               .saveAs('Record timing pending')
               .then((_) => saved = true);
           await Future<void>.delayed(const Duration(milliseconds: 20));
-          expect(saved, isFalse);
+          expect(saved, isFalse, reason: session.state.errorMessage);
           store.blocked!.complete();
           expect((await write).isOk, isTrue);
           await save;
-          expect(session.state.status, SessionStatus.success);
+          expect(
+            session.state.status,
+            SessionStatus.success,
+            reason: session.state.errorMessage,
+          );
           final bundle = await sessions.read(
             await sessions.bundlePath('Record timing pending'),
           );

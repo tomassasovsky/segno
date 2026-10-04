@@ -58,6 +58,9 @@ enum SessionError {
 
   /// Any other failure (I/O, engine, etc.); see [SessionState.errorMessage].
   unknown,
+
+  /// A loaded rig is stopped until its full boot-settings image is recovered.
+  bootPersistence,
 }
 
 /// State of the [SessionCubit].
@@ -77,6 +80,7 @@ class SessionState extends Equatable {
     this.errorMessage,
     this.currentSessionName,
     this.sessions = const [],
+    this.bootRecoveryRequired = false,
   });
 
   /// The current action status.
@@ -98,6 +102,9 @@ class SessionState extends Equatable {
   /// The saved-session catalog, for the picker.
   final List<SessionSummary> sessions;
 
+  /// The new rig was accepted but boot settings or bindings still need Retry.
+  final bool bootRecoveryRequired;
+
   /// Returns a copy for the next emit.
   ///
   /// The **result** fields ([outcome] / [error] / [errorMessage]) are
@@ -113,6 +120,7 @@ class SessionState extends Equatable {
     String? currentSessionName,
     bool clearCurrentSession = false,
     List<SessionSummary>? sessions,
+    bool? bootRecoveryRequired,
   }) => SessionState(
     status: status ?? this.status,
     outcome: outcome,
@@ -122,6 +130,7 @@ class SessionState extends Equatable {
         ? null
         : (currentSessionName ?? this.currentSessionName),
     sessions: sessions ?? this.sessions,
+    bootRecoveryRequired: bootRecoveryRequired ?? this.bootRecoveryRequired,
   );
 
   @override
@@ -132,5 +141,6 @@ class SessionState extends Equatable {
     errorMessage,
     currentSessionName,
     sessions,
+    bootRecoveryRequired,
   ];
 }

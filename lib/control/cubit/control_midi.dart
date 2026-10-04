@@ -333,7 +333,10 @@ extension MidiControlEditing on ControlCubit {
   }
 
   void _onMidiInput(MidiInputMessage message) {
-    if (_closing || isClosed || message.session != _midiDevices?.session) {
+    if (_inputRetired ||
+        _closing ||
+        isClosed ||
+        message.session != _midiDevices?.session) {
       return;
     }
     _midiReadTime = message.timestampMicros == null
@@ -425,6 +428,7 @@ extension MidiControlEditing on ControlCubit {
   }
 
   bool _midiCanDispatch(String device) =>
+      !_inputRetired &&
       !_closing &&
       !isClosed &&
       !_controlInputSuspended &&

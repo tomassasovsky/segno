@@ -9,6 +9,9 @@ import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/setup/setup_surface.dart';
@@ -30,6 +33,7 @@ class _MockControlCubit extends MockCubit<ControlState>
     implements ControlCubit {}
 
 void main() {
+  late TempoSettings tempoOwner;
   setUpAll(() => registerFallbackValue(RecordTiming.immediately));
 
   late AudioSetupCubit cubit;
@@ -37,7 +41,7 @@ void main() {
   late PedalCubit pedal;
   late MonitorCubit monitor;
   late RecordTimingCubit quantize;
-  late RecordOptionsCubit recordOptions;
+  late RecordSettings recordOptions;
   // The MIDI-learn section (part 7) reads the mapping set off ControlCubit and
   // enumerates its targets from the looper repository.
   late ControlCubit control;
@@ -237,7 +241,7 @@ void main() {
       repository: repository,
       settings: settings,
     );
-    recordOptions = RecordOptionsCubit(
+    recordOptions = RecordSettings(
       repository: repository,
       settings: settings,
     );
@@ -257,15 +261,23 @@ void main() {
     bool loadRecordStart = true,
   }) async {
     final timingSettings = SettingsRepository(store: FakeKeyValueStore());
-    tempo = TempoCubit(repository: looper, settings: timingSettings);
-    addTearDown(() => unawaited(tempo.close()));
-    if (loadRecordStart) await tempo.loadRecordStart();
-    quantize = RecordTimingCubit(
+    tempoOwner = TempoSettings(
       repository: looper,
       settings: timingSettings,
     );
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    tempo = TempoCubit(settings: tempoOwner);
+    addTearDown(() => unawaited(tempo.close()));
+    if (loadRecordStart) await tempoOwner.loadRecordStart();
+    final quantizeOwner = RecordTimingSettings(
+      repository: looper,
+      settings: timingSettings,
+    );
+    addTearDown(() => unawaited(quantizeOwner.close()));
+    quantize = RecordTimingCubit(settings: quantizeOwner);
     addTearDown(() => unawaited(quantize.close()));
-    await quantize.load();
+    await quantizeOwner.load();
     await tester.pumpApp(
       MultiBlocProvider(
         providers: [
@@ -274,7 +286,9 @@ void main() {
           BlocProvider<PedalCubit>.value(value: pedal),
           BlocProvider<MonitorCubit>.value(value: monitor),
           BlocProvider<RecordTimingCubit>.value(value: quantize),
-          BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+          BlocProvider<RecordOptionsCubit>(
+            create: (_) => RecordOptionsCubit(settings: recordOptions),
+          ),
           BlocProvider<ControlCubit>.value(value: control),
           BlocProvider<TracksCubit>.value(value: tracks),
           BlocProvider<TempoCubit>.value(value: tempo),
@@ -485,8 +499,8 @@ void main() {
     seed(runningState);
     await pumpSection(tester);
     expect(recordOptions.state.recDub, isFalse);
-    expect(tempo.confirmedRecordStart?.soundStart, isFalse);
-    expect(tempo.recordStartSnapshot?.canEdit, isTrue);
+    expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
+    expect(tempo.state.recordStartSnapshot?.canEdit, isTrue);
 
     final recDub = find.byKey(const Key('audioSettings_recDub_switch'));
     await tester.ensureVisible(recDub);
@@ -500,10 +514,10 @@ void main() {
     await tester.ensureVisible(autoRecord);
     await tester.tap(autoRecord);
     await tester.pumpAndSettle();
-    await tester.runAsync(tempo.flushRecordStart);
+    await tester.runAsync(tempoOwner.flushRecordStart);
     await tester.pump();
-    expect(tempo.confirmedRecordStart?.soundStart, isTrue);
-    expect(tempo.confirmedRecordStart?.countInBars, 0);
+    expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
+    expect(tempo.state.confirmedRecordStart?.countInBars, 0);
   });
 
   testWidgets('unconfirmed Sound shows an unavailable readout, not Off', (
@@ -515,7 +529,7 @@ void main() {
     await tester.ensureVisible(control);
     expect(control, findsOneWidget);
     expect(control.evaluate().single.widget, isNot(isA<Switch>()));
-    expect(tempo.confirmedRecordStart, isNull);
+    expect(tempo.state.confirmedRecordStart, isNull);
     expect(find.text('—'), findsWidgets);
   });
 
@@ -528,12 +542,12 @@ void main() {
     await tester.ensureVisible(control);
     await tester.tap(control);
     await tester.pumpAndSettle();
-    expect(tempo.confirmedRecordStart?.soundStart, isTrue);
+    expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
 
     startRecovering = true;
     stateChanges.add(const LooperState());
     await tester.pumpAndSettle();
-    expect(tempo.recordStartSnapshot, isNull);
+    expect(tempo.state.recordStartSnapshot, isNull);
     final toggle = tester.widget<SetupToggleRow>(
       find.ancestor(of: control, matching: find.byType(SetupToggleRow)),
     );
@@ -567,7 +581,7 @@ void main() {
     );
     expect(toggle.value, isFalse);
     expect(toggle.onChanged, isNull);
-    expect(tempo.recordStartSnapshot?.captureLocked, isTrue);
+    expect(tempo.state.recordStartSnapshot?.captureLocked, isTrue);
     clearInteractions(looper);
     await tester.ensureVisible(control);
     await tester.tap(control);

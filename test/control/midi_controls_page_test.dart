@@ -25,6 +25,8 @@ import 'package:segno/control/view/midi_controls/midi_segmented.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
@@ -40,8 +42,8 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_key_value_store.dart';
-import '../helpers/mock_click_tempo_cubit.dart';
-import '../helpers/mock_decay_playback_cubit.dart';
+import '../helpers/mock_click_tempo_settings.dart';
+import '../helpers/mock_decay_playback_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooper extends Mock implements LooperRepository {}
@@ -97,8 +99,8 @@ void main() {
   late StreamController<MidiInputMessage> messages;
   late _Store store;
   late ControlCubit control;
-  late MockClickTempoCubit tempo;
-  late RecordOptionsCubit record;
+  late MockClickTempoSettings tempo;
+  late RecordSettings record;
   late RecordTimingCubit timing;
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
@@ -239,8 +241,11 @@ void main() {
     final settings = SettingsRepository(store: store);
     confirmedTiming = currentTiming;
     rememberedDivision = currentTiming.division;
-    await settings.saveQuantize(value: currentTiming.quantize);
-    await settings.saveQuantizeDiv(rememberedDivision.code);
+    await settings.restoreRecordTimingCheckpoint((
+      quantize: currentTiming.quantize,
+      division: rememberedDivision.code,
+      trackOverrides: {},
+    ));
     tray = SettingsTrayCubit(settings: settings);
     addTearDown(() => unawaited(tray.close()));
     if (malformed) {
@@ -264,18 +269,26 @@ void main() {
     addTearDown(() => unawaited(pedal.dispose()));
     final mix = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mix.close()));
-    tempo = MockClickTempoCubit(clickVolume: clickVolume);
+    tempo = MockClickTempoSettings(clickVolume: clickVolume);
+    final closeTempo = tempo.close;
+    addTearDown(() => unawaited(closeTempo()));
     when(() => tempo.clickModeSnapshot).thenReturn(clickModeSnapshot);
-    final playback = MockDecayPlaybackCubit(
+    final playback = MockDecayPlaybackSettings(
       snapshot: decaySnapshot,
       oneShot: oneShotSnapshot,
     );
-    record = RecordOptionsCubit(repository: looper, settings: settings);
+    addTearDown(playback.close);
+    record = RecordSettings(repository: looper, settings: settings);
     addTearDown(() => unawaited(record.close()));
     await record.load();
-    timing = RecordTimingCubit(repository: looper, settings: settings);
+    final timingOwner = RecordTimingSettings(
+      repository: looper,
+      settings: settings,
+    );
+    addTearDown(() => unawaited(timingOwner.close()));
+    timing = RecordTimingCubit(settings: timingOwner);
     addTearDown(() => unawaited(timing.close()));
-    await timing.load();
+    await timingOwner.load();
     control = ControlCubit(
       looper: looper,
       clickVolumeControl: tempo,
@@ -283,7 +296,7 @@ void main() {
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,
-      recordTimingControl: timing,
+      recordTimingControl: timingOwner,
       pedal: pedal,
       settings: settings,
       performance: performance,
@@ -305,9 +318,15 @@ void main() {
             BlocProvider.value(value: control),
             BlocProvider.value(value: tracks),
             BlocProvider.value(value: midi),
-            BlocProvider<TempoCubit>.value(value: tempo),
-            BlocProvider<PlaybackOptionsCubit>.value(value: playback),
-            BlocProvider<RecordOptionsCubit>.value(value: record),
+            BlocProvider<TempoCubit>(
+              create: (_) => TempoCubit(settings: tempo),
+            ),
+            BlocProvider<PlaybackOptionsCubit>(
+              create: (_) => PlaybackOptionsCubit(settings: playback),
+            ),
+            BlocProvider<RecordOptionsCubit>(
+              create: (_) => RecordOptionsCubit(settings: record),
+            ),
             BlocProvider<RecordTimingCubit>.value(value: timing),
           ],
           child: MaterialApp(
@@ -1332,6 +1351,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(control.state.midiControlEnabled, isTrue);
     expect(control.state.midiRemotePaused, isTrue);
+    expect(find.text('Could not save MIDI control setting'), findsOneWidget);
+    expect(find.text('Could not save MIDI device setting'), findsNothing);
     expect(find.byKey(const Key('midi_retry_off')), findsOneWidget);
     expect(find.byKey(const Key('midi_resume_on')), findsOneWidget);
     store.refuse = false;

@@ -123,3 +123,38 @@ abstract interface class RecordTimingControl {
     required RecordTiming? timing,
   });
 }
+
+/// Confirmed recording policy and independent initialization availability.
+final class RecordTimingState extends Equatable {
+  const RecordTimingState({
+    this.defaultTiming = RecordTiming.immediately,
+    this.rememberedDivision = GridDivision.off,
+    this.trackOverrides = const {},
+    this.captureLocked = false,
+    this.recordTimingReady = false,
+  });
+  final RecordTiming defaultTiming;
+  final GridDivision rememberedDivision;
+  final Map<int, RecordTiming> trackOverrides;
+  final bool captureLocked;
+  final bool recordTimingReady;
+
+  /// Confirmed choices, or null while initialization or recovery is pending.
+  RecordTimingSnapshot? get recordTimingSnapshot => recordTimingReady
+      ? RecordTimingSnapshot(
+          defaultTiming: defaultTiming,
+          rememberedDivision: rememberedDivision,
+          trackOverrides: trackOverrides,
+          captureLocked: captureLocked,
+        )
+      : null;
+
+  @override
+  List<Object?> get props => [
+    defaultTiming,
+    rememberedDivision,
+    trackOverrides,
+    captureLocked,
+    recordTimingReady,
+  ];
+}

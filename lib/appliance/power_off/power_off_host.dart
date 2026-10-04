@@ -17,7 +17,7 @@ import 'package:session_repository/session_repository.dart';
 
 /// Listens for the rear power button, shows confirm, and runs Save As.
 ///
-/// Mounted under LooperPage so it can read SessionCubit / the page
+/// Mounted under LooperPage so it can read SessionCubit and the app-wide
 /// [LooperBloc]. [PowerOffCubit] itself is provided app-wide. Silent when
 /// either is missing (widget tests that pump the page without the cubit).
 class PowerOffHost extends StatefulWidget {
@@ -127,7 +127,6 @@ class _PowerOffHostState extends State<PowerOffHost> {
         _dismissPowerOffRoutes();
       case PowerOffPhase.goodbye:
         _dismissPowerOffRoutes();
-        context.read<LooperBloc>().add(const LooperPersistFlush());
     }
   }
 

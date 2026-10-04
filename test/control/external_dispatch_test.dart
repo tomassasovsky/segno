@@ -1057,7 +1057,15 @@ void main() {
         ..midiValue(127)
         ..store.monitorModeGate = Completer<void>();
       var saved = false;
-      unawaited(monitor.syncFromRepository().then((_) => saved = true));
+      monitor.projectFromRepository();
+      unawaited(
+        r.fx
+            .saveConfirmed(
+              const FxAddress(stage: FxStage.input),
+              r.settings,
+            )
+            .then((_) => saved = true),
+      );
       r
         ..clock.flushMicrotasks()
         ..settle();
@@ -1110,8 +1118,7 @@ void main() {
         settings: r.settings,
         mixSettings: r.mix,
         fxPersistence: r.fx,
-      );
-      unawaited(monitor.syncFromRepository());
+      )..projectFromRepository();
       r
         ..clock.flushMicrotasks()
         ..settle()

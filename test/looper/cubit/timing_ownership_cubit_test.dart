@@ -3,7 +3,15 @@ import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/playback_options.dart';
+import 'package:segno/looper/model/record_options.dart';
+import 'package:segno/looper/model/record_timing.dart';
+import 'package:segno/looper/model/tempo_state.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -60,9 +68,13 @@ void main() {
 
   Future<_DelayedSettingsRepository> delayedSettings() async {
     final delayed = _DelayedSettingsRepository(store: FakeKeyValueStore());
-    await delayed.saveOverdubDecay(80);
-    await delayed.saveDefaultOneShot(oneShot: true);
-    await delayed.saveQuantize(value: true);
+    await delayed.restoreDecayCheckpoint(channel: null, percent: 80);
+    await delayed.restoreOneShotCheckpoint(channel: null, oneShot: true);
+    await delayed.restoreRecordTimingCheckpoint((
+      quantize: true,
+      division: null,
+      trackOverrides: {},
+    ));
     await delayed.saveRecDub(value: true);
     await delayed.saveDefaultMultiple(4);
     await delayed.saveTempoBpm(120);
@@ -74,19 +86,19 @@ void main() {
     'a session recall wins while all startup preference reads are pending',
     () async {
       final delayed = await delayedSettings();
-      final playback = PlaybackOptionsCubit(
+      final playback = PlaybackSettings(
         repository: repository,
         settings: delayed,
       );
-      final quantize = RecordTimingCubit(
+      final quantize = RecordTimingSettings(
         repository: repository,
         settings: delayed,
       );
-      final record = RecordOptionsCubit(
+      final record = RecordSettings(
         repository: repository,
         settings: delayed,
       );
-      final tempo = TempoCubit(repository: repository, settings: delayed);
+      final tempo = TempoSettings(repository: repository, settings: delayed);
       addTearDown(playback.close);
       addTearDown(quantize.close);
       addTearDown(record.close);
@@ -126,7 +138,7 @@ void main() {
       );
       expect(
         tempo.state,
-        const TempoSettings(
+        const TempoState(
           bpm: 96,
           soundStart: true,
           recordStartReady: true,
@@ -153,7 +165,7 @@ void main() {
       );
       expect(
         tempo.state,
-        const TempoSettings(
+        const TempoState(
           bpm: 96,
           soundStart: true,
           recordStartReady: true,
@@ -173,19 +185,19 @@ void main() {
     'explicit matching edits win over pending startup preferences',
     () async {
       final delayed = await delayedSettings();
-      final playback = PlaybackOptionsCubit(
+      final playback = PlaybackSettings(
         repository: repository,
         settings: delayed,
       );
-      final quantize = RecordTimingCubit(
+      final quantize = RecordTimingSettings(
         repository: repository,
         settings: delayed,
       );
-      final record = RecordOptionsCubit(
+      final record = RecordSettings(
         repository: repository,
         settings: delayed,
       );
-      final tempo = TempoCubit(repository: repository, settings: delayed);
+      final tempo = TempoSettings(repository: repository, settings: delayed);
       addTearDown(playback.close);
       addTearDown(quantize.close);
       addTearDown(record.close);
@@ -225,7 +237,7 @@ void main() {
       expect(record.state, const RecordOptions(recordLengthReady: true));
       expect(
         tempo.state,
-        const TempoSettings(
+        const TempoState(
           bpm: 120,
           clickReady: true,
           clickModeReady: true,
@@ -243,7 +255,7 @@ void main() {
     'a Hear click edit preserves independent pending Tempo preferences',
     () async {
       final delayed = await delayedSettings();
-      final tempo = TempoCubit(repository: repository, settings: delayed);
+      final tempo = TempoSettings(repository: repository, settings: delayed);
       addTearDown(tempo.close);
       addTearDown(() {
         if (!delayed.ready.isCompleted) delayed.ready.complete();
@@ -262,7 +274,7 @@ void main() {
       await poll();
       expect(
         tempo.state,
-        const TempoSettings(
+        const TempoState(
           bpm: 120,
           countInBars: 2,
           recordStartReady: true,
@@ -283,11 +295,11 @@ void main() {
     'a Sound start edit preserves independent delayed Tempo preferences',
     () async {
       final delayed = await delayedSettings();
-      final record = RecordOptionsCubit(
+      final record = RecordSettings(
         repository: repository,
         settings: delayed,
       );
-      final tempo = TempoCubit(repository: repository, settings: delayed);
+      final tempo = TempoSettings(repository: repository, settings: delayed);
       addTearDown(record.close);
       addTearDown(tempo.close);
       final loading = tempo.load();
@@ -306,11 +318,11 @@ void main() {
 
   test('only Tempo restores the coupled startup start methods', () async {
     await settings.saveRecordStartSettings(countInBars: 2, soundStart: false);
-    final record = RecordOptionsCubit(
+    final record = RecordSettings(
       repository: repository,
       settings: settings,
     );
-    final tempo = TempoCubit(repository: repository, settings: settings);
+    final tempo = TempoSettings(repository: repository, settings: settings);
     addTearDown(record.close);
     addTearDown(tempo.close);
     await Future.wait([record.load(), tempo.load()]);
@@ -329,11 +341,11 @@ void main() {
         ..values['tempo.count_in_bars'] = 2
         ..values['looper.auto_record'] = true;
       final invalid = SettingsRepository(store: store);
-      final record = RecordOptionsCubit(
+      final record = RecordSettings(
         repository: repository,
         settings: invalid,
       );
-      final tempo = TempoCubit(repository: repository, settings: invalid);
+      final tempo = TempoSettings(repository: repository, settings: invalid);
       addTearDown(record.close);
       addTearDown(tempo.close);
       await Future.wait([record.load(), tempo.load()]);
@@ -345,66 +357,76 @@ void main() {
     },
   );
 
-  blocTest<PlaybackOptionsCubit, PlaybackOptions>(
+  test(
     'offline playback defaults survive polling, recall and explicit reset',
-    build: () => PlaybackOptionsCubit(
-      repository: repository,
-      settings: settings,
-    ),
-    act: (cubit) async {
-      await cubit.load();
-      await cubit.setOverdubDecay(40);
-      await cubit.setDefaultOneShot(value: true);
-      await poll();
-      expect(
-        cubit.state,
-        const PlaybackOptions(
-          overdubDecay: 40,
-          defaultOneShot: true,
-          decayReady: true,
-          oneShotReady: true,
-        ),
-      );
+    () async {
+      final owner = (() => PlaybackSettings(
+        repository: repository,
+        settings: settings,
+      ))();
+      addTearDown(owner.close);
+      await ((PlaybackSettings cubit) async {
+        await cubit.load();
+        await cubit.setOverdubDecay(40);
+        await cubit.setDefaultOneShot(value: true);
+        await poll();
+        expect(
+          cubit.state,
+          const PlaybackOptions(
+            overdubDecay: 40,
+            defaultOneShot: true,
+            decayReady: true,
+            oneShotReady: true,
+          ),
+        );
 
-      await repository.applySession(const SessionRig(overdubDecay: 75));
-      await poll();
-      expect(
-        cubit.state,
-        const PlaybackOptions(
-          overdubDecay: 75,
-          decayReady: true,
-          oneShotReady: true,
-        ),
-      );
-      await cubit.load();
-      expect(
-        cubit.state,
-        const PlaybackOptions(
-          overdubDecay: 75,
-          decayReady: true,
-          oneShotReady: true,
-        ),
-      );
-      expect(await settings.loadOverdubDecay(), 40);
-      expect(await settings.loadDefaultOneShot(), isTrue);
+        await repository.applySession(const SessionRig(overdubDecay: 75));
+        await poll();
+        expect(
+          cubit.state,
+          const PlaybackOptions(
+            overdubDecay: 75,
+            decayReady: true,
+            oneShotReady: true,
+          ),
+        );
+        await cubit.load();
+        expect(
+          cubit.state,
+          const PlaybackOptions(
+            overdubDecay: 75,
+            decayReady: true,
+            oneShotReady: true,
+          ),
+        );
+        expect(await settings.readDecayCheckpoint(channel: null), 40);
+        expect(await settings.readOneShotCheckpoint(channel: null), isTrue);
 
-      await repository.applySession(const SessionRig());
-      await poll();
+        await repository.applySession(const SessionRig());
+        await poll();
+      })(owner);
+      await Future<void>.delayed(Duration.zero);
+      await owner.close();
+      ((PlaybackSettings cubit) => expect(
+        cubit.state,
+        const PlaybackOptions(decayReady: true, oneShotReady: true),
+      ))(owner);
     },
-    verify: (cubit) => expect(
-      cubit.state,
-      const PlaybackOptions(decayReady: true, oneShotReady: true),
-    ),
   );
 
+  late RecordTimingSettings timingOwner;
   blocTest<RecordTimingCubit, RecordTimingState>(
     'offline quantize follows recalled timing and toggles from that value',
-    build: () => RecordTimingCubit(
-      repository: repository,
-      settings: settings,
-    ),
+    build: () {
+      timingOwner = RecordTimingSettings(
+        repository: repository,
+        settings: settings,
+      );
+      addTearDown(timingOwner.close);
+      return RecordTimingCubit(settings: timingOwner);
+    },
     act: (cubit) async {
-      await cubit.load();
+      await timingOwner.load();
       await cubit.setEnabled(value: true);
       await poll();
       expect(cubit.state.defaultTiming, RecordTiming.loopStart);
@@ -412,8 +434,8 @@ void main() {
       await repository.applySession(const SessionRig());
       await poll();
       expect(cubit.state.defaultTiming, RecordTiming.immediately);
-      expect(await settings.loadQuantize(), isTrue);
-      await cubit.load();
+      expect((await settings.readRecordTimingCheckpoint()).quantize, isTrue);
+      await timingOwner.load();
       await cubit.setEnabled(value: true);
       await poll();
     },
@@ -423,42 +445,49 @@ void main() {
     },
   );
 
-  blocTest<TempoCubit, TempoSettings>(
+  test(
     'offline count-in and Sound edits use the same confirmed owner',
-    build: () => TempoCubit(repository: repository, settings: settings),
-    act: (cubit) async {
-      await cubit.load();
-      expect((await cubit.setSoundStart(enabled: true)).isOk, isTrue);
-      await poll();
-      expect(cubit.state.soundStart, isTrue);
-      expect(cubit.state.countInBars, 0);
-      expect((await cubit.setCountInBars(2)).isOk, isTrue);
-      await poll();
-      expect(cubit.state.soundStart, isFalse);
-      expect(cubit.state.countInBars, 2);
-      expect(await settings.readRecordStartCheckpoint(), (
-        countInBars: 2,
-        soundStart: false,
-      ));
-      expect((await cubit.setSoundStart(enabled: true)).isOk, isTrue);
-      await poll();
-      expect(cubit.state.countInBars, 0);
-      expect(await settings.readRecordStartCheckpoint(), (
-        countInBars: 0,
-        soundStart: true,
-      ));
-    },
-    verify: (cubit) {
-      expect(cubit.state.soundStart, isTrue);
-      expect(repository.sessionTransport.autoRecord, isTrue);
-      expect(repository.sessionTransport.countInBars, 0);
+    () async {
+      final owner = (() =>
+          TempoSettings(repository: repository, settings: settings))();
+      addTearDown(owner.close);
+      await ((TempoSettings cubit) async {
+        await cubit.load();
+        expect((await cubit.setSoundStart(enabled: true)).isOk, isTrue);
+        await poll();
+        expect(cubit.state.soundStart, isTrue);
+        expect(cubit.state.countInBars, 0);
+        expect((await cubit.setCountInBars(2)).isOk, isTrue);
+        await poll();
+        expect(cubit.state.soundStart, isFalse);
+        expect(cubit.state.countInBars, 2);
+        expect(await settings.readRecordStartCheckpoint(), (
+          countInBars: 2,
+          soundStart: false,
+        ));
+        expect((await cubit.setSoundStart(enabled: true)).isOk, isTrue);
+        await poll();
+        expect(cubit.state.countInBars, 0);
+        expect(await settings.readRecordStartCheckpoint(), (
+          countInBars: 0,
+          soundStart: true,
+        ));
+      })(owner);
+      await Future<void>.delayed(Duration.zero);
+      await owner.close();
+      ((TempoSettings cubit) {
+        expect(cubit.state.soundStart, isTrue);
+        expect(repository.sessionTransport.autoRecord, isTrue);
+        expect(repository.sessionTransport.countInBars, 0);
+      })(owner);
     },
   );
 
-  blocTest<TempoCubit, TempoSettings>(
-    'offline musical settings follow full recall and reset',
-    build: () => TempoCubit(repository: repository, settings: settings),
-    act: (cubit) async {
+  test('offline musical settings follow full recall and reset', () async {
+    final owner = (() =>
+        TempoSettings(repository: repository, settings: settings))();
+    addTearDown(owner.close);
+    await ((TempoSettings cubit) async {
       await cubit.load();
       await cubit.setTempo(120);
       await cubit.setCountInBars(1);
@@ -484,7 +513,7 @@ void main() {
       await poll();
       expect(
         cubit.state,
-        const TempoSettings(
+        const TempoState(
           bpm: 96,
           tsNum: 5,
           tsDen: 8,
@@ -504,46 +533,54 @@ void main() {
 
       await repository.applySession(const SessionRig());
       await poll();
-    },
-    verify: (cubit) => expect(
+    })(owner);
+    await Future<void>.delayed(Duration.zero);
+    await owner.close();
+    ((TempoSettings cubit) => expect(
       cubit.state,
-      const TempoSettings(
+      const TempoState(
         clickReady: true,
         clickModeReady: true,
         recordStartReady: true,
       ),
-    ),
-  );
+    ))(owner);
+  });
 
-  blocTest<TempoCubit, TempoSettings>(
+  test(
     'rapid start-method edits persist the last choice in both directions',
-    build: () => TempoCubit(repository: repository, settings: settings),
-    act: (cubit) async {
-      await cubit.load();
-      final first = await Future.wait([
-        cubit.setSoundStart(enabled: true),
-        cubit.setCountInBars(2),
-      ]);
-      expect(first.every((outcome) => outcome.isOk), isTrue);
-      await poll();
-      expect(cubit.state.soundStart, isFalse);
-      expect(cubit.state.countInBars, 2);
-      expect(await settings.readRecordStartCheckpoint(), (
-        countInBars: 2,
-        soundStart: false,
-      ));
-      final second = await Future.wait([
-        cubit.setCountInBars(1),
-        cubit.setSoundStart(enabled: true),
-      ]);
-      expect(second.every((outcome) => outcome.isOk), isTrue);
-      await poll();
-      expect(cubit.state.countInBars, 0);
-      expect(await settings.readRecordStartCheckpoint(), (
-        countInBars: 0,
-        soundStart: true,
-      ));
+    () async {
+      final owner = (() =>
+          TempoSettings(repository: repository, settings: settings))();
+      addTearDown(owner.close);
+      await ((TempoSettings cubit) async {
+        await cubit.load();
+        final first = await Future.wait([
+          cubit.setSoundStart(enabled: true),
+          cubit.setCountInBars(2),
+        ]);
+        expect(first.every((outcome) => outcome.isOk), isTrue);
+        await poll();
+        expect(cubit.state.soundStart, isFalse);
+        expect(cubit.state.countInBars, 2);
+        expect(await settings.readRecordStartCheckpoint(), (
+          countInBars: 2,
+          soundStart: false,
+        ));
+        final second = await Future.wait([
+          cubit.setCountInBars(1),
+          cubit.setSoundStart(enabled: true),
+        ]);
+        expect(second.every((outcome) => outcome.isOk), isTrue);
+        await poll();
+        expect(cubit.state.countInBars, 0);
+        expect(await settings.readRecordStartCheckpoint(), (
+          countInBars: 0,
+          soundStart: true,
+        ));
+      })(owner);
+      await Future<void>.delayed(Duration.zero);
+      await owner.close();
+      ((TempoSettings cubit) => expect(cubit.state.soundStart, isTrue))(owner);
     },
-    verify: (cubit) => expect(cubit.state.soundStart, isTrue),
   );
 }

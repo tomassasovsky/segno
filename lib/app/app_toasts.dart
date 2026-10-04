@@ -59,10 +59,10 @@ void resetAppToastsForTest() => _active.clear();
 @visibleForTesting
 bool debugAppToastActive(String id) => _active.containsKey(id);
 
-void dismissAppToast(String id) {
+void dismissAppToast(String id, {bool animate = true}) {
   final item = _active.remove(id);
   if (item != null) {
-    toastification.dismiss(item);
+    toastification.dismiss(item, showRemoveAnimation: animate);
   }
 }
 

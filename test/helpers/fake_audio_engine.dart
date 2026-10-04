@@ -258,6 +258,20 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult clear({int channel = 0}) {
     clearCalls++;
+    if (channel < 0 || channel >= nextSnapshot.tracks.length) {
+      return EngineResult.invalid;
+    }
+    final tracks = [...nextSnapshot.tracks];
+    tracks[channel] = const TrackSnapshot.empty();
+    nextSnapshot = nextSnapshot.copyWith(
+      tracks: tracks,
+      masterLengthFrames: tracks.every((track) => track.lengthFrames == 0)
+          ? 0
+          : nextSnapshot.masterLengthFrames,
+    );
+    laneExports.removeWhere((key, _) => key.$1 == channel);
+    _importedLengths.removeWhere((key, _) => key.$1 == channel);
+    _importedDepths.remove(channel);
     return EngineResult.ok;
   }
 
@@ -1323,16 +1337,44 @@ class FakeAudioEngine implements AudioEngine {
     Float32List pcm,
   ) {
     if (ordinal == 0) laneExports[(channel, lane)] = Float32List.fromList(pcm);
+    if (lane == 0) _importedLengths[(channel, ordinal)] = pcm.length;
     return EngineResult.ok;
   }
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
-      EngineResult.ok;
+  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
+    _importedDepths[channel] = (undoCount, redoCount);
+    return EngineResult.ok;
+  }
+
+  final _importedDepths = <int, (int, int)>{};
+  final _importedLengths = <(int, int), int>{};
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) =>
-      EngineResult.ok;
+  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+    final tracks = [...nextSnapshot.tracks];
+    for (final entry in _importedDepths.entries) {
+      final length = _importedLengths[(entry.key, entry.value.$1)];
+      if (length == null || length == 0) return EngineResult.invalid;
+      tracks[entry.key] = TrackSnapshot(
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        lengthFrames: length,
+        undoDepth: entry.value.$1,
+        redoDepth: entry.value.$2,
+        rms: 0,
+        peak: 0,
+      );
+    }
+    nextSnapshot = nextSnapshot.copyWith(
+      tracks: tracks,
+      masterLengthFrames: baseFrames,
+    );
+    _importedDepths.clear();
+    _importedLengths.clear();
+    return EngineResult.ok;
+  }
 
   // --- Performance recording capture ---
 

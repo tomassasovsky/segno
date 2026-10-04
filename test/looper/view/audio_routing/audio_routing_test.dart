@@ -13,6 +13,7 @@ import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
@@ -48,6 +49,7 @@ const _rig = LooperState(
 );
 
 void main() {
+  late TempoSettings tempoOwner;
   late _MockLooperBloc bloc;
   late _MockLooperRepository repository;
   late SettingsRepository settings;
@@ -88,6 +90,9 @@ void main() {
       (countInBars: 0, soundStart: false),
     );
     when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.fxRecipesSettled).thenReturn(true);
+    when(() => repository.monitorEffects(any())).thenReturn(const []);
+    when(() => repository.monitorChainEnabled(any())).thenReturn(true);
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -160,7 +165,13 @@ void main() {
       mixSettings: testMixSettings(repository, settings: settings),
     );
     addTearDown(() => unawaited(monitors.close()));
-    tempo = TempoCubit(repository: repository, settings: settings);
+    tempoOwner = TempoSettings(
+      repository: repository,
+      settings: settings,
+    );
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    tempo = TempoCubit(settings: tempoOwner);
     addTearDown(() => unawaited(tempo.close()));
     // Providers ABOVE the app, so a route pushed onto the root navigator can
     // read them: the navigator builds its routes outside `home`'s subtree.

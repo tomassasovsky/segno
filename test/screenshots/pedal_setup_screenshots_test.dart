@@ -63,6 +63,20 @@ void main() {
   setUp(() {
     looper = _MockLooperRepository();
     when(() => looper.sessionRevision).thenReturn(0);
+    when(() => looper.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
+    when(() => looper.mixGeneration).thenReturn(0);
+    when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => looper.laneCount(any())).thenAnswer((call) {
+      final channel = call.positionalArguments.first as int;
+      return looper.state.tracks
+              .where((track) => track.channel == channel)
+              .firstOrNull
+              ?.lanes
+              .length ??
+          0;
+    });
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     when(() => looper.state).thenReturn(

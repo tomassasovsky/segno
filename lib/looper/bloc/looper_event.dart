@@ -1292,17 +1292,6 @@ final class LooperOutputEnabledToggled extends LooperEvent {
   List<Object?> get props => [output, enabled];
 }
 
-/// A session load landed, so the bloc must write its FX chains back to their
-/// boot-restore keys — see `_resyncSessionChains`. Mix settings are
-/// synchronized with the session load through the shared coordinator.
-///
-/// Named for the trigger rather than the work, like every other event here: a
-/// load is what HAPPENED; re-persisting is this bloc's response to it.
-final class LooperSessionLoaded extends LooperEvent {
-  /// Creates a [LooperSessionLoaded].
-  const LooperSessionLoaded();
-}
-
 /// Flushes coalesced FX persistence now — a clean halt must not wait for
 /// cubit teardown.
 final class LooperPersistFlush extends LooperEvent {

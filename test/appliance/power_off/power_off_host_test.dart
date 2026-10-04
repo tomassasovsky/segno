@@ -299,7 +299,7 @@ void main() {
       verifyNever(() => session.saveAs(any()));
     });
 
-    testWidgets('empty console skips confirm and flushes the page bloc', (
+    testWidgets('empty console flushes before goodbye and halt', (
       tester,
     ) async {
       whenListen(
@@ -316,7 +316,6 @@ void main() {
       expect(find.byKey(const Key('power_off_dialog')), findsNothing);
       expect(cubit.state.phase, PowerOffPhase.goodbye);
       expect(log, ['flush', 'pedal', 'powerOff']);
-      verify(() => looper.add(const LooperPersistFlush())).called(1);
     });
 
     testWidgets('named Save success halts and does not open Save As', (

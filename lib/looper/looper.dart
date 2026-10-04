@@ -15,6 +15,5 @@ export 'cubit/tracks_cubit.dart';
 export 'cubit/transport_clock_cubit.dart';
 export 'model/interaction_mode.dart';
 export 'view/looper_page.dart';
-export 'view/session_persistence_sync_listener.dart';
 export 'view/settings_page.dart';
 export 'view/tracks_view.dart';

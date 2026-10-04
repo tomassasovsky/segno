@@ -7,11 +7,12 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
-import 'package:segno/looper/cubit/playback_options_cubit.dart';
-import 'package:segno/looper/cubit/record_options_cubit.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_timing.dart';
+import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
@@ -41,9 +42,11 @@ void main() {
     () {
       late PumpedNativeEngine engine;
       late LooperRepository looper;
-      late TempoCubit tempo;
-      late PlaybackOptionsCubit playback;
-      late RecordOptionsCubit record;
+      late TempoSettings tempo;
+      late PlaybackSettings playback;
+      late RecordSettings record;
+      late RecordTimingSettings timing;
+      late FxChainPersistence projection;
       late SessionCubit session;
       late SessionRepository sessions;
       late PerformanceRepository performance;
@@ -73,14 +76,17 @@ void main() {
         directory = Directory.systemTemp.createTempSync('segno-length-save-');
         store = _LengthSaveStore();
         final settings = SettingsRepository(store: store);
-        tempo = TempoCubit(repository: looper, settings: settings);
+        tempo = TempoSettings(repository: looper, settings: settings);
         await tempo.load();
         expect((await tempo.setCountInBars(0)).isOk, isTrue);
-        playback = PlaybackOptionsCubit(repository: looper, settings: settings);
+        playback = PlaybackSettings(repository: looper, settings: settings);
         await playback.load();
         await settings.saveLooperMode(LooperMode.free.code);
-        record = RecordOptionsCubit(repository: looper, settings: settings);
+        record = RecordSettings(repository: looper, settings: settings);
         await record.load();
+        timing = RecordTimingSettings(repository: looper, settings: settings);
+        await timing.load();
+        projection = FxChainPersistence(looper: looper);
         mix = MixSettingsCoordinator(
           repository: looper,
           persistence: SettingsMixPersistence(settings),
@@ -95,28 +101,22 @@ void main() {
           exportsRoot: () async => directory.path,
         );
         session = SessionCubit(
+          settings: settings,
           repository: sessions,
           looper: looper,
           performance: performance,
           mixSettings: mix,
           mixPersistence: SettingsMixPersistence(settings),
-          fxPersistence: FxChainPersistence(looper: looper),
-          runTempoExclusive: tempo.runTempoExclusive,
-          currentDurableRecordStart: () => tempo.durableRecordStartSettings,
-          currentDurableClickVolume: () => tempo.durableClickVolume,
-          currentDurableClickMode: () => tempo.durableClickMode,
-          runPlaybackExclusive: playback.runPlaybackExclusive,
-          runRecordExclusive: record.runRecordExclusive,
-          runRecordTimingExclusive: <T>(operation) => operation(),
-          currentDurableRecordTiming: () => RecordTimingSnapshot(
-            defaultTiming: looper.defaultRecordTiming,
-            rememberedDivision: looper.sessionTransport.quantizeDiv,
-            trackOverrides: looper.trackRecordTimingOverrides,
-            captureLocked: false,
+          fxPersistence: projection,
+          captureSettings: SessionSettingsCoordinator(
+            looper: looper,
+            mix: mix,
+            fx: projection,
+            tempo: tempo,
+            playback: playback,
+            record: record,
+            timing: timing,
           ),
-          currentDurableRecordLength: () => record.durableRecordLengthSnapshot,
-          currentDurableDecay: () => playback.durableDecaySnapshot,
-          currentDurableOneShot: () => playback.durableOneShotSnapshot,
           exportDirectory: () async => directory.path,
         );
         expect(looper.record(), EngineResult.ok);
@@ -135,9 +135,11 @@ void main() {
         }
         await session.close();
         await record.close();
+        await timing.close();
         await playback.close();
         await tempo.close();
         await mix.close();
+        await projection.close();
         performance.dispose();
         pump.cancel();
         await looper.dispose();

@@ -126,6 +126,9 @@ class MixSettingsCoordinator {
   String? _queuedDevice;
   bool _closed = false;
   MixSettingsOutcome? _recovery;
+
+  /// Whether the last durable rollback still needs explicit recovery.
+  bool get recoveryRequired => _recovery != null;
   (String, String?)? _recoveryCheckpoint;
 
   /// Accepted ordinary intent, in the same normalized domain as assignments.

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno_engine/segno_engine.dart' as le;
 import 'package:settings_repository/settings_repository.dart';
@@ -32,7 +33,7 @@ void main() {
   late LooperRepository repository;
   late SettingsRepository settings;
   late LooperBloc bloc;
-  late RecordOptionsCubit record;
+  late RecordSettings record;
 
   Future<void> poll([int count = 1]) async {
     for (var i = 0; i < count; i++) {
@@ -46,7 +47,7 @@ void main() {
     ticker = StreamController<void>.broadcast();
     repository = LooperRepository(engine: engine, ticker: ticker.stream);
     settings = SettingsRepository(store: FakeKeyValueStore());
-    record = RecordOptionsCubit(repository: repository, settings: settings);
+    record = RecordSettings(repository: repository, settings: settings);
     await record.load();
     bloc = LooperBloc(
       decayControl: FakeDecayControl(),
@@ -79,7 +80,7 @@ void main() {
         }
         await bootSettings.saveDefaultLengthPreset(4);
         await bootSettings.saveTrackLengthPreset(7, 0);
-        final bootOwner = RecordOptionsCubit(
+        final bootOwner = RecordSettings(
           repository: bootRepository,
           settings: bootSettings,
         );

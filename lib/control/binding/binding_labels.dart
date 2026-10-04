@@ -1,4 +1,5 @@
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/control/binding/control_availability.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -177,3 +178,12 @@ String? fxParamName(LooperRepository looper, FxParamTarget target) {
   }
   return null;
 }
+
+String? controlEditBlockLabel(AppLocalizations l10n, ControlEditBlock? block) =>
+    switch (block) {
+      ControlEditBlock.clickCapture => l10n.clickModeCaptureLocked,
+      ControlEditBlock.lengthCapture => l10n.recordLengthCaptureLocked,
+      ControlEditBlock.sharedLength => l10n.recordLengthSharedInMulti,
+      ControlEditBlock.timingCapture => l10n.recordTimingCaptureLocked,
+      null => null,
+    };

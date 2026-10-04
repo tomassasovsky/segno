@@ -26,6 +26,9 @@ import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
@@ -41,6 +44,7 @@ import 'package:update_repository/update_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../helpers/helpers.dart';
+import 'screenshot_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -315,6 +319,7 @@ class _PreviewBluetoothClient implements BluetoothClient {
 }
 
 void main() {
+  late TempoSettings tempoOwner;
   setUpAll(() {
     registerFallbackValue(const EngineConfig());
     registerFallbackValue(MonitorMode.off);
@@ -388,7 +393,7 @@ void main() {
     InputsCubit inputs,
     AudioSetupCubit audio,
     TempoCubit tempo,
-    RecordOptionsCubit options,
+    RecordSettings options,
     MonitorCubit monitor,
   })
   controlProviders(
@@ -398,6 +403,29 @@ void main() {
   }) {
     final looper = _MockLooperRepository();
     when(() => looper.sessionRevision).thenReturn(0);
+    stubScreenshotSettings(looper);
+    when(() => looper.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.clickModeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => looper.laneCount(any())).thenAnswer((call) {
+      final channel = call.positionalArguments.first as int;
+      return looper.state.tracks
+              .where((track) => track.channel == channel)
+              .firstOrNull
+              ?.lanes
+              .length ??
+          0;
+    });
     when(() => looper.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -504,11 +532,21 @@ void main() {
       initialState: looperState,
     );
     when(() => bloc.state).thenReturn(looperState);
-    final tempo = TempoCubit(repository: looper, settings: settings);
-    final options = RecordOptionsCubit(repository: looper, settings: settings);
+    tempoOwner = TempoSettings(repository: looper, settings: settings);
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    unawaited(tempoOwner.loadRecordStart());
+    final tempo = TempoCubit(settings: tempoOwner);
+    final options = RecordSettings(repository: looper, settings: settings);
     final tracks = TracksCubit(settings: settings);
     final inputs = InputsCubit(settings: settings, repository: looper);
-    final quantize = RecordTimingCubit(repository: looper, settings: settings);
+    final quantizeOwner = RecordTimingSettings(
+      repository: looper,
+      settings: settings,
+    );
+    addTearDown(() => unawaited(quantizeOwner.close()));
+    unawaited(quantizeOwner.load());
+    final quantize = RecordTimingCubit(settings: quantizeOwner);
     final monitor = MonitorCubit(
       fxPersistence: fxPersistence,
       mixSettings: mixSettings,
@@ -627,7 +665,7 @@ void main() {
       InputsCubit inputs,
       AudioSetupCubit audio,
       TempoCubit tempo,
-      RecordOptionsCubit options,
+      RecordSettings options,
       MonitorCubit monitor,
     })?
     control,
@@ -662,7 +700,9 @@ void main() {
               BlocProvider.value(value: rig.midi),
               BlocProvider<LooperBloc>.value(value: rig.bloc),
               BlocProvider.value(value: rig.tempo),
-              BlocProvider.value(value: rig.options),
+              BlocProvider(
+                create: (_) => RecordOptionsCubit(settings: rig.options),
+              ),
               BlocProvider.value(value: rig.tracks),
               BlocProvider.value(value: rig.quantize),
               BlocProvider.value(value: rig.inputs),
@@ -1037,7 +1077,7 @@ void main() {
       InputsCubit inputs,
       AudioSetupCubit audio,
       TempoCubit tempo,
-      RecordOptionsCubit options,
+      RecordSettings options,
       MonitorCubit monitor,
     })
   >
