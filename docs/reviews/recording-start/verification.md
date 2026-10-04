@@ -69,7 +69,7 @@ coverage threshold or test exclusion was added to product configuration.
 
 Five native author captures are saved under
 [`docs/design/native-record-start`](../../design/native-record-start/).
-Pen section `rsAsect` places those Recording and Tempo states in the current
+The Pen Recording start and Count-in section places those Recording and Tempo states in the current
 native implementation group. Its saved composite was visually checked: aligned
 screens, readable labels and no clipped or blank image. All 504 preceding
 canvas nodes were structurally preserved. Saved design fingerprint:
