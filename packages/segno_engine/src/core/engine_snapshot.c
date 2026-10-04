@@ -291,10 +291,9 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
   h = le_fx_fp_u32(h, (uint32_t)n);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
-    h = le_fx_fp_u32(h, (uint32_t)le_lane_pre_fx_fingerprint(engine, channel, l));
-    h = le_fx_fp_u32(h,
-                     (uint32_t)(le_lane_pre_fx_fingerprint(engine, channel, l) >>
-                                32));
+    const uint64_t lane_fp = le_lane_pre_fx_fingerprint(engine, channel, l);
+    h = le_fx_fp_u32(h, (uint32_t)lane_fp);
+    h = le_fx_fp_u32(h, (uint32_t)(lane_fp >> 32));
     h = le_fx_fp_u32(h, (uint32_t)load_i32(&ln->a_fx_count));
     h = le_fx_fp_u32(
         h, atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed));

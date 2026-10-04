@@ -32274,6 +32274,45 @@ static void test_record_timing_admission_and_capture_refusal(void) {
   le_engine_destroy(e);
 }
 
+static void test_record_timing_command_fence_above_uint32(void) {
+  printf("test_record_timing_command_fence_above_uint32\n");
+  le_engine* e = tg_make_engine(8000);
+  float sample = 0;
+  le_engine_process(e, &sample, &sample, 0);
+  /* Seed only quiescent counters; the receipt revision remains independent. */
+  e->commands_posted = UINT32_MAX;
+  e->commands_applied = UINT32_MAX;
+  atomic_store_explicit(&e->a_commands_published, UINT32_MAX,
+                        memory_order_release);
+  le_record_timing_settings first = timing_vector(e);
+  first.default_timing = 2;
+  first.remembered_division = 1;
+  CHECK(le_engine_set_record_timing_settings(e, &first) == LE_OK);
+  le_record_timing_settings second = first;
+  second.default_timing = 4;
+  second.remembered_division = 3;
+  CHECK(le_engine_set_record_timing_settings(e, &second) == LE_ERR_NOT_READY);
+  CHECK(le_engine_record(e, 0) == LE_ERR_NOT_READY);
+  CHECK(!le_engine_commands_settled(e));
+  le_engine_process(e, &sample, &sample, 0);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(le_engine_commands_settled(e));
+  CHECK(s.quantize == 1 && s.quantize_div == 1);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.record_timing_revision == 2 && s.record_timing_result == LE_OK);
+  CHECK(le_engine_set_record_timing_settings(e, &second) == LE_OK);
+  le_engine_process(e, &sample, &sample, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.quantize == 1 && s.quantize_div == 3);
+  CHECK(s.record_timing_revision == 4 && s.record_timing_result == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  le_engine_process(e, &sample, &sample, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  le_engine_destroy(e);
+}
+
 static int timing_cancel_result;
 static void timing_cancel_during_publication(le_engine* e, int event) {
   if (event != 2) return;
@@ -32486,6 +32525,7 @@ int main(void) {
   test_record_timing_default_waits_for_callback();
   test_record_timing_coherent_publication();
   test_record_timing_admission_and_capture_refusal();
+  test_record_timing_command_fence_above_uint32();
   test_record_timing_partial_publication_keeps_owned_cancel();
   if (getenv("SEGNO_TIMING_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_record_length_vector_capture_guard();
