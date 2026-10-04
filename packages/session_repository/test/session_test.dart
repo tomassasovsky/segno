@@ -209,6 +209,35 @@ void main() {
       });
     });
 
+    group('monitor volume', () {
+      for (final value in [-0.1, 1.01, double.nan, double.infinity]) {
+        test('refuses invalid saved gain $value', () {
+          final json = const SessionMonitor(
+            input: 0,
+            mode: 'on',
+            outputMask: 3,
+            volume: 1,
+            muted: false,
+            encoded: '[]',
+          ).toJson()..['volume'] = value;
+          expect(() => SessionMonitor.fromJson(json), throwsFormatException);
+        });
+      }
+      for (final value in [0.0, 0.5, 1.0]) {
+        test('round-trips accepted gain $value', () {
+          final monitor = SessionMonitor(
+            input: 0,
+            mode: 'on',
+            outputMask: 3,
+            volume: value,
+            muted: false,
+            encoded: '[]',
+          );
+          expect(SessionMonitor.fromJson(monitor.toJson()), monitor);
+        });
+      }
+    });
+
     group('monitor gate (schema 9)', () {
       test('a named gate round-trips', () {
         const monitor = SessionMonitor(

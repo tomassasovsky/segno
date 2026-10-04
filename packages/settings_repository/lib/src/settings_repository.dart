@@ -1147,16 +1147,14 @@ class SettingsRepository {
   Future<void> saveMonitorOutput(int input, int mask) =>
       _store.setInt(_monitorOutKey(input), mask);
 
-  /// Loads hardware [input]'s monitor output gain (`0..LE_MAX_GAIN`, 2.0,
-  /// +6.02 dB headroom above unity), or `null` if never saved (the caller
-  /// defaults to unity `1.0`).
+  /// Loads hardware [input]'s monitor output gain (silence to unity), or `null`
+  /// if never saved (the caller defaults to unity `1.0`).
   Future<double?> loadMonitorVolume(int input) async {
     await _serializedWrite;
     return (await _readMixSettings()).monitorLevels[input];
   }
 
-  /// Saves hardware [input]'s monitor output gain (`0..LE_MAX_GAIN`, 2.0,
-  /// +6.02 dB headroom above unity).
+  /// Saves hardware [input]'s monitor output gain (silence to unity).
   Future<void> saveMonitorVolume(int input, double volume) =>
       _serialize(() async {
         _validateMonitorLevels({input: volume});
@@ -1471,11 +1469,15 @@ class SettingsRepository {
         balance: values(setup['balance']),
       );
     }
+    final monitors = values(json['monitorLevels']);
+    if (!_validMonitorLevels(monitors)) {
+      throw const FormatException('invalid saved monitor levels');
+    }
     return _SavedMixSettings(
       trackLevels: values(json['trackLevels']),
       pans: values(json['pans']),
       levels: levels,
-      monitorLevels: values(json['monitorLevels']),
+      monitorLevels: monitors,
       laneInputs: laneValues(json['laneInputs']),
       laneOutputs: laneValues(json['laneOutputs']),
       laneCounts: {
@@ -1678,15 +1680,17 @@ class SettingsRepository {
     }
   }
 
+  bool _validMonitorLevels(Map<int, double> levels) => levels.entries.every(
+    (e) =>
+        e.key >= 0 &&
+        e.key < 32 &&
+        e.value.isFinite &&
+        e.value >= 0 &&
+        e.value <= 1,
+  );
+
   void _validateMonitorLevels(Map<int, double> levels) {
-    if (levels.entries.any(
-      (e) =>
-          e.key < 0 ||
-          e.key >= 32 ||
-          !e.value.isFinite ||
-          e.value < 0 ||
-          e.value > 2,
-    )) {
+    if (!_validMonitorLevels(levels)) {
       throw ArgumentError('invalid monitor levels');
     }
   }

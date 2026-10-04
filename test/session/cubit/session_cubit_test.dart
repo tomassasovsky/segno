@@ -889,7 +889,52 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
-      'loadNamed auto-disarms and finalizes before reading the bundle '
+      'invalid monitor gain preserves the current rig and ongoing capture',
+      setUp: () {
+        when(() => repository.read(any())).thenAnswer(
+          (_) async => (
+            session: const Session(
+              sampleRate: 48000,
+              channels: 1,
+              baseLengthFrames: 0,
+              tracks: [],
+              monitors: [
+                SessionMonitor(
+                  input: 0,
+                  mode: 'on',
+                  outputMask: 3,
+                  volume: 1.5,
+                  muted: false,
+                  encoded: '[]',
+                ),
+              ],
+            ),
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+        );
+      },
+      seed: () => const SessionState(currentSessionName: 'A'),
+      build: build,
+      act: (cubit) => cubit.loadNamed('B'),
+      expect: () => [
+        isA<SessionState>().having(
+          (s) => s.status,
+          'status',
+          SessionStatus.working,
+        ),
+        isA<SessionState>()
+            .having((s) => s.status, 'status', SessionStatus.failure)
+            .having((s) => s.currentSessionName, 'current', 'A'),
+      ],
+      verify: (_) {
+        verifyNever(performance.disarmAndFinalize);
+        verifyNever(() => looper.applySession(any()));
+        verifyNever(looper.stopEngine);
+      },
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'loadNamed validates the bundle before disarming and applying '
       '(D-ORCHESTRATE)',
       setUp: () {
         stubCatalog();
@@ -903,8 +948,8 @@ void main() {
       act: (cubit) => cubit.loadNamed('A'),
       verify: (_) {
         verifyInOrder([
-          performance.disarmAndFinalize,
           () => repository.read(any()),
+          performance.disarmAndFinalize,
           () => looper.applySession(any()),
         ]);
       },
@@ -913,6 +958,11 @@ void main() {
     blocTest<SessionCubit, SessionState>(
       'loadNamed leaves the live rig alone when performance disarm refuses',
       setUp: () {
+        stubCatalog();
+        when(() => repository.read(any())).thenAnswer(
+          (_) async =>
+              (session: _session, laneStems: <(int, int), List<Float32List>>{}),
+        );
         when(
           performance.disarmAndFinalize,
         ).thenAnswer((_) async => EngineResult.device);
@@ -932,7 +982,7 @@ void main() {
       ],
       verify: (_) {
         verify(performance.disarmAndFinalize).called(1);
-        verifyNever(() => repository.read(any()));
+        verify(() => repository.read(any())).called(1);
         verifyNever(() => looper.applySession(any()));
       },
     );

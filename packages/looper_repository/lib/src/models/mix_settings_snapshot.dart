@@ -134,7 +134,11 @@ class MixSettingsSnapshot extends Equatable {
             _level(e.value),
       ) &&
       monitorLevels.entries.every(
-        (e) => e.key >= 0 && e.key < kMaxChannels && _level(e.value),
+        (e) =>
+            e.key >= 0 &&
+            e.key < kMaxChannels &&
+            _level(e.value) &&
+            e.value <= 1,
       );
 
   static bool _lane((int, int) key) =>

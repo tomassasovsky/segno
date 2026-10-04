@@ -64,7 +64,7 @@ void main() {
       expect(gain.fromDomain(1), closeTo(0.90880725226, 1e-10));
       expect(gain.toDomain(gain.fromDomain(1)), closeTo(1, 1e-12));
       expect(const LaneVolumeTarget(0, 1).toDomain(0.5), gain.toDomain(0.5));
-      expect(const MonitorVolumeTarget(0).fromDomain(1), gain.fromDomain(1));
+      expect(const MonitorVolumeTarget(0).fromDomain(1), 1);
       expect(mixerGainAt(1), closeTo(2, 1e-12));
 
       for (final target in <MixValueTarget>[
@@ -79,6 +79,17 @@ void main() {
         expect(target.fromDomain(0), 0.5);
       }
       expect(const OutputLevelTarget(0).toDomain(0.75), 0.75);
+    });
+
+    test('live-input travel is linear silence to unity', () {
+      const target = MonitorVolumeTarget(0);
+      for (final value in [0.0, 0.25, 0.5, 0.75, 1.0]) {
+        expect(target.toDomain(value), value);
+        expect(target.fromDomain(value), value);
+      }
+      expect(target.toDomain(-1), 0);
+      expect(target.toDomain(2), 1);
+      expect(target.toDomain(0.5 + target.relativeStep), 0.52);
     });
 
     test('Click travel is linear physical gain, with unity at halfway', () {

@@ -422,11 +422,15 @@ class SessionMonitor {
     if (mode != 'off' && mode != 'on' && mode != 'auto') {
       throw const FormatException('invalid session monitor mode');
     }
+    final volume = (json['volume'] as num).toDouble();
+    if (!volume.isFinite || volume < 0 || volume > 1) {
+      throw const FormatException('invalid session monitor volume');
+    }
     return SessionMonitor(
       input: (json['input'] as num).toInt(),
       mode: mode as String,
       outputMask: (json['outputMask'] as num).toInt(),
-      volume: (json['volume'] as num).toDouble(),
+      volume: volume,
       muted: json['muted'] as bool,
       encoded: json['encoded'] as String,
     );
@@ -438,8 +442,7 @@ class SessionMonitor {
   /// Bitmask of output channels the monitor plays to.
   final int outputMask;
 
-  /// Monitor output gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above
-  /// unity).
+  /// Monitor output gain from silence to unity (0–100%).
   final double volume;
 
   /// Whether the monitor is muted.

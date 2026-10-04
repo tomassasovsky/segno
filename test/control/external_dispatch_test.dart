@@ -488,7 +488,7 @@ void main() {
         target is LaneVolumeTarget ||
         target is MonitorVolumeTarget;
     final low = gain || target is OutputLevelTarget ? 0.0 : -1.0;
-    final high = gain ? 2.0 : 1.0;
+    final high = gain && target is! MonitorVolumeTarget ? 2.0 : 1.0;
     check(
       'MIDI and External ${target.canonicalString()} '
       'share full range and durable low',

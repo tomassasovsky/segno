@@ -104,6 +104,41 @@ void main() {
     repository = SettingsRepository(store: store);
   });
 
+  group('live-input gain admission', () {
+    for (final raw in ['-0.1', '1.01', '1e999']) {
+      test(
+        'rejects saved monitor gain $raw without changing saved bytes',
+        () async {
+          final checkpoint =
+              '{"trackLevels":{"0":1.5},"monitorLevels":{"0":0.5,"1":$raw}}';
+          store.values['mix_settings'] = checkpoint;
+          await expectLater(
+            repository.loadMixSettings('device'),
+            throwsFormatException,
+          );
+          await expectLater(
+            repository.loadMonitorVolume(0),
+            throwsFormatException,
+          );
+          expect(store.values, {'mix_settings': checkpoint});
+        },
+      );
+    }
+    test('writes accept unity and refuse invalid monitor gain', () async {
+      await repository.saveMonitorVolume(0, 0.5);
+      final before = Map<String, Object>.of(store.values);
+      for (final value in [-0.1, 1.01, double.nan, double.infinity]) {
+        await expectLater(
+          repository.saveMonitorVolume(0, value),
+          throwsArgumentError,
+        );
+        expect(store.values, before);
+      }
+      await repository.saveMonitorVolume(0, 1);
+      expect(await repository.loadMonitorVolume(0), isNull);
+    });
+  });
+
   group('Click scalar checkpoint', () {
     test(
       'absence and explicit unity remain distinct after restoration',

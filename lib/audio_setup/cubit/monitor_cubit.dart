@@ -109,7 +109,11 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Restores the persisted per-input monitors and applies them to the
   /// repository. Reads the single-chain keys; the multi-lane → single-chain
   /// fold (v3) runs at bootstrap, before this.
-  Future<void> load() => _loadFuture ??= _mixSettings.runExclusive(_restore);
+  Future<void> load() => _loadFuture ??= _mixSettings
+      .runExclusive(_restore)
+      .catchError((Object error, StackTrace stack) {
+        if (!isClosed) addError(error, stack);
+      });
 
   Future<void> _restore() async {
     // Scan the monitor path's own ceiling ([kMaxMonitoredInputs] ==
@@ -406,8 +410,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     await _persistMonitor(next);
   }
 
-  /// Sets and persists monitor [input]'s output gain (`0..LE_MAX_GAIN`, 2.0,
-  /// +6.02 dB headroom above unity).
+  /// Sets and persists monitor [input]'s output gain (silence to unity).
   Future<void> setVolume(int input, double volume) async {
     final result = await _mixSettings.setMonitorVolume(
       input: input,

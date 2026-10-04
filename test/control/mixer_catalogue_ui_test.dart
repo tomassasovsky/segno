@@ -41,12 +41,21 @@ void main() {
     const gains = <MixValueTarget>[
       TrackVolumeTarget(0),
       LaneVolumeTarget(0, 1),
-      MonitorVolumeTarget(0),
     ];
     for (final target in gains) {
       expect(controlValueReadout(l10n, target, 0.5), '−27.0 dB');
       expect(controlValueReadout(l10n, target, 0), '−∞');
       expect(controlValueReadout(l10n, target, 1), '+6.0 dB');
+    }
+    for (final (position, label) in [
+      (0.0, '0%'),
+      (0.5, '50%'),
+      (1.0, '100%'),
+    ]) {
+      expect(
+        controlValueReadout(l10n, const MonitorVolumeTarget(0), position),
+        label,
+      );
     }
     for (final target in <MixValueTarget>[
       const TrackPanTarget(0),

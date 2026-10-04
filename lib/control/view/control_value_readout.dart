@@ -13,8 +13,9 @@ String controlValueReadout(
   ControlValueTarget target,
   double normalized,
 ) => switch (target) {
-  TrackVolumeTarget() || LaneVolumeTarget() || MonitorVolumeTarget() =>
-    signalGainReadout((target as MixValueTarget).toDomain(normalized)),
+  TrackVolumeTarget() || LaneVolumeTarget() => signalGainReadout(
+    (target as MixValueTarget).toDomain(normalized),
+  ),
   TrackPanTarget() ||
   InputPanTarget() ||
   PairBalanceTarget() ||
@@ -22,6 +23,7 @@ String controlValueReadout(
     l10n,
     (target as MixValueTarget).toDomain(normalized),
   ),
+  MonitorVolumeTarget() => '${(target.toDomain(normalized) * 100).round()}%',
   OutputLevelTarget() || FxParamTarget() => '${(normalized * 100).round()}%',
   ClickVolumeTarget() => l10n.loopClickVolumeReadout(
     (target.toDomain(normalized) * 100).round(),
