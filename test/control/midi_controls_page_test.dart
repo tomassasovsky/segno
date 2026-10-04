@@ -1180,6 +1180,149 @@ void main() {
     expect(control.state.midiEdit, isNull);
   });
 
+  testWidgets('failed None remains visible and can be retried', (tester) async {
+    const failed = MidiConnection(
+      devices: [MidiDevice(id: 'usb', name: 'USB controller')],
+      status: MidiConnectionStatus.error,
+      errorDetail: 'storage refused',
+      pinUncertain: true,
+    );
+    when(() => devices.select('')).thenAnswer((_) async {
+      connections.add(failed);
+      throw StateError('storage refused');
+    });
+    await pump(tester);
+
+    await tap(tester, 'midi_select_none');
+    verify(() => devices.select('')).called(1);
+    expect(find.byKey(const Key('midi_device_save_failed')), findsOneWidget);
+    expect(find.byKey(const Key('midi_notice')), findsNothing);
+    expect(find.text('Could not save MIDI device setting'), findsOneWidget);
+    expect(
+      tester
+          .widget<LoopOutlinedButton>(find.byKey(const Key('midi_select_none')))
+          .onTap,
+      isNotNull,
+    );
+
+    when(() => devices.select('')).thenAnswer((_) async {
+      connections.add(
+        const MidiConnection(
+          devices: [MidiDevice(id: 'usb', name: 'USB controller')],
+        ),
+      );
+    });
+    await tap(tester, 'midi_select_none');
+    verify(() => devices.select('')).called(1);
+    expect(find.byKey(const Key('midi_notice')), findsNothing);
+    expect(find.byKey(const Key('midi_device_save_failed')), findsNothing);
+    expect(
+      tester
+          .widget<LoopOutlinedButton>(find.byKey(const Key('midi_select_none')))
+          .onTap,
+      isNull,
+    );
+  });
+
+  testWidgets('reopened page shows unresolved None failure', (tester) async {
+    when(() => devices.connection).thenReturn(
+      const MidiConnection(
+        status: MidiConnectionStatus.error,
+        errorDetail: 'storage refused',
+        pinUncertain: true,
+      ),
+    );
+    await pump(tester);
+
+    expect(find.byKey(const Key('midi_device_save_failed')), findsOneWidget);
+    expect(find.text('Could not save MIDI device setting'), findsOneWidget);
+    expect(
+      tester
+          .widget<LoopOutlinedButton>(find.byKey(const Key('midi_select_none')))
+          .onTap,
+      isNotNull,
+    );
+  });
+
+  testWidgets('unrelated successful control change does not hide device '
+      'save failure', (tester) async {
+    when(() => devices.connection).thenReturn(
+      const MidiConnection(pinUncertain: true),
+    );
+    await pump(tester);
+    expect(find.byKey(const Key('midi_device_save_failed')), findsOneWidget);
+
+    await tap(tester, 'midi_control_enabled');
+
+    expect(find.byKey(const Key('midi_notice')), findsOneWidget);
+    expect(find.byKey(const Key('midi_device_save_failed')), findsOneWidget);
+    expect(find.text('Could not save MIDI device setting'), findsOneWidget);
+  });
+
+  testWidgets('failed device selection stays visible and has a retry action', (
+    tester,
+  ) async {
+    const choice = MidiConnection(
+      devices: [
+        MidiDevice(id: 'usb', name: 'USB controller'),
+        MidiDevice(id: 'pads', name: 'Drum pads'),
+      ],
+      selectedId: 'usb',
+      selectedName: 'USB controller',
+      status: MidiConnectionStatus.connected,
+    );
+    final failed = choice.copyWith(
+      selectedId: 'pads',
+      selectedName: 'Drum pads',
+      status: MidiConnectionStatus.error,
+      pinUncertain: true,
+    );
+    when(() => devices.connection).thenReturn(choice);
+    when(() => devices.select('pads')).thenAnswer((_) async {
+      connections.add(failed);
+      throw StateError('storage refused');
+    });
+    await pump(tester);
+    await tap(tester, 'midi_device_pads');
+
+    expect(find.byKey(const Key('midi_device_save_failed')), findsOneWidget);
+    expect(find.byKey(const Key('midi_controller_disconnected')), findsNothing);
+    expect(find.byKey(const Key('midi_retry_device')), findsOneWidget);
+    expect(find.text('Could not save MIDI device setting'), findsOneWidget);
+
+    when(() => devices.select('pads')).thenAnswer((_) async {
+      connections.add(
+        failed.copyWith(
+          status: MidiConnectionStatus.connected,
+          pinUncertain: false,
+          clearError: true,
+        ),
+      );
+    });
+    await tap(tester, 'midi_retry_device');
+    verify(() => devices.select('pads')).called(2);
+    expect(find.byKey(const Key('midi_device_save_failed')), findsNothing);
+    expect(find.byKey(const Key('midi_retry_device')), findsNothing);
+  });
+
+  testWidgets('reopened selected-device failure keeps Retry visible', (
+    tester,
+  ) async {
+    when(() => devices.connection).thenReturn(
+      const MidiConnection(
+        devices: [MidiDevice(id: 'usb', name: 'USB controller')],
+        selectedId: 'usb',
+        selectedName: 'USB controller',
+        status: MidiConnectionStatus.error,
+        pinUncertain: true,
+      ),
+    );
+    await pump(tester);
+
+    expect(find.byKey(const Key('midi_device_save_failed')), findsOneWidget);
+    expect(find.byKey(const Key('midi_retry_device')), findsOneWidget);
+  });
+
   testWidgets('failed remote Off offers separate Retry Off and Resume On', (
     tester,
   ) async {

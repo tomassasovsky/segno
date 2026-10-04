@@ -429,19 +429,30 @@ class SettingsRepository {
     await _store.setString(_audioAsioDriverKey, config.asioDriver);
   }
 
-  static const String _midiInputDeviceIdKey = 'midi.input_device_id';
-  static const String _midiInputDeviceNameKey = 'midi.input_device_name';
+  static const String _midiInputDeviceKey = 'midi.input_device';
 
   /// Loads the pinned MIDI input device as `(id, name)`, or `null` when none
   /// has been selected (a fresh install, or after picking "None"). The `id` is
   /// the per-OS stable token used to re-open the device on launch; `name` is
   /// the human-readable label kept so a "last device not found" status can name
-  /// it even while the device is absent. Additive flat keys, like `audio.*`.
+  /// it even while the device is absent. The pair is one durable record.
   Future<({String id, String name})?> loadMidiDevice() async {
-    final id = await _store.getString(_midiInputDeviceIdKey);
-    if (id == null || id.isEmpty) return null;
-    final name = await _store.getString(_midiInputDeviceNameKey) ?? '';
-    return (id: id, name: name);
+    final raw = await _store.getString(_midiInputDeviceKey);
+    if (raw == null) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      throw const FormatException('Invalid saved MIDI input device');
+    }
+    if (decoded is! Map<String, dynamic> ||
+        decoded.length != 2 ||
+        decoded['id'] is! String ||
+        (decoded['id'] as String).isEmpty ||
+        decoded['name'] is! String) {
+      throw const FormatException('Invalid saved MIDI input device');
+    }
+    return (id: decoded['id'] as String, name: decoded['name'] as String);
   }
 
   /// Pins the MIDI input device [id]/[name] so it auto-reconnects next launch.
@@ -449,15 +460,21 @@ class SettingsRepository {
     required String id,
     required String name,
   }) async {
-    await _store.setString(_midiInputDeviceIdKey, id);
-    await _store.setString(_midiInputDeviceNameKey, name);
+    if (id.isEmpty) throw ArgumentError.value(id, 'id', 'Must not be empty');
+    final raw = jsonEncode({'id': id, 'name': name});
+    await _store.setString(_midiInputDeviceKey, raw);
+    if (await _store.getString(_midiInputDeviceKey) != raw) {
+      throw StateError('Saved MIDI input device was not confirmed');
+    }
   }
 
   /// Clears the pinned MIDI input device (the "None" selection), so the looper
   /// relaunches with no MIDI device attached.
   Future<void> clearMidiDevice() async {
-    await _store.remove(_midiInputDeviceIdKey);
-    await _store.remove(_midiInputDeviceNameKey);
+    await _store.remove(_midiInputDeviceKey);
+    if (await _store.getString(_midiInputDeviceKey) != null) {
+      throw StateError('Cleared MIDI input device was not confirmed');
+    }
   }
 
   static const String _midiConfigurationKey = 'midi.configuration';

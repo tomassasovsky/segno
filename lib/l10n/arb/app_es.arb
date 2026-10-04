@@ -2598,6 +2598,8 @@
     "midiControlsEntryDetail": "Elige un controlador y asigna sus botones, teclas y perillas.",
     "actionTapTempo": "Marcar tempo",
     "midiRetryOff": "Reintentar apagar",
+    "midiRetryDevice": "Reintentar dispositivo",
+    "midiDeviceSettingFailed": "No se pudo guardar el dispositivo MIDI",
     "midiResumeOn": "Reanudar",
     "midiResetConfiguration": "Restablecer asignaciones",
     "midiConfigurationUnavailable": "No se pudieron leer las asignaciones guardadas. Restablécelas para empezar de nuevo.",

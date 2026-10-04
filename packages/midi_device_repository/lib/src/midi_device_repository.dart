@@ -104,16 +104,31 @@ class MidiDeviceRepository {
   Future<void> _hydrate() async {
     final generation = _selectionGeneration;
     final source = _source;
-    final saved = await _settings.loadMidiDevice();
+    final ({String id, String name})? saved;
+    try {
+      saved = await _settings.loadMidiDevice();
+    } on Object catch (error) {
+      if (!_disposed && generation == _selectionGeneration) {
+        _emit(
+          _connection.copyWith(
+            status: MidiConnectionStatus.error,
+            errorDetail: '$error',
+            pinUncertain: true,
+          ),
+        );
+      }
+      return;
+    }
     if (_disposed || generation != _selectionGeneration) return;
     final devices = source?.enumerate() ?? const <MidiDevice>[];
-    if (saved == null || source == null) {
+    final selected = saved;
+    if (selected == null || source == null) {
       _emit(_connection.copyWith(devices: devices));
       _lastSelectedPresent = null;
       return;
     }
 
-    final present = devices.any((d) => d.id == saved.id);
+    final present = devices.any((d) => d.id == selected.id);
     _lastSelectedPresent = present;
     // A saved selection outranks auto-detect even when it is absent: the user
     // named a device, so keep waiting for it rather than adopting another.
@@ -121,20 +136,20 @@ class MidiDeviceRepository {
       _emit(
         _connection.copyWith(
           devices: devices,
-          selectedId: saved.id,
-          selectedName: saved.name,
+          selectedId: selected.id,
+          selectedName: selected.name,
           status: MidiConnectionStatus.deviceGone,
         ),
       );
       return;
     }
 
-    final code = source.open(saved.id);
+    final code = source.open(selected.id);
     _emit(
       _connection.copyWith(
         devices: devices,
-        selectedId: saved.id,
-        selectedName: saved.name,
+        selectedId: selected.id,
+        selectedName: selected.name,
         status: code == 0
             ? MidiConnectionStatus.connected
             : MidiConnectionStatus.error,
@@ -152,12 +167,14 @@ class MidiDeviceRepository {
     final source = _source;
     if (source == null || _disposed) return Future<void>.value();
     if (id == _connection.selectedId &&
-        _connection.status == MidiConnectionStatus.connected) {
+        _connection.status == MidiConnectionStatus.connected &&
+        !_connection.pinUncertain) {
       return Future<void>.value();
     }
     final generation = ++_selectionGeneration;
     _selectionPending = true;
     source.close();
+    _lastSelectedPresent = null;
     final name = _nameFor(id);
     _emit(
       _connection.copyWith(
@@ -171,37 +188,59 @@ class MidiDeviceRepository {
     return _queueSelection(() async {
       if (_disposed || generation != _selectionGeneration) return;
       try {
-        await _settings.saveMidiDevice(id: id, name: name);
+        try {
+          await _settings.saveMidiDevice(id: id, name: name);
+        } on Object catch (error) {
+          if (!_disposed && generation == _selectionGeneration) {
+            _emit(
+              _connection.copyWith(
+                status: MidiConnectionStatus.error,
+                errorDetail: '$error',
+                pinUncertain: true,
+              ),
+            );
+          }
+          rethrow;
+        }
         if (_disposed || generation != _selectionGeneration) return;
-        final code = source.open(id);
-        _lastSelectedPresent = true;
-        _emit(
-          _connection.copyWith(
-            status: code == 0
-                ? MidiConnectionStatus.connected
-                : MidiConnectionStatus.error,
-            errorDetail: code == 0 ? null : '$code',
-            clearError: code == 0,
-          ),
-        );
-      } on Object catch (error) {
-        if (!_disposed && generation == _selectionGeneration) {
+        // The durable pin is confirmed now. A native connection failure must
+        // remain retryable without pretending that storage became uncertain.
+        try {
+          final code = source.open(id);
+          _lastSelectedPresent = true;
           _emit(
             _connection.copyWith(
-              status: MidiConnectionStatus.error,
-              errorDetail: '$error',
+              status: code == 0
+                  ? MidiConnectionStatus.connected
+                  : MidiConnectionStatus.error,
+              errorDetail: code == 0 ? null : '$code',
+              clearError: code == 0,
+              pinUncertain: false,
             ),
           );
+        } on Object catch (error) {
+          if (!_disposed && generation == _selectionGeneration) {
+            _emit(
+              _connection.copyWith(
+                status: MidiConnectionStatus.error,
+                errorDetail: '$error',
+                pinUncertain: false,
+              ),
+            );
+          }
+          rethrow;
         }
-        rethrow;
       } finally {
         if (generation == _selectionGeneration) _selectionPending = false;
       }
     });
   }
 
-  /// Deselects immediately; stale selection writes cannot reopen the old port.
+  /// Stops input immediately, then confirms the durable "None" selection.
+  /// A failed clear leaves input stopped and reports an uncertain selection so
+  /// the caller can retry; it never presents the pending clear as saved.
   Future<void> selectNone() {
+    if (_disposed) return Future<void>.value();
     final generation = ++_selectionGeneration;
     _selectionPending = true;
     _source?.close();
@@ -210,7 +249,7 @@ class MidiDeviceRepository {
       _connection.copyWith(
         selectedId: '',
         selectedName: '',
-        status: MidiConnectionStatus.none,
+        status: MidiConnectionStatus.connecting,
         connectivity: MidiConnectivity.none,
         clearError: true,
       ),
@@ -219,6 +258,25 @@ class MidiDeviceRepository {
       if (_disposed || generation != _selectionGeneration) return;
       try {
         await _settings.clearMidiDevice();
+        if (_disposed || generation != _selectionGeneration) return;
+        _emit(
+          _connection.copyWith(
+            status: MidiConnectionStatus.none,
+            clearError: true,
+            pinUncertain: false,
+          ),
+        );
+      } on Object catch (error) {
+        if (!_disposed && generation == _selectionGeneration) {
+          _emit(
+            _connection.copyWith(
+              status: MidiConnectionStatus.error,
+              errorDetail: '$error',
+              pinUncertain: true,
+            ),
+          );
+        }
+        rethrow;
       } finally {
         if (generation == _selectionGeneration) _selectionPending = false;
       }
@@ -249,7 +307,10 @@ class MidiDeviceRepository {
 
     // Raise the transition for the pinned device only (a change with no prior
     // sample is the initial reading, not a transition).
-    if (pinned && previous != null && previous != present) {
+    if (pinned &&
+        !_connection.pinUncertain &&
+        previous != null &&
+        previous != present) {
       next = next.copyWith(
         connectivity: present
             ? MidiConnectivity.restored
@@ -260,6 +321,7 @@ class MidiDeviceRepository {
 
     if (pinned &&
         present &&
+        !_connection.pinUncertain &&
         _connection.status != MidiConnectionStatus.connected) {
       // (Re)attach: launch-present, replug, or retry after an error.
       final code = source.open(_connection.selectedId);

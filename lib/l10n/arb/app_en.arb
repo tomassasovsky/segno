@@ -5709,6 +5709,10 @@
         "description": "Shared action for setting tempo by tapping a control."
     },
     "midiRetryOff": "Retry Off",
+    "midiRetryDevice": "Retry device",
+    "@midiRetryDevice": {"description": "Retry saving the selected MIDI device after persistence failed."},
+    "midiDeviceSettingFailed": "Could not save MIDI device setting",
+    "@midiDeviceSettingFailed": {"description": "Persistent warning when the selected MIDI input was not durably confirmed."},
     "midiResumeOn": "Resume On",
     "midiResetConfiguration": "Reset mappings",
     "midiConfigurationUnavailable": "Saved mappings could not be read. Reset them to start again.",
