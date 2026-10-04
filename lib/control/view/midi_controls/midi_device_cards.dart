@@ -52,13 +52,15 @@ class MidiDeviceCard {
 /// The cards [connection] gives: every enumerated input, and the one in use
 /// even while it is unplugged, so its mappings stay reachable.
 List<MidiDeviceCard> midiDeviceCards(MidiConnection connection) {
-  final selectedStatus = switch (connection.status) {
-    MidiConnectionStatus.connected => MidiDeviceStatus.connected,
-    MidiConnectionStatus.connecting => MidiDeviceStatus.connecting,
-    MidiConnectionStatus.error => MidiDeviceStatus.openFailed,
-    MidiConnectionStatus.deviceGone ||
-    MidiConnectionStatus.none => MidiDeviceStatus.disconnected,
-  };
+  final selectedStatus = connection.pinUncertain
+      ? MidiDeviceStatus.disconnected
+      : switch (connection.status) {
+          MidiConnectionStatus.connected => MidiDeviceStatus.connected,
+          MidiConnectionStatus.connecting => MidiDeviceStatus.connecting,
+          MidiConnectionStatus.error => MidiDeviceStatus.openFailed,
+          MidiConnectionStatus.deviceGone ||
+          MidiConnectionStatus.none => MidiDeviceStatus.disconnected,
+        };
   return [
     for (final device in connection.devices)
       MidiDeviceCard(
