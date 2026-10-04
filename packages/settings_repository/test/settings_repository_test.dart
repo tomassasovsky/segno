@@ -9,6 +9,8 @@ class _InMemoryStore implements KeyValueStore {
   String? failAfterWriteKey;
   String? failOnSetValue;
   String? discardNextWriteKey;
+  String? discardNextRemovalKey;
+  String? failAfterRemovalKey;
 
   @override
   Future<int?> getInt(String key) async => values[key] as int?;
@@ -74,11 +76,19 @@ class _InMemoryStore implements KeyValueStore {
 
   @override
   Future<void> remove(String key) async {
+    if (discardNextRemovalKey == key) {
+      discardNextRemovalKey = null;
+      return;
+    }
     if (failNextKey == key) {
       failNextKey = null;
       throw StateError('storage write failed');
     }
     values.remove(key);
+    if (failAfterRemovalKey == key) {
+      failAfterRemovalKey = null;
+      throw StateError('storage reported failure after removing');
+    }
   }
 
   @override
@@ -927,24 +937,77 @@ void main() {
       expect(loaded?.name, 'FCB1010');
     });
 
-    test('defaults the name to empty when only the id was stored', () async {
-      await store.setString('midi.input_device_id', 'port-1');
-      final loaded = await repository.loadMidiDevice();
-      expect(loaded?.id, 'port-1');
-      expect(loaded?.name, '');
+    test('saves the id and name in one record', () async {
+      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
+      expect(store.values.keys, contains('midi.input_device'));
+      expect(store.values.length, 1);
+      expect(
+        store.values['midi.input_device'],
+        '{"id":"12345","name":"FCB1010"}',
+      );
     });
 
-    test('treats an empty saved id as no selection', () async {
-      await repository.saveMidiDevice(id: '', name: '');
+    test('rejects an empty id without saving', () async {
+      await expectLater(
+        repository.saveMidiDevice(id: '', name: ''),
+        throwsArgumentError,
+      );
+      expect(store.values, isEmpty);
+    });
+
+    test(
+      'rejects malformed saved records rather than selecting a device',
+      () async {
+        for (final raw in [
+          'not json',
+          '{"id":"port-1"}',
+          '{"id":"","name":"Pedal"}',
+          '{"id":"port-1","name":3}',
+          '{"id":"port-1","name":"Pedal","extra":true}',
+        ]) {
+          store.values['midi.input_device'] = raw;
+          await expectLater(repository.loadMidiDevice(), throwsFormatException);
+        }
+      },
+    );
+
+    test('dropped save is not reported as durable', () async {
+      store.discardNextWriteKey = 'midi.input_device';
+      await expectLater(
+        repository.saveMidiDevice(id: 'port-1', name: 'Pedal'),
+        throwsStateError,
+      );
       expect(await repository.loadMidiDevice(), isNull);
     });
 
-    test('clearMidiDevice removes both keys', () async {
+    test('a write that mutates then throws leaves a coherent pair', () async {
+      store.failAfterWriteKey = 'midi.input_device';
+      await expectLater(
+        repository.saveMidiDevice(id: 'port-1', name: 'Pedal'),
+        throwsStateError,
+      );
+      expect(await repository.loadMidiDevice(), (id: 'port-1', name: 'Pedal'));
+    });
+
+    test('clearMidiDevice removes the one record', () async {
       await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
       await repository.clearMidiDevice();
       expect(await repository.loadMidiDevice(), isNull);
-      expect(store.values.containsKey('midi.input_device_id'), isFalse);
-      expect(store.values.containsKey('midi.input_device_name'), isFalse);
+      expect(store.values.containsKey('midi.input_device'), isFalse);
+    });
+
+    test('dropped clear is not reported as durable', () async {
+      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
+      store.discardNextRemovalKey = 'midi.input_device';
+      await expectLater(repository.clearMidiDevice(), throwsStateError);
+      expect(await repository.loadMidiDevice(), (id: '12345', name: 'FCB1010'));
+    });
+
+    test('a clear that mutates then throws remains uncertain', () async {
+      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
+      store.failAfterRemovalKey = 'midi.input_device';
+      await expectLater(repository.clearMidiDevice(), throwsStateError);
+      expect(await repository.loadMidiDevice(), isNull);
     });
   });
 

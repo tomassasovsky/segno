@@ -224,6 +224,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     final paused = control.state.midiRemotePaused;
     final unavailable = control.state.midiUnavailable;
     final loaded = control.state.midiLoaded;
+    final clearFailed = !connection.hasSelection && connection.pinUncertain;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -283,6 +284,24 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
               ? () => _add(control, connection)
               : null,
         ),
+        const SizedBox(width: 16),
+        LoopOutlinedButton(
+          key: const Key('midi_select_none'),
+          width: 150,
+          label: l10n.midiDeviceNone,
+          onTap: connection.hasSelection || clearFailed
+              ? () => unawaited(_selectDevice(''))
+              : null,
+        ),
+        if (connection.pinUncertain && connection.hasSelection) ...[
+          const SizedBox(width: 16),
+          LoopOutlinedButton(
+            key: const Key('midi_retry_device'),
+            width: 160,
+            label: l10n.midiRetryDevice,
+            onTap: () => unawaited(_selectDevice(connection.selectedId)),
+          ),
+        ],
       ],
     );
   }
@@ -308,12 +327,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         height: MidiDeviceCards.cardSize.height,
         child: MidiDeviceCards(
           cards: midiDeviceCards(connection),
-          onSelect: (id) {
-            if (_saving) return;
-            _closeEditor(control);
-            setState(() => _notice = null);
-            unawaited(context.read<MidiSetupCubit>().select(id));
-          },
+          onSelect: (id) => unawaited(_selectDevice(id)),
         ),
       ),
       Positioned(
@@ -365,13 +379,20 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
               ),
             // The page's notices sit under the rows, as the accepted design
             // puts them, and are announced when they change.
-            if (connection.hasSelection && !connected)
+            if (connection.hasSelection &&
+                !connected &&
+                !connection.pinUncertain)
               _Notice(
                 l10n.midiControllerDisconnected,
                 key: const Key('midi_controller_disconnected'),
               ),
             if (_notice case final notice?)
               _Notice(notice, key: const Key('midi_notice')),
+            if (connection.pinUncertain)
+              _Notice(
+                l10n.midiDeviceSettingFailed,
+                key: const Key('midi_device_save_failed'),
+              ),
             if (_notice == null &&
                 !control.state.midiUnavailable &&
                 (control.state.midiPersistenceUncertain ||
@@ -385,6 +406,20 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         ),
       ),
     ];
+  }
+
+  Future<void> _selectDevice(String id) async {
+    if (_saving) return;
+    final midi = context.read<MidiSetupCubit>();
+    final control = context.read<ControlCubit>();
+    _closeEditor(control);
+    setState(() => _notice = null);
+    try {
+      await midi.select(id);
+    } on Object {
+      // The repository publishes an enduring, typed persistence failure.
+      // The page may have closed or another notice may be showing meanwhile.
+    }
   }
 
   MidiMappingRow _row(
