@@ -126,6 +126,16 @@ void main() {
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
     when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => repository.laneCount(any())).thenAnswer((call) {
+      final channel = call.positionalArguments.first as int;
+      return repository.state.tracks
+              .where((track) => track.channel == channel)
+              .firstOrNull
+              ?.lanes
+              .length ??
+          0;
+    });
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );

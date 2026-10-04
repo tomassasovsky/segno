@@ -239,6 +239,19 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult clear({int channel = 0}) {
     lastChannel = channel;
     calls.add('clear');
+    if (importedTracks.remove(channel) != null) {
+      importedLanes.removeWhere((key, _) => key.$1 == channel);
+      importedLayers.removeWhere((key, _) => key.$1 == channel);
+      finalizedLayers.remove(channel);
+      final tracks = [..._nextSnapshot.tracks];
+      tracks[channel] = const TrackSnapshot.empty();
+      _nextSnapshot = _nextSnapshot.copyWith(
+        tracks: tracks,
+        masterLengthFrames: importedTracks.isEmpty
+            ? 0
+            : _nextSnapshot.masterLengthFrames,
+      );
+    }
     return EngineResult.ok;
   }
 
@@ -1442,6 +1455,25 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult commitSession(int baseFrames, {required int loopBars}) {
     calls.add('commitSession');
     committedBaseFrames = baseFrames;
+    final tracks = [..._nextSnapshot.tracks];
+    for (final entry in importedTracks.entries) {
+      final depths = finalizedLayers[entry.key];
+      if (depths == null) return EngineResult.invalid;
+      tracks[entry.key] = TrackSnapshot(
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        lengthFrames: entry.value.length,
+        undoDepth: depths.$1,
+        redoDepth: depths.$2,
+        rms: 0,
+        peak: 0,
+      );
+    }
+    _nextSnapshot = _nextSnapshot.copyWith(
+      tracks: tracks,
+      masterLengthFrames: baseFrames,
+    );
     return EngineResult.ok;
   }
 

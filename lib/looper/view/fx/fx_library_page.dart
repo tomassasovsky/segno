@@ -2,42 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_library_choice.dart';
 import 'package:segno/looper/view/fx/fx_saved_list.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
-
-/// What the library was asked for: a whole rack preset, or a single effect.
-sealed class FxLibraryChoice {
-  const FxLibraryChoice();
-}
-
-/// One factory rack preset, to be instantiated as a run of chain entries.
-final class FxRackChoice extends FxLibraryChoice {
-  /// Creates an [FxRackChoice].
-  const FxRackChoice(this.preset);
-
-  /// The preset chosen.
-  final FxPreset preset;
-}
-
-/// One standalone effect, alongside the rack families rather than inside one.
-final class FxSingleChoice extends FxLibraryChoice {
-  /// Creates an [FxSingleChoice].
-  const FxSingleChoice(this.type);
-
-  /// The built-in chosen.
-  final TrackEffectType type;
-}
-
-/// One of the player's own saved sounds.
-final class FxSavedChoice extends FxLibraryChoice {
-  /// Creates an [FxSavedChoice].
-  const FxSavedChoice(this.preset);
-
-  /// The saved preset chosen.
-  final FxUserPreset preset;
-}
 
 /// The effect library (accepted design, `03 Sound library & presets`): the
 /// rack families and Single FX in one artwork grid, then the chosen family's

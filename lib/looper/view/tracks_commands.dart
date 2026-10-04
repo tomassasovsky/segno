@@ -380,6 +380,7 @@ void showSessionOutcome(BuildContext context, SessionState state) {
     SessionStatus.failure => switch (state.error) {
       SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
       SessionError.unsupportedVersion => l10n.sessionErrorUnsupportedVersion,
+      SessionError.bootPersistence => l10n.sessionBootRecoveryBody,
       // nameCollision gets a dedicated inline message in the manager UI; here
       // (legacy path) it falls back to the generic error. corruptLayers is a
       // rare corrupt/foreign-bundle refusal — the generic message (carrying the
@@ -398,6 +399,17 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SnackBar(
         key: const Key('tracks_session_snackbar'),
         content: Semantics(liveRegion: true, child: AppText(message)),
+        duration: state.error == SessionError.bootPersistence
+            ? const Duration(days: 1)
+            : const Duration(seconds: 4),
+        action: state.error == SessionError.bootPersistence
+            ? SnackBarAction(
+                label: l10n.powerOffRetry,
+                onPressed: () => unawaited(
+                  context.read<SessionCubit>().retryLoadedSession(),
+                ),
+              )
+            : null,
       ),
     );
 }

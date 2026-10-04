@@ -7,6 +7,7 @@ import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
@@ -18,6 +19,7 @@ import 'package:segno/looper/cubit/fx_cubit.dart';
 import 'package:segno/looper/cubit/fx_presets_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/model/fx_library_choice.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
@@ -29,6 +31,7 @@ import 'package:segno/looper/view/fx/fx_reorder_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:settings_repository/settings_repository.dart';
 import 'package:toastification/toastification.dart';
 
 /// The Effects route (accepted design, slice 3f): the pen's
@@ -54,7 +57,12 @@ class FxPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-    create: (_) => FxCubit(initial: initial),
+    create: (context) => FxCubit(
+      repository: context.read<LooperRepository>(),
+      settings: context.read<SettingsRepository>(),
+      persistence: context.read<FxChainPersistence>(),
+      initial: initial,
+    ),
     child: FxView(catalogue: catalogue, onStage: onStage),
   );
 }
@@ -119,6 +127,7 @@ class _FxViewState extends State<FxView> {
     final monitor = context.read<MonitorCubit>();
     final bloc = context.read<LooperBloc>();
     final presets = context.read<FxPresetsCubit>();
+    final fx = context.read<FxCubit>();
     if (!fxChainGroups(_entriesOf(context, address)).any(
       (group) => fxGroupId(group) == id,
     )) {
@@ -137,6 +146,7 @@ class _FxViewState extends State<FxView> {
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider<MonitorCubit>.value(value: monitor),
             BlocProvider<FxPresetsCubit>.value(value: presets),
+            BlocProvider<FxCubit>.value(value: fx),
           ],
           child: Builder(
             builder: (context) {
@@ -163,7 +173,7 @@ class _FxViewState extends State<FxView> {
                   ),
                 );
               }
-              final edits = _editsFor(context, bloc, monitor, address);
+              final edits = _editsFor(context, fx, address);
               return found.isRack
                   ? FxRackEditor(
                       group: found,
@@ -172,12 +182,13 @@ class _FxViewState extends State<FxView> {
                       edits: edits,
                       onStage: _stage,
                       onBack: () => Navigator.maybePop(context),
-                      onOptions: () =>
-                          unawaited(_rackOptions(context, found, edits, label)),
+                      onOptions: () => unawaited(
+                        _rackOptions(context, address, found, label),
+                      ),
                       onSavePreset: () =>
                           unawaited(_savePreset(context, found)),
                       onAddEffect: () =>
-                          unawaited(_addToRack(context, found, edits)),
+                          unawaited(_addToRack(context, address, found)),
                     )
                   : FxEffectEditor(
                       group: found,
@@ -187,7 +198,7 @@ class _FxViewState extends State<FxView> {
                       onStage: _stage,
                       onBack: () => Navigator.maybePop(context),
                       onOptions: () => unawaited(
-                        _effectOptions(context, found, edits),
+                        _effectOptions(context, address, found),
                       ),
                       onSavePreset: () =>
                           unawaited(_savePreset(context, found)),
@@ -208,13 +219,14 @@ class _FxViewState extends State<FxView> {
   /// rather than hidden so the list keeps its shape between two racks.
   Future<void> _rackOptions(
     BuildContext context,
+    FxAddress address,
     FxChainGroup group,
-    FxEdits edits,
     String label,
   ) async {
     final l10n = context.l10n;
     final rack = group.rack;
     if (rack == null) return;
+    final fx = context.read<FxCubit>();
     final several = group.length > 1;
     final choice = await showFxOptionsSheet(
       context,
@@ -245,12 +257,8 @@ class _FxViewState extends State<FxView> {
           fieldLabel: l10n.fxRackRenameField,
         );
         if (name == null || !context.mounted) return;
-        final current = edits.currentChain();
-        if (!fxChainGroups(current).any((g) => g.rack?.id == rack.id)) return;
-        if (!await edits.setChain(fxRenameRack(current, rack.id, name)) &&
-            context.mounted) {
-          _changeRefused(context);
-        }
+        final result = await fx.renameRack(address, rack.id, name);
+        if (context.mounted) _notifyEditResult(context, result);
       case 'reorder':
         final ordered = await Navigator.push<List<String>>(
           context,
@@ -270,12 +278,8 @@ class _FxViewState extends State<FxView> {
           ),
         );
         if (ordered == null || !context.mounted) return;
-        final current = edits.currentChain();
-        final next = fxOrderRackModules(current, rack.id, ordered);
-        if (identical(next, current)) return;
-        if (!await edits.setChain(next) && context.mounted) {
-          _changeRefused(context);
-        }
+        final result = await fx.reorderRack(address, rack.id, ordered);
+        if (context.mounted) _notifyEditResult(context, result);
       case 'remove-one':
         final id = await showFxOptionsSheet(
           context,
@@ -289,17 +293,8 @@ class _FxViewState extends State<FxView> {
           ],
         );
         if (id == null || !context.mounted) return;
-        final current = edits.currentChain();
-        final currentGroup = fxChainGroups(
-          current,
-        ).where((g) => g.rack?.id == rack.id).firstOrNull;
-        if (currentGroup == null) return;
-        final index = current.indexWhere((fx) => fx.slotId == id);
-        if (index < currentGroup.start || index >= currentGroup.end) return;
-        if (!await edits.setChain(fxRemoveRange(current, index, index + 1)) &&
-            context.mounted) {
-          _changeRefused(context);
-        }
+        final result = await fx.removeRackModule(address, rack.id, id);
+        if (context.mounted) _notifyEditResult(context, result);
       case 'remove':
         // Asked first, because a rack is several pedals with their settings
         // and a chain has no undo. What it says is the accepted rule: removing
@@ -311,17 +306,10 @@ class _FxViewState extends State<FxView> {
           confirmLabel: l10n.fxRemoveRack,
         );
         if (!confirmed || !context.mounted) return;
-        final current = edits.currentChain();
-        final currentGroup = fxChainGroups(
-          current,
-        ).where((g) => g.rack?.id == rack.id).firstOrNull;
-        if (currentGroup == null) return;
-        final accepted = await edits.setChain(
-          fxRemoveRange(current, currentGroup.start, currentGroup.end),
-        );
+        final result = await fx.removeRack(address, rack.id);
         if (!context.mounted) return;
-        if (!accepted) {
-          _changeRefused(context);
+        _notifyEditResult(context, result);
+        if (!_committed(result)) {
           return;
         }
         showAppSnackToast(
@@ -380,16 +368,11 @@ class _FxViewState extends State<FxView> {
       ),
     );
     if (ordered == null || !mounted) return;
-    final current = _entriesOf(context, address);
-    final next = fxOrderGroups(current, ordered);
-    if (identical(next, current)) return;
-    final accepted = await _editsFor(
-      context,
-      context.read<LooperBloc>(),
-      context.read<MonitorCubit>(),
+    final result = await context.read<FxCubit>().reorderGroups(
       address,
-    ).setChain(next);
-    if (!accepted && mounted) _changeRefused(context);
+      ordered,
+    );
+    if (mounted) _notifyEditResult(context, result);
   }
 
   /// The pen's `02 Add an effect to a rack`: the same full-page catalogue,
@@ -400,8 +383,8 @@ class _FxViewState extends State<FxView> {
   /// other addition, and Back from the catalogue changes nothing.
   Future<void> _addToRack(
     BuildContext context,
+    FxAddress address,
     FxChainGroup group,
-    FxEdits edits,
   ) async {
     final rack = group.rack;
     if (rack == null) return;
@@ -425,34 +408,12 @@ class _FxViewState extends State<FxView> {
       ),
     );
     if (choice == null || !context.mounted) return;
-    final current = edits.currentChain();
-    final currentGroup = fxChainGroups(
-      current,
-    ).where((g) => g.rack?.id == rack.id).firstOrNull;
-    if (currentGroup == null || current.length >= kTrackEffectMax) return;
-    final added = _entriesFor(
+    final result = await context.read<FxCubit>().appendToRack(
+      address,
+      rack.id,
       choice,
-      placement: currentGroup.placement,
-      into: currentGroup.rack,
     );
-    if (added.isEmpty || current.length + added.length > kTrackEffectMax) {
-      return;
-    }
-    final withAdded = [
-      ...current.sublist(0, currentGroup.end),
-      ...added,
-      ...current.sublist(currentGroup.end),
-    ];
-    if (!await edits.setChain(
-      fxSetGroupChannels(
-        withAdded,
-        currentGroup.start,
-        currentGroup.end + added.length,
-        currentGroup.channels,
-      ),
-    )) {
-      if (context.mounted) _changeRefused(context);
-    }
+    if (context.mounted) _notifyEditResult(context, result);
   }
 
   /// The pen's `05 Save a preset` and `06 Replace a saved preset`: names the
@@ -551,8 +512,8 @@ class _FxViewState extends State<FxView> {
   /// beyond the effect it is.
   static Future<void> _effectOptions(
     BuildContext context,
+    FxAddress address,
     FxChainGroup group,
-    FxEdits edits,
   ) async {
     final l10n = context.l10n;
     final name = fxPedalName(l10n, group.entries.first);
@@ -562,16 +523,13 @@ class _FxViewState extends State<FxView> {
       options: [FxOption(id: 'remove', label: l10n.fxRemoveEffect(name))],
     );
     if (choice != 'remove' || !context.mounted) return;
-    final current = edits.currentChain();
     final id = group.entries.first.slotId;
-    final index = current.indexWhere((fx) => fx.slotId == id);
-    if (index < 0) return;
-    final accepted = await edits.setChain(
-      fxRemoveRange(current, index, index + 1),
-    );
+    final fx = context.read<FxCubit>();
+    if (id == null) return;
+    final result = await fx.removeEffect(address, id);
     if (!context.mounted) return;
-    if (!accepted) {
-      _changeRefused(context);
+    _notifyEditResult(context, result);
+    if (!_committed(result)) {
       return;
     }
     if (ModalRoute.of(context)?.isCurrent ?? false) {
@@ -585,120 +543,52 @@ class _FxViewState extends State<FxView> {
     title: AppText(context.l10n.fxChangeNotApplied),
   );
 
-  /// How a chain's editors write, per stage.
-  ///
-  /// Each stage keeps its own owner rather than routing through one shared
-  /// setter: that is what stops a write meant for a live input landing on a
-  /// track's chain.
+  static bool _committed(FxEditResult result) =>
+      result.status == FxEditStatus.applied ||
+      result.status == FxEditStatus.unsaved;
+
+  static void _notifyEditResult(BuildContext context, FxEditResult result) {
+    switch (result.status) {
+      case FxEditStatus.refused:
+        _changeRefused(context);
+      case FxEditStatus.unsaved:
+        showAppSnackToast(
+          id: 'fx-storage-failed',
+          type: ToastificationType.error,
+          title: AppText(context.l10n.storageActionFailed),
+        );
+      case FxEditStatus.applied || FxEditStatus.unchanged || FxEditStatus.stale:
+        break;
+    }
+  }
+
+  /// Forwards editor gestures to the route owner by stable identity.
   static FxEdits _editsFor(
     BuildContext context,
-    LooperBloc bloc,
-    MonitorCubit monitor,
+    FxCubit fx,
     FxAddress address,
   ) {
-    final generation = bloc.state.mixGeneration;
+    void report(FxEditResult result) {
+      if (context.mounted) _notifyEditResult(context, result);
+    }
+
+    Future<void> reportLater(Future<FxEditResult> future) async {
+      report(await future);
+    }
+
     return (
-      currentChain: () => address.stage == FxStage.input
-          ? monitor.state.forInput(address.index).effects
-          : _DestinationChain._entriesAt(bloc.state, address),
-      setEnabled: (index, {required enabled}) => _DestinationChain._togglePower(
-        bloc,
-        monitor,
-        address,
-        index,
-        enabled: enabled,
+      setEnabled: (slotId, {required enabled}) =>
+          report(fx.setEffectEnabled(address, slotId, enabled: enabled)),
+      setGroupEnabled: (groupId, {required enabled}) =>
+          report(fx.setGroupEnabled(address, groupId, enabled: enabled)),
+      setParam: (slotId, parameter, value) =>
+          report(fx.setParameter(address, slotId, parameter, value)),
+      setChannels: (groupId, channels) => unawaited(
+        reportLater(fx.setGroupChannels(address, groupId, channels)),
       ),
-      setParam: (index, param, value) {
-        switch (address.stage) {
-          case FxStage.input:
-            monitor.setEffectParam(address.index, index, param, value);
-          case FxStage.loop:
-            bloc.add(
-              LooperLaneEffectParamChanged(
-                address.index,
-                address.lane ?? 0,
-                index,
-                param,
-                value,
-              ),
-            );
-          case FxStage.track:
-          case FxStage.output:
-            bloc.add(LooperBusEffectParamChanged(address, index, param, value));
-          case FxStage.allTracks:
-            bloc.add(LooperAllTracksEffectParamChanged(index, param, value));
-        }
-      },
-      setChannels: (index, channels) {
-        switch (address.stage) {
-          case FxStage.input:
-            monitor.setEffectChannels(address.index, index, channels);
-          case FxStage.loop:
-            bloc.add(
-              LooperLaneEffectChannelsChanged(
-                address.index,
-                address.lane ?? 0,
-                index,
-                channels,
-              ),
-            );
-          case FxStage.track:
-          case FxStage.output:
-            bloc.add(LooperBusEffectChannelsChanged(address, index, channels));
-          case FxStage.allTracks:
-            bloc.add(LooperAllTracksEffectChannelsChanged(index, channels));
-        }
-      },
-      // Rename, reorder, removal and Pre/Post move several entries at once.
-      // A rack is one thing, so these edits hand back a complete chain.
-      setChain: (chain) async {
-        if (address.stage == FxStage.input) {
-          return monitor.setEffectsConfirmed(
-            address.index,
-            chain,
-            cancelled: () => !context.mounted,
-            expectedMixGeneration: generation,
-          );
-        }
-        if (bloc.isClosed) return false;
-        final receipt = Completer<bool>();
-        switch (address.stage) {
-          case FxStage.input:
-            return false;
-          case FxStage.loop:
-            bloc.add(
-              LooperLaneEffectsChanged(
-                address.index,
-                address.lane ?? 0,
-                chain,
-                receipt: receipt,
-                cancelled: () => !context.mounted,
-                expectedMixGeneration: generation,
-              ),
-            );
-          case FxStage.track:
-          case FxStage.output:
-            bloc.add(
-              LooperBusEffectsChanged(
-                address,
-                chain,
-                receipt: receipt,
-                cancelled: () => !context.mounted,
-                expectedMixGeneration: generation,
-              ),
-            );
-          case FxStage.allTracks:
-            bloc.add(
-              LooperAllTracksEffectsChanged(
-                chain,
-                receipt: receipt,
-                cancelled: () => !context.mounted,
-                expectedMixGeneration: generation,
-              ),
-            );
-        }
-        return receipt.future;
-      },
+      setPlacement: (groupId, placement) => unawaited(
+        reportLater(fx.setGroupPlacement(address, groupId, placement)),
+      ),
     );
   }
 
@@ -740,32 +630,19 @@ class _FxViewState extends State<FxView> {
         selection.state.destination != destination) {
       return;
     }
-    final added = withFreshSlotIds(
-      _entriesFor(choice, placement: destination.defaultPlacement),
-    );
-    if (added.isEmpty) return;
     bool stillHere() =>
         mounted &&
         (route?.isCurrent ?? false) &&
         selection.state.destination == destination &&
         bloc.hasMixGeneration(generation);
-    if (_entriesOf(context, address).length + added.length > kTrackEffectMax) {
-      _changeRefused(context);
-      return;
-    }
-    final accepted = await _append(
-      context,
-      address,
-      added,
-      expectedMixGeneration: generation,
-      cancelled: () => !stillHere(),
-    );
+    final result = await selection.appendChoice(destination, choice);
     if (!mounted || !stillHere()) return;
-    if (!accepted) {
-      _changeRefused(context);
+    _notifyEditResult(context, result);
+    if (!_committed(result)) {
       return;
     }
-    final id = added.first.rack?.id ?? added.first.slotId!;
+    final id = result.groupId;
+    if (id == null) return;
     if (await _waitForAddedGroup(destination, id, generation, route) &&
         stillHere()) {
       _openEditorById(destination, id);
@@ -841,82 +718,6 @@ class _FxViewState extends State<FxView> {
     }
   }
 
-  /// The entries a choice becomes.
-  ///
-  /// Every one arrives BYPASSED, whatever the preset's own power keys say:
-  /// the accepted design is explicit that a new instance starts bypassed, so
-  /// adding a rack mid-set cannot change the sound until the player says so.
-  /// The preset's power values are not lost — they ride each entry's own
-  /// parameters and come back when the chain is engaged.
-  static List<TrackEffect> _entriesFor(
-    FxLibraryChoice choice, {
-    required FxPlacement placement,
-    FxRack? into,
-  }) {
-    switch (choice) {
-      case FxSingleChoice(:final type):
-        return [
-          BuiltInEffect(
-            type: type,
-            enabled: false,
-            placement: placement,
-            rack: into,
-          ),
-        ];
-      case FxSavedChoice(:final preset):
-        // The player's own sound, recalled as a NEW instance: a fresh rack id
-        // so it is its own thing on the chain, this destination's placement,
-        // and bypassed like every other addition. A single-effect preset
-        // stays a single effect.
-        final rack =
-            into ??
-            (preset.isRack
-                ? FxRack(
-                    id: SlotIds.mint(),
-                    name: preset.name,
-                    art: preset.art,
-                  )
-                : null);
-        return [
-          for (final fx in preset.entries)
-            switch (fx) {
-              BuiltInEffect() => fx.copyWith(
-                enabled: false,
-                placement: placement,
-                rack: rack,
-              ),
-              PluginEffect() => fx.copyWith(
-                enabled: false,
-                placement: placement,
-                rack: rack,
-              ),
-            },
-        ];
-      case FxRackChoice(:final preset):
-        // Every module of one rack carries the same rack: a freshly minted id
-        // that makes them one thing to every surface downstream, the preset's
-        // own name (which the player may rename without touching the preset),
-        // and the family's artwork slug for the card. Adding INTO a rack keeps
-        // that rack instead, so the new pedals join it rather than starting a
-        // second one beside it.
-        final rack =
-            into ??
-            FxRack(
-              id: SlotIds.mint(),
-              name: preset.name,
-              art: kFxFamilySlugs[preset.family],
-            );
-        return [
-          for (final module in fxPresetModules(preset))
-            fxModuleEntry(module, preset).copyWith(
-              enabled: false,
-              placement: placement,
-              rack: rack,
-            ),
-        ];
-    }
-  }
-
   /// What the library's header calls the destination.
   String _destinationLabel(FxDestination destination) {
     final l10n = context.l10n;
@@ -960,63 +761,6 @@ class _FxViewState extends State<FxView> {
           context.watch<LooperBloc>().state,
           address,
         );
-
-  Future<bool> _append(
-    BuildContext context,
-    FxAddress address,
-    List<TrackEffect> entries, {
-    required int expectedMixGeneration,
-    required bool Function() cancelled,
-  }) async {
-    final bloc = context.read<LooperBloc>();
-    switch (address.stage) {
-      case FxStage.input:
-        final monitor = context.read<MonitorCubit>();
-        return monitor.appendEffectsConfirmed(
-          address.index,
-          entries,
-          expectedMixGeneration: expectedMixGeneration,
-          cancelled: cancelled,
-        );
-      case FxStage.loop:
-        final receipt = Completer<bool>();
-        bloc.add(
-          LooperLaneEffectsAppended(
-            address.index,
-            address.lane ?? 0,
-            entries,
-            receipt: receipt,
-            cancelled: cancelled,
-            expectedMixGeneration: expectedMixGeneration,
-          ),
-        );
-        return receipt.future;
-      case FxStage.track:
-      case FxStage.output:
-        final receipt = Completer<bool>();
-        bloc.add(
-          LooperBusEffectsAppended(
-            address,
-            entries,
-            receipt: receipt,
-            cancelled: cancelled,
-            expectedMixGeneration: expectedMixGeneration,
-          ),
-        );
-        return receipt.future;
-      case FxStage.allTracks:
-        final receipt = Completer<bool>();
-        bloc.add(
-          LooperAllTracksEffectsAppended(
-            entries,
-            receipt: receipt,
-            cancelled: cancelled,
-            expectedMixGeneration: expectedMixGeneration,
-          ),
-        );
-        return receipt.future;
-    }
-  }
 
   void _stage() {
     widget.onStage?.call();
@@ -1476,7 +1220,6 @@ class _DestinationChain extends StatelessWidget {
   Widget build(BuildContext context) {
     final address = destination.address;
     if (address == null) return const SizedBox.shrink();
-    final bloc = context.read<LooperBloc>();
     // A live input's chain is the monitor cubit's, not the projection's: the
     // Input stage is the one chain the engine snapshot does not carry, and
     // that cubit is its single owner (it mints slot ids and recovers plugins
@@ -1521,15 +1264,14 @@ class _DestinationChain extends StatelessWidget {
       controller: controller,
       showPlacement: destination.placementIsEditable,
       onTogglePower: (group, {required enabled}) {
-        final monitor = context.read<MonitorCubit>();
         final groups = fxChainGroups(entries);
         if (group < 0 || group >= groups.length) return;
-        // A rack's power is every pedal's power, one write each. There is no
-        // rack-level bypass bit in this engine, so a rack turned back on turns
-        // every pedal on — see the rack editor's own note.
-        for (var i = groups[group].start; i < groups[group].end; i++) {
-          _togglePower(bloc, monitor, address, i, enabled: enabled);
-        }
+        final outcome = context.read<FxCubit>().setGroupEnabled(
+          address,
+          fxGroupId(groups[group]),
+          enabled: enabled,
+        );
+        _FxViewState._notifyEditResult(context, outcome);
       },
       onOpen: (group) => onOpen(destination, group),
     );
@@ -1551,46 +1293,4 @@ class _DestinationChain extends StatelessWidget {
         FxStage.allTracks => state.allTracksChain.entries,
         FxStage.output => state.outputEffects(address.index),
       };
-
-  static void _togglePower(
-    LooperBloc bloc,
-    MonitorCubit monitor,
-    FxAddress address,
-    int index, {
-    required bool enabled,
-  }) {
-    switch (address.stage) {
-      case FxStage.input:
-        monitor.setEffectEnabled(address.index, index, enabled: enabled);
-      case FxStage.loop:
-        bloc.add(
-          LooperLaneEffectEnabledToggled(
-            address.index,
-            address.lane ?? 0,
-            index,
-            enabled: enabled,
-          ),
-        );
-      case FxStage.track:
-        bloc.add(
-          LooperTrackEffectEnabledToggled(
-            address.index,
-            index,
-            enabled: enabled,
-          ),
-        );
-      case FxStage.allTracks:
-        bloc.add(
-          LooperAllTracksEffectEnabledToggled(index, enabled: enabled),
-        );
-      case FxStage.output:
-        bloc.add(
-          LooperOutputEffectEnabledToggled(
-            address.index,
-            index,
-            enabled: enabled,
-          ),
-        );
-    }
-  }
 }

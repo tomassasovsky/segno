@@ -8,8 +8,10 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/model/record_start.dart';
+import 'package:segno/looper/model/tempo_state.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_labels.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/looper/view/tempo_labels.dart';
 import 'package:segno/theme/theme.dart';
 
 /// What the Tempo & click page reads off the transport.
@@ -76,9 +78,12 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
     );
     final settings = context.watch<TempoCubit>().state;
     final tempo = context.read<TempoCubit>();
-    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
-    final recordStartSnapshot = tempo.recordStartSnapshot;
-    final confirmedRecordStart = tempo.confirmedRecordStart;
+    final clickModeSnapshot = context
+        .watch<TempoCubit>()
+        .state
+        .clickModeSnapshot;
+    final recordStartSnapshot = tempo.state.recordStartSnapshot;
+    final confirmedRecordStart = tempo.state.confirmedRecordStart;
     // The live tempo when the engine has one (a tap or a derived tempo
     // moves it without this page), else the cubit's own intent.
     final liveBpm = transport.bpm > 0 ? transport.bpm : settings.bpm;
@@ -234,7 +239,7 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                   ClickMode.playRec => l10n.loopClickAlways,
                 },
                 keyOf: (mode) => Key('loop_click_${mode.name}'),
-                selected: tempo.confirmedClickMode,
+                selected: tempo.state.confirmedClickMode,
                 enabled: clickModeSnapshot?.canEdit ?? false,
                 onSelected: (mode) => unawaited(tempo.setClickMode(mode)),
                 width: 1392,

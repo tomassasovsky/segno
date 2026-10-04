@@ -3,252 +3,100 @@ import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/model/playback_options.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-import '../../helpers/fake_key_value_store.dart';
+import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _Store extends FakeKeyValueStore {
+  Completer<void>? onceWrite;
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    if (key == 'looper.default_one_shot') await onceWrite?.future;
+    await super.setBool(key, value: value);
+  }
+}
 
 void main() {
-  late SettingsRepository settings;
+  late _Store store;
   late LooperRepository repository;
-  late StreamController<LooperState> looperStates;
+  late PlaybackSettings owner;
+  late PlaybackOptionsCubit cubit;
 
   setUp(() {
-    settings = SettingsRepository(store: FakeKeyValueStore());
-    repository = _MockLooperRepository();
-    when(() => repository.sessionRevision).thenReturn(0);
-    when(() => repository.mixGeneration).thenReturn(0);
-    when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
-    var decay = 0;
-    var once = false;
-    final onceOverrides = <int, bool>{};
-    when(() => repository.oneShotRecoveryRequired).thenReturn(false);
-    when(() => repository.oneShotSettingsSettled).thenReturn(true);
-    when(
-      () => repository.settleOneShot(),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.trackOneShotOverrides,
-    ).thenAnswer((_) => Map.of(onceOverrides));
-    when(() => repository.oneShotRestartIntent).thenAnswer(
-      (_) => (defaultOneShot: once, trackOverrides: Map.of(onceOverrides)),
+    store = _Store();
+    repository = LooperRepository(engine: FakeAudioEngine());
+    owner = PlaybackSettings(
+      repository: repository,
+      settings: SettingsRepository(store: store),
     );
-    when(
-      () => repository.setOneShotSnapshot(
-        defaultOneShot: any(named: 'defaultOneShot'),
-        trackOverrides: any(named: 'trackOverrides'),
-      ),
-    ).thenAnswer((call) {
-      once = call.namedArguments[#defaultOneShot] as bool;
-      onceOverrides
-        ..clear()
-        ..addAll(call.namedArguments[#trackOverrides] as Map<int, bool>);
-      return EngineResult.ok;
-    });
-
-    final overrides = <int, int>{};
-    when(() => repository.defaultOverdubDecay).thenAnswer((_) => decay);
-    when(() => repository.defaultOneShot).thenAnswer((_) => once);
-    when(
-      () => repository.trackOverdubDecayOverrides,
-    ).thenAnswer((_) => Map.of(overrides));
-    when(() => repository.decayRestartIntent).thenAnswer(
-      (_) => (defaultPercent: decay, trackOverrides: Map.of(overrides)),
-    );
-    when(() => repository.state).thenReturn(const LooperState());
-    when(
-      () => repository.setTrackOverdubDecay(
-        channel: any(named: 'channel'),
-        percent: any(named: 'percent'),
-      ),
-    ).thenAnswer((call) {
-      final channel = call.namedArguments[#channel] as int;
-      final percent = call.namedArguments[#percent] as int?;
-      if (percent == null) {
-        overrides.remove(channel);
-      } else {
-        overrides[channel] = percent;
-      }
-      return EngineResult.ok;
-    });
-    looperStates = StreamController<LooperState>.broadcast();
-    when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
-    when(
-      () => repository.setOverdubDecay(any()),
-    ).thenAnswer((call) {
-      decay = call.positionalArguments.single as int;
-      return EngineResult.ok;
-    });
-    when(
-      () => repository.setDefaultOneShot(
-        oneShot: any(named: 'oneShot'),
-        releasedOneShot: any(named: 'releasedOneShot'),
-      ),
-    ).thenAnswer((call) {
-      once = call.namedArguments[#oneShot] as bool;
-      return EngineResult.ok;
-    });
+    cubit = PlaybackOptionsCubit(settings: owner);
+  });
+  tearDown(() async {
+    await cubit.close();
+    await owner.close();
+    await repository.dispose();
   });
 
-  tearDown(() => looperStates.close());
+  blocTest<PlaybackOptionsCubit, PlaybackOptions>(
+    'projects readiness and forwards explicit zero and false '
+    'without inheritance',
+    build: () => cubit,
+    act: (cubit) async {
+      expect(cubit.state.decaySnapshot, isNull);
+      expect(cubit.state.oneShotSnapshot, isNull);
+      await owner.load();
+      await cubit.setOverdubDecay(40);
+      await cubit.setDefaultOneShot(value: true);
+      await cubit.setTrackOverdubDecay(channel: 0, percent: 0);
+      await cubit.setTrackOneShot(channel: 0, oneShot: false);
+      expect(cubit.state, same(owner.state));
+      expect(cubit.state.decaySnapshot!.trackOverrides, {0: 0});
+      expect(cubit.state.oneShotSnapshot!.trackOverrides, {0: false});
+      expect(store.values['track_overdub_decay.0'], 0);
+      expect(store.values['track_one_shot.0'], isFalse);
+      await cubit.setTrackOverdubDecay(channel: 0, percent: null);
+      await cubit.setTrackOneShot(channel: 0, oneShot: null);
+      expect(cubit.state.decaySnapshot!.trackOverrides, isEmpty);
+      expect(cubit.state.oneShotSnapshot!.trackOverrides, isEmpty);
+    },
+  );
 
-  PlaybackOptionsCubit build() =>
-      PlaybackOptionsCubit(repository: repository, settings: settings);
+  blocTest<PlaybackOptionsCubit, PlaybackOptions>(
+    'closing and remounting a view leaves the accepted owner available',
+    build: () => cubit,
+    act: (cubit) async {
+      await owner.load();
+      await cubit.close();
+      expect((await owner.setOverdubDecay(35)).isOk, isTrue);
+      final reopened = PlaybackOptionsCubit(settings: owner);
+      expect(reopened.state, same(owner.state));
+      expect(reopened.state.overdubDecay, 35);
+      await reopened.setDefaultOneShot(value: true);
+      expect(owner.oneShotSnapshot!.defaultOneShot, isTrue);
+      await reopened.close();
+    },
+  );
 
-  group('PlaybackOptionsCubit', () {
-    test('defaults to no decay', () {
-      expect(build().state, const PlaybackOptions());
-    });
-
-    blocTest<PlaybackOptionsCubit, PlaybackOptions>(
-      'load restores the persisted decay and applies it to the repository',
-      setUp: () => settings.saveOverdubDecay(25),
-      build: build,
-      act: (cubit) => cubit.load(),
-      expect: () => [
-        const PlaybackOptions(overdubDecay: 25, decayReady: true),
-        const PlaybackOptions(
-          overdubDecay: 25,
-          decayReady: true,
-          oneShotReady: true,
-        ),
-      ],
-      verify: (_) => verify(() => repository.setOverdubDecay(25)).called(1),
-    );
-
-    blocTest<PlaybackOptionsCubit, PlaybackOptions>(
-      'out-of-range Decay is refused without changing persistence or audio',
-      build: build,
-      act: (cubit) => cubit.setOverdubDecay(140),
-      expect: () => <PlaybackOptions>[],
-      verify: (_) async {
-        expect(await settings.loadOverdubDecay(), 0);
-        verifyNever(() => repository.setOverdubDecay(any()));
-      },
-    );
-
-    blocTest<PlaybackOptionsCubit, PlaybackOptions>(
-      'setOverdubDecay reapplies an explicit value even if the cache matches',
-      build: build,
-      act: (cubit) => cubit.setOverdubDecay(0),
-      expect: () => [const PlaybackOptions(decayReady: true)],
-      verify: (_) async {
-        expect(await settings.loadOverdubDecay(), 0);
-        verify(() => repository.setOverdubDecay(0)).called(2);
-      },
-    );
-
-    blocTest<PlaybackOptionsCubit, PlaybackOptions>(
-      'load restores the default Once behavior',
-      setUp: () => settings.saveDefaultOneShot(oneShot: true),
-      build: build,
-      act: (cubit) => cubit.load(),
-      expect: () => [
-        const PlaybackOptions(decayReady: true),
-        const PlaybackOptions(
-          defaultOneShot: true,
-          decayReady: true,
-          oneShotReady: true,
-        ),
-      ],
-      verify: (_) => verify(
-        () => repository.setOneShotSnapshot(
-          defaultOneShot: true,
-          trackOverrides: any(named: 'trackOverrides'),
-        ),
-      ).called(1),
-    );
-
-    blocTest<PlaybackOptionsCubit, PlaybackOptions>(
-      'setDefaultOneShot persists and reapplies a matching explicit value',
-      build: build,
-      act: (cubit) => cubit.setDefaultOneShot(value: false),
-      expect: () => [const PlaybackOptions(oneShotReady: true)],
-      verify: (_) async {
-        expect(await settings.loadDefaultOneShot(), isFalse);
-        verify(
-          () => repository.setDefaultOneShot(
-            oneShot: false,
-          ),
-        ).called(1);
-      },
-    );
-
-    blocTest<PlaybackOptionsCubit, PlaybackOptions>(
-      'refused Once changes leave the displayed and saved choice intact',
-      setUp: () {
-        when(
-          () => repository.setDefaultOneShot(
-            oneShot: true,
-          ),
-        ).thenReturn(EngineResult.invalid);
-      },
-      build: build,
-      act: (cubit) => cubit.setDefaultOneShot(value: true),
-      expect: () => [const PlaybackOptions(oneShotReady: true)],
-      verify: (_) async => expect(await settings.loadDefaultOneShot(), isFalse),
-    );
-
-    blocTest<PlaybackOptionsCubit, PlaybackOptions>(
-      'refused startup Once does not advertise the saved choice as applied',
-      setUp: () async {
-        await settings.saveDefaultOneShot(oneShot: true);
-        when(
-          () => repository.setOneShotSnapshot(
-            defaultOneShot: true,
-            trackOverrides: any(named: 'trackOverrides'),
-          ),
-        ).thenReturn(EngineResult.invalid);
-      },
-      build: build,
-      act: (cubit) => cubit.load(),
-      expect: () => [const PlaybackOptions(decayReady: true)],
-      verify: (_) async => expect(await settings.loadDefaultOneShot(), isTrue),
-    );
-
-    blocTest<PlaybackOptionsCubit, PlaybackOptions>(
-      'follows recalled and reset defaults without changing startup settings',
-      setUp: () => settings.saveOverdubDecay(25),
-      build: build,
-      act: (cubit) async {
-        await cubit.load();
-        when(() => repository.defaultOverdubDecay).thenReturn(80);
-        when(() => repository.defaultOneShot).thenReturn(true);
-        looperStates.add(
-          const LooperState(
-            transport: TransportState(overdubDecay: 80, defaultOneShot: true),
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
-        when(() => repository.defaultOverdubDecay).thenReturn(0);
-        when(() => repository.defaultOneShot).thenReturn(false);
-        looperStates.add(const LooperState());
-        await Future<void>.delayed(Duration.zero);
-        await cubit.load();
-      },
-      expect: () => [
-        const PlaybackOptions(overdubDecay: 25, decayReady: true),
-        const PlaybackOptions(
-          overdubDecay: 25,
-          decayReady: true,
-          oneShotReady: true,
-        ),
-        const PlaybackOptions(
-          overdubDecay: 80,
-          defaultOneShot: true,
-          decayReady: true,
-          oneShotReady: true,
-        ),
-        const PlaybackOptions(decayReady: true, oneShotReady: true),
-      ],
-      verify: (_) async {
-        expect(await settings.loadOverdubDecay(), 25);
-        expect(await settings.loadDefaultOneShot(), isFalse);
-        verify(() => repository.setOverdubDecay(25)).called(1);
-      },
-    );
-  });
+  blocTest<PlaybackOptionsCubit, PlaybackOptions>(
+    'an admitted write finishes after its UI projection closes',
+    build: () => cubit,
+    act: (cubit) async {
+      await owner.load();
+      final gate = Completer<void>();
+      store.onceWrite = gate;
+      final pending = cubit.setDefaultOneShot(value: true);
+      await pumpEventQueue();
+      await cubit.close();
+      final closedState = cubit.state;
+      gate.complete();
+      await pending;
+      expect(cubit.state, same(closedState));
+      expect(owner.oneShotSnapshot!.defaultOneShot, isTrue);
+      expect(store.values['looper.default_one_shot'], isTrue);
+      expect((await owner.flushOneShot()).isOk, isTrue);
+    },
+  );
 }

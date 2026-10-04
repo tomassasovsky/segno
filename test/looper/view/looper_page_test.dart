@@ -13,9 +13,15 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
+import 'package:segno/session/application/session_settings_coordinator.dart';
+import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -28,7 +34,7 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
 
 void main() {
   group('LooperPage', () {
-    testWidgets('wires its blocs and renders the Tracks view', (
+    testWidgets('uses the shared track owner and renders the Tracks view', (
       tester,
     ) async {
       final repository = LooperRepository(
@@ -45,22 +51,22 @@ void main() {
       final fxPersistence = FxChainPersistence(looper: repository);
       final mixSettings = testMixSettings(repository, settings: settings);
       final mixPersistence = SettingsMixPersistence(settings);
-      final tempo = TempoCubit(repository: repository, settings: settings);
+      final tempo = TempoSettings(repository: repository, settings: settings);
       await tempo.load();
       addTearDown(() => unawaited(tempo.close()));
-      final playback = PlaybackOptionsCubit(
+      final playback = PlaybackSettings(
         repository: repository,
         settings: settings,
       );
       await playback.load();
       addTearDown(() => unawaited(playback.close()));
-      final recordOptions = RecordOptionsCubit(
+      final recordOptions = RecordSettings(
         repository: repository,
         settings: settings,
       );
       await recordOptions.load();
       addTearDown(() => unawaited(recordOptions.close()));
-      final timing = RecordTimingCubit(
+      final timing = RecordTimingSettings(
         repository: repository,
         settings: settings,
       );
@@ -88,6 +94,10 @@ void main() {
         MultiRepositoryProvider(
           providers: [
             RepositoryProvider.value(value: repository),
+            RepositoryProvider.value(value: timing),
+            RepositoryProvider.value(value: recordOptions),
+            RepositoryProvider.value(value: tempo),
+            RepositoryProvider.value(value: playback),
             RepositoryProvider.value(value: controllerRepository),
             RepositoryProvider.value(value: sessionRepository),
             RepositoryProvider.value(value: performanceRepository),
@@ -100,10 +110,30 @@ void main() {
           ],
           child: MultiBlocProvider(
             providers: [
-              BlocProvider<TempoCubit>.value(value: tempo),
-              BlocProvider<PlaybackOptionsCubit>.value(value: playback),
-              BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
-              BlocProvider<RecordTimingCubit>.value(value: timing),
+              BlocProvider<LooperBloc>(
+                create: (_) => LooperBloc(
+                  repository: repository,
+                  settings: settings,
+                  mixSettings: mixSettings,
+                  fxPersistence: fxPersistence,
+                  decayControl: playback,
+                  oneShotControl: playback,
+                  recordLengthControl: recordOptions,
+                  recordTimingControl: timing,
+                ),
+              ),
+              BlocProvider<TempoCubit>(
+                create: (_) => TempoCubit(settings: tempo),
+              ),
+              BlocProvider<PlaybackOptionsCubit>(
+                create: (_) => PlaybackOptionsCubit(settings: playback),
+              ),
+              BlocProvider<RecordOptionsCubit>(
+                create: (_) => RecordOptionsCubit(settings: recordOptions),
+              ),
+              BlocProvider<RecordTimingCubit>(
+                create: (_) => RecordTimingCubit(settings: timing),
+              ),
               // The stage status bar is now unconditional, and its clock
               // readout selects a TransportClockCubit.
               BlocProvider<TransportClockCubit>(
@@ -131,6 +161,34 @@ void main() {
                   performance: performanceRepository,
                 ),
               ),
+              BlocProvider(
+                create: (context) => SessionCubit(
+                  settings: context.read<SettingsRepository>(),
+                  repository: sessionRepository,
+                  looper: repository,
+                  performance: performanceRepository,
+                  mixSettings: mixSettings,
+                  fxPersistence: fxPersistence,
+                  mixPersistence: mixPersistence,
+                  captureSettings: SessionSettingsCoordinator(
+                    looper: repository,
+                    mix: mixSettings,
+                    fx: fxPersistence,
+                    tempo: tempo,
+                    playback: playback,
+                    record: recordOptions,
+                    timing: timing,
+                  ),
+                  exportDirectory: () async => '.',
+                  currentPedalBindings: () =>
+                      context.read<ControlCubit>().state.bindings.encode(),
+                  onPedalBindings: (encoded) => context
+                      .read<ControlCubit>()
+                      .applySessionBindings(PedalBindingSet.decode(encoded)),
+                  releaseHeldBindings: () =>
+                      context.read<ControlCubit>().releaseAllMomentary(),
+                ),
+              ),
               BlocProvider<PedalCubit>.value(value: pedal),
               // App-wide in the real shell, above this page. The tray now
               // opens on Signal — the pen's rail has no "Controls" landing
@@ -155,7 +213,7 @@ void main() {
               ),
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             ],
-            child: LooperPage(exportDirectory: () async => '.'),
+            child: const LooperPage(),
           ),
         ),
       );

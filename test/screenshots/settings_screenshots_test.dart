@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -19,6 +18,9 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/theme/theme.dart';
@@ -28,6 +30,7 @@ import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
 
 import '../helpers/helpers.dart';
+import 'screenshot_settings.dart';
 
 /// The deterministic golden theme: a bare dark [ThemeData] (fixed font, no
 /// seeded colours) carrying the same surface + routing-graph extensions the
@@ -53,6 +56,7 @@ class _MockMidiDeviceRepository extends Mock implements MidiDeviceRepository {}
 class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
 
 void main() {
+  late TempoSettings tempoOwner;
   late MixSettingsCoordinator mixSettings;
   late FxChainPersistence fxPersistence;
   const fontDir =
@@ -124,10 +128,34 @@ void main() {
     ),
   );
 
-  setUp(() {
+  void setUpRig() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
     when(() => repository.sessionRevision).thenReturn(0);
+    stubScreenshotSettings(repository);
+    when(() => repository.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.clickModeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => repository.laneCount(any())).thenAnswer((call) {
+      final channel = call.positionalArguments.first as int;
+      return repository.state.tracks
+              .where((track) => track.channel == channel)
+              .firstOrNull
+              ?.lanes
+              .length ??
+          0;
+    });
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -202,7 +230,7 @@ void main() {
       settings: settings,
       performance: performance,
     );
-    addTearDown(control.close);
+    addTearDown(() => unawaited(control.close()));
     // Backs the Tempo section (reads live values from LooperBloc's
     // TransportState, not a cached cubit copy — see
     // TempoSettingsSection's class doc): a representative grid-on state so
@@ -224,15 +252,38 @@ void main() {
         status: EngineStatus(outputChannels: 4),
       ),
     );
-  });
+  }
 
   Future<void> pump(WidgetTester tester) async {
+    // Serialized preference futures must originate in this widget test zone.
+    setUpRig();
     tester.view
       ..physicalSize = const Size(1980, 1480)
       ..devicePixelRatio = 2;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final timingOwner = RecordTimingSettings(
+      repository: repository,
+      settings: settings,
+    );
+    await timingOwner.load();
+    expect(timingOwner.state.recordTimingReady, isTrue);
+    final timing = RecordTimingCubit(settings: timingOwner);
+    addTearDown(() => unawaited(timingOwner.close()));
+    addTearDown(() => unawaited(timing.close()));
+    tempoOwner = TempoSettings(repository: repository, settings: settings);
+    await tempoOwner.loadRecordStart();
+    expect(tempoOwner.recordStartSnapshot, isNotNull);
+    final tempo = TempoCubit(settings: tempoOwner);
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    addTearDown(() => unawaited(tempo.close()));
+    final recordOwner = RecordSettings(
+      repository: repository,
+      settings: settings,
+    );
+    addTearDown(() => unawaited(recordOwner.close()));
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -266,10 +317,7 @@ void main() {
                 ),
               ),
               BlocProvider<RecordTimingCubit>.value(
-                value: RecordTimingCubit(
-                  repository: repository,
-                  settings: settings,
-                ),
+                value: timing,
               ),
               BlocProvider<MonitorCubit>.value(
                 value: MonitorCubit(
@@ -279,17 +327,14 @@ void main() {
                   settings: settings,
                 ),
               ),
-              BlocProvider<RecordOptionsCubit>.value(
-                value: RecordOptionsCubit(
-                  repository: repository,
-                  settings: settings,
-                ),
+              BlocProvider<RecordOptionsCubit>(
+                create: (_) => RecordOptionsCubit(settings: recordOwner),
               ),
               BlocProvider<PedalCubit>.value(value: pedal),
               BlocProvider<ControlCubit>.value(value: control),
               BlocProvider<LooperBloc>.value(value: looperBloc),
               BlocProvider<TempoCubit>.value(
-                value: TempoCubit(repository: repository, settings: settings),
+                value: tempo,
               ),
               BlocProvider<UpdateCubit>.value(
                 value: UpdateCubit(

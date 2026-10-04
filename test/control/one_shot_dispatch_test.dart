@@ -15,7 +15,7 @@ import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
-import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -95,7 +95,7 @@ class _Rig {
         )
         .encode();
     settings = SettingsRepository(store: store);
-    owner = PlaybackOptionsCubit(repository: looper, settings: settings);
+    owner = PlaybackSettings(repository: looper, settings: settings);
     unawaited(owner.load());
     pump();
     midi = _Midi(settings);
@@ -139,7 +139,7 @@ class _Rig {
   final link = FakePedalLink();
   bool powerUp = false;
   late final SettingsRepository settings;
-  late final PlaybackOptionsCubit owner;
+  late final PlaybackSettings owner;
   late final _Midi midi;
   late final MixSettingsCoordinator mix;
   late final PedalRepository pedal;

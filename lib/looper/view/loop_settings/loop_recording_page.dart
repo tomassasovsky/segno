@@ -20,10 +20,10 @@ class LoopRecordingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final options = context.watch<RecordOptionsCubit>().state;
+    final options = context.watch<RecordOptionsCubit>().state.options;
     final tempo = context.watch<TempoCubit>();
-    final confirmed = tempo.confirmedRecordStart;
-    final recordStart = tempo.recordStartSnapshot;
+    final confirmed = tempo.state.confirmedRecordStart;
+    final recordStart = tempo.state.recordStartSnapshot;
     final capturing = context.select<LooperBloc, bool>(
       (bloc) => bloc.state.tracks.any((t) => t.isCapturing),
     );

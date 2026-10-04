@@ -50,12 +50,12 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
     final l10n = context.l10n;
     final surface = context.surface;
     final audio = context.watch<AudioSetupCubit>();
-    final options = context.watch<RecordOptionsCubit>().state;
+    final options = context.watch<RecordOptionsCubit>().state.options;
     final timing = context.watch<RecordTimingCubit>().state;
     final timingEnabled = timing.recordTimingReady && !timing.captureLocked;
     final tempo = context.watch<TempoCubit>();
-    final confirmedStart = tempo.confirmedRecordStart;
-    final startSnapshot = tempo.recordStartSnapshot;
+    final confirmedStart = tempo.state.confirmedRecordStart;
+    final startSnapshot = tempo.state.recordStartSnapshot;
     final cap = audio.state.maxLoopMinutes;
 
     return KeyedSubtree(

@@ -16,7 +16,6 @@ import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_presets_cubit.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
@@ -214,6 +213,7 @@ void main() {
   late StreamController<int> monitorParams;
   late PluginCatalog catalog;
   late FxPresetsCubit presets;
+  late List<TrackEffect> monitorEntries;
 
   setUp(() {
     catalog = PluginCatalog(
@@ -241,6 +241,10 @@ void main() {
       }
     });
     repository = _MockLooperRepository();
+    monitorEntries = [
+      _fx('m1', TrackEffectType.delay, placement: FxPlacement.pre),
+      _fx('m2', TrackEffectType.reverb),
+    ];
     when(() => repository.clickModeFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
@@ -283,10 +287,9 @@ void main() {
         cancelled: any(named: 'cancelled'),
       ),
     ).thenAnswer((_) async => EngineResult.ok);
-    when(() => repository.monitorEffects(any())).thenReturn([
-      _fx('m1', TrackEffectType.delay, placement: FxPlacement.pre),
-      _fx('m2', TrackEffectType.reverb),
-    ]);
+    when(
+      () => repository.monitorEffects(any()),
+    ).thenAnswer((_) => monitorEntries);
     when(() => repository.monitorChainEnabled(any())).thenReturn(true);
     when(
       () => repository.setMonitorEffects(
@@ -301,7 +304,9 @@ void main() {
       () => repository.monitorParamChanges,
     ).thenAnswer((_) => monitorParams.stream);
     when(() => repository.pluginCatalog).thenReturn(catalog);
-    when(() => repository.allMonitors()).thenReturn(const {});
+    when(() => repository.allMonitors()).thenAnswer(
+      (_) => {0: InputMonitor(input: 0, effects: monitorEntries)},
+    );
     when(() => repository.monitorMode(any())).thenReturn(MonitorMode.off);
     when(() => repository.monitorOutput(any())).thenReturn(0x3);
     when(() => repository.monitorVolume(any())).thenReturn(1);
@@ -328,23 +333,213 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final rig = state ?? _rig;
+    final ownUpdates = StreamController<LooperState>.broadcast();
+    addTearDown(ownUpdates.close);
+    final trackEntries = <int, List<TrackEffect>>{
+      for (var channel = 0; channel < rig.tracks.length; channel++)
+        channel: rig.tracks[channel].effects,
+    };
+    final laneEntries = <(int, int), List<TrackEffect>>{
+      for (var channel = 0; channel < rig.tracks.length; channel++)
+        for (var lane = 0; lane < rig.tracks[channel].lanes.length; lane++)
+          (channel, lane): rig.tracks[channel].lanes[lane].effects,
+    };
+    final outputEntries = <int, List<TrackEffect>>{
+      for (final entry in rig.outputChains.entries)
+        entry.key: entry.value.entries,
+    };
+    var allEntries = rig.allTracksChain.entries;
+    void publish() {
+      if (updates != null) return;
+      ownUpdates.add(
+        LooperState(
+          tracks: [
+            for (var channel = 0; channel < rig.tracks.length; channel++)
+              Track(
+                channel: channel,
+                state: rig.tracks[channel].state,
+                lanes: [
+                  for (
+                    var lane = 0;
+                    lane < rig.tracks[channel].lanes.length;
+                    lane++
+                  )
+                    Lane(
+                      inputChannel:
+                          rig.tracks[channel].lanes[lane].inputChannel,
+                      lengthFrames:
+                          rig.tracks[channel].lanes[lane].lengthFrames,
+                      effects: laneEntries[(channel, lane)] ?? const [],
+                    ),
+                ],
+                effects: trackEntries[channel] ?? const [],
+              ),
+          ],
+          status: rig.status,
+          outputBusCount: rig.outputBusCount,
+          outputChains: {
+            for (final entry in outputEntries.entries)
+              entry.key: FxChainEnvelope(entries: entry.value),
+          },
+          allTracksChain: FxChainEnvelope(entries: allEntries),
+          inputPeaks: rig.inputPeaks,
+          outputPeaks: rig.outputPeaks,
+        ),
+      );
+    }
+
+    when(() => repository.allTrackChains()).thenAnswer(
+      (_) => {
+        for (final entry in trackEntries.entries)
+          entry.key: FxChainEnvelope(entries: entry.value),
+      },
+    );
+    when(() => repository.trackEffects(any())).thenAnswer(
+      (call) =>
+          trackEntries[call.positionalArguments.single as int] ?? const [],
+    );
+    when(() => repository.trackChainEnabled(any())).thenReturn(true);
+    when(() => repository.allLaneChains()).thenAnswer(
+      (_) => {
+        for (final entry in laneEntries.entries)
+          entry.key: FxChainEnvelope(entries: entry.value),
+      },
+    );
+    when(() => repository.laneEffects(any(), any())).thenAnswer((call) {
+      final channel = call.positionalArguments[0] as int;
+      final lane = call.positionalArguments[1] as int;
+      return laneEntries[(channel, lane)] ?? const [];
+    });
+    when(() => repository.laneChainEnabled(any(), any())).thenReturn(true);
+    when(
+      () => repository.laneChainInheritedFrom(any(), any()),
+    ).thenReturn(const []);
+    when(() => repository.outputEffects(any())).thenAnswer(
+      (call) =>
+          outputEntries[call.positionalArguments.single as int] ?? const [],
+    );
+    when(() => repository.outputChainEnabled(any())).thenReturn(true);
+    when(() => repository.allTracksEffects).thenAnswer((_) => allEntries);
+    when(() => repository.allTracksChainEnabled).thenReturn(true);
+    when(
+      () => repository.setTrackEffects(
+        channel: any(named: 'channel'),
+        effects: any(named: 'effects'),
+      ),
+    ).thenAnswer((call) {
+      trackEntries[call.namedArguments[#channel]! as int] =
+          call.namedArguments[#effects]! as List<TrackEffect>;
+      publish();
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setLaneEffects(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        effects: any(named: 'effects'),
+      ),
+    ).thenAnswer((call) {
+      laneEntries[(
+            call.namedArguments[#channel]! as int,
+            call.namedArguments[#lane]! as int,
+          )] =
+          call.namedArguments[#effects]! as List<TrackEffect>;
+      publish();
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setOutputEffects(
+        bus: any(named: 'bus'),
+        effects: any(named: 'effects'),
+      ),
+    ).thenAnswer((call) {
+      outputEntries[call.namedArguments[#bus]! as int] =
+          call.namedArguments[#effects]! as List<TrackEffect>;
+      publish();
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setAllTracksEffects(
+        effects: any(named: 'effects'),
+      ),
+    ).thenAnswer((call) {
+      allEntries = call.namedArguments[#effects]! as List<TrackEffect>;
+      publish();
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setMonitorEffects(
+        input: 0,
+        effects: any(named: 'effects'),
+      ),
+    ).thenAnswer((call) {
+      monitorEntries = call.namedArguments[#effects]! as List<TrackEffect>;
+      monitorChanges.add(0);
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setTrackEffectEnabled(
+        channel: 0,
+        index: any(named: 'index'),
+        enabled: any(named: 'enabled'),
+      ),
+    ).thenAnswer((call) {
+      final index = call.namedArguments[#index]! as int;
+      final enabled = call.namedArguments[#enabled]! as bool;
+      trackEntries[0] = List<TrackEffect>.of(trackEntries[0]!)
+        ..[index] = (trackEntries[0]![index] as BuiltInEffect).copyWith(
+          enabled: enabled,
+        );
+      publish();
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setOutputEffectEnabled(
+        bus: 0,
+        index: any(named: 'index'),
+        enabled: any(named: 'enabled'),
+      ),
+    ).thenAnswer((call) {
+      final index = call.namedArguments[#index]! as int;
+      final enabled = call.namedArguments[#enabled]! as bool;
+      outputEntries[0] = List<TrackEffect>.of(outputEntries[0]!)
+        ..[index] = (outputEntries[0]![index] as BuiltInEffect).copyWith(
+          enabled: enabled,
+        );
+      publish();
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setAllTracksEffectEnabled(
+        index: any(named: 'index'),
+        enabled: any(named: 'enabled'),
+      ),
+    ).thenAnswer((call) {
+      final index = call.namedArguments[#index]! as int;
+      final enabled = call.namedArguments[#enabled]! as bool;
+      allEntries = List<TrackEffect>.of(allEntries)
+        ..[index] = (allEntries[index] as BuiltInEffect).copyWith(
+          enabled: enabled,
+        );
+      publish();
+      return EngineResult.ok;
+    });
     when(() => bloc.state).thenReturn(rig);
     whenListen(
       bloc,
-      updates ?? const Stream<LooperState>.empty(),
+      updates ?? ownUpdates.stream,
       initialState: rig,
     );
     final inputs = InputsCubit(repository: repository, settings: settings);
     final outputs = OutputsCubit(repository: repository, settings: settings);
+    final fxPersistence = FxChainPersistence(looper: repository);
     final monitors = MonitorCubit(
-      fxPersistence: FxChainPersistence(looper: repository),
+      fxPersistence: fxPersistence,
       repository: repository,
       settings: settings,
       mixSettings: testMixSettings(repository, settings: settings),
-    );
+    )..projectFromRepository();
     // The page reads monitor state after the repository is authoritative.
-    await monitors.syncFromRepository();
-    final tempo = TempoCubit(repository: repository, settings: settings);
     final tracks = TracksCubit(settings: settings);
     presets = FxPresetsCubit(settings: settings);
     await presets.load();
@@ -352,7 +547,6 @@ void main() {
       inputs,
       outputs,
       monitors,
-      tempo,
       tracks,
       presets,
     ]) {
@@ -379,15 +573,20 @@ void main() {
               routingGraphThemeFromSurface(SurfaceTheme.dark),
             ],
           ),
-          home: RepositoryProvider<LooperRepository>.value(
-            value: repository,
+          home: MultiRepositoryProvider(
+            providers: [
+              RepositoryProvider<LooperRepository>.value(value: repository),
+              RepositoryProvider<SettingsRepository>.value(value: settings),
+              RepositoryProvider<FxChainPersistence>.value(
+                value: fxPersistence,
+              ),
+            ],
             child: MultiBlocProvider(
               providers: [
                 BlocProvider<LooperBloc>.value(value: bloc),
                 BlocProvider.value(value: inputs),
                 BlocProvider.value(value: outputs),
                 BlocProvider.value(value: monitors),
-                BlocProvider.value(value: tempo),
                 BlocProvider.value(value: tracks),
                 BlocProvider.value(value: presets),
               ],
@@ -417,6 +616,15 @@ void main() {
     await tester.tap(find.byKey(Key(key)));
     await tester.pumpAndSettle();
   }
+
+  List<TrackEffect> lastTrackWrite() =>
+      verify(
+            () => repository.setTrackEffects(
+              channel: 0,
+              effects: captureAny(named: 'effects'),
+            ),
+          ).captured.last
+          as List<TrackEffect>;
 
   group('the Sound type row', () {
     testWidgets('picks which strip is showing', (tester) async {
@@ -531,24 +739,29 @@ void main() {
       await pump(tester, destination: const FxDestination.recordedTrack(0));
       await tapKey(tester, 'fx_power_t3');
       verify(
-        () => bloc.add(
-          const LooperTrackEffectEnabledToggled(0, 2, enabled: false),
+        () => repository.setTrackEffectEnabled(
+          channel: 0,
+          index: 2,
+          enabled: false,
         ),
       ).called(1);
 
       await tapKey(tester, 'fx_all_tracks');
       await tapKey(tester, 'fx_power_a1');
       verify(
-        () => bloc.add(
-          const LooperAllTracksEffectEnabledToggled(0, enabled: false),
+        () => repository.setAllTracksEffectEnabled(
+          index: 0,
+          enabled: false,
         ),
       ).called(1);
 
       await tapKey(tester, 'fx_kind_output');
       await tapKey(tester, 'fx_power_o1');
       verify(
-        () => bloc.add(
-          const LooperOutputEffectEnabledToggled(0, 0, enabled: false),
+        () => repository.setOutputEffectEnabled(
+          bus: 0,
+          index: 0,
+          enabled: false,
         ),
       ).called(1);
     });
@@ -584,7 +797,13 @@ void main() {
         destination: const FxDestination.recordedTrack(0),
         updates: updates.stream,
       );
-      when(() => bloc.add(any())).thenAnswer((_) {});
+      final receipt = Completer<EngineResult>();
+      when(
+        () => repository.settleFxRecipes(
+          waitForCallback: true,
+          cancelled: any(named: 'cancelled'),
+        ),
+      ).thenAnswer((_) => receipt.future);
       await tapKey(tester, 'fx_add_effects');
 
       // The destination is stated once, in the header.
@@ -597,15 +816,11 @@ void main() {
       await tapKey(tester, 'fx_library_family_edsguitar');
       await tapKey(tester, 'fx_preset_ed53e7b8');
 
-      final appended =
-          verify(
-                () => bloc.add(
-                  captureAny(that: isA<LooperBusEffectsAppended>()),
-                ),
-              ).captured.single
-              as LooperBusEffectsAppended;
-      final id = appended.entries.first.rack!.id;
-      expect(appended.entries.every((effect) => effect.slotId != null), isTrue);
+      final added = lastTrackWrite()
+          .skip(_rig.tracks.first.effects.length)
+          .toList();
+      final id = added.first.rack!.id;
+      expect(added.every((effect) => effect.slotId != null), isTrue);
       // Even a projected change cannot navigate until its own callback
       // receipt confirms the recipe. A different rack already on the page
       // must never stand in for the one just chosen.
@@ -615,7 +830,7 @@ void main() {
             Track(
               state: _rig.tracks.first.state,
               lanes: _rig.tracks.first.lanes,
-              effects: [..._rig.tracks.first.effects, ...appended.entries],
+              effects: [..._rig.tracks.first.effects, ...added],
             ),
             _rig.tracks[1],
           ],
@@ -626,7 +841,7 @@ void main() {
       await tester.pump();
       expect(find.byType(FxRackEditor), findsNothing);
 
-      appended.receipt!.complete(true);
+      receipt.complete(EngineResult.ok);
       await tester.pumpAndSettle();
       expect(find.byType(FxRackEditor), findsOneWidget);
       expect(
@@ -639,12 +854,12 @@ void main() {
 
     testWidgets('a refused add stays on its destination', (tester) async {
       await pump(tester, destination: const FxDestination.recordedTrack(0));
-      when(() => bloc.add(any())).thenAnswer((invocation) {
-        final event = invocation.positionalArguments.single as LooperEvent;
-        if (event case LooperBusEffectsAppended(:final receipt?)) {
-          receipt.complete(false);
-        }
-      });
+      when(
+        () => repository.settleFxRecipes(
+          waitForCallback: true,
+          cancelled: any(named: 'cancelled'),
+        ),
+      ).thenAnswer((_) async => EngineResult.invalid);
       await tapKey(tester, 'fx_add_effects');
       await tapKey(tester, 'fx_library_family_edsguitar');
       await tapKey(tester, 'fx_preset_ed53e7b8');
@@ -652,28 +867,31 @@ void main() {
       expect(find.byType(FxRackEditor), findsNothing);
       expect(find.byKey(const Key('fx_track_strip')), findsOneWidget);
       verify(
-        () => bloc.add(any(that: isA<LooperBusEffectsAppended>())),
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
       ).called(1);
       await tester.pump(const Duration(seconds: 4));
     });
 
     testWidgets('a delayed add cannot cover a newer route', (tester) async {
       await pump(tester, destination: const FxDestination.recordedTrack(0));
-      when(() => bloc.add(any())).thenAnswer((_) {});
+      final receipt = Completer<EngineResult>();
+      when(
+        () => repository.settleFxRecipes(
+          waitForCallback: true,
+          cancelled: any(named: 'cancelled'),
+        ),
+      ).thenAnswer((_) => receipt.future);
       await tapKey(tester, 'fx_add_effects');
       await tapKey(tester, 'fx_library_family_edsguitar');
       await tapKey(tester, 'fx_preset_ed53e7b8');
 
-      final appended =
-          verify(
-                () => bloc.add(
-                  captureAny(that: isA<LooperBusEffectsAppended>()),
-                ),
-              ).captured.single
-              as LooperBusEffectsAppended;
+      expect(lastTrackWrite(), hasLength(_rig.tracks.first.effects.length + 3));
       await tapKey(tester, 'fx_reorder');
       expect(find.byKey(const Key('fx_reorder_done')), findsOneWidget);
-      appended.receipt!.complete(true);
+      receipt.complete(EngineResult.ok);
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('fx_reorder_done')), findsOneWidget);
@@ -684,20 +902,20 @@ void main() {
       tester,
     ) async {
       await pump(tester, destination: const FxDestination.recordedTrack(0));
-      when(() => bloc.add(any())).thenAnswer((_) {});
+      final receipt = Completer<EngineResult>();
+      when(
+        () => repository.settleFxRecipes(
+          waitForCallback: true,
+          cancelled: any(named: 'cancelled'),
+        ),
+      ).thenAnswer((_) => receipt.future);
       await tapKey(tester, 'fx_add_effects');
       await tapKey(tester, 'fx_library_family_edsguitar');
       await tapKey(tester, 'fx_preset_ed53e7b8');
 
-      final appended =
-          verify(
-                () => bloc.add(
-                  captureAny(that: isA<LooperBusEffectsAppended>()),
-                ),
-              ).captured.single
-              as LooperBusEffectsAppended;
-      when(() => bloc.hasMixGeneration(any())).thenReturn(false);
-      appended.receipt!.complete(true);
+      expect(lastTrackWrite(), hasLength(_rig.tracks.first.effects.length + 3));
+      when(() => repository.mixGeneration).thenReturn(1);
+      receipt.complete(EngineResult.ok);
       await tester.pumpAndSettle();
 
       expect(find.byType(FxRackEditor), findsNothing);
@@ -715,7 +933,12 @@ void main() {
       await tapKey(tester, 'fx_library_family_edsguitar');
       await tapKey(tester, 'fx_preset_ed53e7b8');
 
-      verifyNever(() => bloc.add(any(that: isA<LooperBusEffectsAppended>())));
+      verifyNever(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      );
       expect(find.byKey(const Key('fx_track_strip')), findsOneWidget);
       expect(find.byType(FxRackEditor), findsNothing);
     });
@@ -725,7 +948,12 @@ void main() {
       await tapKey(tester, 'fx_add_effects');
       await tapKey(tester, 'loop_settings_back');
 
-      verifyNever(() => bloc.add(any(that: isA<LooperBusEffectsAppended>())));
+      verifyNever(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      );
     });
 
     testWidgets('a rack becomes one entry per module, in one write', (
@@ -736,12 +964,11 @@ void main() {
       await tapKey(tester, 'fx_library_family_edsguitar');
       await tapKey(tester, 'fx_preset_ed53e7b8');
 
-      final appended =
-          verify(
-                () =>
-                    bloc.add(captureAny(that: isA<LooperBusEffectsAppended>())),
-              ).captured.single
-              as LooperBusEffectsAppended;
+      final appended = (
+        entries: lastTrackWrite()
+            .skip(_rig.tracks.first.effects.length)
+            .toList(),
+      );
 
       // One write, not one per pedal: a half-built rack must not be heard on
       // the way in.
@@ -767,12 +994,11 @@ void main() {
       await tapKey(tester, 'fx_library_family_edsguitar');
       await tapKey(tester, 'fx_preset_ed53e7b8');
 
-      final appended =
-          verify(
-                () =>
-                    bloc.add(captureAny(that: isA<LooperBusEffectsAppended>())),
-              ).captured.single
-              as LooperBusEffectsAppended;
+      final appended = (
+        entries: lastTrackWrite()
+            .skip(_rig.tracks.first.effects.length)
+            .toList(),
+      );
 
       final racks = appended.entries.map((e) => e.rack).toSet();
       expect(racks, hasLength(1));
@@ -796,13 +1022,11 @@ void main() {
         await tapKey(tester, 'fx_library_single');
         await tapKey(tester, 'fx_single_reverb');
 
-        final appended =
-            verify(
-                  () => bloc.add(
-                    captureAny(that: isA<LooperBusEffectsAppended>()),
-                  ),
-                ).captured.single
-                as LooperBusEffectsAppended;
+        final appended = (
+          entries: lastTrackWrite()
+              .skip(_rig.tracks.first.effects.length)
+              .toList(),
+        );
 
         expect(appended.entries.single.rack, isNull);
       },
@@ -816,13 +1040,11 @@ void main() {
         await tapKey(tester, 'fx_library_family_edsguitar');
         await tapKey(tester, 'fx_preset_ed53e7b8');
 
-        final appended =
-            verify(
-                  () => bloc.add(
-                    captureAny(that: isA<LooperBusEffectsAppended>()),
-                  ),
-                ).captured.single
-                as LooperBusEffectsAppended;
+        final appended = (
+          entries: lastTrackWrite()
+              .skip(_rig.tracks.first.effects.length)
+              .toList(),
+        );
 
         // The preset engages its compressor and reverb. Adding a rack mid-set
         // must not change the sound until the player says so.
@@ -838,12 +1060,11 @@ void main() {
       await tapKey(tester, 'fx_library_family_rhythmic');
       await tapKey(tester, 'fx_preset_rh-1');
 
-      final appended =
-          verify(
-                () =>
-                    bloc.add(captureAny(that: isA<LooperBusEffectsAppended>())),
-              ).captured.single
-              as LooperBusEffectsAppended;
+      final appended = (
+        entries: lastTrackWrite()
+            .skip(_rig.tracks.first.effects.length)
+            .toList(),
+      );
 
       // A recorded destination defaults Post.
       expect(appended.entries.single.placement, FxPlacement.post);
@@ -860,6 +1081,7 @@ void main() {
         ),
       ).thenAnswer((invocation) {
         confirmed = invocation.namedArguments[#effects]! as List<TrackEffect>;
+        monitorChanges.add(0);
         return EngineResult.ok;
       });
       when(() => repository.monitorEffects(0)).thenAnswer((_) => confirmed);
@@ -886,7 +1108,12 @@ void main() {
       );
       expect(added.placement, FxPlacement.pre);
       expect(find.byType(FxRackEditor), findsOneWidget);
-      verifyNever(() => bloc.add(any(that: isA<LooperBusEffectsAppended>())));
+      verifyNever(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      );
     });
 
     testWidgets('a rack that will not fit is offered and explains itself '
@@ -919,7 +1146,12 @@ void main() {
         findsOneWidget,
       );
       await tapKey(tester, 'fx_preset_ed53e7b8');
-      verifyNever(() => bloc.add(any(that: isA<LooperBusEffectsAppended>())));
+      verifyNever(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      );
     });
 
     testWidgets('a build with no catalogue says so instead of drawing an '
@@ -997,18 +1229,10 @@ void main() {
         // instance can be a rack of six pedals. And to the end of the Post
         // run, not to where it stood: reorder is the separate, cancellable
         // surface that arranges a stage.
-        final written =
-            verify(
-                  () => bloc.add(
-                    captureAny(that: isA<LooperBusEffectsChanged>()),
-                  ),
-                ).captured.single
-                as LooperBusEffectsChanged;
-
-        expect(written.address.stage, FxStage.track);
-        expect(written.effects.last.slotId, 't1');
-        expect(written.effects.last.placement, FxPlacement.post);
-        expect(fxPreCount(written.effects), 1);
+        final written = lastTrackWrite();
+        expect(written.last.slotId, 't1');
+        expect(written.last.placement, FxPlacement.post);
+        expect(fxPreCount(written), 1);
       });
 
       testWidgets('is NOT offered on an output, whose stage is fixed after '
@@ -1048,22 +1272,16 @@ void main() {
         await tapKey(tester, 'fx_card_t1');
         await tapKey(tester, 'fx_output_mono');
 
-        final written =
-            verify(
-                  () => bloc.add(
-                    captureAny(that: isA<LooperBusEffectChannelsChanged>()),
-                  ),
-                ).captured.single
-                as LooperBusEffectChannelsChanged;
+        final written = lastTrackWrite();
 
         // The one field the control touched changed, and the other three
         // came through untouched: the four are one control, and writing the
         // output alone would silently reset the rest.
-        expect(written.channels.output, FxChannelOutput.mono);
-        expect(written.channels.input, FxChannelInput.monoSum);
-        expect(written.channels.placement, -0.5);
-        expect(written.channels.level, 0.8);
-        expect(written.index, 0);
+        expect(written.first.channels.output, FxChannelOutput.mono);
+        expect(written.first.channels.input, FxChannelInput.monoSum);
+        expect(written.first.channels.placement, -0.5);
+        expect(written.first.channels.level, 0.8);
+        expect(written.first.slotId, 't1');
       });
 
       testWidgets('the balance reads Centre at rest rather than a number', (
@@ -1085,14 +1303,7 @@ void main() {
       );
 
       /// The chain the last structural write pushed.
-      List<TrackEffect> lastChain() =>
-          (verify(
-                    () => bloc.add(
-                      captureAny(that: isA<LooperBusEffectsChanged>()),
-                    ),
-                  ).captured.last
-                  as LooperBusEffectsChanged)
-              .effects;
+      List<TrackEffect> lastChain() => lastTrackWrite();
 
       testWidgets('is ONE card on the chain, named by the rack and saying how '
           'many pedals it holds', (tester) async {
@@ -1112,13 +1323,13 @@ void main() {
         await tapKey(tester, 'fx_power_R1');
 
         final written = verify(
-          () => bloc.add(
-            captureAny(that: isA<LooperTrackEffectEnabledToggled>()),
+          () => repository.setTrackEffectEnabled(
+            channel: 0,
+            index: captureAny(named: 'index'),
+            enabled: false,
           ),
-        ).captured.cast<LooperTrackEffectEnabledToggled>();
-
-        expect(written.map((e) => e.index), [1, 2, 3]);
-        expect(written.every((e) => !e.enabled), isTrue);
+        ).captured.cast<int>();
+        expect(written, [1, 2, 3]);
       });
 
       testWidgets('opens into one column per pedal, each with its own power '
@@ -1155,13 +1366,13 @@ void main() {
         await tapKey(tester, 'fx_card_R1');
         await tapKey(tester, 'fx_pedal_power_r1a');
 
-        final written = verify(
-          () => bloc.add(
-            captureAny(that: isA<LooperTrackEffectEnabledToggled>()),
+        verify(
+          () => repository.setTrackEffectEnabled(
+            channel: 0,
+            index: 1,
+            enabled: false,
           ),
-        ).captured.cast<LooperTrackEffectEnabledToggled>();
-
-        expect(written.single.index, 1);
+        ).called(1);
       });
 
       testWidgets('the footer writes the input to the first pedal and the '
@@ -1174,16 +1385,12 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final written = verify(
-          () => bloc.add(
-            captureAny(that: isA<LooperBusEffectChannelsChanged>()),
-          ),
-        ).captured.cast<LooperBusEffectChannelsChanged>();
+        final written = lastTrackWrite();
 
         // The last pedal, because that is where the engine applies a level —
         // after the rack's effects, which is what the control says it does.
-        expect(written.last.index, 3);
-        expect(written.last.channels.level, lessThan(1));
+        expect(written[3].slotId, 'r1c');
+        expect(written[3].channels.level, lessThan(1));
       });
 
       testWidgets('rename writes every pedal and leaves the rack id alone', (
@@ -1242,12 +1449,12 @@ void main() {
           tester,
         ) async {
           await pumpRack(tester);
-          when(() => bloc.add(any())).thenAnswer((invocation) {
-            final event = invocation.positionalArguments.single as LooperEvent;
-            if (event is LooperBusEffectsChanged) {
-              event.receipt?.complete(false);
-            }
-          });
+          when(
+            () => repository.setTrackEffects(
+              channel: 0,
+              effects: any(named: 'effects'),
+            ),
+          ).thenReturn(EngineResult.invalid);
           await tapKey(tester, 'fx_card_R1');
           await tapKey(tester, 'fx_rack_options');
           await tapKey(tester, 'fx_option_remove');
@@ -1306,7 +1513,10 @@ void main() {
         await tapKey(tester, 'fx_reorder_cancel');
 
         verifyNever(
-          () => bloc.add(any(that: isA<LooperBusEffectsChanged>())),
+          () => repository.setTrackEffects(
+            channel: 0,
+            effects: any(named: 'effects'),
+          ),
         );
       });
     });
@@ -1360,7 +1570,10 @@ void main() {
         expect(saved.entries, hasLength(3));
         // The instance on the chain is untouched: no write went out at all.
         verifyNever(
-          () => bloc.add(any(that: isA<LooperBusEffectsChanged>())),
+          () => repository.setTrackEffects(
+            channel: 0,
+            effects: any(named: 'effects'),
+          ),
         );
         expect(find.text('Funk Wah'), findsWidgets);
       });
@@ -1422,13 +1635,11 @@ void main() {
         expect(find.text('verse'), findsOneWidget);
         await tapKey(tester, 'fx_saved_${presets.state.single.id}');
 
-        final appended =
-            verify(
-                  () => bloc.add(
-                    captureAny(that: isA<LooperBusEffectsAppended>()),
-                  ),
-                ).captured.single
-                as LooperBusEffectsAppended;
+        final appended = (
+          entries: lastTrackWrite()
+              .skip(_rackRig.tracks.first.effects.length)
+              .toList(),
+        );
 
         // Its own rack, so it is its own thing on the chain; bypassed, like
         // every other addition; and the destination's placement, because
@@ -1456,13 +1667,11 @@ void main() {
         await tapKey(tester, 'fx_library_saved');
         await tapKey(tester, 'fx_saved_${presets.state.single.id}');
 
-        final appended =
-            verify(
-                  () => bloc.add(
-                    captureAny(that: isA<LooperBusEffectsAppended>()),
-                  ),
-                ).captured.single
-                as LooperBusEffectsAppended;
+        final appended = (
+          entries: lastTrackWrite()
+              .skip(_rackRig.tracks.first.effects.length)
+              .toList(),
+        );
 
         expect(appended.entries.single.rack, isNull);
       });
@@ -1568,16 +1777,8 @@ void main() {
         await tapKey(tester, 'fx_move_right');
         await tapKey(tester, 'fx_reorder_done');
 
-        final written =
-            verify(
-                  () => bloc.add(
-                    captureAny(that: isA<LooperBusEffectsChanged>()),
-                  ),
-                ).captured.single
-                as LooperBusEffectsChanged;
-
         expect(
-          written.effects.map((fx) => fx.slotId),
+          lastTrackWrite().map((fx) => fx.slotId),
           ['p1', 's1', 'r1a', 'r1b', 'r1c'],
         );
       });
@@ -1604,6 +1805,10 @@ void main() {
             else
               effect,
         ];
+        when(() => repository.allTrackChains()).thenReturn({
+          0: FxChainEnvelope(entries: changed),
+        });
+        when(() => repository.trackEffects(0)).thenReturn(changed);
         updates.add(
           LooperState(
             tracks: [
@@ -1623,16 +1828,9 @@ void main() {
         await tapKey(tester, 'fx_move_right');
         await tapKey(tester, 'fx_reorder_done');
 
-        final written =
-            verify(
-                  () => bloc.add(
-                    captureAny(that: isA<LooperBusEffectsChanged>()),
-                  ),
-                ).captured.single
-                as LooperBusEffectsChanged;
+        final written = lastTrackWrite();
         expect(
-          (written.effects.firstWhere((e) => e.slotId == 'r1a')
-                  as BuiltInEffect)
+          (written.firstWhere((e) => e.slotId == 'r1a') as BuiltInEffect)
               .params,
           const [0.41, 0.32, 0.23, 0.14],
         );
@@ -1688,7 +1886,10 @@ void main() {
       expect(moved.placement, FxPlacement.post);
       expect(pushed.last.slotId, 'm1');
       verifyNever(
-        () => bloc.add(any(that: isA<LooperBusEffectChannelsChanged>())),
+        () => repository.setTrackEffects(
+          channel: any(named: 'channel'),
+          effects: any(named: 'effects'),
+        ),
       );
     });
   });

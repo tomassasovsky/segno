@@ -56,8 +56,6 @@ class FxEffectEditor extends StatelessWidget {
 
   TrackEffect get _effect => group.entries.first;
 
-  int get _index => group.start;
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -79,8 +77,12 @@ class FxEffectEditor extends StatelessWidget {
             top: 32,
             child: _ChainActions(
               enabled: effect.enabled,
-              onToggle: () =>
-                  edits.setEnabled(_index, enabled: !effect.enabled),
+              onToggle: () {
+                final id = effect.slotId;
+                if (id != null) {
+                  edits.setEnabled(id, enabled: !effect.enabled);
+                }
+              },
               onOptions: onOptions,
               onSavePreset: onSavePreset,
             ),
@@ -92,7 +94,7 @@ class FxEffectEditor extends StatelessWidget {
             height: 650,
             child: _Parameters(
               effect: built,
-              index: _index,
+              slotId: effect.slotId,
               edits: edits,
             ),
           ),
@@ -104,22 +106,10 @@ class FxEffectEditor extends StatelessWidget {
             child: FxChannelFooter(
               group: group,
               destination: destination,
-              onPlacement: (placement) => edits.setChain(
-                fxSetGroupPlacement(
-                  group.chain,
-                  group.start,
-                  group.end,
-                  placement,
-                ),
-              ),
-              onChannels: (channels) {
-                for (final write in fxGroupChannelWrites(
-                  group,
-                  channels,
-                ).entries) {
-                  edits.setChannels(write.key, write.value);
-                }
-              },
+              onPlacement: (placement) =>
+                  edits.setPlacement(fxGroupId(group), placement),
+              onChannels: (channels) =>
+                  edits.setChannels(fxGroupId(group), channels),
             ),
           ),
         ],
@@ -181,12 +171,12 @@ class _ChainActions extends StatelessWidget {
 class _Parameters extends StatelessWidget {
   const _Parameters({
     required this.effect,
-    required this.index,
+    required this.slotId,
     required this.edits,
   });
 
   final BuiltInEffect? effect;
-  final int index;
+  final String? slotId;
   final FxEdits edits;
 
   @override
@@ -213,7 +203,10 @@ class _Parameters extends StatelessWidget {
                 // mapping was never recovered says so rather than printing a
                 // number in milliseconds nobody verified.
                 note: context.l10n.fxScaleUnverified,
-                onChanged: (value) => edits.setParam(index, i, value),
+                onChanged: (value) {
+                  final id = slotId;
+                  if (id != null) edits.setParam(id, i, value);
+                },
               ),
           ],
         ),

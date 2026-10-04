@@ -22,11 +22,13 @@ import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_gate.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
-// Engine-typed fixtures fed to the fake engine use the `le` prefix, as in
-// audio_bootstrap_test.
 import 'package:segno_engine/segno_engine.dart'
     as le
     show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot, TrackState;
@@ -175,6 +177,24 @@ class _WindowGone implements Exception {
 /// A MIDI source whose enumeration the test drives by hand, so a pinned
 /// controller can be made to vanish and return through `refresh()`.
 class _MockMidiSource extends Mock implements MidiControllerSource {}
+
+class _TrackFxStore extends FakeKeyValueStore {
+  final releaseWrite = Completer<void>();
+  bool writeEntered = false;
+  bool refuseWrite = false;
+
+  @override
+  Future<void> setString(String key, String value) async {
+    if (key == 'track_fx_chain.0') {
+      writeEntered = true;
+      await releaseWrite.future;
+      if (refuseWrite) {
+        throw StateError('FX storage unavailable during disposal');
+      }
+    }
+    await super.setString(key, value);
+  }
+}
 
 class _ClickStore extends FakeKeyValueStore {
   Completer<void>? pendingWrite;
@@ -579,6 +599,164 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    testWidgets('disposal logs FX persistence failure after closing owners', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final logDirectory = Directory.systemTemp.createTempSync(
+          'segno-dispose-',
+        );
+        AppLog.close();
+        addTearDown(() {
+          AppLog.close();
+          logDirectory.deleteSync(recursive: true);
+        });
+        await AppLog.init(directory: logDirectory);
+        final store = _TrackFxStore()..refuseWrite = true;
+        // Stream cancellation uses a cached real-zone future in this SDK, so
+        // the complete disposal journey stays inside runAsync.
+        final settings = SettingsRepository(store: store);
+        final engine = FakeAudioEngine();
+        final repository = LooperRepository(
+          engine: engine,
+          ticker: const Stream<void>.empty(),
+        );
+        final controllers = ControllerRepository(sources: const []);
+        final midi = MidiDeviceRepository(source: null, settings: settings);
+        final performance = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () async => '.',
+        );
+        addTearDown(() => unawaited(repository.dispose()));
+        addTearDown(() => unawaited(controllers.dispose()));
+        addTearDown(() => unawaited(midi.dispose()));
+        addTearDown(performance.dispose);
+        await tester.pumpWidget(
+          App(
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllers,
+            midiDeviceRepository: midi,
+            settings: settings,
+            waveformWindow: NoopWaveformWindowService(),
+            sessionRepository: SessionRepository(engine: engine),
+            performanceRepository: performance,
+            exportDirectory: () async => '.',
+          ),
+        );
+        await tester.pumpAndSettle();
+        final context = tester.element(find.byType(TracksView));
+        final looper = context.read<LooperBloc>();
+        final control = context.read<ControlCubit>();
+        final power = context.read<PowerOffCubit>();
+        final closed = <String>{};
+        context.read<TempoSettings>().stream.listen(
+          (_) {},
+          onDone: () => closed.add('tempo'),
+        );
+        context.read<RecordSettings>().stream.listen(
+          (_) {},
+          onDone: () => closed.add('record'),
+        );
+        context.read<RecordTimingSettings>().stream.listen(
+          (_) {},
+          onDone: () => closed.add('timing'),
+        );
+        repository.setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        );
+        looper.add(
+          const LooperBusEffectParamChanged(
+            FxAddress(stage: FxStage.track),
+            0,
+            1,
+            .65,
+          ),
+        );
+        await tester.pump();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        expect(closed, isEmpty);
+        store.releaseWrite.complete();
+        await pumpEventQueue();
+        await tester.pumpAndSettle();
+        expect(closed, {'tempo', 'record', 'timing'});
+        expect(looper.isClosed, isTrue);
+        expect(control.isClosed, isTrue);
+        expect(power.isClosed, isTrue);
+        expect(tester.takeException(), isNull);
+        final log = File(
+          '${logDirectory.path}/${AppLog.fileName}',
+        ).readAsStringSync();
+        expect('application teardown failed'.allMatches(log), hasLength(1));
+        expect(log, contains('FX storage unavailable during disposal'));
+        expect(log, contains('_TrackFxStore.setString'));
+      });
+    });
+
+    testWidgets('shutdown flushes the track editor before its debounce', (
+      tester,
+    ) async {
+      final store = _TrackFxStore();
+      settings = SettingsRepository(store: store);
+      String? savedAtHalt;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async {
+          savedAtHalt = await settings.loadTrackFxChain(0);
+        },
+      );
+      final tracksContext = tester.element(find.byType(TracksView));
+      final shellContext = tester.element(find.byType(LooperPage));
+      final looper = tracksContext.read<LooperBloc>();
+      expect(repository.onLaneChainChanged, isNotNull);
+      repository.setTrackEffects(
+        channel: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.delay)],
+      );
+      looper.add(
+        const LooperBusEffectParamChanged(
+          FxAddress(stage: FxStage.track),
+          0,
+          1,
+          0.65,
+        ),
+      );
+      await tester.pump();
+      expect(await settings.loadTrackFxChain(0), isNull);
+      final power = tracksContext.read<PowerOffCubit>()
+        ..press(const PowerOffSnapshot());
+      await tester.pump();
+      // No virtual time has elapsed: shutdown, not the debounce timer,
+      // must begin the edit's persistence and await it before goodbye.
+      expect(store.writeEntered, isTrue);
+      expect(power.state.phase, PowerOffPhase.flushing);
+      expect(await settings.loadTrackFxChain(0), isNull);
+      store.releaseWrite.complete();
+      await tester.pump();
+      final saved = await settings.loadTrackFxChain(0);
+      expect(saved, isNotNull);
+      expect(identical(looper, shellContext.read<LooperBloc>()), isTrue);
+      expect(
+        (decodeFxChain(saved).entries.single as BuiltInEffect).params[1],
+        0.65,
+      );
+      expect(power.state.isUiUp, isTrue);
+      looper
+        ..add(const LooperRecordPressed(0))
+        ..add(const LooperClearPressed(0));
+      await tester.pump();
+      expect(engine.recordCalls, 0);
+      expect(engine.clearCalls, 0);
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerOffPhase.goodbye);
+      await tester.pump(const Duration(seconds: 3));
+      expect(savedAtHalt, saved);
+    });
+
     testWidgets('power off waits for an ordinary Click preference', (
       tester,
     ) async {
@@ -603,7 +781,7 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
       expect(halted, isTrue);
       expect(store.values['tempo.click_volume'], 1.5);
-      expect(tempo.clickVolume, 1.5);
+      expect(tempo.state.confirmedClickVolume, 1.5);
     });
 
     testWidgets('Click refusal prevents halt and visible Retry recovers', (
@@ -623,7 +801,7 @@ void main() {
       store.refuseWrite = true;
       unawaited(tempo.setClickVolume(1.5));
       await tester.pump();
-      expect(tempo.clickVolume, 1);
+      expect(tempo.state.confirmedClickVolume, 1);
       power.press(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.flushFailed);
@@ -690,11 +868,11 @@ void main() {
       control.endMidiEdit(editor);
       midi.push(127);
       await tester.pumpAndSettle();
-      expect(tempo.clickVolume, 1.5);
+      expect(tempo.state.confirmedClickVolume, 1.5);
       power.press(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.goodbye);
-      expect(tempo.clickVolume, .25);
+      expect(tempo.state.confirmedClickVolume, .25);
       expect(store.values['tempo.click_volume'], .25);
       expect(haltCalls, 0);
 
@@ -705,7 +883,7 @@ void main() {
       midi.push(127);
       await tester.pump();
       expect(store.writeEntered, isFalse);
-      expect(tempo.clickVolume, .25);
+      expect(tempo.state.confirmedClickVolume, .25);
       store.pendingWrite!.complete();
       await tester.pump(const Duration(seconds: 2));
       expect(haltCalls, 1);
@@ -728,14 +906,14 @@ void main() {
           await pumpApp(tester, NoopWaveformWindowService());
           final context = tester.element(find.byType(TracksView));
           final length = context.read<RecordOptionsCubit>();
-          expect(length.state.recordLengthReady, isFalse);
+          expect(length.state.options.recordLengthReady, isFalse);
           expect(find.text('Record length needs recovery'), findsOneWidget);
           await tester.pump(const Duration(seconds: 6));
           expect(find.text('Record length needs recovery'), findsOneWidget);
           expect(find.text('Retry'), findsOneWidget);
           await tester.tap(find.text('Retry'));
           await tester.pumpAndSettle();
-          expect(length.state.recordLengthReady, !malformed);
+          expect(length.state.options.recordLengthReady, !malformed);
           expect(store.values, before);
           if (malformed) {
             // Retry does not turn invalid saved data into a guessed default.
@@ -744,11 +922,11 @@ void main() {
             expect(repository.trackLengthPresetOverrides, isEmpty);
           } else {
             expect(find.text('Record length needs recovery'), findsNothing);
-            expect(length.state.defaultLengthBars, 4);
-            expect(length.state.trackLengthPresetOverrides, {7: 0});
+            expect(length.state.options.defaultLengthBars, 4);
+            expect(length.state.options.trackLengthPresetOverrides, {7: 0});
           }
           await tester.pumpWidget(const SizedBox.shrink());
-          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
         },
       );
     }
@@ -785,7 +963,7 @@ void main() {
             expect(timing.state.trackOverrides, {7: RecordTiming.immediately});
           }
           await tester.pumpWidget(const SizedBox.shrink());
-          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
         },
       );
     }
@@ -804,7 +982,7 @@ void main() {
           final tempo = tester
               .element(find.byType(TracksView))
               .read<TempoCubit>();
-          expect(tempo.recordStartSnapshot, isNull);
+          expect(tempo.state.recordStartSnapshot, isNull);
           expect(find.text('Recording start needs recovery'), findsOneWidget);
           await tester.pump(const Duration(seconds: 6));
           expect(find.text('Recording start needs recovery'), findsOneWidget);
@@ -815,12 +993,15 @@ void main() {
           if (malformed) {
             expect(find.text('Recording start needs recovery'), findsOneWidget);
           } else {
-            expect(tempo.recordStartSnapshot?.settings.countInBars, 4);
-            expect(tempo.recordStartSnapshot?.settings.soundStart, isFalse);
+            expect(tempo.state.recordStartSnapshot?.settings.countInBars, 4);
+            expect(
+              tempo.state.recordStartSnapshot?.settings.soundStart,
+              isFalse,
+            );
             expect(find.text('Recording start needs recovery'), findsNothing);
           }
           await tester.pumpWidget(const SizedBox.shrink());
-          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
         },
       );
     }
@@ -880,7 +1061,7 @@ void main() {
             await tester.pumpAndSettle();
           }
           expect(
-            context.read<TempoCubit>().confirmedRecordStart?.soundStart,
+            context.read<TempoCubit>().state.confirmedRecordStart?.soundStart,
             isTrue,
           );
           final initialCalls = engine.recordCalls;
@@ -932,8 +1113,8 @@ void main() {
         final context = tester.element(find.byType(TracksView));
         final tempo = context.read<TempoCubit>();
         final power = context.read<PowerOffCubit>();
-        expect(tempo.confirmedRecordStart?.countInBars, 1);
-        expect(tempo.confirmedRecordStart?.soundStart, isFalse);
+        expect(tempo.state.confirmedRecordStart?.countInBars, 1);
+        expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
         store.pendingWrite = Completer<void>();
         unawaited(tempo.setSoundStart(enabled: true));
         await tester.pump();
@@ -942,16 +1123,22 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
         expect(power.state.phase, PowerOffPhase.flushing);
         expect(haltCalls, 0);
-        expect(tempo.confirmedRecordStart?.countInBars, 1);
-        expect(tempo.confirmedRecordStart?.soundStart, isFalse);
+        expect(tempo.state.confirmedRecordStart?.countInBars, 1);
+        expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
         store.pendingWrite!.complete();
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 6));
         expect(haltCalls, 1);
         expect(store.values['tempo.count_in_bars'], 0);
         expect(store.values['looper.auto_record'], isTrue);
-        expect(tempo.durableRecordStartSettings.countInBars, 0);
-        expect(tempo.durableRecordStartSettings.soundStart, isTrue);
+        expect(
+          context.read<TempoSettings>().durableRecordStartSettings.countInBars,
+          0,
+        );
+        expect(
+          context.read<TempoSettings>().durableRecordStartSettings.soundStart,
+          isTrue,
+        );
       });
     }
 
@@ -973,9 +1160,9 @@ void main() {
         store.refuseWrite = true;
         unawaited(tempo.setSoundStart(enabled: true));
         await tester.pumpAndSettle();
-        expect(tempo.confirmedRecordStart?.countInBars, 1);
-        expect(tempo.confirmedRecordStart?.soundStart, isFalse);
-        expect(tempo.recordStartSnapshot, isNull);
+        expect(tempo.state.confirmedRecordStart?.countInBars, 1);
+        expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
+        expect(tempo.state.recordStartSnapshot, isNull);
         power.press(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.flushFailed);
@@ -991,15 +1178,21 @@ void main() {
         expect(haltCalls, retry ? 1 : 0);
         if (!retry) {
           expect(find.text('Recording start needs recovery'), findsOneWidget);
-          expect(tempo.recordStartSnapshot, isNull);
+          expect(tempo.state.recordStartSnapshot, isNull);
           await tester.tap(find.text('Retry'));
           await tester.pumpAndSettle();
           expect(find.text('Recording start needs recovery'), findsNothing);
         }
         expect(store.values.containsKey('tempo.count_in_bars'), isFalse);
         expect(store.values.containsKey('looper.auto_record'), isFalse);
-        expect(tempo.durableRecordStartSettings.countInBars, 1);
-        expect(tempo.durableRecordStartSettings.soundStart, isFalse);
+        expect(
+          context.read<TempoSettings>().durableRecordStartSettings.countInBars,
+          1,
+        );
+        expect(
+          context.read<TempoSettings>().durableRecordStartSettings.soundStart,
+          isFalse,
+        );
       });
     }
 
@@ -1021,10 +1214,15 @@ void main() {
       final power = context.read<PowerOffCubit>();
       engine.recordStartResult = EngineResult.invalid;
       bool? accepted;
-      unawaited(tempo.setCountInBars(4).then((v) => accepted = v.isOk));
+      unawaited(
+        context
+            .read<TempoSettings>()
+            .setCountInBars(4)
+            .then((v) => accepted = v.isOk),
+      );
       await tester.pumpAndSettle();
       expect(accepted, isFalse);
-      expect(tempo.recordStartSnapshot?.settings.countInBars, 1);
+      expect(tempo.state.recordStartSnapshot?.settings.countInBars, 1);
       expect(store.values.containsKey('tempo.count_in_bars'), isFalse);
       expect(store.values.containsKey('looper.auto_record'), isFalse);
       expect(repository.recordStartRecoveryRequired, isFalse);
@@ -1047,7 +1245,7 @@ void main() {
           final tempo = tester
               .element(find.byType(TracksView))
               .read<TempoCubit>();
-          expect(tempo.clickModeSnapshot, isNull);
+          expect(tempo.state.clickModeSnapshot, isNull);
           expect(find.text('Hear click needs attention'), findsOneWidget);
           await tester.pump(const Duration(seconds: 6));
           expect(find.text('Hear click needs attention'), findsOneWidget);
@@ -1058,11 +1256,11 @@ void main() {
           if (malformed) {
             expect(find.text('Hear click needs attention'), findsOneWidget);
           } else {
-            expect(tempo.clickModeSnapshot?.mode, ClickMode.off);
+            expect(tempo.state.clickModeSnapshot?.mode, ClickMode.off);
             expect(find.text('Hear click needs attention'), findsNothing);
           }
           await tester.pumpWidget(const SizedBox.shrink());
-          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
         },
       );
     }
@@ -1081,7 +1279,7 @@ void main() {
       final context = tester.element(find.byType(TracksView));
       final tempo = context.read<TempoCubit>();
       final power = context.read<PowerOffCubit>();
-      expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
+      expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
       store.pendingWrite = Completer<void>();
       unawaited(tempo.setClickMode(ClickMode.playRec));
       await tester.pump();
@@ -1096,7 +1294,7 @@ void main() {
       await tester.pump(const Duration(seconds: 6));
       expect(haltCalls, 1);
       expect(store.values['tempo.click_mode'], 3);
-      expect(tempo.durableClickMode, ClickMode.playRec);
+      expect(context.read<TempoSettings>().durableClickMode, ClickMode.playRec);
     });
 
     for (final retry in [false, true]) {
@@ -1118,7 +1316,7 @@ void main() {
         unawaited(tempo.setClickMode(ClickMode.playRec));
         await tester.pumpAndSettle();
         expect(tempo.state.clickMode, ClickMode.recFirst);
-        expect(tempo.clickModeSnapshot, isNull);
+        expect(tempo.state.clickModeSnapshot, isNull);
         power.press(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.flushFailed);
@@ -1134,13 +1332,16 @@ void main() {
         expect(haltCalls, retry ? 1 : 0);
         if (!retry) {
           expect(find.text('Hear click needs attention'), findsOneWidget);
-          expect(tempo.clickModeSnapshot, isNull);
+          expect(tempo.state.clickModeSnapshot, isNull);
           await tester.tap(find.text('Retry'));
           await tester.pumpAndSettle();
           expect(find.text('Hear click needs attention'), findsNothing);
         }
         expect(store.values.containsKey('tempo.click_mode'), isFalse);
-        expect(tempo.durableClickMode, ClickMode.recFirst);
+        expect(
+          context.read<TempoSettings>().durableClickMode,
+          ClickMode.recFirst,
+        );
       });
     }
 
@@ -1169,11 +1370,14 @@ void main() {
       rejectingEngine.refuseMode = true;
       bool? accepted;
       unawaited(
-        tempo.setClickMode(ClickMode.rec).then((v) => accepted = v.isOk),
+        context
+            .read<TempoSettings>()
+            .setClickMode(ClickMode.rec)
+            .then((v) => accepted = v.isOk),
       );
       await tester.pumpAndSettle();
       expect(accepted, isFalse);
-      expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
+      expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
       expect(store.values.containsKey('tempo.click_mode'), isFalse);
       expect(repository.clickModeRecoveryRequired, isFalse);
       power.press(const PowerOffSnapshot());
@@ -1244,8 +1448,8 @@ void main() {
           control.endMidiEdit(editor);
           midi.push(127);
           await tester.pumpAndSettle();
-          expect(tempo.clickModeSnapshot?.mode, ClickMode.playRec);
-          expect(tempo.durableClickMode, ClickMode.off);
+          expect(tempo.state.clickModeSnapshot?.mode, ClickMode.playRec);
+          expect(context.read<TempoSettings>().durableClickMode, ClickMode.off);
           rejectingEngine.refuseMode = true;
           if (releasedBeforeShutdown) {
             midi.push(0);
@@ -1443,9 +1647,11 @@ void main() {
         unawaited(decay.setOverdubDecay(80));
         await tester.pumpAndSettle();
         expect(decay.state.overdubDecay, 0);
+        expect(debugAppToastActive(AppToastId.decaySettings), isTrue);
         power.press(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.flushFailed);
+        expect(debugAppToastActive(AppToastId.decaySettings), isFalse);
         expect(find.text('Settings could not be confirmed'), findsOneWidget);
         expect(find.byKey(const Key('power_off_discard')), findsNothing);
         expect(halted, isFalse);
@@ -1458,6 +1664,7 @@ void main() {
         expect(halted, retry);
         expect(store.values.containsKey('looper.overdub_decay'), isFalse);
         if (!retry) {
+          expect(debugAppToastActive(AppToastId.decaySettings), isFalse);
           unawaited(decay.setOverdubDecay(25));
           await tester.pumpAndSettle();
           expect(decay.state.overdubDecay, 25);
@@ -1764,7 +1971,7 @@ void main() {
           store.refuseWrite = true;
           unawaited(length.setDefaultLengthBars(4));
           await tester.pumpAndSettle();
-          expect(length.state.defaultLengthBars, 0);
+          expect(length.state.options.defaultLengthBars, 0);
           power.press(const PowerOffSnapshot());
           await tester.pumpAndSettle();
           expect(power.state.phase, PowerOffPhase.flushFailed);
@@ -1787,7 +1994,7 @@ void main() {
           if (!retry) {
             unawaited(length.setDefaultLengthBars(4));
             await tester.pumpAndSettle();
-            expect(length.state.defaultLengthBars, 4);
+            expect(length.state.options.defaultLengthBars, 4);
             expect(store.values['looper.default_length_bars'], 4);
           }
         },
@@ -1819,7 +2026,10 @@ void main() {
       rejectingEngine.refuseTiming = true;
       bool? accepted;
       unawaited(
-        timing.setTiming(RecordTiming.quarter).then((v) => accepted = v.isOk),
+        context
+            .read<RecordTimingSettings>()
+            .setTiming(RecordTiming.quarter)
+            .then((v) => accepted = v.isOk),
       );
       await tester.pumpAndSettle();
       expect(accepted, isFalse);
@@ -1899,7 +2109,10 @@ void main() {
           await tester.pumpAndSettle();
           expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
           expect(
-            timing.durableRecordTimingSnapshot.trackOverrides[0],
+            context
+                .read<RecordTimingSettings>()
+                .durableRecordTimingSnapshot
+                .trackOverrides[0],
             RecordTiming.immediately,
           );
           rejectingEngine.refuseTiming = true;
@@ -2000,11 +2213,17 @@ void main() {
         await tester.pumpAndSettle();
         expect(timing.state.defaultTiming, RecordTiming.sixteenth);
         expect(
-          timing.durableRecordTimingSnapshot.defaultTiming,
+          context
+              .read<RecordTimingSettings>()
+              .durableRecordTimingSnapshot
+              .defaultTiming,
           RecordTiming.immediately,
         );
         expect(
-          timing.durableRecordTimingSnapshot.rememberedDivision,
+          context
+              .read<RecordTimingSettings>()
+              .durableRecordTimingSnapshot
+              .rememberedDivision,
           GridDivision.quarter,
         );
 
@@ -2032,11 +2251,17 @@ void main() {
         await tester.pumpAndSettle();
         expect(timing.state.defaultTiming, RecordTiming.sixteenth);
         expect(
-          timing.durableRecordTimingSnapshot.defaultTiming,
+          context
+              .read<RecordTimingSettings>()
+              .durableRecordTimingSnapshot
+              .defaultTiming,
           RecordTiming.immediately,
         );
         expect(
-          timing.durableRecordTimingSnapshot.rememberedDivision,
+          context
+              .read<RecordTimingSettings>()
+              .durableRecordTimingSnapshot
+              .rememberedDivision,
           GridDivision.quarter,
         );
         final stopCalls = engine.stopCalls;
@@ -2129,8 +2354,14 @@ void main() {
         control.endMidiEdit(editor);
         midi.push(127);
         await tester.pumpAndSettle();
-        expect(length.state.defaultLengthBars, 4);
-        expect(length.durableRecordLengthSnapshot.defaultBars, 0);
+        expect(length.state.options.defaultLengthBars, 4);
+        expect(
+          context
+              .read<RecordSettings>()
+              .durableRecordLengthSnapshot
+              .defaultBars,
+          0,
+        );
 
         // Only the engine seam is simulated. The live repository, owner,
         // controller, Bloc, power-key host, gate and dialog are production.
@@ -2152,11 +2383,17 @@ void main() {
         );
         ticker.add(null);
         await tester.pumpAndSettle();
-        expect(length.state.recordLengthCaptureLocked, isTrue);
+        expect(length.state.options.recordLengthCaptureLocked, isTrue);
         midi.push(0);
         await tester.pumpAndSettle();
-        expect(length.state.defaultLengthBars, 4);
-        expect(length.durableRecordLengthSnapshot.defaultBars, 0);
+        expect(length.state.options.defaultLengthBars, 4);
+        expect(
+          context
+              .read<RecordSettings>()
+              .durableRecordLengthSnapshot
+              .defaultBars,
+          0,
+        );
         final stopCalls = engine.stopCalls;
         key.press();
         await tester.pumpAndSettle();
@@ -2175,7 +2412,7 @@ void main() {
         );
         ticker.add(null);
         await tester.pumpAndSettle();
-        expect(length.state.defaultLengthBars, 0);
+        expect(length.state.options.defaultLengthBars, 0);
         expect(engine.stopCalls, stopCalls);
         key.press();
         await tester.pumpAndSettle();
@@ -2244,21 +2481,21 @@ void main() {
         control.endMidiEdit(editor);
         midi.push(127);
         await tester.pumpAndSettle();
-        expect(length.state.defaultLengthBars, 4);
-        expect(length.state.trackLengthPresetOverrides, {7: 4});
+        expect(length.state.options.defaultLengthBars, 4);
+        expect(length.state.options.trackLengthPresetOverrides, {7: 4});
         power.press(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.goodbye);
-        expect(length.state.defaultLengthBars, 0);
-        expect(length.state.trackLengthPresetOverrides, {7: 0});
+        expect(length.state.options.defaultLengthBars, 0);
+        expect(length.state.options.trackLengthPresetOverrides, {7: 0});
         expect(store.values['looper.default_length_bars'], 0);
         expect(store.values['tempo.length_preset.7'], 0);
         store.writeEntered = false;
         midi.push(127);
         await tester.pump();
         expect(store.writeEntered, isFalse);
-        expect(length.state.defaultLengthBars, 0);
-        expect(length.state.trackLengthPresetOverrides, {7: 0});
+        expect(length.state.options.defaultLengthBars, 0);
+        expect(length.state.options.trackLengthPresetOverrides, {7: 0});
         await tester.pump(const Duration(seconds: 2));
         expect(haltCalls, 1);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -2737,6 +2974,8 @@ void main() {
         // Let the snack's auto-close and removal animations run out so no
         // timer outlives the test.
         await tester.pump(const Duration(seconds: 10));
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
       },
     );
 

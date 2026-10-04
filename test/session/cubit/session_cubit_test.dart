@@ -9,11 +9,16 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
+import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
+import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -56,14 +61,85 @@ const _session = Session(
   tracks: [],
 );
 
-Future<T> _readyClick<T>(Future<T> Function() operation) => operation();
+class _TempoOwner extends Fake implements TempoSettings {
+  @override
+  Future<T> runTempoExclusive<T>(Future<T> Function() operation) => operation();
+
+  @override
+  double get durableClickVolume => 1;
+
+  @override
+  ClickMode get durableClickMode => ClickMode.off;
+
+  @override
+  RecordStartSettings get durableRecordStartSettings =>
+      RecordStartSettings(countInBars: 0, soundStart: false);
+}
+
+class _PlaybackOwner extends Fake implements PlaybackSettings {
+  _PlaybackOwner(this.looper);
+  final LooperRepository looper;
+
+  @override
+  Future<T> runPlaybackExclusive<T>(Future<T> Function() operation) =>
+      operation();
+
+  @override
+  DecaySnapshot get durableDecaySnapshot => DecaySnapshot(
+    defaultPercent: looper.defaultOverdubDecay,
+    trackOverrides: looper.trackOverdubDecayOverrides,
+  );
+
+  @override
+  OneShotSnapshot get durableOneShotSnapshot => OneShotSnapshot(
+    defaultOneShot: looper.defaultOneShot,
+    trackOverrides: looper.trackOneShotOverrides,
+  );
+}
+
+class _RecordOwner extends Fake implements RecordSettings {
+  _RecordOwner(this.looper);
+  final LooperRepository looper;
+
+  @override
+  Future<T> runRecordExclusive<T>(Future<T> Function() operation) =>
+      operation();
+
+  @override
+  RecordLengthSnapshot get durableRecordLengthSnapshot => RecordLengthSnapshot(
+    defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+    trackOverrides: looper.trackLengthPresetOverrides,
+    mode: looper.sessionTransport.looperMode,
+    captureLocked: false,
+  );
+}
+
+class _TimingOwner extends Fake implements RecordTimingSettings {
+  _TimingOwner(this.looper);
+  final LooperRepository looper;
+
+  @override
+  Future<T> runRecordTimingExclusive<T>(Future<T> Function() operation) =>
+      operation();
+
+  @override
+  RecordTimingSnapshot get durableRecordTimingSnapshot => RecordTimingSnapshot(
+    defaultTiming: looper.defaultRecordTiming,
+    rememberedDivision: looper.sessionTransport.quantizeDiv,
+    trackOverrides: looper.trackRecordTimingOverrides,
+    captureLocked: false,
+  );
+}
 
 void main() {
   late SessionRepository repository;
   late LooperRepository looper;
   late PerformanceRepository performance;
   late MixSettingsCoordinator mixSettings;
+  late FxChainPersistence fxPersistence;
+  late SessionSettingsCoordinator captureSettings;
   late MixSettingsPersistence mixPersistence;
+  late SettingsRepository settings;
   late StreamController<LooperState> looperStates;
 
   setUpAll(() {
@@ -72,6 +148,16 @@ void main() {
     registerFallbackValue(const SessionSettings());
   });
 
+  SessionSettingsCoordinator buildCapture() => SessionSettingsCoordinator(
+    looper: looper,
+    mix: mixSettings,
+    fx: fxPersistence,
+    tempo: _TempoOwner(),
+    playback: _PlaybackOwner(looper),
+    record: _RecordOwner(looper),
+    timing: _TimingOwner(looper),
+  );
+
   setUp(() {
     repository = _MockSessionRepository();
     looper = _MockLooperRepository();
@@ -79,9 +165,8 @@ void main() {
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     addTearDown(looperStates.close);
-    mixPersistence = SettingsMixPersistence(
-      SettingsRepository(store: FakeKeyValueStore()),
-    );
+    settings = SettingsRepository(store: FakeKeyValueStore());
+    mixPersistence = SettingsMixPersistence(settings);
     // Default chain getters so the save path's _captureChains() has something
     // to read; individual tests override as needed.
     when(looper.allLaneChains).thenReturn(const {});
@@ -110,6 +195,9 @@ void main() {
       persistence: mixPersistence,
       device: () => looper.state.status.deviceName,
     );
+    fxPersistence = FxChainPersistence(looper: looper);
+    addTearDown(fxPersistence.close);
+    captureSettings = buildCapture();
     // loadNamed's auto-disarm-before-load orchestration; a no-op success by
     // default since nothing is armed in these tests.
     when(
@@ -118,35 +206,9 @@ void main() {
   });
 
   SessionCubit build() => SessionCubit(
-    runTempoExclusive: _readyClick,
-    currentDurableRecordStart: () =>
-        RecordStartSettings(countInBars: 0, soundStart: false),
-    runPlaybackExclusive: _readyClick,
-    runRecordExclusive: <T>(operation) => operation(),
-    runRecordTimingExclusive: <T>(operation) => operation(),
-    currentDurableRecordTiming: () => RecordTimingSnapshot(
-      defaultTiming: looper.defaultRecordTiming,
-      rememberedDivision: looper.sessionTransport.quantizeDiv,
-      trackOverrides: looper.trackRecordTimingOverrides,
-      captureLocked: false,
-    ),
-    currentDurableRecordLength: () => RecordLengthSnapshot(
-      defaultBars: looper.sessionTransport.defaultLengthPresetBars,
-      trackOverrides: looper.trackLengthPresetOverrides,
-      mode: looper.sessionTransport.looperMode,
-      captureLocked: false,
-    ),
-    currentDurableDecay: () => DecaySnapshot(
-      defaultPercent: looper.defaultOverdubDecay,
-      trackOverrides: looper.trackOverdubDecayOverrides,
-    ),
-    currentDurableOneShot: () => OneShotSnapshot(
-      defaultOneShot: looper.defaultOneShot,
-      trackOverrides: looper.trackOneShotOverrides,
-    ),
-    currentDurableClickVolume: () => 1,
-    currentDurableClickMode: () => ClickMode.off,
-    fxPersistence: FxChainPersistence(looper: looper),
+    captureSettings: captureSettings,
+    fxPersistence: fxPersistence,
+    settings: settings,
     repository: repository,
     looper: looper,
     performance: performance,
@@ -474,6 +536,27 @@ void main() {
       ).thenAnswer((_) async => _session);
     }
 
+    test('load closes control admission before the catalog read', () async {
+      stubCatalog();
+      final read = Completer<SessionBundle>();
+      final entered = Completer<void>();
+      when(() => repository.read(any())).thenAnswer((_) {
+        entered.complete();
+        return read.future;
+      });
+      final cubit = build();
+      addTearDown(cubit.close);
+
+      final load = cubit.loadNamed('A');
+      expect(fxPersistence.sessionTransitionActive, isTrue);
+      await entered.future;
+      read.completeError(StateError('bundle unavailable'));
+      await load;
+      expect(cubit.state.status, SessionStatus.failure);
+      expect(fxPersistence.sessionTransitionActive, isFalse);
+      verifyNever(() => looper.applySession(any()));
+    });
+
     test('Save As and Save capture the current desired settings', () async {
       stubCatalog();
       when(() => looper.sessionTransport).thenReturn(
@@ -599,6 +682,7 @@ void main() {
             persistence: failing,
             device: () => looper.state.status.deviceName,
           );
+          captureSettings = buildCapture();
           when(
             () => repository.bundlePath('B'),
           ).thenAnswer((_) async => '/root/B');
@@ -608,6 +692,7 @@ void main() {
               laneStems: <(int, int), List<Float32List>>{},
             ),
           );
+          when(repository.listSessions).thenAnswer((_) async => const []);
           final cubit = build();
           addTearDown(cubit.close);
           addTearDown(mixSettings.close);
@@ -751,6 +836,10 @@ void main() {
           'st',
           SessionStatus.working,
         ),
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.working)
+            .having((s) => s.currentSessionName, 'current', 'A')
+            .having((s) => s.bootRecoveryRequired, 'boot debt', isTrue),
         isA<SessionState>()
             .having((s) => s.status, 'st', SessionStatus.success)
             .having((s) => s.outcome, 'outcome', SessionOutcome.loaded)
@@ -1031,21 +1120,12 @@ void main() {
     );
   });
 
-  group('isClosed guard', () {
-    // These exercise `_run`'s three branches (success, `on SessionException`,
-    // `on Object`) and `refreshSessions` all closing mid-flight: the mocked
-    // repository call is left pending on a Completer, the cubit is closed
-    // while that await is outstanding, and only then is the Completer
-    // resolved — resuming the suspended action after `isClosed` is already
-    // true. Without a guard, the post-await `emit` throws `StateError`, and
-    // (for the success path) `_run`'s `on Object catch` branch re-emits
-    // unguarded too, so the error propagates out of the returned Future.
-    // Plain `test()` is used instead of `blocTest()` here because the
-    // assertion is "the returned Future completes without throwing", not a
-    // state-sequence `blocTest`'s `expect` is shaped for.
+  group('close drains admitted session work', () {
+    // Shutdown closes Session before its engine and settings owners. A pending
+    // repository operation must finish before its state stream closes, while
+    // new actions are rejected as soon as close starts.
     test(
-      'exportMixdown does not throw when the cubit closes while the '
-      'repository call is still pending (success path)',
+      'exportMixdown finishes before close completes (success path)',
       () async {
         final completer = Completer<void>();
         when(
@@ -1055,16 +1135,18 @@ void main() {
         final cubit = build();
         final future = cubit.exportMixdown();
 
-        await cubit.close();
+        final closing = cubit.close();
+        expect(cubit.isClosed, isFalse);
         completer.complete();
 
         await expectLater(future, completes);
+        await closing;
+        expect(cubit.isClosed, isTrue);
       },
     );
 
     test(
-      'exportMixdown does not throw when the cubit closes while the '
-      'repository call is still pending (on SessionException catch)',
+      'exportMixdown error settles before close (SessionException)',
       () async {
         final completer = Completer<void>();
         when(
@@ -1074,16 +1156,17 @@ void main() {
         final cubit = build();
         final future = cubit.exportMixdown();
 
-        await cubit.close();
+        final closing = cubit.close();
+        expect(cubit.isClosed, isFalse);
         completer.completeError(const SessionNameCollision(slug: 'x'));
 
         await expectLater(future, completes);
+        await closing;
       },
     );
 
     test(
-      'exportMixdown does not throw when the cubit closes while the '
-      'repository call is still pending (on Object catch)',
+      'exportMixdown error settles before close (unknown error)',
       () async {
         final completer = Completer<void>();
         when(
@@ -1093,16 +1176,17 @@ void main() {
         final cubit = build();
         final future = cubit.exportMixdown();
 
-        await cubit.close();
+        final closing = cubit.close();
+        expect(cubit.isClosed, isFalse);
         completer.completeError(Exception('disk full'));
 
         await expectLater(future, completes);
+        await closing;
       },
     );
 
     test(
-      'refreshSessions does not throw when the cubit closes while the '
-      'repository call is still pending',
+      'refreshSessions completes before close',
       () async {
         final completer = Completer<List<SessionSummary>>();
         when(repository.listSessions).thenAnswer((_) => completer.future);
@@ -1110,10 +1194,12 @@ void main() {
         final cubit = build();
         final future = cubit.refreshSessions();
 
-        await cubit.close();
+        final closing = cubit.close();
+        expect(cubit.isClosed, isFalse);
         completer.complete(const []);
 
         await expectLater(future, completes);
+        await closing;
       },
     );
   });
@@ -1146,35 +1232,9 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
-          runTempoExclusive: _readyClick,
-          currentDurableRecordStart: () =>
-              RecordStartSettings(countInBars: 0, soundStart: false),
-          runPlaybackExclusive: _readyClick,
-          runRecordExclusive: <T>(operation) => operation(),
-          runRecordTimingExclusive: <T>(operation) => operation(),
-          currentDurableRecordTiming: () => RecordTimingSnapshot(
-            defaultTiming: looper.defaultRecordTiming,
-            rememberedDivision: looper.sessionTransport.quantizeDiv,
-            trackOverrides: looper.trackRecordTimingOverrides,
-            captureLocked: false,
-          ),
-          currentDurableRecordLength: () => RecordLengthSnapshot(
-            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
-            trackOverrides: looper.trackLengthPresetOverrides,
-            mode: looper.sessionTransport.looperMode,
-            captureLocked: false,
-          ),
-          currentDurableDecay: () => DecaySnapshot(
-            defaultPercent: looper.defaultOverdubDecay,
-            trackOverrides: looper.trackOverdubDecayOverrides,
-          ),
-          currentDurableOneShot: () => OneShotSnapshot(
-            defaultOneShot: looper.defaultOneShot,
-            trackOverrides: looper.trackOneShotOverrides,
-          ),
-          currentDurableClickVolume: () => 1,
-          currentDurableClickMode: () => ClickMode.off,
-          fxPersistence: FxChainPersistence(looper: looper),
+          captureSettings: captureSettings,
+          fxPersistence: fxPersistence,
+          settings: settings,
           repository: repository,
           looper: looper,
           performance: performance,
@@ -1222,35 +1282,9 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
-          runTempoExclusive: _readyClick,
-          currentDurableRecordStart: () =>
-              RecordStartSettings(countInBars: 0, soundStart: false),
-          runPlaybackExclusive: _readyClick,
-          runRecordExclusive: <T>(operation) => operation(),
-          runRecordTimingExclusive: <T>(operation) => operation(),
-          currentDurableRecordTiming: () => RecordTimingSnapshot(
-            defaultTiming: looper.defaultRecordTiming,
-            rememberedDivision: looper.sessionTransport.quantizeDiv,
-            trackOverrides: looper.trackRecordTimingOverrides,
-            captureLocked: false,
-          ),
-          currentDurableRecordLength: () => RecordLengthSnapshot(
-            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
-            trackOverrides: looper.trackLengthPresetOverrides,
-            mode: looper.sessionTransport.looperMode,
-            captureLocked: false,
-          ),
-          currentDurableDecay: () => DecaySnapshot(
-            defaultPercent: looper.defaultOverdubDecay,
-            trackOverrides: looper.trackOverdubDecayOverrides,
-          ),
-          currentDurableOneShot: () => OneShotSnapshot(
-            defaultOneShot: looper.defaultOneShot,
-            trackOverrides: looper.trackOneShotOverrides,
-          ),
-          currentDurableClickVolume: () => 1,
-          currentDurableClickMode: () => ClickMode.off,
-          fxPersistence: FxChainPersistence(looper: looper),
+          captureSettings: captureSettings,
+          fxPersistence: fxPersistence,
+          settings: settings,
           repository: repository,
           looper: looper,
           performance: performance,
@@ -1284,35 +1318,9 @@ void main() {
       ).thenAnswer((_) async => _session);
 
       final cubit = SessionCubit(
-        runTempoExclusive: _readyClick,
-        currentDurableRecordStart: () =>
-            RecordStartSettings(countInBars: 0, soundStart: false),
-        runPlaybackExclusive: _readyClick,
-        runRecordExclusive: <T>(operation) => operation(),
-        runRecordTimingExclusive: <T>(operation) => operation(),
-        currentDurableRecordTiming: () => RecordTimingSnapshot(
-          defaultTiming: looper.defaultRecordTiming,
-          rememberedDivision: looper.sessionTransport.quantizeDiv,
-          trackOverrides: looper.trackRecordTimingOverrides,
-          captureLocked: false,
-        ),
-        currentDurableRecordLength: () => RecordLengthSnapshot(
-          defaultBars: looper.sessionTransport.defaultLengthPresetBars,
-          trackOverrides: looper.trackLengthPresetOverrides,
-          mode: looper.sessionTransport.looperMode,
-          captureLocked: false,
-        ),
-        currentDurableDecay: () => DecaySnapshot(
-          defaultPercent: looper.defaultOverdubDecay,
-          trackOverrides: looper.trackOverdubDecayOverrides,
-        ),
-        currentDurableOneShot: () => OneShotSnapshot(
-          defaultOneShot: looper.defaultOneShot,
-          trackOverrides: looper.trackOneShotOverrides,
-        ),
-        currentDurableClickVolume: () => 1,
-        currentDurableClickMode: () => ClickMode.off,
-        fxPersistence: FxChainPersistence(looper: looper),
+        captureSettings: captureSettings,
+        fxPersistence: fxPersistence,
+        settings: settings,
         repository: repository,
         looper: looper,
         performance: performance,

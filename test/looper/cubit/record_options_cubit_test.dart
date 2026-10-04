@@ -4,254 +4,202 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_options.dart';
+import 'package:segno/looper/model/record_options_view_state.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockSettings extends Mock implements RecordSettings {}
+
+class _Store extends FakeKeyValueStore {
+  Completer<void>? writeGate;
+  bool writeEntered = false;
+  @override
+  Future<void> setInt(String key, int value) async {
+    if (key == 'looper.default_length_bars') {
+      writeEntered = true;
+      await writeGate?.future;
+    }
+    await super.setInt(key, value);
+  }
+}
 
 void main() {
-  late SettingsRepository settings;
-  late LooperRepository repository;
-  late StreamController<LooperState> looperStates;
-  late int confirmedLength;
+  group('length attempt acknowledgement', () {
+    late _MockSettings owner;
+    late StreamController<RecordOptions> states;
+    late RecordLengthLifetime lifetime;
+    late RecordOptionsCubit cubit;
+    late List<Completer<RecordLengthOutcome>> writes;
 
-  setUp(() {
-    settings = SettingsRepository(store: FakeKeyValueStore());
-    repository = _MockLooperRepository();
-    confirmedLength = 0;
-    registerFallbackValue(LooperMode.multi);
-    when(() => repository.mixGeneration).thenReturn(0);
-    when(() => repository.recordLengthCaptureLocked).thenReturn(false);
-    when(() => repository.lengthSettingsSettled).thenReturn(true);
-    when(() => repository.lengthRecoveryRequired).thenReturn(false);
-    when(
-      () => repository.lengthSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
-    when(() => repository.trackLengthPresetOverrides).thenReturn({});
-    when(() => repository.state).thenReturn(const LooperState());
-    when(() => repository.lengthRestartIntent).thenAnswer(
-      (_) => (
-        defaultBars: confirmedLength,
-        trackOverrides: <int, int>{},
-        mode: LooperMode.multi,
-      ),
-    );
-    when(
-      () => repository.setLengthSettings(
-        defaultBars: any(named: 'defaultBars'),
-        overrides: any(named: 'overrides'),
-        mode: any(named: 'mode'),
-      ),
-    ).thenAnswer((call) {
-      confirmedLength = call.namedArguments[#defaultBars] as int;
-      return EngineResult.ok;
+    setUp(() {
+      owner = _MockSettings();
+      states = StreamController<RecordOptions>.broadcast(sync: true);
+      lifetime = (sessionRevision: 0, mixGeneration: 0);
+      writes = [];
+      when(() => owner.state).thenReturn(
+        const RecordOptions(recordLengthReady: true, defaultLengthBars: 4),
+      );
+      when(() => owner.stream).thenAnswer((_) => states.stream);
+      when(() => owner.recordLengthLifetime).thenAnswer((_) => lifetime);
+      Future<RecordLengthOutcome> write() {
+        final pending = Completer<RecordLengthOutcome>();
+        writes.add(pending);
+        return pending.future;
+      }
+
+      when(() => owner.setDefaultLengthBars(any())).thenAnswer((_) => write());
+      when(
+        () => owner.setTrackRecordLength(
+          channel: any(named: 'channel'),
+          bars: any(named: 'bars'),
+        ),
+      ).thenAnswer((_) => write());
+      cubit = RecordOptionsCubit(settings: owner);
     });
-    when(() => repository.sessionRevision).thenReturn(0);
-    when(() => repository.sessionTransport).thenAnswer(
-      (_) => TransportState(defaultLengthPresetBars: confirmedLength),
-    );
-    when(
-      () => repository.settleLengthSettings(),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.setRecDub(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
-    ).thenReturn(EngineResult.ok);
-    when(() => repository.setDefaultLengthPreset(any())).thenAnswer((call) {
-      confirmedLength = call.positionalArguments.single as int;
-      return EngineResult.ok;
+    tearDown(() async {
+      await cubit.close();
+      await states.close();
     });
-    looperStates = StreamController<LooperState>.broadcast();
-    when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
+
+    blocTest<RecordOptionsCubit, RecordOptionsViewState>(
+      'refused candidate remains distinct from the accepted length',
+      build: () => cubit,
+      act: (cubit) async {
+        final edit = cubit.setDefaultLengthBars(8);
+        expect(cubit.state.lengthAttempt?.phase, LengthEditPhase.pending);
+        expect(cubit.state.options.defaultLengthBars, 4);
+        writes.single.complete(
+          const RecordLengthOutcome(RecordLengthStatus.rejected),
+        );
+        await edit;
+        expect(cubit.state.lengthAttempt?.phase, LengthEditPhase.refused);
+        expect(cubit.state.lengthAttempt?.bars, 8);
+        expect(cubit.state.options.defaultLengthBars, 4);
+      },
+    );
+
+    for (final nextChannel in <int?>[null, 1]) {
+      blocTest<RecordOptionsCubit, RecordOptionsViewState>(
+        'older completion cannot replace a newer same-bars attempt '
+        'on $nextChannel',
+        build: () => cubit,
+        act: (cubit) async {
+          final first = cubit.setDefaultLengthBars(8);
+          final firstId = cubit.state.lengthAttempt!.id;
+          final second = nextChannel == null
+              ? cubit.setDefaultLengthBars(8)
+              : cubit.setTrackRecordLength(channel: nextChannel, bars: 8);
+          final secondId = cubit.state.lengthAttempt!.id;
+          expect(secondId, greaterThan(firstId));
+          writes.first.complete(
+            const RecordLengthOutcome(RecordLengthStatus.rejected),
+          );
+          await first;
+          expect(cubit.state.lengthAttempt?.id, secondId);
+          expect(cubit.state.lengthAttempt?.phase, LengthEditPhase.pending);
+          writes.last.complete(
+            const RecordLengthOutcome(RecordLengthStatus.applied),
+          );
+          await second;
+          expect(cubit.state.lengthAttempt?.channel, nextChannel);
+          expect(cubit.state.lengthAttempt?.phase, LengthEditPhase.applied);
+        },
+      );
+    }
+
+    for (final publish in [false, true]) {
+      blocTest<RecordOptionsCubit, RecordOptionsViewState>(
+        'replacement lifetime ignores old completion with publication $publish',
+        build: () => cubit,
+        act: (cubit) async {
+          final edit = cubit.setDefaultLengthBars(8);
+          lifetime = (sessionRevision: 1, mixGeneration: 1);
+          if (publish) states.add(owner.state);
+          writes.single.complete(
+            const RecordLengthOutcome(RecordLengthStatus.rejected),
+          );
+          await edit;
+          expect(cubit.state.lengthAttempt, isNull);
+          expect(cubit.state.options.defaultLengthBars, 4);
+        },
+      );
+    }
   });
 
-  tearDown(() => looperStates.close());
-
-  RecordOptionsCubit build() =>
-      RecordOptionsCubit(repository: repository, settings: settings);
-
-  group('RecordOptionsCubit', () {
-    test('defaults to RecDub off', () {
-      expect(build().state, const RecordOptions());
+  group('borrowed application owner', () {
+    late _Store store;
+    late LooperRepository repository;
+    late RecordSettings owner;
+    late RecordOptionsCubit cubit;
+    setUp(() {
+      store = _Store()..values['looper.mode'] = LooperMode.free.code;
+      repository = LooperRepository(engine: FakeAudioEngine());
+      owner = RecordSettings(
+        repository: repository,
+        settings: SettingsRepository(store: store),
+      );
+      cubit = RecordOptionsCubit(settings: owner);
+    });
+    tearDown(() async {
+      await cubit.close();
+      await owner.close();
+      await repository.dispose();
     });
 
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'load restores persisted options and applies them',
-      setUp: () async {
-        await settings.saveRecDub(value: true);
-      },
-      build: build,
-      act: (cubit) => cubit.load(),
-      expect: () => [
-        const RecordOptions(recDub: true),
-        const RecordOptions(recDub: true, recordLengthReady: true),
-      ],
-      verify: (_) {
-        verify(() => repository.setRecDub(enabled: true)).called(1);
-      },
-    );
-
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'setRecDub emits, applies, and persists',
-      build: build,
-      act: (cubit) => cubit.setRecDub(value: true),
-      expect: () => [const RecordOptions(recDub: true)],
-      verify: (_) async {
-        verify(() => repository.setRecDub(enabled: true)).called(1);
-        expect(await settings.loadRecDub(), isTrue);
-      },
-    );
-
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'setDefaultMultiple emits, applies, and persists',
-      build: build,
-      act: (cubit) => cubit.setDefaultMultiple(2),
-      expect: () => [const RecordOptions(defaultMultiple: 2)],
-      verify: (_) async {
-        verify(() => repository.setDefaultMultiple(multiple: 2)).called(1);
-        expect(await settings.loadDefaultMultiple(), 2);
-      },
-    );
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'setDefaultLengthBars emits, persists and applies the clamped default',
-      build: build,
-      act: (cubit) => cubit.setDefaultLengthBars(80),
-      expect: () => [
-        const RecordOptions(recordLengthReady: true),
-        const RecordOptions(defaultLengthBars: 64, recordLengthReady: true),
-      ],
-      verify: (_) async {
-        expect(await settings.loadDefaultLengthPreset(), 64);
-        verify(() => repository.setDefaultLengthPreset(64)).called(1);
-      },
-    );
-
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'late length refusal keeps the displayed and saved default',
-      setUp: () => when(
-        () => repository.settleLengthSettings(),
-      ).thenAnswer((_) async => EngineResult.invalid),
-      build: build,
-      act: (cubit) => cubit.setDefaultLengthBars(8),
-      expect: () => <RecordOptions>[],
-      verify: (_) async => expect(await settings.loadDefaultLengthPreset(), 0),
-    );
-
-    test(
-      'an accepted length still persists after a rejected tap and RecDub edit',
-      () async {
-        final pending = Completer<EngineResult>();
-        when(() => repository.setDefaultLengthPreset(any())).thenAnswer((
-          call,
-        ) {
-          final bars = call.positionalArguments.single as int;
-          return bars == 8 ? EngineResult.ok : EngineResult.notReady;
-        });
-        when(
-          () => repository.settleLengthSettings(),
-        ).thenAnswer((_) => pending.future);
-        final cubit = build();
-        addTearDown(cubit.close);
-
-        // Initialize before withholding the transaction receipt.
-        when(
-          () => repository.settleLengthSettings(),
-        ).thenAnswer((_) async => EngineResult.ok);
-        await cubit.load();
-        when(
-          () => repository.settleLengthSettings(),
-        ).thenAnswer((_) => pending.future);
-        final accepted = cubit.setDefaultLengthBars(8);
-        final rejected = cubit.setDefaultLengthBars(12);
-        await Future<void>.delayed(Duration.zero);
-        await cubit.setRecDub(value: true);
-        confirmedLength = 8;
-        pending.complete(EngineResult.ok);
-        await accepted;
-        await rejected;
-
-        expect(cubit.state.defaultLengthBars, 8);
-        expect(cubit.state.recDub, isTrue);
-        expect(await settings.loadDefaultLengthPreset(), 8);
-        expect(await settings.loadRecDub(), isTrue);
-      },
-    );
-
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'follows the repository before load without overwriting saved defaults',
-      setUp: () => settings.saveRecDub(value: true),
-      build: build,
+    blocTest<RecordOptionsCubit, RecordOptionsViewState>(
+      'explicit Auto remains Custom until Use default removes membership',
+      build: () => cubit,
       act: (cubit) async {
-        looperStates.add(const LooperState());
-        await Future<void>.delayed(Duration.zero);
+        await owner.load();
+        await cubit.setTrackRecordLength(channel: 0, bars: 0);
+        expect(cubit.state.options.trackLengthPresetOverrides, {0: 0});
+        expect(cubit.state.lengthAttempt?.phase, LengthEditPhase.applied);
+        await cubit.setTrackRecordLength(channel: 0, bars: null);
+        expect(cubit.state.options.trackLengthPresetOverrides, isEmpty);
+        expect(cubit.state.lengthAttempt?.bars, isNull);
       },
-      expect: () => [const RecordOptions()],
-      verify: (_) async => expect(await settings.loadRecDub(), isTrue),
     );
 
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'explicit matching values still reach the repository',
-      build: build,
+    blocTest<RecordOptionsCubit, RecordOptionsViewState>(
+      'closing and remounting preserves the core and excludes old attempts',
+      build: () => cubit,
       act: (cubit) async {
-        await cubit.setRecDub(value: false);
-        await cubit.setDefaultMultiple(0);
-      },
-      expect: () => [const RecordOptions()],
-      verify: (_) {
-        verify(() => repository.setRecDub(enabled: false)).called(1);
-        verify(() => repository.setDefaultMultiple(multiple: 0)).called(1);
+        await owner.load();
+        await cubit.setDefaultLengthBars(4);
+        await cubit.close();
+        expect((await owner.setDefaultLengthBars(8)).isOk, isTrue);
+        final reopened = RecordOptionsCubit(settings: owner);
+        expect(reopened.state.options, same(owner.state));
+        expect(reopened.state.options.defaultLengthBars, 8);
+        expect(reopened.state.lengthAttempt, isNull);
+        await reopened.close();
       },
     );
 
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'refused edits preserve displayed and saved recording options',
-      setUp: () {
-        when(
-          () => repository.setRecDub(enabled: true),
-        ).thenReturn(EngineResult.invalid);
-        when(
-          () => repository.setDefaultMultiple(multiple: 2),
-        ).thenReturn(EngineResult.invalid);
-      },
-      build: build,
+    blocTest<RecordOptionsCubit, RecordOptionsViewState>(
+      'an admitted edit completes after view disposal '
+      'without late acknowledgement',
+      build: () => cubit,
       act: (cubit) async {
-        await cubit.setRecDub(value: true);
-        await cubit.setDefaultMultiple(2);
-      },
-      expect: () => <RecordOptions>[],
-      verify: (_) async {
-        expect(await settings.loadRecDub(), isFalse);
-        expect(await settings.loadDefaultMultiple(), 0);
-      },
-    );
-
-    blocTest<RecordOptionsCubit, RecordOptions>(
-      'follows recalled and reset recording defaults',
-      build: build,
-      act: (_) async {
-        looperStates.add(
-          const LooperState(
-            transport: TransportState(
-              recDub: true,
-              defaultMultiple: 3,
-            ),
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
-        looperStates.add(const LooperState());
-        await Future<void>.delayed(Duration.zero);
-      },
-      expect: () => [
-        const RecordOptions(recDub: true, defaultMultiple: 3),
-        const RecordOptions(),
-      ],
-      verify: (_) async {
-        expect(await settings.loadRecDub(), isFalse);
-        expect(await settings.loadDefaultMultiple(), 0);
+        await owner.load();
+        final gate = Completer<void>();
+        store.writeGate = gate;
+        final edit = cubit.setDefaultLengthBars(8);
+        await pumpEventQueue();
+        expect(store.writeEntered, isTrue);
+        expect(owner.state.defaultLengthBars, 0);
+        await cubit.close();
+        final closedState = cubit.state;
+        gate.complete();
+        await edit;
+        expect(cubit.state, same(closedState));
+        expect(owner.state.defaultLengthBars, 8);
+        expect((await owner.flushRecordLength()).isOk, isTrue);
       },
     );
   });

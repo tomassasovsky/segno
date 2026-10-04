@@ -532,9 +532,12 @@ void main() {
                 const StoredAudioConfig(sampleRate: 48000, bufferFrames: 256),
               );
             }
-            await settings.saveDefaultOneShot(oneShot: defaultOnce);
-            await settings.saveTrackOneShot(0, oneShot: false);
-            await settings.saveTrackOneShot(7, oneShot: true);
+            await settings.restoreOneShotCheckpoint(
+              channel: null,
+              oneShot: defaultOnce,
+            );
+            await settings.restoreOneShotCheckpoint(channel: 0, oneShot: false);
+            await settings.restoreOneShotCheckpoint(channel: 7, oneShot: true);
             final result = await tryAutoStartEngine(
               repository: repository,
               settings: settings,
@@ -612,9 +615,9 @@ void main() {
               const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
             );
           }
-          await settings.saveOverdubDecay(35);
-          await settings.saveTrackOverdubDecay(0, 0);
-          await settings.saveTrackOverdubDecay(7, 80);
+          await settings.restoreDecayCheckpoint(channel: null, percent: 35);
+          await settings.restoreDecayCheckpoint(channel: 0, percent: 0);
+          await settings.restoreDecayCheckpoint(channel: 7, percent: 80);
           final result = await tryAutoStartEngine(
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
@@ -1173,8 +1176,8 @@ void main() {
         await settings.saveAudioConfig(
           const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
         );
-        await settings.saveDefaultOneShot(oneShot: true);
-        await settings.saveTrackOneShot(1, oneShot: false);
+        await settings.restoreOneShotCheckpoint(channel: null, oneShot: true);
+        await settings.restoreOneShotCheckpoint(channel: 1, oneShot: false);
         engine.nextSnapshot = const EngineSnapshot(
           isRunning: true,
           sampleRate: 48000,
@@ -1812,6 +1815,7 @@ void main() {
     late SettingsRepository settings;
     late LooperBloc bloc;
     late MonitorCubit monitor;
+    late FxChainPersistence fxPersistence;
 
     /// A settled-empty two-track snapshot, so a load's clear-settle wait
     /// passes immediately and the boot restore has tracks to walk.
@@ -1836,7 +1840,7 @@ void main() {
         ticker: const Stream<void>.empty(),
       )..startEngine(const EngineConfig());
       settings = SettingsRepository(store: FakeKeyValueStore());
-      final fxPersistence = FxChainPersistence(looper: repository);
+      fxPersistence = FxChainPersistence(looper: repository);
       final mixSettings = testMixSettings(repository, settings: settings);
       bloc = LooperBloc(
         decayControl: FakeDecayControl(),
@@ -1889,11 +1893,11 @@ void main() {
       await pumpEventQueue();
     }
 
-    /// The listener's two halves, in the order the widget dispatches them.
-    Future<void> resync() async {
-      await monitor.syncFromRepository();
-      bloc.add(const LooperSessionLoaded());
-      await pumpEventQueue();
+    /// The application's boot image boundary, independent of any widget.
+    Future<void> persistLoadedRig() async {
+      await fxPersistence.persistLoadedSession(settings);
+      fxPersistence.completeSessionBoot();
+      monitor.projectFromRepository();
     }
 
     /// A cold boot: a FRESH engine + repository over the SAME settings store.
@@ -1916,6 +1920,8 @@ void main() {
     test('restores the LOADED chains after a cold boot, not the pre-load '
         'ones', () async {
       await stagePreLoadRig();
+      fxPersistence.reserveSessionLoad();
+      await fxPersistence.beginSessionLoad();
 
       final pcm = Float32List.fromList([1, 1, 1, 1]);
       await repository.applySession(
@@ -1982,7 +1988,7 @@ void main() {
       await SettingsMixPersistence(
         settings,
       ).write('Fake Device', repository.mixSettingsSnapshot);
-      await resync();
+      await persistLoadedRig();
 
       final rebooted = await coldBoot();
 
@@ -2027,13 +2033,15 @@ void main() {
 
     test('a shrinking load leaves no stale chain behind', () async {
       await stagePreLoadRig();
+      fxPersistence.reserveSessionLoad();
+      await fxPersistence.beginSessionLoad();
 
       // The loaded session defines NO chains at all.
       await repository.applySession(
         const SessionRig(),
         clearPollInterval: Duration.zero,
       );
-      await resync();
+      await persistLoadedRig();
 
       final rebooted = await coldBoot();
 

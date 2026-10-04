@@ -2,7 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/binding_labels.dart';
-import 'package:segno/control/binding/control_value_resolver.dart';
+import 'package:segno/control/binding/control_availability.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
@@ -320,14 +320,16 @@ List<ExpressionDestination> expressionDestinations(
     ),
   );
 
-  for (final target in looper.availableValueTargets(
+  final availability = ControlAvailability(
+    looper: looper,
     clickModeSnapshot: clickModeSnapshot,
     clickVolume: clickVolume,
     decaySnapshot: decaySnapshot,
     oneShotSnapshot: oneShotSnapshot,
     recordLengthSnapshot: recordLengthSnapshot,
     recordTimingSnapshot: recordTimingSnapshot,
-  )) {
+  );
+  for (final target in availability.targets) {
     final place = _placeOf(target);
     if (place == null) continue;
     final names = expressionTargetName(l10n, trackNames, looper, target);
@@ -338,22 +340,10 @@ List<ExpressionDestination> expressionDestinations(
             target: target,
             label: names.control,
             art: expressionTargetArt(looper, target),
-            disabledReason:
-                target is ClickModeValueTarget &&
-                    clickModeSnapshot != null &&
-                    !clickModeSnapshot.canEdit
-                ? l10n.clickModeCaptureLocked
-                : target is RecordLengthValueTarget &&
-                      recordLengthSnapshot != null &&
-                      !recordLengthSnapshot.canEdit(target.address)
-                ? recordLengthSnapshot.captureLocked
-                      ? l10n.recordLengthCaptureLocked
-                      : l10n.recordLengthSharedInMulti
-                : target is RecordTimingValueTarget &&
-                      recordTimingSnapshot != null &&
-                      !recordTimingSnapshot.canEdit(target.address)
-                ? l10n.recordTimingCaptureLocked
-                : null,
+            disabledReason: controlEditBlockLabel(
+              l10n,
+              availability.blockedBy(target),
+            ),
           ),
         );
   }

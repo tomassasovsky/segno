@@ -6,21 +6,14 @@ import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
-/// Everything an FX editor can change, dispatched by the page that owns the
-/// chain rather than reached from here.
-///
-/// A record of callbacks rather than a repository handle: these editors are
-/// used on five stages whose writes have five different owners, and threading
-/// the owner in would put the stage switch inside the editor.
-///
-/// Indices are positions in the WHOLE chain, not in the group being edited, so
-/// a rack module and a standalone effect are addressed the same way.
+/// Editor intentions forwarded to the FX owner by stable effect/group ID.
+/// Indices remain a rendering detail and never identify a write.
 typedef FxEdits = ({
-  List<TrackEffect> Function() currentChain,
-  void Function(int index, {required bool enabled}) setEnabled,
-  void Function(int index, int param, double value) setParam,
-  void Function(int index, FxChannels channels) setChannels,
-  Future<bool> Function(List<TrackEffect> chain) setChain,
+  void Function(String slotId, {required bool enabled}) setEnabled,
+  void Function(String groupId, {required bool enabled}) setGroupEnabled,
+  void Function(String slotId, int param, double value) setParam,
+  void Function(String groupId, FxChannels channels) setChannels,
+  void Function(String groupId, FxPlacement placement) setPlacement,
 });
 
 /// One parameter: its name, its value, the slider, and the note that says its

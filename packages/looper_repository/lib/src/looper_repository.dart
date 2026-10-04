@@ -90,9 +90,7 @@ class _PendingRecordStart {
   final ({int countInBars, bool soundStart}) prior;
   final int expectedRevision;
   final bool startup;
-  final completed = Completer<EngineResult>();
-  Timer? timer;
-  int polls = 0;
+  final observation = _ReceiptObservation();
 }
 
 class _PendingClickMode {
@@ -112,9 +110,7 @@ class _PendingClickMode {
   final ClickMode prior;
   final int expectedRevision;
   final bool startup;
-  final completed = Completer<EngineResult>();
-  Timer? timer;
-  int polls = 0;
+  final observation = _ReceiptObservation();
 }
 
 class _PendingTiming {
@@ -134,9 +130,7 @@ class _PendingTiming {
   final int expectedRevision;
   final EngineSnapshot prior;
   final bool startup;
-  final completed = Completer<EngineResult>();
-  Timer? timer;
-  int polls = 0;
+  final observation = _ReceiptObservation();
 }
 
 class _LengthIntent {
@@ -166,9 +160,7 @@ class _PendingLengthSettings {
   final List<int> priorBars;
   final LooperMode priorMode;
   final bool startup;
-  final completed = Completer<EngineResult>();
-  Timer? timer;
-  int polls = 0;
+  final observation = _ReceiptObservation();
 }
 
 /// Builds the production [AudioEngine] backed by the native segno engine.
@@ -285,6 +277,14 @@ class LooperRepository {
   StreamSubscription<void>? _tickerSub;
   Timer? _pollTimer;
   LooperState? _last;
+
+  // Native session import stages PCM/history while tracks remain EMPTY. Keep
+  // the cleared public vector until callback commit or acknowledged cleanup.
+  List<Track>? _importTracks;
+  int? _applyingSessionRevision;
+
+  bool get _sessionAudioReserved =>
+      _applyingSessionRevision != null || _importTracks != null;
   EngineConfig? _lastEngineConfig;
 
   /// Whether the user intends the engine to be running (set on a successful
@@ -443,6 +443,16 @@ class LooperRepository {
   _PendingClickVolume? _pendingClickVolume;
   EngineResult _lastClickVolumeResult = EngineResult.ok;
   bool _clickRecoveryStartBlocked = false;
+  bool _sessionBootStartBlocked = false;
+
+  /// Whether a loaded rig still owes its complete boot settings image.
+  bool get sessionBootRecoveryRequired => _sessionBootStartBlocked;
+
+  /// Prevents restart while session boot persistence or recovery is pending.
+  void blockStartForSessionBoot() => _sessionBootStartBlocked = true;
+
+  /// Releases the session boot fence only after its image and bindings commit.
+  void clearSessionBootStartBlock() => _sessionBootStartBlocked = false;
 
   /// Whether Click uncertainty prevents another engine start.
   bool get clickVolumeRecoveryRequired => _clickRecoveryStartBlocked;
@@ -813,7 +823,13 @@ class LooperRepository {
     final payload = _mixPayload(next, replay: replay);
     final result = _engine.setMix(payload);
     if (!result.isOk) return _mixFailure(result);
-    _pendingMix = _PendingMix(next, payload.revision, startup: startup);
+    final pending = _PendingMix(next, payload.revision, startup: startup);
+    _pendingMix = pending;
+    _watchReceipt(
+      pending.observation,
+      settle: _settlePendingMix,
+      expire: () => _failMix(pending),
+    );
     _reproject();
     return _pendingMix == null ? _lastMixResult : EngineResult.ok;
   }
@@ -833,22 +849,38 @@ class LooperRepository {
       if (pending.startup) stopEngine();
       _mixFailure(result);
     }
-    pending.completed.complete(result);
+    pending.observation.complete(result);
     return true;
   }
 
-  void _cancelMix() {
+  /// Retires every pending settings receipt before replacing engine ownership.
+  /// Published capture images are reconciled before their old lifetime ends.
+  void _retireEngineLifetime() {
+    _cancelTiming();
+    _cancelClickMode();
+    _cancelRecordStart();
+    _cancelLengthSettings();
     _cancelClickVolume();
     _cancelOneShot();
+    _cancelMix();
     _mixGeneration++;
     if (_pendingImages.isNotEmpty) _settleImages(_engine.snapshot());
+    _pendingImages.clear();
+  }
+
+  void _cancelMix() {
     final pending = _pendingMix;
     _pendingMix = null;
-    _pendingImages.clear();
     if (pending != null) {
       _lastMixResult = EngineResult.notReady;
-      pending.completed.complete(EngineResult.notReady);
+      pending.observation.complete(EngineResult.notReady);
     }
+  }
+
+  void _failMix(_PendingMix pending) {
+    if (!identical(_pendingMix, pending)) return;
+    stopEngine();
+    _mixFailure(EngineResult.notReady);
   }
 
   /// Waits for callback publication independently of UI polling. Only confirmed
@@ -860,17 +892,10 @@ class LooperRepository {
   }) async {
     final pending = _pendingMix;
     if (pending == null) return _lastMixResult;
-    for (var i = 0; i < attempts; i++) {
-      if (pending.completed.isCompleted) return pending.completed.future;
-      if (_settlePendingMix()) _reproject();
-      if (pending.completed.isCompleted) return pending.completed.future;
-      await Future<void>.delayed(pollInterval);
-    }
-    if (pending.completed.isCompleted) return pending.completed.future;
-    stopEngine();
-    _mixFailure(EngineResult.notReady);
-    _reproject();
-    return EngineResult.notReady;
+    return pending.observation.wait(
+      pollInterval: pollInterval,
+      attempts: attempts,
+    );
   }
 
   /// Whether every admitted structural recipe is callback-confirmed.
@@ -1190,10 +1215,10 @@ class LooperRepository {
   void _cancelTiming() {
     final pending = _pendingTiming;
     _pendingTiming = null;
-    pending?.timer?.cancel();
+
     if (pending != null) {
       _lastTimingResult = EngineResult.notReady;
-      pending.completed.complete(EngineResult.notReady);
+      pending.observation.complete(EngineResult.notReady);
     }
   }
 
@@ -1247,18 +1272,11 @@ class LooperRepository {
       startup: startup,
     );
     _pendingTiming = pending;
-    pending.timer = Timer.periodic(const Duration(milliseconds: 10), (timer) {
-      if (!identical(_pendingTiming, pending)) {
-        timer.cancel();
-        return;
-      }
-      if (_settleTiming()) {
-        _reproject();
-      } else if (++pending.polls >= 50) {
-        _failTiming(pending, EngineResult.notReady);
-        _reproject();
-      }
-    });
+    _watchReceipt(
+      pending.observation,
+      settle: _settleTiming,
+      expire: () => _failTiming(pending, EngineResult.notReady),
+    );
     if (!startup) _reproject();
     return _pendingTiming == null ? _lastTimingResult : EngineResult.ok;
   }
@@ -1288,10 +1306,10 @@ class LooperRepository {
     final result = EngineResult.fromCode(snapshot.recordTimingResult);
     if (result.isOk && _timingMatches(snapshot, pending.intent)) {
       _pendingTiming = null;
-      pending.timer?.cancel();
+
       _acceptTiming(pending.intent, pending.restart);
       _lastTimingResult = EngineResult.ok;
-      pending.completed.complete(EngineResult.ok);
+      pending.observation.complete(EngineResult.ok);
     } else if (!result.isOk &&
         _timingMatches(
           snapshot,
@@ -1315,9 +1333,9 @@ class LooperRepository {
         ) &&
         !pending.startup) {
       _pendingTiming = null;
-      pending.timer?.cancel();
+
       _lastTimingResult = result;
-      pending.completed.complete(result);
+      pending.observation.complete(result);
       _reportTiming(result);
     } else {
       _failTiming(pending, EngineResult.invalid);
@@ -1328,11 +1346,11 @@ class LooperRepository {
   void _failTiming(_PendingTiming pending, EngineResult result) {
     if (!identical(_pendingTiming, pending)) return;
     _pendingTiming = null;
-    pending.timer?.cancel();
+
     _timingRecovery = pending.recovery;
     _timingRecoveryRestart = pending.recoveryRestart;
     _lastTimingResult = result;
-    pending.completed.complete(result);
+    pending.observation.complete(result);
     // A take is never stopped to clean up future settings. Retry can repair
     // after capture exits; a callback that resumes will refuse this vector.
     if (!recordTimingCaptureLocked) stopEngine();
@@ -1346,17 +1364,10 @@ class LooperRepository {
   }) async {
     final pending = _pendingTiming;
     if (pending == null) return _lastTimingResult;
-    for (var attempt = 0; attempt < attempts; attempt++) {
-      if (pending.completed.isCompleted) return pending.completed.future;
-      if (_settleTiming()) _reproject();
-      if (pending.completed.isCompleted) return pending.completed.future;
-      await Future<void>.delayed(pollInterval);
-    }
-    if (!pending.completed.isCompleted) {
-      _failTiming(pending, EngineResult.notReady);
-      _reproject();
-    }
-    return pending.completed.future;
+    return pending.observation.wait(
+      pollInterval: pollInterval,
+      attempts: attempts,
+    );
   }
 
   /// Explicit Retry repairs only the current lifetime's retained obligation.
@@ -1413,10 +1424,10 @@ class LooperRepository {
   void _cancelLengthSettings() {
     final pending = _pendingLengthSettings;
     _pendingLengthSettings = null;
-    pending?.timer?.cancel();
+
     if (pending != null) {
       _lastLengthResult = EngineResult.notReady;
-      pending.completed.complete(EngineResult.notReady);
+      pending.observation.complete(EngineResult.notReady);
     }
   }
 
@@ -1478,18 +1489,11 @@ class LooperRepository {
       startup: startup,
     );
     _pendingLengthSettings = pending;
-    pending.timer = Timer.periodic(const Duration(milliseconds: 10), (timer) {
-      if (!identical(_pendingLengthSettings, pending)) {
-        timer.cancel();
-        return;
-      }
-      if (_settlePendingLengthSettings()) {
-        _reproject();
-      } else if (++pending.polls >= 50) {
-        _failLength(pending, EngineResult.notReady);
-        _reproject();
-      }
-    });
+    _watchReceipt(
+      pending.observation,
+      settle: _settlePendingLengthSettings,
+      expire: () => _failLength(pending, EngineResult.notReady),
+    );
     if (!startup) _reproject();
     return _pendingLengthSettings == null ? _lastLengthResult : EngineResult.ok;
   }
@@ -1516,18 +1520,18 @@ class LooperRepository {
     );
     if (!capturing && matches(pending.bars, pending.intent.mode)) {
       _pendingLengthSettings = null;
-      pending.timer?.cancel();
+
       _acceptLength(pending.intent, pending.restart);
       _lastLengthResult = EngineResult.ok;
-      pending.completed.complete(EngineResult.ok);
+      pending.observation.complete(EngineResult.ok);
     } else if (matches(pending.priorBars, pending.priorMode) &&
         !pending.startup) {
       // A guarded callback left the old vector whole. Refuse without stopping
       // a healthy take or publishing new override membership/priority.
       _pendingLengthSettings = null;
-      pending.timer?.cancel();
+
       _lastLengthResult = EngineResult.invalid;
-      pending.completed.complete(EngineResult.invalid);
+      pending.observation.complete(EngineResult.invalid);
       _reportLengthSettingsFailure(EngineResult.invalid);
     } else {
       _failLength(pending, EngineResult.invalid);
@@ -1538,11 +1542,11 @@ class LooperRepository {
   void _failLength(_PendingLengthSettings pending, EngineResult result) {
     if (!identical(_pendingLengthSettings, pending)) return;
     _pendingLengthSettings = null;
-    pending.timer?.cancel();
+
     _lengthRecovery = pending.recovery;
     _lengthRecoveryRestart = pending.recoveryRestart;
     _lastLengthResult = result;
-    pending.completed.complete(result);
+    pending.observation.complete(result);
     stopEngine();
     _reportLengthSettingsFailure(result);
   }
@@ -1554,17 +1558,10 @@ class LooperRepository {
   }) async {
     final pending = _pendingLengthSettings;
     if (pending == null) return _lastLengthResult;
-    for (var attempt = 0; attempt < attempts; attempt++) {
-      if (pending.completed.isCompleted) return pending.completed.future;
-      if (_settlePendingLengthSettings()) _reproject();
-      if (pending.completed.isCompleted) return pending.completed.future;
-      await Future<void>.delayed(pollInterval);
-    }
-    if (!pending.completed.isCompleted) {
-      _failLength(pending, EngineResult.notReady);
-      _reproject();
-    }
-    return pending.completed.future;
+    return pending.observation.wait(
+      pollInterval: pollInterval,
+      attempts: attempts,
+    );
   }
 
   /// Explicit recovery adopts only the current repository obligation.
@@ -2107,14 +2104,36 @@ class LooperRepository {
     _reproject();
   }
 
+  void _watchReceipt(
+    _ReceiptObservation observation, {
+    required bool Function() settle,
+    required void Function() expire,
+  }) {
+    observation.start(
+      settle: settle,
+      expire: expire,
+      publish: () => _reproject(forcePublication: true),
+    );
+  }
+
+  bool _observeSettingsReceipts() {
+    var changed = false;
+    for (final observation in [
+      _pendingOneShot?.observation,
+      _pendingClickVolume?.observation,
+      _pendingClickMode?.observation,
+      _pendingRecordStart?.observation,
+      _pendingTiming?.observation,
+      _pendingLengthSettings?.observation,
+      _pendingMix?.observation,
+    ]) {
+      if (observation?.check() ?? false) changed = true;
+    }
+    return changed;
+  }
+
   void _poll() {
-    final onceSettled = _settlePendingOneShot();
-    final clickSettled = _settlePendingClickVolume();
-    final modeSettled = _settleClickMode();
-    final startSettled = _settleRecordStart();
-    final timingSettled = _settleTiming();
-    final lengthSettled = _settlePendingLengthSettings();
-    final mixSettled = _settlePendingMix();
+    final receiptsSettled = _observeSettingsReceipts();
     _drainHistoryFx();
     final snapshot = _engine.snapshot();
     _settleImages(snapshot);
@@ -2129,17 +2148,13 @@ class LooperRepository {
       _recordOffset = snapshot.recordOffsetFrames;
     }
     _settlePendingClearUndos();
+    // Remember retired restore points even when no Undo is waiting. A later
+    // individual clear must not re-form an obsolete clear-all group.
+    _intactClearAllGroup();
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (next == _last &&
-        !onceSettled &&
-        !clickSettled &&
-        !modeSettled &&
-        !startSettled &&
-        !lengthSettled &&
-        !timingSettled &&
-        !mixSettled) {
+    if (next == _last && !receiptsSettled) {
       return;
     }
     _last = next;
@@ -2156,27 +2171,13 @@ class LooperRepository {
   /// param the UI drives — reflects on the next frame rather than waiting for
   /// the next poll tick (which would make a dragged knob feel a tick behind).
   void _reproject({bool forcePublication = false}) {
-    final onceSettled = _settlePendingOneShot();
-    final clickSettled = _settlePendingClickVolume();
-    final modeSettled = _settleClickMode();
-    final startSettled = _settleRecordStart();
-    final timingSettled = _settleTiming();
-    final lengthSettled = _settlePendingLengthSettings();
-    final mixSettled = _settlePendingMix();
+    final receiptsSettled = _observeSettingsReceipts();
     final snapshot = _engine.snapshot();
     _settleImages(snapshot);
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
-    if (!forcePublication &&
-        next == _last &&
-        !onceSettled &&
-        !clickSettled &&
-        !modeSettled &&
-        !startSettled &&
-        !lengthSettled &&
-        !timingSettled &&
-        !mixSettled) {
+    if (!forcePublication && next == _last && !receiptsSettled) {
       return;
     }
     _last = next;
@@ -2235,6 +2236,7 @@ class LooperRepository {
   /// unopenable device cannot thrash the engine. (Engine calls are synchronous,
   /// so no re-entrancy guard is needed.)
   void _attemptReconnect() {
+    if (_applyingSessionRevision != null) return;
     final config = _lastEngineConfig;
     if (config == null || !_isPinned) {
       _stopReconnectPolling();
@@ -2260,12 +2262,8 @@ class LooperRepository {
     // silently dropping the live rig on every reconnect. The new configure
     // discards queued commands, so cancel their waiter before replaying the
     // confirmed settings without disarming reconnect supervision.
-    _cancelTiming();
-    _cancelClickMode();
-    _cancelRecordStart();
-    _cancelLengthSettings();
     _engine.stop();
-    _cancelMix();
+    _retireEngineLifetime();
     if (startEngine(config).isOk) {
       _stopReconnectPolling();
     }
@@ -2335,61 +2333,64 @@ class LooperRepository {
         division: _quantizeDiv,
       ),
     ),
-    tracks: [
-      for (var i = 0; i < s.tracks.length; i++)
-        Track(
-          channel: i,
-          state: s.tracks[i].state,
-          // An untouched live fader is unity. Native volume already includes
-          // source balance, which must never become a second saved level.
-          volume: _trackVolume[i] ?? 1,
-          muted: s.tracks[i].muted,
-          pan: _trackPan[i] ?? 0,
-          solo: s.tracks[i].solo,
-          peakL: s.tracks[i].peakL,
-          peakR: s.tracks[i].peakR,
-          lengthFrames: s.tracks[i].lengthFrames,
-          peak: s.tracks[i].peak,
-          undoDepth: s.tracks[i].undoDepth,
-          clearRestore: s.tracks[i].clearRestore,
-          redoDepth: s.tracks[i].redoDepth,
-          layerInFlight: s.tracks[i].layerInFlight,
-          pending: s.tracks[i].pending,
-          pendingTrigger: ArmTrigger.fromCode(s.tracks[i].pendingTrigger),
-          positionFrames: s.tracks[i].positionFrames,
-          lengthPresetBars: _effectiveLengthPreset(i),
-          lengthPresetOverride: _trackLengthPreset[i],
-          recordTimingOverride: _trackRecordTiming[i],
-          overdubDecayOverride: _trackOverdubDecay[i],
-          oneShot: _trackOneShot[i] ?? _defaultOneShot,
-          oneShotOverride: _trackOneShot[i],
-          multiple: s.tracks[i].multiple,
-          inputMask: s.tracks[i].inputMask,
-          outputMask: s.tracks[i].outputMask,
-          lanes: [
-            for (var l = 0; l < s.tracks[i].lanes.length; l++)
-              Lane(
-                inputChannel: s.tracks[i].lanes[l].inputChannel,
-                outputMask: s.tracks[i].lanes[l].outputMask,
-                volume: _laneVolume[(i, l)] ?? 1,
-                pan: s.tracks[i].lanes[l].pan,
-                imagePan: _laneBasePan[(i, l)] ?? 0,
-                balance: _laneBalance[(i, l)] ?? 1,
-                muted: s.tracks[i].lanes[l].muted,
-                lengthFrames: s.tracks[i].lanes[l].lengthFrames,
-                effects: _laneEffects[(i, l)] ?? const [],
-                chainEnabled: laneChainEnabled(i, l),
-                inheritedFrom: _laneChainMeta[(i, l)] ?? const [],
-                inputChainDiverges: laneChainDivergesFromInput(i, l),
-                // From the last refresh, never a fresh engine read — see
-                // [_laneCacheStates] for why _project must stay cheap.
-                cacheState: _laneCacheStates[(i, l)],
-              ),
-          ],
-          effects: _trackEffects[i] ?? const [],
-          chainEnabled: trackChainEnabled(i),
-        ),
-    ],
+    tracks:
+        _importTracks ??
+        [
+          for (var i = 0; i < s.tracks.length; i++)
+            Track(
+              channel: i,
+              state: s.tracks[i].state,
+              // An untouched live fader is unity. Native volume already
+              // includes
+              // source balance, which must never become a second saved level.
+              volume: _trackVolume[i] ?? 1,
+              muted: s.tracks[i].muted,
+              pan: _trackPan[i] ?? 0,
+              solo: s.tracks[i].solo,
+              peakL: s.tracks[i].peakL,
+              peakR: s.tracks[i].peakR,
+              lengthFrames: s.tracks[i].lengthFrames,
+              peak: s.tracks[i].peak,
+              undoDepth: s.tracks[i].undoDepth,
+              clearRestore: s.tracks[i].clearRestore,
+              redoDepth: s.tracks[i].redoDepth,
+              layerInFlight: s.tracks[i].layerInFlight,
+              pending: s.tracks[i].pending,
+              pendingTrigger: ArmTrigger.fromCode(s.tracks[i].pendingTrigger),
+              positionFrames: s.tracks[i].positionFrames,
+              lengthPresetBars: _effectiveLengthPreset(i),
+              lengthPresetOverride: _trackLengthPreset[i],
+              recordTimingOverride: _trackRecordTiming[i],
+              overdubDecayOverride: _trackOverdubDecay[i],
+              oneShot: _trackOneShot[i] ?? _defaultOneShot,
+              oneShotOverride: _trackOneShot[i],
+              multiple: s.tracks[i].multiple,
+              inputMask: s.tracks[i].inputMask,
+              outputMask: s.tracks[i].outputMask,
+              lanes: [
+                for (var l = 0; l < s.tracks[i].lanes.length; l++)
+                  Lane(
+                    inputChannel: s.tracks[i].lanes[l].inputChannel,
+                    outputMask: s.tracks[i].lanes[l].outputMask,
+                    volume: _laneVolume[(i, l)] ?? 1,
+                    pan: s.tracks[i].lanes[l].pan,
+                    imagePan: _laneBasePan[(i, l)] ?? 0,
+                    balance: _laneBalance[(i, l)] ?? 1,
+                    muted: s.tracks[i].lanes[l].muted,
+                    lengthFrames: s.tracks[i].lanes[l].lengthFrames,
+                    effects: _laneEffects[(i, l)] ?? const [],
+                    chainEnabled: laneChainEnabled(i, l),
+                    inheritedFrom: _laneChainMeta[(i, l)] ?? const [],
+                    inputChainDiverges: laneChainDivergesFromInput(i, l),
+                    // From the last refresh, never a fresh engine read — see
+                    // [_laneCacheStates] for why _project must stay cheap.
+                    cacheState: _laneCacheStates[(i, l)],
+                  ),
+              ],
+              effects: _trackEffects[i] ?? const [],
+              chainEnabled: trackChainEnabled(i),
+            ),
+        ],
     outputChains: allOutputChains(),
     allTracksChain: allTracksChainEnvelope(),
     inputSetup: _inputSetup,
@@ -2463,7 +2464,9 @@ class LooperRepository {
 
   /// Opens the audio device and starts processing.
   EngineResult startEngine(EngineConfig config) {
-    if (_mixRecoveryStartBlocked ||
+    if (_applyingSessionRevision != null ||
+        _sessionBootStartBlocked ||
+        _mixRecoveryStartBlocked ||
         _clickRecoveryStartBlocked ||
         oneShotRecoveryRequired ||
         lengthRecoveryRequired ||
@@ -2472,16 +2475,11 @@ class LooperRepository {
         recordStartRecoveryRequired) {
       return EngineResult.notReady;
     }
-    _cancelClickVolume();
-    _cancelOneShot();
-    _cancelTiming();
-    _cancelClickMode();
-    _cancelRecordStart();
-    _cancelLengthSettings();
+    _retireEngineLifetime();
     final replayedPriorEngine = _hasOpenedEngine;
-    _mixGeneration++;
     final result = _engine.start(engineConfigToEngine(config));
     if (result.isOk) {
+      if (_audioCleared(_engine.snapshot())) _importTracks = null;
       final foldedHistory = _foldHistoryFxAtQuiescence();
       _fxSlots.clear();
       _fxPending.clear();
@@ -2511,6 +2509,7 @@ class LooperRepository {
         stopEngine();
         return timingResult;
       }
+      _watchClickVolume(_pendingClickVolume!);
       _engine
         ..setRecDub(enabled: _recDub)
         ..setDefaultMultiple(multiple: _defaultMultiple)
@@ -2878,13 +2877,9 @@ class LooperRepository {
   /// Closes the audio device. A deliberate stop also cancels any in-flight
   /// reconnect supervision so the engine is not reopened behind the user.
   EngineResult stopEngine() {
-    _cancelTiming();
-    _cancelClickMode();
-    _cancelRecordStart();
-    _cancelLengthSettings();
     // Quiesce the callback before reconciling the final published take image.
     final result = _engine.stop();
-    _cancelMix();
+    _retireEngineLifetime();
     final folded = _foldHistoryFxAtQuiescence();
     if (_intendRunning) {
       final snapshot = _engine.snapshot();
@@ -2926,6 +2921,9 @@ class LooperRepository {
   /// copy is by value, so editing the input chain afterwards never alters the
   /// take (D3).
   EngineResult record({int channel = 0}) {
+    if (_sessionAudioReserved) {
+      return EngineResult.notReady;
+    }
     final snapshot = _engine.snapshot();
     final state = channel >= 0 && channel < snapshot.tracks.length
         ? snapshot.tracks[channel].state
@@ -3207,7 +3205,9 @@ class LooperRepository {
 
   /// Resumes playback of track [channel].
   EngineResult play({int channel = 0}) =>
-      !recordStartSettingsSettled || recordStartRecoveryRequired
+      _sessionAudioReserved ||
+          !recordStartSettingsSettled ||
+          recordStartRecoveryRequired
       ? EngineResult.notReady
       : _engine.play(channel: channel);
 
@@ -3225,6 +3225,7 @@ class LooperRepository {
   /// This is the USER's clear. [applySession] uses [_clearDestructive]
   /// instead — loading a session must never be undoable.
   EngineResult clear({int channel = 0}) {
+    if (_sessionAudioReserved) return EngineResult.notReady;
     final result = _clearTrack(channel);
     if (result.isOk) {
       // A refused native clear leaves the prior restore/group ownership.
@@ -3275,6 +3276,7 @@ class LooperRepository {
   /// rule), and the group with it — the per-track history then answers as
   /// usual, and nothing newer is overwritten.
   EngineResult clearAll(Iterable<int> channels) {
+    if (_sessionAudioReserved) return EngineResult.notReady;
     _pendingClearAllUndo = const {};
     final group = <int>{};
     final pending = <int>{};
@@ -3316,12 +3318,6 @@ class LooperRepository {
 
   /// A grouped undo waits for every frozen point before changing any member.
   Set<int> _pendingClearAllUndo = const {};
-
-  /// Whether the next [undo] would restore a whole cleared group.
-  bool get undoRestoresClearAll {
-    _settlePendingClearUndos();
-    return _intactClearAllGroup().isNotEmpty;
-  }
 
   /// Tracks whose undo waits for the clear's frozen restore point to land:
   /// tapped at a frozen clear, restored on the first poll after the engine
@@ -3398,6 +3394,7 @@ class LooperRepository {
   /// operation; otherwise every track that still holds a clear restore point
   /// is restored on its own (a group the engine partly retired).
   EngineResult undoClearAll() {
+    if (_sessionAudioReserved) return EngineResult.notReady;
     _settlePendingClearUndos();
     final group = _intactClearAllGroup();
     if (group.isNotEmpty) return undo(channel: group.first);
@@ -3501,6 +3498,9 @@ class LooperRepository {
   /// describes the next tap, and the snapshot it derives from does not flip
   /// until the audio thread applies the restore.
   EngineResult undo({int channel = 0}) {
+    if (_sessionAudioReserved) {
+      return EngineResult.notReady;
+    }
     _settlePendingClearUndos();
     // A grouped clear comes back as one operation, whichever member is asked.
     final group = _intactClearAllGroup();
@@ -3592,6 +3592,9 @@ class LooperRepository {
   /// A redo that resurrects an undone-to-empty track comes back unmuted
   /// engine-side; the remembered mutes are forgotten to match.
   EngineResult redo({int channel = 0}) {
+    if (_sessionAudioReserved) {
+      return EngineResult.notReady;
+    }
     // Cancel a grouped undo before settling it: every member is still clear.
     if (_pendingClearAllUndo.contains(channel)) {
       _pendingClearAllUndo.forEach(_cancelStagedClearUndoFx);
@@ -3755,10 +3758,37 @@ class LooperRepository {
       counts: mix.laneCounts,
     );
     final revision = ++_sessionRevision;
-    _cancelTiming();
-    _cancelClickMode();
-    _cancelRecordStart();
-    _cancelLengthSettings();
+    _applyingSessionRevision = revision;
+    try {
+      await _applySession(
+        rig,
+        restoredMix,
+        revision: revision,
+        clearPollInterval: clearPollInterval,
+        clearPollAttempts: clearPollAttempts,
+      );
+    } finally {
+      if (_applyingSessionRevision == revision) _applyingSessionRevision = null;
+    }
+  }
+
+  Future<void> _applySession(
+    SessionRig rig,
+    _MixIntent restoredMix, {
+    required int revision,
+    required Duration clearPollInterval,
+    required int clearPollAttempts,
+  }) async {
+    _retireEngineLifetime();
+    final generation = _mixGeneration;
+    void requireCurrent() {
+      if (revision != _sessionRevision ||
+          generation != _mixGeneration ||
+          _controller.isClosed) {
+        throw StateError('session replacement was superseded');
+      }
+    }
+
     _lengthRecovery = null;
     _lengthRecoveryRestart = null;
     _lastLengthResult = EngineResult.ok;
@@ -3769,7 +3799,6 @@ class LooperRepository {
     _recordStartRecovery = null;
     _lastRecordStartResult = EngineResult.ok;
     _lastClickModeResult = EngineResult.ok;
-    _cancelMix();
     _oneShotRecoveryIntent = null;
     _oneShotRecoveryRestart = null;
     _lastOneShotResult = EngineResult.ok;
@@ -3784,19 +3813,19 @@ class LooperRepository {
         attempts: clearPollAttempts,
       ),
     );
+    requireCurrent();
     final priorLaneKeys = <(int, int)>{
       ..._laneEffects.keys,
       ..._laneChainEnabled.keys,
     };
-    if (revision != _sessionRevision) {
-      throw StateError('session replacement was superseded');
-    }
     final trackCount = _engine.snapshot().tracks.length;
     for (var channel = 0; channel < trackCount; channel++) {
       // Destructive on purpose: a session load replaces the rig wholesale, so
       // the tracks it wipes must not sit there offering an undo back to the
       // previous session's takes.
-      _clearDestructive(channel: channel);
+      if (!_clearDestructive(channel: channel).isOk) {
+        throw StateError('engine refused session clear');
+      }
     }
     // The session's per-lane config replaces the remembered one wholesale:
     // purge it all (not just the mutes [clear] forgot) so the restart replay
@@ -3814,7 +3843,8 @@ class LooperRepository {
     // flag resets to the enabled default — pushed to the engine too (the
     // setter is a direct atomic publish), or a chain the loaded session
     // defines on a previously chain-disabled lane would land silently muted.
-    // The rig's own flags are re-applied from its envelopes at the end of this
+    // The rig's own flags are re-applied from its envelopes at the end of
+    // this
     // method; the provenance markers drop with the takes they described (and
     // likewise come back from the rig).
     for (final key in _laneChainEnabled.keys.toList()) {
@@ -3842,19 +3872,24 @@ class LooperRepository {
     if (!await _awaitCleared(clearPollInterval, clearPollAttempts)) {
       throw StateError('engine did not clear before applying the session');
     }
-    if (revision != _sessionRevision || _controller.isClosed) {
-      throw StateError('session replacement was superseded');
-    }
+    requireCurrent();
 
-    // Countermand the live engine's leftover lane count/routing. `clear` above
+    _importTracks = null;
+
+    // Countermand the live engine's leftover lane count/routing. `clear`
+    // above
     // resets a track's audio/state/mutes but NOT its lane_count or per-lane
     // input/output, and the cache purge only fixes the restart replay — so a
     // track this session leaves empty would still RECORD the prior session's
-    // lane count/inputs (the record path reads the cache, but the engine records
+    // lane count/inputs (the record path reads the cache, but the engine
+    // records
     // at its own stale lane_count). Reset every track to the fresh configure
-    // defaults (lane_count 1; lane 0 records input 0 to the first output pair,
-    // matching le_lane_reset) so the engine agrees with the purged caches; the
-    // rig restore below re-grows and re-routes the tracks this session defines.
+    // defaults (lane_count 1; lane 0 records input 0 to the first output
+    // pair,
+    // matching le_lane_reset) so the engine agrees with the purged caches;
+    // the
+    // rig restore below re-grows and re-routes the tracks this session
+    // defines.
     // Imports grow settled EMPTY tracks; the final canonical mix publishes
     // exact counts after import, without a queued reset racing that growth.
     if (_intendRunning) {
@@ -3895,6 +3930,7 @@ class LooperRepository {
       ),
     );
     _requireSessionSetting(await settleRecordTimingSettings());
+    requireCurrent();
     _requireSessionSetting(setOverdubDecay(rig.overdubDecay));
 
     _requireSessionSetting(setDefaultMultiple(multiple: rig.defaultMultiple));
@@ -3907,17 +3943,21 @@ class LooperRepository {
       ),
     );
     _requireSessionSetting(await settleRecordStartSettings());
+    requireCurrent();
     _requireSessionSetting(setClickMode(rig.clickMode));
     _requireSessionSetting(await settleClickMode());
+    requireCurrent();
     _requireSessionSetting(setClickOutput(rig.clickMask));
     _requireSessionSetting(setClickVolume(rig.clickVolume));
     _requireSessionSetting(await settleClickVolume());
+    requireCurrent();
 
     // Session-level mode + crown (B5c), applied here — before any content is
     // imported below — so the mode lands on an empty rig with nothing to
     // measure or stop (see [LooperModeControl]'s class doc for the content
     // rules a switch over takes would apply). The mode is always
-    // pushed (like [setLooperMode]'s own "no unset sentinel" posture — `multi`
+    // pushed (like [setLooperMode]'s own "no unset sentinel" posture —
+    // `multi`
     // IS the default), mirroring how the tempo grid's SETTINGS push
     // unconditionally elsewhere in this method. The crown is NOT gated by
     // content (D18) so its ordering here is only for symmetry; it is pushed
@@ -3941,9 +3981,7 @@ class LooperRepository {
         attempts: clearPollAttempts,
       ),
     );
-    if (revision != _sessionRevision || _controller.isClosed) {
-      throw StateError('session replacement was superseded');
-    }
+    requireCurrent();
     // The session's own defaults (slice 2b), before the per-track overrides
     // land with the tracks below: a track whose override is null follows
     // these, so restoring the overrides without them would leave that track
@@ -3956,86 +3994,23 @@ class LooperRepository {
       crownPrimary(channel: rig.primaryTrack);
     }
 
-    for (final track in rig.tracks) {
-      // A clear posted just above may not be acked yet — the engine rejects an
-      // import that races a pending state flip and expects a trivial retry. The
-      // ack lands within a buffer or two, so cap the retry low (NOT the full
-      // clear budget, which — times track count — could stall a load for
-      // seconds on a genuinely bad stem before surfacing the error). Only the
-      // first (lane 0) import can race the clear ack; once it lands the track
-      // stays EMPTY until commit, so sibling lanes import without retry.
-      final importRetries = clearPollAttempts < _maxImportAckRetries
-          ? clearPollAttempts
-          : _maxImportAckRetries;
-      // Stage every layer of every lane, then finalize to rebuild the shared
-      // undo/redo stacks. Only the very first import into the track can race
-      // the just-posted clear's ack, so retry that one; the rest follow while
-      // the track stays EMPTY.
-      var first = true;
-      for (final lane in track.lanes) {
-        for (var ordinal = 0; ordinal < lane.layers.length; ordinal++) {
-          final pcm = lane.layers[ordinal];
-          var result = _engine.importLayer(
-            track.channel,
-            lane.lane,
-            ordinal,
-            pcm,
-          );
-          if (first) {
-            for (
-              var attempt = 0;
-              !result.isOk && attempt < importRetries;
-              attempt++
-            ) {
-              await Future<void>.delayed(clearPollInterval);
-              result = _engine.importLayer(
-                track.channel,
-                lane.lane,
-                ordinal,
-                pcm,
-              );
-            }
-            first = false;
-          }
-          if (!result.isOk) {
-            throw StateError(
-              'failed to import track ${track.channel} lane ${lane.lane} '
-              'layer $ordinal: ${result.name}',
-            );
-          }
-        }
-      }
-      // undo/redo depths are track-wide (shared across lanes) — take lane 0's.
-      final primary = track.lanes.first;
-      final finalized = _engine.finalizeLayers(
-        track.channel,
-        primary.undoCount,
-        primary.redoCount,
-      );
-      if (!finalized.isOk) {
-        throw StateError(
-          'failed to finalize track ${track.channel}: ${finalized.name}',
-        );
-      }
-    }
-    // An empty session establishes no master: the engine stays free to define
-    // a fresh loop length.
-    if (rig.tracks.isNotEmpty && rig.baseLengthFrames > 0) {
-      final committed = _engine.commitSession(
-        rig.baseLengthFrames,
-        loopBars: rig.loopBars,
-      );
-      if (!committed.isOk) {
-        throw StateError('failed to start the session: ${committed.name}');
-      }
-    }
+    await _importSessionAudio(
+      rig,
+      revision: revision,
+      generation: generation,
+      interval: clearPollInterval,
+      attempts: clearPollAttempts,
+    );
+    requireCurrent();
 
     // Restore per-lane routing / mix through the cached setters so the caches
     // stay truthful (and a restart replays them). Lane count first — so an
     // added lane is activated — then per-lane input / output / volume / mute.
     for (final track in rig.tracks) {
-      // Activate up to the highest imported lane index — not the lane *count* —
-      // so a non-contiguous set (a middle lane dropped on capture/decode) does
+      // Activate up to the highest imported lane index — not the lane *count*
+      // —
+      // so a non-contiguous set (a middle lane dropped on capture/decode)
+      // does
       // not deactivate the top lane the imports just filled.
       final laneCount =
           track.lanes.map((l) => l.lane).reduce((a, b) => a > b ? a : b) + 1;
@@ -4047,7 +4022,11 @@ class LooperRepository {
         restoredMix.balances[(track.channel, lane.lane)] = lane.balance;
         restoredMix.images[(track.channel, lane.lane)] = lane.pan;
         restoredMix.levels[(track.channel, lane.lane)] = lane.volume;
-        setLaneMute(muted: lane.muted, channel: track.channel, lane: lane.lane);
+        setLaneMute(
+          muted: lane.muted,
+          channel: track.channel,
+          lane: lane.lane,
+        );
       }
     }
 
@@ -4058,9 +4037,11 @@ class LooperRepository {
       ),
     );
     _requireSessionSetting(await settleOneShot());
+    requireCurrent();
 
     // Settings have one content-independent owner. Empty tracks and custom
-    // values equal to defaults restore through the same maps as recorded ones.
+    // values equal to defaults restore through the same maps as recorded
+    // ones.
     // Before device startup there is no native track array yet, but the eight
     // product tracks still own settings that must be replayed on first start.
     final settingsTrackCount = _intendRunning ? trackCount : 8;
@@ -4146,14 +4127,16 @@ class LooperRepository {
         allowUnavailable: true,
       ),
     );
-    // Monitors: fully reset every remembered monitor the rig does not define —
+    // Monitors: fully reset every remembered monitor the rig does not define
+    // —
     // not just its chain but its enable / routing / mix too, or an input
     // enabled under session A would keep monitoring under session B (the F2
     // leftover class). Reset to the disabled defaults, then apply the rig's.
     final definedMonitors = {for (final m in rig.monitors) m.input};
     // Snapshot the configured inputs before the reset loop mutates the maps.
     // Resetting a monitor already at the disabled default is a no-op, so the
-    // default-omitting `allMonitors()` covers every input that needs clearing.
+    // default-omitting `allMonitors()` covers every input that needs
+    // clearing.
     final rememberedMonitors = allMonitors().keys.toList();
     for (final input in rememberedMonitors) {
       if (definedMonitors.contains(input)) continue;
@@ -4194,20 +4177,173 @@ class LooperRepository {
         attempts: clearPollAttempts,
       ),
     );
+    requireCurrent();
     _requireSessionSetting(
       await settleFxRecipes(
         pollInterval: clearPollInterval,
         attempts: clearPollAttempts,
       ),
     );
-    if (revision != _sessionRevision) {
-      throw StateError('session replacement was superseded');
-    }
+    requireCurrent();
 
     // Last, after every import/commit that could throw: [rigReplaced]'s
     // contract is "a NEW rig is on the engine", not "a load was attempted".
     if (!_rigReplaced.isClosed) _rigReplaced.add(null);
   }
+
+  Future<void> _importSessionAudio(
+    SessionRig rig, {
+    required int revision,
+    required int generation,
+    required Duration interval,
+    required int attempts,
+  }) async {
+    if (rig.tracks.isEmpty) return;
+    bool current() =>
+        revision == _sessionRevision &&
+        generation == _mixGeneration &&
+        !_controller.isClosed;
+    void requireCurrent() {
+      if (!current()) throw StateError('session import was superseded');
+    }
+
+    requireCurrent();
+    _importTracks = state.tracks;
+    try {
+      for (final track in rig.tracks) {
+        requireCurrent();
+        // A clear posted just above may not be acked yet — the engine rejects
+        // an
+        // import that races a pending state flip and expects a trivial retry.
+        // The
+        // ack lands within a buffer or two, so cap the retry low (NOT the full
+        // clear budget, which — times track count — could stall a load for
+        // seconds on a genuinely bad stem before surfacing the error). Only the
+        // first (lane 0) import can race the clear ack; once it lands the track
+        // stays EMPTY until commit, so sibling lanes import without retry.
+        final importRetries = attempts < _maxImportAckRetries
+            ? attempts
+            : _maxImportAckRetries;
+        // Stage every layer of every lane, then finalize to rebuild the shared
+        // undo/redo stacks. Only the very first import into the track can race
+        // the just-posted clear's ack, so retry that one; the rest follow while
+        // the track stays EMPTY.
+        var first = true;
+        for (final lane in track.lanes) {
+          for (var ordinal = 0; ordinal < lane.layers.length; ordinal++) {
+            final pcm = lane.layers[ordinal];
+            var result = _engine.importLayer(
+              track.channel,
+              lane.lane,
+              ordinal,
+              pcm,
+            );
+            if (first) {
+              for (
+                var attempt = 0;
+                !result.isOk && attempt < importRetries;
+                attempt++
+              ) {
+                await Future<void>.delayed(interval);
+                requireCurrent();
+                result = _engine.importLayer(
+                  track.channel,
+                  lane.lane,
+                  ordinal,
+                  pcm,
+                );
+              }
+              first = false;
+            }
+            if (!result.isOk) {
+              throw StateError(
+                'failed to import track ${track.channel} lane ${lane.lane} '
+                'layer $ordinal: ${result.name}',
+              );
+            }
+          }
+        }
+        // undo/redo depths are track-wide (shared across lanes) — take lane
+        // 0's.
+        final primary = track.lanes.first;
+        final finalized = _engine.finalizeLayers(
+          track.channel,
+          primary.undoCount,
+          primary.redoCount,
+        );
+        if (!finalized.isOk) {
+          throw StateError(
+            'failed to finalize track ${track.channel}: ${finalized.name}',
+          );
+        }
+      }
+      // An empty session establishes no master: the engine stays free to define
+      // a fresh loop length.
+      if (rig.tracks.isNotEmpty && rig.baseLengthFrames > 0) {
+        final committed = _engine.commitSession(
+          rig.baseLengthFrames,
+          loopBars: rig.loopBars,
+        );
+        if (!committed.isOk) {
+          throw StateError('failed to start the session: ${committed.name}');
+        }
+      }
+
+      for (var attempt = 0; attempt < attempts; attempt++) {
+        requireCurrent();
+        if (_engine.commandsSettled) {
+          final snapshot = _engine.snapshot();
+          final committed =
+              snapshot.masterLengthFrames == rig.baseLengthFrames &&
+              rig.tracks.every((track) {
+                if (track.channel >= snapshot.tracks.length) return false;
+                final actual = snapshot.tracks[track.channel];
+                final primary = track.lanes.first;
+                return actual.state == TrackState.playing &&
+                    actual.lengthFrames == primary.livePcm.length &&
+                    actual.undoDepth == primary.undoCount &&
+                    actual.redoDepth == primary.redoCount;
+              });
+          if (!committed) throw StateError('session import commit was refused');
+          _importTracks = null;
+          _reproject();
+          return;
+        }
+        await Future<void>.delayed(interval);
+      }
+      throw StateError('session import commit did not settle');
+    } catch (_) {
+      if (current()) {
+        var admitted = true;
+        for (final track in rig.tracks) {
+          if (!_clearDestructive(channel: track.channel).isOk) admitted = false;
+        }
+        final cleared = admitted && await _awaitCleared(interval, attempts);
+        if (current()) {
+          if (cleared) {
+            _importTracks = null;
+            _reproject();
+          } else {
+            // A queued commit must not apply after failure. Keep staged audio
+            // private even if the native stop retains its final raw snapshot.
+            stopEngine();
+          }
+        }
+      }
+      rethrow;
+    }
+  }
+
+  static bool _audioCleared(EngineSnapshot snapshot) =>
+      snapshot.masterLengthFrames == 0 &&
+      snapshot.tracks.every(
+        (track) =>
+            track.state == TrackState.empty &&
+            track.lengthFrames == 0 &&
+            track.undoDepth == 0 &&
+            track.redoDepth == 0 &&
+            track.lanes.every((lane) => lane.lengthFrames == 0),
+      );
 
   /// The default monitor output routing (the first stereo pair) an undefined
   /// monitor resets to on a session apply — matches [monitorOutput]'s default.
@@ -4227,10 +4363,7 @@ class LooperRepository {
         continue;
       }
       final snapshot = _engine.snapshot();
-      final cleared =
-          snapshot.masterLengthFrames == 0 &&
-          snapshot.tracks.every((t) => t.state == TrackState.empty);
-      if (cleared) return true;
+      if (_audioCleared(snapshot)) return true;
       await Future<void>.delayed(interval);
     }
     return false;
@@ -7096,10 +7229,10 @@ class LooperRepository {
   void _cancelRecordStart() {
     final pending = _pendingRecordStart;
     _pendingRecordStart = null;
-    pending?.timer?.cancel();
+
     if (pending != null) {
       _lastRecordStartResult = EngineResult.notReady;
-      pending.completed.complete(EngineResult.notReady);
+      pending.observation.complete(EngineResult.notReady);
     }
   }
 
@@ -7149,18 +7282,11 @@ class LooperRepository {
       startup: startup,
     );
     _pendingRecordStart = pending;
-    pending.timer = Timer.periodic(const Duration(milliseconds: 10), (timer) {
-      if (!identical(_pendingRecordStart, pending)) {
-        timer.cancel();
-        return;
-      }
-      if (_settleRecordStart()) {
-        _reproject(forcePublication: true);
-      } else if (++pending.polls >= 50) {
-        _failRecordStart(pending, EngineResult.notReady);
-        _reproject();
-      }
-    });
+    _watchReceipt(
+      pending.observation,
+      settle: _settleRecordStart,
+      expire: () => _failRecordStart(pending, EngineResult.notReady),
+    );
     if (!startup) _reproject();
     return _pendingRecordStart == null
         ? _lastRecordStartResult
@@ -7180,15 +7306,15 @@ class LooperRepository {
     final result = EngineResult.fromCode(snapshot.recordStartResult);
     if (result.isOk && actual == pending.settings) {
       _pendingRecordStart = null;
-      pending.timer?.cancel();
+
       _recordStart = pending.settings;
       _lastRecordStartResult = EngineResult.ok;
-      pending.completed.complete(EngineResult.ok);
+      pending.observation.complete(EngineResult.ok);
     } else if (!result.isOk && actual == pending.prior && !pending.startup) {
       _pendingRecordStart = null;
-      pending.timer?.cancel();
+
       _lastRecordStartResult = result;
-      pending.completed.complete(result);
+      pending.observation.complete(result);
       _reportRecordStart(result);
     } else {
       _failRecordStart(pending, EngineResult.invalid);
@@ -7199,10 +7325,10 @@ class LooperRepository {
   void _failRecordStart(_PendingRecordStart pending, EngineResult result) {
     if (!identical(_pendingRecordStart, pending)) return;
     _pendingRecordStart = null;
-    pending.timer?.cancel();
+
     _recordStartRecovery = pending.recovery;
     _lastRecordStartResult = result;
-    pending.completed.complete(result);
+    pending.observation.complete(result);
     if (!recordStartCaptureLocked) stopEngine();
     _reportRecordStart(result);
   }
@@ -7214,17 +7340,10 @@ class LooperRepository {
   }) async {
     final pending = _pendingRecordStart;
     if (pending == null) return _lastRecordStartResult;
-    for (var i = 0; i < attempts; i++) {
-      if (pending.completed.isCompleted) return pending.completed.future;
-      if (_settleRecordStart()) _reproject(forcePublication: true);
-      if (pending.completed.isCompleted) return pending.completed.future;
-      await Future<void>.delayed(pollInterval);
-    }
-    if (!pending.completed.isCompleted) {
-      _failRecordStart(pending, EngineResult.notReady);
-      _reproject();
-    }
-    return pending.completed.future;
+    return pending.observation.wait(
+      pollInterval: pollInterval,
+      attempts: attempts,
+    );
   }
 
   /// Explicit retry repairs only this lifetime's native obligation.
@@ -7269,10 +7388,10 @@ class LooperRepository {
   void _cancelClickMode() {
     final pending = _pendingClickMode;
     _pendingClickMode = null;
-    pending?.timer?.cancel();
+
     if (pending != null) {
       _lastClickModeResult = EngineResult.notReady;
-      pending.completed.complete(EngineResult.notReady);
+      pending.observation.complete(EngineResult.notReady);
     }
   }
 
@@ -7310,18 +7429,11 @@ class LooperRepository {
       startup: startup,
     );
     _pendingClickMode = pending;
-    pending.timer = Timer.periodic(const Duration(milliseconds: 10), (timer) {
-      if (!identical(_pendingClickMode, pending)) {
-        timer.cancel();
-        return;
-      }
-      if (_settleClickMode()) {
-        _reproject(forcePublication: true);
-      } else if (++pending.polls >= 50) {
-        _failClickMode(pending, EngineResult.notReady);
-        _reproject();
-      }
-    });
+    _watchReceipt(
+      pending.observation,
+      settle: _settleClickMode,
+      expire: () => _failClickMode(pending, EngineResult.notReady),
+    );
     if (!startup) _reproject();
     return _pendingClickMode == null ? _lastClickModeResult : EngineResult.ok;
   }
@@ -7336,18 +7448,18 @@ class LooperRepository {
     final result = EngineResult.fromCode(snapshot.clickModeResult);
     if (result.isOk && snapshot.clickMode == pending.mode) {
       _pendingClickMode = null;
-      pending.timer?.cancel();
+
       _clickMode = pending.mode;
       _clickModeRestart = pending.restart;
       _lastClickModeResult = EngineResult.ok;
-      pending.completed.complete(EngineResult.ok);
+      pending.observation.complete(EngineResult.ok);
     } else if (!result.isOk &&
         snapshot.clickMode == pending.prior &&
         !pending.startup) {
       _pendingClickMode = null;
-      pending.timer?.cancel();
+
       _lastClickModeResult = result;
-      pending.completed.complete(result);
+      pending.observation.complete(result);
       _reportClickMode(result);
     } else {
       _failClickMode(pending, EngineResult.invalid);
@@ -7358,13 +7470,13 @@ class LooperRepository {
   void _failClickMode(_PendingClickMode pending, EngineResult result) {
     if (!identical(_pendingClickMode, pending)) return;
     _pendingClickMode = null;
-    pending.timer?.cancel();
+
     _clickModeRecovery = (
       mode: pending.recovery,
       restart: pending.recoveryRestart,
     );
     _lastClickModeResult = result;
-    pending.completed.complete(result);
+    pending.observation.complete(result);
     // Never stop an active take to repair a future Click policy.
     if (!clickModeCaptureLocked) stopEngine();
     _reportClickMode(result);
@@ -7377,17 +7489,10 @@ class LooperRepository {
   }) async {
     final pending = _pendingClickMode;
     if (pending == null) return _lastClickModeResult;
-    for (var i = 0; i < attempts; i++) {
-      if (pending.completed.isCompleted) return pending.completed.future;
-      if (_settleClickMode()) _reproject(forcePublication: true);
-      if (pending.completed.isCompleted) return pending.completed.future;
-      await Future<void>.delayed(pollInterval);
-    }
-    if (!pending.completed.isCompleted) {
-      _failClickMode(pending, EngineResult.notReady);
-      _reproject();
-    }
-    return pending.completed.future;
+    return pending.observation.wait(
+      pollInterval: pollInterval,
+      attempts: attempts,
+    );
   }
 
   /// Explicit Retry repairs only the current repository obligation.
@@ -7439,15 +7544,27 @@ class LooperRepository {
     if (_clickRecoveryStartBlocked) return EngineResult.notReady;
     final result = _engine.setClickVolume(volume);
     if (!result.isOk) return result;
-    _pendingClickVolume = _PendingClickVolume(volume, restartVolume);
+    final pending = _PendingClickVolume(volume, restartVolume);
+    _pendingClickVolume = pending;
+    _watchClickVolume(pending);
     _reproject();
     return EngineResult.ok;
   }
 
   /// Whether the most recent admitted Click command has a callback receipt.
-  bool get clickVolumeSettled {
-    _settlePendingClickVolume();
-    return _pendingClickVolume == null && _lastClickVolumeResult.isOk;
+  bool get clickVolumeSettled =>
+      _pendingClickVolume == null && _lastClickVolumeResult.isOk;
+
+  void _watchClickVolume(_PendingClickVolume pending) {
+    _watchReceipt(
+      pending.observation,
+      settle: _settlePendingClickVolume,
+      expire: () {
+        if (!identical(_pendingClickVolume, pending)) return;
+        blockStartForClickRecovery();
+        stopEngine();
+      },
+    );
   }
 
   bool _settlePendingClickVolume() {
@@ -7468,7 +7585,7 @@ class LooperRepository {
       blockStartForClickRecovery();
       stopEngine();
     }
-    pending.completed.complete(result);
+    pending.observation.complete(result);
     return true;
   }
 
@@ -7477,7 +7594,7 @@ class LooperRepository {
     _pendingClickVolume = null;
     if (pending != null) {
       _lastClickVolumeResult = EngineResult.notReady;
-      pending.completed.complete(EngineResult.notReady);
+      pending.observation.complete(EngineResult.notReady);
     }
   }
 
@@ -7489,17 +7606,10 @@ class LooperRepository {
   }) async {
     final pending = _pendingClickVolume;
     if (pending == null) return _lastClickVolumeResult;
-    for (var i = 0; i < attempts; i++) {
-      if (pending.completed.isCompleted) return pending.completed.future;
-      if (_settlePendingClickVolume()) _reproject();
-      if (pending.completed.isCompleted) return pending.completed.future;
-      await Future<void>.delayed(pollInterval);
-    }
-    if (pending.completed.isCompleted) return pending.completed.future;
-    blockStartForClickRecovery();
-    stopEngine();
-    _reproject();
-    return EngineResult.notReady;
+    return pending.observation.wait(
+      pollInterval: pollInterval,
+      attempts: attempts,
+    );
   }
 
   /// Sets one future-recording length override. Null inherits the default;
@@ -7776,31 +7886,20 @@ class LooperRepository {
     );
     _pendingOneShot = pending;
     // Autonomous replay has a deadline even without a UI poll or later edit.
-    pending.timer = Timer.periodic(const Duration(milliseconds: 10), (timer) {
-      if (!identical(_pendingOneShot, pending)) {
-        timer.cancel();
-        return;
-      }
-      if (_settlePendingOneShot()) {
-        _reproject();
-        return;
-      }
-      if (++pending.polls >= 50) {
-        _failOneShot(pending, EngineResult.notReady);
-        _reproject();
-      }
-    });
+    _watchReceipt(
+      pending.observation,
+      settle: _settlePendingOneShot,
+      expire: () => _failOneShot(pending, EngineResult.notReady),
+    );
     if (!startup) _reproject();
     return EngineResult.ok;
   }
 
   /// True only after actual callback bits match the admitted effective vector.
-  bool get oneShotSettingsSettled {
-    _settlePendingOneShot();
-    return _pendingOneShot == null &&
-        _lastOneShotResult.isOk &&
-        !oneShotRecoveryRequired;
-  }
+  bool get oneShotSettingsSettled =>
+      _pendingOneShot == null &&
+      _lastOneShotResult.isOk &&
+      !oneShotRecoveryRequired;
 
   bool _settlePendingOneShot() {
     final pending = _pendingOneShot;
@@ -7815,31 +7914,31 @@ class LooperRepository {
       }
     }
     _pendingOneShot = null;
-    pending.timer?.cancel();
+
     _acceptOneShot(pending.intent, restart: pending.restart);
     _lastOneShotResult = EngineResult.ok;
-    pending.completed.complete(EngineResult.ok);
+    pending.observation.complete(EngineResult.ok);
     return true;
   }
 
   void _failOneShot(_PendingOneShot pending, EngineResult result) {
     if (!identical(_pendingOneShot, pending)) return;
     _pendingOneShot = null;
-    pending.timer?.cancel();
+
     _oneShotRecoveryIntent = pending.recovery;
     _oneShotRecoveryRestart = pending.recoveryRestart;
     _lastOneShotResult = result;
-    pending.completed.complete(result);
+    pending.observation.complete(result);
     stopEngine();
   }
 
   void _cancelOneShot() {
     final pending = _pendingOneShot;
     _pendingOneShot = null;
-    pending?.timer?.cancel();
+
     if (pending != null) {
       _lastOneShotResult = EngineResult.notReady;
-      pending.completed.complete(EngineResult.notReady);
+      pending.observation.complete(EngineResult.notReady);
     }
   }
 
@@ -7850,15 +7949,10 @@ class LooperRepository {
   }) async {
     final pending = _pendingOneShot;
     if (pending == null) return _lastOneShotResult;
-    for (var i = 0; i < attempts; i++) {
-      if (pending.completed.isCompleted) return pending.completed.future;
-      if (_settlePendingOneShot()) _reproject();
-      if (pending.completed.isCompleted) return pending.completed.future;
-      await Future<void>.delayed(pollInterval);
-    }
-    if (pending.completed.isCompleted) return pending.completed.future;
-    _failOneShot(pending, EngineResult.notReady);
-    return pending.completed.future;
+    return pending.observation.wait(
+      pollInterval: pollInterval,
+      attempts: attempts,
+    );
   }
 
   /// Explicitly makes a stopped uncertain rig coherent and safe to restart.
@@ -7884,11 +7978,7 @@ class LooperRepository {
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
-    _cancelTiming();
-    _cancelClickMode();
-    _cancelRecordStart();
-    _cancelLengthSettings();
-    _cancelMix();
+    _retireEngineLifetime();
     await _stopPollingAndClose();
     _engine.dispose();
   }
@@ -8049,7 +8139,7 @@ class _PendingMix {
   final _MixIntent intent;
   final int revision;
   final bool startup;
-  final completed = Completer<EngineResult>();
+  final observation = _ReceiptObservation();
 }
 
 class _PendingImage {
@@ -8083,7 +8173,7 @@ class _PendingClickVolume {
   _PendingClickVolume(this.volume, this.restartVolume);
   final double volume;
   final double restartVolume;
-  final completed = Completer<EngineResult>();
+  final observation = _ReceiptObservation();
 }
 
 final class _OneShotIntent {
@@ -8107,7 +8197,77 @@ final class _PendingOneShot {
   final _OneShotIntent recovery;
   final _OneShotIntent restart;
   final _OneShotIntent recoveryRestart;
-  final completed = Completer<EngineResult>();
-  Timer? timer;
-  int polls = 0;
+  final observation = _ReceiptObservation();
+}
+
+/// One admission deadline and observer per settings receipt. Family classifiers
+/// decide acceptance and recovery; consumers only await this work.
+final class _ReceiptObservation {
+  static const _interval = Duration(milliseconds: 10);
+  static const _timeout = Duration(milliseconds: 500);
+  final _completed = Completer<EngineResult>();
+  Timer? _deadline;
+  Timer? _observer;
+  final _shortenedDeadlines = <Timer>[];
+  bool Function()? _settle;
+  void Function()? _expire;
+  void Function()? _publish;
+
+  void start({
+    required bool Function() settle,
+    required void Function() expire,
+    required void Function() publish,
+  }) {
+    _settle = settle;
+    _expire = expire;
+    _publish = publish;
+    // Relative timers are independent of the wall clock. Later awaiters never
+    // restart this admitted request's native uncertainty cutoff.
+    _deadline = Timer(_timeout, () => _observe(expired: true));
+    _observer = Timer.periodic(_interval, (_) => _observe());
+  }
+
+  bool check() {
+    if (_completed.isCompleted) return false;
+    return _settle?.call() ?? false;
+  }
+
+  void complete(EngineResult result) {
+    _deadline?.cancel();
+    _observer?.cancel();
+    for (final timer in _shortenedDeadlines) {
+      timer.cancel();
+    }
+    _shortenedDeadlines.clear();
+    _completed.complete(result);
+  }
+
+  Future<EngineResult> wait({
+    required Duration pollInterval,
+    required int attempts,
+  }) {
+    if (_completed.isCompleted) return _completed.future;
+    final micros = pollInterval.inMicroseconds;
+    final budget = micros <= 0 || attempts <= 0 ? 0 : micros * attempts;
+    _observe();
+    // Each shorter budget starts when requested, independently of any delayed
+    // observation ticks. All waiters still share the one receipt completion;
+    // none can move or replace its original admission deadline.
+    if (!_completed.isCompleted && budget < _timeout.inMicroseconds) {
+      _shortenedDeadlines.add(
+        Timer(Duration(microseconds: budget), () => _observe(expired: true)),
+      );
+    }
+    return _completed.future;
+  }
+
+  void _observe({bool expired = false}) {
+    if (_completed.isCompleted) return;
+    if (check()) {
+      _publish?.call();
+    } else if (expired) {
+      _expire?.call();
+      _publish?.call();
+    }
+  }
 }

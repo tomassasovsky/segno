@@ -1310,6 +1310,7 @@ class ControlCubit extends Cubit<ControlState> {
   final PerformanceChains Function() _currentChains;
   final bool Function() _takeLocked;
   bool _haltInputSuspended = false;
+  bool _inputRetired = false;
   bool get _controlInputSuspended {
     if (!_takeLocked()) _haltInputSuspended = false;
     return _haltInputSuspended;
@@ -1466,7 +1467,7 @@ class ControlCubit extends Cubit<ControlState> {
       setupUnavailable = true;
       addError(error, stackTrace);
     }
-    if (isClosed) return;
+    if (_inputRetired || _closing || isClosed) return;
     emit(
       state.copyWith(
         defaultMode: defaultMode,
@@ -1476,6 +1477,7 @@ class ControlCubit extends Cubit<ControlState> {
       ),
     );
     await _loadMidiConfiguration();
+    if (_inputRetired || _closing || isClosed) return;
     setMode(defaultMode);
   }
 
@@ -2200,6 +2202,7 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// An encoder detent turn: accumulates into the master output gain.
   void encoderTurned(int delta) {
+    if (_inputRetired || _takeLocked()) return;
     final value = (_masterGain + delta * _encoderStep).clamp(0.0, 1.0);
     if (_looper.setMasterGain(value).isOk) {
       _masterGain = value;
@@ -2215,6 +2218,7 @@ class ControlCubit extends Cubit<ControlState> {
   // ---------------------------------------------------------------------------
 
   void _handleEvent(PedalEvent event) {
+    if (_inputRetired) return;
     switch (event) {
       case ButtonPressed(:final button):
         _onPress(button);
@@ -3073,6 +3077,7 @@ class ControlCubit extends Cubit<ControlState> {
   // ---------------------------------------------------------------------------
 
   void _onControllerBindingEvent(ControllerDispatchEvent event) {
+    if (_inputRetired) return;
     if (event is ControllerConsoleEvent) _onConsoleEvent(event.input);
   }
 
@@ -3389,14 +3394,23 @@ class ControlCubit extends Cubit<ControlState> {
     _pushProjected();
   }
 
+  /// Permanently stops new input while admitted session work can still finish.
+  /// The application calls this before draining sessions and disposing owners.
+  void retireInput() {
+    if (_inputRetired) return;
+    _inputRetired = true;
+    _invalidateGestures();
+    _retireAllExternal();
+    _retireMidi();
+  }
+
   Future<void>? _closeFuture;
 
   @override
   Future<void> close() => _closeFuture ??= _close().then((_) => super.close());
 
   Future<void> _close() async {
-    _retireAllExternal();
-    _retireMidi();
+    retireInput();
     _midiLearnTimer?.cancel();
     _midiLevelTimer?.cancel();
     _closing = true;
