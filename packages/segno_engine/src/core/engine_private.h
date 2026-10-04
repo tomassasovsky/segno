@@ -1856,7 +1856,7 @@ struct le_engine {
   _Atomic uint32_t a_record_timing_revision;
   _Atomic int32_t a_record_timing_result;
   uint32_t record_timing_posted_revision; /* sole control producer */
-  uint32_t record_timing_command; /* existing end-of-block publication fence */
+  uint64_t record_timing_command; /* existing end-of-block publication fence */
   uint32_t record_timing_publish_revision; /* callback: even revision at tail */
   int record_timing_publish_pending;
   le_record_timing_readback record_timing_cache;
