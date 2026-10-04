@@ -194,6 +194,10 @@ void main() {
         (_) => looper.state.tracks.any((track) => track.isCapturing),
       );
       when(() => looper.recordTimingSettingsSettled).thenReturn(true);
+      when(() => looper.recordStartCaptureLocked).thenAnswer(
+        (_) => looper.state.tracks.any((track) => track.isCapturing),
+      );
+      when(() => looper.recordStartSettingsSettled).thenReturn(true);
       when(() => looper.clickModeCaptureLocked).thenAnswer(
         (_) => looper.state.tracks.any((track) => track.isCapturing),
       );
@@ -317,6 +321,7 @@ void main() {
         recordTimingControl: FakeRecordTimingControl(),
         clickVolumeControl: FakeClickVolumeControl(),
         clickModeControl: FakeClickModeControl(),
+        recordStartControl: FakeRecordStartControl(),
         fxPersistence: FxChainPersistence(looper: looper),
         looper: looper,
         mixSettings: testMixSettings(looper),
@@ -1924,6 +1929,7 @@ void main() {
           recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           clickModeControl: FakeClickModeControl(),
+          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -1945,6 +1951,7 @@ void main() {
           recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           clickModeControl: FakeClickModeControl(),
+          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -1966,6 +1973,7 @@ void main() {
           recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           clickModeControl: FakeClickModeControl(),
+          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -1992,6 +2000,7 @@ void main() {
           recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           clickModeControl: FakeClickModeControl(),
+          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -2396,6 +2405,7 @@ void main() {
             recordTimingControl: FakeRecordTimingControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             clickModeControl: FakeClickModeControl(),
+            recordStartControl: FakeRecordStartControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
@@ -2444,6 +2454,7 @@ void main() {
           recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           clickModeControl: FakeClickModeControl(),
+          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -2479,6 +2490,7 @@ void main() {
             recordTimingControl: FakeRecordTimingControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             clickModeControl: FakeClickModeControl(),
+            recordStartControl: FakeRecordStartControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
@@ -2620,6 +2632,7 @@ void main() {
             recordTimingControl: FakeRecordTimingControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             clickModeControl: FakeClickModeControl(),
+            recordStartControl: FakeRecordStartControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
@@ -3859,6 +3872,7 @@ void main() {
           recordTimingControl: FakeRecordTimingControl(),
           clickVolumeControl: FakeClickVolumeControl(),
           clickModeControl: FakeClickModeControl(),
+          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -3959,6 +3973,7 @@ void main() {
             recordTimingControl: FakeRecordTimingControl(),
             clickVolumeControl: FakeClickVolumeControl(),
             clickModeControl: FakeClickModeControl(),
+            recordStartControl: FakeRecordStartControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),

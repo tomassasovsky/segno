@@ -158,6 +158,7 @@ class _Rig {
       recordTimingControl: FakeRecordTimingControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
+      recordStartControl: FakeRecordStartControl(),
       looper: looper,
       pedal: pedal,
       settings: settings,

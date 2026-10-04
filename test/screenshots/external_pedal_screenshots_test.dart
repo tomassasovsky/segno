@@ -35,6 +35,7 @@ import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -236,6 +237,7 @@ void main() {
     ExternalJackSetup? jack,
     OneShotSnapshot? oneShotSnapshot,
     ClickModeSnapshot? clickModeSnapshot,
+    RecordStartSnapshot? recordStartSnapshot,
   }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
     await settings.restoreRecordTimingCheckpoint((
@@ -262,6 +264,18 @@ void main() {
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     final tempo = MockClickTempoSettings();
+    when(() => tempo.recordStartSnapshot).thenReturn(recordStartSnapshot);
+    if (recordStartSnapshot != null) {
+      when(() => tempo.state).thenReturn(
+        tempo.state.copyWith(
+          countInBars: recordStartSnapshot.settings.countInBars,
+          soundStart: recordStartSnapshot.settings.soundStart,
+          recordStartReady: true,
+          recordStartInitialized: true,
+          recordStartCaptureLocked: recordStartSnapshot.captureLocked,
+        ),
+      );
+    }
     final closeTempo = tempo.close;
     addTearDown(() => unawaited(closeTempo()));
     when(() => tempo.clickModeSnapshot).thenReturn(clickModeSnapshot);
@@ -288,6 +302,7 @@ void main() {
       recordTimingControl: timingOwner,
       clickVolumeControl: tempo,
       clickModeControl: tempo,
+      recordStartControl: tempo,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
@@ -650,6 +665,62 @@ void main() {
       findsOneWidget,
     );
     await shot(tester, 'hear_click_held_released');
+  }, skip: !hasScreenshotFonts);
+
+  screenshotTestWidgets('Count-in button named endpoints at console size', (
+    tester,
+  ) async {
+    const target = CountInValueTarget();
+    await pump(
+      tester,
+      recordStartSnapshot: RecordStartSnapshot(
+        settings: RecordStartSettings(countInBars: 2, soundStart: false),
+        captureLocked: false,
+      ),
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: target,
+                condition: ExternalValueCondition.heldReleased,
+                active: 2 / 3,
+                inactive: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    await tap(tester, 'external_control_value_${externalControlKey(target)}');
+    expect(find.text('2 bars'), findsWidgets);
+    expect(find.text('Off'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await shot(tester, 'count_in_held_released');
+  }, skip: !hasScreenshotFonts);
+
+  screenshotTestWidgets('Count-in expression named endpoints at console size', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      recordStartSnapshot: RecordStartSnapshot(
+        settings: RecordStartSettings(countInBars: 2, soundStart: false),
+        captureLocked: false,
+      ),
+      jack: ExternalJackSetup(
+        type: ExternalJackType.expression,
+        expression: ExternalExpressionSetup(
+          calibration: ExpressionCalibration(heel: 0, toe: 255),
+          mappings: [ExpressionMapping(target: const CountInValueTarget())],
+        ),
+      ),
+    );
+    expect(find.text('4 bars'), findsWidgets);
+    expect(find.text('Off'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await shot(tester, 'count_in_expression');
   }, skip: !hasScreenshotFonts);
 
   screenshotTestWidgets('a button holds decay and releases to explicit zero', (

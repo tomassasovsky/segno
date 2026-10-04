@@ -7,6 +7,7 @@ import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -197,6 +198,40 @@ void main() {
         isTrue,
       );
       expect(looper.readValueTarget(target, clickModeSnapshot: locked), 1 / 3);
+    });
+
+    test('Count-in is absent until its pair is confirmed, including Off', () {
+      const target = CountInValueTarget();
+      final off = RecordStartSnapshot(
+        settings: RecordStartSettings(countInBars: 0, soundStart: true),
+        captureLocked: false,
+      );
+      final locked = RecordStartSnapshot(
+        settings: RecordStartSettings(countInBars: 4, soundStart: false),
+        captureLocked: true,
+      );
+      expect(
+        looper.availableValueTargets().whereType<CountInValueTarget>(),
+        isEmpty,
+      );
+      expect(looper.valueTargetResolves(target), isFalse);
+      expect(looper.readValueTarget(target), isNull);
+      expect(
+        looper
+            .availableValueTargets(recordStartSnapshot: off)
+            .whereType<CountInValueTarget>(),
+        [target],
+      );
+      expect(
+        looper.valueTargetResolves(target, recordStartSnapshot: off),
+        isTrue,
+      );
+      expect(looper.readValueTarget(target, recordStartSnapshot: off), 0);
+      expect(
+        looper.valueTargetResolves(target, recordStartSnapshot: locked),
+        isTrue,
+      );
+      expect(looper.readValueTarget(target, recordStartSnapshot: locked), 1);
     });
 
     test('decay offers default and all fixed tracks only with an owner', () {

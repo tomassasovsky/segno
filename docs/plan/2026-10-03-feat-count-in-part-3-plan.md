@@ -1,7 +1,9 @@
 # Part 3: shared Count-in mappings (#1026)
 
 Depends on [part 2](2026-10-03-feat-count-in-part-2-plan.md).
-Status: reviewed direction; freeze its independent oracle on that future base.
+Status: implemented under #1121 after Part 2 PR #1120. Local aggregate checks
+and complete independent source review pass; additional Claude review and
+current-head CI remain separate publication gates. Human merge review remains.
 
 ## Result
 

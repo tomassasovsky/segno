@@ -130,6 +130,7 @@ void main() {
         countInBars: any(named: 'countInBars'),
         soundStart: any(named: 'soundStart'),
         editKind: any(named: 'editKind'),
+        releasedSettings: any(named: 'releasedSettings'),
       ),
     ).thenAnswer((call) {
       confirmedCountIn = call.namedArguments[#countInBars] as int;
@@ -563,6 +564,7 @@ void main() {
         countInBars: any(named: 'countInBars'),
         soundStart: any(named: 'soundStart'),
         editKind: any(named: 'editKind'),
+        releasedSettings: any(named: 'releasedSettings'),
       ),
     );
   });
@@ -591,6 +593,7 @@ void main() {
         countInBars: any(named: 'countInBars'),
         soundStart: any(named: 'soundStart'),
         editKind: any(named: 'editKind'),
+        releasedSettings: any(named: 'releasedSettings'),
       ),
     );
   });

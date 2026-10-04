@@ -29,6 +29,7 @@ import '../helpers/fake_decay_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/fake_one_shot_control.dart';
 import '../helpers/fake_record_length_control.dart';
+import '../helpers/fake_record_start_control.dart';
 
 const _timing = TrackRecordTimingTarget(0);
 
@@ -144,6 +145,7 @@ class _Rig {
       fxPersistence: FxChainPersistence(looper: looper),
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
+      recordStartControl: FakeRecordStartControl(),
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/record_start.dart';
+import 'package:segno_engine/segno_engine.dart' show TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -124,6 +125,423 @@ void main() {
     }, saved: entry.saved);
   }
 
+  for (final choice in [
+    (held: 2, released: 0, liveSound: false, savedSound: false),
+    (held: 0, released: 2, liveSound: true, savedSound: false),
+  ]) {
+    check(
+      'controller pair projects Released from accepted Held ${choice.held}',
+      (
+        r,
+      ) {
+        r.load();
+        final lifetime = r.owner.recordStartLifetime;
+        final revision = r.owner.recordStartRevision;
+        expect(
+          r
+              .edit(
+                r.owner.setControllerCountIn(
+                  choice.held,
+                  lifetime: lifetime,
+                  revision: revision,
+                  releasedBars: choice.released,
+                ),
+              )
+              ?.isOk,
+          isTrue,
+        );
+        expect(
+          r.owner.confirmedRecordStart,
+          RecordStartSettings(
+            countInBars: choice.held,
+            soundStart: choice.liveSound,
+          ),
+        );
+        expect(
+          r.owner.durableRecordStartSettings,
+          RecordStartSettings(
+            countInBars: choice.released,
+            soundStart: choice.savedSound,
+          ),
+        );
+        expect(r.store.values, {
+          'tempo.count_in_bars': choice.released,
+          'looper.auto_record': choice.savedSound,
+        });
+        expect(r.owner.recordStartRevision, revision);
+        expect(
+          r
+              .edit(
+                r.owner.setControllerCountIn(
+                  choice.released,
+                  lifetime: lifetime,
+                  revision: revision,
+                ),
+              )
+              ?.isOk,
+          isTrue,
+        );
+        expect(
+          r.owner.confirmedRecordStart,
+          r.owner.durableRecordStartSettings,
+        );
+      },
+      saved: {'looper.auto_record': true},
+    );
+  }
+
+  check(
+    'ordinary Sound at the same zero count supersedes old controller revision',
+    (r) {
+      r.load();
+      final changes = <RecordStartSettings>[];
+      final subscription = r.owner.ordinaryRecordStartChanges.listen(
+        changes.add,
+      );
+      final lifetime = r.owner.recordStartLifetime;
+      final revision = r.owner.recordStartRevision;
+      expect(
+        r
+            .edit(
+              r.owner.setControllerCountIn(
+                0,
+                lifetime: lifetime,
+                revision: revision,
+                releasedBars: 2,
+              ),
+            )
+            ?.isOk,
+        isTrue,
+      );
+      expect(changes, isEmpty);
+      expect(r.edit(r.owner.setSoundStart(enabled: true))?.isOk, isTrue);
+      expect(r.owner.recordStartRevision, revision + 1);
+      expect(changes, [RecordStartSettings(countInBars: 0, soundStart: true)]);
+      final requests = r.engine.recordStartRequests.length;
+      expect(
+        r
+            .edit(
+              r.owner.setControllerCountIn(
+                2,
+                lifetime: lifetime,
+                revision: revision,
+              ),
+            )
+            ?.status,
+        RecordStartStatus.superseded,
+      );
+      expect(r.engine.recordStartRequests.length, requests);
+      expect(
+        r.owner.durableRecordStartSettings,
+        RecordStartSettings(countInBars: 0, soundStart: true),
+      );
+      unawaited(subscription.cancel());
+    },
+    saved: {'looper.auto_record': true},
+  );
+
+  check('refused ordinary Sound leaves original controller release eligible', (
+    r,
+  ) {
+    r.load();
+    final lifetime = r.owner.recordStartLifetime;
+    final revision = r.owner.recordStartRevision;
+    expect(
+      r
+          .edit(
+            r.owner.setControllerCountIn(
+              0,
+              lifetime: lifetime,
+              revision: revision,
+              releasedBars: 2,
+            ),
+          )
+          ?.isOk,
+      isTrue,
+    );
+    r.engine.recordStartResult = EngineResult.invalid;
+    expect(
+      r.edit(r.owner.setSoundStart(enabled: true))?.status,
+      RecordStartStatus.rejected,
+    );
+    expect(r.owner.recordStartRevision, revision);
+    expect(
+      r.owner.durableRecordStartSettings,
+      RecordStartSettings(countInBars: 2, soundStart: false),
+    );
+    r.engine.recordStartResult = EngineResult.ok;
+    expect(
+      r
+          .edit(
+            r.owner.setControllerCountIn(
+              2,
+              lifetime: lifetime,
+              revision: revision,
+            ),
+          )
+          ?.isOk,
+      isTrue,
+    );
+    expect(
+      r.owner.confirmedRecordStart,
+      RecordStartSettings(countInBars: 2, soundStart: false),
+    );
+  }, saved: {'looper.auto_record': true});
+
+  check(
+    'controller failure preserves older Held and exact Released checkpoint',
+    (r) {
+      r.load();
+      final lifetime = r.owner.recordStartLifetime;
+      final revision = r.owner.recordStartRevision;
+      expect(
+        r
+            .edit(
+              r.owner.setControllerCountIn(
+                2,
+                lifetime: lifetime,
+                revision: revision,
+                releasedBars: 0,
+              ),
+            )
+            ?.isOk,
+        isTrue,
+      );
+      r.store.failWrites = 1;
+      expect(
+        r
+            .edit(
+              r.owner.setControllerCountIn(
+                4,
+                lifetime: lifetime,
+                revision: revision,
+                releasedBars: 1,
+              ),
+            )
+            ?.status,
+        RecordStartStatus.rejected,
+      );
+      expect(
+        r.owner.confirmedRecordStart,
+        RecordStartSettings(countInBars: 2, soundStart: false),
+      );
+      expect(
+        r.owner.durableRecordStartSettings,
+        RecordStartSettings(countInBars: 0, soundStart: false),
+      );
+      expect(r.store.values, {
+        'tempo.count_in_bars': 0,
+        'looper.auto_record': false,
+      });
+      expect(r.owner.recordStartRevision, revision);
+    },
+  );
+
+  check('device restart applies Released and refuses the retired lifetime', (
+    r,
+  ) {
+    r.load();
+    final lifetime = r.owner.recordStartLifetime;
+    final revision = r.owner.recordStartRevision;
+    expect(
+      r
+          .edit(
+            r.owner.setControllerCountIn(
+              2,
+              lifetime: lifetime,
+              revision: revision,
+              releasedBars: 0,
+            ),
+          )
+          ?.isOk,
+      isTrue,
+    );
+    r.repository.stopEngine();
+    expect(r.repository.startEngine(const EngineConfig()), EngineResult.ok);
+    r.pump();
+    expect(
+      r.owner.confirmedRecordStart,
+      RecordStartSettings(countInBars: 0, soundStart: false),
+    );
+    final requests = r.engine.recordStartRequests.length;
+    expect(
+      r
+          .edit(
+            r.owner.setControllerCountIn(
+              4,
+              lifetime: lifetime,
+              revision: revision,
+            ),
+          )
+          ?.status,
+      RecordStartStatus.superseded,
+    );
+    expect(r.engine.recordStartRequests.length, requests);
+  });
+
+  check('capture refusal retains Released until same-origin release succeeds', (
+    r,
+  ) {
+    r.load();
+    final lifetime = r.owner.recordStartLifetime;
+    final revision = r.owner.recordStartRevision;
+    expect(
+      r
+          .edit(
+            r.owner.setControllerCountIn(
+              2,
+              lifetime: lifetime,
+              revision: revision,
+              releasedBars: 0,
+            ),
+          )
+          ?.isOk,
+      isTrue,
+    );
+    final prior = r.engine.nextSnapshot;
+    r.engine.nextSnapshot = prior.copyWith(
+      tracks: [
+        const TrackSnapshot(
+          state: TrackState.recording,
+          volume: 1,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          rms: 0,
+          peak: 0,
+        ),
+        ...prior.tracks.skip(1),
+      ],
+    );
+    final stops = r.engine.stopCalls;
+    expect(
+      r
+          .edit(
+            r.owner.setControllerCountIn(
+              0,
+              lifetime: lifetime,
+              revision: revision,
+            ),
+          )
+          ?.status,
+      RecordStartStatus.rejected,
+    );
+    expect(r.engine.stopCalls, stops);
+    expect(r.owner.confirmedRecordStart?.countInBars, 2);
+    expect(r.owner.durableRecordStartSettings.countInBars, 0);
+    r.engine.nextSnapshot = prior;
+    expect(
+      r
+          .edit(
+            r.owner.setControllerCountIn(
+              0,
+              lifetime: lifetime,
+              revision: revision,
+            ),
+          )
+          ?.isOk,
+      isTrue,
+    );
+    expect(r.owner.confirmedRecordStart?.countInBars, 0);
+  });
+
+  check(
+    'blocked controller write compensates storage without crossing session',
+    (r) {
+      r.load();
+      final lifetime = r.owner.recordStartLifetime;
+      final revision = r.owner.recordStartRevision;
+      r.store.writeGate = Completer<void>();
+      RecordStartOutcome? outcome;
+      unawaited(
+        r.owner
+            .setControllerCountIn(
+              2,
+              lifetime: lifetime,
+              revision: revision,
+              releasedBars: 0,
+            )
+            .then((value) => outcome = value),
+      );
+      r.pump();
+      expect(outcome, isNull);
+      r.repository.stopEngine();
+      var replaced = false;
+      unawaited(
+        r.repository
+            .applySession(
+              const SessionRig(
+                countInBars: 4,
+              ),
+            )
+            .then((_) => replaced = true),
+      );
+      r.pump();
+      expect(replaced, isTrue);
+      r.store.writeGate!.complete();
+      r.pump();
+      expect(outcome?.status, RecordStartStatus.superseded);
+      expect(
+        r.owner.confirmedRecordStart,
+        RecordStartSettings(countInBars: 4, soundStart: false),
+      );
+      expect(
+        r.owner.durableRecordStartSettings,
+        RecordStartSettings(countInBars: 4, soundStart: false),
+      );
+      expect(r.store.values, {'looper.auto_record': true});
+      final requests = r.engine.recordStartRequests.length;
+      expect(
+        r
+            .edit(
+              r.owner.setControllerCountIn(
+                0,
+                lifetime: lifetime,
+                revision: revision,
+              ),
+            )
+            ?.status,
+        RecordStartStatus.superseded,
+      );
+      expect(r.engine.recordStartRequests.length, requests);
+    },
+    saved: {'looper.auto_record': true},
+  );
+
+  check('non-held controller acceptance replaces older durable Released', (r) {
+    r.load();
+    final lifetime = r.owner.recordStartLifetime;
+    final revision = r.owner.recordStartRevision;
+    expect(
+      r
+          .edit(
+            r.owner.setControllerCountIn(
+              2,
+              lifetime: lifetime,
+              revision: revision,
+              releasedBars: 0,
+            ),
+          )
+          ?.isOk,
+      isTrue,
+    );
+    expect(
+      r
+          .edit(
+            r.owner.setControllerCountIn(
+              4,
+              lifetime: lifetime,
+              revision: revision,
+            ),
+          )
+          ?.isOk,
+      isTrue,
+    );
+    expect(r.owner.confirmedRecordStart?.countInBars, 4);
+    expect(r.owner.durableRecordStartSettings.countInBars, 4);
+    expect(r.store.values['tempo.count_in_bars'], 4);
+  });
+
   check('ordinary pair edits preserve Count Off versus Sound off intent', (r) {
     r.load();
     expect(r.edit(r.owner.setSoundStart(enabled: true))?.isOk, isTrue);
@@ -215,17 +633,25 @@ void main() {
 
   check('raw pair publication cannot precede acquired receipt', (r) {
     r.load();
+    final revision = r.owner.recordStartRevision;
+    final changes = <RecordStartSettings>[];
+    final subscription = r.owner.ordinaryRecordStartChanges.listen(changes.add);
     r.engine.commandsAreSettled = false;
     RecordStartOutcome? result;
     unawaited(r.owner.setCountInBars(4).then((value) => result = value));
     r.pump();
     expect(result, isNull);
+    expect(changes, isEmpty);
+    expect(r.owner.recordStartRevision, revision);
     expect(r.engine.nextSnapshot.countInBars, 4);
     expect(r.repository.state.transport.countInBars, 1);
     expect(r.owner.confirmedRecordStart?.countInBars, 1);
     r.engine.commandsAreSettled = true;
     r.pump();
     expect(result?.isOk, isTrue);
+    expect(r.owner.recordStartRevision, revision + 1);
+    expect(changes, [RecordStartSettings(countInBars: 4, soundStart: false)]);
+    unawaited(subscription.cancel());
     expect(r.owner.confirmedRecordStart?.countInBars, 4);
   });
 

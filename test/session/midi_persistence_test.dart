@@ -191,6 +191,7 @@ void main() {
             recordTimingControl: timing,
             clickVolumeControl: tempo,
             clickModeControl: tempo,
+            recordStartControl: tempo,
             looper: looper,
             pedal: pedal,
             settings: settings,

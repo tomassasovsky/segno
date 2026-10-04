@@ -32,6 +32,7 @@ import '../helpers/fake_decay_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/fake_one_shot_control.dart';
 import '../helpers/fake_record_length_control.dart';
+import '../helpers/fake_record_start_control.dart';
 import '../helpers/fake_record_timing_control.dart';
 import '../helpers/test_mix_settings.dart';
 
@@ -859,6 +860,7 @@ class _Harness {
       recordTimingControl: FakeRecordTimingControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
+      recordStartControl: FakeRecordStartControl(),
       fxPersistence: fxPersistence,
       looper: repo,
       mixSettings: mixSettings,

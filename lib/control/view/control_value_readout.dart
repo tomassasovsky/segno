@@ -4,6 +4,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart'
     show routingPlacementLabel;
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/looper/view/tempo_labels.dart';
 
 /// The unit a saved normalized endpoint represents on its actual control.
 /// The same text is used by MIDI and External rows and endpoint editors.
@@ -29,6 +30,7 @@ String controlValueReadout(
     l10n,
     target.toDomain(normalized),
   ),
+  CountInValueTarget() => countInLabels(l10n)[target.toDomain(normalized)]!,
   DecayValueTarget() => _decayReadout(l10n, target.toDomain(normalized)),
   OneShotValueTarget() =>
     target.toDomain(normalized) ? l10n.loopPlaybackOnce : l10n.loopPlaybackLoop,

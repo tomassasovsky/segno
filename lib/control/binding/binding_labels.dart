@@ -98,6 +98,8 @@ String valueTargetLabel(
   ClickVolumeTarget() => l10n.clickVolumeLabel,
   ClickModeValueTarget() =>
     '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopTempoHearClick}',
+  CountInValueTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopTempoCountIn}',
   DefaultDecayTarget() =>
     '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopDecayLabel}',
   TrackDecayTarget(:final channel) =>
@@ -182,6 +184,7 @@ String? fxParamName(LooperRepository looper, FxParamTarget target) {
 String? controlEditBlockLabel(AppLocalizations l10n, ControlEditBlock? block) =>
     switch (block) {
       ControlEditBlock.clickCapture => l10n.clickModeCaptureLocked,
+      ControlEditBlock.recordStartCapture => l10n.recordStartCaptureLocked,
       ControlEditBlock.lengthCapture => l10n.recordLengthCaptureLocked,
       ControlEditBlock.sharedLength => l10n.recordLengthSharedInMulti,
       ControlEditBlock.timingCapture => l10n.recordTimingCaptureLocked,

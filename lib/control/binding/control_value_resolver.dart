@@ -5,6 +5,7 @@ import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 
 /// Resolves a typed [ControlValueTarget] against the live rig — the app-side
@@ -41,6 +42,7 @@ extension ControlValueResolver on LooperRepository {
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordLengthSnapshot? recordLengthSnapshot,
+    RecordStartSnapshot? recordStartSnapshot,
     RecordTimingSnapshot? recordTimingSnapshot,
   }) {
     final targets = <ControlValueTarget>[];
@@ -86,6 +88,7 @@ extension ControlValueResolver on LooperRepository {
     targets.addAll(availableMixValueTargets());
     if (clickVolume != null) targets.add(const ClickVolumeTarget());
     if (clickModeSnapshot != null) targets.add(const ClickModeValueTarget());
+    if (recordStartSnapshot != null) targets.add(const CountInValueTarget());
     if (decaySnapshot != null) {
       targets.add(const DefaultDecayTarget());
       for (var channel = 0; channel < 8; channel++) {
@@ -158,6 +161,7 @@ extension ControlValueResolver on LooperRepository {
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordLengthSnapshot? recordLengthSnapshot,
+    RecordStartSnapshot? recordStartSnapshot,
     RecordTimingSnapshot? recordTimingSnapshot,
   }) => switch (target) {
     FxParamTarget() => _paramSlot(target) != null,
@@ -177,6 +181,7 @@ extension ControlValueResolver on LooperRepository {
     OutputBalanceTarget(:final bus) => bus >= 0 && bus < state.outputBusCount,
     MasterGainTarget() => true,
     ClickModeValueTarget() => clickModeSnapshot != null,
+    CountInValueTarget() => recordStartSnapshot != null,
     ClickVolumeTarget() => clickVolume != null,
     DecayValueTarget() => decaySnapshot != null && target.isStructurallyValid,
     OneShotValueTarget() =>
@@ -199,6 +204,7 @@ extension ControlValueResolver on LooperRepository {
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordLengthSnapshot? recordLengthSnapshot,
+    RecordStartSnapshot? recordStartSnapshot,
     RecordTimingSnapshot? recordTimingSnapshot,
   }) => switch (target) {
     FxParamTarget(:final param) => _paramSlot(target)?.effect.params[param],
@@ -208,6 +214,10 @@ extension ControlValueResolver on LooperRepository {
       clickModeSnapshot == null
           ? null
           : target.fromDomain(clickModeSnapshot.mode),
+    CountInValueTarget() =>
+      recordStartSnapshot == null
+          ? null
+          : target.fromDomain(recordStartSnapshot.settings.countInBars),
     ClickVolumeTarget() =>
       clickVolume == null ? null : target.fromDomain(clickVolume),
     DecayValueTarget() =>

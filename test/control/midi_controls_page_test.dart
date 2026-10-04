@@ -36,6 +36,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -212,6 +213,7 @@ void main() {
     registerFallbackValue(LooperMode.multi);
     registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(GridDivision.off);
+    registerFallbackValue(RecordStartEditKind.countIn);
     registerFallbackValue(<int, RecordTiming>{});
   });
 
@@ -229,6 +231,7 @@ void main() {
     MidiMapping? savedMapping,
     double? clickVolume = 1,
     ClickModeSnapshot? clickModeSnapshot,
+    RecordStartSnapshot? recordStartSnapshot,
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordTiming currentTiming = RecordTiming.immediately,
@@ -273,6 +276,18 @@ void main() {
     final closeTempo = tempo.close;
     addTearDown(() => unawaited(closeTempo()));
     when(() => tempo.clickModeSnapshot).thenReturn(clickModeSnapshot);
+    when(() => tempo.recordStartSnapshot).thenReturn(recordStartSnapshot);
+    if (recordStartSnapshot != null) {
+      when(() => tempo.state).thenReturn(
+        tempo.state.copyWith(
+          countInBars: recordStartSnapshot.settings.countInBars,
+          soundStart: recordStartSnapshot.settings.soundStart,
+          recordStartReady: true,
+          recordStartInitialized: true,
+          recordStartCaptureLocked: recordStartSnapshot.captureLocked,
+        ),
+      );
+    }
     final playback = MockDecayPlaybackSettings(
       snapshot: decaySnapshot,
       oneShot: oneShotSnapshot,
@@ -293,6 +308,7 @@ void main() {
       looper: looper,
       clickVolumeControl: tempo,
       clickModeControl: tempo,
+      recordStartControl: tempo,
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,
@@ -514,6 +530,90 @@ void main() {
     );
     final key = const ClickModeValueTarget().canonicalString();
     await tap(tester, 'midi_click_mode_low_${key}_playRec');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tap(tester, 'midi_save');
+    final repaired =
+        control.state.midiMappings.byId('m1')!.controls.single
+            as MidiParameterControl;
+    expect(repaired.key, key);
+    expect((repaired.low, repaired.high), (0.2, 0.8));
+  });
+
+  testWidgets('Count-in MIDI uses named Off to four-bar endpoints', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      seeded: true,
+      recordStartSnapshot: RecordStartSnapshot(
+        settings: RecordStartSettings(countInBars: 0, soundStart: true),
+        captureLocked: false,
+      ),
+    );
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_add_control');
+    await tap(tester, 'expression_kind_loopControls');
+    await tap(tester, 'expression_destination_loop:defaults');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const CountInValueTarget())}',
+    );
+    final key = const CountInValueTarget().canonicalString();
+    final low = find.byKey(Key('midi_range_low_$key'));
+    final high = find.byKey(Key('midi_range_high_$key'));
+    expect(
+      find.descendant(of: low, matching: find.text('Off')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: high, matching: find.text('4 bars')),
+      findsOneWidget,
+    );
+    await tap(tester, 'midi_save');
+    final saved = control.state.midiMappings
+        .byId('m1')!
+        .controls
+        .whereType<MidiParameterControl>()
+        .singleWhere((control) => control.key == key);
+    expect((saved.low, saved.high), (0, 1));
+    verifyNever(
+      () => looper.setRecordStartSettings(
+        countInBars: any(named: 'countInBars'),
+        soundStart: any(named: 'soundStart'),
+        editKind: any(named: 'editKind'),
+      ),
+    );
+  });
+
+  testWidgets('Count-in MIDI repair Escape preserves raw range', (
+    tester,
+  ) async {
+    final oldKey = const TrackVolumeTarget(0).canonicalString();
+    final original = MidiMapping(
+      id: 'm1',
+      source: _source,
+      behavior: MidiBehavior.continuous,
+      controls: [MidiParameterControl(key: oldKey, low: 0.2, high: 0.8)],
+    );
+    await pump(
+      tester,
+      savedMapping: original,
+      recordStartSnapshot: RecordStartSnapshot(
+        settings: RecordStartSettings(countInBars: 1, soundStart: false),
+        captureLocked: false,
+      ),
+    );
+    await tap(tester, 'midi_row_edit_m1');
+    await tap(tester, 'midi_control_change_$oldKey');
+    await tap(tester, 'expression_kind_loopControls');
+    await tap(tester, 'expression_destination_loop:defaults');
+    await tap(
+      tester,
+      'external_pick_${externalControlKey(const CountInValueTarget())}',
+    );
+    final key = const CountInValueTarget().canonicalString();
+    await tap(tester, 'midi_count_in_low_${key}_4');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     await tap(tester, 'midi_save');
