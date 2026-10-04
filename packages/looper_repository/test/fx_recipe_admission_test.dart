@@ -397,6 +397,79 @@ void main() {
     },
   );
 
+  test('reentrant FX settlement drains each queued lane only once', () async {
+    engine.nextSnapshot = _playingTrack;
+    expect(repo.setLaneCount(channel: 0, count: 2), EngineResult.ok);
+    engine.publishRecipes = false;
+    for (var lane = 0; lane < 2; lane++) {
+      expect(
+        repo.setLaneEffects(
+          channel: 0,
+          lane: lane,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        ),
+        EngineResult.ok,
+      );
+    }
+    expect(repo.clear(), EngineResult.ok);
+    for (var lane = 0; lane < 2; lane++) {
+      engine.publishRecipe((FxOwner.lane, 0, lane));
+    }
+    engine.publishRecipes = true;
+    final notices = <(int, int)>[];
+    final reentrant = <Future<EngineResult>>[];
+    repo.onLaneChainChanged = (channel, lane) {
+      notices.add((channel, lane));
+      reentrant.add(repo.settleFxRecipes());
+    };
+    final recipesBefore = engine.calls.where((c) => c == 'setFxRecipe').length;
+
+    expect(await repo.settleFxRecipes(), EngineResult.ok);
+    expect(await Future.wait(reentrant), everyElement(EngineResult.ok));
+    expect(
+      engine.calls.where((c) => c == 'setFxRecipe').length - recipesBefore,
+      2,
+    );
+    expect(notices, [(0, 0), (0, 1)]);
+    for (var lane = 0; lane < 2; lane++) {
+      expect(engine.recipes[(FxOwner.lane, 0, lane)]!.slots, isEmpty);
+    }
+    expect(repo.fxRecipesSettled, isTrue);
+  });
+
+  test('reading FX readiness cannot submit a queued Clear recipe', () async {
+    engine.nextSnapshot = _playingTrack;
+    expect(
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      ),
+      EngineResult.ok,
+    );
+    engine.publishRecipes = false;
+    expect(
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.delay)],
+      ),
+      EngineResult.ok,
+    );
+    expect(repo.clear(), EngineResult.ok);
+    engine.publishRecipe((FxOwner.lane, 0, 0));
+    final callsBeforeRead = engine.calls.length;
+
+    expect(repo.fxRecipesSettled, isFalse);
+    expect(engine.calls.length, callsBeforeRead);
+    expect(engine.pendingRecipeRevisions, isEmpty);
+
+    engine.publishRecipes = true;
+    expect(await repo.settleFxRecipes(), EngineResult.ok);
+    expect(engine.recipes[(FxOwner.lane, 0, 0)]!.slots, isEmpty);
+    expect(repo.fxRecipesSettled, isTrue);
+  });
+
   test('Clear blocks dry rerecord until its reset recipe applies', () async {
     engine.nextSnapshot = _playingTrack;
     expect(
