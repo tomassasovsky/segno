@@ -873,23 +873,20 @@ class LooperRepository {
     return EngineResult.notReady;
   }
 
-  /// Confirms every admitted structural FX recipe on the audio callback.
-  /// A command queue draining alone cannot prove that its recipe was accepted.
-  bool get fxRecipesSettled {
-    _drainHistoryFx();
-    for (final entry in _fxPending.entries.toList()) {
-      final key = entry.key;
-      if (_engine.fxRecipeRevision(
-            owner: key.$1,
-            channel: key.$2,
-            lane: key.$3,
-          ) ==
-          entry.value) {
-        _fxPending.remove(key);
-      }
-    }
-    return _fxPending.isEmpty && _historyFx.isEmpty;
-  }
+  /// Whether every admitted structural recipe is callback-confirmed.
+  /// Reading readiness never submits queued Clear/Undo work; explicit
+  /// settlement and repository polling advance those operations.
+  bool get fxRecipesSettled =>
+      _historyFx.isEmpty &&
+      _fxPending.entries.every((entry) {
+        final key = entry.key;
+        return _engine.fxRecipeRevision(
+              owner: key.$1,
+              channel: key.$2,
+              lane: key.$3,
+            ) ==
+            entry.value;
+      });
 
   void _requestHistoryFx(
     int channel,
@@ -911,10 +908,12 @@ class LooperRepository {
   /// The latest Clear/Undo intent for each lane wins after any older callback
   /// recipe. This uses the same target fence as an ordinary structural edit.
   void _drainHistoryFx() {
-    for (final entry in _historyFx.entries.toList()) {
-      final key = entry.key;
-      if (_fxTargetPending(FxOwner.lane, key.$1, key.$2)) continue;
-      final desired = entry.value;
+    for (final key in _historyFx.keys.toList()) {
+      // A lane notification can synchronously drain another queued lane.
+      final desired = _historyFx[key];
+      if (desired == null || _fxTargetPending(FxOwner.lane, key.$1, key.$2)) {
+        continue;
+      }
       final result = setLaneEffects(
         channel: key.$1,
         lane: key.$2,
@@ -1054,6 +1053,7 @@ class LooperRepository {
           (cancelled?.call() ?? false)) {
         return EngineResult.notReady;
       }
+      _drainHistoryFx();
       if (fxRecipesSettled) return EngineResult.ok;
       if (_engine.commandsSettled) return EngineResult.invalid;
       await Future<void>.delayed(pollInterval);
@@ -1063,6 +1063,7 @@ class LooperRepository {
         !_intendRunning) {
       return EngineResult.notReady;
     }
+    _drainHistoryFx();
     if (fxRecipesSettled) return EngineResult.ok;
     return EngineResult.notReady;
   }
