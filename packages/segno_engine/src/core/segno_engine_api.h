@@ -443,11 +443,9 @@ typedef enum le_command_code {
    * re-checks its precondition on the audio thread and is a strict no-op
    * anywhere else, so a state change in the one-block window between
    * le_engine_finalize_take's control-side guards and the apply can never
-   * turn it into a capture start or a punch-in/out. During a count-in it
-   * cancels the count-in (global transport state — the addressed channel is
-   * irrelevant) and logs LE_PLOG_RECORD_ABORT for the counting channel. Not
-   * itself perf-logged (like LE_CMD_ARM/DISARM: the transport fact it causes
-   * — LE_PLOG_RECORD_END / LE_PLOG_RECORD_ABORT — is what is logged). */
+   * turn it into a capture start or a punch-in/out. Pending Count-in members
+   * use explicit cancellation instead. Not itself perf-logged (the resulting
+   * LE_PLOG_RECORD_END is logged by the actual finalization). */
   LE_CMD_FINALIZE_TAKE = 56,
   /* Cancel a take in progress on arg_i (le_engine_undo while RECORDING): the
    * take is finalized at its captured length exactly as a press would end
@@ -518,6 +516,8 @@ typedef enum le_command_code {
                                 * pending (0 len: a void take, no way back). */
   LE_CMD_SET_FX_RECIPE = 77,
   LE_CMD_SET_RECORD_TIMING = 78, /* one complete timing vector and receipt */
+  LE_CMD_STOP_RECORD_CONTROL = 79, /* cohort cancel or non-acquiring capture finish */
+  LE_CMD_CANCEL_COUNT_IN = 80, /* only the shared launch cohort/grace */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -920,6 +920,10 @@ typedef struct le_track_snapshot {
   float peak_l;
   float peak_r;
   uint32_t image_revision; /* last image applied at capture start */
+  int32_t pending_launch; /* 0 none, 1 Record, 2 Play, 3 Overdub: shared Count-in */
+  /* A just-committed member can still be canceled in the next command drain.
+   * This is cancellation authority, not pending membership or fresh admission. */
+  int32_t count_in_cancel_grace;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1881,6 +1885,14 @@ LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,
  * same call falls through and STARTS a capture instead. A caller that means
  * "make sure nothing fires later" — the app's FX-mode entry, which hands the
  * user a surface with no transport controls — needs this, not that. */
+/* Explicit transport intents, resolved atomically by the callback. Rec Stop
+ * cancels the shared launch cohort/grace, otherwise finishes only an actual
+ * cursor capture with normal Record timing. It never acquires a new take.
+ * Cancel Count-in touches only that cohort/grace, never ordinary arms or an
+ * older running capture. Both report queue/admission refusal synchronously. */
+LE_EXPORT int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel);
+LE_EXPORT int32_t le_engine_cancel_count_in(le_engine* engine);
+
 LE_EXPORT int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel);
 
 /* Finalizes track [channel]'s live NON-DEFINING recording take NOW,
@@ -1906,10 +1918,7 @@ LE_EXPORT int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel);
  *   to another command and must be retired first (le_engine_cancel_arm) —
  *   finalizing under it would leave it to fire onto the settled loop later.
  *
- * The one exception to the RECORDING guard: while a count-in is running the
- * call is accepted for ANY valid channel and cancels the count-in outright —
- * the count-in is global transport state that has captured nothing, and its
- * abort is logged as LE_PLOG_RECORD_ABORT for the counting channel.
+ * Pending Count-in members are retired explicitly with cancel_arm.
  *
  * Like cancel_arm, LE_OK means the command actually reached the ring; the
  * audio thread re-checks the RECORDING/non-defining precondition on apply,

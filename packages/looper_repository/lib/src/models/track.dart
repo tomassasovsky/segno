@@ -53,6 +53,7 @@ class Track extends Equatable {
     this.outputMask = 0x3,
     this.layerInFlight = false,
     this.pending = false,
+    this.pendingLaunch,
     this.pendingTrigger,
     this.positionFrames = 0,
     this.lengthPresetBars = 0,
@@ -120,6 +121,9 @@ class Track extends Equatable {
 
   /// Whether a quantized/signal-triggered record arm is waiting to fire.
   final bool pending;
+
+  /// This track’s action waiting for the shared Count-in downbeat.
+  final PendingLaunchAction? pendingLaunch;
 
   /// What that arm waits for, or `null` while nothing is pending.
   final ArmTrigger? pendingTrigger;
@@ -315,6 +319,7 @@ class Track extends Equatable {
     outputMask,
     layerInFlight,
     pending,
+    pendingLaunch,
     pendingTrigger,
     lengthPresetBars,
     lengthPresetOverride,
@@ -359,6 +364,7 @@ class Track extends Equatable {
     outputMask,
     layerInFlight,
     pending,
+    pendingLaunch,
     pendingTrigger,
     lengthPresetBars,
     lengthPresetOverride,

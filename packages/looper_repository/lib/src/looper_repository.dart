@@ -864,7 +864,7 @@ class LooperRepository {
     _cancelOneShot();
     _cancelMix();
     _mixGeneration++;
-    if (_pendingImages.isNotEmpty) _settleImages(_engine.snapshot());
+    if (_pendingImages.isNotEmpty) _snapshotAndSettleImages();
     _pendingImages.clear();
   }
 
@@ -1112,7 +1112,11 @@ class LooperRepository {
     ),
   );
 
-  void _settleImages(EngineSnapshot snapshot) {
+  EngineSnapshot _snapshotAndSettleImages() {
+    // A settled fence may retire an absent image only from a later snapshot.
+    // Reading it afterwards can mistake an in-flight join for a cancellation.
+    final commandsSettled = _engine.commandsSettled;
+    final snapshot = _engine.snapshot();
     for (final entry in _pendingImages.entries.toList()) {
       final ch = entry.key;
       if (ch >= snapshot.tracks.length) continue;
@@ -1158,12 +1162,13 @@ class LooperRepository {
         }
         _pendingImages.remove(ch);
         _reproject();
-      } else if (_engine.commandsSettled &&
+      } else if (commandsSettled &&
           !track.pending &&
-          !snapshot.countingIn) {
+          track.pendingLaunch == null) {
         _pendingImages.remove(ch);
       }
     }
+    return snapshot;
   }
 
   _PendingTiming? _pendingTiming;
@@ -2135,8 +2140,7 @@ class LooperRepository {
   void _poll() {
     final receiptsSettled = _observeSettingsReceipts();
     _drainHistoryFx();
-    final snapshot = _engine.snapshot();
-    _settleImages(snapshot);
+    final snapshot = _snapshotAndSettleImages();
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
     // A measurement auto-sets the engine's offset (it never flows through
@@ -2172,8 +2176,7 @@ class LooperRepository {
   /// the next poll tick (which would make a dragged knob feel a tick behind).
   void _reproject({bool forcePublication = false}) {
     final receiptsSettled = _observeSettingsReceipts();
-    final snapshot = _engine.snapshot();
-    _settleImages(snapshot);
+    final snapshot = _snapshotAndSettleImages();
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
@@ -2356,6 +2359,7 @@ class LooperRepository {
               redoDepth: s.tracks[i].redoDepth,
               layerInFlight: s.tracks[i].layerInFlight,
               pending: s.tracks[i].pending,
+              pendingLaunch: s.tracks[i].pendingLaunch,
               pendingTrigger: ArmTrigger.fromCode(s.tracks[i].pendingTrigger),
               positionFrames: s.tracks[i].positionFrames,
               lengthPresetBars: _effectiveLengthPreset(i),
@@ -2931,8 +2935,13 @@ class LooperRepository {
     if (channel < 0 || channel >= snapshot.tracks.length) {
       return EngineResult.invalid;
     }
+    // The callback rechecks this cancellation-only intent, so an expired
+    // grace window cannot turn the press into a new capture.
+    if (snapshot.tracks[channel].pendingLaunch != null ||
+        snapshot.tracks[channel].countInCancelGrace) {
+      return _engine.cancelArm(channel: channel);
+    }
     if (snapshot.tracks[channel].pending ||
-        snapshot.countingIn ||
         (state != TrackState.empty &&
             state != TrackState.playing &&
             state != TrackState.stopped)) {
@@ -3204,12 +3213,19 @@ class LooperRepository {
       _engine.stopTrack(channel: channel);
 
   /// Resumes playback of track [channel].
-  EngineResult play({int channel = 0}) =>
-      _sessionAudioReserved ||
-          !recordStartSettingsSettled ||
-          recordStartRecoveryRequired
-      ? EngineResult.notReady
-      : _engine.play(channel: channel);
+  EngineResult play({int channel = 0}) {
+    if (_sessionAudioReserved) return EngineResult.notReady;
+    final tracks = _engine.snapshot().tracks;
+    if (channel >= 0 &&
+        channel < tracks.length &&
+        (tracks[channel].pendingLaunch != null ||
+            tracks[channel].countInCancelGrace)) {
+      return _engine.cancelArm(channel: channel);
+    }
+    return !recordStartSettingsSettled || recordStartRecoveryRequired
+        ? EngineResult.notReady
+        : _engine.play(channel: channel);
+  }
 
   /// Erases track [channel] (resets the master if all tracks empty), leaving a
   /// restore point: [undo] puts the take back, chains and mutes included.
@@ -5341,6 +5357,19 @@ class LooperRepository {
     return _engine.cancelArm(channel: channel);
   }
 
+  /// Rec Stop retires Count-in, otherwise finishing only a live capture.
+  /// The callback resolves the intent without a snapshot-to-toggle race.
+  EngineResult stopRecordControl({required int channel}) {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.stopRecordControl(channel: channel);
+  }
+
+  /// Retires only Count-in membership/grace, preserving ordinary live work.
+  EngineResult cancelCountIn() {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.cancelCountIn();
+  }
+
   /// Finalizes track [channel]'s live non-defining recording take NOW —
   /// [cancelArm]'s counterpart for the LIVE take (#405): the cancel retires
   /// an arm that has not fired, this ends a take already capturing, exactly
@@ -5351,8 +5380,8 @@ class LooperRepository {
   /// The engine refuses for the DEFINING take (ending it would let a mode
   /// switch set the session's bar length mid-gesture) and while a pending
   /// arm is live on the channel; callers treat a refusal as "the capture
-  /// survives". A running count-in is cancelled outright instead, whatever
-  /// channel is addressed. No [record]-style snapshot side effects here: the
+  /// survives". Pending Count-in uses [cancelArm]. No [record]-style snapshot
+  /// side effects here: the
   /// take is already running, so its record-time lane FX snapshot was pushed
   /// when it started — and nothing to remember across a restart (a live take
   /// does not survive one).

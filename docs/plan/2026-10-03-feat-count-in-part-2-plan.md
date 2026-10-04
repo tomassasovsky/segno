@@ -1,7 +1,10 @@
 # Part 2: shared stopped launch (#1026)
 
 Depends on [part 1](2026-10-03-feat-count-in-part-1-plan.md).
-Status: reviewed design; rebind source and freeze its oracle before implementation.
+Status: implemented and independently reviewed locally. Publication issue #1117
+contains this Part 2 cut after the architecture corrections; local verification
+passes. Additional Claude review and current-head CI remain pending. The broader
+#1026 remains open.
 
 ## Result and contract
 
@@ -55,3 +58,52 @@ No Count-in mapping target ships in this part. External-clock Receive still has
 no producer; retain its future bypass requirement without inventing a receiver.
 The future capture journal must extend admission before it ships. No parallel
 capture, changed pitch/speed or compatibility path is introduced.
+
+## Integration review, October 4
+
+The real pedal path requires callback-resolved Stop intents. A polled track
+snapshot cannot safely choose between canceling Count-in and toggling recording:
+the audio callback may advance between those operations. Rec Stop now retires
+Count-in or finishes an actual capture without ever acquiring a new take. Mute
+Stop retires Count-in without canceling unrelated grid or Sound arms. FX entry
+sweeps the eight track addresses because queued launches may not be published
+when the mode changes. Refused cancellation keeps transport controls available.
+
+Independent Control review found two cancellation-refusal paths; both have
+behavioral failing-before/passing-after regressions. Full Control tests pass
+205 cases; all 29 real-native Control cases also pass. Follow-up review caught a
+repository cancellation race at the launch boundary. Record and Play now use a
+cancellation-only command when their snapshot witnesses pending membership or
+the existing one-callback grace. A stale witness cannot acquire an overdub.
+The witness remains engine-only; pending membership still clears at launch.
+
+The repaired source passes 712 Looper repository tests (95.174% coverage), 356
+engine package tests, all native variants, the C++ shim, strict analysis and
+Bloc lint (789 files). Independent tests reproduce the repaired failure and
+exercise both callers, expiration and snapshot interleaving. Existing app and
+Session evidence is reused only for unchanged callers. The complete source and
+matching test library are archived. No hardware or current-head CI claim is
+made, and this does not close the separate controller-mapping part.
+
+The original metric fixture used unsupported 3/8. The corrected common fixture
+uses 3/4 at 120 BPM and 8 kHz: one bar is 12,000 frames. A separate 6/8 fixture
+preserves the existing native denominator-note BPM law: 24,000 frames. The older
+prototype uses quarter-note BPM instead for eighth-note signatures. That
+inherited discrepancy needs explicit reconciliation outside this scheduler
+change; these checks do not claim agreement between those two sources.
+
+## Publication integration check
+
+Independent review reproduced a second repository race: a joining track could
+lose inherited effect metadata when its command completed after an older
+snapshot but before the settlement check. Settlement now reads the command
+fence first and then the snapshot, retaining one snapshot walk per projection.
+The existing real-native capture-image case covers both normal and interleaved
+execution, with the original deadline, committed image revision and effect
+fingerprint checked. The failing case passes after the fix.
+
+Current local results: 724 repository tests (95.74% coverage), 356 engine tests,
+2948 app tests with 46 skips (92.22% filtered coverage), all three native variants
+and the C++ shim. No native source changed for this final repository repair.
+The review is complete with no unresolved finding; the requested additional
+Claude review has not returned a verdict because of its session limit.

@@ -2041,7 +2041,46 @@ class SegnoEngineBindings {
   /// still holding — with the transport parked, or quantize since turned off, the
   /// same call falls through and STARTS a capture instead. A caller that means
   /// "make sure nothing fires later" — the app's FX-mode entry, which hands the
-  /// user a surface with no transport controls — needs this, not that.
+  /// user a surface with no transport controls — needs this, not that. */
+  /// /* Explicit transport intents, resolved atomically by the callback. Rec Stop
+  /// cancels the shared launch cohort/grace, otherwise finishes only an actual
+  /// cursor capture with normal Record timing. It never acquires a new take.
+  /// Cancel Count-in touches only that cohort/grace, never ordinary arms or an
+  /// older running capture. Both report queue/admission refusal synchronously.
+  int le_engine_stop_record_control(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_stop_record_control(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_stop_record_controlPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_stop_record_control');
+  late final _le_engine_stop_record_control = _le_engine_stop_record_controlPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  int le_engine_cancel_count_in(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_engine_cancel_count_in(
+      engine,
+    );
+  }
+
+  late final _le_engine_cancel_count_inPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_engine_cancel_count_in',
+      );
+  late final _le_engine_cancel_count_in = _le_engine_cancel_count_inPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
   int le_engine_cancel_arm(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -2084,10 +2123,7 @@ class SegnoEngineBindings {
   /// to another command and must be retired first (le_engine_cancel_arm) —
   /// finalizing under it would leave it to fire onto the settled loop later.
   ///
-  /// The one exception to the RECORDING guard: while a count-in is running the
-  /// call is accepted for ANY valid channel and cancels the count-in outright —
-  /// the count-in is global transport state that has captured nothing, and its
-  /// abort is logged as LE_PLOG_RECORD_ABORT for the counting channel.
+  /// Pending Count-in members are retired explicitly with cancel_arm.
   ///
   /// Like cancel_arm, LE_OK means the command actually reached the ring; the
   /// audio thread re-checks the RECORDING/non-defining precondition on apply,
@@ -5819,11 +5855,9 @@ enum le_command_code {
   /// re-checks its precondition on the audio thread and is a strict no-op
   /// anywhere else, so a state change in the one-block window between
   /// le_engine_finalize_take's control-side guards and the apply can never
-  /// turn it into a capture start or a punch-in/out. During a count-in it
-  /// cancels the count-in (global transport state — the addressed channel is
-  /// irrelevant) and logs LE_PLOG_RECORD_ABORT for the counting channel. Not
-  /// itself perf-logged (like LE_CMD_ARM/DISARM: the transport fact it causes
-  /// — LE_PLOG_RECORD_END / LE_PLOG_RECORD_ABORT — is what is logged).
+  /// turn it into a capture start or a punch-in/out. Pending Count-in members
+  /// use explicit cancellation instead. Not itself perf-logged (the resulting
+  /// LE_PLOG_RECORD_END is logged by the actual finalization).
   LE_CMD_FINALIZE_TAKE(56),
 
   /// Cancel a take in progress on arg_i (le_engine_undo while RECORDING): the
@@ -5915,7 +5949,13 @@ enum le_command_code {
   LE_CMD_SET_FX_RECIPE(77),
 
   /// one complete timing vector and receipt
-  LE_CMD_SET_RECORD_TIMING(78);
+  LE_CMD_SET_RECORD_TIMING(78),
+
+  /// cohort cancel or non-acquiring capture finish
+  LE_CMD_STOP_RECORD_CONTROL(79),
+
+  /// only the shared launch cohort/grace
+  LE_CMD_CANCEL_COUNT_IN(80);
 
   final int value;
   const le_command_code(this.value);
@@ -5999,6 +6039,8 @@ enum le_command_code {
     102 => LE_EVT_CLEAR_FROZEN,
     77 => LE_CMD_SET_FX_RECIPE,
     78 => LE_CMD_SET_RECORD_TIMING,
+    79 => LE_CMD_STOP_RECORD_CONTROL,
+    80 => LE_CMD_CANCEL_COUNT_IN,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -6512,6 +6554,15 @@ final class le_track_snapshot extends ffi.Struct {
   /// last image applied at capture start
   @ffi.Uint32()
   external int image_revision;
+
+  /// 0 none, 1 Record, 2 Play, 3 Overdub: shared Count-in
+  @ffi.Int32()
+  external int pending_launch;
+
+  /// A just-committed member can still be canceled in the next command drain.
+  /// This is cancellation authority, not pending membership or fresh admission.
+  @ffi.Int32()
+  external int count_in_cancel_grace;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct

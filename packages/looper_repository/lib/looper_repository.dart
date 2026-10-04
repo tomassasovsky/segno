@@ -19,6 +19,7 @@ export 'package:segno_engine/segno_engine.dart'
         LaneCacheState,
         LooperMode,
         LooperModeGate,
+        PendingLaunchAction,
         PluginScanProgress,
         RecordStartEditKind,
         RecordTiming,

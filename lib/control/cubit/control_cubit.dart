@@ -1687,30 +1687,27 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
       case InteractionMode.fx:
-        // Every FX entry records its return mode for the current pedal door.
-        _fxReturn = state.mode;
         // Cancel arms BEFORE the emit so the projection that rides it already
         // describes the post-entry intent (the engine's own state follows one
         // poll later, as it does for every other command).
         //
-        // Read LIVE engine truth, not the polled snapshot: an arm cancelled or
-        // fired moments ago still reads `pending` for up to one poll, and the
-        // cancel is cheap enough that a stale read costs only a no-op.
+        // A launch can be queued before either snapshot reports it. Sweep
+        // the fixed addresses: cancellation is FIFO and a no-op when empty.
         final looper = _looper.state;
-        for (final track in looper.tracks) {
-          if (track.pending) _looper.cancelArm(channel: track.channel);
+        for (
+          var channel = 0;
+          channel < ControlState.bankCount * ControlState.tracksPerBank;
+          channel++
+        ) {
+          if (!_looper.cancelArm(channel: channel).isOk) return;
         }
+        _fxReturn = state.mode;
         // Then end every live non-defining take at the entry gesture (#405).
         // AFTER the arm sweep by construction: the primitive refuses while a
         // pending arm is live on the channel, and the sweep is what retires
         // them. Refusals are silently accepted — that IS the defining-take
         // fallback (the capture survives, as documented above). RECORDING
         // only: an overdub rides on, exactly as under Mute.
-        if (looper.transport.countingIn) {
-          // A count-in is global transport state (no track is capturing yet),
-          // so the addressed channel is irrelevant — any channel cancels it.
-          _looper.finalizeTake(channel: 0);
-        }
         for (final track in looper.tracks) {
           if (track.state == TrackState.recording) {
             _looper.finalizeTake(channel: track.channel);
@@ -1900,7 +1897,7 @@ class ControlCubit extends Cubit<ControlState> {
   bool _recStop(int channel) {
     final track = _trackAt(channel);
     if (track == null) return false;
-    if (track.isCapturing && !_looper.record(channel: channel).isOk) {
+    if (!_looper.stopRecordControl(channel: channel).isOk) {
       return false;
     }
     if (!_looper.setMute(muted: true, channel: channel).isOk) return false;
@@ -1920,8 +1917,9 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   bool _parkAllAccepted() {
+    if (!_looper.cancelCountIn().isOk) return false;
     final running = _running();
-    if (running.isEmpty) return false; // already parked: keep resume set
+    if (running.isEmpty) return true; // Keep the parked resume set.
     emit(
       state.copyWith(
         parkedResume: {...running}..removeWhere(state.excluded.contains),

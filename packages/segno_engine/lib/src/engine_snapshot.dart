@@ -526,6 +526,26 @@ class LaneSnapshot {
   );
 }
 
+/// The action queued for a track at the shared stopped-launch deadline.
+enum PendingLaunchAction {
+  /// Starts a fresh recording.
+  record,
+
+  /// Resumes existing audio.
+  play,
+
+  /// Starts an overdub over existing audio.
+  overdub;
+
+  /// Decodes native membership; zero means no pending launch.
+  static PendingLaunchAction? fromCode(int code) => switch (code) {
+    1 => record,
+    2 => play,
+    3 => overdub,
+    _ => null,
+  };
+}
+
 /// An immutable per-track projection of the native `le_track_snapshot`.
 ///
 /// A track is a multi-lane container: it owns the transport (state, multiple,
@@ -550,6 +570,8 @@ class TrackSnapshot {
     this.outputMask = 0x3,
     this.layerInFlight = false,
     this.pending = false,
+    this.pendingLaunch,
+    this.countInCancelGrace = false,
     this.lengthPresetBars = 0,
     this.oneShot = false,
     this.settledTakeId = 0,
@@ -582,6 +604,8 @@ class TrackSnapshot {
       outputMask = 0x3,
       layerInFlight = false,
       pending = false,
+      pendingLaunch = null,
+      countInCancelGrace = false,
       lengthPresetBars = 0,
       oneShot = false,
       settledTakeId = 0,
@@ -620,6 +644,8 @@ class TrackSnapshot {
     outputMask: native.output_mask,
     layerInFlight: native.layer_in_flight != 0,
     pending: native.pending != 0,
+    pendingLaunch: PendingLaunchAction.fromCode(native.pending_launch),
+    countInCancelGrace: native.count_in_cancel_grace != 0,
     lengthPresetBars: native.length_preset_bars,
     oneShot: native.one_shot != 0,
     settledTakeId: native.settled_take_id,
@@ -677,6 +703,13 @@ class TrackSnapshot {
 
   /// Whether a quantized/signal-triggered record arm is waiting to fire.
   final bool pending;
+
+  /// This track’s action waiting for the shared Count-in downbeat.
+  final PendingLaunchAction? pendingLaunch;
+
+  /// A just-committed Count-in member can be canceled in the next drain.
+  /// This does not mean the launch is still pending.
+  final bool countInCancelGrace;
 
   /// The DEFINING-recording length preset (A6, D17): `0` = AUTO, `1..64` =
   /// fixed N bars. Inert on a track that already has content; applies to the
@@ -792,6 +825,8 @@ class TrackSnapshot {
           outputMask == other.outputMask &&
           layerInFlight == other.layerInFlight &&
           pending == other.pending &&
+          pendingLaunch == other.pendingLaunch &&
+          countInCancelGrace == other.countInCancelGrace &&
           lengthPresetBars == other.lengthPresetBars &&
           oneShot == other.oneShot &&
           settledTakeId == other.settledTakeId &&
@@ -822,6 +857,8 @@ class TrackSnapshot {
     outputMask,
     layerInFlight,
     pending,
+    pendingLaunch,
+    countInCancelGrace,
     lengthPresetBars,
     oneShot,
     settledTakeId,

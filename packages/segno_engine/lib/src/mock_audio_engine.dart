@@ -867,6 +867,12 @@ class MockAudioEngine implements AudioEngine {
   EngineResult cancelArm({required int channel}) => _requireRunning();
 
   @override
+  EngineResult stopRecordControl({required int channel}) => _requireRunning();
+
+  @override
+  EngineResult cancelCountIn() => _requireRunning();
+
+  @override
   EngineResult finalizeTake({required int channel}) => _requireRunning();
 
   @override

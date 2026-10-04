@@ -88,6 +88,8 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   /* Acquire pairs with the arm's release store, so the trigger read below
    * is the one published with this arm. */
   out->pending = atomic_load_explicit(&tr->a_pending, memory_order_acquire);
+  out->pending_launch = active ? load_i32(&tr->a_pending_launch) : 0;
+  out->count_in_cancel_grace = active && load_i32(&tr->a_launch_grace) != 0;
   out->length_preset_bars = load_i32(&tr->a_length_preset_bars);
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
   out->one_shot = load_i32(&tr->a_one_shot);

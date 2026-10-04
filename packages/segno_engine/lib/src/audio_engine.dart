@@ -278,13 +278,23 @@ abstract interface class LooperTransport {
 
   /// Cancels track [channel]'s pending record arm, whatever armed it (the
   /// quantized loop-top arm, the signal-triggered one, or a Band section
-  /// toggle). A no-op when the track is not armed.
+  /// toggle), or its stopped Count-in launch. This cancellation also reaches
+  /// an earlier queued request that has not appeared in a snapshot yet.
+  /// It preserves ordinary playback/capture and older audio.
   ///
   /// The UNCONDITIONAL cancel, distinct from [record]: a record press only
   /// cancels an arm whose trigger it owns, and only while the conditions that
   /// created the arm still hold — with the transport parked it starts a
   /// capture instead. Callers that mean "nothing may fire later" want this.
   EngineResult cancelArm({required int channel});
+
+  /// Cancels the shared Count-in cohort, otherwise finishes an actual cursor
+  /// capture using Record timing. Never starts a new capture from stale state.
+  EngineResult stopRecordControl({required int channel});
+
+  /// Cancels only shared Count-in launches and their one-drain grace.
+  /// Ordinary grid/Sound arms and older captures remain untouched.
+  EngineResult cancelCountIn();
 
   /// Finalizes track [channel]'s live NON-defining recording take NOW,
   /// unconditionally — [cancelArm]'s counterpart for the LIVE take (#405):
@@ -300,9 +310,8 @@ abstract interface class LooperTransport {
   /// no live pending arm. In particular the DEFINING take — the one
   /// establishing the loop length — is refused: ending it would let this
   /// call set the session's bar length mid-gesture, so it keeps running and
-  /// the caller must treat the refusal as "the capture survives". While a
-  /// count-in is running the call is instead accepted for any channel and
-  /// cancels the count-in outright (nothing has been captured).
+  /// the caller must treat the refusal as "the capture survives". Pending
+  /// launches are canceled explicitly with [cancelArm].
   EngineResult finalizeTake({required int channel});
 
   /// Fixes track [channel]'s loop length to [multiple] whole base loops, or `0`

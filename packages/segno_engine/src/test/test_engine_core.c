@@ -13600,6 +13600,374 @@ static void test_click_loop_locked_downbeat_vs_beat_frequency(void) {
   le_engine_destroy(e);
 }
 
+static void test_shared_count_in_late_join_and_cancel(void) {
+  printf("test_shared_count_in_late_join_and_cancel\n");
+  le_engine* e = tg_make_engine(8000);
+  le_snapshot s;
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  CHECK(le_engine_record(e, 6) == LE_OK);
+  tg_advance(e, 6000);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(s.tracks[6].pending_launch == 1);
+  CHECK(s.tracks[1].pending_launch == 1);
+  CHECK(le_engine_record(e, 6) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(s.tracks[6].pending_launch == 0);
+  CHECK(s.tracks[1].pending_launch == 1);
+  tg_advance(e, 9999);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[6].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 0);
+  le_engine_destroy(e);
+}
+
+/* Literal 8 kHz/120 BPM deadlines, with real zero-frame command drains. */
+static void test_shared_count_in_order_pcm_and_fifo(void) {
+  printf("test_shared_count_in_order_pcm_and_fifo\n");
+  for (int requeue = 0; requeue < 2; ++requeue) {
+    le_engine* e = tg_make_engine(8000);
+    le_snapshot s;
+    CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+    CHECK(record_start_count(e, 1) == LE_OK);
+    CHECK(le_engine_record(e, 6) == LE_OK);
+    le_engine_process(e, NULL, NULL, 0);
+    tg_advance(e, 6000);
+    CHECK(le_engine_record(e, 1) == LE_OK);
+    le_engine_process(e, NULL, NULL, 0);
+    if (requeue) {
+      CHECK(le_engine_record(e, 6) == LE_OK);
+      le_engine_process(e, NULL, NULL, 0);
+      CHECK(le_engine_record(e, 6) == LE_OK);
+      le_engine_process(e, NULL, NULL, 0);
+    }
+    tg_advance(e, 9999);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.counting_in == 1);
+    CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+    CHECK(s.tracks[6].state == LE_TRACK_EMPTY);
+    tg_advance(e, 1);
+    le_engine_get_snapshot(e, &s);
+    const int winner = requeue ? 6 : 1;
+    const int loser = requeue ? 1 : 6;
+    CHECK(s.counting_in == 0);
+    CHECK(s.tracks[winner].state == LE_TRACK_RECORDING);
+    CHECK(s.tracks[loser].state == LE_TRACK_EMPTY);
+    CHECK(s.tracks[loser].undo_depth == 0);
+    CHECK(s.master_length_frames == 0);
+    /* No callback between downbeat and this sample: avoid consuming the grace
+     * with a command, and inspect actual captured PCM rather than a cue. */
+    float input = .7f, output = 0;
+    le_engine_process(e, &output, &input, 1);
+    const int live = load_i32(&e->tracks[winner].lanes[0].a_live);
+    CHECK(fabsf(e->tracks[winner].lanes[0].pool[live][0] - .7f) < .00001f);
+    CHECK(e->tracks[winner].record_pos == 1);
+    le_engine_destroy(e);
+  }
+
+  le_engine* e = tg_make_engine(8000);
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  /* Cancellation must catch a preceding unpolled launch, never a later one. */
+  CHECK(le_engine_record(e, 6) == LE_OK);
+  CHECK(le_engine_cancel_arm(e, 6) == LE_OK);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[6].pending_launch == 0);
+  CHECK(s.tracks[1].pending_launch == 1);
+  CHECK(le_engine_cancel_arm(e, 6) == LE_OK);
+  CHECK(le_engine_record(e, 6) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  tg_advance(e, 17000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[6].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 0);
+  le_engine_destroy(e);
+}
+
+static le_engine* shared_stopped_fixture(void) {
+  le_engine* e = tg_make_engine(8000);
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  float pcm[256];
+  for (int i = 0; i < 256; ++i) pcm[i] = .2f;
+  CHECK(le_engine_import_track(e, 6, pcm, 256) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, pcm, 256) == LE_OK);
+  CHECK(le_engine_import_track(e, 4, pcm, 256) == LE_OK);
+  CHECK(le_engine_commit_session(e, 256, 0) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  CHECK(le_engine_stop_track(e, 6) == LE_OK);
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  CHECK(le_engine_stop_track(e, 4) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  return e;
+}
+
+static void test_shared_count_in_play_cancel_and_resume(void) {
+  printf("test_shared_count_in_play_cancel_and_resume\n");
+  for (int grace = 0; grace < 2; ++grace) {
+    le_engine* e = shared_stopped_fixture();
+    le_snapshot s;
+    CHECK(le_engine_play(e, 6) == LE_OK);
+    le_engine_process(e, NULL, NULL, 0);
+    tg_advance(e, 6000);
+    CHECK(le_engine_play(e, 1) == LE_OK);
+    le_engine_process(e, NULL, NULL, 0);
+    if (!grace) {
+      CHECK(le_engine_play(e, 6) == LE_OK);
+      le_engine_process(e, NULL, NULL, 0);
+    }
+    tg_advance(e, 9999);
+    float input = 0, output = 1;
+    le_engine_process(e, &output, &input, 1);
+    CHECK(output == 0); /* last countdown sample is still silent */
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[1].pending_launch == 0);
+    CHECK(s.tracks[1].count_in_cancel_grace == 1);
+    CHECK(s.tracks[4].state == LE_TRACK_PLAYING); /* ordinary resume survives */
+    if (grace) {
+      CHECK(le_engine_play(e, 6) == LE_OK);
+      le_engine_process(e, NULL, NULL, 0);
+    }
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[6].state == LE_TRACK_STOPPED);
+    CHECK(s.tracks[6].length_frames == 256);
+    CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+    float preserved[256];
+    CHECK(le_engine_export_track(e, 6, preserved, 256) == 256);
+    for (int i = 0; i < 256; ++i) CHECK(preserved[i] == .2f);
+    le_engine_process(e, &output, &input, 1);
+    CHECK(output > .1f); /* positive actual playback after the downbeat */
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].count_in_cancel_grace == 0);
+    le_engine_destroy(e);
+  }
+}
+
+static void test_shared_count_in_overdub_and_targeted_undo(void) {
+  printf("test_shared_count_in_overdub_and_targeted_undo\n");
+  le_engine* e = shared_stopped_fixture();
+  le_snapshot s;
+  CHECK(le_engine_record(e, 6) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[6].pending_launch == 3);
+  CHECK(s.tracks[1].pending_launch == 3);
+  CHECK(le_engine_undo(e, 6) == LE_OK); /* cancel request, preserve old audio */
+  le_engine_process(e, NULL, NULL, 0);
+  tg_advance(e, 16000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[6].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[6].length_frames == 256);
+  CHECK(s.tracks[6].undo_depth == 0);
+  CHECK(s.master_length_frames == 256);
+  CHECK(le_engine_cancel_arm(e, 1) == LE_OK); /* next drain grace */
+  le_engine_process(e, NULL, NULL, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[1].length_frames == 256);
+  CHECK(s.tracks[1].undo_depth == 0);
+  le_engine_destroy(e);
+}
+
+static void test_shared_count_in_metric_capacity_and_grace_stop(void) {
+  printf("test_shared_count_in_metric_capacity_and_grace_stop\n");
+  /* 3/4 agrees with the accepted shared-deadline example; 6/8 preserves
+   * the existing native denominator-note BPM law (not quarter-note BPM). */
+  const int signatures[][3] = {{3, 4, 12000}, {6, 8, 24000}};
+  for (int metric = 0; metric < 2; ++metric) {
+  le_engine* e = tg_make_engine(8000);
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(le_engine_set_time_signature(e, signatures[metric][0], signatures[metric][1]) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 6) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  tg_advance(e, 3000);
+  const int order[] = {7, 5, 4, 3, 2, 0, 1};
+  for (int i = 0; i < 7; ++i) CHECK(le_engine_record(e, order[i]) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  for (int c = 0; c < 8; ++c) CHECK(s.tracks[c].pending_launch == 1);
+  CHECK(le_engine_record(e, 8) == LE_ERR_INVALID);
+  tg_advance(e, signatures[metric][2] - 3001);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.master_length_frames == 0);
+  /* Same-drain FIFO cancellation keeps the old Record toggle from acquiring.
+   * The separate-callback physical Stop case has its own explicit-intent test. */
+  for (int c = 0; c < 8; ++c) CHECK(le_engine_cancel_arm(e, c) == LE_OK);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  tg_advance(e, 13000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.master_length_frames == 0);
+  for (int c = 0; c < 8; ++c) CHECK(s.tracks[c].state == LE_TRACK_EMPTY);
+  le_engine_destroy(e);
+  }
+}
+
+static void test_shared_count_in_sections_and_capture_authority(void) {
+  printf("test_shared_count_in_sections_and_capture_authority\n");
+  const int modes[] = {LE_LOOPER_MODE_SONG, LE_LOOPER_MODE_BAND};
+  for (int m = 0; m < 2; ++m) {
+    le_engine* e = shared_stopped_fixture();
+    CHECK(le_engine_crown_primary(e, 4) == LE_OK);
+    le_engine_process(e, NULL, NULL, 0);
+    CHECK(le_engine_set_looper_mode(e, modes[m]) == LE_OK);
+    le_engine_process(e, NULL, NULL, 0);
+    CHECK(le_engine_play(e, 6) == LE_OK);
+    CHECK(le_engine_play(e, 1) == LE_OK);
+    le_engine_process(e, NULL, NULL, 0);
+    tg_advance(e, 16000);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[6].state == LE_TRACK_STOPPED);
+    CHECK(s.tracks[4].state == (m ? LE_TRACK_PLAYING : LE_TRACK_STOPPED));
+    CHECK(s.tracks[6].length_frames == 256);
+    le_engine_destroy(e);
+  }
+  /* A later Play never steals capture ownership: section exclusion applies
+   * only to playback. A subsequent capture still uses the one-capture rule. */
+  le_engine* e = shared_stopped_fixture();
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SONG) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  tg_advance(e, 16000);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[6].state == LE_TRACK_STOPPED);
+  CHECK(s.master_length_frames == 0);
+  le_engine_destroy(e);
+}
+
+static void test_shared_count_in_images_retire_by_member(void) {
+  printf("test_shared_count_in_images_retire_by_member\n");
+  le_engine* e = tg_make_engine(8000);
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  le_fx_recipe recipes[LE_MAX_LANES] = {0};
+  recipes[0].count = 1;
+  recipes[0].enabled = 1;
+  recipes[0].type[0] = LE_FX_DRIVE;
+  recipes[0].slot_enabled[0] = 1;
+  recipes[0].level[0] = 1;
+  recipes[0].params[0][0] = .5f;
+  recipes[0].params[0][1] = 1;
+  le_record_image image = {.revision = 101, .lane_mask = 1, .gain = {1},
+    .fx_lane_mask = 1, .lane_fx = recipes};
+  CHECK(le_engine_record_with_image(e, 6, &image) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  image.revision = 102;
+  CHECK(le_engine_record_with_image(e, 1, &image) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(atomic_load_explicit(&e->tracks[6].a_pending_image_revision, memory_order_acquire) == 101);
+  CHECK(atomic_load_explicit(&e->tracks[1].a_pending_image_revision, memory_order_acquire) == 102);
+  CHECK(le_engine_clear(e, 6) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(atomic_load_explicit(&e->tracks[6].a_pending_image_revision, memory_order_acquire) == 0);
+  CHECK(atomic_load_explicit(&e->tracks[1].a_pending_image_revision, memory_order_acquire) == 102);
+  CHECK(s.tracks[1].pending_launch == 1);
+  /* Collection between cancel and deadline must retain the surviving recipe. */
+  le_engine_drain_events(e);
+  tg_advance(e, 16000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].image_revision == 102);
+  CHECK(s.tracks[6].image_revision == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(load_i32(&e->tracks[1].lanes[0].a_fx_count) == 1);
+  le_engine_destroy(e);
+}
+
+static void test_shared_count_in_stop_intents_do_not_acquire(void) {
+  printf("test_shared_count_in_stop_intents_do_not_acquire\n");
+  le_engine* e = tg_make_engine(8000);
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 6) == LE_OK);
+  CHECK(le_engine_stop_record_control(e, 1) == LE_OK); /* not yet polled */
+  le_engine_process(e, NULL, NULL, 0);
+  tg_advance(e, 17000);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[6].state == LE_TRACK_EMPTY);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  tg_advance(e, 16000);
+  CHECK(le_engine_cancel_count_in(e) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0); /* cancellation completes first */
+  CHECK(le_engine_stop_record_control(e, 1) == LE_OK); /* stale UI capture */
+  le_engine_process(e, NULL, NULL, 0);
+  tg_advance(e, 17000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 0);
+  CHECK(record_start_count(e, 0) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 6) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  CHECK(le_engine_cancel_count_in(e) == LE_OK);
+  CHECK(le_engine_stop_record_control(e, 1) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[6].pending == 1); /* unrelated Sound arm survives */
+  le_engine_destroy(e);
+
+  for (int round_up = 0; round_up < 2; ++round_up) {
+    e = qa_make_grid_engine();
+    CHECK(timing_remember(e, LE_GRID_DIV_QUARTER) == LE_OK);
+    qa_advance_to(e, 0, 1);
+    CHECK(le_engine_record(e, 1) == LE_OK);
+    drain(e);
+    qa_advance_to(e, 0, 375);
+    qa_advance_to(e, .2f, 375 + (round_up ? 1317 : 1309));
+    CHECK(le_engine_stop_record_control(e, 1) == LE_OK);
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].pending == round_up);
+    CHECK(s.tracks[1].state == (round_up ? LE_TRACK_RECORDING : LE_TRACK_PLAYING));
+    if (round_up) qa_advance_to(e, .2f, 1875);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[1].length_frames == 3000);
+    le_engine_destroy(e);
+  }
+}
+
 static void test_count_in_delays_defining_record(void) {
   printf("test_count_in_delays_defining_record\n");
   le_engine* e = tg_make_engine(1000);
@@ -19998,16 +20366,10 @@ static void test_finalize_take_ends_live_take_at_call_frame(void) {
   le_engine_destroy(e);
 }
 
-/* le_engine_finalize_take mid count-in (#405 decision 3): nothing has been
- * captured (the track is still EMPTY — it only becomes RECORDING at the
- * count-in's downbeat commit), so the call cancels the count-in outright,
- * for ANY addressed channel (the count-in is global transport state, same
- * rule as the D9 press-cancel), and the abort is logged as RECORD_ABORT for
- * the COUNTING channel. Never a RECORD_END, and no RECORD_START ever
- * preceded it — the unpaired-ABORT shape events.log header version 3
- * declares. */
-static void test_finalize_take_aborts_count_in(void) {
-  printf("test_finalize_take_aborts_count_in\n");
+/* Explicit FX-entry cancellation preserves the canceled member's abort log;
+ * finalizeTake cannot globally abort another pending launch. */
+static void test_cancel_arm_aborts_count_in(void) {
+  printf("test_cancel_arm_aborts_count_in\n");
   const char* dir = render_test_dir("fintakecountin");
   le_snapshot s;
 
@@ -20025,9 +20387,10 @@ static void test_finalize_take_aborts_count_in(void) {
   CHECK(s.tracks[1].state == LE_TRACK_EMPTY); /* nothing captured yet */
   const uint64_t call_frame = (uint64_t)s.perf_frames;
 
-  /* FX entry mid-count, addressed to a DIFFERENT channel than the counting
-   * one: accepted — the cancel is channel-agnostic by design. */
-  CHECK(le_engine_finalize_take(e, 0) == LE_OK);
+  /* FX entry explicitly cancels pending members; finalize is never a global
+   * countdown-abort fallback and cannot affect a different track. */
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_cancel_arm(e, 1) == LE_OK);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.counting_in == 0);
@@ -20054,7 +20417,7 @@ static void test_finalize_take_aborts_count_in(void) {
    * file that carries the shape has to declare the vocabulary defining it. */
   CHECK(log_version == LE_TEST_EVENTS_VERSION);
   const size_t entries = log_entry_count(log_bytes);
-  /* The abort names the COUNTING channel (1), not the addressed one (0). */
+  /* The abort names only the explicitly canceled member (1). */
   CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
                                       1) == 1);
   CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
@@ -32603,6 +32966,14 @@ int main(void) {
   test_click_loop_locked_downbeat_vs_beat_frequency();
   test_click_sync_off_second_recording_follows_loop_beats();
   test_click_sync_off_short_loop_repeats_downbeat();
+  test_shared_count_in_late_join_and_cancel();
+  test_shared_count_in_order_pcm_and_fifo();
+  test_shared_count_in_play_cancel_and_resume();
+  test_shared_count_in_overdub_and_targeted_undo();
+  test_shared_count_in_metric_capacity_and_grace_stop();
+  test_shared_count_in_sections_and_capture_authority();
+  test_shared_count_in_images_retire_by_member();
+  test_shared_count_in_stop_intents_do_not_acquire();
   test_count_in_delays_defining_record();
   test_count_in_record_press_cancels();
   test_count_in_stop_and_disable_cancel();
@@ -32954,7 +33325,7 @@ int main(void) {
   test_perf_render_fresh_multiloop_second_track_phase();
   test_perf_render_aborted_take_does_not_claim_disarm_image();
   test_finalize_take_ends_live_take_at_call_frame();
-  test_finalize_take_aborts_count_in();
+  test_cancel_arm_aborts_count_in();
   test_perf_render_golden_master_parity();
   test_perf_render_quantized_round_down_truncation_log_frame();
   test_looper_mode_defaults_and_persistence();

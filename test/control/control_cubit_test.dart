@@ -218,6 +218,7 @@ void main() {
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
       when(() => looper.clearAll(any())).thenReturn(EngineResult.ok);
       when(() => looper.undoClearAll()).thenReturn(EngineResult.ok);
+      when(() => looper.cancelCountIn()).thenReturn(EngineResult.ok);
       for (final stub in [
         () => looper.record(channel: any(named: 'channel')),
         () => looper.undo(channel: any(named: 'channel')),
@@ -225,6 +226,7 @@ void main() {
         () => looper.clear(channel: any(named: 'channel')),
         () => looper.play(channel: any(named: 'channel')),
         () => looper.stopTrack(channel: any(named: 'channel')),
+        () => looper.stopRecordControl(channel: any(named: 'channel')),
       ]) {
         when(stub).thenReturn(EngineResult.ok);
       }
@@ -466,19 +468,55 @@ void main() {
       test('entering FX mode mid COUNT-IN aborts it — nothing has been '
           'captured, and no track even reads as recording yet (#405 '
           'decision 3)', () {
-        // During a count-in the defining track is still EMPTY engine-side;
-        // only the transport flag says a take is in gestation. The abort is
-        // channel-agnostic (the count-in is global transport state), so the
-        // cubit addresses channel 0.
+        // Empty-looking tracks can already have queued launch requests.
+        // Cancel each address; finalizeTake must not impersonate global Stop.
         final state = _stateWith(_emptyTracks(), countingIn: true);
         when(() => looper.state).thenReturn(state);
         looperStates.add(state);
 
         cubit.setMode(InteractionMode.fx);
 
-        verify(() => looper.finalizeTake(channel: 0)).called(1);
+        for (var channel = 0; channel < 8; channel++) {
+          verify(() => looper.cancelArm(channel: channel)).called(1);
+        }
+        verifyNever(() => looper.finalizeTake(channel: any(named: 'channel')));
         expect(cubit.state.mode, InteractionMode.fx);
       });
+
+      test(
+        'FX entry cancels earlier requests before membership publication',
+        () {
+          setEngine(_emptyTracks());
+
+          cubit.setMode(InteractionMode.fx);
+
+          for (var channel = 0; channel < 8; channel++) {
+            verify(() => looper.cancelArm(channel: channel)).called(1);
+          }
+          verifyNever(() => looper.record(channel: any(named: 'channel')));
+          verifyNever(
+            () => looper.finalizeTake(channel: any(named: 'channel')),
+          );
+          verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+        },
+      );
+
+      test(
+        'FX entry stays on transport controls when cancellation is refused',
+        () {
+          when(
+            () => looper.cancelArm(channel: 6),
+          ).thenReturn(EngineResult.invalid);
+          cubit.setMode(InteractionMode.fx);
+          expect(cubit.state.mode, InteractionMode.record);
+          verifyNever(
+            () => looper.finalizeTake(channel: any(named: 'channel')),
+          );
+          when(() => looper.cancelArm(channel: 6)).thenReturn(EngineResult.ok);
+          cubit.setMode(InteractionMode.fx);
+          expect(cubit.state.mode, InteractionMode.fx);
+        },
+      );
 
       test('the arm sweep runs BEFORE the finalize on a capturing track with '
           'a pending loop-top finalize arm — the primitive refuses under a '
@@ -538,25 +576,31 @@ void main() {
         verifyNever(() => looper.finalizeTake(channel: any(named: 'channel')));
       });
 
-      test('entering FX mode reads LIVE engine truth for the arm sweep, not '
-          'the polled snapshot', () {
-        // The polled snapshot still shows an arm the engine has already
-        // retired; the live read is what the sweep must follow.
-        looperStates.add(
-          _stateWith(_tracksWith(const [Track(pending: true)])),
-        );
-        when(() => looper.state).thenReturn(
-          _stateWith(
-            _tracksWith(const [
-              Track(state: TrackState.playing, lengthFrames: 48000),
-            ]),
-          ),
-        );
+      test(
+        'FX cancellation stays safe with an already retired published arm',
+        () {
+          // The polled snapshot still shows an arm the engine has already
+          // retired; the live read is what the sweep must follow.
+          looperStates.add(
+            _stateWith(_tracksWith(const [Track(pending: true)])),
+          );
+          when(() => looper.state).thenReturn(
+            _stateWith(
+              _tracksWith(const [
+                Track(state: TrackState.playing, lengthFrames: 48000),
+              ]),
+            ),
+          );
 
-        cubit.setMode(InteractionMode.fx);
+          cubit.setMode(InteractionMode.fx);
 
-        verifyNever(() => looper.cancelArm(channel: any(named: 'channel')));
-      });
+          for (var channel = 0; channel < 8; channel++) {
+            verify(() => looper.cancelArm(channel: channel)).called(1);
+          }
+          verifyNever(() => looper.record(channel: any(named: 'channel')));
+          verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+        },
+      );
 
       test('entering FX mode with nothing capturing touches the transport '
           'not at all', () {
@@ -2041,6 +2085,62 @@ void main() {
     });
 
     group('stop', () {
+      test(
+        'Rec Stop cancels before snapshot publication without toggling record',
+        () {
+          cubit.stop();
+          verifyInOrder([
+            () => looper.stopRecordControl(channel: 0),
+            () => looper.setMute(muted: true),
+          ]);
+          verifyNever(() => looper.record(channel: any(named: 'channel')));
+        },
+      );
+
+      test('refused Rec Stop leaves mute and playback unchanged', () {
+        when(
+          () => looper.stopRecordControl(channel: 0),
+        ).thenReturn(EngineResult.notReady);
+        cubit.stop();
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+      });
+
+      test(
+        'Mute Stop cancels an unpublished countdown without touching grid arms',
+        () {
+          cubit
+            ..setMode(InteractionMode.mute)
+            ..stop();
+          verify(() => looper.cancelCountIn()).called(1);
+          verifyNever(() => looper.cancelArm(channel: any(named: 'channel')));
+          verifyNever(() => looper.record(channel: any(named: 'channel')));
+        },
+      );
+
+      test(
+        'refused Count-in cancellation leaves Mute Stop and resume intact',
+        () {
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          cubit.setMode(InteractionMode.mute);
+          final resume = cubit.state.parkedResume;
+          when(() => looper.cancelCountIn()).thenReturn(EngineResult.invalid);
+          cubit.stop();
+          expect(cubit.state.parkedResume, resume);
+          verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+        },
+      );
+
       test('Rec mode: mutes the cursor track', () {
         setEngine(
           _tracksWith(const [
@@ -2059,7 +2159,7 @@ void main() {
           _tracksWith(const [Track(state: TrackState.recording)]),
         );
         cubit.stop();
-        verify(() => looper.record()).called(1); // finalize first
+        verify(() => looper.stopRecordControl(channel: 0)).called(1);
         verify(() => looper.setMute(muted: true)).called(1);
       });
 

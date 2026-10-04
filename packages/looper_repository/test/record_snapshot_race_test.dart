@@ -11,15 +11,35 @@ import 'package:looper_repository/looper_repository.dart';
 // package — every other name is the domain type from the looper_repository
 // barrel.
 import 'package:segno_engine/segno_engine.dart'
-    show FxFingerprint, PumpedNativeEngine, RecordImage;
+    show EngineSnapshot, FxFingerprint, PumpedNativeEngine, RecordImage;
 
 class _CaptureImageEngine extends PumpedNativeEngine {
   RecordImage? lastImage;
+  final imageChannels = <int>[];
+  bool interleaveNextImage = false;
+  void Function()? afterSnapshot;
+
+  @override
+  EngineSnapshot snapshot() {
+    final result = super.snapshot();
+    final callback = afterSnapshot;
+    afterSnapshot = null;
+    callback?.call();
+    return result;
+  }
 
   @override
   EngineResult recordWithImage(RecordImage image, {int channel = 0}) {
     lastImage = image;
-    return super.recordWithImage(image, channel: channel);
+    imageChannels.add(channel);
+    final result = super.recordWithImage(image, channel: channel);
+    if (interleaveNextImage && result.isOk) {
+      interleaveNextImage = false;
+      // Drain the actual join after the snapshot was captured, before the
+      // repository can make a terminal cancellation decision from it.
+      afterSnapshot = () => pump(frames: 0);
+    }
+    return result;
   }
 }
 
@@ -75,6 +95,78 @@ void main() {
   });
 
   group('record-time snapshot race (real engine)', () {
+    for (final interleaved in [false, true]) {
+      test('shared Count-in joins prepare their own images and cancellation '
+          'retains the surviving image until its original deadline '
+          '(interleaved=$interleaved)', () async {
+        expect(engine.setTempo(120), EngineResult.ok);
+        engine.pump(frames: 0);
+        expect(
+          repo.setRecordStartSettings(
+            countInBars: 1,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+          ),
+          EngineResult.ok,
+        );
+        engine.pump(frames: 0);
+        expect(await repo.settleRecordStartSettings(), EngineResult.ok);
+        expect(
+          repo.setMonitorEffects(
+            input: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        engine.pump(frames: 0);
+        expect(repo.record(channel: 6), EngineResult.ok);
+        engine
+          ..pump(frames: 36000)
+          ..interleaveNextImage = interleaved;
+        expect(repo.record(channel: 1), EngineResult.ok);
+        engine.pump(frames: 0);
+        expect(engine.imageChannels, [6, 1]);
+        expect(
+          engine.snapshot().tracks[6].pendingLaunch,
+          PendingLaunchAction.record,
+        );
+        expect(
+          engine.snapshot().tracks[1].pendingLaunch,
+          PendingLaunchAction.record,
+        );
+        expect(repo.record(channel: 6), EngineResult.ok);
+        engine.pump(frames: 0);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.imageChannels, [6, 1]); // cancel prepares nothing
+        engine.pump(frames: 59999);
+        expect(engine.snapshot().tracks[1].state, TrackState.empty);
+        engine.pump(frames: 1);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.snapshot().tracks[1].state, TrackState.recording);
+        expect(engine.snapshot().tracks[6].state, TrackState.empty);
+        expect(
+          engine.snapshot().tracks[1].imageRevision,
+          engine.lastImage!.revision,
+        );
+        expect(repo.laneEffects(1, 0), isNotEmpty);
+        expect(
+          repo.laneEffects(1, 0).single,
+          isA<BuiltInEffect>().having(
+            (effect) => effect.type,
+            'type',
+            TrackEffectType.drive,
+          ),
+        );
+        expect(repo.laneEffects(6, 0), isEmpty);
+        expect(
+          repo.laneChainFingerprint(1, 0),
+          engine.laneFxFingerprint(channel: 1, lane: 0),
+        );
+      });
+    }
+
     test(
       'a live Pre effect submits zero monitor split and a Pre take recipe',
       () async {
