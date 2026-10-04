@@ -2652,8 +2652,17 @@ class LooperRepository {
           return fxResult;
         }
       }
-      // Re-apply per-input live monitors: enable first, then the single chain's
-      // routing / mix / effects.
+      // Admit remembered mutes before enabling any live monitor.
+      for (final entry in _monitorMute.entries) {
+        final muteResult = _engine.setMonitorInputMute(
+          input: entry.key,
+          muted: entry.value,
+        );
+        if (!muteResult.isOk) {
+          stopEngine();
+          return muteResult;
+        }
+      }
       _monitorInputMode.forEach((input, _) {
         final resolved = monitorResolved(input);
         _monitorResolvedPushed[input] = resolved;
@@ -2664,10 +2673,6 @@ class LooperRepository {
             _engine.setMonitorInputOutput(input: input, mask: mask),
       );
 
-      _monitorMute.forEach(
-        (input, muted) =>
-            _engine.setMonitorInputMute(input: input, muted: muted),
-      );
       for (final input in <int>{
         ..._monitorEffects.keys,
         ..._monitorChainEnabled.keys,
@@ -4171,7 +4176,7 @@ class LooperRepository {
       setMonitorInputMode(input: input, mode: MonitorMode.off);
       setMonitorOutput(input: input, mask: _defaultMonitorOutputMask);
       restoredMix.monitorLevels[input] = 1;
-      setMonitorMute(input: input, muted: false);
+      _requireSessionSetting(setMonitorMute(input: input, muted: false));
       _requireSessionSetting(
         setMonitorEffects(
           input: input,
@@ -4181,10 +4186,20 @@ class LooperRepository {
       );
     }
     for (final monitor in rig.monitors) {
+      // Silence before enabling; unmute only after the destination is ready.
+      if (monitor.muted) {
+        _requireSessionSetting(
+          setMonitorMute(input: monitor.input, muted: true),
+        );
+      }
       setMonitorInputMode(input: monitor.input, mode: monitor.mode);
       setMonitorOutput(input: monitor.input, mask: monitor.outputMask);
+      if (!monitor.muted) {
+        _requireSessionSetting(
+          setMonitorMute(input: monitor.input, muted: false),
+        );
+      }
       restoredMix.monitorLevels[monitor.input] = monitor.volume;
-      setMonitorMute(input: monitor.input, muted: monitor.muted);
       _requireSessionSetting(
         setMonitorEffects(
           input: monitor.input,
@@ -5132,10 +5147,16 @@ class LooperRepository {
   /// Mutes or unmutes monitor [input]. Remembered and re-applied on every
   /// (re)start; takes effect immediately only while running.
   EngineResult setMonitorMute({required int input, required bool muted}) {
+    if (input < 0 || input >= kMaxMonitoredInputs) {
+      return EngineResult.invalid;
+    }
+    if (_intendRunning) {
+      final result = _engine.setMonitorInputMute(input: input, muted: muted);
+      if (!result.isOk) return result;
+    }
     _monitorMute[input] = muted;
     _monitorChanged(input);
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMonitorInputMute(input: input, muted: muted);
+    return EngineResult.ok;
   }
 
   /// Enables or disables hardware [input]'s conditioning stage (the fixed HPF /

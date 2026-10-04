@@ -132,7 +132,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (!priorFx.isOk) throw StateError('previous monitor FX was refused');
     for (final monitor in restored.values) {
       final result = _applyMonitor(monitor);
-      if (!result.isOk) throw StateError('saved monitor FX was refused');
+      if (!result.isOk) throw StateError('saved monitor settings were refused');
     }
     final monitorLevels = {
       for (final monitor in restored.values) monitor.input: monitor.volume,
@@ -423,10 +423,19 @@ class MonitorCubit extends Cubit<MonitorState> {
 
   /// Mutes or unmutes monitor [input].
   Future<void> setMute(int input, {required bool muted}) async {
-    final next = state.forInput(input).copyWith(muted: muted);
-    emit(state.withInput(next));
-    _repository.setMonitorMute(input: input, muted: muted);
-    await _persistMonitor(next);
+    if (isClosed) return;
+    try {
+      final result = _repository.setMonitorMute(input: input, muted: muted);
+      if (!result.isOk) {
+        throw StateError('monitor mute was refused: ${result.name}');
+      }
+      final next = state.forInput(input).copyWith(muted: muted);
+      emit(state.withInput(next));
+      await _persistMonitor(next);
+    } on Object catch (error, stack) {
+      if (!isClosed) addError(error, stack);
+      rethrow;
+    }
   }
 
   /// Appends a default effect (drive) to monitor [input]'s chain, Pre.
@@ -842,10 +851,18 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Pushes [monitor]'s non-mix fields; restore applies all levels together.
   EngineResult _applyMonitor(InputMonitor monitor) {
     final input = monitor.input;
+    // Silence before enabling; unmute only after the destination is ready.
+    if (monitor.muted) {
+      final result = _repository.setMonitorMute(input: input, muted: true);
+      if (!result.isOk) return result;
+    }
     _repository
       ..setMonitorInputMode(input: input, mode: monitor.mode)
-      ..setMonitorOutput(input: input, mask: monitor.outputMask)
-      ..setMonitorMute(input: input, muted: monitor.muted);
+      ..setMonitorOutput(input: input, mask: monitor.outputMask);
+    if (!monitor.muted) {
+      final result = _repository.setMonitorMute(input: input, muted: false);
+      if (!result.isOk) return result;
+    }
     return _repository.setMonitorEffects(
       input: input,
       effects: monitor.effects,
