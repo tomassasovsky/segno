@@ -59,7 +59,8 @@ Neither this feature nor the whole stack is declared ready to merge here.
 The combined regression confirms that a newly saved mute value survives Retry:
 failed restore, accepted mute changes, then recovery restores the saved mode,
 route and disabled nonempty FX chain while retaining the newer mute choice.
-It checks native state, repository, display projection and exact durable values.
+It checks the engine test seam, repository, display projection and exact
+durable values. Actual native sample checks remain separate below.
 
 ## Observed validation
 
