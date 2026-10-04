@@ -7,6 +7,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/monitor_mute.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno_engine/segno_engine.dart' show FxOwner;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -441,6 +442,7 @@ void main() {
         act: (cubit) async {
           await cubit.load();
           expect(cubit.state.inputs, isEmpty);
+          expect(cubit.state.restoreFailed, isTrue);
           expect(live.monitorMode(0), MonitorMode.off);
           expect(live.monitorOutput(0), 3);
           expect(live.monitorEffects(0), isEmpty);
@@ -482,6 +484,36 @@ void main() {
             ),
             ('on', 1, encoded),
           );
+          if (shared) {
+            // Explicit Retry must reread the now-confirmed false mute, not the
+            // original true value from the failed startup attempt.
+            expect(cubit.state.restoreFailed, isTrue);
+            await cubit.load();
+            expect(cubit.state.restoreFailed, isFalse);
+            final restored = cubit.state.forInput(0);
+            expect(restored, live.allMonitors()[0]);
+            expect(restored.mode, MonitorMode.on);
+            expect(restored.outputMask, 1);
+            expect(restored.muted, isFalse);
+            expect(restored.chainEnabled, isFalse);
+            expect(restored.effects.single.slotId, 'saved-monitor');
+            expect(engine.monitorInputEnabled[0], isTrue);
+            expect(engine.monitorOutput[0], 1);
+            expect(engine.monitorMute[0], isFalse);
+            final recipe = engine.fxRecipes[(FxOwner.monitor, 0, 0)]!;
+            expect(recipe.enabled, isFalse);
+            expect(recipe.slots.single.type.name, 'drive');
+            expect(recipe.slots.single.params, [.7, .4, .5, 0]);
+            expect(await saved.loadMonitorMute(0), isFalse);
+            expect(
+              (
+                await saved.loadMonitorInputMode(0),
+                await saved.loadMonitorOutput(0),
+                await saved.loadMonitorEffects(0),
+              ),
+              ('on', 1, encoded),
+            );
+          }
         },
         errors: () => allOf(isNotEmpty, everyElement(isA<StateError>())),
       );
