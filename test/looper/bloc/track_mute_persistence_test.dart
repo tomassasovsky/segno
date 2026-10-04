@@ -151,7 +151,7 @@ void main() {
       onError: (error, _) => errors.add(error),
     );
 
-    Future<void> coldMute({required bool expected}) async {
+    Future<void> coldMute({required bool expected, String? effects}) async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
@@ -172,6 +172,9 @@ void main() {
       );
       expect(boot.started, isTrue);
       expect(freshEngine.laneMute[(0, 0)], expected);
+      if (effects != null) {
+        expect(encodeFxChain(fresh.allLaneChains()[(0, 0)]!), effects);
+      }
     }
 
     LooperBloc attachLooper() {
@@ -191,6 +194,70 @@ void main() {
         await mix.close();
       });
       return bloc;
+    }
+
+    test('mute after failed startup preserves unrestored lane FX', () async {
+      repository.stopEngine();
+      engine.startResult = EngineResult.invalid;
+      final encoded = encodeFxChain(
+        FxChainEnvelope(
+          entries: [
+            BuiltInEffect(
+              type: TrackEffectType.drive,
+              slotId: 'saved-drive',
+              params: const [.8, .4, .5, 0],
+            ),
+          ],
+          chainEnabled: false,
+          meta: const FxChainMeta(inheritedFrom: [2]),
+        ),
+      );
+      await settings.saveLaneEffects(0, 0, encoded);
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      final mix = testMixSettings(repository, settings: settings);
+      addTearDown(mix.close);
+      final boot = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+        mixSettings: mix,
+      );
+      expect(boot.started, isFalse);
+      expect(repository.laneEffects(0, 0), isEmpty);
+      expect(mute(muted: true), EngineResult.ok);
+      await fx.flush();
+      expect(await settings.loadLaneMute(0, 0), isTrue);
+      expect(await settings.loadLaneEffects(0, 0), encoded);
+      await coldMute(expected: true, effects: encoded);
+      expect(await settings.loadLaneEffects(0, 0), encoded);
+      expect(errors, isEmpty);
+    });
+
+    for (final fxFirst in [true, false]) {
+      test('queued FX survives mute coalescing (FX first: $fxFirst)', () async {
+        final effect = BuiltInEffect(
+          type: TrackEffectType.drive,
+          slotId: 'queued-drive',
+          params: const [.6, .4, .5, 0],
+        );
+        expect(
+          repository.setLaneEffects(channel: 0, lane: 0, effects: [effect]),
+          EngineResult.ok,
+        );
+        final ticket = fx.beginPending();
+        const address = FxAddress(stage: FxStage.loop, lane: 0);
+        void queueFx() => fx.retainConfirmed(address, settings);
+        if (fxFirst) queueFx();
+        expect(mute(muted: true), EngineResult.ok);
+        if (!fxFirst) queueFx();
+        fx.finishPending(ticket);
+        await fx.flush();
+        final saved = decodeFxChain(await settings.loadLaneEffects(0, 0));
+        expect(saved.entries.single, effect);
+        expect(await settings.loadLaneMute(0, 0), isTrue);
+        expect(errors, isEmpty);
+      });
     }
 
     for (final redo in [false, true]) {
