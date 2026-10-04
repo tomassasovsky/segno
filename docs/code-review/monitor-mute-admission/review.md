@@ -1,81 +1,85 @@
-# Monitor mute admission review
+# Monitor mute admission and restore recovery review
 
-Issue #1125. Base `623a5a7ba7ff595e60917c5ee9c4ece667c6389d`
-(input-volume correction #1126). Reviewed working head: the four exact source
-hashes below, plus the implementation plan and this report. Human merge gate.
+Issue #1125. Base `623a5a7ba7ff595e60917c5ee9c4ece667c6389d`.
+The original admission correction was published at `05900df`; the recovery
+correction below is bound to its final source manifest. Human merge gate.
 
 ## Result
 
-Independent source reviews report no unresolved actionable findings after the
-corrections below. The additional requested Claude review remains pending its
-usage-limit reset. Therefore the combined review gate is incomplete; this report
-does not authorize `review:clean`, readiness, or merge. Remote CI must also pass
-on the published head.
+Independent bug, architecture, simplicity and test-quality reviews are clean.
+The full app run and static checks pass on the frozen correction. The requested Claude review found the missing Retry path in the
+original head; the correction still requires its own adversarial re-review.
+The combined gate remains pending. No readiness or merge claim is made.
 
-## Scope and behavior
+## Behavior and ownership
 
-Only MonitorCubit, LooperRepository and their existing tests change. Running
-monitor mute is published only after native admission; invalid identities never
-reach native state. Valid stopped-engine intent remains available for restart.
-Monitor emits and saves accepted values; failed admission and storage report an
-error and preserve failed completion for awaiting callers. Existing confirmed
-monitor-envelope persistence retains failed writes for explicit retry.
+Running monitor mute is published only after native admission. Invalid input
+identities do not reach native state; valid stopped-engine intent remains
+available for restart. Admission and storage errors remain observable.
 
-Saved active mute is admitted before enabling or routing a monitor during
-Monitor restore, startup replay, and defined Session monitor application.
-When restoring an input with mute off, mode and routing precede clearing mute. A refused
-startup stops the engine and preserves intent for retry. Omitted Session
-monitors are disabled before clearing mute. Existing Session failure handling remains.
+Saved active mute is admitted before enabling or routing a monitor. When the
+saved mute is off, destination settings precede clearing mute. A refused startup
+stops the engine and preserves intent for retry. Existing Session failure
+handling remains in charge of Session recovery.
 
-Production delta: 55 added, 17 removed, net 38 lines in two files. No new state
-owner, timer, queue, storage format, dependency, native or generated API change.
-Track/lane mute persistence remains separate in #1127.
+MonitorCubit now exposes incomplete saved-monitor restore through its existing
+state. Failed attempts retire so the persistent application notice can retry
+without reconstructing the app. In-flight attempts deduplicate; completed
+restore remains idempotent. The same existing mix exclusion boundary orders
+restore against Session replacement.
 
-## Independent review and resolved findings
+An attempt checks ownership after awaited work and before further publication.
+Close or successful Session projection wins over an old completion. Session
+reservation prevents admission; if a same-session reservation is canceled,
+incomplete startup remains visibly retryable. This does not roll back already
+accepted native commands or cancel a storage write already in progress.
 
-VGV and bug-focused review covered the complete diff, removed behavior, immediate
-callers, admission, restore, Session failure, restart and error paths. Separate
-architecture, test-quality, simplicity and readiness roles reviewed the same
-frozen files. The final source hashes and aggregate results bind their evidence.
+The application only presents the existing Retry notice. It reconciles initial
+state, requests a frame for an asynchronous failure while idle, and removes the
+notice when a Session projection recovers independently. Shutdown suppression
+and notice identity remain shared. There is no new recovery coordinator,
+queue, timer, engine reset, persistence schema or native API.
 
-- MUT-1: The initial implementation observed but consumed mute/save errors.
-  It now reports and rethrows. Tests assert the returned Future fails while
-  refused state stays unchanged and accepted storage failure remains retryable.
-- MUT-2: Restore enabled a saved muted source before mute admission. Monitor,
-  startup and defined Session replay now admit mute first. Tests prove refusal
-  makes no enable mutation; Monitor restore also makes no route mutation.
-- MUT-3: Unconditional mute-first ordering could clear mute before restoring Off
-  or replacing a route. Desired active mute remains first; clearing mute now
-  follows mode and routing. Four regressions observe intermediate engine state
-  after each command, proving silence for Off and the correct destination for On.
+## Verified findings and corrections
 
-The stronger tests failed against the earlier candidate before the fixes. Review
-corrections were rechecked independently. No unrelated cleanup was included.
+- MUT-1: Report and rethrow refused mute/save operations to awaiting callers.
+- MUT-2: Admit saved active mute before enabling its input. Tests observe the
+  refused command and absence of subsequent enable/routing mutation.
+- MUT-3: Restore destination before clearing mute, preserving Off/nondefault
+  routing behavior. Tests inspect intermediate engine state.
+- REC-1: Failed restore was memoized permanently. Explicit Retry now starts a
+  fresh attempt while incomplete repository state remains nonauthoritative.
+- REC-2: A deferred notice could wait indefinitely for another frame while the
+  app was idle. Reconciliation now requests that frame explicitly.
+- REC-3: Canceling a Session reservation could leave initial restore incomplete
+  without a Retry action. Both reservation-before-load and mid-attempt cases
+  now preserve a reachable explicit recovery path.
 
-## Validation on final frozen source
+The original Claude review's enable-before-route startup concern predates this
+PR; it is recorded separately. Its proposed already-clear mute shortcut would not
+repair saved-true refusal or saved-data read failure, so it was not adopted.
+Track/lane scalar persistence and the later input scalar-save correction are
+separate slices. Cross-slice preservation is verified after restacking rather
+than pulled backward into this branch.
 
-- Focused repository, Monitor and existing persistence suites: 454 passed,
-  zero skipped. Real application owners use the existing AudioEngine test seam.
-- Full app: 3,014 passed, 49 conditional skips; coverage 27,247 / 29,522
-  (92.2939%, required 90%), using the workflow's actual exclusions.
-- Full LooperRepository: 737 passed, zero skipped; coverage 4,564 / 4,765
-  (95.7817%, required 95%).
-- Strict analysis of `lib test packages`: clean. Four explicitly formatted
-  files: unchanged. Bloc lint positively scanned 793 files with zero issues.
-- Diff check passed. All four source hashes were unchanged through final checks.
-- Compared 612 native/build/binding inputs to prior native verification: unchanged.
-  The same immutable test library was used; existing native sanitizer and
-  telemetry-disabled evidence was reused, not represented as newly executed.
+## Validation
 
-No UI or Pen geometry changes are part of this correction. Conditional app
-skips are not visual proof. Native admission is not an invented callback receipt;
-these command-order and persistence tests do not prove physical appliance audio.
+- Full app: 3,037 passed, 49 conditional skips, no failures; coverage
+  27,310 / 29,584 (92.3134%, required 90%).
+- Focused restore/App/notice checks: 178 passed, six inherited skips. The final
+  strengthened restore file passed 17 cases; these overlap, not additive counts.
+- Strict analysis of `lib test packages`, explicit formatting, and diff checks
+  pass. Bloc lint positively scanned 794 files with no issues.
+- The 11-path source manifest SHA-256 is
+  `46397e5ddbdf891a492dc8231a0429893873141eebd826f2f9dbcc70d47fd08a`.
+  All source hashes remained unchanged through the aggregate. Independent
+  production and test reviews bind those same bytes.
+- All 612 native/build/binding inputs match the earlier immutable native
+  verification. No native suite was rerun for this Dart-only correction.
+  The unchanged repository's prior 737 passing tests remain separate evidence.
 
-## Reviewed source hashes
-
-| Path | SHA-256 |
-| --- | --- |
-| `lib/audio_setup/cubit/monitor_cubit.dart` | `40eaf31c84964bae761bdd87cc7f0671a45571e35033099bbcf9dbba06ec087a` |
-| `packages/looper_repository/lib/src/looper_repository.dart` | `0e1baa9edde289f3175a233b1a89683a9606159d719f1dfb82af808b0d127ccf` |
-| `packages/looper_repository/test/looper_repository_test.dart` | `f614a72297b79f5465630173539b51ea670eff4fb56af9c7826b569cd4eb1cca` |
-| `test/audio_setup/cubit/monitor_cubit_test.dart` | `f97bda11742728a45dc070aa14ecc587e8906921218534b6615cfaefbbb8dd7c` |
+The correction has no native source changes. Existing native sanitizer,
+telemetry-disabled and symbol evidence may be reused only after confirming
+unchanged inputs. Conditional app skips and source reviews are not physical
+appliance, audio or visual validation. The notice reuses accepted components;
+no Pen geometry or design departure is introduced.

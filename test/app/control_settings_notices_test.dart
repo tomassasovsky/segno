@@ -48,6 +48,49 @@ void main() {
     expect(debugAppToastActive(id), isFalse);
   });
 
+  testWidgets('external dismissal retires recovery across shutdown overlay', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app);
+    notices.show(
+      ControlSettingsNotice(
+        id: AppToastId.monitorRestore,
+        title: (_) => const Text('Restore failed'),
+        retry: () async => false,
+        needsRecovery: () => true,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+    notices
+      ..setPowerVisible(visible: true)
+      ..dismiss(AppToastId.monitorRestore)
+      ..setPowerVisible(visible: false);
+    await tester.pumpAndSettle();
+    expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+    expect(find.text('Restore failed'), findsNothing);
+  });
+
+  testWidgets('disposed presenter cannot dismiss a new app recovery', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app);
+    notices.dispose();
+    final current = ControlSettingsNotices();
+    addTearDown(current.dispose);
+    current.show(
+      ControlSettingsNotice(
+        id: AppToastId.monitorRestore,
+        title: (_) => const Text('Current restore failed'),
+        retry: () async => false,
+        needsRecovery: () => true,
+      ),
+    );
+    notices.dismiss(AppToastId.monitorRestore);
+    await tester.pumpAndSettle();
+    expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+  });
+
   testWidgets('recovery completed by shutdown is not restored', (tester) async {
     await tester.pumpWidget(_app);
     var needsRecovery = true;
