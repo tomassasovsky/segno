@@ -3,7 +3,6 @@ import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
-import 'package:segno/control/binding/fx_chain_lookup.dart';
 
 /// Submits each affected FX owner once, including all power and value edits.
 /// Owners are independently admitted; callers await native recipe settlement.

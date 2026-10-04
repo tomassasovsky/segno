@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
-import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Shared application-owned durable projection for MIDI momentary FX values.
