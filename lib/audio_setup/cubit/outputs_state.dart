@@ -13,7 +13,7 @@ class OutputsState extends Equatable {
   /// How many destinations a device change probes for stored names.
   ///
   /// A read bound, **not** a naming ceiling, for the same reason
-  /// [InputsState.probeCeiling] is one: the store cannot be asked "every key
+  /// the input alias bound is one: the store cannot be asked "every key
   /// under this device". The engine's own bus ceiling is the widest rig the
   /// output mask can address, so nothing past it is reachable to name.
   static const int probeCeiling = kMaxOutputBuses;
