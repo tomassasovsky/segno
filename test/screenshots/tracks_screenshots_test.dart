@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -18,6 +19,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/performance/performance.dart';
@@ -208,7 +210,7 @@ void main() {
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
   }
 
-  Future<void> pump(WidgetTester tester) async {
+  Future<void> pump(WidgetTester tester, {Locale? locale}) async {
     // 16:9 at the panel's native 1920x1080 so the captured decal matches the
     // 344x194 (16:9) active area 1:1.
     tester.view
@@ -219,6 +221,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
+        locale: locale,
         theme: AppTheme.neon,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
@@ -270,6 +273,102 @@ void main() {
     // (the record/level meters may run a repeating ticker that never settles).
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+  }
+
+  for (final scene in ['tracks', 'inputs', 'last_inputs', 'auto', 'spanish']) {
+    testWidgets('Foot Mixer $scene accepted scene', (tester) async {
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 18,
+            outputChannels: 2,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000, volume: .8),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              volume: .65,
+              muted: true,
+            ),
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              volume: 1.1,
+            ),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      when(repository.allMonitors).thenReturn({
+        0: InputMonitor(
+          input: 0,
+          volume: scene == 'spanish' ? .98 : .75,
+          mode: scene == 'auto' ? MonitorMode.auto : MonitorMode.on,
+        ),
+        1: InputMonitor(
+          input: 1,
+          volume: .85,
+          mode: MonitorMode.on,
+          muted: scene == 'spanish',
+        ),
+        for (var input = 2; input < 18; input++)
+          input: InputMonitor(input: input, mode: MonitorMode.on),
+      });
+      control.setMode(InteractionMode.mixer);
+      if (scene != 'tracks') {
+        control.selectFootMixerDomain(FootMixerDomain.inputs);
+      }
+      if (scene == 'last_inputs') {
+        for (var page = 0; page < 4; page++) {
+          control.nextFootMixerPage();
+        }
+      }
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      final context = tester.element(find.byType(TracksView));
+      context.read<MonitorCubit>().projectFromRepository();
+      await context.read<InputsCubit>().rename(0, 'Guitar');
+      await context.read<InputsCubit>().rename(1, 'Vocal');
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      if (scene == 'spanish') {
+        final l10n = context.l10n;
+        for (final hint in [
+          l10n.footMixerLimitReset,
+          l10n.footMixerHoldReset,
+          l10n.footMixerHoldUnmute,
+        ]) {
+          final paragraph = tester.renderObject<RenderParagraph>(
+            find.descendant(
+              of: find.text(hint),
+              matching: find.byType(RichText),
+            ),
+          );
+          expect(paragraph.didExceedMaxLines, isFalse, reason: hint);
+          final boxes = paragraph.getBoxesForSelection(
+            TextSelection(baseOffset: 0, extentOffset: hint.length),
+          );
+          expect(
+            boxes.last.bottom,
+            lessThanOrEqualTo(paragraph.size.height),
+            reason: hint,
+          );
+          expect(paragraph.size.height, lessThanOrEqualTo(56), reason: hint);
+        }
+      }
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_mixer_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
   }
 
   testWidgets(

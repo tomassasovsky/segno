@@ -89,6 +89,72 @@ enum _Control {
 typedef _Target = (_Control, int, int);
 typedef _Edit = MixSettingsSnapshot? Function(MixSettingsSnapshot);
 
+/// Constant-size composition of saturated physical gain steps.
+class _GainEdit {
+  _GainEdit(this.target, {this.absolute, int direction = 0})
+    : high = target.$1 == _Control.trackLevel ? 40 : 20 {
+    if (direction != 0) step(direction);
+  }
+
+  final _Target target;
+  final double? absolute;
+  int net = 0;
+  int low = 0;
+  int high;
+  int offLow = 0;
+  late int offHigh = ceiling - 1;
+  bool positive = false;
+  bool negative = false;
+
+  int get ceiling => target.$1 == _Control.trackLevel ? 40 : 20;
+
+  void step(int direction) {
+    net += direction;
+    low = (low + direction).clamp(0, ceiling);
+    high = (high + direction).clamp(0, ceiling);
+    offLow = (offLow + direction).clamp(0, ceiling - 1);
+    offHigh = (offHigh + direction).clamp(0, ceiling - 1);
+    positive = positive || direction > 0;
+    negative = negative || direction < 0;
+    // A constant result no longer depends on the original gain. Bounding
+    // net also keeps an arbitrarily long outward gesture constant-size.
+    net = net.clamp(-ceiling, ceiling);
+  }
+
+  double base(MixSettingsSnapshot value) =>
+      absolute ??
+      (target.$1 == _Control.trackLevel
+          ? value.trackLevels[target.$2] ?? 1
+          : value.monitorLevels[target.$2] ?? 1);
+
+  bool moves(MixSettingsSnapshot value) =>
+      absolute != null ||
+      (positive && base(value) + .05 <= ceiling / 20 + 1e-9) ||
+      (negative && base(value) - .05 >= -1e-9);
+
+  MixSettingsSnapshot call(MixSettingsSnapshot value) {
+    if (!moves(value)) return value;
+    final scaled = base(value) * 20;
+    final grid = (scaled - scaled.round()).abs() < 1e-9;
+    final integer = grid ? scaled.round() : scaled.floor();
+    final fraction = grid ? 0.0 : scaled - integer;
+    final gain =
+        ((integer + net).clamp(
+              grid ? low : offLow,
+              grid ? high : offHigh,
+            ) +
+            fraction) /
+        20;
+    return target.$1 == _Control.trackLevel
+        ? value.copyWith(trackLevels: {...value.trackLevels, target.$2: gain})
+        : value.copyWith(
+            monitorLevels: {...value.monitorLevels, target.$2: gain},
+          );
+  }
+}
+
+typedef _PendingEdit = ({_Edit apply, _GainEdit? gain});
+
 bool _sameMap<K, V>(Map<K, V> a, Map<K, V> b) =>
     a.length == b.length && a.entries.every((e) => b[e.key] == e.value);
 
@@ -118,7 +184,7 @@ class MixSettingsCoordinator {
   final MixSettingsPersistence _persistence;
   final String Function() _device;
   final _failures = StreamController<MixSettingsOutcome>.broadcast();
-  final _pending = <_Target, _Edit>{};
+  final _pending = <_Target, _PendingEdit>{};
   Future<MixSettingsOutcome>? _draining;
   Future<void> _exclusiveTail = Future<void>.value();
   int _exclusiveCount = 0;
@@ -358,6 +424,7 @@ class MixSettingsCoordinator {
     _Target target,
     _Edit edit, {
     bool drain = true,
+    _GainEdit? gain,
   }) {
     final _ = durableSnapshot;
     if (_recovery case final recovery?) return Future.value(recovery);
@@ -376,6 +443,17 @@ class MixSettingsCoordinator {
       _pending.clear();
       _queuedGeneration = generation;
       _queuedDevice = device;
+    }
+    if (target.$1 == _Control.reset) {
+      _pending.removeWhere((key, _) => key.$1 == _Control.trackLevel);
+    }
+    var queuedGain = gain;
+    if (queuedGain != null && queuedGain.absolute == null) {
+      final previous = _pending[target]?.gain;
+      if (previous != null) {
+        previous.step(queuedGain.net);
+        queuedGain = previous;
+      }
     }
     var queuedTarget = target;
     var queuedEdit = edit;
@@ -406,7 +484,10 @@ class MixSettingsCoordinator {
     // fader, or a track fader then its lane fader) without retaining old moves.
     _pending
       ..remove(queuedTarget)
-      ..[queuedTarget] = queuedEdit;
+      ..[queuedTarget] = (
+        apply: queuedGain?.call ?? queuedEdit,
+        gain: queuedGain,
+      );
     return drain ? _startDrain() : Future.value(_applied);
   }
 
@@ -442,18 +523,25 @@ class MixSettingsCoordinator {
         );
       } else {
         MixSettingsSnapshot? candidate = _repository.mixSettingsSnapshot;
-        for (final edit in edits) {
-          candidate = edit(candidate!);
+        final ordinaryEdits = <_Target>[];
+        for (var index = 0; index < edits.length; index++) {
+          final edit = edits[index];
+          if (edit.gain?.moves(candidate!) ?? true) {
+            ordinaryEdits.add(targets[index]);
+          }
+          candidate = edit.apply(candidate!);
           if (candidate == null) break;
         }
         if (candidate != null) {
-          ordinary = _ordinaryTargets(targets);
+          ordinary = _ordinaryTargets(ordinaryEdits);
         }
         result = candidate == null
             ? const MixSettingsOutcome(
                 MixSettingsStatus.rejected,
                 engineResult: EngineResult.invalid,
               )
+            : ordinaryEdits.isEmpty
+            ? _applied
             : await _commit(
                 candidate,
                 generation,
@@ -687,15 +775,39 @@ class MixSettingsCoordinator {
   /// Sets a track's gain without changing its independent lane levels.
   Future<MixSettingsOutcome> setTrackVolume(double volume, {int channel = 0}) {
     if (!_track(channel) || !volume.isFinite) return _reject();
-    return _submit(
+    final gain = _GainEdit(
       (_Control.trackLevel, channel, 0),
-      (value) => value.copyWith(
-        trackLevels: {
-          ...value.trackLevels,
-          channel: volume.clamp(0.0, 2.0),
-        },
-      ),
+      absolute: volume.clamp(0.0, 2.0),
     );
+    return _submit(gain.target, gain.call, gain: gain);
+  }
+
+  /// Adds one 5% physical playback step, retaining every queued tap.
+  Future<MixSettingsOutcome> stepTrackGain({
+    required int channel,
+    required int direction,
+  }) {
+    if (!_track(channel) || (direction != -1 && direction != 1)) {
+      return _reject();
+    }
+    final gain = _GainEdit((
+      _Control.trackLevel,
+      channel,
+      0,
+    ), direction: direction);
+    return _submit(gain.target, gain.call, gain: gain);
+  }
+
+  /// Adds one 5% live-monitor step independently of capture trim.
+  Future<MixSettingsOutcome> stepMonitorGain({
+    required int input,
+    required int direction,
+  }) {
+    if (!_input(input) || (direction != -1 && direction != 1)) {
+      return _reject();
+    }
+    final gain = _GainEdit((_Control.monitor, input, 0), direction: direction);
+    return _submit(gain.target, gain.call, gain: gain);
   }
 
   /// Sets one lane's playback level.
@@ -839,12 +951,8 @@ class MixSettingsCoordinator {
     if (!_input(input) || !volume.isFinite || volume < 0 || volume > 1) {
       return _reject();
     }
-    return _submit(
-      (_Control.monitor, input, 0),
-      (value) => value.copyWith(
-        monitorLevels: {...value.monitorLevels, input: volume},
-      ),
-    );
+    final gain = _GainEdit((_Control.monitor, input, 0), absolute: volume);
+    return _submit(gain.target, gain.call, gain: gain);
   }
 
   /// Changes one destination fact while retaining its other controls.

@@ -112,19 +112,21 @@ void main() {
     expect(ledColor(2), SurfaceTheme.dark.ledOff);
   });
 
-  testWidgets('Custom LED labels describe active state, not assignment', (
-    tester,
-  ) async {
-    final semantics = tester.ensureSemantics();
-    await pumpPlate(
+  for (final mode in [InteractionMode.custom, InteractionMode.mixer]) {
+    testWidgets('${mode.name} LED labels follow the physical selected mask', (
       tester,
-      mode: InteractionMode.custom,
-      frame: _frame(activeButtonMask: 0x10),
-    );
-    expect(find.bySemanticsLabel('drums, action active'), findsOneWidget);
-    expect(find.bySemanticsLabel('bass, action inactive'), findsOneWidget);
-    semantics.dispose();
-  });
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await pumpPlate(
+        tester,
+        mode: mode,
+        frame: _frame(activeButtonMask: 0x10),
+      );
+      expect(find.bySemanticsLabel('drums, action active'), findsOneWidget);
+      expect(find.bySemanticsLabel('bass, action inactive'), findsOneWidget);
+      semantics.dispose();
+    });
+  }
 
   testWidgets('onPress fires with the pressed button on down and up', (
     tester,

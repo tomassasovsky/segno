@@ -12,9 +12,9 @@
 ///
 /// The catalogue lists what the rig can actually DO. An entry whose operation
 /// has no implementation would be a control that reads as assigned and stomps
-/// as nothing, which is worse than an absent one — so the eight performance
+/// as nothing, which is worse than an absent one — so the seven performance
 /// operations with no engine behind them (Reverse, Speed, Fade, Transpose,
-/// Multiply, Divide, Bounce and the foot Mixer) are absent here, and the part
+/// Multiply, Divide and Bounce) are absent here, and the part
 /// that builds each one adds its entries with it. [ControlActionGroup] carries
 /// the accepted headings, including the ones no entry sits under yet, so a
 /// later part adds actions rather than re-deciding the shape of the picker.
@@ -342,6 +342,7 @@ final class ModeAction extends ControlAction {
     InteractionMode.mute => 'mute',
     InteractionMode.fx => 'fx',
     InteractionMode.custom => 'custom',
+    InteractionMode.mixer => 'mixer',
   };
 
   @override
