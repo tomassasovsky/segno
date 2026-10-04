@@ -36,10 +36,7 @@ EngineResult applyTrackMute({
     for (var index = first; index < end; index++) {
       unawaited(
         persistence
-            .saveConfirmed(
-              FxAddress(stage: FxStage.loop, index: channel, lane: index),
-              settings,
-            )
+            .saveLaneMuteConfirmed(channel, index, settings)
             .catchError(onError),
       );
     }

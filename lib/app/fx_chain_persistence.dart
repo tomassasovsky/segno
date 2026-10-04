@@ -277,13 +277,31 @@ class FxChainPersistence {
     SettingsRepository settings,
   ) => _saveConfirmed(address, settings);
 
+  /// Saves only lane mute intent, sharing ordering with complete FX saves.
+  /// A mute can be admitted before startup has restored the lane FX envelope.
+  Future<void> saveLaneMuteConfirmed(
+    int channel,
+    int lane,
+    SettingsRepository settings,
+  ) => _saveConfirmed(
+    FxAddress(stage: FxStage.loop, index: channel, lane: lane),
+    settings,
+    muteOnly: true,
+  );
+
   Future<void> _saveConfirmed(
     FxAddress address,
     SettingsRepository settings, {
     bool completeOnClose = false,
+    bool muteOnly = false,
   }) async {
     if (_closed) return;
-    _queue(address, settings, completeOnClose: completeOnClose);
+    _queue(
+      address,
+      settings,
+      completeOnClose: completeOnClose,
+      muteOnly: muteOnly,
+    );
     _scheduled.remove(address)?.cancel();
     await _startSave(address);
     final failure = _dirty[address]?.failure;
@@ -325,6 +343,7 @@ class FxChainPersistence {
     FxAddress address,
     SettingsRepository settings, {
     bool completeOnClose = false,
+    bool muteOnly = false,
   }) {
     _syncSession();
     _replay ??= _looper.fxReplayConfirmed.listen((replay) {
@@ -345,6 +364,8 @@ class FxChainPersistence {
       _looper.sessionRevision,
       completeOnClose:
           completeOnClose || (_dirty[address]?.completeOnClose ?? false),
+      // A later scalar edit cannot discard an outstanding full-chain save.
+      muteOnly: muteOnly && (_dirty[address]?.muteOnly ?? true),
     );
   }
 
@@ -390,7 +411,13 @@ class FxChainPersistence {
         if (latest == null) return;
         if (latest.session != _looper.sessionRevision) continue;
         attempted = latest;
-        if (address.stage == FxStage.input) {
+        if (attempted.muteOnly) {
+          await attempted.settings.saveLaneMute(
+            address.index,
+            address.lane!,
+            muted: _looper.laneMuted(address.index, address.lane!),
+          );
+        } else if (address.stage == FxStage.input) {
           await _saveMonitor(address.index, attempted.settings);
         } else {
           await _writeFxOwner(
@@ -770,10 +797,16 @@ Future<void> _writeFxOwner({
 }
 
 class _FxSave {
-  _FxSave(this.settings, this.session, {required this.completeOnClose});
+  _FxSave(
+    this.settings,
+    this.session, {
+    required this.completeOnClose,
+    required this.muteOnly,
+  });
   final SettingsRepository settings;
   final int session;
   bool completeOnClose;
+  final bool muteOnly;
   (Object, StackTrace)? failure;
 }
 

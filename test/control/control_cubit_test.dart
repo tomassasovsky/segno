@@ -2078,6 +2078,71 @@ void main() {
         verify(() => looper.play(channel: 1)).called(1);
       });
 
+      test('refused deselected mute prevents parked transport resume', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+        );
+        cubit
+          ..toggleMode()
+          ..trackPressed(1);
+        expect(cubit.state.parkedResume, {0});
+        when(
+          () => looper.setMute(muted: true, channel: 1),
+        ).thenReturn(EngineResult.invalid);
+        cubit.recPlay();
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+        expect(cubit.state.parkedResume, {0});
+      });
+
+      for (final parked in [true, false]) {
+        test(
+          'later mute refusal prevents every play (parked: $parked)',
+          () async {
+            setEngine(
+              _tracksWith([
+                Track(
+                  state: parked ? TrackState.stopped : TrackState.playing,
+                  lengthFrames: 48000,
+                ),
+                const Track(
+                  channel: 1,
+                  state: TrackState.stopped,
+                  muted: true,
+                  lengthFrames: 48000,
+                ),
+                const Track(
+                  channel: 2,
+                  state: TrackState.stopped,
+                  lengthFrames: 48000,
+                ),
+              ]),
+            );
+            cubit.toggleMode();
+            final before = cubit.state.parkedResume;
+            when(
+              () => looper.setMute(muted: false, channel: 1),
+            ).thenReturn(EngineResult.invalid);
+            cubit.recPlay();
+            verifyNever(() => looper.play(channel: any(named: 'channel')));
+            verify(() => looper.setMute(muted: false, channel: 2)).called(1);
+            expect(cubit.state.parkedResume, before);
+            await pumpEventQueue();
+            expect(await settings.loadLaneMute(0, 0), isFalse);
+            when(
+              () => looper.setMute(muted: false, channel: 1),
+            ).thenReturn(EngineResult.ok);
+            cubit.recPlay();
+            for (var channel = 0; channel < 3; channel++) {
+              verify(() => looper.play(channel: channel)).called(1);
+            }
+            expect(cubit.state.parkedResume, parked ? isEmpty : before);
+          },
+        );
+      }
+
       test('nothing recorded: a no-op', () {
         cubit
           ..toggleMode()

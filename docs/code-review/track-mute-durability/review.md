@@ -11,9 +11,11 @@ report no unresolved actionable findings on the frozen source. The bug-focused
 review covered the complete diff, removed behavior, callers, concurrency,
 shutdown, Session and failure paths. Corrections were independently rechecked.
 
-The additional requested Claude review remains pending its usage-limit reset.
-The combined review gate is therefore incomplete: keep `review:pending` and do
-not mark ready to merge. Remote CI must also pass on the published head.
+Actual Claude Opus 5 review completed on published head
+`5704e2fed795274368ff5bad2fcbba22c8d73d6e`. It found the two additional cases
+below, both reproduced before repair. The corrected three-file production delta
+has an independent bug/architecture review with no actionable findings; its independent test review is also clean. Claude re-review and remote CI on the next published head
+remain pending, so retain `review:pending` and do not mark ready to merge.
 
 ## Scope and behavior
 
@@ -50,31 +52,39 @@ failed work remains observable without creating a new disposal retry.
   saved value. Removed true intents now use the existing lane save notification;
   destructive Session clear suppresses ordinary notifications.
 
+### Additional adversarial corrections
+
+- TM-2: After failed startup, muting a track rewrote its unrestored lane FX
+  envelope. The mute operation now requests only its own saved scalar through
+  the same address queue. Coalescing preserves any pending complete FX save,
+  regardless of request order. A real failed-bootstrap regression checks saved
+  bytes and fresh restart, including effect parameters, bypass and provenance.
+- TM-3: A later native mute refusal could follow an earlier track's playback
+  start. All required mutes now precede any play call; refusal retains the
+  selected resume membership for retry. Parked and running multi-track cases,
+  plus a deselected parked-track refusal, preserve that prerequisite boundary.
+
 ## Validation
 
-- Full app: 3,035 passed, 49 conditional skips, zero failures. Coverage
-  27,283 / 29,558 (92.3033%, required 90%), using the actual CI exclusions.
-- Full LooperRepository: 740 passed, zero skipped; coverage 4,579 / 4,780
-  (95.7950%, required 95%).
-- Full SettingsRepository: 194 passed, zero skipped; coverage 785 / 857
-  (91.5986%; no separate threshold in the current workflow).
-- The final focused persistence/lifetime suite passed all 52 cases. The 54
-  native caller cases also passed without skips using the existing immutable
-  test library. These overlap the aggregate and are not added to its totals.
-- Strict analysis of `lib test packages`: clean. Formatting: 18 files unchanged.
-  Bloc lint positively scanned 795 files, zero issues. Diff whitespace: clean.
-- All 18 source hashes stayed unchanged throughout aggregate verification.
-  All 612 native/build/binding inputs match the prior verified revision; existing
-  native evidence was reused instead of rebuilding unchanged native code.
+The corrected source passed 3,041 full app tests with 49 conditional skips and
+92.31% coverage (90% required), strict analysis of `lib test packages`, explicit
+formatting, positive Bloc lint of 795 files and diff whitespace checks. Source
+and native-library hashes stayed unchanged throughout this run. The six added
+regressions/control cases are included in that total; three failed before repair.
+
+The unchanged repository source retains the published prerequisite evidence:
+740 LooperRepository tests, zero skips, 95.7950% coverage; 194 SettingsRepository
+tests, zero skips, 91.5986% coverage. None of the 612 native/build/binding inputs
+changed. No redundant native rebuild was used to imply new hardware evidence.
 
 Conditional skips are not visual proof. Command admission and device-free
 persistence tests do not prove physical appliance audio. Additional Claude
-review and remote CI remain separate gates.
+re-review and remote CI remain separate gates.
 
 ## Diff size
 
-- Production: 260 added, 114 removed, net 146 lines.
-- Tests: 823 added, 15 removed, net 808 lines.
+- Production: 305 added, 115 removed, net 190 lines.
+- Tests: 955 added, 15 removed, net 940 lines.
 
 Tests include real owner/bootstrap, Session, failure and shutdown journeys.
 The new persistence integration test is intentionally counted separately from
@@ -85,8 +95,8 @@ production changes. No accepted UI or Pen geometry changes are in this slice.
 | Path | SHA-256 |
 | --- | --- |
 | `lib/app/audio_bootstrap.dart` | `5e5b58f9efb48834d1b0f7fa0403f1160c7acad81502ac0ad6e67f7585fd4fa6` |
-| `lib/app/fx_chain_persistence.dart` | `ffc0b5058cdee772052e89b55c4e824f3681587461f7e0563b95417d8196d259` |
-| `lib/control/cubit/control_cubit.dart` | `9f0414560819499c155c7ed8e35ba1d0150212ea920331d43e998e1b4e1553ce` |
+| `lib/app/fx_chain_persistence.dart` | `6982dc0751fae51252e6613bd384f5eb8fe6e5a3237a9bb9190687266307d385` |
+| `lib/control/cubit/control_cubit.dart` | `843007fd33aaf1c95c9b4dcd5a12626f21967c525aec4365e00e91072e582e63` |
 | `lib/control/cubit/control_midi.dart` | `5e56743f1e6e583988691e67996182579eccf433a090b8b00e35b554e8e2e64c` |
 | `lib/looper/bloc/looper_bloc.dart` | `e036b6d9991454223f2308545677a29d9ec26771b23eaa751b83d495c22af531` |
 | `packages/looper_repository/lib/src/looper_repository.dart` | `ab555f29c2465c9917410dc5a71c59341c60e45e0493aa02de7d6305406a3e31` |
@@ -97,8 +107,8 @@ production changes. No accepted UI or Pen geometry changes are in this slice.
 | `test/app/audio_bootstrap_test.dart` | `5686c9c491ace9dff09d0f11b379274258b62670626137a7d3923b41554a9cb9` |
 | `test/app/fx_chain_persistence_test.dart` | `c9dfb68444b231af26337cf52d50445b55c5226210d9c06057d742e801851b28` |
 | `test/common/fx_chain_persistence_test.dart` | `73a243f18ff3a1722c366f0b6d37171db018565d293079b7c7712273f4aa8eb8` |
-| `test/control/control_cubit_test.dart` | `b724ed25ed783b551b5fdb057a29f9852da049b285e8d4baf89a3d6a62082423` |
+| `test/control/control_cubit_test.dart` | `03e2263fbb9e3dafb1f2c9a83b475eec27bc8611739700e8c619633a0f4a06a9` |
 | `test/looper/bloc/looper_bloc_test.dart` | `b014b3ebf168bd6e93b09cc13ebe30c4d178209283764a839eaa6edf536d9086` |
 | `test/session/cubit/session_cubit_test.dart` | `69662deaecbc8f8333672c38d71a3004c6a4e04a6360445ad8587eda6dfe5a8a` |
-| `lib/app/track_mute.dart` | `fab6d00b588507bec9b69898d2bb783d0bdb175f6ec6ae7e9fe4ef1504779913` |
-| `test/looper/bloc/track_mute_persistence_test.dart` | `9c23c0bfea9c58a77402164c34d0669e7953c706e3aa68e02e2bd9bbf6ad4681` |
+| `lib/app/track_mute.dart` | `ec0b376c345b7d08bd6a77cca286bd4c75a74ca07c8c4e7b66163f7e51c871f4` |
+| `test/looper/bloc/track_mute_persistence_test.dart` | `927eb5678a6d90b57f3b8f3534c87d67152d2b45bf197d59ed00c1ba31989894` |

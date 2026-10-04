@@ -1908,19 +1908,27 @@ class ControlCubit extends Cubit<ControlState> {
       // deselected member — it is a live take (isParked ignores `recording`,
       // so one can be running under a parked transport) and muting it would
       // punch it out; leave it alone.
+      var muteAccepted = true;
       for (final track in _tracks) {
         if (_playable(track) &&
             !track.isCapturing &&
             !resume.contains(track.channel) &&
             !track.muted) {
           if (!_setTrackMute(muted: true, channel: track.channel).isOk) {
-            return false;
+            muteAccepted = false;
           }
         }
       }
+      for (final channel in resume) {
+        if (!_setTrackMute(muted: false, channel: channel).isOk) {
+          muteAccepted = false;
+        }
+      }
+      // The first play resumes every member. Admit the complete mute plan
+      // first, retaining membership for retry if any prerequisite refused.
+      if (!muteAccepted) return false;
       var accepted = false;
       for (final channel in resume) {
-        if (!_setTrackMute(muted: false, channel: channel).isOk) return false;
         accepted = _looper.play(channel: channel).isOk || accepted;
       }
       // Consumed: the resumed tracks are now sounding, so the derived armed
@@ -1939,9 +1947,15 @@ class ControlCubit extends Cubit<ControlState> {
       (t) => armed.contains(t.channel) && !t.muted && isSounding(t),
     );
     if (anyAudible && armed.containsAll(all)) return false;
+    var muteAccepted = true;
+    for (final channel in all) {
+      if (!_setTrackMute(muted: false, channel: channel).isOk) {
+        muteAccepted = false;
+      }
+    }
+    if (!muteAccepted) return false;
     var accepted = false;
     for (final channel in all) {
-      if (!_setTrackMute(muted: false, channel: channel).isOk) return false;
       accepted = _looper.play(channel: channel).isOk || accepted;
     }
     return accepted;
