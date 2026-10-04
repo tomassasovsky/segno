@@ -9,7 +9,6 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -43,9 +42,7 @@ void main() {
       const Stream<AudioSetupState>.empty(),
       initialState: const AudioSetupState(),
     );
-    tray = SettingsTrayCubit(
-      settings: SettingsRepository(store: FakeKeyValueStore()),
-    );
+    tray = SettingsTrayCubit();
     addTearDown(tray.close);
   });
 

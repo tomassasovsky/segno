@@ -72,13 +72,11 @@ enum SettingsTrayDestination {
   system,
 }
 
-/// State for [SettingsTrayCubit]: tray open/drag is ephemeral; brightness is
-/// persisted and applied to the display when the appliance helper supports it.
+/// Ephemeral tray navigation and drag state.
 class SettingsTrayState extends Equatable {
   /// Creates a [SettingsTrayState].
   const SettingsTrayState({
     this.dragProgress = 0,
-    this.brightness = kDefaultDisplayBrightness,
     this.destination = SettingsTrayDestination.control,
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
@@ -93,10 +91,6 @@ class SettingsTrayState extends Equatable {
   /// separate "is it open" bit to keep in sync, since between drags this is
   /// always settled at exactly `0` or `1`.
   final double dragProgress;
-
-  /// Brightness slider value (`0..1`). Persisted via SettingsRepository;
-  /// applied through BrightnessClient when DDC/CI is available.
-  final double brightness;
 
   /// In-tray face: one of the rail's domain panels. Brightness is NOT one —
   /// it opens a popover over whichever face is showing.
@@ -123,7 +117,6 @@ class SettingsTrayState extends Equatable {
   /// Returns a copy with the given fields replaced.
   SettingsTrayState copyWith({
     double? dragProgress,
-    double? brightness,
     SettingsTrayDestination? destination,
     NetworkTab? networkTab,
     ControlTab? controlTab,
@@ -131,7 +124,6 @@ class SettingsTrayState extends Equatable {
     SystemTab? systemTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
-    brightness: brightness ?? this.brightness,
     destination: destination ?? this.destination,
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
@@ -142,7 +134,6 @@ class SettingsTrayState extends Equatable {
   @override
   List<Object?> get props => [
     dragProgress,
-    brightness,
     destination,
     networkTab,
     controlTab,
