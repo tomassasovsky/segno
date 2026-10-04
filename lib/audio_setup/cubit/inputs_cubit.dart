@@ -1,8 +1,7 @@
-import 'dart:async';
-
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/audio_setup/application/port_aliases.dart';
 import 'package:segno/audio_setup/cubit/alias_rename_result.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -35,86 +34,32 @@ class InputsCubit extends Cubit<InputsState> {
   InputsCubit({
     required SettingsRepository settings,
     required LooperRepository repository,
-  }) : _settings = settings,
-       _repository = repository,
-       super(const InputsState()) {
-    _subscription = _repository.looperState.listen(
-      (looper) => unawaited(_followDevice(looper)),
+  }) : super(const InputsState()) {
+    _aliases = PortAliases(
+      settings: settings,
+      repository: repository,
+      kind: PortAliasKind.input,
+      probeCeiling: InputsState.probeCeiling,
+      onChanged: (snapshot) => emit(
+        InputsState(
+          device: snapshot.device,
+          names: snapshot.names,
+          lifetime: snapshot.lifetime,
+        ),
+      ),
     );
-    unawaited(_followDevice(_repository.state));
   }
 
-  final SettingsRepository _settings;
-  final LooperRepository _repository;
-  late final StreamSubscription<LooperState> _subscription;
+  late final PortAliases _aliases;
 
-  final Map<int, String?> _confirmedDuringLoad = {};
-  final Map<(String, int), Future<void>> _renameTails = {};
-  final Set<(String, int)> _recoveryKeys = {};
-  String _device = '';
-  int _lifetime = 0;
-  int _generation = -1;
-  bool _loading = false;
-
-  bool _owns(int lifetime, int generation) =>
-      !isClosed &&
-      lifetime == _lifetime &&
-      generation == _repository.mixGeneration;
-
-  Future<void> _followDevice(LooperState looper) async {
-    final status = looper.status;
-    final device = status.isConnected && status.devicePresent
-        ? status.deviceName
-        : '';
-    final generation = looper.mixGeneration;
-    if (generation != _repository.mixGeneration) return;
-    if (device == _device && generation == _generation) return;
-    _device = device;
-    _generation = generation;
-    final lifetime = ++_lifetime;
-    _loading = device.isNotEmpty;
-    _confirmedDuringLoad.clear();
-    emit(InputsState(device: device, lifetime: lifetime));
-    if (device.isEmpty) return;
-    final names = <int, String>{};
-    try {
-      for (var input = 0; input < InputsState.probeCeiling; input++) {
-        await _renameTails[(device, input)];
-        if (!_owns(lifetime, generation)) return;
-        final saved = await _settings.loadInputName(
-          device: device,
-          input: input,
-        );
-        if (!_owns(lifetime, generation)) return;
-        if (saved != null && saved.isNotEmpty) names[input] = saved;
-        _recoveryKeys.remove((device, input));
-      }
-    } on Object {
-      if (_owns(lifetime, generation)) _loading = false;
-      return;
-    }
-    if (!_owns(lifetime, generation)) return;
-    _loading = false;
-    for (final entry in _confirmedDuringLoad.entries) {
-      if (entry.value case final name?) {
-        names[entry.key] = name;
-      } else {
-        names.remove(entry.key);
-      }
-    }
-    _confirmedDuringLoad.clear();
-    emit(InputsState(device: device, names: names, lifetime: lifetime));
-  }
-
-  /// Durably renames [input] for one device lifetime, restoring its exact key
-  /// if a write throws after touching storage.
+  /// Durably renames [input] for the current device opening.
   Future<void> rename(
     int input,
     String name, {
     int? expectedLifetime,
     void Function(AliasRenameResult)? onResult,
   }) async {
-    final result = await _rename(
+    final result = await _aliases.rename(
       input,
       name,
       expectedLifetime: expectedLifetime,
@@ -122,130 +67,13 @@ class InputsCubit extends Cubit<InputsState> {
     onResult?.call(result);
   }
 
-  Future<AliasRenameResult> _rename(
-    int input,
-    String name, {
-    int? expectedLifetime,
-  }) async {
-    final device = _device;
-    final lifetime = _lifetime;
-    final generation = _generation;
-    if (device.isEmpty ||
-        input < 0 ||
-        input >= InputsState.probeCeiling ||
-        !_owns(lifetime, generation) ||
-        (expectedLifetime != null && expectedLifetime != lifetime)) {
-      return AliasRenameResult.refused;
-    }
-    final key = (device, input);
-    final previous = _renameTails[key] ?? Future<void>.value();
-    final completed = Completer<void>();
-    _renameTails[key] = completed.future;
-    try {
-      await previous;
-      if (!_owns(lifetime, generation)) {
-        return AliasRenameResult.refused;
-      }
-      if (_recoveryKeys.contains(key)) {
-        return AliasRenameResult.recoveryRequired;
-      }
-      final trimmed = name.trim();
-      if (!_loading && trimmed == (state.names[input] ?? '')) {
-        return AliasRenameResult.applied;
-      }
-      String? checkpoint;
-      try {
-        checkpoint = await _settings.loadInputName(
-          device: device,
-          input: input,
-        );
-      } on Object {
-        return AliasRenameResult.storageFailed;
-      }
-      if (!_owns(lifetime, generation)) return AliasRenameResult.refused;
-      try {
-        if (trimmed.isEmpty) {
-          await _settings.clearInputName(device: device, input: input);
-        } else {
-          await _settings.saveInputName(
-            device: device,
-            input: input,
-            name: trimmed,
-          );
-        }
-      } on Object {
-        try {
-          if (checkpoint == null) {
-            await _settings.clearInputName(device: device, input: input);
-          } else {
-            await _settings.saveInputName(
-              device: device,
-              input: input,
-              name: checkpoint,
-            );
-          }
-        } on Object {
-          _recoveryKeys.add(key);
-          return AliasRenameResult.recoveryRequired;
-        }
-        if (_owns(lifetime, generation)) {
-          if (_loading) _confirmedDuringLoad[input] = checkpoint;
-          final names = {...state.names};
-          if (checkpoint == null || checkpoint.isEmpty) {
-            names.remove(input);
-          } else {
-            names[input] = checkpoint;
-          }
-          emit(state.copyWith(names: names));
-        }
-        return AliasRenameResult.storageFailed;
-      }
-      if (!_owns(lifetime, generation)) return AliasRenameResult.refused;
-      if (_loading) {
-        _confirmedDuringLoad[input] = trimmed.isEmpty ? null : trimmed;
-      }
-      final names = {...state.names};
-      if (trimmed.isEmpty) {
-        names.remove(input);
-      } else {
-        names[input] = trimmed;
-      }
-      emit(state.copyWith(names: names));
-      return AliasRenameResult.applied;
-    } finally {
-      completed.complete();
-      if (identical(_renameTails[key], completed.future)) {
-        unawaited(_renameTails.remove(key));
-      }
-    }
-  }
-
   /// Re-reads one uncertain key before another edit may use it.
-  Future<void> retryAliasRecovery(int input) async {
-    final device = _device;
-    final lifetime = _lifetime;
-    final generation = _generation;
-    final key = (device, input);
-    if (device.isEmpty || !_recoveryKeys.contains(key)) return;
-    try {
-      final value = await _settings.loadInputName(device: device, input: input);
-      if (!_owns(lifetime, generation)) return;
-      _recoveryKeys.remove(key);
-      final names = {...state.names};
-      if (value == null || value.isEmpty) {
-        names.remove(input);
-      } else {
-        names[input] = value;
-      }
-      emit(state.copyWith(names: names));
-    } on Object {
-      return;
-    }
-  }
+  Future<void> retryAliasRecovery(int input) =>
+      _aliases.retryAliasRecovery(input);
 
   @override
-  Future<void> close() {
-    unawaited(_subscription.cancel());
-    return super.close();
+  Future<void> close() async {
+    await _aliases.close();
+    await super.close();
   }
 }
