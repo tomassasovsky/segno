@@ -14,12 +14,14 @@ EngineSnapshot _rig(
   int count, {
   TrackState state = TrackState.empty,
   bool pending = false,
+  int outputBusCount = 0,
 }) => EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
   bufferFrames: 128,
   inputChannels: 2,
   outputChannels: 2,
+  outputBusCount: outputBusCount,
   framesProcessed: 0,
   xrunCount: 0,
   inputRms: 0,
@@ -72,6 +74,60 @@ void main() {
     addTearDown(repo.dispose);
     return repo;
   }
+
+  group('shared FX lookup', () {
+    test('missing owners never retarget an existing chain', () {
+      final repo = start();
+      final effect = BuiltInEffect(
+        type: TrackEffectType.delay,
+        slotId: 'lookup-delay',
+      );
+      expect(
+        repo.setLaneEffects(channel: 0, lane: 0, effects: [effect]),
+        EngineResult.ok,
+      );
+      expect(
+        repo.chainEntriesAt(const FxAddress(stage: FxStage.loop, lane: 0)),
+        [effect],
+      );
+      for (final address in const [
+        FxAddress(stage: FxStage.loop),
+        FxAddress(stage: FxStage.loop, lane: 1),
+        FxAddress(stage: FxStage.track, index: 1),
+        FxAddress(stage: FxStage.input, index: 1),
+        FxAddress(stage: FxStage.allTracks, index: 1),
+        FxAddress(stage: FxStage.output, index: 9),
+        FxAddress(stage: FxStage.track, index: -1),
+      ]) {
+        expect(repo.chainEntriesAt(address), isNull);
+      }
+    });
+
+    test('configured empty owners remain available to bindings', () {
+      engine.nextSnapshot = _rig(2, outputBusCount: 1);
+      final repo = start();
+      expect(
+        repo.setMonitorEffects(input: 0, effects: [], chainEnabled: false),
+        EngineResult.ok,
+      );
+      expect(
+        repo.setTrackEffects(channel: 0, effects: [], chainEnabled: false),
+        EngineResult.ok,
+      );
+      for (final address in const [
+        FxAddress(stage: FxStage.input),
+        FxAddress(stage: FxStage.track),
+        FxAddress(stage: FxStage.allTracks),
+        FxAddress(stage: FxStage.output),
+      ]) {
+        expect(
+          repo.chainEntriesAt(address),
+          isEmpty,
+          reason: address.toString(),
+        );
+      }
+    });
+  });
 
   group('confirmed mix transactions', () {
     test(
@@ -707,21 +763,6 @@ void main() {
         expect(engine.laneVol[(0, 0)], 0.0);
       },
     );
-  });
-
-  group('MixTarget', () {
-    test('round-trips through its canonical string', () {
-      const target = MixTarget.pairBalance(4);
-      expect(target.canonicalString(), '{"target":"pairBalance","index":4}');
-      expect(MixTarget.tryParse(target.canonicalString()), target);
-      expect(MixTarget.tryParse('{"target":"nothing","index":1}'), isNull);
-      expect(MixTarget.tryParse('{"target":"trackPan","index":"x"}'), isNull);
-      expect(MixTarget.tryParse('not json'), isNull);
-      expect(
-        MixTarget.fromJson({'target': 'trackPan', 'index': 2, 'extra': 1}),
-        const MixTarget.trackPan(2),
-      );
-    });
   });
 
   group('output setup (slice 3b)', () {

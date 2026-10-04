@@ -34,7 +34,6 @@ export 'binding/control_value_resolver.dart';
 export 'binding/control_value_target.dart';
 export 'binding/fx_binding_resolver.dart';
 export 'binding/fx_binding_target.dart';
-export 'binding/fx_chain_lookup.dart';
 export 'binding/midi_edit.dart';
 export 'binding/midi_labels.dart';
 export 'binding/midi_learn.dart';

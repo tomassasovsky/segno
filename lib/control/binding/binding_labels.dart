@@ -1,7 +1,6 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
-import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/l10n/l10n.dart';
 
 /// How a binding's target and its control are NAMED, in one place.

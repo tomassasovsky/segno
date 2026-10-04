@@ -20,7 +20,6 @@ import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
-import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/control/binding/midi_edit.dart';
 import 'package:segno/control/binding/midi_learn.dart';
 import 'package:segno/control/binding/pedal_binding.dart';

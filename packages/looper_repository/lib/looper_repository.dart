@@ -37,6 +37,7 @@ export 'package:segno_engine/segno_engine.dart'
 
 // Domain audio-config models replace the engine's raw config/device types in
 // the UI. The engine-typed boundary mappers stay package-internal (not shown).
+export 'src/fx_chain_lookup.dart';
 export 'src/looper_repository.dart';
 export 'src/models/audio_config.dart'
     show
@@ -72,7 +73,6 @@ export 'src/models/input_setup.dart';
 export 'src/models/lane.dart';
 export 'src/models/looper_state.dart';
 export 'src/models/mix_settings_snapshot.dart';
-export 'src/models/mix_target.dart';
 export 'src/models/output_setup.dart';
 export 'src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginFormat, PluginParamInfo;
