@@ -736,8 +736,7 @@ void main() {
 
   testWidgets('tray open', (tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..open();
+    final cubit = SettingsTrayCubit()..open();
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -755,8 +754,7 @@ void main() {
 
   testWidgets('network domain, wifi tab', (tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.network)
       ..showNetworkTab(NetworkTab.wifi);
@@ -776,8 +774,7 @@ void main() {
 
   testWidgets('network domain, wifi off', (tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.network)
       ..showNetworkTab(NetworkTab.wifi);
@@ -799,8 +796,7 @@ void main() {
 
   testWidgets('network domain, wifi row open', (tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.network)
       ..showNetworkTab(NetworkTab.wifi);
@@ -822,8 +818,7 @@ void main() {
 
   testWidgets('network domain, forget confirm', (tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.network)
       ..showNetworkTab(NetworkTab.wifi);
@@ -849,8 +844,7 @@ void main() {
 
   testWidgets('network domain, join sheet', (tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.network)
       ..showNetworkTab(NetworkTab.wifi);
@@ -874,8 +868,7 @@ void main() {
 
   testWidgets('network domain, bluetooth tab', (tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.network)
       ..showNetworkTab(NetworkTab.bluetooth);
@@ -895,8 +888,7 @@ void main() {
 
   testWidgets('network domain, bluetooth row open', (tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.network)
       ..showNetworkTab(NetworkTab.bluetooth);
@@ -922,8 +914,7 @@ void main() {
     tester,
   ) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.control);
     addTearDown(cubit.close);
@@ -958,8 +949,7 @@ void main() {
 
   testWidgets('control domain, controllers tab on a live link', (tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.control)
       ..showControlTab(ControlTab.controllers);
@@ -1008,8 +998,7 @@ void main() {
 
   Future<void> pumpTracks(WidgetTester tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.tracks);
     addTearDown(cubit.close);
@@ -1032,8 +1021,7 @@ void main() {
 
   testWidgets('tracks domain, a stopped engine has no tracks', (tester) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.tracks);
     addTearDown(cubit.close);
@@ -1083,8 +1071,7 @@ void main() {
   >
   pumpAudio(WidgetTester tester, AudioTab tab) async {
     await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.audio)
       ..showAudioTab(tab);
@@ -1184,7 +1171,7 @@ void main() {
   }) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
+    final cubit = SettingsTrayCubit()
       ..open()
       ..showDestination(SettingsTrayDestination.system)
       ..showSystemTab(tab);

@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:segno/app/app_toasts.dart';
+import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/tray/brightness_capsule.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:toastification/toastification.dart';
 
 /// The brightness popover, from `SYSTEM / brightness`.
 ///
@@ -34,13 +36,14 @@ class TrayBrightnessPopover extends StatelessWidget {
 
   static const double _radius = 22;
   static const double _pad = 20;
+  static const _saveFailureToast = 'tray_brightness_save_failed';
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
-    final state = context.watch<SettingsTrayCubit>().state;
-    final cubit = context.read<SettingsTrayCubit>();
+    final brightness = context.watch<DisplayBrightnessCubit>().state;
+    final cubit = context.read<DisplayBrightnessCubit>();
 
     return Stack(
       children: [
@@ -89,7 +92,7 @@ class TrayBrightnessPopover extends StatelessWidget {
                       // under the thumb that was dragging it.
                       Text(
                         l10n.trayBrightnessPercent(
-                          (state.brightness * 100).round(),
+                          (brightness * 100).round(),
                         ),
                         textAlign: TextAlign.center,
                         style: TextStyle(
@@ -103,10 +106,25 @@ class TrayBrightnessPopover extends StatelessWidget {
                       const SizedBox(height: 12),
                       BrightnessCapsule(
                         key: const Key('settingsTray_brightness'),
-                        value: state.brightness,
+                        value: brightness,
                         semanticLabel: l10n.trayBrightnessLabel,
-                        onChanged: (value) =>
-                            unawaited(cubit.setBrightness(value)),
+                        onChanged: (value) => unawaited(() async {
+                          try {
+                            await cubit.setBrightness(value);
+                            if (!context.mounted) return;
+                            dismissAppToast(_saveFailureToast);
+                          } on Object {
+                            if (!context.mounted) return;
+                            // The tray covers the stage Scaffold. Use the
+                            // app overlay so the failure remains visible here.
+                            showAppSnackToast(
+                              id: _saveFailureToast,
+                              type: ToastificationType.error,
+                              icon: const Icon(Icons.error_outline),
+                              title: Text(l10n.powerOffSaveFailedTitle),
+                            );
+                          }
+                        }()),
                       ),
                     ],
                   ),

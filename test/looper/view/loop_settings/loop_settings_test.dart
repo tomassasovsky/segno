@@ -605,7 +605,7 @@ void main() {
     timing = RecordTimingCubit(settings: timingOwner);
     await timingOwner.load();
     tracks = TracksCubit(settings: settings);
-    tray = SettingsTrayCubit(settings: settings);
+    tray = SettingsTrayCubit();
     if (fromTray) tray.open();
     addTearDown(tray.close);
     resetSegnoNavigatorForTest();

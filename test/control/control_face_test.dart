@@ -152,7 +152,7 @@ void main() {
       midiDevices: midiDevices,
     );
     midi = MidiSetupCubit(repository: midiDevices);
-    tray = SettingsTrayCubit(settings: settings);
+    tray = SettingsTrayCubit();
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).
     addTearDown(() => unawaited(control.close()));

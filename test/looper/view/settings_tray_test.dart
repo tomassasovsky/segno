@@ -16,8 +16,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
@@ -34,6 +36,7 @@ import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:toastification/toastification.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -120,11 +123,26 @@ class _ToggleBluetoothClient implements BluetoothClient {
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
+class _BrightnessStore extends FakeKeyValueStore {
+  bool failNextBrightnessWrite = false;
+
+  @override
+  Future<void> setDouble(String key, double value) async {
+    if (key == 'ui.brightness' && failNextBrightnessWrite) {
+      failNextBrightnessWrite = false;
+      throw StateError('brightness storage unavailable');
+    }
+    await super.setDouble(key, value);
+  }
+}
+
 void main() {
   late MixSettingsCoordinator mixSettings;
   late FxChainPersistence fxPersistence;
   late SettingsTrayCubit cubit;
+  late DisplayBrightnessCubit displayBrightness;
   late SettingsRepository settings;
+  late _BrightnessStore store;
   late _MockLooperBloc looperBloc;
   late _ToggleWifiClient wifiClient;
   late _ToggleBluetoothClient bluetoothClient;
@@ -137,7 +155,10 @@ void main() {
   late ControllerRepository controller;
 
   setUp(() {
-    settings = SettingsRepository(store: FakeKeyValueStore());
+    resetAppToastsForTest();
+    resetToastificationForTest();
+    store = _BrightnessStore();
+    settings = SettingsRepository(store: store);
     looperBloc = _MockLooperBloc();
     when(() => looperBloc.state).thenReturn(const LooperState());
     whenListen(
@@ -145,7 +166,8 @@ void main() {
       const Stream<LooperState>.empty(),
       initialState: const LooperState(),
     );
-    cubit = SettingsTrayCubit(settings: settings);
+    cubit = SettingsTrayCubit();
+    displayBrightness = DisplayBrightnessCubit(settings: settings);
     wifiClient = _ToggleWifiClient();
     bluetoothClient = _ToggleBluetoothClient();
     looper = LooperRepository(engine: FakeAudioEngine());
@@ -181,6 +203,7 @@ void main() {
   });
   tearDown(() async {
     await cubit.close();
+    await displayBrightness.close();
     await tunerCubit.close();
     await inputsCubit.close();
     unawaited(controlCubit.close());
@@ -194,50 +217,55 @@ void main() {
     WidgetTester tester, {
     VoidCallback? onStageTap,
   }) => tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.neon,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: MultiRepositoryProvider(
-        providers: [
-          RepositoryProvider<WifiRepository>.value(
-            value: WifiRepository(client: wifiClient),
-          ),
-          RepositoryProvider<BluetoothRepository>.value(
-            value: BluetoothRepository(client: bluetoothClient),
-          ),
-          RepositoryProvider<LooperRepository>.value(value: looper),
-        ],
-        child: MultiBlocProvider(
+    ToastificationWrapper(
+      child: MaterialApp(
+        theme: AppTheme.neon,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: MultiRepositoryProvider(
           providers: [
-            BlocProvider<SettingsTrayCubit>.value(value: cubit),
-            BlocProvider<TunerCubit>.value(value: tunerCubit),
-            BlocProvider<InputsCubit>.value(value: inputsCubit),
-            BlocProvider<LooperBloc>.value(value: looperBloc),
-            BlocProvider<ControlCubit>.value(value: controlCubit),
-            BlocProvider<TracksCubit>.value(value: tracksCubit),
-            BlocProvider<MonitorCubit>(
-              create: (_) => MonitorCubit(
-                fxPersistence: fxPersistence,
-                mixSettings: mixSettings,
-                repository: looper,
-                settings: settings,
-              ),
+            RepositoryProvider<WifiRepository>.value(
+              value: WifiRepository(client: wifiClient),
             ),
+            RepositoryProvider<BluetoothRepository>.value(
+              value: BluetoothRepository(client: bluetoothClient),
+            ),
+            RepositoryProvider<LooperRepository>.value(value: looper),
           ],
-          // A Scaffold + Stack mirrors how TracksView actually mounts the
-          // tray: as a Stack sibling over full-screen content, top edge at
-          // (0, 0).
-          child: Scaffold(
-            body: Stack(
-              children: [
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onStageTap,
-                  child: const SizedBox.expand(),
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<SettingsTrayCubit>.value(value: cubit),
+              BlocProvider<DisplayBrightnessCubit>.value(
+                value: displayBrightness,
+              ),
+              BlocProvider<TunerCubit>.value(value: tunerCubit),
+              BlocProvider<InputsCubit>.value(value: inputsCubit),
+              BlocProvider<LooperBloc>.value(value: looperBloc),
+              BlocProvider<ControlCubit>.value(value: controlCubit),
+              BlocProvider<TracksCubit>.value(value: tracksCubit),
+              BlocProvider<MonitorCubit>(
+                create: (_) => MonitorCubit(
+                  fxPersistence: fxPersistence,
+                  mixSettings: mixSettings,
+                  repository: looper,
+                  settings: settings,
                 ),
-                const SettingsTray(),
-              ],
+              ),
+            ],
+            // A Scaffold + Stack mirrors how TracksView actually mounts the
+            // tray: as a Stack sibling over full-screen content, top edge at
+            // (0, 0).
+            child: Scaffold(
+              body: Stack(
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onStageTap,
+                    child: const SizedBox.expand(),
+                  ),
+                  const SettingsTray(),
+                ],
+              ),
             ),
           ),
         ),
@@ -1009,6 +1037,54 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('an app-wide brightness change updates the open and reopened '
+        'popover', (tester) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      await openBrightness(tester);
+
+      await displayBrightness.setBrightness(0.42);
+      await tester.pump();
+      expect(find.text('42%'), findsOneWidget);
+      expect(
+        tester.widget<BrightnessCapsule>(find.byType(BrightnessCapsule)).value,
+        0.42,
+      );
+      expect(cubit.state, const SettingsTrayState(dragProgress: 1));
+
+      await tester.tap(find.byKey(const Key('trayBrightness_scrim')));
+      await tester.pumpAndSettle();
+      await openBrightness(tester);
+      expect(find.text('42%'), findsOneWidget);
+      expect(await settings.loadBrightness(), 0.42);
+    });
+
+    testWidgets('failed persistence is caught and a later adjustment retries', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      await openBrightness(tester);
+
+      store.failNextBrightnessWrite = true;
+      await tester.tap(find.byKey(const Key('settingsTray_brightness')));
+      await tester.pumpAndSettle();
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.powerOffSaveFailedTitle), findsOneWidget);
+      expect(store.values['ui.brightness'], isNull);
+
+      await tester.drag(
+        find.byKey(const Key('settingsTray_brightness')),
+        const Offset(0, -80),
+      );
+      await tester.pumpAndSettle();
+      expect(await settings.loadBrightness(), displayBrightness.state);
+      await tester.pump(const Duration(seconds: 10));
+      expect(find.text(l10n.powerOffSaveFailedTitle), findsNothing);
+    });
+
     testWidgets('dragging down (toward the bottom) lowers the value', (
       tester,
     ) async {
@@ -1021,7 +1097,7 @@ void main() {
       await tester.drag(slider, const Offset(0, 100));
       await tester.pump();
 
-      expect(cubit.state.brightness, lessThan(kDefaultDisplayBrightness));
+      expect(displayBrightness.state, lessThan(kDefaultDisplayBrightness));
     });
 
     testWidgets('dragging up (toward the top) raises the value', (
@@ -1036,7 +1112,7 @@ void main() {
       await tester.drag(slider, const Offset(0, -300));
       await tester.pump();
 
-      expect(cubit.state.brightness, greaterThan(0.9));
+      expect(displayBrightness.state, greaterThan(0.9));
     });
 
     testWidgets('a tap moves the value to the tapped position — unlike a plain '
@@ -1054,7 +1130,7 @@ void main() {
       // The tapped position, not merely "a brightness": the value is
       // clamped to 0.1..1 by construction, so a range assertion here
       // passes whatever the tap does.
-      expect(cubit.state.brightness, closeTo(0.55, 0.001));
+      expect(displayBrightness.state, closeTo(0.55, 0.001));
     });
 
     testWidgets('a double tap snaps brightness back to its default', (
@@ -1073,7 +1149,7 @@ void main() {
       final spot = Offset(box.center.dx, box.top + box.height * 3 / 4);
       await tester.tapAt(spot);
       await tester.pump();
-      expect(cubit.state.brightness, closeTo(0.325, 0.001));
+      expect(displayBrightness.state, closeTo(0.325, 0.001));
 
       // The same tap twice, inside the double-tap window.
       await tester.pump(const Duration(milliseconds: 40));
@@ -1081,7 +1157,7 @@ void main() {
       await tester.pump();
 
       expect(
-        cubit.state.brightness,
+        displayBrightness.state,
         closeTo(kDefaultDisplayBrightness, 0.001),
       );
     });
@@ -1101,7 +1177,7 @@ void main() {
         // Let the double-tap window lapse rather than leaving a live timer.
         await tester.pump(kDoubleTapTimeout * 2);
 
-        expect(cubit.state.brightness, closeTo(0.325, 0.001));
+        expect(displayBrightness.state, closeTo(0.325, 0.001));
       },
     );
 
@@ -1127,7 +1203,7 @@ void main() {
         // them as a reset would throw the second one's position away. This
         // is the gate the old Slider-wrapping widget could not pass — its
         // Listener reported one constant position for every tap (#623).
-        expect(cubit.state.brightness, closeTo(0.325, 0.001));
+        expect(displayBrightness.state, closeTo(0.325, 0.001));
         await tester.pump(kDoubleTapTimeout * 2);
       },
     );
@@ -1193,14 +1269,14 @@ void main() {
       // The tile's own pointer listener requests focus on tap.
       await tester.tap(find.byKey(const Key('settingsTray_brightness')));
       await tester.pump();
-      final before = cubit.state.brightness;
+      final before = displayBrightness.state;
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
       await tester.pump();
 
       // Flutter steps by `_adjustmentUnit * (max - min)`; with
       // `min: kMinDisplayBrightness` (0.1) that is 0.05 * 0.9 = 0.045.
-      expect(cubit.state.brightness, closeTo(before + 0.045, 0.001));
+      expect(displayBrightness.state, closeTo(before + 0.045, 0.001));
       debugDefaultTargetPlatformOverride = null;
     });
   });
