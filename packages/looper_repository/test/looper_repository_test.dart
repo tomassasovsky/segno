@@ -230,6 +230,19 @@ final _laneSnapshot = EngineSnapshot(
   ]),
 );
 
+class _RefusingLaneMuteEngine extends FakeAudioEngine {
+  bool refuseMute = false;
+
+  @override
+  EngineResult setLaneMute({
+    required bool muted,
+    int channel = 0,
+    int lane = 0,
+  }) => refuseMute && muted
+      ? EngineResult.invalid
+      : super.setLaneMute(muted: muted, channel: channel, lane: lane);
+}
+
 class _RefusingMonitorMuteEngine extends FakeAudioEngine {
   bool refuseMute = false;
   int muteCalls = 0;
@@ -2011,7 +2024,7 @@ void main() {
       expect(engine.lastConfig?.sampleRate, 48000);
       // The stopped engine keeps the fader intent for its next start.
       expect(engine.lastVolume, isNull);
-      expect(engine.lastMuted, isTrue);
+      expect(engine.lastMuted, isNull);
     });
 
     test('startEngine stores the last successful config', () {
@@ -4384,6 +4397,37 @@ void main() {
       );
     }
 
+    test('lane mute validates identity before native or remembered intent', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      for (final key in [(-1, 0), (8, 0), (0, -1), (0, kMaxLanes)]) {
+        expect(
+          repo.setLaneMute(channel: key.$1, lane: key.$2, muted: true),
+          EngineResult.invalid,
+        );
+        expect(repo.laneMuted(key.$1, key.$2), isFalse);
+      }
+      expect(engine.laneMute, isEmpty);
+    });
+
+    test('lane mute offline intent retries after refused startup replay', () {
+      final refusing = _RefusingLaneMuteEngine()..refuseMute = true;
+      engine = refusing;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      expect(
+        repo.setLaneMute(channel: 0, lane: 0, muted: true),
+        EngineResult.ok,
+      );
+      expect(engine.laneMute, isEmpty);
+      expect(repo.startEngine(const EngineConfig()), EngineResult.invalid);
+      expect(repo.laneMuted(0, 0), isTrue);
+      expect(engine.calls, contains('stop'));
+      refusing.refuseMute = false;
+      expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+      expect(engine.laneMute[(0, 0)], isTrue);
+    });
+
     test('setMonitorMute mutes the chain and reapplies on restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -6067,6 +6111,27 @@ void main() {
         ),
       ],
     );
+
+    test('Session import fails when its lane mute is refused', () async {
+      final refusing = _RefusingLaneMuteEngine()..refuseMute = true;
+      engine = refusing..nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      await expectLater(
+        repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1]), muted: true),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        ),
+        throwsStateError,
+      );
+      expect(repo.laneMuted(0, 0), isFalse);
+      expect(engine.laneMute[(0, 0)], isFalse);
+    });
 
     test(
       'clears every track, imports stems, commits, and applies mix',

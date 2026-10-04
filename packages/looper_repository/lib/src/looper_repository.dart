@@ -230,10 +230,9 @@ class LooperRepository {
   final Stream<void>? _ticker;
   Duration _pollInterval;
 
-  /// Fired synchronously whenever the repository mutates a lane's effect chain
-  /// on its own initiative — today the record-time snapshot-copy of a monitor
-  /// chain onto the recording lanes (F3). The bloc subscribes and persists the
-  /// resulting chain, so a take's remembered FX survive a restart.
+  /// Fired when the repository changes a lane's chain or resets a remembered
+  /// true mute on its own initiative. The bloc persists the resulting lane
+  /// envelope, including mute, so a take's state survives a restart.
   ///
   /// UI-driven structural chain edits do NOT fire this: the bloc already
   /// persists those at the edit, and the bloc is the single settings writer for
@@ -2638,10 +2637,17 @@ class LooperRepository {
         stopEngine();
         return mixResult;
       }
-      _laneMute.forEach(
-        (key, muted) =>
-            _engine.setLaneMute(muted: muted, channel: key.$1, lane: key.$2),
-      );
+      for (final entry in _laneMute.entries) {
+        final result = _engine.setLaneMute(
+          muted: entry.value,
+          channel: entry.key.$1,
+          lane: entry.key.$2,
+        );
+        if (!result.isOk) {
+          stopEngine();
+          return result;
+        }
+      }
       for (final key in <(int, int)>{
         ..._laneEffects.keys,
         ..._laneChainEnabled.keys,
@@ -3134,8 +3140,17 @@ class LooperRepository {
   /// Drops the remembered per-lane mutes for [channel] — used when the engine
   /// itself force-unmutes (clear, record-from-empty, redo-from-empty), so the
   /// restart replay can't resurrect a stale mute over an audible track.
-  void _forgetLaneMutes(int channel) {
+  void _forgetLaneMutes(int channel, {bool notify = true}) {
+    final mutedLanes = [
+      for (final entry in _laneMute.entries)
+        if (entry.key.$1 == channel && entry.value) entry.key.$2,
+    ];
     _laneMute.removeWhere((key, _) => key.$1 == channel);
+    if (notify) {
+      for (final lane in mutedLanes) {
+        onLaneChainChanged?.call(channel, lane);
+      }
+    }
   }
 
   /// Copies lane [lane] of track [channel]'s routed input chain onto the lane
@@ -3449,7 +3464,7 @@ class LooperRepository {
     _clearRestore.remove(channel);
     _restoreFxStaged.remove(channel);
     _historyFx.removeWhere((key, _) => key.$1 == channel);
-    _forgetLaneMutes(channel);
+    _forgetLaneMutes(channel, notify: false);
     // Session apply sends exactly one final recipe per target after this clear.
     _laneEffects.removeWhere((key, _) => key.$1 == channel);
     _laneChainEnabled.removeWhere((key, _) => key.$1 == channel);
@@ -3933,7 +3948,6 @@ class LooperRepository {
           ..setLaneVolume(1, channel: channel)
           ..setLanePan(pan: 0, channel: channel)
           ..setTrackSolo(channel: channel, solo: false)
-          ..setLaneMute(muted: false, channel: channel)
           // a_one_shot survives `clear` by design too (see above) — reset
           // every track to off here; the rig loop below re-arms it for any
           // track this session actually marks One Shot.
@@ -3941,6 +3955,9 @@ class LooperRepository {
           // The record timing and decay overrides survive `clear` the same
           // way: back to inherit here, re-armed from the rig below.
           ..setTrackOverdubFeedback(channel: channel, feedback: null);
+        _requireSessionSetting(
+          _engine.setLaneMute(muted: false, channel: channel),
+        );
       }
     }
 
@@ -4055,10 +4072,12 @@ class LooperRepository {
         restoredMix.balances[(track.channel, lane.lane)] = lane.balance;
         restoredMix.images[(track.channel, lane.lane)] = lane.pan;
         restoredMix.levels[(track.channel, lane.lane)] = lane.volume;
-        setLaneMute(
-          muted: lane.muted,
-          channel: track.channel,
-          lane: lane.lane,
+        _requireSessionSetting(
+          setLaneMute(
+            muted: lane.muted,
+            channel: track.channel,
+            lane: lane.lane,
+          ),
         );
       }
     }
@@ -5077,6 +5096,9 @@ class LooperRepository {
     return applyMixSettings(next);
   }
 
+  /// Last admitted mute intent, including writes not yet in a polled snapshot.
+  bool laneMuted(int channel, int lane) => _laneMute[(channel, lane)] ?? false;
+
   /// Mutes or unmutes lane [lane] of track [channel]. Remembered and re-applied
   /// on every (re)start.
   EngineResult setLaneMute({
@@ -5084,8 +5106,19 @@ class LooperRepository {
     required int channel,
     required int lane,
   }) {
+    if (channel < 0 || channel >= 8 || lane < 0 || lane >= kMaxLanes) {
+      return EngineResult.invalid;
+    }
+    if (_intendRunning) {
+      final result = _engine.setLaneMute(
+        muted: muted,
+        channel: channel,
+        lane: lane,
+      );
+      if (!result.isOk) return result;
+    }
     _laneMute[(channel, lane)] = muted;
-    return _engine.setLaneMute(muted: muted, channel: channel, lane: lane);
+    return EngineResult.ok;
   }
 
   /// Arms the chromatic tuner on hardware [input], or disarms it with `-1`.

@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/track_mute.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -80,7 +81,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       // double-toggle inside the echo window would read the pre-toggle
       // value twice and re-apply the first flip (staying muted) instead of
       // undoing it. Same discipline as `LooperTrackChainToggled` below.
-      (event, _) => _repository.setMute(
+      (event, _) => _setMute(
         muted: !_repository.trackMuted(event.channel),
         channel: event.channel,
       ),
@@ -112,14 +113,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
     });
     on<LooperLaneMuteToggled>((event, _) {
-      final muted = !_laneMuted(event.channel, event.lane);
-      _repository.setLaneMute(
-        muted: muted,
+      _setMute(
+        muted: !_repository.laneMuted(event.channel, event.lane),
         channel: event.channel,
         lane: event.lane,
-      );
-      unawaited(
-        _settings?.saveLaneMute(event.channel, event.lane, muted: muted),
       );
     });
     on<LooperLaneEffectAdded>((event, _) {
@@ -887,9 +884,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
     );
-    // Persist chains the repository mutates on its own — the record-time
-    // snapshot-copy of a monitor chain onto the take's lanes (F3). The bloc
-    // stays the single settings writer for chains.
+    // Persist repository-owned lane changes: inherited chains and accepted
+    // mute resets on clear/new take/redo use the same lane save boundary.
     _repository.onLaneChainChanged = _persistRepositoryLaneChain;
   }
 
@@ -933,21 +929,26 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// every lane on clear), and the unmute is persisted per lane so it survives
   /// a restart. Shared by every clear path (per-track and clear-all).
   void _clearAndArm(int channel) {
+    if (_fxPersistence.sessionTransitionActive) return;
     if (!_repository.clear(channel: channel).isOk) return;
-    _repository.setMute(muted: false, channel: channel);
-    final lanes = channel >= 0 && channel < state.tracks.length
-        ? state.tracks[channel].lanes.length
-        : 1;
-    for (var lane = 0; lane < (lanes < 1 ? 1 : lanes); lane++) {
-      unawaited(_settings?.saveLaneMute(channel, lane, muted: false));
-    }
+    _setMute(muted: false, channel: channel);
   }
 
-  bool _laneMuted(int channel, int lane) {
-    if (channel < 0 || channel >= state.tracks.length) return false;
-    final lanes = state.tracks[channel].lanes;
-    return lane >= 0 && lane < lanes.length && lanes[lane].muted;
-  }
+  EngineResult _setMute({
+    required bool muted,
+    required int channel,
+    int? lane,
+  }) => applyTrackMute(
+    looper: _repository,
+    settings: _settings,
+    persistence: _fxPersistence,
+    channel: channel,
+    lane: lane,
+    muted: muted,
+    onError: (error, stack) {
+      if (!isClosed) addError(error, stack);
+    },
+  );
 
   void _persistAfterFx(FxAddress address) {
     final settings = _settings;

@@ -184,8 +184,26 @@ void main() {
       when(() => looper.mixGeneration).thenReturn(0);
       when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
       when(() => looper.laneCount(any())).thenReturn(1);
+      final laneMutes = <(int, int), bool>{};
+      when(() => looper.laneMuted(any(), any())).thenAnswer(
+        (call) =>
+            laneMutes[(
+              call.positionalArguments[0] as int,
+              call.positionalArguments[1] as int,
+            )] ??
+            false,
+      );
+      when(() => looper.laneEffects(any(), any())).thenReturn(const []);
+      when(() => looper.laneChainEnabled(any(), any())).thenReturn(true);
+      when(
+        () => looper.laneChainInheritedFrom(any(), any()),
+      ).thenReturn(const []);
+
       when(() => looper.mixSettingsSettled).thenReturn(true);
       when(() => looper.fxRecipesSettled).thenReturn(true);
+      when(
+        () => looper.fxReplayConfirmed,
+      ).thenAnswer((_) => const Stream.empty());
       when(() => looper.lengthSettingsSettled).thenReturn(true);
       when(() => looper.recordLengthCaptureLocked).thenAnswer(
         (_) => looper.state.tracks.any((track) => track.isCapturing),
@@ -239,7 +257,11 @@ void main() {
           muted: any(named: 'muted'),
           channel: any(named: 'channel'),
         ),
-      ).thenReturn(EngineResult.ok);
+      ).thenAnswer((call) {
+        laneMutes[(call.namedArguments[#channel] as int, 0)] =
+            call.namedArguments[#muted] as bool;
+        return EngineResult.ok;
+      });
       when(() => looper.trackMuted(any())).thenAnswer((call) {
         final channel = call.positionalArguments.first as int;
         return looper.state.tracks[channel].muted;
@@ -2287,6 +2309,58 @@ void main() {
         verify(() => looper.setMute(muted: false, channel: 1)).called(1);
         expect(cubit.state.parkedResume, {0, 1});
       });
+
+      test('running mute persists the accepted lane value', () async {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        cubit
+          ..toggleMode()
+          ..trackPressed(0);
+        await pumpEventQueue();
+        expect(await settings.loadLaneMute(0, 0), isTrue);
+      });
+
+      test('refused last-track mute cannot park the transport', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        when(
+          () => looper.setMute(muted: true),
+        ).thenReturn(EngineResult.invalid);
+        cubit
+          ..toggleMode()
+          ..trackPressed(0);
+        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+      });
+
+      test(
+        'refused parked unmute cannot play or consume resume membership',
+        () {
+          setEngine(
+            _tracksWith(const [
+              Track(
+                state: TrackState.stopped,
+                muted: true,
+                lengthFrames: 48000,
+              ),
+            ]),
+          );
+          when(
+            () => looper.setMute(muted: false),
+          ).thenReturn(EngineResult.invalid);
+          cubit.toggleMode();
+          final before = cubit.state.parkedResume;
+          cubit.recPlay();
+          verifyNever(() => looper.play(channel: any(named: 'channel')));
+          expect(cubit.state.parkedResume, before);
+        },
+      );
 
       test('running: a live track press toggles its mute', () {
         setEngine(

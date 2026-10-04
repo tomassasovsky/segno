@@ -2004,12 +2004,20 @@ class SettingsRepository {
       'lane_effects.$channel.$lane';
 
   /// Loads lane [lane] of track [channel]'s mute state, or `null` if unset.
-  Future<bool?> loadLaneMute(int channel, int lane) =>
-      _store.getBool(_laneMuteKey(channel, lane));
+  Future<bool?> loadLaneMute(int channel, int lane) async {
+    await _serializedWrite;
+    return _store.getBool(_laneMuteKey(channel, lane));
+  }
 
   /// Saves lane [lane] of track [channel]'s [muted] state.
   Future<void> saveLaneMute(int channel, int lane, {required bool muted}) =>
-      _store.setBool(_laneMuteKey(channel, lane), value: muted);
+      _serialize(
+        () => _writeBoolScalar(
+          _laneMuteKey(channel, lane),
+          muted,
+          'Lane mute was not confirmed',
+        ),
+      );
 
   /// Loads lane [lane] of track [channel]'s persisted effect chain as an opaque
   /// encoded string (see `encodeTrackEffects`), or `null` if none is saved.

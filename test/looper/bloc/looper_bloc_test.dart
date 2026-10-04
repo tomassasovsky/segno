@@ -216,6 +216,15 @@ void main() {
     when(() => repository.state).thenReturn(const LooperState());
     // The mute toggle resolves against the repository's remembered intent
     // (synchronous), not the polled snapshot — see LooperMuteToggled.
+    final laneMutes = <(int, int), bool>{};
+    when(() => repository.laneMuted(any(), any())).thenAnswer(
+      (call) =>
+          laneMutes[(
+            call.positionalArguments[0] as int,
+            call.positionalArguments[1] as int,
+          )] ??
+          false,
+    );
     when(() => repository.trackMuted(any())).thenReturn(false);
     when(
       () => repository.record(channel: any(named: 'channel')),
@@ -350,7 +359,14 @@ void main() {
         channel: any(named: 'channel'),
         lane: any(named: 'lane'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      laneMutes[(
+            call.namedArguments[#channel] as int,
+            call.namedArguments[#lane] as int,
+          )] =
+          call.namedArguments[#muted] as bool;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setLaneEffects(
         channel: any(named: 'channel'),
@@ -1160,6 +1176,7 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'LooperLaneMuteToggled unmutes when the lane is already muted',
     build: buildBloc,
+    setUp: () => when(() => repository.laneMuted(0, 0)).thenReturn(true),
     seed: () => const LooperState(
       tracks: [
         Track(lanes: [Lane(muted: true)]),

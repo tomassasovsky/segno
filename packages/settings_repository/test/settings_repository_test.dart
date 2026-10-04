@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -11,6 +13,8 @@ class _InMemoryStore implements KeyValueStore {
   String? discardNextWriteKey;
   String? discardNextRemovalKey;
   String? failAfterRemovalKey;
+  Completer<void>? boolWrite;
+  final boolEntered = Completer<void>();
 
   @override
   Future<int?> getInt(String key) async => values[key] as int?;
@@ -51,8 +55,19 @@ class _InMemoryStore implements KeyValueStore {
   Future<bool?> getBool(String key) async => values[key] as bool?;
 
   @override
-  Future<void> setBool(String key, {required bool value}) async =>
-      values[key] = value;
+  Future<void> setBool(String key, {required bool value}) async {
+    if (!boolEntered.isCompleted) boolEntered.complete();
+    await boolWrite?.future;
+    if (discardNextWriteKey == key) {
+      discardNextWriteKey = null;
+      return;
+    }
+    values[key] = value;
+    if (failAfterWriteKey == key) {
+      failAfterWriteKey = null;
+      throw StateError('scalar wrote then failed');
+    }
+  }
 
   @override
   Future<double?> getDouble(String key) async => values[key] as double?;
@@ -102,6 +117,48 @@ void main() {
   setUp(() {
     store = _InMemoryStore();
     repository = SettingsRepository(store: store);
+  });
+
+  group('lane mute scalar', () {
+    test(
+      'orders a rapid pair of writes and reads behind blocked storage',
+      () async {
+        store.boolWrite = Completer<void>();
+        final first = repository.saveLaneMute(0, 0, muted: true);
+        await store.boolEntered.future;
+        final second = repository.saveLaneMute(0, 0, muted: false);
+        final read = repository.loadLaneMute(0, 0);
+        store.boolWrite!.complete();
+        await Future.wait([first, second]);
+        expect(await read, isFalse);
+      },
+    );
+
+    test('refuses silent storage loss and permits deliberate retry', () async {
+      store.discardNextWriteKey = 'lane_mute.0.0';
+      await expectLater(
+        repository.saveLaneMute(0, 0, muted: true),
+        throwsStateError,
+      );
+      expect(await repository.loadLaneMute(0, 0), isNull);
+      await repository.saveLaneMute(0, 0, muted: true);
+      expect(await repository.loadLaneMute(0, 0), isTrue);
+    });
+
+    test(
+      'mutation then error fails the write '
+      'without pretending bytes rolled back',
+      () async {
+        store.failAfterWriteKey = 'lane_mute.0.0';
+        await expectLater(
+          repository.saveLaneMute(0, 0, muted: true),
+          throwsStateError,
+        );
+        expect(await repository.loadLaneMute(0, 0), isTrue);
+        await repository.saveLaneMute(0, 0, muted: false);
+        expect(await repository.loadLaneMute(0, 0), isFalse);
+      },
+    );
   });
 
   group('live-input gain admission', () {

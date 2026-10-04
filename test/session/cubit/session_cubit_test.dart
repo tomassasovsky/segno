@@ -170,6 +170,7 @@ void main() {
     // Default chain getters so the save path's _captureChains() has something
     // to read; individual tests override as needed.
     when(looper.allLaneChains).thenReturn(const {});
+    when(() => looper.laneMuted(any(), any())).thenReturn(false);
     when(looper.allTrackChains).thenReturn(const {});
     when(looper.allOutputChains).thenReturn(const {});
     when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());

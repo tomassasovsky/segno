@@ -135,6 +135,7 @@ class FxChainPersistence {
     final outputs = _looper.allOutputChains();
     final monitors = _looper.allMonitors();
     final chains = <FxAddress, String?>{};
+    final laneMutes = <(int, int), bool>{};
     String encoded(FxAddress address, FxChainEnvelope envelope) =>
         encodeFxChain(project(address, envelope));
 
@@ -147,6 +148,7 @@ class FxChainPersistence {
           index: channel,
           lane: lane,
         );
+        laneMutes[(channel, lane)] = _looper.laneMuted(channel, lane);
         final saved = lanes[(channel, lane)];
         chains[address] = saved == null ? null : encoded(address, saved);
       }
@@ -185,6 +187,7 @@ class FxChainPersistence {
       mixGeneration: _looper.mixGeneration,
       device: rig.status.deviceName,
       chains: Map.unmodifiable(chains),
+      laneMutes: Map.unmodifiable(laneMutes),
       monitors: Map.unmodifiable(inputs),
     );
   }
@@ -230,6 +233,13 @@ class FxChainPersistence {
         throw StateError('session FX boot settings were not confirmed');
       }
     }
+    for (final entry in image.laneMutes.entries) {
+      await settings.saveLaneMute(
+        entry.key.$1,
+        entry.key.$2,
+        muted: entry.value,
+      );
+    }
     for (final entry in image.monitors.entries) {
       final input = entry.key;
       final value = entry.value;
@@ -265,9 +275,15 @@ class FxChainPersistence {
   Future<void> saveConfirmed(
     FxAddress address,
     SettingsRepository settings,
-  ) async {
+  ) => _saveConfirmed(address, settings);
+
+  Future<void> _saveConfirmed(
+    FxAddress address,
+    SettingsRepository settings, {
+    bool completeOnClose = false,
+  }) async {
     if (_closed) return;
-    _queue(address, settings);
+    _queue(address, settings, completeOnClose: completeOnClose);
     _scheduled.remove(address)?.cancel();
     await _startSave(address);
     final failure = _dirty[address]?.failure;
@@ -305,7 +321,11 @@ class FxChainPersistence {
     }
   }
 
-  void _queue(FxAddress address, SettingsRepository settings) {
+  void _queue(
+    FxAddress address,
+    SettingsRepository settings, {
+    bool completeOnClose = false,
+  }) {
     _syncSession();
     _replay ??= _looper.fxReplayConfirmed.listen((replay) {
       if (_closed ||
@@ -320,7 +340,12 @@ class FxChainPersistence {
         }
       }
     });
-    _dirty[address] = _FxSave(settings, _looper.sessionRevision);
+    _dirty[address] = _FxSave(
+      settings,
+      _looper.sessionRevision,
+      completeOnClose:
+          completeOnClose || (_dirty[address]?.completeOnClose ?? false),
+    );
   }
 
   Future<void> _startSave(FxAddress address) {
@@ -332,7 +357,7 @@ class FxChainPersistence {
   }
 
   Future<void> _drain(FxAddress address) async {
-    while (!_closed) {
+    while (!_closed || (_dirty[address]?.completeOnClose ?? false)) {
       final boot = _sessionBootBarrier;
       if (boot != null) await boot.future;
       final pending = _dirty[address];
@@ -347,16 +372,17 @@ class FxChainPersistence {
           final receipt = await _looper.settleFxRecipes(
             waitForCallback: true,
             cancelled: () =>
-                _closed || pending.session != _looper.sessionRevision,
+                (_closed && !(_dirty[address]?.completeOnClose ?? false)) ||
+                pending.session != _looper.sessionRevision,
           );
           if (!receipt.isOk) {
             throw StateError('FX changes are not confirmed: $receipt');
           }
         }
-        if (_closed) return;
+        if (_closed && !(_dirty[address]?.completeOnClose ?? false)) return;
         if (pending.session != _looper.sessionRevision) continue;
         await settlePending();
-        if (_closed) return;
+        if (_closed && !(_dirty[address]?.completeOnClose ?? false)) return;
         if (pending.session != _looper.sessionRevision) continue;
         // Edits before storage admission share this snapshot. Edits during
         // storage retain their newer token and require the following write.
@@ -379,7 +405,11 @@ class FxChainPersistence {
           return;
         }
       } on Object catch (error, stack) {
-        attempted.failure = (error, stack);
+        // Failure finishes this admitted attempt. Its dirty retry is not a
+        // new disposal obligation until another controller save admits it.
+        attempted
+          ..failure = (error, stack)
+          ..completeOnClose = false;
         if (identical(_dirty[address], attempted)) return;
       }
     }
@@ -419,7 +449,9 @@ class FxChainPersistence {
     _completeSessionBootOutcome();
     _releaseSessionBootBarrier();
     _cancelScheduled();
-    _dirty.clear();
+    // Started controller saves keep their receipt/storage obligation. Failed
+    // retries and ordinary queued edits still require the caller's flush.
+    _dirty.removeWhere((_, save) => !save.completeOnClose);
     // Genuine receipts still belong to their callers. Completing them here
     // would release a tracked save before the audio callback acknowledges it.
     // Release only our boot barrier above so cancelled drains cannot deadlock.
@@ -632,14 +664,12 @@ class FxChainPersistence {
 /// No-op when [settings] is null (the bloc's settings dependency is optional).
 void persistTrackFxChain({
   required SettingsRepository? settings,
-  required LooperRepository looper,
   required FxChainPersistence projection,
   required int channel,
 }) {
   unawaited(
     saveTrackFxChain(
       settings: settings,
-      looper: looper,
       projection: projection,
       channel: channel,
     ),
@@ -649,14 +679,12 @@ void persistTrackFxChain({
 /// Awaitable twin for lifecycle-fenced FX writes.
 Future<void> saveTrackFxChain({
   required SettingsRepository? settings,
-  required LooperRepository looper,
   required FxChainPersistence projection,
   required int channel,
 }) async {
   if (settings == null) return;
   await saveFxOwner(
     settings: settings,
-    looper: looper,
     projection: projection,
     address: FxAddress(stage: FxStage.track, index: channel),
   );
@@ -665,22 +693,12 @@ Future<void> saveTrackFxChain({
 /// Persists an acknowledged complete FX owner, retaining lane provenance.
 Future<void> saveFxOwner({
   required SettingsRepository settings,
-  required LooperRepository looper,
   required FxChainPersistence projection,
   required FxAddress address,
 }) {
-  if (projection._closed) return Future<void>.value();
-  return projection.trackSave(() async {
-    final session = looper.sessionRevision;
-    await projection.settlePending();
-    if (session != looper.sessionRevision) return;
-    await _writeFxOwner(
-      settings: settings,
-      looper: looper,
-      projection: projection,
-      address: address,
-    );
-  }());
+  return projection.trackSave(
+    projection._saveConfirmed(address, settings, completeOnClose: true),
+  );
 }
 
 Future<void> _writeFxOwner({
@@ -711,20 +729,26 @@ Future<void> _writeFxOwner({
         enabled: looper.monitorChainEnabled(address.index),
       ),
     ),
-    FxStage.loop => settings.saveLaneEffects(
-      address.index,
-      address.lane!,
-      encode(
-        looper.laneEffects(address.index, address.lane!),
-        enabled: looper.laneChainEnabled(address.index, address.lane!),
-        meta: FxChainMeta(
-          inheritedFrom: looper.laneChainInheritedFrom(
-            address.index,
-            address.lane!,
+    FxStage.loop => () async {
+      final session = looper.sessionRevision;
+      final muted = looper.laneMuted(address.index, address.lane!);
+      await settings.saveLaneEffects(
+        address.index,
+        address.lane!,
+        encode(
+          looper.laneEffects(address.index, address.lane!),
+          enabled: looper.laneChainEnabled(address.index, address.lane!),
+          meta: FxChainMeta(
+            inheritedFrom: looper.laneChainInheritedFrom(
+              address.index,
+              address.lane!,
+            ),
           ),
         ),
-      ),
-    ),
+      );
+      if (session != looper.sessionRevision) return;
+      await settings.saveLaneMute(address.index, address.lane!, muted: muted);
+    }(),
     FxStage.track => settings.saveTrackFxChain(
       address.index,
       encode(
@@ -746,9 +770,10 @@ Future<void> _writeFxOwner({
 }
 
 class _FxSave {
-  _FxSave(this.settings, this.session);
+  _FxSave(this.settings, this.session, {required this.completeOnClose});
   final SettingsRepository settings;
   final int session;
+  bool completeOnClose;
   (Object, StackTrace)? failure;
 }
 
@@ -759,6 +784,7 @@ class _SessionBootImage {
     required this.mixGeneration,
     required this.device,
     required this.chains,
+    required this.laneMutes,
     required this.monitors,
   });
 
@@ -767,6 +793,7 @@ class _SessionBootImage {
   final int mixGeneration;
   final String device;
   final Map<FxAddress, String?> chains;
+  final Map<(int, int), bool> laneMutes;
   final Map<int, _SessionBootMonitor> monitors;
 }
 

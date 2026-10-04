@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -22,6 +24,10 @@ void main() {
     setUp(() {
       looper = _MockLooperRepository();
       when(() => looper.sessionRevision).thenReturn(0);
+      when(() => looper.fxRecipesSettled).thenReturn(true);
+      when(
+        () => looper.fxReplayConfirmed,
+      ).thenAnswer((_) => const Stream.empty());
       projection = FxChainPersistence(looper: looper);
       settings = SettingsRepository(store: FakeKeyValueStore());
       when(() => looper.trackChainEnabled(any())).thenReturn(true);
@@ -37,7 +43,6 @@ void main() {
       await saveTrackFxChain(
         projection: projection,
         settings: settings,
-        looper: looper,
         channel: 2,
       );
 
@@ -53,7 +58,6 @@ void main() {
       await saveTrackFxChain(
         projection: projection,
         settings: settings,
-        looper: looper,
         channel: 0,
       );
 
@@ -68,7 +72,6 @@ void main() {
         await saveTrackFxChain(
           projection: projection,
           settings: null,
-          looper: looper,
           channel: 0,
         );
 
@@ -87,7 +90,6 @@ void main() {
         await saveTrackFxChain(
           projection: projection,
           settings: settings,
-          looper: looper,
           channel: 1,
         );
 

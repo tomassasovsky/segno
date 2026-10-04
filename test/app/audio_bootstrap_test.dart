@@ -50,6 +50,17 @@ const _emptyTrackSlots = <TrackSnapshot>[
   TrackSnapshot.empty(),
 ];
 
+class _MuteBootEngine extends FakeAudioEngine {
+  @override
+  EngineResult setLaneMute({
+    required bool muted,
+    int channel = 0,
+    int lane = 0,
+  }) => muted
+      ? EngineResult.invalid
+      : super.setLaneMute(muted: muted, channel: channel, lane: lane);
+}
+
 class _DecayBootEngine extends FakeAudioEngine {
   double? defaultFeedback;
   int? refuseTrack;
@@ -158,6 +169,32 @@ class _OnceBootEngine extends FakeAudioEngine {
 }
 
 void main() {
+  test('bootstrap stops when saved lane mute is refused', () async {
+    final engine = _MuteBootEngine();
+    final repository = LooperRepository(
+      engine: engine,
+      ticker: const Stream<void>.empty(),
+    );
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final mix = testMixSettings(repository, settings: settings);
+    addTearDown(() async {
+      await mix.close();
+      await repository.dispose();
+    });
+    await settings.saveAudioConfig(
+      const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+    );
+    await settings.saveLaneMute(0, 0, muted: true);
+    final result = await tryAutoStartEngine(
+      repository: repository,
+      settings: settings,
+      mixSettings: mix,
+    );
+    expect(result.started, isFalse);
+    expect(repository.laneMuted(0, 0), isFalse);
+    expect(engine.laneMute[(0, 0)], isNull);
+  });
+
   group('tryAutoStartEngine', () {
     late FakeAudioEngine engine;
     late LooperRepository repository;
