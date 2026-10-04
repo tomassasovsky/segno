@@ -194,39 +194,45 @@ class _LibraryGrid extends StatelessWidget {
       for (final family in catalogue.families)
         if (family != wide) family,
     ];
-    return SingleChildScrollView(
-      child: Wrap(
-        spacing: 40,
-        runSpacing: 20,
-        children: [
-          _LibraryCard(
-            key: const Key('fx_library_saved'),
-            label: l10n.fxLibraryMyPresets,
-            asset: 'assets/images/selector/my-presets.png',
-            onTap: onSaved,
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        width: 1660,
+        child: SingleChildScrollView(
+          child: Wrap(
+            spacing: 40,
+            runSpacing: 20,
+            children: [
+              _LibraryCard(
+                key: const Key('fx_library_saved'),
+                label: l10n.fxLibraryMyPresets,
+                asset: 'assets/images/selector/my-presets.png',
+                onTap: onSaved,
+              ),
+              if (wide != null)
+                _LibraryCard(
+                  key: Key('fx_library_family_${wide.slug}'),
+                  label: wide.name,
+                  asset: wide.selectorAsset,
+                  width: 810,
+                  onTap: () => onFamily(wide),
+                ),
+              _LibraryCard(
+                key: const Key('fx_library_single'),
+                label: l10n.fxLibrarySingle,
+                asset: kFxSingleSelectorAsset,
+                onTap: onSingle,
+              ),
+              for (final family in rest)
+                _LibraryCard(
+                  key: Key('fx_library_family_${family.slug}'),
+                  label: family.name,
+                  asset: family.selectorAsset,
+                  onTap: () => onFamily(family),
+                ),
+            ],
           ),
-          if (wide != null)
-            _LibraryCard(
-              key: Key('fx_library_family_${wide.slug}'),
-              label: wide.name,
-              asset: wide.selectorAsset,
-              width: 810,
-              onTap: () => onFamily(wide),
-            ),
-          _LibraryCard(
-            key: const Key('fx_library_single'),
-            label: l10n.fxLibrarySingle,
-            asset: kFxSingleSelectorAsset,
-            onTap: onSingle,
-          ),
-          for (final family in rest)
-            _LibraryCard(
-              key: Key('fx_library_family_${family.slug}'),
-              label: family.name,
-              asset: family.selectorAsset,
-              onTap: () => onFamily(family),
-            ),
-        ],
+        ),
       ),
     );
   }
