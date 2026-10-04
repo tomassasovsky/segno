@@ -44,6 +44,14 @@ class ControlSettingsNotices {
     if (!_powerVisible) _present(notice);
   }
 
+  /// Resolves a recovery completed outside its Retry action.
+  void dismiss(String id) {
+    if (_disposed) return;
+    _recoveries.remove(id);
+    _shown.remove(id);
+    dismissAppToast(id);
+  }
+
   void setPowerVisible({required bool visible}) {
     if (_disposed || _powerVisible == visible) return;
     _powerVisible = visible;

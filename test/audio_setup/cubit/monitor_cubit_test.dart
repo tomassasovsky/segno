@@ -571,7 +571,7 @@ void main() {
     },
     build: build,
     act: (cubit) => cubit.load(),
-    expect: () => <MonitorState>[],
+    expect: () => [const MonitorState(restoreFailed: true)],
     errors: () => [isA<FormatException>()],
     verify: (_) {
       verifyNever(

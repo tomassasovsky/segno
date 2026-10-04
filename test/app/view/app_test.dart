@@ -21,6 +21,7 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_gate.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -276,6 +277,20 @@ class _RecordStartStore extends FakeKeyValueStore {
       throw StateError('Recording start compensation unavailable');
     }
     await super.remove(key);
+  }
+}
+
+class _MonitorRestoreStore extends FakeKeyValueStore {
+  bool refuseRead = true;
+  Completer<void>? readGate;
+
+  @override
+  Future<String?> getString(String key) async {
+    if (key == 'monitor_input_mode.0') await readGate?.future;
+    if (refuseRead && key == 'monitor_input_mode.0') {
+      throw StateError('saved monitor temporarily unreadable');
+    }
+    return super.getString(key);
   }
 }
 
@@ -931,6 +946,103 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     });
+
+    testWidgets('initial monitor restore failure exposes persistent Retry', (
+      tester,
+    ) async {
+      final store = _MonitorRestoreStore();
+      settings = SettingsRepository(store: store);
+      await settings.saveMonitorInputMode(0, mode: 'on');
+      await settings.saveMonitorOutput(0, 8);
+      await settings.saveMonitorVolume(0, .35);
+      await settings.saveMonitorMute(0, muted: true);
+      await pumpApp(tester, NoopWaveformWindowService());
+      final monitor = tester
+          .element(find.byType(TracksView))
+          .read<MonitorCubit>();
+      expect(monitor.state.restoreFailed, isTrue);
+      expect(find.text('Input monitoring needs recovery'), findsOneWidget);
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(monitor.state.restoreFailed, isTrue);
+      expect(find.text('Retry'), findsOneWidget);
+      store.refuseRead = false;
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(monitor.state.restoreFailed, isFalse);
+      expect(monitor.state.forInput(0).mode, MonitorMode.on);
+      expect(monitor.state.forInput(0).outputMask, 8);
+      expect(find.text('Input monitoring needs recovery'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 100));
+    });
+
+    for (final projectBeforeFrame in [false, true]) {
+      testWidgets(
+        'idle monitor failure requests frame; projected=$projectBeforeFrame',
+        (
+          tester,
+        ) async {
+          final gate = Completer<void>();
+          final store = _MonitorRestoreStore()..readGate = gate;
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final monitor = tester
+              .element(find.byType(TracksView))
+              .read<MonitorCubit>();
+          expect(tester.binding.hasScheduledFrame, isFalse);
+          final failed = monitor.stream.firstWhere(
+            (state) => state.restoreFailed,
+          );
+          gate.complete();
+          await failed;
+          // Drain stream listeners without pumping a frame: failure itself must
+          // request one, rather than depending on another player interaction.
+          await Future<void>.value();
+          expect(tester.binding.hasScheduledFrame, isTrue);
+          if (projectBeforeFrame) monitor.projectFromRepository();
+          await tester.pumpAndSettle();
+          expect(
+            find.text('Input monitoring needs recovery'),
+            projectBeforeFrame ? findsNothing : findsOneWidget,
+          );
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 100));
+        },
+      );
+    }
+
+    testWidgets(
+      'Session projection resolves monitor notice before next frame',
+      (
+        tester,
+      ) async {
+        final store = _MonitorRestoreStore();
+        settings = SettingsRepository(store: store);
+        await pumpApp(tester, NoopWaveformWindowService());
+        final monitor = tester
+            .element(find.byType(TracksView))
+            .read<MonitorCubit>();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+        final power =
+            tester.element(find.byType(TracksView)).read<PowerOffCubit>()
+              ..press(const PowerOffSnapshot(anyHasContent: true));
+        await tester.pumpAndSettle();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+        power.keepPlaying();
+        await tester.pumpAndSettle();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+        power.press(const PowerOffSnapshot(anyHasContent: true));
+        await tester.pumpAndSettle();
+        monitor.projectFromRepository();
+        await tester.pumpAndSettle();
+        power.keepPlaying();
+        await tester.pumpAndSettle();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
+      },
+    );
 
     for (final malformed in [false, true]) {
       testWidgets(

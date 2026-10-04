@@ -15,7 +15,10 @@ import 'package:settings_repository/settings_repository.dart';
 /// when you record into the input, so what you monitor is what the take stores.
 class MonitorState extends Equatable {
   /// Creates a [MonitorState] from a map of input index to its [InputMonitor].
-  const MonitorState({this.inputs = const {}});
+  const MonitorState({this.inputs = const {}, this.restoreFailed = false});
+
+  /// Saved monitoring has not been fully restored; an explicit retry is needed.
+  final bool restoreFailed;
 
   /// The configured monitors, keyed by hardware input index. Inputs absent from
   /// the map are not monitored (a default, disabled [InputMonitor]).
@@ -31,11 +34,13 @@ class MonitorState extends Equatable {
   bool hasInput(int input) => inputs.containsKey(input);
 
   /// Returns a copy with [monitor] replacing its input's entry.
-  MonitorState withInput(InputMonitor monitor) =>
-      MonitorState(inputs: {...inputs, monitor.input: monitor});
+  MonitorState withInput(InputMonitor monitor) => MonitorState(
+    inputs: {...inputs, monitor.input: monitor},
+    restoreFailed: restoreFailed,
+  );
 
   @override
-  List<Object?> get props => [inputs];
+  List<Object?> get props => [inputs, restoreFailed];
 }
 
 /// Owns the per-input live monitors: applies them to the [LooperRepository] and
@@ -109,13 +114,46 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Restores the persisted per-input monitors and applies them to the
   /// repository. Reads the single-chain keys; the multi-lane → single-chain
   /// fold (v3) runs at bootstrap, before this.
-  Future<void> load() => _loadFuture ??= _mixSettings
-      .runExclusive(_restore)
-      .catchError((Object error, StackTrace stack) {
-        if (!isClosed) addError(error, stack);
-      });
+  Future<void> load() {
+    if (isClosed || _restored) return Future<void>.value();
+    if (_fxPersistence.sessionTransitionActive) {
+      emit(MonitorState(inputs: state.inputs, restoreFailed: true));
+      return Future<void>.value();
+    }
+    final pending = _loadFuture;
+    if (pending != null) return pending;
+    final session = _repository.sessionRevision;
+    late final Future<void> attempt;
+    bool stillOwned() =>
+        !isClosed &&
+        !_restored &&
+        identical(_loadFuture, attempt) &&
+        _repository.sessionRevision == session &&
+        !_fxPersistence.sessionTransitionActive;
+    attempt = _mixSettings
+        .runExclusive(() async {
+          if (stillOwned()) await _restore(stillOwned);
+        })
+        .catchError((Object error, StackTrace stack) {
+          if (!stillOwned()) return;
+          addError(error, stack);
+          emit(MonitorState(inputs: state.inputs, restoreFailed: true));
+        })
+        .whenComplete(() {
+          if (!identical(_loadFuture, attempt)) return;
+          _loadFuture = null;
+          // A canceled reservation can leave startup incomplete without a newer
+          // Session projection. Keep explicit Retry reachable in that case.
+          if (!isClosed &&
+              !_restored &&
+              _repository.sessionRevision == session) {
+            emit(MonitorState(inputs: state.inputs, restoreFailed: true));
+          }
+        });
+    return _loadFuture = attempt;
+  }
 
-  Future<void> _restore() async {
+  Future<void> _restore(bool Function() stillOwned) async {
     // Scan the monitor path's own ceiling ([kMaxMonitoredInputs] ==
     // `LE_MAX_MONITORED_INPUTS`).
     // Only inputs with saved state populate the map.
@@ -123,20 +161,23 @@ class MonitorCubit extends Cubit<MonitorState> {
       for (var input = 0; input < kMaxMonitoredInputs; input++)
         _restoreInput(input),
     ]);
-    if (isClosed) return;
+    if (!stillOwned()) return;
     final restored = <int, InputMonitor>{};
     for (final monitor in loaded) {
       if (monitor != null) restored[monitor.input] = monitor;
     }
     final priorFx = await _repository.settleFxRecipes();
+    if (!stillOwned()) return;
     if (!priorFx.isOk) throw StateError('previous monitor FX was refused');
     for (final monitor in restored.values) {
+      if (!stillOwned()) return;
       final result = _applyMonitor(monitor);
       if (!result.isOk) throw StateError('saved monitor settings were refused');
     }
     final monitorLevels = {
       for (final monitor in restored.values) monitor.input: monitor.volume,
     };
+    if (!stillOwned()) return;
     if (monitorLevels.isNotEmpty) {
       final request = _repository.setMixSettings(
         trackPans: _repository.trackPans,
@@ -146,14 +187,20 @@ class MonitorCubit extends Cubit<MonitorState> {
       final settled = request.isOk
           ? await _repository.settleMixSettings()
           : request;
+      if (!stillOwned()) return;
       if (!settled.isOk) {
         throw StateError('saved monitor levels were refused');
       }
     }
     final settledFx = await _repository.settleFxRecipes();
+    if (!stillOwned()) return;
     if (!settledFx.isOk) throw StateError('saved monitor FX was refused');
-    if (isClosed) return;
-    emit(MonitorState(inputs: restored));
+    emit(
+      MonitorState(
+        inputs: restored,
+        restoreFailed: state.restoreFailed,
+      ),
+    );
     // Read the APPLIED chains back into state. What was decoded from settings
     // says nothing about whether a plugin actually loaded: `unavailable`,
     // `loading` and the enumerated params are the repository's answer, made
@@ -167,14 +214,16 @@ class MonitorCubit extends Cubit<MonitorState> {
     // same legacy chain. Only that case writes; a chain that already had ids
     // is read, not rewritten.
     for (final monitor in restored.values) {
-      if (isClosed) return;
+      if (!stillOwned()) return;
       final applied = _repository.monitorEffects(monitor.input);
       // Nothing applied (engine not running / a unit-test fake): keep the
       // restored state; the next real apply re-reads and re-mints.
       if (applied.isEmpty) continue;
       emit(state.withInput(monitor.copyWith(effects: applied)));
       if (!monitor.effects.any((fx) => fx.slotId == null)) continue;
+      if (!stillOwned()) return;
       await _persistMonitor(monitor);
+      if (!stillOwned()) return;
     }
     // And keep reading it. The engine starts before the app, with a cold
     // plugin cache, so by now every hosted entry has just failed to load and
@@ -183,9 +232,11 @@ class MonitorCubit extends Cubit<MonitorState> {
     // a plugin that resolves perfectly well would sit in the console reading
     // "loading..." until somebody edited the chain, and a missing one would
     // never offer the relink it needs.
+    if (!stillOwned()) return;
     _catalogWatch ??= _repository.pluginCatalog.progressStream.listen(
       (_) => unawaited(_readAfterScan()),
     );
+    emit(MonitorState(inputs: state.inputs));
     _followRepository();
   }
 

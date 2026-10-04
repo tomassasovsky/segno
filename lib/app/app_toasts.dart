@@ -16,6 +16,7 @@ abstract final class AppToastId {
   static const deviceRestored = 'app_deviceRestored_snackbar';
   static const midiLost = 'app_midiLost_toast';
   static const midiRestored = 'app_midiRestored_snackbar';
+  static const monitorRestore = 'app_monitorRestore_error';
   static const audioRecovery = 'app_audioRecovery_banner';
   static const update = 'app_update_banner';
   static const updateDismiss = 'app_update_banner_dismiss';

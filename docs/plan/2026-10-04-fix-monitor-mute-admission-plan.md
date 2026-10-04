@@ -84,3 +84,26 @@ VERIFICATION COMMAND: flutter test packages/looper_repository/test/looper_reposi
 Use the repository SDK and worktree lint instructions. Commands above are required
 checks, not execution evidence. Bind the final report to the reviewed source and
 record conditional skips and limits explicitly.
+
+
+## Reviewed restore recovery follow-up
+
+At base `05900df`, a refused saved monitor restore is observed but its completed
+load future prevents retry. Add a failure fact to the existing Monitor state and
+make explicit load retry in-flight-deduplicated. Expose Retry through the existing
+settings notice, including initial post-frame reconciliation, external resolution
+and shutdown-overlay suppression. Preserve failure through ordinary state copies;
+clear only on complete restore or successful Session projection.
+
+Use one attempt-local ownership predicate after every asynchronous stage and
+before later native/storage admissions or publication: owner open, same Session
+revision and attempt, no Session reservation, no newer authoritative projection.
+Canceled attempts do not roll back already admitted work. Do not reset audio,
+change routing order, retry automatically or add another owner/queue.
+
+This correction is independent of later scalar mute persistence. Prove failed
+true/false mute and read/settlement restores followed by explicit retry without
+intervening unrelated edits. On this head, unrelated-envelope preservation after
+ordinary mute is not claimed. Test actual App Retry, early failure, Session and
+disposal supersession, concurrent/repeated retries and notice dismissal across
+Power overlay. Reuse English/Spanish toast layout and the existing Retry label.
