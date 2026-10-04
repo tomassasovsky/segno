@@ -93,6 +93,7 @@ class _RecordingWindowService implements WaveformWindowService {
 
   int openCalls = 0;
   int closeCalls = 0;
+  bool failClose = false;
   int pushCalls = 0;
   bool _open = false;
 
@@ -136,6 +137,9 @@ class _RecordingWindowService implements WaveformWindowService {
   Future<void> close() async {
     closeCalls++;
     _open = false;
+    if (failClose) {
+      throw StateError('window enumeration failed during disposal');
+    }
   }
 
   /// Every waveform frame delivered, including a copy of its selected audio.
@@ -598,6 +602,43 @@ void main() {
       );
       await tester.pumpAndSettle();
     }
+
+    testWidgets('disposal logs a window close failure and retires delivery', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final directory = Directory.systemTemp.createTempSync('segno-window-');
+        AppLog.close();
+        addTearDown(() {
+          AppLog.close();
+          directory.deleteSync(recursive: true);
+        });
+        await AppLog.init(directory: directory);
+        final window = _RecordingWindowService();
+        await pumpApp(tester, window);
+        expect(window.openCalls, 1);
+        final context = tester.element(find.byType(TracksView));
+        final control = context.read<ControlCubit>();
+        final looper = context.read<LooperBloc>();
+        window.failClose = true;
+        await tester.pumpWidget(const SizedBox.shrink());
+        await pumpEventQueue();
+        expect(window.closeCalls, 1);
+        expect(window.onWindowReady, isNull);
+        expect(control.isClosed, isTrue);
+        expect(looper.isClosed, isTrue);
+        expect(tester.takeException(), isNull);
+        final log = File(
+          '${directory.path}/${AppLog.fileName}',
+        ).readAsStringSync();
+        expect(
+          'waveform display teardown failed'.allMatches(log),
+          hasLength(1),
+        );
+        expect(log, contains('window enumeration failed during disposal'));
+        expect(log, contains('_RecordingWindowService.close'));
+      });
+    });
 
     testWidgets('disposal logs FX persistence failure after closing owners', (
       tester,
