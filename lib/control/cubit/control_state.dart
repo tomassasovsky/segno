@@ -18,6 +18,8 @@ class ControlState extends Equatable {
     this.pedalSetupUnavailable = false,
     this.pedalSetupPersistenceUncertain = false,
     this.pedalSetupRuntimeUnsaved = false,
+    this.footMixer = const FootMixerSelection(),
+    this.footMixerFailure = 0,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -98,6 +100,12 @@ class ControlState extends Equatable {
 
   /// Accepted external toggle intent has not yet been durably saved.
   final bool pedalSetupRuntimeUnsaved;
+
+  /// Transient Mixer selection; never changes the normal cursor or bank.
+  final FootMixerSelection footMixer;
+
+  /// Repeated failed Mixer mute actions notify the current flow once each.
+  final int footMixerFailure;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -208,6 +216,8 @@ class ControlState extends Equatable {
     bool? pedalSetupUnavailable,
     bool? pedalSetupPersistenceUncertain,
     bool? pedalSetupRuntimeUnsaved,
+    FootMixerSelection? footMixer,
+    int? footMixerFailure,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -236,6 +246,8 @@ class ControlState extends Equatable {
         pedalSetupRuntimeUnsaved ?? this.pedalSetupRuntimeUnsaved,
     pedalSetupPersistenceUncertain:
         pedalSetupPersistenceUncertain ?? this.pedalSetupPersistenceUncertain,
+    footMixer: footMixer ?? this.footMixer,
+    footMixerFailure: footMixerFailure ?? this.footMixerFailure,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -266,6 +278,8 @@ class ControlState extends Equatable {
     pedalSetupUnavailable,
     pedalSetupPersistenceUncertain,
     pedalSetupRuntimeUnsaved,
+    footMixer,
+    footMixerFailure,
     cursor,
     activeBank,
     excluded,

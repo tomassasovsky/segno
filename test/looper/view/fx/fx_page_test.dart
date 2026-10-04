@@ -627,6 +627,41 @@ void main() {
           as List<TrackEffect>;
 
   group('the Sound type row', () {
+    testWidgets('live input explains Mixer mute without changing Hear live', (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.liveInput(0));
+      final monitors = tester.element(find.byType(FxPage)).read<MonitorCubit>();
+      when(repository.allMonitors).thenReturn({
+        0: const InputMonitor(input: 0, mode: MonitorMode.on, muted: true),
+      });
+      when(() => repository.monitorMode(0)).thenReturn(MonitorMode.on);
+      when(() => repository.monitorMuted(0)).thenReturn(true);
+      monitors.projectFromRepository();
+      await tester.pumpAndSettle();
+      expect(monitors.state.forInput(0).muted, isTrue);
+      expect(find.text('Muted in Mixer').hitTestable(), findsOneWidget);
+      expect(
+        tester
+            .widget<LoopChoiceButton>(find.byKey(const Key('fx_hear_on')))
+            .selected,
+        isTrue,
+      );
+      await tapKey(tester, 'fx_kind_output');
+      expect(find.text('Muted in Mixer'), findsNothing);
+      await tapKey(tester, 'fx_kind_liveInput');
+      expect(find.text('Muted in Mixer').hitTestable(), findsOneWidget);
+      when(repository.allMonitors).thenReturn({
+        0: const InputMonitor(input: 0, mode: MonitorMode.on),
+      });
+      when(() => repository.monitorMuted(0)).thenReturn(false);
+      monitors.projectFromRepository();
+      await tester.pumpAndSettle();
+      expect(find.text('Muted in Mixer'), findsNothing);
+      expect(monitors.state.forInput(0).mode, MonitorMode.on);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('picks which strip is showing', (tester) async {
       await pump(tester, destination: const FxDestination.liveInput(0));
 

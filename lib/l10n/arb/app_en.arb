@@ -5764,5 +5764,135 @@
     "recordStartSettingsRecoveryBody": "Recording start could not be confirmed. Retry before saving or switching off.",
     "recordingInputRequiredTitle": "Choose recording inputs",
     "monitorRestoreFailedTitle": "Input monitoring needs recovery",
-    "monitorRestoreFailedBody": "Saved input monitoring could not be fully restored. Retry to apply the saved settings."
+    "monitorRestoreFailedBody": "Saved input monitoring could not be fully restored. Retry to apply the saved settings.",
+    "actionModeMixer": "Foot Mixer",
+    "@actionModeMixer": {
+        "description": "Foot Mixer performance surface: actionModeMixer."
+    },
+    "footMixerTitle": "Mixer",
+    "@footMixerTitle": {
+        "description": "Foot Mixer performance surface: footMixerTitle."
+    },
+    "footMixerPlaybackVolume": "Playback volume",
+    "@footMixerPlaybackVolume": {
+        "description": "Foot Mixer performance surface: footMixerPlaybackVolume."
+    },
+    "footMixerLiveVolume": "Live volume",
+    "@footMixerLiveVolume": {
+        "description": "Foot Mixer performance surface: footMixerLiveVolume."
+    },
+    "footMixerVolumeUp": "Volume +",
+    "@footMixerVolumeUp": {
+        "description": "Foot Mixer performance surface: footMixerVolumeUp."
+    },
+    "footMixerVolumeDown": "Volume −",
+    "@footMixerVolumeDown": {
+        "description": "Foot Mixer performance surface: footMixerVolumeDown."
+    },
+    "footMixerHoldReset": "Hold · Reset",
+    "@footMixerHoldReset": {
+        "description": "Foot Mixer performance surface: footMixerHoldReset."
+    },
+    "footMixerHoldMute": "Hold · Mute",
+    "@footMixerHoldMute": {
+        "description": "Foot Mixer performance surface: footMixerHoldMute."
+    },
+    "footMixerHoldUnmute": "Hold · Unmute",
+    "@footMixerHoldUnmute": {
+        "description": "Foot Mixer performance surface: footMixerHoldUnmute."
+    },
+    "footMixerHoldInputs": "Hold · Inputs",
+    "@footMixerHoldInputs": {
+        "description": "Foot Mixer performance surface: footMixerHoldInputs."
+    },
+    "footMixerHoldTracks": "Hold · Tracks",
+    "@footMixerHoldTracks": {
+        "description": "Foot Mixer performance surface: footMixerHoldTracks."
+    },
+    "footMixerLimitReset": "Limit · Hold reset",
+    "@footMixerLimitReset": {
+        "description": "Foot Mixer performance surface: footMixerLimitReset."
+    },
+    "footMixerAutoOff": "Auto · Live off",
+    "@footMixerAutoOff": {
+        "description": "Foot Mixer performance surface: footMixerAutoOff."
+    },
+    "footMixerHearOff": "Hear live off",
+    "@footMixerHearOff": {
+        "description": "Foot Mixer performance surface: footMixerHearOff."
+    },
+    "footMixerEmptyTracks": "No recorded tracks",
+    "@footMixerEmptyTracks": {
+        "description": "Foot Mixer performance surface: footMixerEmptyTracks."
+    },
+    "footMixerEmptyInputs": "No inputs available",
+    "@footMixerEmptyInputs": {
+        "description": "Foot Mixer performance surface: footMixerEmptyInputs."
+    },
+    "footMixerTracksPage": "Tracks {first}–{last}",
+    "@footMixerTracksPage": {
+        "description": "Foot Mixer performance surface: footMixerTracksPage.",
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            }
+        }
+    },
+    "footMixerInputsPage": "Inputs {first}–{last}",
+    "@footMixerInputsPage": {
+        "description": "Foot Mixer performance surface: footMixerInputsPage.",
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            }
+        }
+    },
+    "footMixerPercent": "{value}%",
+    "@footMixerPercent": {
+        "description": "Foot Mixer performance surface: footMixerPercent.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            }
+        }
+    },
+    "footMixerBank": "BANK",
+    "@footMixerBank": {
+        "description": "Foot Mixer performance surface: footMixerBank."
+    },
+    "footMixerMode": "MODE",
+    "@footMixerMode": {
+        "description": "Foot Mixer performance surface: footMixerMode."
+    },
+    "footMixerClear": "CLEAR",
+    "@footMixerClear": {
+        "description": "Foot Mixer performance surface: footMixerClear."
+    },
+    "footMixerUndo": "UNDO",
+    "@footMixerUndo": {
+        "description": "Foot Mixer performance surface: footMixerUndo."
+    },
+    "footMixerFailure": "The Mixer change could not be completed. Try again.",
+    "footMixerMutedLevel": "{value}% · Muted",
+    "@footMixerFailure": {
+        "description": "Visible notice when a Foot Mixer action is refused or cannot be persisted."
+    },
+    "@footMixerMutedLevel": {
+        "description": "A muted channel retains its gain setting.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            }
+        }
+    },
+    "fxMutedInMixer": "Muted in Mixer",
+    "@fxMutedInMixer": {
+        "description": "Live input Effects cue when the independent Mixer mute remains enabled; Hear live stays unchanged."
+    }
 }

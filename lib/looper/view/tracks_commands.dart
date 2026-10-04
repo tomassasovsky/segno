@@ -118,6 +118,7 @@ class TracksCommands {
       InteractionMode.mute => l10n.a11yModeMute,
       InteractionMode.fx => l10n.a11yModeFx,
       InteractionMode.custom => l10n.a11yModeCustom,
+      InteractionMode.mixer => l10n.actionModeMixer,
     });
   }
 
@@ -171,6 +172,21 @@ class TracksCommands {
   /// Kept in sync with `shortcuts_help_sheet.dart` by contract: a row added
   /// here is added there in the same change, or the legend starts lying.
   KeyEventResult handleKey(FocusNode node, KeyEvent event) {
+    final control = context.read<ControlCubit>();
+    if (control.state.mode == InteractionMode.mixer) {
+      final key = event.logicalKey;
+      if (event is KeyDownEvent &&
+          (key == LogicalKeyboardKey.escape ||
+              key == LogicalKeyboardKey.keyM)) {
+        control.setMode(InteractionMode.record);
+        return KeyEventResult.handled;
+      }
+      // Preserve the flow's separate selection and transport contract.
+      // Tab reaches source choices; Settings remains available below.
+      if (key != LogicalKeyboardKey.tab && key != LogicalKeyboardKey.keyS) {
+        return KeyEventResult.handled;
+      }
+    }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
     // Let Tab / Shift+Tab fall through so keyboard focus can traverse into the
@@ -294,6 +310,8 @@ class TracksCommands {
             // missing channel as "off" and dispatch enable forever.
             announceFxChainToggle(channel);
             bloc.add(LooperTrackChainToggled(channel));
+          case InteractionMode.mixer:
+            break;
           case InteractionMode.custom:
             // Selection only: what a control does in Custom controls is
             // assigned per FOOTSWITCH, and a digit key is not one.

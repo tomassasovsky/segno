@@ -17,6 +17,7 @@ import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -351,6 +352,63 @@ void main() {
         parameters: parameters,
       ),
     ),
+  );
+
+  check(
+    'Mixer equal unity reset supersedes actual MIDI Held Released claim',
+    ExternalJackSetup.empty,
+    (r) {
+      r
+        ..bindMidi(
+          target: const MonitorVolumeTarget(0).canonicalString(),
+          low: .2,
+        )
+        ..midiValue(127);
+      expect(looper.monitorVolume(0), 1);
+      expect(r.mix.durableSnapshot.monitorLevels[0], .2);
+      r.cubit
+        ..setMode(InteractionMode.mixer)
+        ..selectFootMixerDomain(FootMixerDomain.inputs);
+      unawaited(r.cubit.resetFootMixerGain());
+      r.settle();
+      expect(r.mix.durableSnapshot.monitorLevels[0], 1);
+      r.midiValue(0);
+      expect(looper.monitorVolume(0), 1);
+    },
+  );
+
+  check(
+    'External saved Mixer hold enters once and consumes release',
+    const ExternalJackSetup(
+      single: ExternalSwitchSetup(
+        gestures: ControlGesturePair(hold: ModeAction(InteractionMode.mixer)),
+      ),
+    ),
+    (r) {
+      r.sample(255);
+      r.clock.elapse(const Duration(milliseconds: 801));
+      r.settle();
+      expect(r.cubit.state.mode, InteractionMode.mixer);
+      r
+        ..sample(0)
+        ..settle();
+      expect(r.cubit.state.mode, InteractionMode.mixer);
+    },
+  );
+
+  check(
+    'MIDI saved Mixer function enters and release does not toggle it',
+    ExternalJackSetup.empty,
+    (r) {
+      r
+        ..bindMidi(controls: [MidiActionControl(key: 'mode:mixer')])
+        ..midiValue(127);
+      expect(r.cubit.state.mode, InteractionMode.mixer);
+      r.midiValue(0);
+      expect(r.cubit.state.mode, InteractionMode.mixer);
+      r.midiValue(127);
+      expect(r.cubit.state.mode, InteractionMode.record);
+    },
   );
 
   check(

@@ -130,6 +130,89 @@ void main() {
     await ticker.close();
   });
 
+  for (final scenario
+      in <({bool input, double start, List<int> steps, double want})>[
+        (input: false, start: 1, steps: [1, 1, 1], want: 1.15),
+        (input: false, start: 1.95, steps: [1, 1, -1], want: 1.95),
+        (input: true, start: .9, steps: [1, 1, 1], want: 1),
+        (input: true, start: .05, steps: [-1, -1, 1], want: .05),
+        (input: true, start: .98, steps: [1], want: .98),
+        (input: true, start: .02, steps: [-1, 1], want: .07),
+        (input: false, start: .43, steps: [1, 1, 1], want: .58),
+        (input: true, start: .98, steps: [1, -1], want: .93),
+      ]) {
+    test('delayed steps retain full-step order $scenario', () async {
+      if (scenario.input) {
+        await coordinator.setMonitorVolume(input: 0, volume: scenario.start);
+      } else {
+        await coordinator.setTrackVolume(scenario.start);
+      }
+      persistence.writeGate = Completer<void>();
+      final blocking = coordinator.setTrackPan(.2, channel: 1);
+      await _turn();
+      final pending = <Future<MixSettingsOutcome>>[];
+      for (final direction in scenario.steps) {
+        pending.add(
+          scenario.input
+              ? coordinator.stepMonitorGain(input: 0, direction: direction)
+              : coordinator.stepTrackGain(channel: 0, direction: direction),
+        );
+      }
+      persistence.writeGate!.complete();
+      await blocking;
+      expect((await Future.wait(pending)).every((value) => value.isOk), isTrue);
+      final actual = scenario.input
+          ? repository.monitorVolume(0)
+          : repository.mixSettingsSnapshot.trackLevels[0] ?? 1;
+      expect(actual, closeTo(scenario.want, 1e-9));
+    });
+  }
+
+  test(
+    'queued unity and full reset retire only preceding track steps',
+    () async {
+      await coordinator.setTrackVolume(.4);
+      await coordinator.setMonitorVolume(input: 0, volume: .3);
+      persistence.writeGate = Completer<void>();
+      final blocking = coordinator.setTrackPan(.2, channel: 1);
+      await _turn();
+      unawaited(coordinator.stepTrackGain(channel: 0, direction: 1));
+      unawaited(coordinator.stepMonitorGain(input: 0, direction: 1));
+      unawaited(coordinator.resetMixer());
+      unawaited(coordinator.stepTrackGain(channel: 0, direction: 1));
+      unawaited(coordinator.setMonitorVolume(input: 0, volume: 1));
+      unawaited(coordinator.stepMonitorGain(input: 0, direction: -1));
+      persistence.writeGate!.complete();
+      await blocking;
+      expect(
+        repository.mixSettingsSnapshot.trackLevels[0],
+        closeTo(1.05, 1e-9),
+      );
+      expect(repository.monitorVolume(0), closeTo(.95, 1e-9));
+    },
+  );
+
+  test(
+    'off-grid no-op leaves Held/Released claim; real step replaces it',
+    () async {
+      const target = MonitorVolumeTarget(0);
+      final ordinary = <Map<MixValueTarget, double>>[];
+      coordinator.onOrdinaryValues = ordinary.add;
+      await coordinator.setControllerValues(
+        {target: .98},
+        releasedValues: {target: .3},
+      );
+      await coordinator.stepMonitorGain(input: 0, direction: 1);
+      expect(repository.monitorVolume(0), .98);
+      expect(coordinator.durableSnapshot.monitorLevels[0], .3);
+      expect(ordinary, isEmpty);
+      await coordinator.stepMonitorGain(input: 0, direction: -1);
+      expect(repository.monitorVolume(0), closeTo(.93, 1e-9));
+      expect(coordinator.durableSnapshot.monitorLevels[0], closeTo(.93, 1e-9));
+      expect(ordinary.single[target], closeTo(.93, 1e-9));
+    },
+  );
+
   test(
     'monitor ordinary gain refuses invalid values without a write',
     () async {

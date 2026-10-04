@@ -91,7 +91,8 @@ class WaveTrackRow extends StatelessWidget {
           track.chainEnabled
               ? l10n.a11yTrackTileFxOn(name, stateWord)
               : l10n.a11yTrackTileFxOff(name, stateWord),
-        InteractionMode.custom => l10n.a11yTrackTileCustom(name, stateWord),
+        InteractionMode.custom ||
+        InteractionMode.mixer => l10n.a11yTrackTileCustom(name, stateWord),
       },
       selected: selected,
       borderRadius: 17,
@@ -105,6 +106,7 @@ class WaveTrackRow extends StatelessWidget {
           case InteractionMode.fx:
             TracksCommands(context).announceFxChainToggle(track.channel);
             bloc.add(LooperTrackChainToggled(track.channel));
+          case InteractionMode.mixer:
           case InteractionMode.custom:
             // Selection only — see the track column's own arm.
             break;

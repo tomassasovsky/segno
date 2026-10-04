@@ -153,7 +153,7 @@ final List<ControlInvariant> controlInvariants = [
       InteractionMode.record => PedalMode.rec,
       InteractionMode.mute => PedalMode.play,
       InteractionMode.fx => PedalMode.fx,
-      InteractionMode.custom => PedalMode.custom,
+      InteractionMode.custom || InteractionMode.mixer => PedalMode.custom,
     };
     if (c.frame.mode != want) {
       return 'frame mode ${c.frame.mode} != overlay mode ${c.overlay.mode}';
@@ -177,7 +177,8 @@ final List<ControlInvariant> controlInvariants = [
     // Rec and Mute only. FX and Custom report their assigned function state,
     // which need not depend on whether this track contains audio.
     if (c.overlay.mode == InteractionMode.fx ||
-        c.overlay.mode == InteractionMode.custom) {
+        c.overlay.mode == InteractionMode.custom ||
+        c.overlay.mode == InteractionMode.mixer) {
       return null;
     }
     for (final t in c.looper.tracks) {

@@ -13,6 +13,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/invariants.dart';
+import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 /// Whether the play transport is PARKED: content exists but none of it is
@@ -89,6 +90,8 @@ PedalTrackLed projectTrackLed(
     case InteractionMode.record:
       if (channel == overlay.cursor) return PedalTrackLed.red;
       if (track?.isCapturing ?? false) return PedalTrackLed.red;
+      return PedalTrackLed.off;
+    case InteractionMode.mixer:
       return PedalTrackLed.off;
     case InteractionMode.custom:
       return customFunctions[channel] ?? false
@@ -189,7 +192,7 @@ PedalStateFrame projectFrame(
       InteractionMode.record => PedalMode.rec,
       InteractionMode.mute => PedalMode.play,
       InteractionMode.fx => PedalMode.fx,
-      InteractionMode.custom => PedalMode.custom,
+      InteractionMode.custom || InteractionMode.mixer => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -233,6 +236,12 @@ int _physicalButtonMask(
   for (final button in PedalButton.values) {
     final lit = switch (button) {
       PedalButton.mode => overlay.mode != InteractionMode.record,
+      _ when overlay.mode == InteractionMode.mixer =>
+        FootMixerProjection.pedalRoles[button]!.slot != null
+            ? overlay.footMixer.channel ==
+                  overlay.footMixer.page * 4 +
+                      FootMixerProjection.pedalRoles[button]!.slot!
+            : acceptedContacts.contains(button),
       PedalButton.bank => overlay.activeBank == 1,
       _ when overlay.mode == InteractionMode.custom =>
         physicalCustomStates[button] ?? false,

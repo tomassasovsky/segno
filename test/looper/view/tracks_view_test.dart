@@ -19,9 +19,11 @@ import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
@@ -126,6 +128,7 @@ void main() {
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(repository.allMonitors).thenReturn(const {});
     when(() => repository.laneCount(any())).thenReturn(1);
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
@@ -300,6 +303,84 @@ void main() {
     await pump(tester);
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     handle.dispose();
+  });
+
+  testWidgets(
+    'Foot Mixer is distinct from the normal Mixer and pages all inputs',
+    (tester) async {
+      seed(
+        const LooperState(
+          status: EngineStatus(inputChannels: 18),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1),
+          ],
+        ),
+      );
+      tracks.showView(StageView.mixer);
+      await pump(tester);
+      control.setMode(InteractionMode.mixer);
+      await tester.pump();
+      expect(find.byType(FootMixerView), findsOneWidget);
+      expect(find.byKey(const Key('stage_mixer_run')), findsNothing);
+      await tester.tap(find.text('Inputs'));
+      await tester.pump();
+      for (var page = 0; page < 4; page++) {
+        await tester.tap(find.byKey(const Key('foot_mixer_pedal_bank')));
+        await tester.pump();
+      }
+      expect(find.text('Inputs 17–18'), findsOneWidget);
+      expect(control.state.activeBank, 0);
+      expect(control.state.cursor, 0);
+      expect(control.state.footMixer.domain, FootMixerDomain.inputs);
+      await tester.tap(find.byKey(const Key('foot_mixer_exit')));
+      await tester.pump();
+      expect(find.byType(FootMixerView), findsNothing);
+      expect(find.byKey(const Key('stage_mixer_run')), findsOneWidget);
+    },
+  );
+
+  testWidgets('Foot Mixer refusal is visible above the real Settings tray', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+      ),
+    );
+    when(() => repository.trackMuted(0)).thenReturn(false);
+    when(
+      () => repository.setMute(muted: true),
+    ).thenReturn(EngineResult.invalid);
+    when(() => repository.laneMuted(any(), any())).thenReturn(false);
+    when(() => repository.fxRecipesSettled).thenReturn(true);
+    when(() => repository.laneEffects(any(), any())).thenReturn(const []);
+    when(() => repository.laneChainEnabled(any(), any())).thenReturn(true);
+    when(
+      () => repository.laneChainInheritedFrom(any(), any()),
+    ).thenReturn(const []);
+    await pump(tester);
+    control.setMode(InteractionMode.mixer);
+    await tester.pump();
+    tester.element(find.byType(SettingsTray)).read<SettingsTrayCubit>().open();
+    await tester.pumpAndSettle();
+    await control.toggleFootMixerMute();
+    await tester.pumpAndSettle();
+    expect(
+      find
+          .text('The Mixer change could not be completed. Try again.')
+          .hitTestable(),
+      findsOneWidget,
+    );
+    expect(control.state.footMixerFailure, 1);
+    expect(tester.takeException(), isNull);
+    dismissAppToast('footMixerFailure');
+    await tester.pump(const Duration(seconds: 10));
   });
 
   testWidgets('renders a tile per track', (tester) async {
