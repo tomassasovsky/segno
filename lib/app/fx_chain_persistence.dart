@@ -289,6 +289,16 @@ class FxChainPersistence {
     muteOnly: true,
   );
 
+  /// Saves mute without replacing mode, routing or unrestored input FX.
+  Future<void> saveMonitorMuteConfirmed(
+    int input,
+    SettingsRepository settings,
+  ) => _saveConfirmed(
+    FxAddress(stage: FxStage.input, index: input),
+    settings,
+    muteOnly: true,
+  );
+
   Future<void> _saveConfirmed(
     FxAddress address,
     SettingsRepository settings, {
@@ -412,11 +422,18 @@ class FxChainPersistence {
         if (latest.session != _looper.sessionRevision) continue;
         attempted = latest;
         if (attempted.muteOnly) {
-          await attempted.settings.saveLaneMute(
-            address.index,
-            address.lane!,
-            muted: _looper.laneMuted(address.index, address.lane!),
-          );
+          if (address.stage == FxStage.input) {
+            await attempted.settings.saveMonitorMute(
+              address.index,
+              muted: _looper.monitorMuted(address.index),
+            );
+          } else {
+            await attempted.settings.saveLaneMute(
+              address.index,
+              address.lane!,
+              muted: _looper.laneMuted(address.index, address.lane!),
+            );
+          }
         } else if (address.stage == FxStage.input) {
           await _saveMonitor(address.index, attempted.settings);
         } else {
