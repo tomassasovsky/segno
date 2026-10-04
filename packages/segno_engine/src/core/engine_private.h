@@ -1104,6 +1104,8 @@ typedef struct le_track {
   /* What the published arm waits for (le_track_snapshot.pending_trigger):
    * pending_trigger's value, stored beside a_pending at arm time. Read only
    * while a_pending is 1; -1 before any arm. */
+  _Atomic int32_t a_pending_launch; /* published Count-in action, independent of arms */
+  _Atomic int32_t a_launch_grace; /* cancellation-only action through the next drain */
   _Atomic int32_t a_pending_trigger;
   _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
                               * to fire a quantized record action); read by the
@@ -1805,37 +1807,22 @@ struct le_engine {
   int32_t click_free_fpb;   /* frames per beat, refreshed at each beat */
   int32_t click_free_beat;  /* 0..ts_num-1 within the free-run bar */
 
-  /* Audio-thread-local count-in (A2, D9): count_in_total > 0 while counting.
-   * Beat boundaries render from their index against the frozen count_in_fpb
-   * (no accumulation drift); the recording on count_in_channel begins the
-   * frame count_in_elapsed reaches count_in_total — the bar-1 downbeat. */
-  int32_t count_in_total;   /* frames in the whole count-in; 0 = not counting */
-  int32_t count_in_elapsed; /* frames since the count-in began */
-  int32_t count_in_beats;   /* total beats (bars * ts_num) */
-  int32_t count_in_beat;    /* next beat index (0-based) to fire */
-  double count_in_fpb;      /* nominal frames per beat, frozen at start */
-  int32_t count_in_channel; /* track the count-in will commit to */
-  /* Cancel-vs-auto-commit race grace window (code-review fix, A2). Commands
-   * drain once at the top of le_engine_process, but le_count_in_commit can
-   * complete the count-in MID-block via the per-frame countdown; a cancel
-   * press posted just after that block's drain already ran arrives one
-   * block too late — count_in_total is already 0 by the time it drains, so
-   * handle_record's cancel guard above no longer fires and the press would
-   * otherwise fall through to the RECORDING-finalize branch, minting a
-   * near-zero-length defining loop instead of the cancel the user pressed
-   * for. le_count_in_commit sets this to the just-committed channel;
-   * le_engine_process clears it back to -1 immediately after EVERY block's
-   * command-drain loop, so it is visible to exactly one block's worth of
-   * draining (the block right after the commit) — the same block a
-   * concurrently-posted press can land in. handle_record treats a press on
-   * this channel, within that window, as the ORIGINAL cancel-intent: the
-   * just-started take is aborted back to EMPTY (handle_clear) rather than
-   * finalized. This cannot be told apart from a genuine "count in, then
-   * immediately finalize a near-zero loop" double-press — the two are
-   * indistinguishable within a single block — so the deliberate choice is
-   * cancel-wins, matching the precondition that a press was already in
-   * flight before the commit landed. */
-  int32_t count_in_grace_channel; /* -1 = no grace window open */
+  /* One frozen stopped-launch deadline, with bounded insertion order. Actions
+   * are 0 none, 1 fresh Record, 2 Play, 3 overdub. Members retain their own
+   * pending_image/pending_fx until the common downbeat. No callback allocation. */
+  int32_t count_in_total;
+  int32_t count_in_elapsed;
+  int32_t count_in_beats;
+  int32_t count_in_beat;
+  double count_in_fpb;
+  int32_t launch_action[LE_MAX_TRACKS];
+  int32_t launch_order[LE_MAX_TRACKS];
+  int32_t launch_count;
+  int launch_committing;
+  uint32_t launch_stopped_mask; /* canceled Play stays stopped during unpark */
+  /* One following command drain may cancel only these newly launched actions.
+   * An ordinary stopped/playback track has no grace; its older audio survives. */
+  int32_t launch_grace[LE_MAX_TRACKS];
 
   /* MIDI clock send (C1, D15): audio-thread-local generator state driving
    * le_midi_clock_advance once per block (engine_process.c, the very end of

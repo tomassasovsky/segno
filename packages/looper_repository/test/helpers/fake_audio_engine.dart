@@ -1477,6 +1477,18 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  @override
+  EngineResult stopRecordControl({required int channel}) {
+    calls.add('stopRecordControl');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult cancelCountIn() {
+    calls.add('cancelCountIn');
+    return EngineResult.ok;
+  }
+
   /// Result returned by [perfArm] / [perfDisarm].
   EngineResult perfArmResult = EngineResult.ok;
   EngineResult perfDisarmResult = EngineResult.ok;

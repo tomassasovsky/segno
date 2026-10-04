@@ -77,6 +77,9 @@ class FakeAudioEngine implements AudioEngine {
   int measureLatencyCalls = 0;
   int disposeCalls = 0;
   int recordCalls = 0;
+  int stopRecordControlCalls = 0;
+  int? lastStopRecordControlChannel;
+  int cancelCountInCalls = 0;
   int stopTrackCalls = 0;
   int playCalls = 0;
   int clearCalls = 0;
@@ -174,6 +177,30 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult record({int channel = 0}) {
     recordCalls++;
     return EngineResult.ok;
+  }
+
+  @override
+  EngineResult stopRecordControl({required int channel}) {
+    stopRecordControlCalls++;
+    lastStopRecordControlChannel = channel;
+    _clearCountIn();
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult cancelCountIn() {
+    cancelCountInCalls++;
+    _clearCountIn();
+    return EngineResult.ok;
+  }
+
+  void _clearCountIn() {
+    if (_nextSnapshot.countingIn) {
+      _nextSnapshot = _nextSnapshot.copyWith(
+        countingIn: false,
+        countInBeatsLeft: 0,
+      );
+    }
   }
 
   @override

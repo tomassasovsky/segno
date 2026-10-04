@@ -422,6 +422,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_i32(&tr->a_multiple, 1);
     store_i32(&tr->a_sync_divisor, 0); /* B3: per-track, resets like a_multiple */
     store_i32(&tr->a_pending, 0);
+    store_i32(&tr->a_pending_launch, 0);
+    store_i32(&tr->a_launch_grace, 0);
     store_i32(&tr->a_pending_trigger, -1);
     store_i32(&tr->a_length_preset_bars, 0); /* AUTO */
     store_i32(&tr->a_one_shot, 0); /* B4: per-track setting, resets like the
@@ -629,8 +631,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->count_in_beats = 0;
   engine->count_in_beat = 0;
   engine->count_in_fpb = 0.0;
-  engine->count_in_channel = 0;
-  engine->count_in_grace_channel = -1; /* no cancel-race grace window open */
+  memset(engine->launch_action, 0, sizeof(engine->launch_action));
+  memset(engine->launch_order, 0, sizeof(engine->launch_order));
+  memset(engine->launch_grace, 0, sizeof(engine->launch_grace));
+  engine->launch_count = 0;
+  engine->launch_committing = 0;
+  engine->launch_stopped_mask = 0;
   store_i32(&engine->a_counting_in, 0);
   store_i32(&engine->a_count_in_beats_left, 0);
   /* MIDI clock send (C1): the RUNNING generator state resets per session,
