@@ -307,7 +307,7 @@ void main() {
     addTearDown(() => unawaited(closeTempoOwner()));
     tempo = TempoCubit(settings: tempoOwner);
     if (loadRecordStart) await tempoOwner.loadRecordStart();
-    tray = SettingsTrayCubit(settings: settings)
+    tray = SettingsTrayCubit()
       ..showAudioTab(tab)
       ..showDestination(destination);
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
@@ -780,7 +780,7 @@ void main() {
       addTearDown(() => unawaited(closeTempoOwner()));
       tempo = TempoCubit(settings: tempoOwner);
       await tempoOwner.loadRecordStart();
-      tray = SettingsTrayCubit(settings: settings)
+      tray = SettingsTrayCubit()
         ..showDestination(SettingsTrayDestination.audio);
       addTearDown(() => unawaited(audio.close()));
       addTearDown(() => unawaited(inputs.close()));

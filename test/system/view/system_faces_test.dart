@@ -212,7 +212,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     settings = SettingsRepository(store: FakeKeyValueStore());
-    tray = SettingsTrayCubit(settings: settings)
+    tray = SettingsTrayCubit()
       ..showSystemTab(tab)
       ..showDestination(SettingsTrayDestination.system);
     waveform = WaveformWindowCubit(settings: settings);

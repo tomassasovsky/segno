@@ -1,13 +1,9 @@
 import 'package:bloc/bloc.dart';
-import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
-import 'package:segno/appliance/display_brightness_cubit.dart';
-import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/network/network_tab.dart';
 import 'package:segno/system/system_tab.dart';
-import 'package:settings_repository/settings_repository.dart';
 
 part 'settings_tray_state.dart';
 
@@ -16,50 +12,10 @@ part 'settings_tray_state.dart';
 /// counterpart to the `S`/`G` keyboard shortcuts on console/kiosk builds,
 /// where the on-screen toolbar is hidden entirely.
 ///
-/// Tray open/drag state is ephemeral. Brightness is persisted via
-/// [SettingsRepository] (or [DisplayBrightnessCubit] when provided) and dimmed
-/// in software app-wide; DDC/CI is applied when the host helper supports it.
+/// Tray open/drag state and destination selection are ephemeral.
 class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Creates a [SettingsTrayCubit].
-  SettingsTrayCubit({
-    required SettingsRepository settings,
-    BrightnessClient brightnessClient = const UnsupportedBrightnessClient(),
-    DisplayBrightnessCubit? displayBrightness,
-  }) : _settings = settings,
-       _brightnessClient = brightnessClient,
-       _displayBrightness = displayBrightness,
-       super(const SettingsTrayState());
-
-  final SettingsRepository _settings;
-  final BrightnessClient _brightnessClient;
-  final DisplayBrightnessCubit? _displayBrightness;
-  Future<void>? _loadFuture;
-  bool _brightnessSupported = false;
-
-  /// Restores persisted brightness and probes whether the display helper
-  /// can apply it.
-  Future<void> load() => _loadFuture ??= _restore();
-
-  Future<void> _restore() async {
-    final display = _displayBrightness;
-    if (display != null) {
-      await display.load();
-      if (isClosed) return;
-      emit(state.copyWith(brightness: display.state));
-      return;
-    }
-    final saved = clampDisplayBrightness(await _settings.loadBrightness());
-    _brightnessSupported = await _brightnessClient.isSupported();
-    if (isClosed) return;
-    emit(state.copyWith(brightness: saved));
-    if (_brightnessSupported) {
-      try {
-        await _brightnessClient.set(saved);
-      } on Object {
-        // Slider still works locally if apply fails.
-      }
-    }
-  }
+  SettingsTrayCubit() : super(const SettingsTrayState());
 
   /// Live drag progress, clamped to `0..1`. Called every
   /// `onVerticalDragUpdate` frame while the handle is being dragged.
@@ -151,25 +107,4 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// stays [SettingsTrayState.dragProgress]'s alone.
   void showDestination(SettingsTrayDestination destination) =>
       emit(state.copyWith(destination: destination));
-
-  /// Sets brightness (`kMinDisplayBrightness..1`), persists it, and applies
-  /// (software + optional DDC via [DisplayBrightnessCubit], or the legacy
-  /// client path).
-  Future<void> setBrightness(double value) async {
-    final clamped = clampDisplayBrightness(value);
-    emit(state.copyWith(brightness: clamped));
-    final display = _displayBrightness;
-    if (display != null) {
-      await display.setBrightness(clamped);
-      return;
-    }
-    await _settings.saveBrightness(clamped);
-    if (_brightnessSupported) {
-      try {
-        await _brightnessClient.set(clamped);
-      } on Object {
-        // Keep UI/persistence even if the panel rejects the set.
-      }
-    }
-  }
 }

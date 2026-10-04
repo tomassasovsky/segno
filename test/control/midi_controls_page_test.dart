@@ -246,7 +246,7 @@ void main() {
       division: rememberedDivision.code,
       trackOverrides: {},
     ));
-    tray = SettingsTrayCubit(settings: settings);
+    tray = SettingsTrayCubit();
     addTearDown(() => unawaited(tray.close()));
     if (malformed) {
       await store.setString('midi.configuration', '{bad json');

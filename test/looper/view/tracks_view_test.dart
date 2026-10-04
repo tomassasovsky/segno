@@ -15,6 +15,7 @@ import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
@@ -53,6 +54,18 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
+
+class _BrightnessStore extends FakeKeyValueStore {
+  bool refuse = true;
+
+  @override
+  Future<void> setDouble(String key, double value) async {
+    if (key == 'ui.brightness' && refuse) {
+      throw StateError('brightness storage unavailable');
+    }
+    await super.setDouble(key, value);
+  }
+}
 
 /// The rebuild probe for the `rebuild scope` group: a widget `TracksView.build`
 /// creates unconditionally, in console and desktop layouts alike.
@@ -217,6 +230,9 @@ void main() {
           ],
           child: MultiBlocProvider(
             providers: [
+              BlocProvider<DisplayBrightnessCubit>(
+                create: (_) => DisplayBrightnessCubit(settings: settings),
+              ),
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider<TransportClockCubit>.value(value: transportClock),
               BlocProvider<TracksCubit>.value(value: tracks),
@@ -306,6 +322,43 @@ void main() {
       BlocProvider.of<SettingsTrayCubit>(
         tester.element(find.byType(SettingsTray)),
       ).state;
+
+  testWidgets('brightness failure stays visible above the real tray and '
+      'another adjustment saves', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = _BrightnessStore();
+    settings = SettingsRepository(store: store);
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+    tester.element(find.byType(SettingsTray)).read<SettingsTrayCubit>().open();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settingsTray_brightness')));
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byType(SettingsTray));
+    final title = context.l10n.powerOffSaveFailedTitle;
+    // A SnackBar can exist but be painted and hit-tested behind the opaque
+    // SettingsTray sibling. The failure must be reachable above that sibling.
+    expect(find.text(title).hitTestable(), findsOneWidget);
+    expect(store.values['ui.brightness'], isNull);
+    expect(tester.takeException(), isNull);
+    store.refuse = false;
+    await tester.drag(
+      find.byKey(const Key('settingsTray_brightness')),
+      const Offset(0, -80),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      await settings.loadBrightness(),
+      context.read<DisplayBrightnessCubit>().state,
+    );
+    await tester.pump(const Duration(seconds: 10));
+  });
 
   testWidgets('G reaches the Effects route, and no longer opens the tray', (
     tester,

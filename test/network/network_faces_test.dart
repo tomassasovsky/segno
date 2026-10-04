@@ -13,10 +13,7 @@ import 'package:segno/network/network_tab.dart';
 import 'package:segno/network/network_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
-import 'package:settings_repository/settings_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
-
-import '../helpers/helpers.dart';
 
 /// A WiFi stack with just enough behaviour to drive the face.
 class _FaceWifiClient implements WifiClient {
@@ -164,9 +161,7 @@ void main() {
   late SettingsTrayCubit tray;
 
   setUp(() {
-    tray = SettingsTrayCubit(
-      settings: SettingsRepository(store: FakeKeyValueStore()),
-    )..open();
+    tray = SettingsTrayCubit()..open();
   });
 
   tearDown(() => tray.close());

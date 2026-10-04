@@ -115,7 +115,7 @@ void main() {
     );
     addTearDown(() => unawaited(quantizeOwner.close()));
     quantize = RecordTimingCubit(settings: quantizeOwner);
-    tray = SettingsTrayCubit(settings: settings);
+    tray = SettingsTrayCubit();
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).
     addTearDown(() => unawaited(tracks.close()));

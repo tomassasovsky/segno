@@ -1,13 +1,11 @@
 import 'dart:async';
 
-import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
-import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -29,7 +27,6 @@ import 'package:segno/looper/view/wave_track_row.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:settings_repository/settings_repository.dart';
 
 /// The main display's Tracks view (the accepted stage): the top bar, then
 /// the active bank's four tracks — tall level columns between the shared dBFS
@@ -160,27 +157,7 @@ class _TracksViewState extends State<TracksView> {
           ),
         ],
         child: BlocProvider(
-          create: (context) {
-            BrightnessClient brightness;
-            try {
-              brightness = context.read<BrightnessClient>();
-            } on ProviderNotFoundException {
-              brightness = const UnsupportedBrightnessClient();
-            }
-            DisplayBrightnessCubit? displayBrightness;
-            try {
-              displayBrightness = context.read<DisplayBrightnessCubit>();
-            } on ProviderNotFoundException {
-              displayBrightness = null;
-            }
-            final cubit = SettingsTrayCubit(
-              settings: context.read<SettingsRepository>(),
-              brightnessClient: brightness,
-              displayBrightness: displayBrightness,
-            );
-            unawaited(cubit.load());
-            return cubit;
-          },
+          create: (_) => SettingsTrayCubit(),
           child: Stack(
             children: [
               // Its own commands, built from a context UNDER the tray cubit
