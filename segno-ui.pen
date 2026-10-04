@@ -303560,6 +303560,244 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "rsAsect",
+      "x": 72080,
+      "y": 3744,
+      "name": "Native implementation / Recording start and Count-in / M3.17A",
+      "width": 4000,
+      "height": 4200,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "rsAhead",
+          "name": "Recording start reference heading",
+          "fill": "#F1F2F4",
+          "content": "Recording start · one confirmed pair",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "rsAnote",
+          "name": "c/ Recording start and Count-in confirmed pair",
+          "fill": "#F1F2F4",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "A new setup uses one bar and Pedal. A saved Off stays Off. Choosing Sound turns Count-in Off; choosing a positive Count-in returns to Pedal. Changes wait for storage and audio confirmation. While recording or overdubbing, controls retain their confirmed values but cannot be edited. Uncertain settings stay unavailable until Retry. Cancelling an owned count-in must never start a new take. Session save and recall keep the pair together. Native screenshots are author-reviewed references; simultaneous-track starts and mapped Count-in controls belong to the next slices.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "rsArow0",
+          "name": "Recording start reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "rsAcol0",
+              "name": "Recording · Pedal",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rsAcap0",
+                  "name": "Recording · Pedal caption",
+                  "fill": "#F1F2F4",
+                  "content": "Recording · Pedal",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rsAimg0",
+                  "name": "Recording · Pedal native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "docs/design/native-record-start/recording_pedal_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "rsAcol1",
+              "name": "Recording · Sound",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rsAcap1",
+                  "name": "Recording · Sound caption",
+                  "fill": "#F1F2F4",
+                  "content": "Recording · Sound",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rsAimg1",
+                  "name": "Recording · Sound native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "docs/design/native-record-start/recording_sound_on.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "rsArow1",
+          "name": "Recording start reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "rsAcol2",
+              "name": "Tempo & click · Count-in Off",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rsAcap2",
+                  "name": "Tempo & click · Count-in Off caption",
+                  "fill": "#F1F2F4",
+                  "content": "Tempo & click · Count-in Off",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rsAimg2",
+                  "name": "Tempo & click · Count-in Off native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "docs/design/native-record-start/tempo_count_in_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "rsAcol3",
+              "name": "Tempo & click · Count-in 2 bars",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rsAcap3",
+                  "name": "Tempo & click · Count-in 2 bars caption",
+                  "fill": "#F1F2F4",
+                  "content": "Tempo & click · Count-in 2 bars",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rsAimg3",
+                  "name": "Tempo & click · Count-in 2 bars native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "docs/design/native-record-start/tempo_count_in_2.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "rsArow2",
+          "name": "Recording start reference row 3",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "rsAcol4",
+              "name": "Recording · unavailable, last confirmed Sound retained",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rsAcap4",
+                  "name": "Recording · unavailable, last confirmed Sound retained caption",
+                  "fill": "#F1F2F4",
+                  "content": "Recording · unavailable, last confirmed Sound retained",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rsAimg4",
+                  "name": "Recording · unavailable, last confirmed Sound retained native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "docs/design/native-record-start/recording_sound_recovery.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {

@@ -7,6 +7,7 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Which of the tab's two openable rows is showing its list.
@@ -52,6 +53,9 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
     final options = context.watch<RecordOptionsCubit>().state;
     final timing = context.watch<RecordTimingCubit>().state;
     final timingEnabled = timing.recordTimingReady && !timing.captureLocked;
+    final tempo = context.watch<TempoCubit>();
+    final confirmedStart = tempo.confirmedRecordStart;
+    final startSnapshot = tempo.recordStartSnapshot;
     final cap = audio.state.maxLoopMinutes;
 
     return KeyedSubtree(
@@ -133,17 +137,30 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
                   ConsoleRow(
                     key: const Key('audio_auto_record_row'),
                     title: l10n.soundActivatedRecordingTitle,
-                    subtitle: l10n.soundActivatedRecordingSubtitle,
-                    trailing: ConsoleSwitch(
-                      key: const Key('audio_auto_record_switch'),
-                      value: options.autoRecord,
-                      semanticLabel: l10n.soundActivatedRecordingTitle,
-                      onChanged: (on) => unawaited(
-                        context.read<RecordOptionsCubit>().setAutoRecord(
-                          value: on,
-                        ),
-                      ),
-                    ),
+                    subtitle: startSnapshot == null
+                        ? l10n.recordStartUnavailable
+                        : !startSnapshot.canEdit
+                        ? l10n.recordStartCaptureLocked
+                        : l10n.soundActivatedRecordingSubtitle,
+                    trailing: confirmedStart == null
+                        ? Semantics(
+                            label: l10n.recordStartUnavailable,
+                            excludeSemantics: true,
+                            child: const AppText(
+                              '—',
+                              key: Key('audio_auto_record_unavailable'),
+                            ),
+                          )
+                        : ConsoleSwitch(
+                            key: const Key('audio_auto_record_switch'),
+                            value: confirmedStart.soundStart,
+                            semanticLabel: l10n.soundActivatedRecordingTitle,
+                            onChanged: startSnapshot?.canEdit == true
+                                ? (on) => unawaited(
+                                    tempo.setSoundStart(enabled: on),
+                                  )
+                                : null,
+                          ),
                   ),
                   ConsoleRow(
                     key: const Key('audio_default_length_row'),

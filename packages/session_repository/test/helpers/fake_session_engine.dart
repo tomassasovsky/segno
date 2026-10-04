@@ -519,8 +519,6 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setMasterGain(double gain) => EngineResult.ok;
   @override
-  EngineResult setAutoRecord({required bool enabled}) => EngineResult.ok;
-  @override
   EngineResult restoreTempo({
     required double bpm,
     required TempoSource source,
@@ -541,7 +539,11 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setClickVolume(double volume) => EngineResult.ok;
   @override
-  EngineResult setCountIn(int bars) => EngineResult.ok;
+  EngineResult setRecordStartSettings({
+    required int countInBars,
+    required bool soundStart,
+    required RecordStartEditKind editKind,
+  }) => EngineResult.ok;
   @override
   EngineResult setTrackLengthPreset({
     required int channel,

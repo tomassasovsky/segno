@@ -165,7 +165,7 @@ int main(void) {
 
   /* An arm owns its frozen host until capture or cancellation, even though
    * the admission command has long since been consumed. */
-  CHECK(le_engine_set_auto_record(e, 1) == LE_OK); pump(e, 0, out);
+  CHECK(le_engine_set_record_start(e, 0, 1, LE_RECORD_START_SOUND) == LE_OK); pump(e, 0, out);
   le_plugin_slot* take = NULL;
   CHECK(le_engine_prepare_plugin(e, "gain", &take) == LE_OK);
   le_fx_recipe lanes[LE_MAX_LANES] = {0}; lanes[0] = recipe(take);

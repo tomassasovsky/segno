@@ -1316,13 +1316,13 @@ static le_record_admission le_classify_record(le_engine* e, int channel) {
   if (e->armed[channel] && load_i32(&t->a_pending) &&
       e->record_timing_command > atomic_load_explicit(&e->a_commands_published, memory_order_acquire)) {
     const int trigger = e->armed_trigger[channel];
-    if (trigger == 0 || (trigger == 1 && e->auto_record)) return LE_RECORD_CANCEL;
+    if (trigger == 0 || (trigger == 1 && (load_i32(&e->a_record_start) < 0))) return LE_RECORD_CANCEL;
     return LE_RECORD_REFUSE;
   }
   const int has_master = le_rig_effective_master_len(e) > 0 &&
       !(state == LE_TRACK_EMPTY && !le_grid_still_needed(e, channel));
-  const int sound = e->auto_record && state == LE_TRACK_EMPTY &&
-      !(e->count_in_bars > 0 && !has_master);
+  const int sound = (load_i32(&e->a_record_start) < 0) && state == LE_TRACK_EMPTY &&
+      !(load_i32(&e->a_record_start) > 0 && !has_master);
   const int quantized = (le_effective_quantize(e, channel) ||
       (state == LE_TRACK_EMPTY && le_sync_quantize_active(e, channel))) &&
       has_master && le_transport_active(e);
@@ -1343,6 +1343,21 @@ static int32_t le_record_preflight(le_engine* e, int channel,
   le_engine_drain_events(e);
   const le_record_admission kind = le_classify_record(e, channel);
   if (kind == LE_RECORD_REFUSE) return LE_ERR_INVALID;
+  if (kind == LE_RECORD_ACQUIRE && e->record_start_command >
+      atomic_load_explicit(&e->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
+  if (kind == LE_RECORD_ACQUIRE && load_i32(&e->a_record_start) < 0 &&
+      le_effective_state(&e->tracks[channel]) == LE_TRACK_EMPTY) {
+    if (e->input_routing_command > atomic_load_explicit(
+        &e->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
+    const uint32_t excluded = atomic_load_explicit(&e->a_excluded_input_mask, memory_order_relaxed);
+    int source = 0;
+    for (int l = 0; l < le_lanes_active(&e->tracks[channel]); ++l) {
+      const int input = load_i32(&e->tracks[channel].lanes[l].a_input_channel);
+      if (input >= 0 && input < e->in_channels && input < 32 &&
+          !(excluded & (1u << input))) source = 1;
+    }
+    if (!source) return LE_ERR_INVALID;
+  }
   if (kind == LE_RECORD_ACQUIRE && e->record_timing_command != 0 &&
       e->record_timing_command > atomic_load_explicit(
           &e->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
@@ -1353,6 +1368,16 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
                                 const le_record_image* image) {
   const int32_t admission = le_record_preflight(engine, channel, image);
   if (admission != LE_OK) return admission;
+  if (load_i32(&engine->a_counting_in)) {
+    /* Keep cancellation intent even if an earlier pair command removes the
+     * countdown before this command drains. Never reinterpret it as acquire. */
+    uint32_t sequence = engine->clock_commands_posted + 1u;
+    if (sequence == 0) sequence = 1;
+    const int result = le_push_cmd(engine, (le_command){.code = LE_CMD_RECORD,
+        .clock = {channel, sequence, 1}});
+    if (result == LE_OK) engine->clock_commands_posted = sequence;
+    return result;
+  }
   if (engine->armed[channel] && load_i32(&engine->tracks[channel].a_pending) &&
       engine->record_timing_command > atomic_load_explicit(&engine->a_commands_published, memory_order_acquire) &&
       le_classify_record(engine, channel) == LE_RECORD_CANCEL) {
@@ -1374,8 +1399,8 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   const int redefine_grid = st == LE_TRACK_EMPTY &&
       !le_grid_still_needed(engine, channel);
   const int capture_has_master = has_master && !redefine_grid;
-  const int sound_arm = engine->auto_record && st == LE_TRACK_EMPTY &&
-      !(engine->count_in_bars > 0 && !capture_has_master);
+  const int sound_arm = (load_i32(&engine->a_record_start) < 0) && st == LE_TRACK_EMPTY &&
+      !(load_i32(&engine->a_record_start) > 0 && !capture_has_master);
   const int sync_force_arm =
       st == LE_TRACK_EMPTY && le_sync_quantize_active(engine, channel);
   const int quantized_arm =
@@ -1623,6 +1648,8 @@ int32_t le_engine_record_with_image(le_engine* engine, int32_t channel,
   if (!image) return LE_ERR_INVALID;
   const int32_t admission = le_record_preflight(engine, channel, image);
   if (admission != LE_OK) return admission;
+  if (le_classify_record(engine, channel) != LE_RECORD_ACQUIRE)
+    return le_record_impl(engine, channel, NULL);
 #ifdef LE_NATIVE_TESTS
   if (le_test_record_timing_hook) le_test_record_timing_hook(engine, 4);
 #endif
@@ -1640,6 +1667,8 @@ int32_t le_engine_stop_track(le_engine* engine, int32_t channel) {
   return le_push(engine, LE_CMD_STOP, channel, 0.0f);
 }
 int32_t le_engine_play(le_engine* engine, int32_t channel) {
+  if (engine && engine->record_start_command > atomic_load_explicit(
+      &engine->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
   return le_push(engine, LE_CMD_PLAY, channel, 0.0f);
 }
 /* Builds the restore point for a clear about to be posted on `t` (control
@@ -2622,21 +2651,28 @@ int32_t le_engine_set_click_volume(le_engine* engine, float volume) {
   return le_push(engine, LE_CMD_SET_CLICK_VOLUME, 0, volume);
 }
 
-int32_t le_engine_set_count_in(le_engine* engine, int32_t bars) {
-  if (engine == NULL) return LE_ERR_INVALID;
-  if (bars < 0 || bars > LE_COUNT_IN_MAX_BARS) return LE_ERR_INVALID;
-  const int32_t result = le_push(engine, LE_CMD_SET_COUNT_IN, bars, 0.0f);
-  if (result != LE_OK) return result;
-  engine->count_in_bars = bars;
-  if (bars > 0) {
-    engine->auto_record = 0;
-    /* The same accepted command cancels these on the callback. No separate
-     * DISARM posts can fail after the setting has already changed. */
-    for (int32_t c = 0; c < engine->track_count; ++c) {
-      if (engine->armed_trigger[c] == 1) engine->armed[c] = 0;
-    }
+int32_t le_engine_set_record_start(le_engine* engine, int32_t bars,
+                                    int32_t sound_start, int32_t edit_kind) {
+  if (!engine || (bars != 0 && bars != 1 && bars != 2 && bars != 4) ||
+      (sound_start != 0 && sound_start != 1) || (bars > 0 && sound_start) ||
+      edit_kind < LE_RECORD_START_COUNT_IN || edit_kind > LE_RECORD_START_RESTORE)
+    return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  if (engine->record_start_command > atomic_load_explicit(
+          &engine->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
+  for (int c = 0; c < engine->track_count; ++c) {
+    const int state = load_i32(&engine->tracks[c].a_state);
+    if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) return LE_ERR_INVALID;
   }
-  return LE_OK;
+  const uint32_t revision = engine->record_start_posted_revision + 1u;
+  const int32_t result = le_push_cmd(engine, (le_command){
+      .code = LE_CMD_SET_RECORD_START,
+      .record_start = {sound_start ? -1 : bars, edit_kind, revision}});
+  if (result == LE_OK) {
+    engine->record_start_posted_revision = revision;
+    engine->record_start_command = engine->commands_posted;
+  }
+  return result;
 }
 
 int32_t le_engine_set_track_multiple(le_engine* engine, int32_t channel,
@@ -2745,22 +2781,6 @@ int32_t le_engine_set_tuner_input(le_engine* engine, int32_t input) {
    * stream; the audio thread validates the channel against what the device
    * actually negotiated and resets the analysis state on every change. */
   return le_push(engine, LE_CMD_SET_TUNER_INPUT, input, 0.0f);
-}
-
-int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {
-  if (engine == NULL) return LE_ERR_INVALID;
-  const int32_t result =
-      le_push(engine, LE_CMD_SET_AUTO_RECORD, enabled ? 1 : 0, 0.0f);
-  if (result != LE_OK) return result;
-  engine->auto_record = enabled ? 1 : 0;
-  if (!engine->auto_record) {
-    for (int32_t c = 0; c < engine->track_count; ++c) {
-      if (engine->armed_trigger[c] == 1) engine->armed[c] = 0;
-    }
-  } else {
-    engine->count_in_bars = 0;
-  }
-  return LE_OK;
 }
 
 int32_t le_engine_set_limiter(le_engine* engine, int32_t enabled,

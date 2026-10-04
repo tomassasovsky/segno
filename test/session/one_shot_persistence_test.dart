@@ -73,6 +73,7 @@ void main() {
         final settings = SettingsRepository(store: store);
         tempo = TempoCubit(repository: looper, settings: settings);
         await tempo.load();
+        expect((await tempo.setCountInBars(0)).isOk, isTrue);
         playback = PlaybackOptionsCubit(repository: looper, settings: settings);
         await playback.load();
         mix = MixSettingsCoordinator(
@@ -95,7 +96,8 @@ void main() {
           mixSettings: mix,
           mixPersistence: SettingsMixPersistence(settings),
           fxPersistence: FxChainPersistence(looper: looper),
-          runClickExclusive: tempo.runClickExclusive,
+          runTempoExclusive: tempo.runTempoExclusive,
+          currentDurableRecordStart: () => tempo.durableRecordStartSettings,
           currentDurableClickVolume: () => tempo.durableClickVolume,
           currentDurableClickMode: () => tempo.durableClickMode,
           runPlaybackExclusive: playback.runPlaybackExclusive,

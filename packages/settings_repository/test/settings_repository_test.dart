@@ -1277,13 +1277,16 @@ void main() {
   });
 
   group('record options', () {
-    test('rec/dub and auto-record default off and round-trip', () async {
+    test('rec/dub default and exact Sound membership round-trip', () async {
       expect(await repository.loadRecDub(), isFalse);
-      expect(await repository.loadAutoRecord(), isFalse);
+      expect((await repository.readRecordStartCheckpoint()).soundStart, isNull);
       await repository.saveRecDub(value: true);
-      await repository.saveAutoRecord(value: true);
+      await repository.saveRecordStartSettings(
+        countInBars: 0,
+        soundStart: true,
+      );
       expect(await repository.loadRecDub(), isTrue);
-      expect(await repository.loadAutoRecord(), isTrue);
+      expect((await repository.readRecordStartCheckpoint()).soundStart, isTrue);
     });
   });
 
@@ -1656,14 +1659,22 @@ void main() {
   });
 
   group('count-in bars', () {
-    test('defaults to 0 (off) when unset — the wire default, not the '
-        'UI-suggested one bar', () async {
-      expect(await repository.loadCountInBars(), 0);
-    });
+    test(
+      'leaves absent Count-in undecoded for the application default',
+      () async {
+        expect(
+          (await repository.readRecordStartCheckpoint()).countInBars,
+          isNull,
+        );
+      },
+    );
 
     test('round-trips a saved bar count', () async {
-      await repository.saveCountInBars(2);
-      expect(await repository.loadCountInBars(), 2);
+      await repository.saveRecordStartSettings(
+        countInBars: 2,
+        soundStart: false,
+      );
+      expect((await repository.readRecordStartCheckpoint()).countInBars, 2);
     });
   });
 

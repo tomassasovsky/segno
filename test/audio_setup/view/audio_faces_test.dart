@@ -93,6 +93,10 @@ void main() {
   late SettingsTrayCubit tray;
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
+  var confirmedCountIn = 1;
+  var confirmedSoundStart = false;
+  var startRecovering = false;
+  var startCaptureLocked = false;
 
   /// The engine's own state stream, so a test can push a tick and watch the
   /// face react — the negotiation cases need it.
@@ -104,9 +108,14 @@ void main() {
     registerFallbackValue(<int, RecordTiming>{});
     registerFallbackValue(const EngineConfig());
     registerFallbackValue(const LooperRecordPressed(0));
+    registerFallbackValue(RecordStartEditKind.restore);
   });
 
   setUp(() {
+    confirmedCountIn = 1;
+    confirmedSoundStart = false;
+    startRecovering = false;
+    startCaptureLocked = false;
     confirmedTiming = RecordTiming.immediately;
     rememberedDivision = GridDivision.off;
     bloc = _MockLooperBloc();
@@ -116,6 +125,42 @@ void main() {
     );
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
     when(() => repository.clickModeSettled).thenReturn(true);
+    when(() => repository.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordStartSettingsSettled).thenReturn(true);
+    when(() => repository.recordStartRecoveryRequired).thenAnswer(
+      (_) => startRecovering,
+    );
+    when(() => repository.recordStartCaptureLocked).thenAnswer(
+      (_) => startCaptureLocked,
+    );
+    when(() => repository.recordStartSettings).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.recordStartRestartIntent).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.settleRecordStartSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => repository.setRecordStartSettings(
+        countInBars: any(named: 'countInBars'),
+        soundStart: any(named: 'soundStart'),
+        editKind: any(named: 'editKind'),
+      ),
+    ).thenAnswer((call) {
+      confirmedCountIn = call.namedArguments[#countInBars] as int;
+      confirmedSoundStart = call.namedArguments[#soundStart] as bool;
+      return EngineResult.ok;
+    });
     engine = StreamController<LooperState>.broadcast();
     addTearDown(engine.close);
     when(() => repository.looperState).thenAnswer((_) => engine.stream);
@@ -132,6 +177,8 @@ void main() {
       (_) => TransportState(
         recordTiming: confirmedTiming,
         quantizeDiv: rememberedDivision,
+        countInBars: confirmedCountIn,
+        autoRecord: confirmedSoundStart,
       ),
     );
     when(() => repository.lastEngineConfig).thenReturn(
@@ -196,9 +243,6 @@ void main() {
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setAutoRecord(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
       () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
     when(() => repository.setClickOutput(any())).thenReturn(EngineResult.ok);
@@ -219,6 +263,7 @@ void main() {
     LooperState looper = const LooperState(status: _open),
     SettingsTrayDestination destination = SettingsTrayDestination.audio,
     Widget? body,
+    bool loadRecordStart = true,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -246,6 +291,7 @@ void main() {
     await quantize.load();
     options = RecordOptionsCubit(repository: repository, settings: settings);
     tempo = TempoCubit(repository: repository, settings: settings);
+    if (loadRecordStart) await tempo.loadRecordStart();
     tray = SettingsTrayCubit(settings: settings)
       ..showAudioTab(tab)
       ..showDestination(destination);
@@ -705,6 +751,7 @@ void main() {
       await quantize.load();
       options = RecordOptionsCubit(repository: repository, settings: settings);
       tempo = TempoCubit(repository: repository, settings: settings);
+      await tempo.loadRecordStart();
       tray = SettingsTrayCubit(settings: settings)
         ..showDestination(SettingsTrayDestination.audio);
       addTearDown(() => unawaited(audio.close()));
@@ -878,7 +925,88 @@ void main() {
 
       await tester.tap(find.byKey(const Key('audio_auto_record_switch')));
       await tester.pumpAndSettle();
-      expect(options.state.autoRecord, isTrue);
+      await tester.runAsync(tempo.flushRecordStart);
+      await tester.pump();
+      expect(tempo.confirmedRecordStart?.soundStart, isTrue);
+      expect(tempo.confirmedRecordStart?.countInBars, 0);
+    });
+
+    testWidgets('unknown Sound is a dash, never a provisional Off switch', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        tab: AudioTab.recording,
+        loadRecordStart: false,
+      );
+      final row = rowOf(tester, const Key('audio_auto_record_row'));
+      expect(tempo.confirmedRecordStart, isNull);
+      expect(row.trailing, isA<Semantics>());
+      expect(
+        find.byKey(const Key('audio_auto_record_unavailable')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('audio_auto_record_switch')), findsNothing);
+      verifyNever(
+        () => repository.setRecordStartSettings(
+          countInBars: any(named: 'countInBars'),
+          soundStart: any(named: 'soundStart'),
+          editKind: any(named: 'editKind'),
+        ),
+      );
+    });
+
+    testWidgets('recovery retains Sound while blocking its switch', (
+      tester,
+    ) async {
+      await pump(tester, tab: AudioTab.recording);
+      final control = find.byKey(const Key('audio_auto_record_switch'));
+      await tester.tap(control);
+      await tester.pumpAndSettle();
+      expect(tempo.confirmedRecordStart?.soundStart, isTrue);
+
+      startRecovering = true;
+      engine.add(const LooperState());
+      await tester.pumpAndSettle();
+      expect(tempo.recordStartSnapshot, isNull);
+      final row = rowOf(tester, const Key('audio_auto_record_row'));
+      expect(row.subtitle, l10nOf(tester).recordStartUnavailable);
+      final toggle = tester.widget<ConsoleSwitch>(control);
+      expect(toggle.value, isTrue);
+      expect(toggle.onChanged, isNull);
+      clearInteractions(repository);
+      await tester.tap(control);
+      await tester.pumpAndSettle();
+      verifyNever(
+        () => repository.setRecordStartSettings(
+          countInBars: any(named: 'countInBars'),
+          soundStart: any(named: 'soundStart'),
+          editKind: any(named: 'editKind'),
+        ),
+      );
+    });
+
+    testWidgets('capture retains Off and disables Sound', (tester) async {
+      await pump(tester, tab: AudioTab.recording);
+      startCaptureLocked = true;
+      engine.add(const LooperState());
+      await tester.pumpAndSettle();
+      final row = rowOf(tester, const Key('audio_auto_record_row'));
+      expect(row.subtitle, l10nOf(tester).recordStartCaptureLocked);
+      final control = find.byKey(const Key('audio_auto_record_switch'));
+      final toggle = tester.widget<ConsoleSwitch>(control);
+      expect(toggle.value, isFalse);
+      expect(toggle.onChanged, isNull);
+      clearInteractions(repository);
+      await tester.tap(control);
+      await tester.pumpAndSettle();
+      verifyNever(
+        () => repository.setRecordStartSettings(
+          countInBars: any(named: 'countInBars'),
+          soundStart: any(named: 'soundStart'),
+          editKind: any(named: 'editKind'),
+        ),
+      );
     });
 
     testWidgets('the default length is a chip grid that shuts on a pick', (

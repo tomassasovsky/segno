@@ -12,6 +12,7 @@ import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
@@ -117,7 +118,9 @@ void main() {
   });
 
   SessionCubit build() => SessionCubit(
-    runClickExclusive: _readyClick,
+    runTempoExclusive: _readyClick,
+    currentDurableRecordStart: () =>
+        RecordStartSettings(countInBars: 0, soundStart: false),
     runPlaybackExclusive: _readyClick,
     runRecordExclusive: <T>(operation) => operation(),
     runRecordTimingExclusive: <T>(operation) => operation(),
@@ -1143,7 +1146,9 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
-          runClickExclusive: _readyClick,
+          runTempoExclusive: _readyClick,
+          currentDurableRecordStart: () =>
+              RecordStartSettings(countInBars: 0, soundStart: false),
           runPlaybackExclusive: _readyClick,
           runRecordExclusive: <T>(operation) => operation(),
           runRecordTimingExclusive: <T>(operation) => operation(),
@@ -1217,7 +1222,9 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
-          runClickExclusive: _readyClick,
+          runTempoExclusive: _readyClick,
+          currentDurableRecordStart: () =>
+              RecordStartSettings(countInBars: 0, soundStart: false),
           runPlaybackExclusive: _readyClick,
           runRecordExclusive: <T>(operation) => operation(),
           runRecordTimingExclusive: <T>(operation) => operation(),
@@ -1277,7 +1284,9 @@ void main() {
       ).thenAnswer((_) async => _session);
 
       final cubit = SessionCubit(
-        runClickExclusive: _readyClick,
+        runTempoExclusive: _readyClick,
+        currentDurableRecordStart: () =>
+            RecordStartSettings(countInBars: 0, soundStart: false),
         runPlaybackExclusive: _readyClick,
         runRecordExclusive: <T>(operation) => operation(),
         runRecordTimingExclusive: <T>(operation) => operation(),

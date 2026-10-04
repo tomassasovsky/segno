@@ -2138,14 +2138,26 @@ void main() {
     test('count-in and Sound start exclude each other in the remembered '
         'settings, as they do in the engine', () {
       final repo = buildRepo()
-        ..setAutoRecord(enabled: true)
-        ..setCountIn(2)
+        ..setRecordStartSettings(
+          countInBars: 0,
+          soundStart: true,
+          editKind: RecordStartEditKind.sound,
+        )
+        ..setRecordStartSettings(
+          countInBars: 2,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        )
         ..startEngine(const EngineConfig());
       expect(engine.lastAutoRecord, isFalse); // the count-in won
       expect(engine.lastCountIn, 2);
 
       repo
-        ..setAutoRecord(enabled: true)
+        ..setRecordStartSettings(
+          countInBars: 0,
+          soundStart: true,
+          editKind: RecordStartEditKind.sound,
+        )
         ..stopEngine()
         ..startEngine(const EngineConfig());
       expect(engine.lastAutoRecord, isTrue);
@@ -2224,7 +2236,11 @@ void main() {
     test('rec/dub, auto-record and multiples re-apply on start', () {
       final repo = buildRepo()
         ..setRecDub(enabled: true)
-        ..setAutoRecord(enabled: true)
+        ..setRecordStartSettings(
+          countInBars: 0,
+          soundStart: true,
+          editKind: RecordStartEditKind.sound,
+        )
         ..setDefaultMultiple(multiple: 2)
         ..setTrackMultiple(channel: 1, multiple: 3);
       expect(engine.lastRecDub, isNull); // not running yet
@@ -5382,19 +5398,32 @@ void main() {
       expect(engine.lastClickVolume, 0.25);
     });
 
-    test('setCountIn is deferred until running, then re-applied', () {
-      final repo = buildRepo()..setCountIn(2);
+    test('record-start count is deferred until running, then re-applied', () {
+      final repo = buildRepo()
+        ..setRecordStartSettings(
+          countInBars: 2,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        );
       expect(engine.lastCountIn, isNull); // not running yet
 
       repo.startEngine(const EngineConfig());
       expect(engine.lastCountIn, 2);
     });
 
-    test('setCountIn clamps a negative to zero', () {
-      buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setCountIn(-3);
+    test('record-start count rejects a negative without changing the pair', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(
+        repo.setRecordStartSettings(
+          countInBars: -3,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        ),
+        EngineResult.invalid,
+      );
       expect(engine.lastCountIn, 0);
+      expect(engine.lastAutoRecord, isFalse);
+      expect(repo.recordStartSettings, (countInBars: 0, soundStart: false));
     });
 
     test('setLooperMode is deferred until running, then re-applied', () {
@@ -5444,7 +5473,11 @@ void main() {
           ..setClickMode(ClickMode.rec)
           ..setClickOutput(0x1)
           ..setClickVolume(0.7)
-          ..setCountIn(4)
+          ..setRecordStartSettings(
+            countInBars: 4,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+          )
           ..setLooperMode(LooperMode.free);
 
         engine

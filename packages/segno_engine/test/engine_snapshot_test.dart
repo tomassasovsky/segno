@@ -1626,6 +1626,8 @@ void main() {
         'clickMode',
         'clickModeRevision',
         'clickModeResult',
+        'recordStartRevision',
+        'recordStartResult',
         'clickMask',
         'clickVolume',
         'countInBars',

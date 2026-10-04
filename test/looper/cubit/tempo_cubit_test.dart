@@ -20,6 +20,7 @@ TransportState _updated(
   int? clickMask,
   double? clickVolume,
   int? countInBars,
+  bool? soundStart,
 }) => TransportState(
   tempoBpm: tempoBpm ?? prior.tempoBpm,
   tsNum: tsNum ?? prior.tsNum,
@@ -28,6 +29,7 @@ TransportState _updated(
   clickMask: clickMask ?? prior.clickMask,
   clickVolume: clickVolume ?? prior.clickVolume,
   countInBars: countInBars ?? prior.countInBars,
+  autoRecord: soundStart ?? prior.autoRecord,
 );
 
 void main() {
@@ -40,6 +42,7 @@ void main() {
     registerFallbackValue(Duration.zero);
     registerFallbackValue(GridDivision.off);
     registerFallbackValue(ClickMode.off);
+    registerFallbackValue(RecordStartEditKind.restore);
   });
 
   setUp(() {
@@ -68,10 +71,37 @@ void main() {
         attempts: any(named: 'attempts'),
       ),
     ).thenAnswer((_) async => EngineResult.ok);
-    when(() => repository.recordStartRevision).thenReturn(0);
+    when(() => repository.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordStartSettingsSettled).thenReturn(true);
+    when(() => repository.recordStartRecoveryRequired).thenReturn(false);
+    when(() => repository.recordStartCaptureLocked).thenReturn(false);
+    when(() => repository.recordStartSettings).thenAnswer(
+      (_) =>
+          (countInBars: accepted.countInBars, soundStart: accepted.autoRecord),
+    );
+    when(() => repository.recordStartRestartIntent).thenAnswer(
+      (_) =>
+          (countInBars: accepted.countInBars, soundStart: accepted.autoRecord),
+    );
+    when(repository.settleRecordStartSettings).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
     when(
-      () => repository.setAutoRecord(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
+      () => repository.setRecordStartSettings(
+        countInBars: any(named: 'countInBars'),
+        soundStart: any(named: 'soundStart'),
+        editKind: any(named: 'editKind'),
+      ),
+    ).thenAnswer((call) {
+      accepted = _updated(
+        accepted,
+        countInBars: call.namedArguments[#countInBars] as int,
+        soundStart: call.namedArguments[#soundStart] as bool,
+      );
+      return EngineResult.ok;
+    });
     looperStates = StreamController<LooperState>.broadcast();
     when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
     when(() => repository.sessionTransport).thenAnswer((_) => accepted);
@@ -88,9 +118,6 @@ void main() {
       ).thenReturn(EngineResult.ok),
       () => when(
         () => repository.setClickVolume(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setCountIn(any()),
       ).thenReturn(EngineResult.ok),
       () => when(repository.tapTempo).thenReturn(EngineResult.ok),
     ]) {
@@ -132,13 +159,6 @@ void main() {
       );
       return EngineResult.ok;
     });
-    when(() => repository.setCountIn(any())).thenAnswer((call) {
-      accepted = _updated(
-        accepted,
-        countInBars: call.positionalArguments[0] as int,
-      );
-      return EngineResult.ok;
-    });
   });
 
   group('TempoCubit', () {
@@ -156,7 +176,10 @@ void main() {
         await settings.restoreClickModeCheckpoint(ClickMode.playRec.code);
         await settings.saveClickOutputMask(0x3);
         await settings.saveClickVolume(0.5);
-        await settings.saveCountInBars(2);
+        await settings.saveRecordStartSettings(
+          countInBars: 2,
+          soundStart: false,
+        );
       },
       build: () => TempoCubit(repository: repository, settings: settings),
       act: (cubit) => cubit.load(),
@@ -173,6 +196,7 @@ void main() {
             clickReady: true,
             clickModeReady: true,
             countInBars: 2,
+            recordStartReady: true,
           ),
         );
         verify(() => repository.setTempo(140)).called(1);
@@ -180,7 +204,13 @@ void main() {
         verify(() => repository.setClickMode(ClickMode.playRec)).called(1);
         verify(() => repository.setClickOutput(0x3)).called(1);
         verify(() => repository.setClickVolume(0.5)).called(1);
-        verify(() => repository.setCountIn(2)).called(1);
+        verify(
+          () => repository.setRecordStartSettings(
+            countInBars: 2,
+            soundStart: false,
+            editKind: RecordStartEditKind.restore,
+          ),
+        ).called(1);
       },
     );
 
@@ -204,9 +234,12 @@ void main() {
     );
 
     blocTest<TempoCubit, TempoSettings>(
-      'refused edits preserve displayed settings and the saved start method',
+      'refused edits preserve displayed settings and the saved start pair',
       setUp: () async {
-        await settings.saveAutoRecord(value: true);
+        await settings.saveRecordStartSettings(
+          countInBars: 0,
+          soundStart: true,
+        );
         when(
           () => repository.setTempo(96),
         ).thenReturn(EngineResult.invalid);
@@ -223,7 +256,11 @@ void main() {
           () => repository.setClickVolume(0.5),
         ).thenReturn(EngineResult.invalid);
         when(
-          () => repository.setCountIn(2),
+          () => repository.setRecordStartSettings(
+            countInBars: 2,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+          ),
         ).thenReturn(EngineResult.invalid);
       },
       build: () => TempoCubit(repository: repository, settings: settings),
@@ -240,6 +277,12 @@ void main() {
           clickMode: ClickMode.recFirst,
           clickModeReady: true,
         ),
+        const TempoSettings(
+          clickMode: ClickMode.recFirst,
+          clickModeReady: true,
+          soundStart: true,
+          recordStartReady: true,
+        ),
       ],
       verify: (_) async {
         expect(await settings.loadTempoBpm(), 0);
@@ -247,8 +290,10 @@ void main() {
         expect(await settings.readClickModeCheckpoint(), isNull);
         expect(await settings.loadClickOutputMask(), 0);
         expect(await settings.loadClickVolume(), 1);
-        expect(await settings.loadCountInBars(), 0);
-        expect(await settings.loadAutoRecord(), isTrue);
+        expect(
+          await settings.readRecordStartCheckpoint(),
+          (countInBars: 0, soundStart: true),
+        );
       },
     );
 
@@ -348,23 +393,42 @@ void main() {
     );
 
     blocTest<TempoCubit, TempoSettings>(
-      'setCountInBars emits, persists, and applies the new count-in',
+      'setCountInBars confirms and persists the full recording-start pair',
       build: () => TempoCubit(repository: repository, settings: settings),
       act: (cubit) => cubit.setCountInBars(2),
-      expect: () => [const TempoSettings(countInBars: 2)],
       verify: (_) async {
-        expect(await settings.loadCountInBars(), 2);
-        verify(() => repository.setCountIn(2)).called(1);
+        expect(accepted.countInBars, 2);
+        expect(accepted.autoRecord, isFalse);
+        expect(
+          await settings.readRecordStartCheckpoint(),
+          (countInBars: 2, soundStart: false),
+        );
+        verify(
+          () => repository.setRecordStartSettings(
+            countInBars: 2,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+          ),
+        ).called(1);
       },
     );
 
     blocTest<TempoCubit, TempoSettings>(
-      'setCountInBars clamps a negative value to 0',
+      'setCountInBars rejects an unsupported value without a write',
       build: () => TempoCubit(repository: repository, settings: settings),
       act: (cubit) => cubit.setCountInBars(-3),
       verify: (_) async {
-        expect(await settings.loadCountInBars(), 0);
-        verify(() => repository.setCountIn(0)).called(1);
+        expect(
+          await settings.readRecordStartCheckpoint(),
+          (countInBars: null, soundStart: null),
+        );
+        verifyNever(
+          () => repository.setRecordStartSettings(
+            countInBars: -3,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+          ),
+        );
       },
     );
 
@@ -396,21 +460,29 @@ void main() {
   tearDown(() => looperStates.close());
 
   blocTest<TempoCubit, TempoSettings>(
-    'setting a count-in persists Sound start as off (the engine clears it, '
-    'D9)',
-    setUp: () => settings.saveAutoRecord(value: true),
+    'setting a count-in clears Sound in the confirmed and saved pair',
+    setUp: () => settings.saveRecordStartSettings(
+      countInBars: 0,
+      soundStart: true,
+    ),
     build: () => TempoCubit(repository: repository, settings: settings),
     act: (cubit) => cubit.setCountInBars(2),
-    expect: () => [const TempoSettings(countInBars: 2)],
-    verify: (_) async {
-      expect(await settings.loadCountInBars(), 2);
-      expect(await settings.loadAutoRecord(), isFalse);
+    verify: (cubit) async {
+      expect(cubit.confirmedRecordStart?.countInBars, 2);
+      expect(cubit.confirmedRecordStart?.soundStart, isFalse);
+      expect(
+        await settings.readRecordStartCheckpoint(),
+        (countInBars: 2, soundStart: false),
+      );
     },
   );
 
   blocTest<TempoCubit, TempoSettings>(
     'follows a recalled count-in without changing startup settings',
-    setUp: () => settings.saveCountInBars(2),
+    setUp: () => settings.saveRecordStartSettings(
+      countInBars: 2,
+      soundStart: false,
+    ),
     build: () => TempoCubit(repository: repository, settings: settings),
     act: (cubit) async {
       await cubit.load();
@@ -421,7 +493,10 @@ void main() {
       expect(cubit.state.countInBars, 0);
       expect(cubit.state.clickModeReady, isTrue);
     },
-    verify: (_) async => expect(await settings.loadCountInBars(), 2),
+    verify: (_) async => expect(
+      await settings.readRecordStartCheckpoint(),
+      (countInBars: 2, soundStart: false),
+    ),
   );
 
   blocTest<TempoCubit, TempoSettings>(
@@ -429,6 +504,16 @@ void main() {
     build: () => TempoCubit(repository: repository, settings: settings),
     act: (cubit) async {
       await cubit.load();
+      accepted = _updated(
+        accepted,
+        tempoBpm: 96,
+        tsNum: 5,
+        tsDen: 8,
+        clickMode: ClickMode.playRec,
+        clickMask: 3,
+        clickVolume: 0.5,
+        countInBars: 2,
+      );
       when(() => repository.sessionTransport).thenReturn(
         const TransportState(
           tempoBpm: 96,
@@ -456,24 +541,41 @@ void main() {
           clickReady: true,
           clickModeReady: true,
           countInBars: 2,
+          recordStartReady: true,
         ),
       );
-      when(
-        () => repository.sessionTransport,
-      ).thenReturn(const TransportState());
+      accepted = _updated(
+        const TransportState(),
+        countInBars: 1,
+      );
+      when(() => repository.sessionTransport).thenReturn(accepted);
       looperStates.add(const LooperState());
       await Future<void>.delayed(Duration.zero);
       await cubit.load();
       expect(
         cubit.state,
-        const TempoSettings(clickReady: true, clickModeReady: true),
+        const TempoSettings(
+          clickReady: true,
+          clickModeReady: true,
+          countInBars: 1,
+          recordStartReady: true,
+        ),
       );
     },
     verify: (_) async {
       expect(await settings.loadTempoBpm(), 0);
       expect(await settings.loadQuantizeDiv(), GridDivision.off.code);
-      expect(await settings.loadCountInBars(), 0);
-      verify(() => repository.setCountIn(0)).called(1);
+      expect(
+        await settings.readRecordStartCheckpoint(),
+        (countInBars: null, soundStart: null),
+      );
+      verify(
+        () => repository.setRecordStartSettings(
+          countInBars: 1,
+          soundStart: false,
+          editKind: RecordStartEditKind.restore,
+        ),
+      ).called(1);
     },
   );
 }

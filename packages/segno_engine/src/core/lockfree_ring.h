@@ -41,6 +41,10 @@ typedef struct le_command {
       int32_t mode;
       uint32_t revision;
     } click;
+    struct { /* SET_RECORD_START: one atomic pair with distinct edit intent. */
+      int32_t value, edit_kind;
+      uint32_t revision;
+    } record_start;
     struct { /* SET_INPUT_MASK / SET_OUTPUT_MASK */
       int32_t channel;
       uint32_t mask;
@@ -83,6 +87,7 @@ typedef struct le_command {
     struct { /* Mode/crown/defining RECORD: acknowledge typed producers. */
       int32_t value;
       uint32_t sequence;
+      int32_t cancel_count_in; /* admission was an owned countdown cancellation */
     } clock;
     struct { /* SET_LENGTH_PRESETS / SET_LOOPER_MODE. count == 0 means a
               * mode-only command; bars are copied, never caller-owned pointers. */

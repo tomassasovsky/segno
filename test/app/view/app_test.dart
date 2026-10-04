@@ -202,6 +202,59 @@ class _ClickStore extends FakeKeyValueStore {
   }
 }
 
+class _RecordStartStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  String blockedKey = 'looper.auto_record';
+  bool writeEntered = false;
+  bool refuseWrite = false;
+  bool refuseNextRead = false;
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'tempo.count_in_bars' && refuseNextRead) {
+      refuseNextRead = false;
+      throw StateError('Recording start temporarily unreadable');
+    }
+    return super.getInt(key);
+  }
+
+  Future<void> _beforeWrite(String key) async {
+    if (key == blockedKey) {
+      writeEntered = true;
+      await pendingWrite?.future;
+    }
+  }
+
+  void _afterWrite(String key) {
+    if (key == blockedKey && refuseWrite) {
+      throw StateError('Recording start write failed after mutation');
+    }
+  }
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    await _beforeWrite(key);
+    await super.setInt(key, value);
+    _afterWrite(key);
+  }
+
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    await _beforeWrite(key);
+    await super.setBool(key, value: value);
+    _afterWrite(key);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if ((key == 'tempo.count_in_bars' || key == 'looper.auto_record') &&
+        refuseWrite) {
+      throw StateError('Recording start compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
 class _ClickModeStore extends FakeKeyValueStore {
   Completer<void>? pendingWrite;
   bool writeEntered = false;
@@ -736,6 +789,251 @@ void main() {
         },
       );
     }
+
+    for (final malformed in [false, true]) {
+      testWidgets(
+        'recording-start startup recovery remains actionable; '
+        'malformed=$malformed',
+        (tester) async {
+          final store = _RecordStartStore()..refuseNextRead = !malformed;
+          store.values['tempo.count_in_bars'] = malformed ? 3 : 4;
+          store.values['looper.auto_record'] = false;
+          final before = Map<String, Object>.of(store.values);
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final tempo = tester
+              .element(find.byType(TracksView))
+              .read<TempoCubit>();
+          expect(tempo.recordStartSnapshot, isNull);
+          expect(find.text('Recording start needs recovery'), findsOneWidget);
+          await tester.pump(const Duration(seconds: 6));
+          expect(find.text('Recording start needs recovery'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(tempo.state.recordStartReady, !malformed);
+          expect(store.values, before);
+          if (malformed) {
+            expect(find.text('Recording start needs recovery'), findsOneWidget);
+          } else {
+            expect(tempo.recordStartSnapshot?.settings.countInBars, 4);
+            expect(tempo.recordStartSnapshot?.settings.soundStart, isFalse);
+            expect(find.text('Recording start needs recovery'), findsNothing);
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+        },
+      );
+    }
+
+    testWidgets('Hear click Retry preserves independent recording recovery', (
+      tester,
+    ) async {
+      final store = FakeKeyValueStore();
+      store.values['tempo.click_mode'] = 4;
+      store.values['tempo.count_in_bars'] = 3;
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      final tempo = tester.element(find.byType(TracksView)).read<TempoCubit>();
+      expect(debugAppToastActive(AppToastId.clickModeSettings), isTrue);
+      expect(debugAppToastActive(AppToastId.recordStartSettings), isTrue);
+
+      store.values['tempo.click_mode'] = 0;
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key(AppToastId.clickModeSettings)),
+          matching: find.text('Retry'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tempo.state.clickModeReady, isTrue);
+      expect(tempo.state.recordStartReady, isFalse);
+      expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
+      expect(debugAppToastActive(AppToastId.recordStartSettings), isTrue);
+      expect(find.text('Recording start needs recovery'), findsOneWidget);
+
+      store.values['tempo.count_in_bars'] = 2;
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key(AppToastId.recordStartSettings)),
+          matching: find.text('Retry'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tempo.state.recordStartReady, isTrue);
+      expect(debugAppToastActive(AppToastId.recordStartSettings), isFalse);
+    });
+
+    for (final customName in [false, true]) {
+      testWidgets(
+        'Sound without input identifies its track; named=$customName',
+        (
+          tester,
+        ) async {
+          final store = FakeKeyValueStore();
+          store.values['tempo.count_in_bars'] = 0;
+          store.values['looper.auto_record'] = true;
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final context = tester.element(find.byType(TracksView));
+          if (customName) {
+            unawaited(context.read<TracksCubit>().rename(3, 'Harmony'));
+            await tester.pumpAndSettle();
+          }
+          expect(
+            context.read<TempoCubit>().confirmedRecordStart?.soundStart,
+            isTrue,
+          );
+          final initialCalls = engine.recordCalls;
+          expect(repository.record(channel: 3), EngineResult.invalid);
+          await tester.pumpAndSettle();
+          expect(
+            debugAppToastActive(AppToastId.recordingInputRequired),
+            isTrue,
+          );
+          final notice = find.byKey(
+            const Key(AppToastId.recordingInputRequired),
+          );
+          expect(
+            find.descendant(
+              of: notice,
+              matching: find.text('Choose recording inputs'),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(
+              of: notice,
+              matching: find.text(customName ? 'Harmony' : 'TRACK 4'),
+            ),
+            findsOneWidget,
+          );
+          expect(engine.recordCalls, initialCalls);
+          expect(engine.lastRecordImage, isNull);
+          expect(engine.pendingImages, isEmpty);
+          await tester.pump(const Duration(seconds: 6));
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+        },
+      );
+    }
+
+    for (final blockedKey in ['tempo.count_in_bars', 'looper.auto_record']) {
+      testWidgets('power off waits for complete start pair: $blockedKey', (
+        tester,
+      ) async {
+        final store = _RecordStartStore()..blockedKey = blockedKey;
+        settings = SettingsRepository(store: store);
+        var haltCalls = 0;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => haltCalls++,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final tempo = context.read<TempoCubit>();
+        final power = context.read<PowerOffCubit>();
+        expect(tempo.confirmedRecordStart?.countInBars, 1);
+        expect(tempo.confirmedRecordStart?.soundStart, isFalse);
+        store.pendingWrite = Completer<void>();
+        unawaited(tempo.setSoundStart(enabled: true));
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        power.press(const PowerOffSnapshot());
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(power.state.phase, PowerOffPhase.flushing);
+        expect(haltCalls, 0);
+        expect(tempo.confirmedRecordStart?.countInBars, 1);
+        expect(tempo.confirmedRecordStart?.soundStart, isFalse);
+        store.pendingWrite!.complete();
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(haltCalls, 1);
+        expect(store.values['tempo.count_in_bars'], 0);
+        expect(store.values['looper.auto_record'], isTrue);
+        expect(tempo.durableRecordStartSettings.countInBars, 0);
+        expect(tempo.durableRecordStartSettings.soundStart, isTrue);
+      });
+    }
+
+    for (final retry in [false, true]) {
+      testWidgets('uncertain start pair keeps power on; retry=$retry', (
+        tester,
+      ) async {
+        final store = _RecordStartStore();
+        settings = SettingsRepository(store: store);
+        var haltCalls = 0;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => haltCalls++,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final tempo = context.read<TempoCubit>();
+        final power = context.read<PowerOffCubit>();
+        store.refuseWrite = true;
+        unawaited(tempo.setSoundStart(enabled: true));
+        await tester.pumpAndSettle();
+        expect(tempo.confirmedRecordStart?.countInBars, 1);
+        expect(tempo.confirmedRecordStart?.soundStart, isFalse);
+        expect(tempo.recordStartSnapshot, isNull);
+        power.press(const PowerOffSnapshot());
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.flushFailed);
+        expect(haltCalls, 0);
+        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        expect(debugAppToastActive(AppToastId.recordStartSettings), isFalse);
+        store.refuseWrite = false;
+        await tester.tap(
+          find.byKey(Key(retry ? 'power_off_retry' : 'power_off_keep_playing')),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(haltCalls, retry ? 1 : 0);
+        if (!retry) {
+          expect(find.text('Recording start needs recovery'), findsOneWidget);
+          expect(tempo.recordStartSnapshot, isNull);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(find.text('Recording start needs recovery'), findsNothing);
+        }
+        expect(store.values.containsKey('tempo.count_in_bars'), isFalse);
+        expect(store.values.containsKey('looper.auto_record'), isFalse);
+        expect(tempo.durableRecordStartSettings.countInBars, 1);
+        expect(tempo.durableRecordStartSettings.soundStart, isFalse);
+      });
+    }
+
+    testWidgets('compensated start refusal permits normal shutdown', (
+      tester,
+    ) async {
+      final store = FakeKeyValueStore();
+      settings = SettingsRepository(store: store);
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      repository.startEngine(const EngineConfig());
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(TracksView));
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerOffCubit>();
+      engine.recordStartResult = EngineResult.invalid;
+      bool? accepted;
+      unawaited(tempo.setCountInBars(4).then((v) => accepted = v.isOk));
+      await tester.pumpAndSettle();
+      expect(accepted, isFalse);
+      expect(tempo.recordStartSnapshot?.settings.countInBars, 1);
+      expect(store.values.containsKey('tempo.count_in_bars'), isFalse);
+      expect(store.values.containsKey('looper.auto_record'), isFalse);
+      expect(repository.recordStartRecoveryRequired, isFalse);
+      power.press(const PowerOffSnapshot());
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerOffPhase.goodbye);
+      await tester.pump(const Duration(seconds: 6));
+      expect(haltCalls, 1);
+    });
 
     for (final malformed in [false, true]) {
       testWidgets(

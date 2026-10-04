@@ -172,6 +172,7 @@ int le_record_timing_valid(const le_record_timing_settings* settings);
 extern void (*le_test_record_timing_hook)(le_engine*, int);
 /* 1: Click mode/result applied, before command publication. */
 extern void (*le_test_click_mode_hook)(le_engine*, int);
+extern void (*le_test_record_start_hook)(le_engine*, int);
 #endif
 
 
