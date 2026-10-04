@@ -5,6 +5,7 @@ import 'package:segno/control/binding/control_availability.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 
 class _Looper extends Mock implements LooperRepository {}
@@ -29,6 +30,24 @@ void main() {
     expect(locked.resolves(target), isTrue);
     expect(locked.canAssign(target), isFalse);
     expect(locked.blockedBy(target), ControlEditBlock.clickCapture);
+  });
+
+  test('Count-in missing differs from a capture-locked confirmed Off', () {
+    const target = CountInValueTarget();
+    final missing = ControlAvailability(looper: looper);
+    expect(missing.resolves(target), isFalse);
+    expect(missing.blockedBy(target), isNull);
+    final locked = ControlAvailability(
+      looper: looper,
+      recordStartSnapshot: RecordStartSnapshot(
+        settings: RecordStartSettings(countInBars: 0, soundStart: true),
+        captureLocked: true,
+      ),
+    );
+    expect(locked.resolves(target), isTrue);
+    expect(locked.value(target), 0);
+    expect(locked.blockedBy(target), ControlEditBlock.recordStartCapture);
+    expect(locked.canAssign(target), isFalse);
   });
 
   test('Multi length locks track override but keeps defaults assignable', () {

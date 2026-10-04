@@ -61,6 +61,7 @@ void main() {
         owner.clickVolumeFailures.drain<void>(),
         owner.ordinaryClickModeChanges.drain<void>(),
         owner.ordinaryClickVolumeChanges.drain<void>(),
+        owner.ordinaryRecordStartChanges.drain<void>(),
       ];
       final loading = owner.load();
       await expectLater(loading, throwsA(isA<TypeError>()));
@@ -134,6 +135,7 @@ void main() {
         countInBars: any(named: 'countInBars'),
         soundStart: any(named: 'soundStart'),
         editKind: any(named: 'editKind'),
+        releasedSettings: any(named: 'releasedSettings'),
       ),
     ).thenAnswer((call) {
       accepted = _updated(
@@ -322,6 +324,7 @@ void main() {
               countInBars: 2,
               soundStart: false,
               editKind: RecordStartEditKind.countIn,
+              releasedSettings: (countInBars: 2, soundStart: false),
             ),
           ).thenReturn(EngineResult.invalid);
         })();
@@ -537,6 +540,7 @@ void main() {
               countInBars: 2,
               soundStart: false,
               editKind: RecordStartEditKind.countIn,
+              releasedSettings: (countInBars: 2, soundStart: false),
             ),
           ).called(1);
         })(owner);
@@ -562,6 +566,7 @@ void main() {
               countInBars: -3,
               soundStart: false,
               editKind: RecordStartEditKind.countIn,
+              releasedSettings: any(named: 'releasedSettings'),
             ),
           );
         })(owner);

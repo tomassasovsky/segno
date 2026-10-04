@@ -27,6 +27,7 @@ import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
@@ -190,6 +191,7 @@ void main() {
     registerFallbackValue(LooperMode.multi);
     registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(GridDivision.off);
+    registerFallbackValue(RecordStartEditKind.countIn);
     registerFallbackValue(<int, RecordTiming>{});
   });
 
@@ -203,6 +205,7 @@ void main() {
     ExternalJackSetup? jack,
     double? clickVolume = 1,
     ClickModeSnapshot? clickModeSnapshot,
+    RecordStartSnapshot? recordStartSnapshot,
     OneShotSnapshot? oneShotSnapshot,
     RecordTiming currentTiming = RecordTiming.immediately,
     bool captureLocked = false,
@@ -238,6 +241,18 @@ void main() {
     final closeTempo = tempo.close;
     addTearDown(() => unawaited(closeTempo()));
     when(() => tempo.clickModeSnapshot).thenReturn(clickModeSnapshot);
+    when(() => tempo.recordStartSnapshot).thenReturn(recordStartSnapshot);
+    if (recordStartSnapshot != null) {
+      when(() => tempo.state).thenReturn(
+        tempo.state.copyWith(
+          countInBars: recordStartSnapshot.settings.countInBars,
+          soundStart: recordStartSnapshot.settings.soundStart,
+          recordStartReady: true,
+          recordStartInitialized: true,
+          recordStartCaptureLocked: recordStartSnapshot.captureLocked,
+        ),
+      );
+    }
     final playback = MockDecayPlaybackSettings(oneShot: oneShotSnapshot);
     addTearDown(playback.close);
     record = RecordSettings(repository: looper, settings: settings);
@@ -264,6 +279,7 @@ void main() {
       looper: looper,
       clickVolumeControl: tempo,
       clickModeControl: tempo,
+      recordStartControl: tempo,
       mixSettings: mixSettings,
       controller: controller,
       pedal: pedal,
@@ -765,6 +781,80 @@ void main() {
         expect(mapping.target, const ClickModeValueTarget());
         expect((mapping.heel, mapping.toe), (0.2, 0.8));
         verifyNever(() => tempo.setClickMode(ClickMode.playRec));
+      },
+    );
+
+    expressionTestWidgets(
+      'Count-in expression keeps full Off to four-bar range without a write',
+      (tester) async {
+        await pump(
+          tester,
+          recordStartSnapshot: RecordStartSnapshot(
+            settings: RecordStartSettings(countInBars: 0, soundStart: true),
+            captureLocked: false,
+          ),
+        );
+        await tap(tester, 'expression_add');
+        await tap(tester, 'expression_kind_loopControls');
+        await tap(tester, 'expression_destination_loop:defaults');
+        await tap(tester, targetKey(const CountInValueTarget()));
+        expect(textOf('expression_endpoint_heel_value'), 'Off');
+        expect(textOf('expression_endpoint_toe_value'), '4 bars');
+        await tap(tester, 'external_save');
+        final mapping = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(mapping.target, const CountInValueTarget());
+        expect((mapping.heel, mapping.toe), (0, 1));
+        verifyNever(
+          () => looper.setRecordStartSettings(
+            countInBars: any(named: 'countInBars'),
+            soundStart: any(named: 'soundStart'),
+            editKind: any(named: 'editKind'),
+          ),
+        );
+      },
+    );
+
+    expressionTestWidgets(
+      'Count-in repair Escape keeps exact authored raw endpoints',
+      (tester) async {
+        await pump(
+          tester,
+          recordStartSnapshot: RecordStartSnapshot(
+            settings: RecordStartSettings(countInBars: 1, soundStart: false),
+            captureLocked: false,
+          ),
+          jack: ExternalJackSetup(
+            type: ExternalJackType.expression,
+            expression: ExternalExpressionSetup(
+              mappings: [
+                ExpressionMapping(
+                  target: const TrackVolumeTarget(0),
+                  heel: 0.2,
+                  toe: 0.8,
+                ),
+              ],
+            ),
+          ),
+        );
+        await tap(tester, 'expression_change');
+        await tap(tester, 'expression_kind_loopControls');
+        await tap(tester, 'expression_destination_loop:defaults');
+        await tap(tester, targetKey(const CountInValueTarget()));
+        await tap(tester, 'expression_endpoint_heel_4');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        await tap(tester, 'external_save');
+        final mapping = control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single;
+        expect(mapping.target, const CountInValueTarget());
+        expect((mapping.heel, mapping.toe), (0.2, 0.8));
       },
     );
 

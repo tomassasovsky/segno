@@ -147,6 +147,120 @@ void main() {
     expect(engine.nextSnapshot.autoRecord, isTrue);
   });
 
+  check('Held and Released commit together only after acquired receipt', (
+    clock,
+    engine,
+    repository,
+  ) {
+    engine.commandsAreSettled = false;
+    expect(
+      repository.setRecordStartSettings(
+        countInBars: 2,
+        soundStart: false,
+        editKind: RecordStartEditKind.countIn,
+        releasedSettings: (countInBars: 0, soundStart: false),
+      ),
+      EngineResult.ok,
+    );
+    clock.elapse(const Duration(milliseconds: 20));
+    expect(engine.nextSnapshot.countInBars, 2);
+    expect(repository.recordStartSettings, (countInBars: 0, soundStart: false));
+    expect(repository.recordStartRestartIntent, (
+      countInBars: 0,
+      soundStart: false,
+    ));
+    engine.commandsAreSettled = true;
+    clock.elapse(const Duration(milliseconds: 20));
+    expect(repository.recordStartSettings, (countInBars: 2, soundStart: false));
+    expect(repository.recordStartRestartIntent, (
+      countInBars: 0,
+      soundStart: false,
+    ));
+    repository.stopEngine();
+    expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+    unawaited(repository.settleRecordStartSettings());
+    clock.flushMicrotasks();
+    expect(repository.recordStartSettings, (countInBars: 0, soundStart: false));
+    expect(engine.nextSnapshot.countInBars, 0);
+  });
+
+  for (final uncertain in [false, true]) {
+    check(
+      'failed replacement preserves prior live and Released: '
+      'uncertain=$uncertain',
+      (
+        clock,
+        engine,
+        repository,
+      ) {
+        expect(
+          repository.setRecordStartSettings(
+            countInBars: 2,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+            releasedSettings: (countInBars: 0, soundStart: false),
+          ),
+          EngineResult.ok,
+        );
+        unawaited(repository.settleRecordStartSettings());
+        clock.flushMicrotasks();
+        engine.publishRecordStartCommands = false;
+        final revision = engine.nextSnapshot.recordStartRevision;
+        expect(
+          repository.setRecordStartSettings(
+            countInBars: 4,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+            releasedSettings: (countInBars: 1, soundStart: false),
+          ),
+          EngineResult.ok,
+        );
+        if (!uncertain) {
+          engine.nextSnapshot = engine.nextSnapshot.copyWith(
+            recordStartRevision: revision + 1,
+            recordStartResult: -1,
+          );
+        }
+        clock.elapse(const Duration(milliseconds: 510));
+        expect(repository.recordStartRecoveryRequired, uncertain);
+        if (uncertain) {
+          expect(repository.recoverRecordStartSettings(), EngineResult.ok);
+        }
+        expect(repository.recordStartSettings, (
+          countInBars: 2,
+          soundStart: false,
+        ));
+        expect(repository.recordStartRestartIntent, (
+          countInBars: 0,
+          soundStart: false,
+        ));
+      },
+    );
+  }
+
+  check('invalid Released pair is refused before either intent changes', (
+    clock,
+    engine,
+    repository,
+  ) {
+    final calls = engine.calls.length;
+    expect(
+      repository.setRecordStartSettings(
+        countInBars: 2,
+        soundStart: false,
+        editKind: RecordStartEditKind.countIn,
+        releasedSettings: (countInBars: 1, soundStart: true),
+      ),
+      EngineResult.invalid,
+    );
+    expect(engine.calls.length, calls);
+    expect(repository.recordStartSettings, (countInBars: 0, soundStart: false));
+    expect(repository.recordStartRestartIntent, (
+      countInBars: 0,
+      soundStart: false,
+    ));
+  });
+
   check('malformed pair never changes restart or reaches the engine', (
     clock,
     engine,

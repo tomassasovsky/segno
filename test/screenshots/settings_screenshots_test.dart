@@ -216,6 +216,7 @@ void main() {
     fxPersistence = FxChainPersistence(looper: repository);
     mixSettings = testMixSettings(repository, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
+    tempoOwner = TempoSettings(repository: repository, settings: settings);
     control = ControlCubit(
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
@@ -223,6 +224,7 @@ void main() {
       recordTimingControl: FakeRecordTimingControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
+      recordStartControl: tempoOwner,
       fxPersistence: fxPersistence,
       looper: repository,
       mixSettings: mixSettings,
@@ -272,7 +274,6 @@ void main() {
     final timing = RecordTimingCubit(settings: timingOwner);
     addTearDown(() => unawaited(timingOwner.close()));
     addTearDown(() => unawaited(timing.close()));
-    tempoOwner = TempoSettings(repository: repository, settings: settings);
     await tempoOwner.loadRecordStart();
     expect(tempoOwner.recordStartSnapshot, isNotNull);
     final tempo = TempoCubit(settings: tempoOwner);

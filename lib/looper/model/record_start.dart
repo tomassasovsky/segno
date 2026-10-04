@@ -32,6 +32,12 @@ final class RecordStartSettings extends Equatable {
   /// Whether an empty-track Record waits for a selected source's signal.
   final bool soundStart;
 
+  /// Applies Count-in to this pair; Off preserves the accepted Sound setting.
+  RecordStartSettings withCountIn(int bars) => RecordStartSettings(
+    countInBars: bars,
+    soundStart: bars == 0 && soundStart,
+  );
+
   @override
   List<Object?> get props => [countInBars, soundStart];
 }
@@ -56,6 +62,9 @@ final class RecordStartSnapshot extends Equatable {
   @override
   List<Object?> get props => [settings, captureLocked];
 }
+
+/// The session and device generation owning a captured pair operation.
+typedef RecordStartLifetime = ({int sessionRevision, int mixGeneration});
 
 /// The confirmed result of one recording-start transaction.
 enum RecordStartStatus { applied, rejected, superseded, recoveryRequired }
@@ -86,7 +95,7 @@ final class RecordStartOutcome {
   bool get isOk => status == RecordStartStatus.applied;
 }
 
-/// Narrow ordinary access to the application-owned recording-start pair.
+/// Narrow access to the application-owned recording-start pair.
 abstract interface class RecordStartControl {
   /// Accepted pair; null during initialization or recovery.
   RecordStartSnapshot? get recordStartSnapshot;
@@ -94,9 +103,29 @@ abstract interface class RecordStartControl {
   /// Last accepted readout, retained during recovery; null before first load.
   RecordStartSettings? get confirmedRecordStart;
 
+  /// Released pair used for preference, Session Save and device restart.
+  RecordStartSettings get durableRecordStartSettings;
+
+  /// Current session/device identity captured before controller work queues.
+  RecordStartLifetime get recordStartLifetime;
+
+  /// Accepted ordinary revision shared by Count-in and Sound edits.
+  int get recordStartRevision;
+
+  /// Accepted ordinary pairs, including same-value intents; never refusals.
+  Stream<RecordStartSettings> get ordinaryRecordStartChanges;
+
   /// Sets Count-in; positive values disable Sound, zero preserves it.
   Future<RecordStartOutcome> setCountInBars(int bars);
 
   /// Sets Sound; enabling clears Count-in, disabling preserves it.
   Future<RecordStartOutcome> setSoundStart({required bool enabled});
+
+  /// Controller Count-in, with optional authored durable Released choice.
+  Future<RecordStartOutcome> setControllerCountIn(
+    int bars, {
+    required RecordStartLifetime lifetime,
+    required int revision,
+    int? releasedBars,
+  });
 }

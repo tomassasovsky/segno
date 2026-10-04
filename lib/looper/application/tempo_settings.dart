@@ -415,6 +415,10 @@ class TempoSettings
   Future<void>? _startLoadFuture;
   bool _startInitialized = false;
   bool _startApplying = false;
+  int _startRevision = 0;
+  final _ordinaryStart = StreamController<RecordStartSettings>.broadcast(
+    sync: true,
+  );
   ({int? countInBars, bool? soundStart})? _startStoreRecovery;
   final _startFailures = StreamController<RecordStartOutcome>.broadcast(
     sync: true,
@@ -440,7 +444,7 @@ class TempoSettings
         )
       : null;
 
-  /// Current accepted pair for named-session persistence and shutdown.
+  @override
   RecordStartSettings get durableRecordStartSettings {
     final pair = _repository.recordStartRestartIntent;
     return RecordStartSettings(
@@ -459,10 +463,18 @@ class TempoSettings
       !_startApplying &&
       !_startRecoveryPending &&
       _repository.recordStartSettingsSettled;
-  ({int sessionRevision, int mixGeneration}) get _startLifetime => (
+  @override
+  RecordStartLifetime get recordStartLifetime => (
     sessionRevision: _repository.sessionRevision,
     mixGeneration: _repository.mixGeneration,
   );
+
+  @override
+  int get recordStartRevision => _startRevision;
+
+  @override
+  Stream<RecordStartSettings> get ordinaryRecordStartChanges =>
+      _ordinaryStart.stream;
 
   RecordStartOutcome _reportStart(RecordStartOutcome outcome) {
     if (outcome.status == RecordStartStatus.superseded) return outcome;
@@ -491,15 +503,15 @@ class TempoSettings
         if (session == _repository.sessionRevision) rethrow;
       }
       while (!_closing && !_states.isClosed) {
-        final origin = _startLifetime;
+        final origin = recordStartLifetime;
         final done = await _queueTempo(() async {
           if (_closing || _states.isClosed) return true;
-          if (origin != _startLifetime) return false;
+          if (origin != recordStartLifetime) return false;
           _startApplying = true;
           try {
             await _repository.settleRecordStartSettings();
             if (_closing || _states.isClosed) return true;
-            if (origin != _startLifetime) return false;
+            if (origin != recordStartLifetime) return false;
             if (_repository.recordStartRecoveryRequired) {
               _reportStart(
                 const RecordStartOutcome(RecordStartStatus.recoveryRequired),
@@ -517,7 +529,7 @@ class TempoSettings
                 result = await _repository.settleRecordStartSettings();
               }
               if (_closing || _states.isClosed) return true;
-              if (origin != _startLifetime) return false;
+              if (origin != recordStartLifetime) return false;
               if (!result.isOk) {
                 _reportStart(
                   RecordStartOutcome(
@@ -549,21 +561,41 @@ class TempoSettings
 
   @override
   Future<RecordStartOutcome> setCountInBars(int bars) =>
-      _writeRecordStart(countInBars: bars);
+      _writeRecordStart(countInBars: bars, ordinary: true);
 
   @override
   Future<RecordStartOutcome> setSoundStart({required bool enabled}) =>
-      _writeRecordStart(soundStart: enabled);
+      _writeRecordStart(soundStart: enabled, ordinary: true);
+
+  @override
+  Future<RecordStartOutcome> setControllerCountIn(
+    int bars, {
+    required RecordStartLifetime lifetime,
+    required int revision,
+    int? releasedBars,
+  }) => _writeRecordStart(
+    countInBars: bars,
+    lifetime: lifetime,
+    revision: revision,
+    releasedBars: releasedBars,
+  );
 
   Future<RecordStartOutcome> _writeRecordStart({
     int? countInBars,
     bool? soundStart,
+    bool ordinary = false,
+    RecordStartLifetime? lifetime,
+    int? revision,
+    int? releasedBars,
   }) async {
-    final origin = _startLifetime;
+    final origin = lifetime ?? recordStartLifetime;
     await loadRecordStart();
     return _queueTempo(() async {
       bool current() =>
-          origin == _startLifetime && !_closing && !_states.isClosed;
+          origin == recordStartLifetime &&
+          (revision == null || revision == _startRevision) &&
+          !_closing &&
+          !_states.isClosed;
       if (!current()) {
         return const RecordStartOutcome(RecordStartStatus.superseded);
       }
@@ -571,7 +603,8 @@ class TempoSettings
           _startRecoveryPending ||
           !_repository.recordStartSettingsSettled ||
           _repository.recordStartCaptureLocked ||
-          countInBars != null && !kCountInBarOptions.contains(countInBars)) {
+          countInBars != null && !kCountInBarOptions.contains(countInBars) ||
+          releasedBars != null && !kCountInBarOptions.contains(releasedBars)) {
         return _reportStart(
           RecordStartOutcome(
             _startRecoveryPending
@@ -582,12 +615,19 @@ class TempoSettings
         );
       }
       final prior = _repository.recordStartSettings;
-      final next = RecordStartSettings(
-        countInBars: soundStart == true ? 0 : countInBars ?? prior.countInBars,
-        soundStart:
-            !(countInBars != null && countInBars > 0) &&
-            (soundStart ?? prior.soundStart),
+      final accepted = RecordStartSettings(
+        countInBars: prior.countInBars,
+        soundStart: prior.soundStart,
       );
+      final next = countInBars != null
+          ? accepted.withCountIn(countInBars)
+          : RecordStartSettings(
+              countInBars: soundStart == true ? 0 : prior.countInBars,
+              soundStart: soundStart ?? prior.soundStart,
+            );
+      final durable = releasedBars == null
+          ? next
+          : next.withCountIn(releasedBars);
       ({int? countInBars, bool? soundStart})? checkpoint;
       var attempted = false;
       _startApplying = true;
@@ -598,8 +638,8 @@ class TempoSettings
         }
         attempted = true;
         await _settings.saveRecordStartSettings(
-          countInBars: next.countInBars,
-          soundStart: next.soundStart,
+          countInBars: durable.countInBars,
+          soundStart: durable.soundStart,
         );
         if (!current()) {
           throw const _RecordStartRefusal(RecordStartStatus.superseded);
@@ -610,6 +650,10 @@ class TempoSettings
         var result = _repository.setRecordStartSettings(
           countInBars: next.countInBars,
           soundStart: next.soundStart,
+          releasedSettings: (
+            countInBars: durable.countInBars,
+            soundStart: durable.soundStart,
+          ),
           editKind: countInBars != null
               ? RecordStartEditKind.countIn
               : RecordStartEditKind.sound,
@@ -620,6 +664,10 @@ class TempoSettings
         }
         if (!result.isOk) {
           throw _RecordStartRefusal(RecordStartStatus.rejected, result: result);
+        }
+        if (ordinary) {
+          ++_startRevision;
+          _ordinaryStart.add(next);
         }
         return _reportStart(
           RecordStartOutcome(
@@ -1074,6 +1122,7 @@ class TempoSettings
     } finally {
       await Future.wait<void>([
         _startFailures.close(),
+        _ordinaryStart.close(),
         _ordinaryMode.close(),
         _modeFailures.close(),
         _ordinaryClick.close(),

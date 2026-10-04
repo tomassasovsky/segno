@@ -128,6 +128,45 @@ void main() {
       }
     });
 
+    test(
+      'Count-in encodes option index, including the four-bar final step',
+      () {
+        const target = CountInValueTarget();
+        expect(target.canonicalString(), '{"ctl":"countIn"}');
+        expect(ControlValueTarget.tryParse(target.canonicalString()), target);
+        expect(target.isStructurallyValid, isTrue);
+        expect(target.relativeStep, 1 / 3);
+        for (final (position, bars) in <(double, int)>[
+          (0, 0),
+          (1 / 3, 1),
+          (2 / 3, 2),
+          (1, 4),
+        ]) {
+          expect(target.toDomain(position), bars);
+          expect(target.fromDomain(bars), position);
+        }
+        for (final (position, bars) in <(double, int)>[
+          (0.20, 1),
+          (0.49, 1),
+          (0.51, 2),
+          (0.80, 2),
+          (0.90, 4),
+        ]) {
+          expect(target.toDomain(position), bars);
+        }
+        expect(() => target.toDomain(double.nan), throwsArgumentError);
+        expect(() => target.toDomain(double.infinity), throwsArgumentError);
+        expect(() => target.fromDomain(3), throwsArgumentError);
+        for (final malformed in [
+          '{"ctl":"countIn","index":0}',
+          '{"ctl":"countIn","bars":2}',
+          '{"ctl":"countIn","lane":null}',
+        ]) {
+          expect(ControlValueTarget.tryParse(malformed), isNull);
+        }
+      },
+    );
+
     test('Record timing identities and seven musical positions are exact', () {
       const defaults = DefaultRecordTimingTarget();
       const track = TrackRecordTimingTarget(7);

@@ -33,6 +33,7 @@ import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -245,6 +246,7 @@ void main() {
     bool routeEntry = false,
     MidiMapping? savedMapping,
     OneShotSnapshot? oneShotSnapshot,
+    RecordStartSnapshot? recordStartSnapshot,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -281,6 +283,18 @@ void main() {
     final mix = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mix.close()));
     final tempo = MockClickTempoSettings();
+    when(() => tempo.recordStartSnapshot).thenReturn(recordStartSnapshot);
+    if (recordStartSnapshot != null) {
+      when(() => tempo.state).thenReturn(
+        tempo.state.copyWith(
+          countInBars: recordStartSnapshot.settings.countInBars,
+          soundStart: recordStartSnapshot.settings.soundStart,
+          recordStartReady: true,
+          recordStartInitialized: true,
+          recordStartCaptureLocked: recordStartSnapshot.captureLocked,
+        ),
+      );
+    }
     final closeTempo = tempo.close;
     addTearDown(() => unawaited(closeTempo()));
     final decay = MockDecayPlaybackSettings(
@@ -310,6 +324,7 @@ void main() {
       recordTimingControl: timingOwner,
       clickVolumeControl: tempo,
       clickModeControl: tempo,
+      recordStartControl: tempo,
       looper: looper,
       pedal: pedal,
       settings: settings,
@@ -634,6 +649,34 @@ void main() {
       expect(find.text('Immediately'), findsWidgets);
       expect(find.text('1/16 note'), findsWidgets);
       await shot(tester, 'record_timing_range');
+    });
+    testWidgets('Count-in MIDI named endpoints at console size', (
+      tester,
+    ) async {
+      const target = CountInValueTarget();
+      await pump(
+        tester,
+        recordStartSnapshot: RecordStartSnapshot(
+          settings: RecordStartSettings(countInBars: 2, soundStart: false),
+          captureLocked: false,
+        ),
+        savedMapping: MidiMapping(
+          id: 'm1',
+          source: _source,
+          behavior: MidiBehavior.continuous,
+          controls: [
+            MidiParameterControl(
+              key: target.canonicalString(),
+              low: 0,
+              high: 1,
+            ),
+          ],
+        ),
+      );
+      await tap(tester, 'midi_row_edit_m1');
+      expect(find.text('4 bars'), findsWidgets);
+      expect(find.text('Off'), findsWidgets);
+      await shot(tester, 'count_in_range');
     });
     testWidgets('Loop controls offers the default decay', (tester) async {
       await pump(tester, seeded: true);

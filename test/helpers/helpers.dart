@@ -5,6 +5,7 @@ export 'fake_decay_control.dart';
 export 'fake_key_value_store.dart';
 export 'fake_one_shot_control.dart';
 export 'fake_record_length_control.dart';
+export 'fake_record_start_control.dart';
 export 'fake_record_timing_control.dart';
 export 'pump_app.dart';
 export 'screenshot_fonts.dart';

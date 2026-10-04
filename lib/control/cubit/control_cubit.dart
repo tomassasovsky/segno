@@ -34,6 +34,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -45,6 +46,7 @@ typedef _OneShotOrigin = ({OneShotLifetime lifetime, int revision});
 typedef _RecordLengthOrigin = ({RecordLengthLifetime lifetime, int revision});
 typedef _RecordTimingOrigin = ({RecordTimingLifetime lifetime, int revision});
 typedef _ClickModeOrigin = ({ClickModeLifetime lifetime, int revision});
+typedef _RecordStartOrigin = ({RecordStartLifetime lifetime, int revision});
 typedef _ControlOrigins = ({
   Map<MixValueTarget, int> mix,
   ClickVolumeLifetime? click,
@@ -53,6 +55,7 @@ typedef _ControlOrigins = ({
   Map<RecordLengthValueTarget, _RecordLengthOrigin> recordLength,
   Map<RecordTimingValueTarget, _RecordTimingOrigin> recordTiming,
   Map<ClickModeValueTarget, _ClickModeOrigin> clickMode,
+  Map<CountInValueTarget, _RecordStartOrigin> recordStart,
 });
 
 /// The press/long-press state machine every gestural footswitch shares.
@@ -179,6 +182,7 @@ class ControlCubit extends Cubit<ControlState> {
     required RecordLengthControl recordLengthControl,
     required RecordTimingControl recordTimingControl,
     required ClickModeControl clickModeControl,
+    required RecordStartControl recordStartControl,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
     Duration Function()? midiClock,
@@ -197,6 +201,7 @@ class ControlCubit extends Cubit<ControlState> {
        _recordLength = recordLengthControl,
        _recordTiming = recordTimingControl,
        _clickMode = clickModeControl,
+       _recordStart = recordStartControl,
        _midiDevices = midiDevices,
        _midiClock = midiClock,
        _learnTimeout = learnTimeout,
@@ -219,7 +224,7 @@ class ControlCubit extends Cubit<ControlState> {
           ? const DefaultDecayTarget()
           : TrackDecayTarget(change.address.channel!);
       if (change.percent == null) {
-        _supersedeDecayClaims(target);
+        _supersedeParameterClaims(target);
       } else {
         _onOrdinaryFxWrite(target, target.fromDomain(change.percent!));
       }
@@ -230,7 +235,7 @@ class ControlCubit extends Cubit<ControlState> {
           ? const DefaultOneShotTarget()
           : TrackOneShotTarget(change.address.channel!);
       if (change.oneShot == null) {
-        _supersedeOneShotClaims(target);
+        _supersedeParameterClaims(target);
       } else {
         _onOrdinaryFxWrite(target, target.fromDomain(oneShot: change.oneShot!));
       }
@@ -242,7 +247,7 @@ class ControlCubit extends Cubit<ControlState> {
             ? const DefaultRecordLengthTarget()
             : TrackRecordLengthTarget(change.address.channel!);
         if (change.bars == null) {
-          _supersedeRecordLengthClaims(target);
+          _supersedeParameterClaims(target);
         } else {
           _onOrdinaryFxWrite(target, target.fromDomain(change.bars!));
         }
@@ -255,7 +260,7 @@ class ControlCubit extends Cubit<ControlState> {
             ? const DefaultRecordTimingTarget()
             : TrackRecordTimingTarget(change.address.channel!);
         if (change.timing == null) {
-          _supersedeRecordTimingClaims(target);
+          _supersedeParameterClaims(target);
         } else {
           _onOrdinaryFxWrite(target, target.fromDomain(change.timing!));
         }
@@ -265,6 +270,15 @@ class ControlCubit extends Cubit<ControlState> {
     _clickModeOrdinarySub = _clickMode.ordinaryClickModeChanges.listen((mode) {
       const target = ClickModeValueTarget();
       _onOrdinaryFxWrite(target, target.fromDomain(mode));
+    });
+    _recordStartLifetime = _recordStart.recordStartLifetime;
+    _recordStartOrdinarySub = _recordStart.ordinaryRecordStartChanges.listen((
+      pair,
+    ) {
+      const target = CountInValueTarget();
+      // Sound and Count-in share one authority, even when Count-in stays Off.
+      _supersedeParameterClaims(target);
+      _onOrdinaryFxWrite(target, target.fromDomain(pair.countInBars));
     });
     _midiSession = _looper.sessionRevision;
     _midiCapture = midiDevices?.session;
@@ -317,6 +331,9 @@ class ControlCubit extends Cubit<ControlState> {
   late RecordLengthLifetime _recordLengthLifetime;
   late final StreamSubscription<({RecordLengthAddress address, int? bars})>
   _recordLengthOrdinarySub;
+  final RecordStartControl _recordStart;
+  late RecordStartLifetime _recordStartLifetime;
+  late final StreamSubscription<RecordStartSettings> _recordStartOrdinarySub;
   final ClickModeControl _clickMode;
   late ClickModeLifetime _clickModeLifetime;
   late final StreamSubscription<ClickMode> _clickModeOrdinarySub;
@@ -652,7 +669,8 @@ class ControlCubit extends Cubit<ControlState> {
                 row.target is OneShotValueTarget ||
                 row.target is RecordLengthValueTarget ||
                 row.target is RecordTimingValueTarget ||
-                row.target is ClickModeValueTarget)
+                row.target is ClickModeValueTarget ||
+                row.target is CountInValueTarget)
               if (row.condition == ExternalValueCondition.heldReleased)
                 row.target: row.inactive,
       },
@@ -765,7 +783,8 @@ class ControlCubit extends Cubit<ControlState> {
                       target is OneShotValueTarget ||
                       target is RecordLengthValueTarget ||
                       target is RecordTimingValueTarget ||
-                      target is ClickModeValueTarget) &&
+                      target is ClickModeValueTarget ||
+                      target is CountInValueTarget) &&
                   (_externalInvalidatedMix[input]?.contains(target) ?? false),
             );
             (_externalNumericReleases[input] ??= {}).addAll(parameters);
@@ -812,6 +831,11 @@ class ControlCubit extends Cubit<ControlState> {
                     !_clickModeOriginCurrent(
                       target,
                       origins.clickMode[target],
+                    )) ||
+                (target is CountInValueTarget &&
+                    !_recordStartOriginCurrent(
+                      target,
+                      origins.recordStart[target],
                     )),
           );
           activations.removeWhere(
@@ -860,6 +884,13 @@ class ControlCubit extends Cubit<ControlState> {
                 )) {
               return;
             }
+            if (target is CountInValueTarget &&
+                !_recordStartOriginCurrent(
+                  target,
+                  origins.recordStart[target],
+                )) {
+              return;
+            }
             if (held == false) {
               _externalMixReleased[input]?.remove(target);
               _parameterHolders[target]?.remove(trigger);
@@ -872,7 +903,8 @@ class ControlCubit extends Cubit<ControlState> {
                   target is OneShotValueTarget ||
                   target is RecordLengthValueTarget ||
                   target is RecordTimingValueTarget ||
-                  target is ClickModeValueTarget) {
+                  target is ClickModeValueTarget ||
+                  target is CountInValueTarget) {
                 _retireMixBaseline(target);
                 _externalMixReleased[input]?.remove(target);
                 if (requestedReleased[target] case final low?) {
@@ -1170,6 +1202,32 @@ class ControlCubit extends Cubit<ControlState> {
                 recordParameter(target);
               }
             }
+            if (entry.key case final CountInValueTarget target) {
+              final origin = origins.recordStart[target];
+              if (origin == null ||
+                  !entry.value.isFinite ||
+                  !_recordStartOriginCurrent(target, origin)) {
+                continue;
+              }
+              final released = held == true
+                  ? requestedReleased[target]
+                  : held == false
+                  ? _survivingMidiReleased(target, excluding: trigger)
+                  : null;
+              final outcome = await _recordStart.setControllerCountIn(
+                target.toDomain(entry.value),
+                lifetime: origin.lifetime,
+                revision: origin.revision,
+                releasedBars: released == null
+                    ? null
+                    : target.toDomain(released),
+              );
+              if (cancelled()) return;
+              if (outcome.isOk && _recordStartOriginCurrent(target, origin)) {
+                applied = true;
+                recordParameter(target);
+              }
+            }
             switch (entry.key) {
               case FxParamTarget() ||
                   MixValueTarget() ||
@@ -1178,7 +1236,8 @@ class ControlCubit extends Cubit<ControlState> {
                   OneShotValueTarget() ||
                   RecordLengthValueTarget() ||
                   RecordTimingValueTarget() ||
-                  ClickModeValueTarget():
+                  ClickModeValueTarget() ||
+                  CountInValueTarget():
                 break;
               case MasterGainTarget():
                 if (_looper.setMasterGain(entry.value).isOk) {
@@ -1237,6 +1296,9 @@ class ControlCubit extends Cubit<ControlState> {
     _looper.clickModeCaptureLocked,
     _looper.clickModeSettled,
     _clickMode.clickModeSnapshot != null,
+    _looper.recordStartCaptureLocked,
+    _looper.recordStartSettingsSettled,
+    _recordStart.recordStartSnapshot != null,
     _looper.mixSettingsSnapshot,
   );
 
@@ -3147,7 +3209,7 @@ class ControlCubit extends Cubit<ControlState> {
       <DecayValueTarget>[
         const DefaultDecayTarget(),
         for (var channel = 0; channel < 8; channel++) TrackDecayTarget(channel),
-      ].forEach(_supersedeDecayClaims);
+      ].forEach(_supersedeParameterClaims);
     }
     final oneShotLifetime = _oneShot.oneShotLifetime;
     if (_oneShotLifetime != oneShotLifetime) {
@@ -3156,7 +3218,7 @@ class ControlCubit extends Cubit<ControlState> {
         const DefaultOneShotTarget(),
         for (var channel = 0; channel < 8; channel++)
           TrackOneShotTarget(channel),
-      ].forEach(_supersedeOneShotClaims);
+      ].forEach(_supersedeParameterClaims);
     }
     final recordLengthLifetime = _recordLength.recordLengthLifetime;
     if (_recordLengthLifetime != recordLengthLifetime) {
@@ -3165,7 +3227,7 @@ class ControlCubit extends Cubit<ControlState> {
         const DefaultRecordLengthTarget(),
         for (var channel = 0; channel < 8; channel++)
           TrackRecordLengthTarget(channel),
-      ].forEach(_supersedeRecordLengthClaims);
+      ].forEach(_supersedeParameterClaims);
     }
     final recordTimingLifetime = _recordTiming.recordTimingLifetime;
     if (_recordTimingLifetime != recordTimingLifetime) {
@@ -3174,12 +3236,17 @@ class ControlCubit extends Cubit<ControlState> {
         const DefaultRecordTimingTarget(),
         for (var channel = 0; channel < 8; channel++)
           TrackRecordTimingTarget(channel),
-      ].forEach(_supersedeRecordTimingClaims);
+      ].forEach(_supersedeParameterClaims);
     }
     final modeLifetime = _clickMode.clickModeLifetime;
     if (_clickModeLifetime != modeLifetime) {
       _clickModeLifetime = modeLifetime;
-      _supersedeClickModeClaims(const ClickModeValueTarget());
+      _supersedeParameterClaims(const ClickModeValueTarget());
+    }
+    final startLifetime = _recordStart.recordStartLifetime;
+    if (_recordStartLifetime != startLifetime) {
+      _recordStartLifetime = startLifetime;
+      _supersedeParameterClaims(const CountInValueTarget());
     }
     final clickLifetime = _clickVolume.clickVolumeLifetime;
     if (_clickLifetime != clickLifetime) {
@@ -3438,6 +3505,7 @@ class ControlCubit extends Cubit<ControlState> {
     await _recordLengthOrdinarySub.cancel();
     await _recordTimingOrdinarySub.cancel();
     await _clickModeOrdinarySub.cancel();
+    await _recordStartOrdinarySub.cancel();
     await Future.wait(_bindingDecisions.values.toList());
     await _restoreWait;
     _heldRestore.clear();
