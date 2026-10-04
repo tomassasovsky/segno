@@ -57,6 +57,7 @@ void main() {
   setUp(() {
     looper = _Looper();
     when(() => looper.sessionRevision).thenReturn(1);
+    when(() => looper.laneMuted(any(), any())).thenReturn(false);
     when(() => looper.mixGeneration).thenReturn(1);
     when(() => looper.fxRecipesSettled).thenReturn(true);
     when(
@@ -238,7 +239,6 @@ void main() {
       final ticket = projection.beginPending();
       final saving = saveTrackFxChain(
         settings: settings,
-        looper: looper,
         projection: projection,
         channel: 0,
       );
@@ -265,7 +265,6 @@ void main() {
     final ticket = projection.beginPending();
     final saving = saveTrackFxChain(
       settings: settings,
-      looper: looper,
       projection: projection,
       channel: 0,
     );
@@ -299,7 +298,6 @@ void main() {
     final ticket = projection.beginPending();
     final saving = saveTrackFxChain(
       settings: settings,
-      looper: looper,
       projection: projection,
       channel: 0,
     );
@@ -327,7 +325,6 @@ void main() {
       }
       final saving = saveTrackFxChain(
         settings: settings,
-        looper: looper,
         projection: projection,
         channel: 0,
       );
@@ -361,7 +358,6 @@ void main() {
     final store = _ControlledStore()..blocked = Completer<void>();
     final saving = saveTrackFxChain(
       settings: SettingsRepository(store: store),
-      looper: looper,
       projection: owner,
       channel: 0,
     );
@@ -387,7 +383,6 @@ void main() {
     await projection.close();
     await saveTrackFxChain(
       settings: SettingsRepository(store: store),
-      looper: looper,
       projection: projection,
       channel: 0,
     );
