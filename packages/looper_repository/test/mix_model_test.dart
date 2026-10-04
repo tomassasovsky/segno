@@ -597,6 +597,58 @@ void main() {
     });
   });
 
+  test(
+    'monitor gain refuses invalid intent without changing native or mix',
+    () {
+      final repo = start();
+      final before = repo.mixSettingsSnapshot;
+      engine.calls.clear();
+      for (final value in [-0.1, 1.01, double.nan, double.infinity]) {
+        expect(
+          repo.setMonitorVolume(input: 0, volume: value),
+          EngineResult.invalid,
+        );
+        expect(
+          repo.applyMixSettings(before.copyWith(monitorLevels: {0: value})),
+          EngineResult.invalid,
+        );
+      }
+      expect(engine.calls, isEmpty);
+      expect(repo.mixSettingsSnapshot, before);
+    },
+  );
+
+  test('invalid session monitor gain cannot mutate the current rig', () async {
+    final repo = start();
+    final before = repo.mixSettingsSnapshot;
+    final generation = repo.mixGeneration;
+    final revision = repo.sessionRevision;
+    engine.calls.clear();
+    for (final value in [-0.1, 1.01, double.nan, double.infinity]) {
+      await expectLater(
+        repo.applySession(
+          SessionRig(
+            monitors: [
+              SessionRigMonitor(
+                input: 0,
+                mode: MonitorMode.on,
+                outputMask: 3,
+                volume: value,
+                muted: false,
+                effects: const [],
+              ),
+            ],
+          ),
+        ),
+        throwsStateError,
+      );
+    }
+    expect(engine.calls, isEmpty);
+    expect(repo.mixSettingsSnapshot, before);
+    expect(repo.mixGeneration, generation);
+    expect(repo.sessionRevision, revision);
+  });
+
   group('applySession', () {
     test(
       'contradictory saved count refuses before replacing live audio',

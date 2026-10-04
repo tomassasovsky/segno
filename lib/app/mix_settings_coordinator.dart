@@ -836,11 +836,13 @@ class MixSettingsCoordinator {
     required int input,
     required double volume,
   }) {
-    if (!_input(input) || !volume.isFinite) return _reject();
+    if (!_input(input) || !volume.isFinite || volume < 0 || volume > 1) {
+      return _reject();
+    }
     return _submit(
       (_Control.monitor, input, 0),
       (value) => value.copyWith(
-        monitorLevels: {...value.monitorLevels, input: volume.clamp(0.0, 2.0)},
+        monitorLevels: {...value.monitorLevels, input: volume},
       ),
     );
   }

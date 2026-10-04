@@ -211,6 +211,35 @@ void main() {
       );
     }
 
+    for (final configured in [false, true]) {
+      test(
+        'invalid saved monitor gain keeps audio stopped; config=$configured',
+        () async {
+          if (configured) {
+            await settings.saveAudioConfig(
+              const StoredAudioConfig(
+                sampleRate: 48000,
+                bufferFrames: 256,
+              ),
+            );
+          }
+          const badMix = '{"monitorLevels":{"0":0.5,"1":1.5}}';
+          store.values['mix_settings'] = badMix;
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            mixSettings: testMixSettings(repository, settings: settings),
+          );
+          expect(result.started, isFalse);
+          expect(repository.state.status.isConnected, isFalse);
+          expect(engine.startCalls, 0);
+          expect(engine.lastConfig, isNull);
+          expect(store.values['mix_settings'], badMix);
+          expect(repository.mixSettingsSnapshot.monitorLevels, isEmpty);
+        },
+      );
+    }
+
     group('confirmed recording-start startup', () {
       for (final hasAudioConfig in [false, true]) {
         for (final (savedCount, savedSound, bars, sound)

@@ -225,6 +225,9 @@ Future<AutoStartResult> _tryAutoStartEngine({
 }) async {
   const asioDrivers = <AudioDevice>[];
 
+  // Global monitor gain must be valid before either first-run or saved-device
+  // startup opens audio. The selected device's full mix is read after opening.
+  await settings.loadMixSettings('');
   final saved = await settings.loadAudioConfig();
   if (saved == null) {
     AppLog.info('audio auto-start: first run (no saved config)');

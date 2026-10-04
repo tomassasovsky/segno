@@ -5,7 +5,7 @@ import 'dart:math' as math;
 /// scale as the track strip. Mix settings themselves store linear gain.
 const double mixFaderFloorDb = -60;
 
-/// Maximum linear gain accepted by track, lane, and live-monitor controls.
+/// Maximum linear gain accepted by recorded-track and lane controls.
 const double mixFaderMaxGain = 2;
 
 final double _mixFaderCeilingDb = 20 * math.log(mixFaderMaxGain) / math.ln10;

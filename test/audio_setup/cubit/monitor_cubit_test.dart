@@ -316,6 +316,51 @@ void main() {
     fxPersistDebounce: Duration.zero,
   );
 
+  blocTest<MonitorCubit, MonitorState>(
+    'invalid saved gain reports load error before any monitor mutation',
+    setUp: () {
+      final store = FakeKeyValueStore();
+      store.values.addAll({
+        'mix_settings': '{"monitorLevels":{"0":0.5,"1":1.5}}',
+        'monitor_input_mode.0': 'on',
+        'monitor_output.0': 3,
+      });
+      settings = SettingsRepository(store: store);
+    },
+    build: build,
+    act: (cubit) => cubit.load(),
+    expect: () => <MonitorState>[],
+    errors: () => [isA<FormatException>()],
+    verify: (_) {
+      verifyNever(
+        () => repository.setMonitorInputMode(
+          input: any(named: 'input'),
+          mode: any(named: 'mode'),
+        ),
+      );
+      verifyNever(
+        () => repository.setMonitorOutput(
+          input: any(named: 'input'),
+          mask: any(named: 'mask'),
+        ),
+      );
+      verifyNever(
+        () => repository.setMonitorMute(
+          input: any(named: 'input'),
+          muted: any(named: 'muted'),
+        ),
+      );
+      verifyNever(
+        () => repository.setMonitorEffects(
+          input: any(named: 'input'),
+          effects: any(named: 'effects'),
+          chainEnabled: any(named: 'chainEnabled'),
+          allowUnavailable: any(named: 'allowUnavailable'),
+        ),
+      );
+    },
+  );
+
   test('an input route edit outlives an earlier blocked FX save', () async {
     final store = _BlockedMonitorModeStore();
     settings = SettingsRepository(store: store);
