@@ -3,16 +3,19 @@ import 'package:flutter/services.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/looper/view/tempo_labels.dart';
 import 'package:segno/theme/theme.dart';
 
-/// A mapping endpoint's named Hear click value, separate from its trigger.
+/// A mapping endpoint's named Hear click or Count-in value.
 ///
 /// The stored endpoint is left untouched until a choice is made. Escape then
 /// restores its exact opening value, including an older noncanonical value.
-class ClickModeEndpointChoice extends StatefulWidget {
+class NamedValueEndpointChoice extends StatefulWidget {
   /// Creates a compact four-choice endpoint.
-  const ClickModeEndpointChoice({
+  const NamedValueEndpointChoice({
+    required this.target,
     required this.value,
     required this.width,
     required this.enabled,
@@ -21,6 +24,9 @@ class ClickModeEndpointChoice extends StatefulWidget {
     this.caption,
     super.key,
   });
+
+  /// The one named four-choice target this endpoint edits.
+  final ControlValueTarget target;
 
   /// The normalized draft endpoint.
   final double value;
@@ -41,11 +47,11 @@ class ClickModeEndpointChoice extends StatefulWidget {
   final String? caption;
 
   @override
-  State<ClickModeEndpointChoice> createState() =>
-      _ClickModeEndpointChoiceState();
+  State<NamedValueEndpointChoice> createState() =>
+      _NamedValueEndpointChoiceState();
 }
 
-class _ClickModeEndpointChoiceState extends State<ClickModeEndpointChoice> {
+class _NamedValueEndpointChoiceState extends State<NamedValueEndpointChoice> {
   final _focusNode = FocusNode();
   double? _opening;
 
@@ -55,24 +61,41 @@ class _ClickModeEndpointChoiceState extends State<ClickModeEndpointChoice> {
     super.dispose();
   }
 
-  void _choose(ClickMode mode) {
+  void _choose(double normalized) {
     if (!widget.enabled) return;
     _opening ??= widget.value;
     _focusNode.requestFocus();
-    widget.onChanged(const ClickModeValueTarget().fromDomain(mode));
+    widget.onChanged(normalized);
   }
 
   @override
   Widget build(BuildContext context) {
-    const target = ClickModeValueTarget();
     final l10n = context.l10n;
-    final selected = target.toDomain(widget.value);
-    final choices = <(ClickMode, String)>[
-      (ClickMode.off, l10n.loopClickOff),
-      (ClickMode.recFirst, l10n.loopClickFirst),
-      (ClickMode.rec, l10n.loopClickRecording),
-      (ClickMode.playRec, l10n.loopClickAlways),
-    ];
+    final choices = switch (widget.target) {
+      ClickModeValueTarget() => <(String, String, double)>[
+        for (final mode in ClickModeValueTarget.choices)
+          (
+            mode.name,
+            switch (mode) {
+              ClickMode.off => l10n.loopClickOff,
+              ClickMode.recFirst => l10n.loopClickFirst,
+              ClickMode.rec => l10n.loopClickRecording,
+              ClickMode.playRec => l10n.loopClickAlways,
+            },
+            const ClickModeValueTarget().fromDomain(mode),
+          ),
+      ],
+      CountInValueTarget() => <(String, String, double)>[
+        for (final bars in kCountInBarOptions)
+          (
+            '$bars',
+            countInLabels(l10n)[bars]!,
+            const CountInValueTarget().fromDomain(bars),
+          ),
+      ],
+      _ => throw ArgumentError.value(widget.target, 'target'),
+    };
+    final selected = (widget.value.clamp(0.0, 1.0) * 3).round();
     return Focus(
       focusNode: _focusNode,
       skipTraversal: true,
@@ -118,15 +141,15 @@ class _ClickModeEndpointChoiceState extends State<ClickModeEndpointChoice> {
                     LoopChoiceButton(
                       key: Key(
                         '${widget.keyPrefix}_'
-                        '${choices[row * 2 + column].$1.name}',
+                        '${choices[row * 2 + column].$1}',
                       ),
                       width: (widget.width - 8) / 2,
                       height: 46,
                       fontSize: 21,
                       label: choices[row * 2 + column].$2,
-                      selected: selected == choices[row * 2 + column].$1,
+                      selected: selected == row * 2 + column,
                       enabled: widget.enabled,
-                      onTap: () => _choose(choices[row * 2 + column].$1),
+                      onTap: () => _choose(choices[row * 2 + column].$3),
                     ),
                   ],
                 ],

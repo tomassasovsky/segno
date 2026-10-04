@@ -7,6 +7,7 @@ import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 
 /// A present target can be temporarily locked without losing its identity.
@@ -15,6 +16,7 @@ enum ControlEditBlock {
   lengthCapture,
   sharedLength,
   timingCapture,
+  recordStartCapture,
 }
 
 /// Ephemeral read projection shared by MIDI, external controls and catalogues.
@@ -27,6 +29,7 @@ class ControlAvailability {
     this.decaySnapshot,
     this.oneShotSnapshot,
     this.recordLengthSnapshot,
+    this.recordStartSnapshot,
     this.recordTimingSnapshot,
   });
 
@@ -36,6 +39,7 @@ class ControlAvailability {
   final DecaySnapshot? decaySnapshot;
   final OneShotSnapshot? oneShotSnapshot;
   final RecordLengthSnapshot? recordLengthSnapshot;
+  final RecordStartSnapshot? recordStartSnapshot;
   final RecordTimingSnapshot? recordTimingSnapshot;
 
   List<ControlValueTarget> get targets => looper.availableValueTargets(
@@ -44,6 +48,7 @@ class ControlAvailability {
     decaySnapshot: decaySnapshot,
     oneShotSnapshot: oneShotSnapshot,
     recordLengthSnapshot: recordLengthSnapshot,
+    recordStartSnapshot: recordStartSnapshot,
     recordTimingSnapshot: recordTimingSnapshot,
   );
 
@@ -55,6 +60,7 @@ class ControlAvailability {
       decaySnapshot: decaySnapshot,
       oneShotSnapshot: oneShotSnapshot,
       recordLengthSnapshot: recordLengthSnapshot,
+      recordStartSnapshot: recordStartSnapshot,
       recordTimingSnapshot: recordTimingSnapshot,
     ),
     FxBindingTarget() => looper.bindingResolves(target),
@@ -68,6 +74,8 @@ class ControlAvailability {
   ControlEditBlock? blockedBy(Object? target) => switch (target) {
     ClickModeValueTarget() when clickModeSnapshot?.canEdit == false =>
       ControlEditBlock.clickCapture,
+    CountInValueTarget() when recordStartSnapshot?.canEdit == false =>
+      ControlEditBlock.recordStartCapture,
     RecordLengthValueTarget(:final address)
         when recordLengthSnapshot?.canEdit(address) == false =>
       recordLengthSnapshot!.captureLocked
@@ -89,6 +97,7 @@ class ControlAvailability {
     decaySnapshot: decaySnapshot,
     oneShotSnapshot: oneShotSnapshot,
     recordLengthSnapshot: recordLengthSnapshot,
+    recordStartSnapshot: recordStartSnapshot,
     recordTimingSnapshot: recordTimingSnapshot,
   );
 }

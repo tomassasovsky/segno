@@ -153,6 +153,7 @@ void main() {
                   recordTimingControl: timing,
                   clickVolumeControl: tempo,
                   clickModeControl: tempo,
+                  recordStartControl: tempo,
                   fxPersistence: fxPersistence,
                   looper: repository,
                   mixSettings: mixSettings,

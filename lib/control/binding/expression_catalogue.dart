@@ -11,6 +11,7 @@ import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 
 /// Picker categories; Loop controls are separate from FX stage categories.
@@ -211,6 +212,11 @@ class ExpressionDestination extends Equatable {
     group: l10n.loopTempoHearClick,
     control: l10n.loopTempoHearClick,
   ),
+  CountInValueTarget() => (
+    destination: l10n.expressionDestinationLoopDefaults,
+    group: l10n.loopTempoCountIn,
+    control: l10n.loopTempoCountIn,
+  ),
   DefaultDecayTarget() => (
     destination: l10n.expressionDestinationLoopDefaults,
     group: l10n.loopPlaybackLabel,
@@ -277,7 +283,8 @@ String expressionRowName(
   final name = expressionTargetName(l10n, trackNames, looper, target);
   return name.group == name.destination ||
           ((target is RecordTimingValueTarget ||
-                  target is ClickModeValueTarget) &&
+                  target is ClickModeValueTarget ||
+                  target is CountInValueTarget) &&
               name.group == name.control)
       ? name.control
       : '${name.group} · ${name.control}';
@@ -304,6 +311,7 @@ List<ExpressionDestination> expressionDestinations(
   DecaySnapshot? decaySnapshot,
   OneShotSnapshot? oneShotSnapshot,
   RecordLengthSnapshot? recordLengthSnapshot,
+  RecordStartSnapshot? recordStartSnapshot,
   RecordTimingSnapshot? recordTimingSnapshot,
 }) {
   final drafts = <String, _Draft>{};
@@ -327,6 +335,7 @@ List<ExpressionDestination> expressionDestinations(
     decaySnapshot: decaySnapshot,
     oneShotSnapshot: oneShotSnapshot,
     recordLengthSnapshot: recordLengthSnapshot,
+    recordStartSnapshot: recordStartSnapshot,
     recordTimingSnapshot: recordTimingSnapshot,
   );
   for (final target in availability.targets) {
@@ -468,6 +477,11 @@ String _addressLabel(
     order: _clickOrder,
   ),
   ClickModeValueTarget() => (
+    id: 'loop:defaults',
+    kind: ExpressionDestinationKind.loopControls,
+    order: _loopControlsOrder,
+  ),
+  CountInValueTarget() => (
     id: 'loop:defaults',
     kind: ExpressionDestinationKind.loopControls,
     order: _loopControlsOrder,

@@ -95,6 +95,21 @@ void main() {
     }
   });
 
+  test('Count-in endpoints name Off, 1, 2 and 4 bars', () async {
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    for (final (position, label) in <(double, String)>[
+      (0, 'Off'),
+      (1 / 3, '1 bar'),
+      (2 / 3, '2 bars'),
+      (1, '4 bars'),
+    ]) {
+      expect(
+        controlValueReadout(l10n, const CountInValueTarget(), position),
+        label,
+      );
+    }
+  });
+
   testWidgets('expression endpoint shows Mixer gain in dB', (tester) async {
     const target = TrackVolumeTarget(0);
     final semantics = tester.ensureSemantics();

@@ -7,6 +7,7 @@ import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 
 /// What a continuous binding sweeps: an FX parameter, Mixer control, or
@@ -49,6 +50,7 @@ sealed class ControlValueTarget extends Equatable {
     OutputBalanceTarget(:final bus) => bus >= 0,
     MasterGainTarget() => true,
     ClickModeValueTarget() => true,
+    CountInValueTarget() => true,
     ClickVolumeTarget() => true,
     DefaultDecayTarget() => true,
     TrackDecayTarget(:final channel) => channel >= 0 && channel < 8,
@@ -84,6 +86,9 @@ sealed class ControlValueTarget extends Equatable {
       }
       if (ctl == 'clickMode') {
         return raw.length == 1 ? const ClickModeValueTarget() : null;
+      }
+      if (ctl == 'countIn') {
+        return raw.length == 1 ? const CountInValueTarget() : null;
       }
       if (ctl == 'overdubDecay') {
         return raw.length == 1 ? const DefaultDecayTarget() : null;
@@ -413,6 +418,36 @@ final class ClickModeValueTarget extends ControlValueTarget {
 
   @override
   List<Object?> get props => ['clickMode'];
+}
+
+/// The four Count-in choices, stored as normalized option positions.
+final class CountInValueTarget extends ControlValueTarget {
+  /// Creates the global Count-in target.
+  const CountInValueTarget();
+
+  /// The nearest supported choice, never a rounded number of bars.
+  int toDomain(double normalized) {
+    if (!normalized.isFinite) {
+      throw ArgumentError.value(normalized, 'normalized');
+    }
+    return kCountInBarOptions[(normalized.clamp(0.0, 1.0) * 3).round()];
+  }
+
+  /// The position of an accepted choice.
+  double fromDomain(int bars) {
+    final index = kCountInBarOptions.indexOf(bars);
+    if (index < 0) throw ArgumentError.value(bars, 'bars');
+    return index / 3;
+  }
+
+  /// One relative detent moves one named choice.
+  double get relativeStep => 1 / 3;
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'countIn'});
+
+  @override
+  List<Object?> get props => ['countIn'];
 }
 
 /// A decay endpoint uses percent as its native domain and 0..1 in mappings.

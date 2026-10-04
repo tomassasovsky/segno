@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_expression.dart';
-import 'package:segno/control/view/click_mode_endpoint_choice.dart';
 import 'package:segno/control/view/control_value_readout.dart';
+import 'package:segno/control/view/named_value_endpoint_choice.dart';
 import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/control/view/playback_endpoint_choice.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -214,7 +214,9 @@ class ExpressionControlsPanel extends StatelessWidget {
   Widget _range(BuildContext context, ExpressionRow row) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final compactChoices = row.mapping.target is ClickModeValueTarget;
+    final compactChoices =
+        row.mapping.target is ClickModeValueTarget ||
+        row.mapping.target is CountInValueTarget;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -311,11 +313,17 @@ class ExpressionControlsPanel extends StatelessWidget {
             ),
           ),
           SizedBox(
-            height: row.mapping.target is ClickModeValueTarget ? 9 : 14,
+            height:
+                row.mapping.target is ClickModeValueTarget ||
+                    row.mapping.target is CountInValueTarget
+                ? 9
+                : 14,
           ),
-          if (row.mapping.target is ClickModeValueTarget)
-            ClickModeEndpointChoice(
+          if (row.mapping.target is ClickModeValueTarget ||
+              row.mapping.target is CountInValueTarget)
+            NamedValueEndpointChoice(
               key: Key('expression_endpoint_${endpointId}_$targetKey'),
+              target: row.mapping.target,
               value: value,
               width: 625,
               enabled: row.available && row.disabledReason == null,

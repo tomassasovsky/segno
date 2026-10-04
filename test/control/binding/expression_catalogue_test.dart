@@ -11,6 +11,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -305,6 +306,47 @@ void main() {
       expect(
         lockedLoop.controls.single.disabledReason,
         l10n.clickModeCaptureLocked,
+      );
+    });
+
+    test('Count-in is one Loop control with a capture lock', () {
+      final off = RecordStartSnapshot(
+        settings: RecordStartSettings(countInBars: 0, soundStart: true),
+        captureLocked: false,
+      );
+      final locked = RecordStartSnapshot(
+        settings: RecordStartSettings(countInBars: 2, soundStart: false),
+        captureLocked: true,
+      );
+      expect(
+        expressionDestinations(l10n, names, looper)
+            .expand((place) => place.controls)
+            .where((control) => control.target is CountInValueTarget),
+        isEmpty,
+      );
+      final ready = expressionDestinations(
+        l10n,
+        names,
+        looper,
+        recordStartSnapshot: off,
+      ).singleWhere((place) => place.id == 'loop:defaults');
+      expect(ready.kind, ExpressionDestinationKind.loopControls);
+      expect(ready.controls.single.target, const CountInValueTarget());
+      expect(ready.controls.single.disabledReason, isNull);
+      expect(
+        expressionRowName(l10n, names, looper, const CountInValueTarget()),
+        l10n.loopTempoCountIn,
+      );
+      final lockedRow = expressionDestinations(
+        l10n,
+        names,
+        looper,
+        recordStartSnapshot: locked,
+      ).singleWhere((place) => place.id == 'loop:defaults');
+      expect(lockedRow.controls.single.target, const CountInValueTarget());
+      expect(
+        lockedRow.controls.single.disabledReason,
+        l10n.recordStartCaptureLocked,
       );
     });
 

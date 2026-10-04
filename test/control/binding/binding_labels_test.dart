@@ -142,6 +142,11 @@ void main() {
         '${l10n.loopTempoHearClick}',
       );
       expect(
+        valueTargetLabel(l10n, names, looper, const CountInValueTarget()),
+        '${l10n.expressionDestinationLoopDefaults} · '
+        '${l10n.loopTempoCountIn}',
+      );
+      expect(
         valueTargetLabel(l10n, names, looper, const DefaultOneShotTarget()),
         '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopPlaybackLabel}',
       );

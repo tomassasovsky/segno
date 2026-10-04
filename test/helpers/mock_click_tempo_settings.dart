@@ -8,6 +8,15 @@ import 'package:segno/looper/model/tempo_state.dart';
 /// A coherent accepted owner used by controller and presentation fixtures.
 class MockClickTempoSettings extends Mock implements TempoSettings {
   MockClickTempoSettings({double? clickVolume = 1}) {
+    when(() => recordStartSnapshot).thenReturn(null);
+    when(() => confirmedRecordStart).thenReturn(null);
+    when(
+      () => recordStartLifetime,
+    ).thenReturn((sessionRevision: 0, mixGeneration: 0));
+    when(() => recordStartRevision).thenReturn(0);
+    when(
+      () => ordinaryRecordStartChanges,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => clickModeSnapshot).thenReturn(null);
     when(() => durableClickMode).thenReturn(ClickMode.off);
     when(

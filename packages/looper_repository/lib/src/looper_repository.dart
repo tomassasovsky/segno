@@ -80,13 +80,17 @@ class _TimingIntent {
 class _PendingRecordStart {
   _PendingRecordStart({
     required this.settings,
+    required this.restart,
     required this.recovery,
+    required this.recoveryRestart,
     required this.prior,
     required this.expectedRevision,
     required this.startup,
   });
   final ({int countInBars, bool soundStart}) settings;
+  final ({int countInBars, bool soundStart}) restart;
   final ({int countInBars, bool soundStart}) recovery;
+  final ({int countInBars, bool soundStart}) recoveryRestart;
   final ({int countInBars, bool soundStart}) prior;
   final int expectedRevision;
   final bool startup;
@@ -389,8 +393,16 @@ class LooperRepository {
     countInBars: 0,
     soundStart: false,
   );
+  ({int countInBars, bool soundStart}) _recordStartRestart = (
+    countInBars: 0,
+    soundStart: false,
+  );
   _PendingRecordStart? _pendingRecordStart;
-  ({int countInBars, bool soundStart})? _recordStartRecovery;
+  ({
+    ({int countInBars, bool soundStart}) settings,
+    ({int countInBars, bool soundStart}) restart,
+  })?
+  _recordStartRecovery;
   EngineResult _lastRecordStartResult = EngineResult.ok;
   final _recordStartFailures = StreamController<EngineResult>.broadcast();
   final _recordingInputRequired = StreamController<int>.broadcast();
@@ -2549,7 +2561,7 @@ class LooperRepository {
         ..setSyncTempo(on: _syncTempo)
         ..setClickOutput(_clickMask);
       final startResult = _requestRecordStart(
-        _recordStart,
+        _recordStartRestart,
         RecordStartEditKind.restore,
         startup: true,
       );
@@ -7227,12 +7239,12 @@ class LooperRepository {
     return EngineResult.ok;
   }
 
-  /// Last accepted pair, used unchanged for session capture and restart.
+  /// Last accepted live pair, including temporary controller intent.
   ({int countInBars, bool soundStart}) get recordStartSettings => _recordStart;
 
-  /// Durable pair for device restart. No mapped temporary ownership in A.
+  /// Accepted Released pair for session capture and device restart.
   ({int countInBars, bool soundStart}) get recordStartRestartIntent =>
-      _recordStart;
+      _recordStartRestart;
 
   /// Whether a pair command is awaiting its callback receipt.
   bool get recordStartSettingsSettled => _pendingRecordStart == null;
@@ -7270,27 +7282,39 @@ class LooperRepository {
     required int countInBars,
     required bool soundStart,
     required RecordStartEditKind editKind,
+    ({int countInBars, bool soundStart})? releasedSettings,
   }) {
     if (!const [0, 1, 2, 4].contains(countInBars) ||
-        countInBars > 0 && soundStart) {
+        countInBars > 0 && soundStart ||
+        releasedSettings != null &&
+            (!const [0, 1, 2, 4].contains(releasedSettings.countInBars) ||
+                releasedSettings.countInBars > 0 &&
+                    releasedSettings.soundStart)) {
       return EngineResult.invalid;
     }
-    return _requestRecordStart((
-      countInBars: countInBars,
-      soundStart: soundStart,
-    ), editKind);
+    return _requestRecordStart(
+      (
+        countInBars: countInBars,
+        soundStart: soundStart,
+      ),
+      editKind,
+      releasedSettings: releasedSettings,
+    );
   }
 
   EngineResult _requestRecordStart(
     ({int countInBars, bool soundStart}) settings,
     RecordStartEditKind editKind, {
     bool startup = false,
+    ({int countInBars, bool soundStart})? releasedSettings,
   }) {
     if (_pendingRecordStart != null || recordStartRecoveryRequired) {
       return EngineResult.notReady;
     }
+    final restart = releasedSettings ?? settings;
     if (!_intendRunning) {
       _recordStart = settings;
+      _recordStartRestart = restart;
       _lastRecordStartResult = EngineResult.ok;
       _reproject();
       return EngineResult.ok;
@@ -7305,7 +7329,9 @@ class LooperRepository {
     if (!result.isOk) return result;
     final pending = _PendingRecordStart(
       settings: settings,
-      recovery: startup ? settings : _recordStart,
+      restart: restart,
+      recovery: startup ? restart : _recordStart,
+      recoveryRestart: startup ? restart : _recordStartRestart,
       prior: (countInBars: prior.countInBars, soundStart: prior.autoRecord),
       expectedRevision: (prior.recordStartRevision + 1) & 0xffffffff,
       startup: startup,
@@ -7337,6 +7363,7 @@ class LooperRepository {
       _pendingRecordStart = null;
 
       _recordStart = pending.settings;
+      _recordStartRestart = pending.restart;
       _lastRecordStartResult = EngineResult.ok;
       pending.observation.complete(EngineResult.ok);
     } else if (!result.isOk && actual == pending.prior && !pending.startup) {
@@ -7355,7 +7382,10 @@ class LooperRepository {
     if (!identical(_pendingRecordStart, pending)) return;
     _pendingRecordStart = null;
 
-    _recordStartRecovery = pending.recovery;
+    _recordStartRecovery = (
+      settings: pending.recovery,
+      restart: pending.recoveryRestart,
+    );
     _lastRecordStartResult = result;
     pending.observation.complete(result);
     if (!recordStartCaptureLocked) stopEngine();
@@ -7381,7 +7411,8 @@ class LooperRepository {
     if (recovery == null) return EngineResult.ok;
     if (recordStartCaptureLocked) return EngineResult.notReady;
     if (_intendRunning) stopEngine();
-    _recordStart = recovery;
+    _recordStart = recovery.settings;
+    _recordStartRestart = recovery.restart;
     _recordStartRecovery = null;
     _lastRecordStartResult = EngineResult.ok;
     _reproject();

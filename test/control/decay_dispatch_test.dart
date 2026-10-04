@@ -27,6 +27,7 @@ import '../helpers/fake_click_mode_control.dart';
 import '../helpers/fake_click_volume_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/fake_record_length_control.dart';
+import '../helpers/fake_record_start_control.dart';
 import '../helpers/fake_record_timing_control.dart';
 
 const _decay = TrackDecayTarget(0);
@@ -129,6 +130,7 @@ class _Rig {
       fxPersistence: FxChainPersistence(looper: looper),
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
+      recordStartControl: FakeRecordStartControl(),
       decayControl: owner,
       oneShotControl: owner,
       recordLengthControl: FakeRecordLengthControl(),

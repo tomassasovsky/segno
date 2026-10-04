@@ -71,6 +71,7 @@ class AppRuntime {
       recordTimingControl: timing,
       clickVolumeControl: tempo,
       clickModeControl: tempo,
+      recordStartControl: tempo,
       pedal: pedal,
       performance: performance,
       controller: controllers,

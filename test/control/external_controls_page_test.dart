@@ -29,6 +29,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -168,6 +169,7 @@ void main() {
     registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(GridDivision.off);
     registerFallbackValue(ClickMode.off);
+    registerFallbackValue(RecordStartEditKind.countIn);
     registerFallbackValue(<int, RecordTiming>{});
   });
 
@@ -180,6 +182,7 @@ void main() {
     ExternalJackSetup? jack,
     double? clickVolume = 1,
     ClickModeSnapshot? clickModeSnapshot,
+    RecordStartSnapshot? recordStartSnapshot,
     DecaySnapshot? decaySnapshot,
     OneShotSnapshot? oneShotSnapshot,
   }) async {
@@ -210,6 +213,18 @@ void main() {
     final closeTempo = tempo.close;
     addTearDown(() => unawaited(closeTempo()));
     when(() => tempo.clickModeSnapshot).thenReturn(clickModeSnapshot);
+    when(() => tempo.recordStartSnapshot).thenReturn(recordStartSnapshot);
+    if (recordStartSnapshot != null) {
+      when(() => tempo.state).thenReturn(
+        tempo.state.copyWith(
+          countInBars: recordStartSnapshot.settings.countInBars,
+          soundStart: recordStartSnapshot.settings.soundStart,
+          recordStartReady: true,
+          recordStartInitialized: true,
+          recordStartCaptureLocked: recordStartSnapshot.captureLocked,
+        ),
+      );
+    }
     final playback = MockDecayPlaybackSettings(
       snapshot: decaySnapshot,
       oneShot: oneShotSnapshot,
@@ -231,6 +246,7 @@ void main() {
       looper: looper,
       clickVolumeControl: tempo,
       clickModeControl: tempo,
+      recordStartControl: tempo,
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,
@@ -539,6 +555,86 @@ void main() {
     expect((parameter.active, parameter.inactive), (1.0, 1 / 3));
     verifyNever(() => tempo.setClickMode(any()));
     verifyNever(() => looper.setClickMode(any()));
+  });
+
+  testWidgets(
+    'Count-in button starts at accepted 2 bars and edits draft only',
+    (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        recordStartSnapshot: RecordStartSnapshot(
+          settings: RecordStartSettings(countInBars: 2, soundStart: false),
+          captureLocked: false,
+        ),
+      );
+      await tap(tester, 'external_panel_controls');
+      await tap(tester, 'external_add_control');
+      await tap(tester, 'expression_kind_loopControls');
+      await tap(tester, 'expression_destination_loop:defaults');
+      await tap(
+        tester,
+        'external_pick_${externalControlKey(const CountInValueTarget())}',
+      );
+      await tap(tester, 'external_value_active_4');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await tap(tester, 'external_save');
+      var parameter = saved().parameters.single;
+      expect(parameter.target, const CountInValueTarget());
+      expect((parameter.active, parameter.inactive), (2 / 3, 2 / 3));
+      await tap(tester, 'external_value_active_4');
+      await tap(tester, 'external_save');
+      parameter = saved().parameters.single;
+      expect((parameter.active, parameter.inactive), (1.0, 2 / 3));
+      verifyNever(
+        () => looper.setRecordStartSettings(
+          countInBars: any(named: 'countInBars'),
+          soundStart: any(named: 'soundStart'),
+          editKind: any(named: 'editKind'),
+        ),
+      );
+    },
+  );
+
+  testWidgets('capture keeps Count-in row but disables its endpoints', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      recordStartSnapshot: RecordStartSnapshot(
+        settings: RecordStartSettings(countInBars: 0, soundStart: true),
+        captureLocked: true,
+      ),
+      jack: ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: const CountInValueTarget(),
+                active: 0.8,
+                inactive: 0.2,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    expect(saved().parameters.single.target, const CountInValueTarget());
+    expect(
+      find.text('Recording start cannot change during capture.'),
+      findsWidgets,
+    );
+    expect(
+      tester
+          .widget<LoopChoiceButton>(
+            find.byKey(const Key('external_value_active_4')),
+          )
+          .enabled,
+      isFalse,
+    );
   });
 
   testWidgets('capture retains Hear click row but disables both endpoints', (

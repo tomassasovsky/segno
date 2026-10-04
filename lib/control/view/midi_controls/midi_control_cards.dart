@@ -2,9 +2,9 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/binding/control_value_target.dart';
-import 'package:segno/control/view/click_mode_endpoint_choice.dart';
 import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/midi_controls/midi_segmented.dart';
+import 'package:segno/control/view/named_value_endpoint_choice.dart';
 import 'package:segno/control/view/playback_endpoint_choice.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -327,28 +327,35 @@ class _Card extends StatelessWidget {
                 ],
               ),
             MidiParameterControl(:final low, :final high)
-                when ControlValueTarget.tryParse(key) is ClickModeValueTarget =>
+                when lengthTarget is ClickModeValueTarget ||
+                    lengthTarget is CountInValueTarget =>
               Row(
                 children: [
                   if (captions.low case final lowCaption?) ...[
-                    ClickModeEndpointChoice(
+                    NamedValueEndpointChoice(
                       key: Key('midi_range_low_$key'),
+                      target: lengthTarget!,
                       caption: lowCaption,
                       value: low,
                       width: _rangeWidth,
                       enabled: editable,
-                      keyPrefix: 'midi_click_mode_low_$key',
+                      keyPrefix: lengthTarget is ClickModeValueTarget
+                          ? 'midi_click_mode_low_$key'
+                          : 'midi_count_in_low_$key',
                       onChanged: (value) => onRange(key, low: value),
                     ),
                     const SizedBox(width: 36),
                   ],
-                  ClickModeEndpointChoice(
+                  NamedValueEndpointChoice(
                     key: Key('midi_range_high_$key'),
+                    target: lengthTarget!,
                     caption: captions.high,
                     value: high,
                     width: _rangeWidth,
                     enabled: editable,
-                    keyPrefix: 'midi_click_mode_high_$key',
+                    keyPrefix: lengthTarget is ClickModeValueTarget
+                        ? 'midi_click_mode_high_$key'
+                        : 'midi_count_in_high_$key',
                     onChanged: (value) => onRange(key, high: value),
                   ),
                 ],
