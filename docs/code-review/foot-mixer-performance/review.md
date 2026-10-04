@@ -1,8 +1,8 @@
 # Foot Mixer review
 
-Issue #1123. Base: `a833c89c5b0d3964a855e72f35b5650bc53350f0` (#1129).
+Issue #1123. Base: `029245043b4b6247b1835261932dee7cdaf161ba` (#1129).
 Human merge gate. Final source binding:
-`100f5d990688dd6b6dd04d25cb5f9c5cfb35c060846f2753a8a2912883929713`.
+`15e0e4b3601ef4fb616bb8876836b81586d398e0d192afd63f83a056af04e205`.
 
 ## Scope
 
@@ -44,35 +44,44 @@ repair; five final cases cover both mute callers, refused storage and retry,
 retained failed full saves, and overlapping full/mute writes through close.
 Independent architecture, simplicity, bug and test-quality reviews found no
 remaining issue in this correction. The full suite also caught a missing mock
-mute readback; its fixture now models admitted state and asserts both the visible
-mute cue and durable mute/unmute values. No production behavior was weakened.
+mute status; its fixture now models admitted state and asserts both the visible
+mute cue and durable mute-on and mute-off values. No production behavior was weakened.
 
-PR-readiness review found no mechanical issues in the original feature. This is
-not yet a complete delivery review: actual Claude review of this feature remains
-pending. Prerequisite #1128 has a separately confirmed failed-Monitor-load retry
-gap; preserving saved settings here does not solve that recovery flow. Prerequisite #1129 has two
-independently reproduced findings repaired and locally re-reviewed; its Claude
-re-review remains pending. Neither the
-feature nor its prerequisite is declared ready to merge here.
+PR-readiness review found no mechanical issues in the original feature. The
+actual Claude review of this feature stopped at its session quota before a
+verdict; it remains incomplete. Prerequisite #1128 now supplies explicit Retry
+for failed Monitor restoration and has passed local independent reviews and its
+full app checks. Its additional Claude re-review remains pending. Prerequisite
+#1129 passed actual Claude re-review before this restack; its PR delta is byte
+identical afterward. Current-head CI and all outstanding reviews remain required.
+Neither this feature nor the whole stack is declared ready to merge here.
+
+The combined regression confirms that a newly saved mute value survives Retry:
+failed restore, accepted mute changes, then recovery restores the saved mode,
+route and disabled nonempty FX chain while retaining the newer mute choice.
+It checks native state, repository, display projection and exact durable values.
 
 ## Observed validation
 
 Frozen application and affected repository source passed:
 
-- Application: 3,104 tests passed, 49 conditional skips; 92.38% coverage under the
+- Application: 3,127 tests passed, 49 conditional skips; 92.40% coverage under the
   configured CI exclusions (90% required).
 - Looper repository: 745 passed, zero skipped; 95.84% coverage (95% required).
   Five real-native sample tests confirm live gain/mute do not alter capture PCM,
   capture trim remains effective, and existing loop playback stays independent.
 - Strict analyzer over lib, test and packages; explicit formatting of changed
-  Dart paths; Bloc lint positively scanned 804 files; diff whitespace check.
-- Rebased onto the repaired prerequisite without conflicts, then reran the full
-  application and static gates. After the monitor-only save correction, another
-  complete app and static pass verified the final 49-path source binding.
-  Unchanged repository files retain the 745-test
-  evidence above. Source and reused native-library hashes stayed unchanged
-  throughout validation.
-  No native API, implementation, binding or firmware source changed.
+  Dart paths; Bloc lint positively scanned 805 files; diff whitespace check.
+- The final combined pass includes the upstream Retry repair and the scalar
+  mute save, bound to 66 code, test and image paths. The only rebase conflicts
+  were appended localization entries; both accepted sets were preserved.
+  Repository and native inputs remain unchanged, so their earlier evidence is
+  reused rather than described as newly executed. Source and native-library
+  hashes stayed unchanged throughout validation. No native API, implementation,
+  binding or firmware source changed.
+- The preserved integration checkout passes 184 focused tests with six inherited
+  skips. Its additional targeted scalar-save-to-Retry case passes independently;
+  unrelated files and the existing index were preserved.
 
 Focused author evidence also covers composed Custom/External/MIDI entry,
 18-input paging, fresh bootstrap mute/gain persistence, Session recall, partial
