@@ -5,7 +5,6 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
-import 'package:segno/common/write_debouncer.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -42,7 +41,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
        _recordTimingControl = recordTimingControl,
        _settings = settings,
        _takeLocked = takeLocked,
-       _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
+       _fxPersistDebounce = fxPersistDebounce,
        super(const LooperState()) {
     on<LooperStateUpdated>((event, emit) {
       emit(event.state);
@@ -248,7 +247,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         ],
       );
       if (!result.isOk) return;
-      _persistAfterFx(#allTracks, _saveAllTracksChain);
+      _persistAfterFx(const FxAddress(stage: FxStage.allTracks));
     });
     on<LooperLaneEffectPlacementChanged>((event, _) {
       final result = _repository.setLaneEffectPlacement(
@@ -522,15 +521,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         effects: event.effects,
       );
       if (!result.isOk) return;
-      _persistAfterFx(
-        (#track, event.channel),
-        () => saveTrackFxChain(
-          settings: _settings,
-          looper: _repository,
-          projection: _fxPersistence,
-          channel: event.channel,
-        ),
-      );
+      _persistAfterFx(FxAddress(stage: FxStage.track, index: event.channel));
     });
     on<LooperTrackEffectEnabledToggled>((event, _) {
       final result = _repository.setTrackEffectEnabled(
@@ -579,7 +570,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         effects: event.effects,
       );
       if (!result.isOk) return;
-      _persistAfterFx((#output, event.bus), () => _saveOutputChain(event.bus));
+      _persistAfterFx(FxAddress(stage: FxStage.output, index: event.bus));
     });
     on<LooperTrackEffectPlacementChanged>((event, _) {
       final result = _repository.setTrackEffectPlacement(
@@ -588,15 +579,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         placement: event.placement,
       );
       if (!result.isOk) return;
-      _persistAfterFx(
-        (#track, event.channel),
-        () => saveTrackFxChain(
-          settings: _settings,
-          looper: _repository,
-          projection: _fxPersistence,
-          channel: event.channel,
-        ),
-      );
+      _persistAfterFx(FxAddress(stage: FxStage.track, index: event.channel));
     });
     on<LooperAllTracksEffectsChanged>((event, _) {
       if ((event.cancelled?.call() ?? false) ||
@@ -610,7 +593,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         event.receipt?.complete(false);
         return;
       }
-      _persistAfterFx(#allTracks, _saveAllTracksChain);
+      _persistAfterFx(const FxAddress(stage: FxStage.allTracks));
       _confirmFxReceipt(event.receipt, result, cancelled: event.cancelled);
     });
     on<LooperAllTracksEffectsAppended>((event, _) {
@@ -633,7 +616,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         event.receipt?.complete(false);
         return;
       }
-      _persistAfterFx(#allTracks, _saveAllTracksChain);
+      _persistAfterFx(const FxAddress(stage: FxStage.allTracks));
       _confirmFxReceipt(event.receipt, result, cancelled: event.cancelled);
     });
     on<LooperAllTracksEffectEnabledToggled>((event, _) {
@@ -689,7 +672,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         event.index,
         enabled: event.enabled,
       );
-      _persistAfterFx((#output, event.bus), () => _saveOutputChain(event.bus));
+      _persistAfterFx(FxAddress(stage: FxStage.output, index: event.bus));
     });
     on<LooperOutputChainEnabledToggled>((event, _) {
       final result = _repository.setOutputChainEnabled(
@@ -701,7 +684,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         FxAddress(stage: FxStage.output, index: event.bus),
         enabled: event.enabled,
       );
-      _persistAfterFx((#output, event.bus), () => _saveOutputChain(event.bus));
+      _persistAfterFx(FxAddress(stage: FxStage.output, index: event.bus));
     });
     on<LooperLanePluginEditorOpened>((event, _) {
       final key = (event.channel, event.lane, event.index);
@@ -884,14 +867,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         ),
       );
     });
-    on<LooperSessionLoaded>((_, _) => _resyncSessionChains());
     on<LooperPersistFlush>((event, _) async {
       try {
         await Future.wait(_decayWrites.toList());
         await Future.wait(_oneShotWrites.toList());
         await Future.wait(_recordLengthWrites.toList());
         await Future.wait(_recordTimingWrites.toList());
-        _fxPersist.flush();
         await _fxPersistence.flush();
         event.receipt?.complete();
       } on Object catch (error, stackTrace) {
@@ -905,9 +886,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
-    );
-    _fxReplaySubscription = _repository.fxReplayConfirmed.listen(
-      _onFxReplayConfirmed,
     );
     // Persist chains the repository mutates on its own — the record-time
     // snapshot-copy of a monitor chain onto the take's lanes (F3). The bloc
@@ -938,18 +916,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   static bool _neverLocked() => false;
 
-  /// Coalesces the per-target chain-envelope writes that a knob drag would
-  /// otherwise emit at pointer rate. Flushed in [close].
-  final WriteDebouncer _fxPersist;
+  final Duration _fxPersistDebounce;
   late final StreamSubscription<LooperState> _subscription;
-  late final StreamSubscription<({int mixGeneration, int sessionRevision})>
-  _fxReplaySubscription;
-  final Map<
-    Object,
-    ({int sessionRevision, Object token, Future<void> Function() save})
-  >
-  _pendingFxSaves = {};
-  final Set<Object> _savingFxKeys = {};
 
   /// The inbound editor-sync poll cadence (D-SYNC: ≤10 Hz).
   static const Duration _editorPollInterval = Duration(milliseconds: 100);
@@ -981,98 +949,21 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     return lane >= 0 && lane < lanes.length && lanes[lane].muted;
   }
 
-  void _persistAfterFx(Object key, Future<void> Function() save) {
-    if (_settings == null) return;
-    final sessionRevision = _repository.sessionRevision;
-    _pendingFxSaves[key] = (
-      sessionRevision: sessionRevision,
-      token: Object(),
-      save: save,
-    );
-    if (_repository.fxRecipesSettled) {
-      unawaited(_fxPersistence.trackSave(_savePendingFx(key, sessionRevision)));
-    } else {
-      unawaited(
-        _fxPersistence.trackSave(_waitAndPersistFx(key, sessionRevision)),
-      );
-    }
-  }
-
-  Future<void> _savePendingFx(Object key, int sessionRevision) async {
-    if (!_savingFxKeys.add(key)) return;
-    Object? attemptedToken;
-    try {
-      while (true) {
-        final pending = _pendingFxSaves[key];
-        if (pending == null ||
-            pending.sessionRevision != sessionRevision ||
-            sessionRevision != _repository.sessionRevision ||
-            isClosed ||
-            !_repository.fxRecipesSettled) {
-          return;
-        }
-        attemptedToken = pending.token;
-        try {
-          await pending.save();
-        } on Object catch (error, stackTrace) {
-          // Keep this target dirty for a later confirmed replay or edit.
-          addError(error, stackTrace);
-          return;
-        }
-        if (identical(_pendingFxSaves[key]?.token, pending.token)) {
-          _pendingFxSaves.remove(key);
-          return;
-        }
-      }
-    } finally {
-      _savingFxKeys.remove(key);
-      final next = _pendingFxSaves[key];
-      if (next != null &&
-          !identical(next.token, attemptedToken) &&
-          next.sessionRevision == _repository.sessionRevision &&
-          !isClosed &&
-          _repository.fxRecipesSettled) {
-        unawaited(
-          _fxPersistence.trackSave(_savePendingFx(key, next.sessionRevision)),
-        );
-      }
-    }
-  }
-
-  void _onFxReplayConfirmed(
-    ({int mixGeneration, int sessionRevision}) replay,
-  ) {
-    if (isClosed ||
-        replay.mixGeneration != _repository.mixGeneration ||
-        replay.sessionRevision != _repository.sessionRevision) {
-      return;
-    }
-    for (final entry in _pendingFxSaves.entries.toList()) {
-      if (entry.value.sessionRevision == replay.sessionRevision) {
-        unawaited(
-          _fxPersistence.trackSave(
-            _savePendingFx(entry.key, replay.sessionRevision),
-          ),
-        );
-      }
-    }
-  }
-
-  void _persistRepositoryLaneChain(int channel, int lane) {
-    _persistAfterFx(
-      (#lane, channel, lane),
-      () => _saveLaneChain(channel, lane),
+  void _persistAfterFx(FxAddress address) {
+    final settings = _settings;
+    if (settings == null) return;
+    unawaited(
+      _fxPersistence.saveConfirmed(address, settings).catchError(
+        (Object error, StackTrace stack) {
+          if (!isClosed) addError(error, stack);
+        },
+      ),
     );
   }
 
-  Future<void> _waitAndPersistFx(Object key, int sessionRevision) async {
-    final result = await _repository.settleFxRecipes(
-      waitForCallback: true,
-      cancelled: () => isClosed,
-    );
-    if (!result.isOk || isClosed) return;
-    await _savePendingFx(key, sessionRevision);
-  }
+  void _persistRepositoryLaneChain(int channel, int lane) => _persistAfterFx(
+    FxAddress(stage: FxStage.loop, index: channel, lane: lane),
+  );
 
   /// Pushes a freshly-computed lane chain to the engine and persists it. The
   /// single home for lane FX structural edits — every add/remove/retype/move
@@ -1136,46 +1027,15 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// repository's [LooperRepository.onLaneChainChanged] notification (F3: the
   /// record-time snapshot copy). Reads the repository's enriched chain so a
   /// persisted plugin entry keeps its resolved name.
-  void _persistLaneChain(int channel, int lane) {
-    unawaited(_fxPersistence.trackSave(_saveLaneChain(channel, lane)));
-  }
-
-  Future<void> _saveLaneChain(int channel, int lane) =>
-      _fxPersistence.trackSave(() async {
-        final session = _repository.sessionRevision;
-        await _fxPersistence.settlePending();
-        if (session != _repository.sessionRevision) return;
-        await _settings?.saveLaneEffects(
-          channel,
-          lane,
-          encodeFxChain(
-            _fxPersistence.project(
-              FxAddress(stage: FxStage.loop, index: channel, lane: lane),
-              decodeFxChain(_encodedLaneChain(channel, lane)),
-            ),
-          ),
-        );
-      }());
+  void _persistLaneChain(int channel, int lane) =>
+      _persistRepositoryLaneChain(channel, lane);
 
   /// Coalesced twin of [_persistLaneChain], for the paths a knob drag drives.
   /// Keyed per lane, so dragging one lane's knob never delays another's write.
-  void _schedulePersistLaneChain(int channel, int lane) => _fxPersist.schedule(
-    (#lane, channel, lane),
-    () => _persistRepositoryLaneChain(channel, lane),
-  );
-
-  /// Encodes lane [lane] of [channel]'s chain as the persisted envelope
-  /// string (R15): the entries, the chain-enabled flag, and the inheritance
-  /// meta all ride the one `lane_effects` key — no per-flag keys.
-  String _encodedLaneChain(int channel, int lane) => encodeFxChain(
-    FxChainEnvelope(
-      chainEnabled: _repository.laneChainEnabled(channel, lane),
-      meta: FxChainMeta(
-        inheritedFrom: _repository.laneChainInheritedFrom(channel, lane),
-      ),
-      entries: _repository.laneEffects(channel, lane),
-    ),
-  );
+  void _schedulePersistLaneChain(int channel, int lane) =>
+      _schedulePersistBusChain(
+        FxAddress(stage: FxStage.loop, index: channel, lane: lane),
+      );
 
   /// One entry with its channel handling replaced, dispatched over the
   /// sealed hierarchy.
@@ -1197,10 +1057,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   EngineResult _pushBusChain(FxAddress address, List<TrackEffect> next) {
     final result = _writeBusChain(address, next);
     if (!result.isOk) return result;
-    _persistAfterFx(
-      (address.stage, address.index),
-      () => _saveBusChain(address),
-    );
+    _persistAfterFx(address);
     return result;
   }
 
@@ -1214,143 +1071,23 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
           effects: next,
         );
 
-  /// Persists the bus chain envelope at [address] — used on its own by the
-  /// granular param path, which writes through the repository rather than
-  /// replacing the chain.
-  Future<void> _saveBusChain(FxAddress address) =>
-      address.stage == FxStage.output
-      ? _saveOutputChain(address.index)
-      : saveTrackFxChain(
-          settings: _settings,
-          looper: _repository,
-          projection: _fxPersistence,
-          channel: address.index,
-        );
-
   /// Coalesced bus-chain persistence — the bus half of
   /// [_schedulePersistLaneChain], keyed by the address it persists.
-  void _schedulePersistBusChain(FxAddress address) => _fxPersist.schedule(
-    address,
-    () => _persistAfterFx(
-      (address.stage, address.index),
-      () => _saveBusChain(address),
-    ),
-  );
-
-  /// Persists track [channel]'s Track-stage chain envelope (the bus twin of
-  /// [_encodedLaneChain]; bus chains carry no inheritance meta) — through the
-  /// helper `ControlCubit`'s FX-mode stomps share, so the on-screen and pedal
-  /// paths write the same envelope.
-  void _persistTrackChain(int channel) => persistTrackFxChain(
-    settings: _settings,
-    looper: _repository,
-    projection: _fxPersistence,
-    channel: channel,
-  );
-
-  /// Writes a loaded session's Loop / Track / Master chains, every track's
-  /// pan and the input setup back to the boot-restore keys — the settings
-  /// half of [LooperRepository.applySession], which updates the engine and
-  /// the re-apply caches but leaves persistence to its caller (see its doc,
-  /// and `SessionPersistenceSyncListener` for the full argument).
-  ///
-  /// Reads the repository's chain enumerations — the same truth a session SAVE
-  /// captures — and writes through the same helpers the edit paths use, so a
-  /// written-back envelope is byte-identical to an edited one.
-  ///
-  /// Also re-persists the lane COUNT, which is not decoration: the boot
-  /// restore walks lanes `0..lane_count`, so without it every chain written
-  /// for a lane above the PRE-LOAD count is stored and never read back, and a
-  /// multi-lane session still restores wrong.
-  ///
-  /// The mix (slice 3) is re-persisted together: every track's pan and lane
-  /// level in one Mixer value, and the input setup WHOLE under the
-  /// open device (an edit writes one input; a load replaces the setup, so
-  /// a key the loaded session does not carry is cleared). With no device
-  /// open there is nothing to key the setup to and it is left alone, like an
-  /// edit.
-  ///
-  /// Sweeps the whole key space (every engine track × [kMaxLanes]) rather than
-  /// just the applied keys. A key above the live lane count is unreachable
-  /// today but not forever — growing the lane count later would read it — so
-  /// bounding the sweep by the live count would let a dropped chain resurrect
-  /// on the next boot after a lane is added. That correctness is worth the
-  /// bounded burst of removals per load: a load is a deliberate, infrequent
-  /// action that already clears every track and re-imports its stems.
-  void _resyncSessionChains() {
-    _pendingFxSaves.clear();
+  void _schedulePersistBusChain(FxAddress address) {
     final settings = _settings;
     if (settings == null) return;
-    // A loaded session supersedes every edit in flight. Without this, a knob
-    // let go of less than one debounce window before the load would land
-    // AFTER the sweep below and resurrect a chain the sweep just cleared —
-    // exactly the stale-key revival the sweep exists to prevent.
-    _fxPersist.cancelAll();
-    final lanes = _repository.allLaneChains();
-    final tracks = _repository.allTrackChains();
-    // The engine's track count, read fresh rather than from this bloc's
-    // state (only as current as the last poll tick).
-    final channels = _repository.state.tracks.length;
-    for (var channel = 0; channel < channels; channel++) {
-      for (var lane = 0; lane < kMaxLanes; lane++) {
-        if (lanes.containsKey((channel, lane))) {
-          _persistLaneChain(channel, lane);
-        } else {
-          unawaited(settings.clearLaneEffects(channel, lane));
-        }
-      }
-      if (tracks.containsKey(channel)) {
-        _persistTrackChain(channel);
-      } else {
-        unawaited(settings.clearTrackFxChain(channel));
-      }
-    }
-    // Every destination, not just the ones the loaded session configured: a
-    // destination the session does not name has no chain, and leaving its old
-    // key would restore the previous session's output FX on the next boot —
-    // the same stale-key class the lane and track sweeps above prevent.
-    final outputs = _repository.allOutputChains();
-    for (var bus = 0; bus < kMaxOutputBuses; bus++) {
-      if (outputs.containsKey(bus)) {
-        _persistOutputChain(bus);
-      } else {
-        unawaited(settings.clearOutputFxChain(bus));
-      }
-    }
-    _persistAllTracksChain();
-  }
-
-  /// Persists output destination [bus]'s chain envelope.
-  void _persistOutputChain(int bus) {
-    unawaited(_fxPersistence.trackSave(_saveOutputChain(bus)));
-  }
-
-  Future<void> _saveOutputChain(int bus) async {
-    final settings = _settings;
-    if (settings == null) return;
-    await saveFxOwner(
-      settings: settings,
-      looper: _repository,
-      projection: _fxPersistence,
-      address: FxAddress(stage: FxStage.output, index: bus),
+    _fxPersistence.scheduleSave(
+      address,
+      settings,
+      debounce: _fxPersistDebounce,
     );
   }
 
-  /// Persists the All tracks recorded-mix chain envelope.
-  void _persistAllTracksChain() {
-    unawaited(_fxPersistence.trackSave(_saveAllTracksChain()));
-  }
+  void _persistTrackChain(int channel) =>
+      _persistAfterFx(FxAddress(stage: FxStage.track, index: channel));
 
-  Future<void> _saveAllTracksChain() async {
-    final settings = _settings;
-    if (settings == null) return;
-    await saveFxOwner(
-      settings: settings,
-      looper: _repository,
-      projection: _fxPersistence,
-      address: const FxAddress(stage: FxStage.allTracks),
-    );
-  }
+  void _persistAllTracksChain() =>
+      _persistAfterFx(const FxAddress(stage: FxStage.allTracks));
 
   /// Cancels every editor-sync poll timer for lane [lane] of [channel].
   void _cancelLaneEditorTimers(int channel, int lane) {
@@ -1367,7 +1104,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   Future<void> close() {
     // Before anything is torn down: a drag that ended in the debounce window
     // and was followed by a shutdown must still reach the store.
-    _fxPersist.flush();
+    _fxPersistence.flushScheduled();
     for (final timer in _lanePluginEditorTimers.values) {
       timer.cancel();
     }
@@ -1377,9 +1114,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     if (_repository.onLaneChainChanged == _persistRepositoryLaneChain) {
       _repository.onLaneChainChanged = null;
     }
-    _pendingFxSaves.clear();
     unawaited(_subscription.cancel());
-    unawaited(_fxReplaySubscription.cancel());
     return super.close();
   }
 }

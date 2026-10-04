@@ -11,6 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
@@ -20,7 +23,7 @@ import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
-import '../helpers/mock_decay_playback_cubit.dart';
+import '../helpers/mock_decay_playback_settings.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
@@ -55,6 +58,7 @@ const _rig = LooperState(
 );
 
 void main() {
+  late TempoSettings tempoOwner;
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   // Author-machine goldens, like the other screenshot suites here: the
@@ -66,6 +70,7 @@ void main() {
     registerFallbackValue(const LooperRecordPressed(0));
     registerFallbackValue(LooperMode.multi);
     registerFallbackValue(RecordTiming.immediately);
+    registerFallbackValue(GridDivision.bar);
     registerFallbackValue(ClickMode.off);
     registerFallbackValue(RecordStartEditKind.restore);
     if (!hasScreenshotFonts) return;
@@ -96,6 +101,11 @@ void main() {
   late _MockLooperRepository repository;
   late SettingsRepository settings;
   late int confirmedLength;
+  late Map<int, int> confirmedTrackLengths;
+  late LooperMode confirmedMode;
+  late RecordTiming confirmedTiming;
+  late GridDivision confirmedDivision;
+  late Map<int, RecordTiming> confirmedTrackTiming;
   late ClickMode confirmedClickMode;
   late int confirmedCountIn;
   late bool confirmedSoundStart;
@@ -109,16 +119,81 @@ void main() {
       (_) => const Stream<EngineResult>.empty(),
     );
     confirmedLength = 0;
+    confirmedTrackLengths = {1: 8};
+    confirmedMode = LooperMode.song;
+    confirmedTiming = RecordTiming.immediately;
+    confirmedDivision = GridDivision.bar;
+    confirmedTrackTiming = {1: RecordTiming.quarter};
     confirmedClickMode = ClickMode.off;
     confirmedCountIn = 1;
     confirmedSoundStart = false;
     recordStartCaptureLocked = false;
     recordStartRecoveryRequired = false;
     when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => repository.laneCount(any())).thenAnswer((call) {
+      final channel = call.positionalArguments.first as int;
+      return repository.state.tracks
+              .where((track) => track.channel == channel)
+              .firstOrNull
+              ?.lanes
+              .length ??
+          0;
+    });
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.lengthRecoveryRequired).thenReturn(false);
+    when(() => repository.lengthSettingsSettled).thenReturn(true);
+    when(() => repository.recordLengthCaptureLocked).thenReturn(false);
+    when(() => repository.trackLengthPresetOverrides).thenAnswer(
+      (_) => Map.unmodifiable(confirmedTrackLengths),
+    );
+    when(
+      () => repository.setLengthSettings(
+        defaultBars: any(named: 'defaultBars'),
+        overrides: any(named: 'overrides'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenAnswer((call) {
+      confirmedLength = call.namedArguments[#defaultBars] as int;
+      confirmedTrackLengths = Map.of(
+        call.namedArguments[#overrides] as Map<int, int>,
+      );
+      confirmedMode = call.namedArguments[#mode] as LooperMode;
+      return EngineResult.ok;
+    });
+    when(() => repository.recordTimingSettingsSettled).thenReturn(true);
+    when(() => repository.recordTimingRecoveryRequired).thenReturn(false);
+    when(() => repository.recordTimingCaptureLocked).thenReturn(false);
+    when(
+      () => repository.defaultRecordTiming,
+    ).thenAnswer((_) => confirmedTiming);
+    when(() => repository.trackRecordTimingOverrides).thenAnswer(
+      (_) => Map.unmodifiable(confirmedTrackTiming),
+    );
+    when(
+      () => repository.settleRecordTimingSettings(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(
+      () => repository.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      confirmedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      confirmedTrackTiming = Map.of(
+        call.namedArguments[#trackOverrides] as Map<int, RecordTiming>,
+      );
+      return EngineResult.ok;
+    });
     when(() => repository.sessionTransport).thenAnswer(
       (_) => TransportState(
         defaultLengthPresetBars: confirmedLength,
+        looperMode: confirmedMode,
+        recordTiming: confirmedTiming,
+        quantizeDiv: confirmedDivision,
         clickMode: confirmedClickMode,
         countInBars: confirmedCountIn,
         autoRecord: confirmedSoundStart,
@@ -239,8 +314,7 @@ void main() {
     WidgetTester tester, {
     required LoopSettingsPageId page,
     LooperState state = _rig,
-    Future<void> Function(TempoCubit tempo, RecordOptionsCubit options)?
-    prepare,
+    Future<void> Function(TempoSettings tempo, RecordSettings options)? prepare,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -251,13 +325,20 @@ void main() {
     when(() => bloc.state).thenReturn(state);
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
     // The Click checkpoint and its initial writer must share testWidgets' zone.
-    settings = SettingsRepository(store: FakeKeyValueStore());
-    final tempo = TempoCubit(repository: repository, settings: settings);
-    final options = RecordOptionsCubit(
+    final store = FakeKeyValueStore()
+      ..values['looper.mode'] = LooperMode.song.code
+      ..values['tempo.length_preset.1'] = 8
+      ..values['track_record_timing.1'] = RecordTiming.quarter.index;
+    settings = SettingsRepository(store: store);
+    tempoOwner = TempoSettings(repository: repository, settings: settings);
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    final tempo = TempoCubit(settings: tempoOwner);
+    final options = RecordSettings(
       repository: repository,
       settings: settings,
     );
-    final playback = MockDecayPlaybackCubit(
+    final playback = MockDecayPlaybackSettings(
       snapshot: DecaySnapshot(
         defaultPercent: 0,
         trackOverrides: const {1: 25},
@@ -267,25 +348,32 @@ void main() {
         trackOverrides: const {1: true},
       ),
     );
-    final timing = RecordTimingCubit(
+    addTearDown(playback.close);
+    final timingOwner = RecordTimingSettings(
       repository: repository,
       settings: settings,
     );
+    addTearDown(() => unawaited(timingOwner.close()));
+    final timing = RecordTimingCubit(settings: timingOwner);
     final tracks = TracksCubit(settings: settings);
+    final closeRecordOwner = options.close;
+    addTearDown(() => unawaited(closeRecordOwner()));
     for (final cubit in <BlocBase<Object?>>[
       tempo,
-      options,
-      playback,
       timing,
       tracks,
     ]) {
       addTearDown(() => unawaited(cubit.close()));
     }
     await tempo.setTempo(84);
-    await tempo.loadRecordStart();
-    await tempo.loadClickMode();
-    expect(tempo.clickModeSnapshot?.mode, ClickMode.recFirst);
-    await prepare?.call(tempo, options);
+    await tempoOwner.loadRecordStart();
+    await tempoOwner.loadClickMode();
+    expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
+    await options.load();
+    await timingOwner.load();
+    expect(options.state.recordLengthReady, isTrue);
+    expect(timing.state.recordTimingReady, isTrue);
+    await prepare?.call(tempoOwner, options);
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -301,8 +389,12 @@ void main() {
             providers: [
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider.value(value: tempo),
-              BlocProvider.value(value: options),
-              BlocProvider<PlaybackOptionsCubit>.value(value: playback),
+              BlocProvider(
+                create: (_) => RecordOptionsCubit(settings: options),
+              ),
+              BlocProvider<PlaybackOptionsCubit>(
+                create: (_) => PlaybackOptionsCubit(settings: playback),
+              ),
               BlocProvider.value(value: timing),
               BlocProvider.value(value: tracks),
             ],
@@ -374,17 +466,14 @@ void main() {
       tester,
       page: LoopSettingsPageId.recording,
       prepare: (tempo, _) async {
-        expect((await tempo.setCountInBars(0)).isOk, isTrue);
+        expect((await tempoOwner.setCountInBars(0)).isOk, isTrue);
       },
     );
     await expectLater(
       find.byType(LoopSettingsPage),
       matchesGoldenFile('$authorCaptureDir/recording_pedal_off.png'),
     );
-    final tempo = tester
-        .element(find.byType(LoopSettingsPage))
-        .read<TempoCubit>();
-    expect((await tempo.setSoundStart(enabled: true)).isOk, isTrue);
+    expect((await tempoOwner.setSoundStart(enabled: true)).isOk, isTrue);
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),
@@ -392,7 +481,7 @@ void main() {
     );
     recordStartRecoveryRequired = true;
     expect(
-      (await tempo.setCountInBars(0)).isOk,
+      (await tempoOwner.setCountInBars(0)).isOk,
       isFalse,
     );
     await tester.pumpAndSettle();
@@ -420,16 +509,13 @@ void main() {
 
   testWidgets('Author Count-in Off and 2-bar captures', (tester) async {
     await pump(tester, page: LoopSettingsPageId.tempo);
-    final tempo = tester
-        .element(find.byType(LoopSettingsPage))
-        .read<TempoCubit>();
-    expect((await tempo.setCountInBars(0)).isOk, isTrue);
+    expect((await tempoOwner.setCountInBars(0)).isOk, isTrue);
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),
       matchesGoldenFile('$authorCaptureDir/tempo_count_in_off.png'),
     );
-    expect((await tempo.setCountInBars(2)).isOk, isTrue);
+    expect((await tempoOwner.setCountInBars(2)).isOk, isTrue);
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),

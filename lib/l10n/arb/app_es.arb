@@ -99,6 +99,8 @@
     },
     "sessionErrorSampleRate": "No se pudo cargar la sesión: se grabó a una frecuencia de muestreo distinta a la del dispositivo actual. Vuelve a abrir el dispositivo a la frecuencia de la sesión e inténtalo de nuevo.",
     "sessionErrorUnsupportedVersion": "No se pudo cargar la sesión: se guardó con una versión más reciente de Segno. Actualiza la aplicación e inténtalo de nuevo.",
+    "sessionBootRecoveryTitle": "Hay que recuperar los ajustes de la sesión",
+    "sessionBootRecoveryBody": "La sesión cargada está detenida. Reintenta confirmar sus ajustes antes de continuar.",
     "sessionErrorGeneric": "La acción de sesión falló: {details}",
     "engineStoppedBanner": "Motor de audio detenido — abre la configuración para iniciar.",
     "loopMultipleLabel": "×{multiple}",

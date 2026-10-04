@@ -16,7 +16,7 @@ import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno_engine/segno_engine.dart'
     show AudioEngine, PumpedNativeEngine, TrackSnapshot;
@@ -90,7 +90,7 @@ class _Rig {
         .encode();
     store.values['looper.mode'] = LooperMode.free.code;
     settings = SettingsRepository(store: store);
-    owner = TempoCubit(repository: looper, settings: settings);
+    owner = TempoSettings(repository: looper, settings: settings);
     unawaited(owner.load());
     pump();
     midi = _Midi(settings);
@@ -135,7 +135,7 @@ class _Rig {
   final link = FakePedalLink();
   bool powerUp = false;
   late final SettingsRepository settings;
-  late final TempoCubit owner;
+  late final TempoSettings owner;
   late final _Midi midi;
   late final MixSettingsCoordinator mix;
   late final PedalRepository pedal;

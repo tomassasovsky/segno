@@ -13,10 +13,11 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/application/app_runtime.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
-import 'package:segno/app/settings_mix_persistence.dart';
+import 'package:segno/app/view/control_settings_notices.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
@@ -37,6 +38,7 @@ import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
+import 'package:segno/session/session.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
@@ -177,26 +179,20 @@ class App extends StatefulWidget {
 /// Resolves the optional pedal pair once so a replacement [App] keeps
 /// [ControlCubit], [PedalCubit], and dialog routes on one repository.
 class _AppState extends State<App> {
-  PowerOffCubit? _power;
   StreamSubscription<PowerOffState>? _powerNoticeSubscription;
-  RecordTimingOutcome? _timingRecoveryNotice;
   late final PedalRepository _pedal;
-  late final MixSettingsCoordinator _mixSettings;
-  late final FxChainPersistence _fxPersistence;
-  late final MixSettingsPersistence _mixPersistence;
+  late final AppRuntime _runtime;
+  late final RecordOptionsCubit _recordView;
   StreamSubscription<MixSettingsOutcome>? _mixFailureSubscription;
   PowerKeySource? _powerKeySource;
-  ControlCubit? _control;
-  late final TempoCubit _tempo;
+  final _controlNotices = ControlSettingsNotices();
+  late final TempoCubit _tempoView;
   StreamSubscription<ClickVolumeOutcome>? _clickFailureSubscription;
   StreamSubscription<ClickModeOutcome>? _clickModeFailureSubscription;
-  ClickModeOutcome? _clickModeRecoveryNotice;
   StreamSubscription<RecordStartOutcome>? _recordStartFailureSubscription;
   StreamSubscription<int>? _recordingInputRequiredSubscription;
-  RecordStartOutcome? _recordStartRecoveryNotice;
-  late final PlaybackOptionsCubit _playback;
-  late final RecordOptionsCubit _record;
-  late final RecordTimingCubit _timing;
+  late final PlaybackOptionsCubit _playbackView;
+  late final RecordTimingCubit _timingView;
   StreamSubscription<RecordLengthOutcome>? _recordLengthFailureSubscription;
   StreamSubscription<RecordTimingOutcome>? _recordTimingFailureSubscription;
   StreamSubscription<DecayOutcome>? _decayFailureSubscription;
@@ -206,55 +202,58 @@ class _AppState extends State<App> {
   void initState() {
     super.initState();
     _pedal = widget.pedalRepository ?? PedalRepository(NoopPedalLink());
-    _mixPersistence = SettingsMixPersistence(widget.settings);
-    _mixSettings = widget.mixSettings;
-    _fxPersistence = FxChainPersistence(looper: widget.repository);
-    _mixFailureSubscription = _mixSettings.failures.listen(_showMixFailure);
-    _tempo = TempoCubit(
+    _runtime = AppRuntime(
       repository: widget.repository,
       settings: widget.settings,
+      mix: widget.mixSettings,
+      controllers: widget.controllerRepository,
+      midiDevices: widget.midiDeviceRepository,
+      pedal: _pedal,
+      performance: widget.performanceRepository,
+      sessions: widget.sessionRepository,
+      exportDirectory: widget.exportDirectory,
+      powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
     );
-    _clickFailureSubscription = _tempo.clickVolumeFailures.listen(
+    _powerNoticeSubscription = _runtime.power.stream.listen(
+      _syncControlNoticesWithPower,
+    );
+    _mixFailureSubscription = _runtime.mix.failures.listen(_showMixFailure);
+    _tempoView = TempoCubit(settings: _runtime.tempo);
+    _clickFailureSubscription = _runtime.tempo.clickVolumeFailures.listen(
       _showClickFailure,
     );
-    _clickModeFailureSubscription = _tempo.clickModeFailures.listen(
+    _clickModeFailureSubscription = _runtime.tempo.clickModeFailures.listen(
       _showClickModeFailure,
     );
-    _recordStartFailureSubscription = _tempo.recordStartFailures.listen(
+    _recordStartFailureSubscription = _runtime.tempo.recordStartFailures.listen(
       _showRecordStartFailure,
     );
     _recordingInputRequiredSubscription = widget
         .repository
         .recordingInputRequired
         .listen(_showRecordingInputRequired);
-    unawaited(_tempo.load());
-    _playback = PlaybackOptionsCubit(
-      repository: widget.repository,
-      settings: widget.settings,
-    );
-    _decayFailureSubscription = _playback.decayFailures.listen(
+    _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
+    _decayFailureSubscription = _runtime.playback.decayFailures.listen(
       _showDecayFailure,
     );
-    _oneShotFailureSubscription = _playback.oneShotFailures.listen(
+    _oneShotFailureSubscription = _runtime.playback.oneShotFailures.listen(
       _showOneShotFailure,
     );
-    unawaited(_playback.load());
-    _record = RecordOptionsCubit(
-      repository: widget.repository,
-      settings: widget.settings,
+    _recordView = RecordOptionsCubit(settings: _runtime.record);
+    _recordLengthFailureSubscription = _runtime.record.recordLengthFailures
+        .listen(
+          _showRecordLengthFailure,
+        );
+    _timingView = RecordTimingCubit(settings: _runtime.timing);
+    _recordTimingFailureSubscription = _runtime.timing.recordTimingFailures
+        .listen(
+          _showRecordTimingFailure,
+        );
+    unawaited(
+      _runtime.start().catchError((Object error, StackTrace stack) {
+        AppLog.error('settings startup failed', error: error, stack: stack);
+      }),
     );
-    _recordLengthFailureSubscription = _record.recordLengthFailures.listen(
-      _showRecordLengthFailure,
-    );
-    unawaited(_record.load());
-    _timing = RecordTimingCubit(
-      repository: widget.repository,
-      settings: widget.settings,
-    );
-    _recordTimingFailureSubscription = _timing.recordTimingFailures.listen(
-      _showRecordTimingFailure,
-    );
-    unawaited(_timing.load());
     _powerKeySource =
         widget.powerKeySource ??
         openAppliancePowerKeySource(onAppliance: isAppliance());
@@ -273,152 +272,102 @@ class _AppState extends State<App> {
     unawaited(_oneShotFailureSubscription?.cancel());
     unawaited(_recordLengthFailureSubscription?.cancel());
     unawaited(_recordTimingFailureSubscription?.cancel());
-    unawaited(_closeControlOwners());
+    _controlNotices.dispose();
+    unawaited(
+      _closeControlOwners().catchError((Object error, StackTrace stack) {
+        AppLog.error('application teardown failed', error: error, stack: stack);
+      }),
+    );
     super.dispose();
   }
 
   Future<void> _closeControlOwners() async {
-    // BlocProvider can also close Control; its memoized completion ensures
-    // held cleanup finishes while the Click and Mixer owners are still alive.
-    await _control?.close();
-    await _timing.close();
-    await _record.close();
-    await _playback.close();
-    await _tempo.close();
-    await _mixSettings.close();
+    // Runtime close stops control ingress synchronously, before adapters close.
+    final closed = _runtime.close();
+    await Future.wait([
+      _timingView.close(),
+      _recordView.close(),
+      _playbackView.close(),
+      _tempoView.close(),
+      closed,
+    ]);
   }
 
   void _showClickFailure(ClickVolumeOutcome outcome) {
     if (!mounted || outcome.status == ClickVolumeStatus.superseded) return;
     final recovery = outcome.status == ClickVolumeStatus.recoveryRequired;
-    AppLog.error(
-      'Click settings: ${outcome.status.name} ${outcome.error ?? ''}',
-    );
-    showAppToast(
-      id: AppToastId.clickSettings,
-      type: ToastificationType.error,
-      dismissible: !recovery,
-      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
-      title: Builder(
-        builder: (context) => Text(
+    AppLog.error('Click: ${outcome.status.name} ${outcome.error ?? ''}');
+    _controlNotices.show(
+      ControlSettingsNotice(
+        id: AppToastId.clickSettings,
+        title: (context) => Text(
           recovery
               ? context.l10n.clickSettingsRecoveryTitle
               : context.l10n.clickSettingsRefusedTitle,
         ),
+        description: recovery
+            ? (context) => Text(context.l10n.clickSettingsRecoveryBody)
+            : null,
+        retry: recovery
+            ? () async => (await _runtime.tempo.recoverClickVolume()).isOk
+            : null,
+        needsRecovery: recovery ? () => !_runtime.tempo.state.clickReady : null,
       ),
-      description: recovery
-          ? Builder(
-              builder: (context) =>
-                  Text(context.l10n.clickSettingsRecoveryBody),
-            )
-          : null,
-      actions: recovery
-          ? [
-              TextButton(
-                onPressed: () async {
-                  if ((await _tempo.recoverClickVolume()).isOk) {
-                    dismissAppToast(AppToastId.clickSettings);
-                  }
-                },
-                child: Builder(
-                  builder: (context) => Text(context.l10n.powerOffRetry),
-                ),
-              ),
-            ]
-          : const [],
     );
   }
 
   void _showClickModeFailure(ClickModeOutcome outcome) {
     if (!mounted || outcome.status == ClickModeStatus.superseded) return;
     final recovery = outcome.status == ClickModeStatus.recoveryRequired;
-    AppLog.error(
-      'Hear click: ${outcome.status.name} ${outcome.error ?? ''}',
-    );
-    if (recovery) _clickModeRecoveryNotice = outcome;
-    if (_power?.state.isUiUp ?? false) return;
-    showAppToast(
-      id: AppToastId.clickModeSettings,
-      type: ToastificationType.error,
-      dismissible: !recovery,
-      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
-      title: Builder(
-        builder: (context) => Text(
+    AppLog.error('ClickMode: ${outcome.status.name} ${outcome.error ?? ''}');
+    _controlNotices.show(
+      ControlSettingsNotice(
+        id: AppToastId.clickModeSettings,
+        title: (context) => Text(
           recovery
               ? context.l10n.clickModeSettingsRecoveryTitle
               : context.l10n.clickModeSettingsRefusedTitle,
         ),
+        description: recovery
+            ? (context) => Text(context.l10n.clickModeSettingsRecoveryBody)
+            : null,
+        retry: recovery
+            ? () async => (await _runtime.tempo.recoverClickMode()).isOk
+            : null,
+        needsRecovery: recovery
+            ? () => !_runtime.tempo.state.clickModeReady
+            : null,
       ),
-      description: recovery
-          ? Builder(
-              builder: (context) =>
-                  Text(context.l10n.clickModeSettingsRecoveryBody),
-            )
-          : null,
-      actions: recovery
-          ? [
-              TextButton(
-                onPressed: () async {
-                  if ((await _tempo.recoverClickMode()).isOk) {
-                    _clickModeRecoveryNotice = null;
-                    dismissAppToast(AppToastId.clickModeSettings);
-                  }
-                },
-                child: Builder(
-                  builder: (context) => Text(context.l10n.powerOffRetry),
-                ),
-              ),
-            ]
-          : const [],
     );
   }
 
   void _showRecordStartFailure(RecordStartOutcome outcome) {
     if (!mounted || outcome.status == RecordStartStatus.superseded) return;
     final recovery = outcome.status == RecordStartStatus.recoveryRequired;
-    AppLog.error(
-      'Recording start: ${outcome.status.name} ${outcome.error ?? ''}',
-    );
-    if (recovery) _recordStartRecoveryNotice = outcome;
-    if (_power?.state.isUiUp ?? false) return;
-    showAppToast(
-      id: AppToastId.recordStartSettings,
-      type: ToastificationType.error,
-      dismissible: !recovery,
-      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
-      title: Builder(
-        builder: (context) => Text(
+    AppLog.error('RecordStart: ${outcome.status.name} ${outcome.error ?? ''}');
+    _controlNotices.show(
+      ControlSettingsNotice(
+        id: AppToastId.recordStartSettings,
+        title: (context) => Text(
           recovery
               ? context.l10n.recordStartSettingsRecoveryTitle
               : context.l10n.recordStartSettingsRefusedTitle,
         ),
+        description: recovery
+            ? (context) => Text(context.l10n.recordStartSettingsRecoveryBody)
+            : null,
+        retry: recovery
+            ? () async => (await _runtime.tempo.recoverRecordStart()).isOk
+            : null,
+        needsRecovery: recovery
+            ? () => !_runtime.tempo.state.recordStartReady
+            : null,
       ),
-      description: recovery
-          ? Builder(
-              builder: (context) =>
-                  Text(context.l10n.recordStartSettingsRecoveryBody),
-            )
-          : null,
-      actions: recovery
-          ? [
-              TextButton(
-                onPressed: () async {
-                  if ((await _tempo.recoverRecordStart()).isOk) {
-                    _recordStartRecoveryNotice = null;
-                    dismissAppToast(AppToastId.recordStartSettings);
-                  }
-                },
-                child: Builder(
-                  builder: (context) => Text(context.l10n.powerOffRetry),
-                ),
-              ),
-            ]
-          : const [],
     );
   }
 
   void _showRecordingInputRequired(int channel) {
-    if (!mounted || (_power?.state.isUiUp ?? false)) return;
+    if (!mounted || _runtime.power.state.isUiUp) return;
     showAppToast(
       id: AppToastId.recordingInputRequired,
       type: ToastificationType.warning,
@@ -439,230 +388,133 @@ class _AppState extends State<App> {
 
   void _showMixFailure(MixSettingsOutcome outcome) {
     if (!mounted || outcome.status == MixSettingsStatus.superseded) return;
-    AppLog.error('mix settings: ${outcome.status.name} ${outcome.error ?? ''}');
-    if (outcome.status == MixSettingsStatus.recoveryRequired) {
-      showAppToast(
+    final recovery = outcome.status == MixSettingsStatus.recoveryRequired;
+    AppLog.error('Mix settings: ${outcome.status.name} ${outcome.error ?? ''}');
+    _controlNotices.show(
+      ControlSettingsNotice(
         id: AppToastId.mixSettings,
-        type: ToastificationType.error,
-        dismissible: false,
-        title: const Text('Mix settings need recovery'),
-        description: const Text('Audio was stopped to protect your settings.'),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final recovered = await _mixSettings.recover();
-              if (recovered.isOk) dismissAppToast(AppToastId.mixSettings);
-            },
-            child: const Text('Retry'),
-          ),
-        ],
-      );
-      return;
-    }
-    showAppSnackToast(
-      id: AppToastId.mixSettings,
-      type: ToastificationType.error,
-      title: Text(
-        outcome.status == MixSettingsStatus.storageFailed
-            ? 'Mix change could not be saved'
-            : 'Mix change was not applied',
+        title: (_) => Text(
+          recovery
+              ? 'Mix settings need recovery'
+              : outcome.status == MixSettingsStatus.storageFailed
+              ? 'Mix change could not be saved'
+              : 'Mix change was not applied',
+        ),
+        description: recovery
+            ? (_) => const Text('Audio was stopped to protect your settings.')
+            : null,
+        retry: recovery
+            ? () async => (await _runtime.mix.recover()).isOk
+            : null,
+        needsRecovery: recovery ? () => _runtime.mix.recoveryRequired : null,
       ),
-      icon: const Icon(Icons.error_outline),
     );
   }
 
   void _showDecayFailure(DecayOutcome outcome) {
     if (!mounted || outcome.status == DecayStatus.superseded) return;
     final recovery = outcome.status == DecayStatus.recoveryRequired;
-    AppLog.error(
-      'Decay settings: ${outcome.status.name} ${outcome.error ?? ''}',
-    );
-    showAppToast(
-      id: AppToastId.decaySettings,
-      type: ToastificationType.error,
-      dismissible: !recovery,
-      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
-      title: Builder(
-        builder: (context) => Text(
+    AppLog.error('Decay: ${outcome.status.name} ${outcome.error ?? ''}');
+    _controlNotices.show(
+      ControlSettingsNotice(
+        id: AppToastId.decaySettings,
+        title: (context) => Text(
           recovery
               ? context.l10n.decaySettingsRecoveryTitle
               : context.l10n.decaySettingsRefusedTitle,
         ),
+        description: recovery
+            ? (context) => Text(context.l10n.decaySettingsRecoveryBody)
+            : null,
+        retry: recovery
+            ? () async => (await _runtime.playback.recoverDecay()).isOk
+            : null,
+        needsRecovery: recovery
+            ? () => !_runtime.playback.state.decayReady
+            : null,
       ),
-      description: recovery
-          ? Builder(
-              builder: (context) =>
-                  Text(context.l10n.decaySettingsRecoveryBody),
-            )
-          : null,
-      actions: recovery
-          ? [
-              TextButton(
-                onPressed: () async {
-                  if ((await _playback.recoverDecay()).isOk) {
-                    dismissAppToast(AppToastId.decaySettings);
-                  }
-                },
-                child: Builder(
-                  builder: (context) => Text(context.l10n.powerOffRetry),
-                ),
-              ),
-            ]
-          : const [],
     );
   }
 
   void _showOneShotFailure(OneShotOutcome outcome) {
     if (!mounted || outcome.status == OneShotStatus.superseded) return;
     final recovery = outcome.status == OneShotStatus.recoveryRequired;
-    AppLog.error(
-      'OneShot settings: ${outcome.status.name} ${outcome.error ?? ''}',
-    );
-    showAppToast(
-      id: AppToastId.oneShotSettings,
-      type: ToastificationType.error,
-      dismissible: !recovery,
-      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
-      title: Builder(
-        builder: (context) => Text(
+    AppLog.error('OneShot: ${outcome.status.name} ${outcome.error ?? ''}');
+    _controlNotices.show(
+      ControlSettingsNotice(
+        id: AppToastId.oneShotSettings,
+        title: (context) => Text(
           recovery
               ? context.l10n.oneShotSettingsRecoveryTitle
               : context.l10n.oneShotSettingsRefusedTitle,
         ),
+        description: recovery
+            ? (context) => Text(context.l10n.oneShotSettingsRecoveryBody)
+            : null,
+        retry: recovery
+            ? () async => (await _runtime.playback.recoverOneShot()).isOk
+            : null,
+        needsRecovery: recovery
+            ? () => !_runtime.playback.state.oneShotReady
+            : null,
       ),
-      description: recovery
-          ? Builder(
-              builder: (context) =>
-                  Text(context.l10n.oneShotSettingsRecoveryBody),
-            )
-          : null,
-      actions: recovery
-          ? [
-              TextButton(
-                onPressed: () async {
-                  if ((await _playback.recoverOneShot()).isOk) {
-                    dismissAppToast(AppToastId.oneShotSettings);
-                  }
-                },
-                child: Builder(
-                  builder: (context) => Text(context.l10n.powerOffRetry),
-                ),
-              ),
-            ]
-          : const [],
     );
   }
 
   void _showRecordLengthFailure(RecordLengthOutcome outcome) {
     if (!mounted || outcome.status == RecordLengthStatus.superseded) return;
     final recovery = outcome.status == RecordLengthStatus.recoveryRequired;
-    AppLog.error(
-      'Record length settings: ${outcome.status.name} ${outcome.error ?? ''}',
-    );
-    showAppToast(
-      id: AppToastId.recordLengthSettings,
-      type: ToastificationType.error,
-      dismissible: !recovery,
-      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
-      title: Builder(
-        builder: (context) => Text(
+    AppLog.error('RecordLength: ${outcome.status.name} ${outcome.error ?? ''}');
+    _controlNotices.show(
+      ControlSettingsNotice(
+        id: AppToastId.recordLengthSettings,
+        title: (context) => Text(
           recovery
               ? context.l10n.recordLengthSettingsRecoveryTitle
               : context.l10n.recordLengthSettingsRefusedTitle,
         ),
+        description: recovery
+            ? (context) => Text(context.l10n.recordLengthSettingsRecoveryBody)
+            : null,
+        retry: recovery
+            ? () async => (await _runtime.record.recoverRecordLength()).isOk
+            : null,
+        needsRecovery: recovery
+            ? () => !_runtime.record.state.recordLengthReady
+            : null,
       ),
-      description: recovery
-          ? Builder(
-              builder: (context) =>
-                  Text(context.l10n.recordLengthSettingsRecoveryBody),
-            )
-          : null,
-      actions: recovery
-          ? [
-              TextButton(
-                onPressed: () async {
-                  if ((await _record.recoverRecordLength()).isOk) {
-                    dismissAppToast(AppToastId.recordLengthSettings);
-                  }
-                },
-                child: Builder(
-                  builder: (context) => Text(context.l10n.powerOffRetry),
-                ),
-              ),
-            ]
-          : const [],
     );
   }
 
   void _showRecordTimingFailure(RecordTimingOutcome outcome) {
     if (!mounted || outcome.status == RecordTimingStatus.superseded) return;
     final recovery = outcome.status == RecordTimingStatus.recoveryRequired;
-    AppLog.error(
-      'Record timing settings: ${outcome.status.name} ${outcome.error ?? ''}',
-    );
-    if (recovery) _timingRecoveryNotice = outcome;
-    // The shutdown dialog owns this failure and its Retry action. A second
-    // toast can cover that action while held controls are being retired.
-    if (_power?.state.isUiUp ?? false) return;
-    showAppToast(
-      id: AppToastId.recordTimingSettings,
-      type: ToastificationType.error,
-      dismissible: !recovery,
-      autoCloseDuration: recovery ? null : const Duration(seconds: 5),
-      title: Builder(
-        builder: (context) => Text(
+    AppLog.error('RecordTiming: ${outcome.status.name} ${outcome.error ?? ''}');
+    _controlNotices.show(
+      ControlSettingsNotice(
+        id: AppToastId.recordTimingSettings,
+        title: (context) => Text(
           recovery
               ? context.l10n.recordTimingSettingsRecoveryTitle
               : context.l10n.recordTimingSettingsRefusedTitle,
         ),
+        description: recovery
+            ? (context) => Text(context.l10n.recordTimingSettingsRecoveryBody)
+            : null,
+        retry: recovery
+            ? () async => (await _runtime.timing.recoverRecordTiming()).isOk
+            : null,
+        needsRecovery: recovery
+            ? () => !_runtime.timing.state.recordTimingReady
+            : null,
       ),
-      description: recovery
-          ? Builder(
-              builder: (context) =>
-                  Text(context.l10n.recordTimingSettingsRecoveryBody),
-            )
-          : null,
-      actions: recovery
-          ? [
-              TextButton(
-                onPressed: () async {
-                  if ((await _timing.recoverRecordTiming()).isOk) {
-                    dismissAppToast(AppToastId.recordTimingSettings);
-                  }
-                },
-                child: Builder(
-                  builder: (context) => Text(context.l10n.powerOffRetry),
-                ),
-              ),
-            ]
-          : const [],
     );
   }
 
   void _syncControlNoticesWithPower(PowerOffState state) {
     if (!mounted) return;
-    if (state.isUiUp) {
-      dismissAppToast(AppToastId.recordTimingSettings);
-      dismissAppToast(AppToastId.clickModeSettings);
-      dismissAppToast(AppToastId.recordStartSettings);
-      dismissAppToast(AppToastId.recordingInputRequired);
-      return;
-    }
-    final notice = _timingRecoveryNotice;
-    _timingRecoveryNotice = null;
-    if (notice != null && !_timing.state.recordTimingReady) {
-      _showRecordTimingFailure(notice);
-    }
-    final clickNotice = _clickModeRecoveryNotice;
-    _clickModeRecoveryNotice = null;
-    if (clickNotice != null && !_tempo.state.clickModeReady) {
-      _showClickModeFailure(clickNotice);
-    }
-    final startNotice = _recordStartRecoveryNotice;
-    _recordStartRecoveryNotice = null;
-    if (startNotice != null && !_tempo.state.recordStartReady) {
-      _showRecordStartFailure(startNotice);
-    }
+    _controlNotices.setPowerVisible(visible: state.isUiUp);
+    if (state.isUiUp) dismissAppToast(AppToastId.recordingInputRequired);
   }
 
   @override
@@ -670,13 +522,17 @@ class _AppState extends State<App> {
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider.value(value: widget.repository),
+        RepositoryProvider.value(value: _runtime.timing),
+        RepositoryProvider.value(value: _runtime.record),
         RepositoryProvider.value(value: widget.controllerRepository),
         RepositoryProvider.value(value: widget.midiDeviceRepository),
         RepositoryProvider.value(value: widget.settings),
-        RepositoryProvider.value(value: _mixSettings),
-        RepositoryProvider.value(value: _fxPersistence),
+        RepositoryProvider.value(value: _runtime.mix),
+        RepositoryProvider.value(value: _runtime.fxPersistence),
+        RepositoryProvider.value(value: _runtime.tempo),
+        RepositoryProvider.value(value: _runtime.playback),
         RepositoryProvider<MixSettingsPersistence>.value(
-          value: _mixPersistence,
+          value: _runtime.mixPersistence,
         ),
         RepositoryProvider.value(value: widget.sessionRepository),
         RepositoryProvider.value(value: widget.performanceRepository),
@@ -723,21 +579,8 @@ class _AppState extends State<App> {
           // drive routing edits through the bloc, mirroring the in-view routing
           // controls. The TracksCubit below is hoisted for the same reason.
           // Remote and console controls are interpreted by ControlCubit.
-          BlocProvider(
-            create: (context) {
-              final bloc = LooperBloc(
-                decayControl: _playback,
-                oneShotControl: _playback,
-                recordLengthControl: _record,
-                recordTimingControl: _timing,
-                repository: context.read<LooperRepository>(),
-                mixSettings: context.read<MixSettingsCoordinator>(),
-                fxPersistence: context.read<FxChainPersistence>(),
-                settings: context.read<SettingsRepository>(),
-              );
-              return bloc;
-            },
-          ),
+          BlocProvider<LooperBloc>.value(value: _runtime.looper),
+          BlocProvider<SessionCubit>.value(value: _runtime.session),
           BlocProvider(
             create: (context) {
               final cubit = TracksCubit(
@@ -853,9 +696,9 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
-          BlocProvider<RecordTimingCubit>.value(value: _timing),
-          BlocProvider<TempoCubit>.value(value: _tempo),
-          BlocProvider<PlaybackOptionsCubit>.value(value: _playback),
+          BlocProvider<RecordTimingCubit>.value(value: _timingView),
+          BlocProvider<TempoCubit>.value(value: _tempoView),
+          BlocProvider<PlaybackOptionsCubit>.value(value: _playbackView),
           BlocProvider(
             // Not lazy: the monitor graph page is the only widget that reads
             // this cubit, but the saved per-input monitors must be applied to
@@ -887,7 +730,7 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
-          BlocProvider.value(value: _record),
+          BlocProvider.value(value: _recordView),
           // Provided at the shell (not just the setup screen) so the device
           // picker, the persisted selection, and the connect/disconnect banner
           // stay live during normal looping, not only during first-run setup.
@@ -909,146 +752,8 @@ class _AppState extends State<App> {
               repository: context.read<MidiDeviceRepository>(),
             ),
           ),
-          // Above ControlCubit so take-start can read isUiUp. MIDI flush
-          // cannot context.read a descendant — capture the instance below.
-          BlocProvider(
-            lazy: false,
-            create: (context) {
-              final power = PowerOffCubit(
-                flush: ({required retry}) async {
-                  final monitor = context.read<MonitorCubit>();
-                  final looper = context.read<LooperBloc>();
-                  final controllers = _control?.flushMidiConfiguration(
-                    retireControls: true,
-                  );
-                  try {
-                    await controllers;
-                  } on ControlCleanupPending {
-                    // Retry repairs the owner before the owed release below.
-                    // Initial shutdown must remain blocked.
-                    if (!retry) rethrow;
-                  }
-                  if (retry) {
-                    final mix = await _mixSettings.recover();
-                    if (!mix.isOk) throw MixSettingsRecoveryException(mix);
-                    final click = await _tempo.recoverClickVolume();
-                    if (!click.isOk) {
-                      throw StateError('Click settings still need recovery');
-                    }
-                    final clickMode = await _tempo.recoverClickMode();
-                    if (!clickMode.isOk) {
-                      throw StateError('Hear click still needs recovery');
-                    }
-                    final recordStart = await _tempo.recoverRecordStart();
-                    if (!recordStart.isOk) {
-                      throw StateError('Recording start still needs recovery');
-                    }
-                    final decay = await _playback.recoverDecay();
-                    if (!decay.isOk) {
-                      throw StateError('Decay settings still need recovery');
-                    }
-                    final once = await _playback.recoverOneShot();
-                    if (!once.isOk) {
-                      throw StateError('Playback settings still need recovery');
-                    }
-                    final length = await _record.recoverRecordLength();
-                    if (!length.isOk) {
-                      throw StateError('Record length still needs recovery');
-                    }
-                    final timing = await _timing.recoverRecordTiming();
-                    if (!timing.isOk) {
-                      throw StateError('Record timing still needs recovery');
-                    }
-                    await _control?.flushMidiConfiguration(
-                      retireControls: true,
-                    );
-                  }
-                  await monitor.flushPersistence();
-                  final receipt = Completer<void>();
-                  looper.add(LooperPersistFlush(receipt: receipt));
-                  await receipt.future;
-                  final mix = await _mixSettings.flush();
-                  if (!mix.isOk) throw MixSettingsRecoveryException(mix);
-                  final click = await _tempo.flushClickVolume();
-                  if (!click.isOk) {
-                    throw StateError('Click settings were not confirmed');
-                  }
-                  final clickMode = await _tempo.flushClickMode();
-                  if (!clickMode.isOk) {
-                    throw StateError('Hear click was not confirmed');
-                  }
-                  final recordStart = await _tempo.flushRecordStart();
-                  if (!recordStart.isOk) {
-                    throw StateError('Recording start was not confirmed');
-                  }
-                  final decay = await _playback.flushDecay();
-                  if (!decay.isOk) {
-                    throw StateError('Decay settings were not confirmed');
-                  }
-                  final once = await _playback.flushOneShot();
-                  if (!once.isOk) {
-                    throw StateError('Playback settings were not confirmed');
-                  }
-                  final length = await _record.flushRecordLength();
-                  if (!length.isOk) {
-                    throw StateError('Record length was not confirmed');
-                  }
-                  final timing = await _timing.flushRecordTiming();
-                  if (!timing.isOk) {
-                    throw StateError('Record timing was not confirmed');
-                  }
-                  dismissAppToast(AppToastId.recordTimingSettings);
-                  dismissAppToast(AppToastId.recordLengthSettings);
-                  dismissAppToast(AppToastId.oneShotSettings);
-                  dismissAppToast(AppToastId.clickSettings);
-                  dismissAppToast(AppToastId.clickModeSettings);
-                  dismissAppToast(AppToastId.recordStartSettings);
-                  dismissAppToast(AppToastId.decaySettings);
-                },
-                pedalGoodbye: () => context.read<PedalRepository>().goodbye(),
-                powerOff:
-                    widget.powerOff ?? const SystemApplianceEnv().powerOff,
-              );
-              _power = power;
-              _powerNoticeSubscription = power.stream.listen(
-                _syncControlNoticesWithPower,
-              );
-              return power;
-            },
-          ),
-          // Eager (not lazy): the ONE control-surface interpreter and owner
-          // of stored user intent (mode / cursor / bank / play intent). The
-          // pedal's decoded footswitches reach it through PedalRepository's
-          // event stream and its projected LED frames leave through the same
-          // repository, so the keyboard, on-screen widgets, and the pedal
-          // share one cursor, one mode, one command path — with repositories
-          // composed at the bloc level, per the layered architecture.
-          BlocProvider(
-            lazy: false,
-            create: (context) {
-              final cubit = ControlCubit(
-                decayControl: _playback,
-                oneShotControl: _playback,
-                recordLengthControl: _record,
-                recordTimingControl: _timing,
-                clickVolumeControl: _tempo,
-                clickModeControl: _tempo,
-                looper: context.read<LooperRepository>(),
-                mixSettings: context.read<MixSettingsCoordinator>(),
-                fxPersistence: context.read<FxChainPersistence>(),
-                pedal: context.read<PedalRepository>(),
-                settings: context.read<SettingsRepository>(),
-                performance: context.read<PerformanceRepository>(),
-                // One owner interprets console intent and selected-device MIDI.
-                controller: context.read<ControllerRepository>(),
-                midiDevices: context.read<MidiDeviceRepository>(),
-                takeLocked: () => context.read<PowerOffCubit>().state.isUiUp,
-              );
-              _control = cubit;
-              unawaited(cubit.load()); // boot-default mode restore
-              return cubit;
-            },
-          ),
+          BlocProvider<PowerOffCubit>.value(value: _runtime.power),
+          BlocProvider<ControlCubit>.value(value: _runtime.control),
           // Eager (not lazy): the pedal LINK feature owns the repository's
           // lifecycle and mirrors the board's status. It shares the
           // PedalRepository with ControlCubit (status here, events/frames
@@ -1083,7 +788,9 @@ class _AppState extends State<App> {
             create: (context) {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
-                takeLocked: () => context.read<PowerOffCubit>().state.isUiUp,
+                takeLocked: () =>
+                    context.read<PowerOffCubit>().state.isUiUp ||
+                    _runtime.fxPersistence.sessionTransitionActive,
               );
               unawaited(cubit.load());
               return cubit;
@@ -1092,7 +799,6 @@ class _AppState extends State<App> {
         ],
         child: _AppView(
           waveformWindow: widget.waveformWindow,
-          exportDirectory: widget.exportDirectory,
           displayCount: widget.displayCount,
           waveformWindowOpenDelay: widget.waveformWindowOpenDelay,
         ),
@@ -1120,13 +826,11 @@ typedef _ReadoutInputs = ({
 class _AppView extends StatefulWidget {
   const _AppView({
     required this.waveformWindow,
-    required this.exportDirectory,
     required this.waveformWindowOpenDelay,
     this.displayCount,
   });
 
   final WaveformWindowService waveformWindow;
-  final Future<String> Function() exportDirectory;
   final int Function()? displayCount;
   final Duration waveformWindowOpenDelay;
 
@@ -1788,9 +1492,7 @@ class _AppViewState extends State<_AppView> {
       supportedLocales: AppLocalizations.supportedLocales,
       home: Builder(
         builder: (context) {
-          final Widget page = LooperPage(
-            exportDirectory: widget.exportDirectory,
-          );
+          const Widget page = LooperPage();
           if (!segnoUsesFlutterTitleBar && !segnoUsesCursorAutoHide) {
             return page;
           }

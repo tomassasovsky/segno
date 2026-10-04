@@ -14,6 +14,9 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/theme/theme.dart';
@@ -36,6 +39,7 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
 void main() {
+  late TempoSettings tempoOwner;
   late MixSettingsCoordinator mixSettings;
   late FxChainPersistence fxPersistence;
   late SettingsRepository settings;
@@ -51,7 +55,7 @@ void main() {
   late RefreshRateCubit refreshRate;
   late RecordTimingCubit quantize;
   late MonitorCubit monitor;
-  late RecordOptionsCubit recordOptions;
+  late RecordSettings recordOptions;
   late LooperRepository repository;
   late LooperBloc looperBloc;
   late TempoCubit tempo;
@@ -207,9 +211,14 @@ void main() {
       }
       return EngineResult.ok;
     });
-    quantize = RecordTimingCubit(repository: repository, settings: settings);
+    final quantizeOwner = RecordTimingSettings(
+      repository: repository,
+      settings: settings,
+    );
+    addTearDown(() => unawaited(quantizeOwner.close()));
+    quantize = RecordTimingCubit(settings: quantizeOwner);
     addTearDown(() => unawaited(quantize.close()));
-    await quantize.load();
+    await quantizeOwner.load();
     // The real control cubit: it owns the shared InteractionMode whose
     // persisted default the View section edits.
     pedalRepo = PedalRepository(NoopPedalLink());
@@ -225,7 +234,7 @@ void main() {
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: quantize,
+      recordTimingControl: quantizeOwner,
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
       fxPersistence: fxPersistence,
@@ -268,7 +277,7 @@ void main() {
     when(
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
-    recordOptions = RecordOptionsCubit(
+    recordOptions = RecordSettings(
       repository: repository,
       settings: settings,
     );
@@ -304,8 +313,14 @@ void main() {
     ]) {
       stub();
     }
-    tempo = TempoCubit(repository: repository, settings: settings);
-    await tempo.loadRecordStart();
+    tempoOwner = TempoSettings(
+      repository: repository,
+      settings: settings,
+    );
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    tempo = TempoCubit(settings: tempoOwner);
+    await tempoOwner.loadRecordStart();
   }
 
   Future<void> pump(WidgetTester tester) async {
@@ -332,7 +347,9 @@ void main() {
               BlocProvider<RefreshRateCubit>.value(value: refreshRate),
               BlocProvider<RecordTimingCubit>.value(value: quantize),
               BlocProvider<MonitorCubit>.value(value: monitor),
-              BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+              BlocProvider<RecordOptionsCubit>(
+                create: (_) => RecordOptionsCubit(settings: recordOptions),
+              ),
               BlocProvider<LooperBloc>.value(value: looperBloc),
               BlocProvider<TempoCubit>.value(value: tempo),
               BlocProvider<UpdateCubit>.value(value: updates),
@@ -476,7 +493,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(quantize.state.defaultTiming.quantize, isTrue);
-    expect(await settings.loadQuantize(), isTrue);
+    expect((await settings.readRecordTimingCheckpoint()).quantize, isTrue);
     verify(() => repository.setRecordTiming(RecordTiming.loopStart)).called(1);
   });
 
@@ -563,7 +580,9 @@ void main() {
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<RecordTimingCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
-            BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+            BlocProvider<RecordOptionsCubit>(
+              create: (_) => RecordOptionsCubit(settings: recordOptions),
+            ),
             BlocProvider<LooperBloc>.value(value: looperBloc),
             BlocProvider<TempoCubit>.value(value: tempo),
             BlocProvider<UpdateCubit>.value(value: updates),

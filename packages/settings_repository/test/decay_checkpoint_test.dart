@@ -28,12 +28,12 @@ void main() {
       () async {
         store.values['sentinel'] = 17;
         expect(await settings.readDecayCheckpoint(channel: null), isNull);
-        await settings.saveOverdubDecay(0);
+        await settings.restoreDecayCheckpoint(channel: null, percent: 0);
         expect(await settings.readDecayCheckpoint(channel: null), 0);
-        await settings.saveTrackOverdubDecay(7, 0);
-        expect(await settings.loadTrackOverdubDecay(7), 0);
+        await settings.restoreDecayCheckpoint(channel: 7, percent: 0);
+        expect(await settings.readDecayCheckpoint(channel: 7), 0);
         await settings.restoreDecayCheckpoint(channel: null, percent: null);
-        await settings.saveTrackOverdubDecay(7, null);
+        await settings.restoreDecayCheckpoint(channel: 7, percent: null);
         expect(store.values, {'sentinel': 17});
       },
     );
@@ -41,10 +41,13 @@ void main() {
       'silent discarded write is refused and does not poison later writer',
       () async {
         store.discard = true;
-        await expectLater(settings.saveOverdubDecay(40), throwsStateError);
+        await expectLater(
+          settings.restoreDecayCheckpoint(channel: null, percent: 40),
+          throwsStateError,
+        );
         store.discard = false;
-        await settings.saveOverdubDecay(60);
-        expect(await settings.loadOverdubDecay(), 60);
+        await settings.restoreDecayCheckpoint(channel: null, percent: 60);
+        expect(await settings.readDecayCheckpoint(channel: null), 60);
       },
     );
     test(
@@ -52,19 +55,22 @@ void main() {
       () async {
         store.values['track_overdub_decay.7'] = 101;
         await expectLater(
-          settings.loadTrackOverdubDecay(7),
+          settings.readDecayCheckpoint(channel: 7),
           throwsFormatException,
         );
         expect(store.values['track_overdub_decay.7'], 101);
       },
     );
     test('invalid coordinates cannot create a hidden override key', () {
-      expect(() => settings.saveTrackOverdubDecay(8, 40), throwsArgumentError);
+      expect(
+        () => settings.restoreDecayCheckpoint(channel: 8, percent: 40),
+        throwsArgumentError,
+      );
       expect(store.values, isEmpty);
     });
     test('loads wait for prior writes and zero remains explicit', () async {
-      final saved = settings.saveTrackOverdubDecay(0, 0);
-      final read = settings.loadTrackOverdubDecay(0);
+      final saved = settings.restoreDecayCheckpoint(channel: 0, percent: 0);
+      final read = settings.readDecayCheckpoint(channel: 0);
       await saved;
       expect(await read, 0);
       expect(store.values.containsKey('track_overdub_decay.0'), isTrue);

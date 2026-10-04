@@ -1328,17 +1328,6 @@ void main() {
     });
   });
 
-  group('quantize', () {
-    test('defaults to off when unset', () async {
-      expect(await repository.loadQuantize(), isFalse);
-    });
-
-    test('round-trips a saved preference', () async {
-      await repository.saveQuantize(value: true);
-      expect(await repository.loadQuantize(), isTrue);
-    });
-  });
-
   group('record options', () {
     test('rec/dub default and exact Sound membership round-trip', () async {
       expect(await repository.loadRecDub(), isFalse);
@@ -1371,17 +1360,36 @@ void main() {
 
   group('track record timing override', () {
     test('defaults to null (follow the default) when unset', () async {
-      expect(await repository.loadTrackRecordTiming(0), isNull);
+      expect(
+        (await repository.readRecordTimingCheckpoint()).trackOverrides[0],
+        isNull,
+      );
     });
 
     test('round-trips a code and the follow-the-default value', () async {
-      await repository.saveTrackRecordTiming(0, 4);
-      await repository.saveTrackRecordTiming(1, 0);
-      expect(await repository.loadTrackRecordTiming(0), 4);
-      expect(await repository.loadTrackRecordTiming(1), 0);
+      await repository.restoreRecordTimingCheckpoint((
+        quantize: null,
+        division: null,
+        trackOverrides: {0: 4, 1: 0},
+      ));
+      expect(
+        (await repository.readRecordTimingCheckpoint()).trackOverrides[0],
+        4,
+      );
+      expect(
+        (await repository.readRecordTimingCheckpoint()).trackOverrides[1],
+        0,
+      );
 
-      await repository.saveTrackRecordTiming(0, null);
-      expect(await repository.loadTrackRecordTiming(0), isNull);
+      await repository.restoreRecordTimingCheckpoint((
+        quantize: null,
+        division: null,
+        trackOverrides: {1: 0},
+      ));
+      expect(
+        (await repository.readRecordTimingCheckpoint()).trackOverrides[0],
+        isNull,
+      );
     });
   });
 
@@ -1601,56 +1609,43 @@ void main() {
   });
 
   group('overdub decay', () {
-    test('defaults to 0 and round-trips, by default and per track', () async {
-      expect(await repository.loadOverdubDecay(), 0);
-      expect(await repository.loadTrackOverdubDecay(0), isNull);
-      await repository.saveOverdubDecay(25);
-      await repository.saveTrackOverdubDecay(0, 100);
-      expect(await repository.loadOverdubDecay(), 25);
-      expect(await repository.loadTrackOverdubDecay(0), 100);
-      await repository.saveTrackOverdubDecay(0, null);
-      expect(await repository.loadTrackOverdubDecay(0), isNull);
-    });
-
     test('retains an explicit value equal to the default', () async {
-      await repository.saveOverdubDecay(25);
-      await repository.saveTrackOverdubDecay(0, 25);
-      await repository.saveTrackOverdubDecay(1, 0);
-      await repository.saveOverdubDecay(70);
-      expect(await repository.loadTrackOverdubDecay(0), 25);
-      expect(await repository.loadTrackOverdubDecay(1), 0);
-      expect(await repository.loadTrackOverdubDecay(2), isNull);
+      await repository.restoreDecayCheckpoint(channel: null, percent: 25);
+      await repository.restoreDecayCheckpoint(channel: 0, percent: 25);
+      await repository.restoreDecayCheckpoint(channel: 1, percent: 0);
+      await repository.restoreDecayCheckpoint(channel: null, percent: 70);
+      expect(await repository.readDecayCheckpoint(channel: 0), 25);
+      expect(await repository.readDecayCheckpoint(channel: 1), 0);
+      expect(await repository.readDecayCheckpoint(channel: 2), isNull);
     });
   });
 
   group('playback choice', () {
-    test('defaults to Loop with all tracks following the default', () async {
-      expect(await repository.loadDefaultOneShot(), isFalse);
-      expect(await repository.loadTrackOneShot(0), isNull);
-    });
-
     test(
       'preserves explicit Loop and Once independently of the default',
       () async {
-        await repository.saveTrackOneShot(0, oneShot: false);
-        await repository.saveTrackOneShot(1, oneShot: true);
-        await repository.saveDefaultOneShot(oneShot: true);
-        expect(await repository.loadDefaultOneShot(), isTrue);
-        expect(await repository.loadTrackOneShot(0), isFalse);
-        expect(await repository.loadTrackOneShot(1), isTrue);
-        expect(await repository.loadTrackOneShot(2), isNull);
+        await repository.restoreOneShotCheckpoint(channel: 0, oneShot: false);
+        await repository.restoreOneShotCheckpoint(channel: 1, oneShot: true);
+        await repository.restoreOneShotCheckpoint(channel: null, oneShot: true);
+        expect(await repository.readOneShotCheckpoint(channel: null), isTrue);
+        expect(await repository.readOneShotCheckpoint(channel: 0), isFalse);
+        expect(await repository.readOneShotCheckpoint(channel: 1), isTrue);
+        expect(await repository.readOneShotCheckpoint(channel: 2), isNull);
 
-        await repository.saveDefaultOneShot(oneShot: false);
-        expect(await repository.loadDefaultOneShot(), isFalse);
-        expect(await repository.loadTrackOneShot(1), isTrue);
+        await repository.restoreOneShotCheckpoint(
+          channel: null,
+          oneShot: false,
+        );
+        expect(await repository.readOneShotCheckpoint(channel: null), isFalse);
+        expect(await repository.readOneShotCheckpoint(channel: 1), isTrue);
       },
     );
 
     test('Use default removes either explicit playback choice', () async {
       for (final oneShot in [false, true]) {
-        await repository.saveTrackOneShot(0, oneShot: oneShot);
-        await repository.saveTrackOneShot(0, oneShot: null);
-        expect(await repository.loadTrackOneShot(0), isNull);
+        await repository.restoreOneShotCheckpoint(channel: 0, oneShot: oneShot);
+        await repository.restoreOneShotCheckpoint(channel: 0, oneShot: null);
+        expect(await repository.readOneShotCheckpoint(channel: 0), isNull);
       }
     });
   });
@@ -1674,17 +1669,6 @@ void main() {
     test('round-trips a saved signature', () async {
       await repository.saveTimeSignature(7, 8);
       expect(await repository.loadTimeSignature(), (7, 8));
-    });
-  });
-
-  group('quantize div', () {
-    test('defaults to 0 (off) when unset', () async {
-      expect(await repository.loadQuantizeDiv(), 0);
-    });
-
-    test('round-trips a saved enum code', () async {
-      await repository.saveQuantizeDiv(3);
-      expect(await repository.loadQuantizeDiv(), 3);
     });
   });
 

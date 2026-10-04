@@ -40,6 +40,20 @@ class _DeferredMonitorFxStore extends FakeKeyValueStore {
   }
 }
 
+class _BlockedMonitorModeStore extends FakeKeyValueStore {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<void> setString(String key, String value) async {
+    if (key == 'monitor_input_mode.0' && !entered.isCompleted) {
+      entered.complete();
+      await release.future;
+    }
+    await super.setString(key, value);
+  }
+}
+
 void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
@@ -60,13 +74,25 @@ void main() {
     when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
     addTearDown(looperStates.close);
     final monitorVolumes = <int, double>{};
+    final monitorModes = <int, MonitorMode>{};
+    final monitorOutputs = <int, int>{};
+    final monitorMutes = <int, bool>{};
     final monitorChains = <int, List<TrackEffect>>{};
     final monitorChainFlags = <int, bool>{};
     when(repository.allMonitors).thenAnswer(
       (_) => {
-        for (final input in {...monitorChains.keys, ...monitorChainFlags.keys})
+        for (final input in {
+          ...monitorChains.keys,
+          ...monitorChainFlags.keys,
+          ...monitorModes.keys,
+          ...monitorOutputs.keys,
+          ...monitorMutes.keys,
+        })
           input: InputMonitor(
             input: input,
+            mode: monitorModes[input] ?? MonitorMode.off,
+            outputMask: monitorOutputs[input] ?? 3,
+            muted: monitorMutes[input] ?? false,
             effects: monitorChains[input] ?? const [],
             chainEnabled: monitorChainFlags[input] ?? true,
           ),
@@ -156,13 +182,21 @@ void main() {
         input: any(named: 'input'),
         mode: any(named: 'mode'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorModes[call.namedArguments[#input] as int] =
+          call.namedArguments[#mode] as MonitorMode;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorOutput(
         input: any(named: 'input'),
         mask: any(named: 'mask'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorOutputs[call.namedArguments[#input] as int] =
+          call.namedArguments[#mask] as int;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorVolume(
         input: any(named: 'input'),
@@ -178,7 +212,11 @@ void main() {
         input: any(named: 'input'),
         muted: any(named: 'muted'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorMutes[call.namedArguments[#input] as int] =
+          call.namedArguments[#muted] as bool;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorEffects(
         input: any(named: 'input'),
@@ -277,6 +315,24 @@ void main() {
     settings: settings,
     fxPersistDebounce: Duration.zero,
   );
+
+  test('an input route edit outlives an earlier blocked FX save', () async {
+    final store = _BlockedMonitorModeStore();
+    settings = SettingsRepository(store: store);
+    final cubit = build();
+    addTearDown(cubit.close);
+    cubit.addEffect(0);
+    await store.entered.future;
+    final route = cubit.setOutputMask(0, 4);
+    store.release.complete();
+    await route;
+    await cubit.flushPersistence();
+    expect(await settings.loadMonitorOutput(0), 4);
+    expect(
+      decodeFxChain(await settings.loadMonitorEffects(0)).entries,
+      hasLength(1),
+    );
+  });
 
   group('following the repository', () {
     late StreamController<int> changes;
@@ -1021,9 +1077,9 @@ void main() {
       },
     );
 
-    group('syncFromRepository', () {
+    group('projectFromRepository', () {
       blocTest<MonitorCubit, MonitorState>(
-        're-projects repository monitors and persists non-mix fields',
+        're-projects repository monitors without persisting them',
         setUp: () {
           when(repository.allMonitors).thenReturn({
             2: InputMonitor(
@@ -1037,7 +1093,7 @@ void main() {
           });
         },
         build: build,
-        act: (cubit) => cubit.syncFromRepository(),
+        act: (cubit) => cubit.projectFromRepository(),
         verify: (cubit) async {
           final monitor = cubit.state.forInput(2);
           expect(monitor.mode, MonitorMode.on);
@@ -1048,12 +1104,12 @@ void main() {
             (monitor.effects.single as BuiltInEffect).type,
             TrackEffectType.delay,
           );
-          // SessionCubit owns the separate atomic mix write before this sync.
-          expect(await settings.loadMonitorInputMode(2), 'on');
-          expect(await settings.loadMonitorOutput(2), 0x2);
+          // The new session's boot image is a separate application write.
+          expect(await settings.loadMonitorInputMode(2), isNull);
+          expect(await settings.loadMonitorOutput(2), isNull);
           expect(await settings.loadMonitorVolume(2), isNull);
-          expect(await settings.loadMonitorMute(2), isTrue);
-          expect(await settings.loadMonitorEffects(2), isNotNull);
+          expect(await settings.loadMonitorMute(2), isNull);
+          expect(await settings.loadMonitorEffects(2), isNull);
           // The load already applied to the engine; the re-sync only READS the
           // repository — it must never push back, or it could desync the two.
           verifyNever(
@@ -1090,7 +1146,7 @@ void main() {
       );
 
       blocTest<MonitorCubit, MonitorState>(
-        'resets non-mix fields for inputs dropped since the last state',
+        'drops absent inputs from presentation without changing stored keys',
         setUp: () async {
           // A prior session left input 5 configured (enabled + non-default
           // routing / volume / mute) in settings AND cubit state.
@@ -1102,25 +1158,28 @@ void main() {
             5,
             encodeTrackEffects([BuiltInEffect(type: TrackEffectType.reverb)]),
           );
-          // The freshly loaded session defines no monitors.
-          when(repository.allMonitors).thenReturn(const {});
         },
         build: build,
         // Seed input 5 into state so it counts as "previously present".
-        act: (cubit) async {
-          await cubit.setMode(5, MonitorMode.on);
-          await cubit.syncFromRepository();
+        act: (cubit) {
+          when(repository.allMonitors).thenReturn(const {
+            5: InputMonitor(input: 5, mode: MonitorMode.on),
+          });
+          cubit.projectFromRepository();
+          // The freshly loaded session defines no monitors.
+          when(repository.allMonitors).thenReturn(const {});
+          cubit.projectFromRepository();
         },
         verify: (cubit) async {
           expect(cubit.state.inputs, isEmpty);
-          // SessionCubit writes the new mix level before this listener runs.
-          expect(await settings.loadMonitorInputMode(5), 'off');
-          expect(await settings.loadMonitorOutput(5), 0x3);
+          // A projection cannot clear boot storage; the load owner does that.
+          expect(await settings.loadMonitorInputMode(5), 'on');
+          expect(await settings.loadMonitorOutput(5), 0x2);
           expect(await settings.loadMonitorVolume(5), 0.3);
-          expect(await settings.loadMonitorMute(5), isFalse);
+          expect(await settings.loadMonitorMute(5), isTrue);
           expect(
             await settings.loadMonitorEffects(5),
-            encodeFxChain(const FxChainEnvelope()),
+            encodeTrackEffects([BuiltInEffect(type: TrackEffectType.reverb)]),
           );
         },
       );

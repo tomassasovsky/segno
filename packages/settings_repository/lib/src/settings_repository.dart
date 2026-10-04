@@ -205,6 +205,37 @@ class SettingsRepository {
   final KeyValueStore _store;
   Future<void> _serializedWrite = Future<void>.value();
 
+  Future<void> _writeIntScalar(String key, int? value, String failure) async {
+    if (value == null) {
+      await _store.remove(key);
+    } else {
+      await _store.setInt(key, value);
+    }
+    if (await _store.getInt(key) != value) throw StateError(failure);
+  }
+
+  Future<void> _writeBoolScalar(String key, bool? value, String failure) async {
+    if (value == null) {
+      await _store.remove(key);
+    } else {
+      await _store.setBool(key, value: value);
+    }
+    if (await _store.getBool(key) != value) throw StateError(failure);
+  }
+
+  Future<void> _writeDoubleScalar(
+    String key,
+    double? value,
+    String failure,
+  ) async {
+    if (value == null) {
+      await _store.remove(key);
+    } else {
+      await _store.setDouble(key, value);
+    }
+    if (await _store.getDouble(key) != value) throw StateError(failure);
+  }
+
   Future<T> _serialize<T>(Future<T> Function() write) {
     final operation = _serializedWrite.then((_) => write());
     _serializedWrite = operation.then<void>(
@@ -714,15 +745,6 @@ class SettingsRepository {
 
   static const String _quantizeKey = 'looper.quantize';
 
-  /// Whether recording is quantized to the loop grid. Defaults to `false`
-  /// (the free-running behaviour) when unset.
-  Future<bool> loadQuantize() async =>
-      await _store.getBool(_quantizeKey) ?? false;
-
-  /// Saves whether recording is quantized to the loop grid.
-  Future<void> saveQuantize({required bool value}) =>
-      _store.setBool(_quantizeKey, value: value);
-
   static const String _recDubKey = 'looper.rec_dub';
 
   /// Whether a record press finalizing a recording continues into overdub
@@ -757,9 +779,8 @@ class SettingsRepository {
 
   // ---- tempo grid (A1) + click/count-in (A2) ----
   //
-  // Every key here defaults to the tempo-free/grid-off value, so an unset
-  // install (or one that predates this plan) loads exactly the tempo-free
-  // behaviour — mirroring [loadQuantize]'s off-by-default contract.
+  // Timing checkpoints preserve missing keys; the application decodes their
+  // tempo-free/grid-off defaults.
 
   static const String _tempoBpmKey = 'tempo.bpm';
 
@@ -789,16 +810,6 @@ class SettingsRepository {
 
   static const String _quantizeDivKey = 'tempo.quantize_div';
 
-  /// Loads the musical quantization granularity as the native `le_grid_div`
-  /// enum code (see `GridDivision.code` / `GridDivision.fromCode`). Defaults
-  /// to `0` (`GridDivision.off`) when unset.
-  Future<int> loadQuantizeDiv() async =>
-      await _store.getInt(_quantizeDivKey) ?? 0;
-
-  /// Saves the musical quantization granularity as its enum [code].
-  Future<void> saveQuantizeDiv(int code) =>
-      _store.setInt(_quantizeDivKey, code);
-
   static const String _clickModeKey = 'tempo.click_mode';
 
   /// Reads the exact saved native enum, preserving absence and invalid data.
@@ -817,14 +828,11 @@ class SettingsRepository {
       throw const FormatException('Invalid Hear click setting');
     }
     return _serialize(() async {
-      if (code == null) {
-        await _store.remove(_clickModeKey);
-      } else {
-        await _store.setInt(_clickModeKey, code);
-      }
-      if (await _store.getInt(_clickModeKey) != code) {
-        throw StateError('Hear click checkpoint was not restored');
-      }
+      await _writeIntScalar(
+        _clickModeKey,
+        code,
+        'Hear click checkpoint was not restored',
+      );
     });
   }
 
@@ -853,23 +861,21 @@ class SettingsRepository {
 
   /// Saves and verifies the Click scalar through the existing writer.
   Future<void> saveClickVolume(double volume) => _serialize(() async {
-    await _store.setDouble(_clickVolumeKey, volume);
-    if (await _store.getDouble(_clickVolumeKey) != volume) {
-      throw StateError('Click volume was not saved');
-    }
+    await _writeDoubleScalar(
+      _clickVolumeKey,
+      volume,
+      'Click volume was not saved',
+    );
   });
 
   /// Restores the exact old scalar, including an absent preference.
   Future<void> restoreClickVolumeCheckpoint(double? checkpoint) =>
       _serialize(() async {
-        if (checkpoint == null) {
-          await _store.remove(_clickVolumeKey);
-        } else {
-          await _store.setDouble(_clickVolumeKey, checkpoint);
-        }
-        if (await _store.getDouble(_clickVolumeKey) != checkpoint) {
-          throw StateError('Click volume checkpoint was not restored');
-        }
+        await _writeDoubleScalar(
+          _clickVolumeKey,
+          checkpoint,
+          'Click volume checkpoint was not restored',
+        );
       });
 
   static const String _countInBarsKey = 'tempo.count_in_bars';
@@ -934,7 +940,7 @@ class SettingsRepository {
   /// Loads the five-mode axis as the native `le_looper_mode` enum code (see
   /// `LooperMode.code` / `LooperMode.fromCode`). Defaults to `0`
   /// (`LooperMode.multi`) when unset — the int-code convention matches this
-  /// enum's siblings ([loadQuantizeDiv] / [readClickModeCheckpoint]), unlike
+  /// enum's siblings ([readRecordTimingCheckpoint] / [readClickModeCheckpoint]), unlike
   /// `loadDefaultInteractionMode`'s opaque-string-token scheme: that key
   /// predates this plan and preserves pre-rename legacy tokens (D10), a
   /// concern this newly-introduced enum has no analog of.
@@ -978,14 +984,11 @@ class SettingsRepository {
       throw ArgumentError.value(bars, 'bars');
     }
     return _serialize(() async {
-      if (bars == null) {
-        await _store.remove(key);
-      } else {
-        await _store.setInt(key, bars);
-      }
-      if (await _store.getInt(key) != bars) {
-        throw StateError('Record length scalar was not confirmed');
-      }
+      await _writeIntScalar(
+        key,
+        bars,
+        'Record length scalar was not confirmed',
+      );
     });
   }
 
@@ -1005,14 +1008,11 @@ class SettingsRepository {
       throw ArgumentError.value(mode, 'mode');
     }
     return _serialize(() async {
-      if (mode == null) {
-        await _store.remove(_looperModeKey);
-      } else {
-        await _store.setInt(_looperModeKey, mode);
-      }
-      if (await _store.getInt(_looperModeKey) != mode) {
-        throw StateError('Loop mode scalar was not confirmed');
-      }
+      await _writeIntScalar(
+        _looperModeKey,
+        mode,
+        'Loop mode scalar was not confirmed',
+      );
     });
   }
 
@@ -1903,27 +1903,20 @@ class SettingsRepository {
   ) {
     _validateRecordTimingCheckpoint(checkpoint);
     return _serialize(() async {
-      final oldGate = await _store.getBool(_quantizeKey);
-      if (oldGate != checkpoint.quantize) {
-        if (checkpoint.quantize == null) {
-          await _store.remove(_quantizeKey);
-        } else {
-          await _store.setBool(_quantizeKey, value: checkpoint.quantize!);
-        }
-        if (await _store.getBool(_quantizeKey) != checkpoint.quantize) {
-          throw StateError('Record timing gate was not confirmed');
-        }
+      if (await _store.getBool(_quantizeKey) != checkpoint.quantize) {
+        await _writeBoolScalar(
+          _quantizeKey,
+          checkpoint.quantize,
+          'Record timing gate was not confirmed',
+        );
       }
       Future<void> write(String key, int? value) async {
         if (await _store.getInt(key) == value) return;
-        if (value == null) {
-          await _store.remove(key);
-        } else {
-          await _store.setInt(key, value);
-        }
-        if (await _store.getInt(key) != value) {
-          throw StateError('Record timing scalar was not confirmed');
-        }
+        await _writeIntScalar(
+          key,
+          value,
+          'Record timing scalar was not confirmed',
+        );
       }
 
       await write(_quantizeDivKey, checkpoint.division);
@@ -1934,18 +1927,6 @@ class SettingsRepository {
   }
 
   String _trackRecordTimingKey(int channel) => 'track_record_timing.$channel';
-
-  /// Loads track [channel]'s record timing override as its `RecordTiming`
-  /// code (`0` = immediately, `1` = loop start, `2..6` = bar to 1/16), or
-  /// `null` to follow the default.
-  Future<int?> loadTrackRecordTiming(int channel) =>
-      _store.getInt(_trackRecordTimingKey(channel));
-
-  /// Saves track [channel]'s record timing override by code (`null` =>
-  /// follow the default).
-  Future<void> saveTrackRecordTiming(int channel, int? code) => code == null
-      ? _store.remove(_trackRecordTimingKey(channel))
-      : _store.setInt(_trackRecordTimingKey(channel), code);
 
   static const String _overdubDecayKey = 'looper.overdub_decay';
   String _trackOverdubDecayKey(int channel) => 'track_overdub_decay.$channel';
@@ -1982,32 +1963,9 @@ class SettingsRepository {
     final key = _decayKey(channel);
     _validateDecay(percent);
     return _serialize(() async {
-      if (percent == null) {
-        await _store.remove(key);
-      } else {
-        await _store.setInt(key, percent);
-      }
-      if (await _store.getInt(key) != percent) {
-        throw StateError('Decay scalar was not confirmed');
-      }
+      await _writeIntScalar(key, percent, 'Decay scalar was not confirmed');
     });
   }
-
-  /// Loads default decay; an absent scalar means zero percent.
-  Future<int> loadOverdubDecay() async =>
-      await readDecayCheckpoint(channel: null) ?? 0;
-
-  /// Saves and verifies default decay through the shared settings writer.
-  Future<void> saveOverdubDecay(int percent) =>
-      restoreDecayCheckpoint(channel: null, percent: percent);
-
-  /// Loads a track override; absence inherits, while explicit zero is Custom.
-  Future<int?> loadTrackOverdubDecay(int channel) =>
-      readDecayCheckpoint(channel: channel);
-
-  /// Saves an explicit track percent, or removes the override on Use default.
-  Future<void> saveTrackOverdubDecay(int channel, int? percent) =>
-      restoreDecayCheckpoint(channel: channel, percent: percent);
 
   static const String _defaultOneShotKey = 'looper.default_one_shot';
   String _trackOneShotKey(int channel) => 'track_one_shot.$channel';
@@ -2033,32 +1991,9 @@ class SettingsRepository {
   }) {
     final key = _oneShotKey(channel);
     return _serialize(() async {
-      if (oneShot == null) {
-        await _store.remove(key);
-      } else {
-        await _store.setBool(key, value: oneShot);
-      }
-      if (await _store.getBool(key) != oneShot) {
-        throw StateError('Playback scalar was not confirmed');
-      }
+      await _writeBoolScalar(key, oneShot, 'Playback scalar was not confirmed');
     });
   }
-
-  /// Loads the default choice; absence loops.
-  Future<bool> loadDefaultOneShot() async =>
-      await readOneShotCheckpoint(channel: null) ?? false;
-
-  /// Saves the default playback choice.
-  Future<void> saveDefaultOneShot({required bool oneShot}) =>
-      restoreOneShotCheckpoint(channel: null, oneShot: oneShot);
-
-  /// Loads explicit membership, including false; null inherits.
-  Future<bool?> loadTrackOneShot(int channel) =>
-      readOneShotCheckpoint(channel: channel);
-
-  /// Saves explicit membership or removes only this field's override.
-  Future<void> saveTrackOneShot(int channel, {required bool? oneShot}) =>
-      restoreOneShotCheckpoint(channel: channel, oneShot: oneShot);
 
   String _laneMuteKey(int channel, int lane) => 'lane_mute.$channel.$lane';
   String _laneEffectsKey(int channel, int lane) =>

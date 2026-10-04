@@ -16,6 +16,7 @@ import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
@@ -53,6 +54,7 @@ const _rig = LooperState(
 );
 
 void main() {
+  late TempoSettings tempoOwner;
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   // Author-machine goldens, like the other screenshot suites here.
@@ -93,6 +95,28 @@ void main() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
     when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.clickModeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => repository.laneCount(any())).thenAnswer((call) {
+      final channel = call.positionalArguments.first as int;
+      return repository.state.tracks
+              .where((track) => track.channel == channel)
+              .firstOrNull
+              ?.lanes
+              .length ??
+          0;
+    });
     settings = SettingsRepository(store: FakeKeyValueStore());
     monitorChanges = StreamController<int>.broadcast();
     monitorParams = StreamController<int>.broadcast();
@@ -139,7 +163,13 @@ void main() {
       repository: repository,
       settings: settings,
     );
-    final tempo = TempoCubit(repository: repository, settings: settings);
+    tempoOwner = TempoSettings(
+      repository: repository,
+      settings: settings,
+    );
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    final tempo = TempoCubit(settings: tempoOwner);
     final tracks = TracksCubit(settings: settings);
     for (final cubit in <BlocBase<Object?>>[
       inputs,

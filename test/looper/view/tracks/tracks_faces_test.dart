@@ -11,6 +11,7 @@ import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
@@ -108,7 +109,12 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tracks = TracksCubit(settings: settings);
     inputs = InputsCubit(settings: settings, repository: repository);
-    quantize = RecordTimingCubit(repository: repository, settings: settings);
+    final quantizeOwner = RecordTimingSettings(
+      repository: repository,
+      settings: settings,
+    );
+    addTearDown(() => unawaited(quantizeOwner.close()));
+    quantize = RecordTimingCubit(settings: quantizeOwner);
     tray = SettingsTrayCubit(settings: settings);
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).

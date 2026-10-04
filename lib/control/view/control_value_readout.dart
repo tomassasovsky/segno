@@ -1,9 +1,6 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/model/click_mode.dart';
-import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart'
     show routingPlacementLabel;
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
@@ -62,15 +59,6 @@ String clickModeReadout(AppLocalizations l10n, ClickMode mode) =>
       ClickMode.playRec => l10n.loopClickAlways,
     };
 
-/// A saved Hear click target remains visible while capture prevents edits.
-String? clickModeDisabledReason(
-  AppLocalizations l10n,
-  ControlValueTarget target,
-  ClickModeSnapshot? snapshot,
-) => target is ClickModeValueTarget && snapshot?.canEdit == false
-    ? l10n.clickModeCaptureLocked
-    : null;
-
 /// The same seven musical choices offered by Loop settings.
 String recordTimingReadout(AppLocalizations l10n, RecordTiming timing) =>
     switch (timing) {
@@ -82,28 +70,3 @@ String recordTimingReadout(AppLocalizations l10n, RecordTiming timing) =>
       RecordTiming.eighth => l10n.loopTimingEighth,
       RecordTiming.sixteenth => l10n.loopTimingSixteenth,
     };
-
-/// Why an initialized Record length target cannot accept a new edit now.
-String? recordLengthDisabledReason(
-  AppLocalizations l10n,
-  ControlValueTarget target,
-  RecordLengthSnapshot? snapshot,
-) {
-  if (target is! RecordLengthValueTarget || snapshot == null) return null;
-  if (snapshot.canEdit(target.address)) return null;
-  return snapshot.captureLocked
-      ? l10n.recordLengthCaptureLocked
-      : l10n.recordLengthSharedInMulti;
-}
-
-/// A timing row remains identifiable while capture temporarily blocks edits.
-String? recordTimingDisabledReason(
-  AppLocalizations l10n,
-  ControlValueTarget target,
-  RecordTimingSnapshot? snapshot,
-) {
-  if (target is! RecordTimingValueTarget || snapshot == null) return null;
-  return snapshot.canEdit(target.address)
-      ? null
-      : l10n.recordTimingCaptureLocked;
-}

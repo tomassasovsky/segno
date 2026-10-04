@@ -8,6 +8,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/loop_settings_feedback_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
+import 'package:segno/looper/model/record_options_view_state.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_labels.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/loop_settings/loop_track_names.dart';
@@ -53,12 +54,14 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
 
   /// A requested count stays editable until the confirmed value catches up.
   int? _candidateBars;
+  int? _lengthAttemptId;
   int? _confirmedBarsAtAttempt;
   bool _candidateRefused = false;
   int? _sessionRevision;
 
   void _discardCandidate() {
     _candidateBars = null;
+    _lengthAttemptId = null;
     _confirmedBarsAtAttempt = null;
     _candidateRefused = false;
   }
@@ -66,9 +69,10 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
   void _setBars(int? bars) {
     final scope = _scope;
     final record = context.read<RecordOptionsCubit>();
-    if (!record.state.recordLengthReady ||
-        record.state.recordLengthCaptureLocked ||
-        (scope != null && record.state.recordLengthMode == LooperMode.multi)) {
+    if (!record.state.options.recordLengthReady ||
+        record.state.options.recordLengthCaptureLocked ||
+        (scope != null &&
+            record.state.options.recordLengthMode == LooperMode.multi)) {
       return;
     }
     if (bars == null || bars == 0) {
@@ -80,23 +84,15 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
         _candidateRefused = false;
       });
     }
-    final lifetime = record.recordLengthLifetime;
-    unawaited(() async {
-      final outcome = scope == null
-          ? await record.setDefaultLengthBars(bars ?? 0)
-          : await record.setTrackRecordLength(channel: scope, bars: bars);
-      if (!mounted ||
-          scope != _scope ||
-          record.recordLengthLifetime != lifetime ||
-          _candidateBars != bars) {
-        return;
-      }
-      if (!outcome.isOk) setState(() => _candidateRefused = true);
-    }());
+    final command = scope == null
+        ? record.setDefaultLengthBars(bars ?? 0)
+        : record.setTrackRecordLength(channel: scope, bars: bars);
+    _lengthAttemptId = record.state.lengthAttempt?.id;
+    unawaited(command);
   }
 
   int _confirmedBars() {
-    final record = context.read<RecordOptionsCubit>().state;
+    final record = context.read<RecordOptionsCubit>().state.options;
     if (_scope == null || record.recordLengthMode == LooperMode.multi) {
       return record.defaultLengthBars;
     }
@@ -124,7 +120,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
       (bloc) => _lengthValues(bloc.state),
     );
     // Length defaults and exact Custom membership share the confirmed owner.
-    final record = context.watch<RecordOptionsCubit>().state;
+    final record = context.watch<RecordOptionsCubit>().state.options;
     final defaultBars = record.defaultLengthBars;
     final sessionRevision = context.select<LoopSettingsFeedbackCubit, int>(
       (cubit) => cubit.state.sessionRevision,
@@ -163,13 +159,34 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
     final lengthEnabled = record.recordLengthReady && !locked && !shared;
     final timingEnabled = timingState.recordTimingReady && !locked;
     final top = locked ? 441.0 : 349.0;
-    return BlocListener<LoopSettingsFeedbackCubit, LoopSettingsFeedback>(
-      listenWhen: (previous, current) => previous.refused != current.refused,
-      listener: (context, _) {
-        if (_candidateBars != null) {
-          setState(() => _candidateRefused = true);
-        }
-      },
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<RecordOptionsCubit, RecordOptionsViewState>(
+          listenWhen: (before, after) =>
+              before.lengthAttempt != after.lengthAttempt,
+          listener: (context, state) {
+            final attempt = state.lengthAttempt;
+            if (attempt == null ||
+                attempt.id != _lengthAttemptId ||
+                attempt.phase == LengthEditPhase.pending ||
+                attempt.channel != _scope ||
+                attempt.bars != _candidateBars) {
+              return;
+            }
+            setState(() {
+              _candidateRefused = attempt.phase == LengthEditPhase.refused;
+            });
+          },
+        ),
+        BlocListener<LoopSettingsFeedbackCubit, LoopSettingsFeedback>(
+          listenWhen: (before, after) => before.refused != after.refused,
+          listener: (context, _) {
+            if (_candidateBars != null) {
+              setState(() => _candidateRefused = true);
+            }
+          },
+        ),
+      ],
       child: Positioned.fill(
         child: Stack(
           children: [

@@ -8,6 +8,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/audio_setup/view/click_volume_section.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/model/click_volume.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -24,6 +25,7 @@ const _fourOut = AudioSetupState(
 );
 
 void main() {
+  late TempoSettings tempoOwner;
   late _MockAudioSetupCubit audio;
   late LooperRepository repository;
   late TempoCubit tempo;
@@ -46,13 +48,16 @@ void main() {
       engine: FakeAudioEngine(),
       ticker: const Stream<void>.empty(),
     );
-    tempo = TempoCubit(
+    tempoOwner = TempoSettings(
       repository: repository,
       settings: SettingsRepository(store: FakeKeyValueStore()),
     );
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    tempo = TempoCubit(settings: tempoOwner);
     addTearDown(() => unawaited(tempo.close()));
     addTearDown(repository.dispose);
-    unawaited(tempo.load());
+    unawaited(tempoOwner.load());
     await tester.pumpApp(
       MultiBlocProvider(
         providers: [
@@ -109,7 +114,7 @@ void main() {
         findsOneWidget,
       );
 
-      expect((await tempo.setClickVolume(0.5)).isOk, isTrue);
+      expect((await tempoOwner.setClickVolume(0.5)).isOk, isTrue);
       expect(tempo.state.clickVolume, .5);
       expect(repository.sessionTransport.clickVolume, .5);
       await tester.pumpAndSettle();
@@ -119,7 +124,7 @@ void main() {
       );
 
       // The bar reaches the engine's +6 dB ceiling, not 100%.
-      expect((await tempo.setClickVolume(kMaxClickGain)).isOk, isTrue);
+      expect((await tempoOwner.setClickVolume(kMaxClickGain)).isOk, isTrue);
       expect(repository.sessionTransport.clickVolume, 2);
       await tester.pumpAndSettle();
       expect(

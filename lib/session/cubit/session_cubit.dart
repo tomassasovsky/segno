@@ -4,13 +4,10 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
-import 'package:segno/looper/model/one_shot.dart';
-import 'package:segno/looper/model/overdub_decay.dart';
-import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_start.dart';
-import 'package:segno/looper/model/record_timing.dart';
+import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 part 'session_state.dart';
 
@@ -48,22 +45,9 @@ class SessionCubit extends Cubit<SessionState> {
     required PerformanceRepository performance,
     required MixSettingsCoordinator mixSettings,
     required FxChainPersistence fxPersistence,
+    required SettingsRepository settings,
     required MixSettingsPersistence mixPersistence,
-    required Future<T> Function<T>(Future<T> Function() operation)
-    runTempoExclusive,
-    required double Function() currentDurableClickVolume,
-    required ClickMode Function() currentDurableClickMode,
-    required RecordStartSettings Function() currentDurableRecordStart,
-    required Future<T> Function<T>(Future<T> Function() operation)
-    runPlaybackExclusive,
-    required DecaySnapshot Function() currentDurableDecay,
-    required OneShotSnapshot Function() currentDurableOneShot,
-    required Future<T> Function<T>(Future<T> Function() operation)
-    runRecordExclusive,
-    required RecordLengthSnapshot Function() currentDurableRecordLength,
-    required Future<T> Function<T>(Future<T> Function() operation)
-    runRecordTimingExclusive,
-    required RecordTimingSnapshot Function() currentDurableRecordTiming,
+    required SessionSettingsCoordinator captureSettings,
     required Future<String> Function() exportDirectory,
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
@@ -73,18 +57,9 @@ class SessionCubit extends Cubit<SessionState> {
        _performance = performance,
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
+       _settings = settings,
        _mixPersistence = mixPersistence,
-       _runTempoExclusive = runTempoExclusive,
-       _currentDurableClickVolume = currentDurableClickVolume,
-       _currentDurableClickMode = currentDurableClickMode,
-       _currentDurableRecordStart = currentDurableRecordStart,
-       _runPlaybackExclusive = runPlaybackExclusive,
-       _currentDurableDecay = currentDurableDecay,
-       _currentDurableOneShot = currentDurableOneShot,
-       _runRecordExclusive = runRecordExclusive,
-       _currentDurableRecordLength = currentDurableRecordLength,
-       _runRecordTimingExclusive = runRecordTimingExclusive,
-       _currentDurableRecordTiming = currentDurableRecordTiming,
+       _captureSettings = captureSettings,
        _exportDirectory = exportDirectory,
        _currentPedalBindings = currentPedalBindings,
        _onPedalBindings = onPedalBindings,
@@ -108,38 +83,19 @@ class SessionCubit extends Cubit<SessionState> {
   final PerformanceRepository _performance;
   final MixSettingsCoordinator _mixSettings;
   final FxChainPersistence _fxPersistence;
+  final SettingsRepository _settings;
   final MixSettingsPersistence _mixPersistence;
-  final Future<T> Function<T>(Future<T> Function() operation)
-  _runTempoExclusive;
-  final double Function() _currentDurableClickVolume;
-  final ClickMode Function() _currentDurableClickMode;
-  final RecordStartSettings Function() _currentDurableRecordStart;
-  final Future<T> Function<T>(Future<T> Function() operation)
-  _runPlaybackExclusive;
-  final DecaySnapshot Function() _currentDurableDecay;
-  final OneShotSnapshot Function() _currentDurableOneShot;
-  final Future<T> Function<T>(Future<T> Function() operation)
-  _runRecordExclusive;
-  final RecordLengthSnapshot Function() _currentDurableRecordLength;
-  final Future<T> Function<T>(Future<T> Function() operation)
-  _runRecordTimingExclusive;
-  final RecordTimingSnapshot Function() _currentDurableRecordTiming;
+  final SessionSettingsCoordinator _captureSettings;
   final Future<String> Function() _exportDirectory;
   final String Function() _currentPedalBindings;
   final void Function(String encoded) _onPedalBindings;
   final void Function() _releaseHeldBindings;
-
-  // Lock order: Mixer, Tempo, Playback, Record length, then Record timing.
-  Future<T> _runSettingsExclusive<T>(Future<T> Function() operation) =>
-      _mixSettings.runExclusive(
-        () => _runTempoExclusive(
-          () => _runPlaybackExclusive(
-            () => _runRecordExclusive(
-              () => _runRecordTimingExclusive(operation),
-            ),
-          ),
-        ),
-      );
+  String? _pendingLoadedBindings;
+  String? _pendingLoadedName;
+  List<SessionSummary>? _pendingLoadedSessions;
+  final _activeOperations = <Future<void>>{};
+  Future<void>? _closingFuture;
+  bool _closing = false;
 
   // ---- exports (a separate action from the session catalog) ----
 
@@ -162,8 +118,15 @@ class SessionCubit extends Cubit<SessionState> {
   /// Reloads the saved-session catalog into state (for the picker). A quiet
   /// update — no working/success cycle.
   Future<void> refreshSessions() async {
+    if (_closing || isClosed) return;
+    final operation = _refreshSessions();
+    _track(operation);
+    await operation;
+  }
+
+  Future<void> _refreshSessions() async {
     final sessions = await _repository.listSessions();
-    if (isClosed) return;
+    if (_closing || isClosed) return;
     emit(state.copyWith(sessions: sessions));
   }
 
@@ -174,7 +137,7 @@ class SessionCubit extends Cubit<SessionState> {
     final generation = _looper.mixGeneration;
     final device = _looper.state.status.deviceName;
     return _run(
-      () => _runSettingsExclusive(() async {
+      () => _captureSettings.runExclusive(() async {
         final slug = _slugOf(name);
         if ((await _repository.listSessions()).any((s) => s.name == slug)) {
           throw SessionNameCollision(slug: slug);
@@ -198,6 +161,7 @@ class SessionCubit extends Cubit<SessionState> {
   /// session, signals the UI to open Save-As ([SessionOutcome.saveAsRequested])
   /// rather than silently picking a name.
   Future<void> save() {
+    if (_closing || isClosed) return Future<void>.value();
     final name = state.currentSessionName;
     if (name == null) {
       emit(
@@ -212,7 +176,7 @@ class SessionCubit extends Cubit<SessionState> {
     final generation = _looper.mixGeneration;
     final device = _looper.state.status.deviceName;
     return _run(
-      () => _runSettingsExclusive(() async {
+      () => _captureSettings.runExclusive(() async {
         await _saveCurrentRig(
           await _repository.bundlePath(name),
           revision,
@@ -244,42 +208,11 @@ class SessionCubit extends Cubit<SessionState> {
     if (!stillOwned()) {
       throw StateError('session changed before save');
     }
-    if (!_looper.lengthSettingsSettled) {
-      final result = await _looper.settleLengthSettings();
-      if (!result.isOk || !stillOwned()) {
-        throw StateError('length settings did not settle before session save');
-      }
-    }
-    if (!_looper.mixSettingsSettled) {
-      final result = await _looper.settleMixSettings();
-      if (!result.isOk || !stillOwned()) {
-        throw StateError('mix settings did not settle before session save');
-      }
-    }
-    final mixOutcome = await _mixSettings.flush();
-    if (!mixOutcome.isOk || !stillOwned()) {
-      throw StateError('mix edit did not settle before session save');
-    }
-    await _fxPersistence.settlePending();
-    if (!stillOwned()) throw StateError('session changed before snapshot');
+    final captured = await _captureSettings.capture(stillOwned: stillOwned);
     await _repository.save(
       directory,
-      chains: chainsFromLooper(
-        _looper,
-        projection: _fxPersistence,
-        mix: _mixSettings.durableSnapshot,
-      ),
-      settings: settingsFromLooper(
-        _looper,
-        mix: _mixSettings.durableSnapshot,
-        clickVolume: _currentDurableClickVolume(),
-        clickMode: _currentDurableClickMode(),
-        recordStart: _currentDurableRecordStart(),
-        decay: _currentDurableDecay(),
-        oneShot: _currentDurableOneShot(),
-        recordLength: _currentDurableRecordLength(),
-        recordTiming: _currentDurableRecordTiming(),
-      ),
+      chains: captured.chains,
+      settings: captured.settings,
       pedalBindings: _currentPedalBindings(),
       captureStillValid: stillOwned,
     );
@@ -295,96 +228,171 @@ class SessionCubit extends Cubit<SessionState> {
   /// status stream, so it reflects this disarm too even though it was never
   /// the one to call it.
   Future<void> loadNamed(String name) => _run(
-    () => _runSettingsExclusive(() async {
-      final disarmed = await _performance.disarmAndFinalize();
-      if (!disarmed.isOk) {
-        throw StateError(
-          'performance capture did not stop before session load',
-        );
-      }
-      final bundle = await _repository.read(await _repository.bundlePath(name));
-      final rig = rigFromBundle(bundle);
-      final candidate = MixSettingsSnapshot.fromRig(rig);
-      if (!candidate.isValid) throw StateError('session mix is invalid');
-      final generation = _looper.mixGeneration;
-      final device = _looper.state.status.deviceName;
-      if (device.isEmpty &&
-          (candidate.inputSetup != const InputSetup.empty() ||
-              candidate.outputSetup != const OutputSetup())) {
-        throw StateError('audio device is required for this mix setup');
-      }
-      final checkpoint = await _mixPersistence.read(device);
-      if (generation != _looper.mixGeneration ||
-          device != _looper.state.status.deviceName) {
-        throw StateError('audio device changed before session load');
-      }
+    () async {
+      var applied = false;
       try {
-        await _mixPersistence.write(device, candidate);
+        return await _captureSettings.runExclusive(() async {
+          final disarmed = await _performance.disarmAndFinalize();
+          if (!disarmed.isOk) {
+            throw StateError(
+              'performance capture did not stop before session load',
+            );
+          }
+          final bundle = await _repository.read(
+            await _repository.bundlePath(name),
+          );
+          final rig = rigFromBundle(bundle);
+          final candidate = MixSettingsSnapshot.fromRig(rig);
+          if (!candidate.isValid) throw StateError('session mix is invalid');
+          final loadedName = _slugOf(name);
+          final sessions = await _repository.listSessions();
+          final generation = _looper.mixGeneration;
+          final device = _looper.state.status.deviceName;
+          if (device.isEmpty &&
+              (candidate.inputSetup != const InputSetup.empty() ||
+                  candidate.outputSetup != const OutputSetup())) {
+            throw StateError('audio device is required for this mix setup');
+          }
+          final checkpoint = await _mixPersistence.read(device);
+          if (generation != _looper.mixGeneration ||
+              device != _looper.state.status.deviceName) {
+            throw StateError('audio device changed before session load');
+          }
+          await _fxPersistence.beginSessionLoad();
+          try {
+            try {
+              await _mixPersistence.write(device, candidate);
+            } on Object {
+              final rollback = await _mixSettings.rollbackExclusive(
+                device: device,
+                checkpoint: checkpoint,
+              );
+              if (rollback.status == MixSettingsStatus.recoveryRequired) {
+                throw MixSettingsRecoveryException(rollback);
+              }
+              rethrow;
+            }
+            if (generation != _looper.mixGeneration ||
+                device != _looper.state.status.deviceName) {
+              final rollback = await _mixSettings.rollbackExclusive(
+                device: device,
+                checkpoint: checkpoint,
+              );
+              if (rollback.status == MixSettingsStatus.recoveryRequired) {
+                throw MixSettingsRecoveryException(rollback);
+              }
+              throw StateError('audio device changed before session load');
+            }
+            // The remap is control-surface configuration outside the rig.
+            // applies, so it leaves through its own seam rather than
+            // `SessionRig`. Its halves sit on opposite sides of the apply.
+            //
+            // Release first: a held momentary's state belongs on the outgoing
+            // rig. After apply it would instead stamp the old values onto
+            // old session's values onto the chains the new one just installed,
+            // bringing a freshly loaded session up bypassed.
+            try {
+              _releaseHeldBindings();
+            } on Object {
+              final rollback = await _mixSettings.rollbackExclusive(
+                device: device,
+                checkpoint: checkpoint,
+              );
+              if (rollback.status == MixSettingsStatus.recoveryRequired) {
+                throw MixSettingsRecoveryException(rollback);
+              }
+              rethrow;
+            }
+            try {
+              await _looper.applySession(rig);
+            } on Object {
+              _looper.stopEngine();
+              final rollback = await _mixSettings.rollbackExclusive(
+                device: device,
+                checkpoint: checkpoint,
+              );
+              if (rollback.status == MixSettingsStatus.recoveryRequired) {
+                throw MixSettingsRecoveryException(rollback);
+              }
+              rethrow;
+            }
+            applied = true;
+            _looper.blockStartForSessionBoot();
+            _pendingLoadedName = loadedName;
+            _pendingLoadedBindings = bundle.session.pedalBindings;
+            _pendingLoadedSessions = sessions;
+            // The live rig is the new session, even if boot keys fail later.
+            // Do not publish loaded or enable its bindings until persistence
+            // and readback of the full image have finished.
+            if (!isClosed) {
+              emit(
+                state.copyWith(
+                  status: SessionStatus.working,
+                  currentSessionName: loadedName,
+                  bootRecoveryRequired: true,
+                ),
+              );
+            }
+            await _fxPersistence.persistLoadedSession(_settings);
+            _onPedalBindings(bundle.session.pedalBindings);
+            _fxPersistence.completeSessionBoot();
+            _looper.clearSessionBootStartBlock();
+            _pendingLoadedName = null;
+            _pendingLoadedBindings = null;
+            _pendingLoadedSessions = null;
+            return _ActionResult(
+              SessionOutcome.loaded,
+              currentName: loadedName,
+              sessions: sessions,
+            );
+          } on Object catch (error) {
+            if (!applied) {
+              _fxPersistence.cancelSessionLoad();
+              rethrow;
+            }
+            _looper.stopEngine();
+            _fxPersistence.markSessionBootFailed();
+            throw _SessionBootException(error);
+          }
+        });
       } on Object {
-        final rollback = await _mixSettings.rollbackExclusive(
-          device: device,
-          checkpoint: checkpoint,
-        );
-        if (rollback.status == MixSettingsStatus.recoveryRequired) {
-          throw MixSettingsRecoveryException(rollback);
-        }
+        if (!applied) _fxPersistence.cancelSessionLoad();
         rethrow;
       }
-      if (generation != _looper.mixGeneration ||
-          device != _looper.state.status.deviceName) {
-        final rollback = await _mixSettings.rollbackExclusive(
-          device: device,
-          checkpoint: checkpoint,
-        );
-        if (rollback.status == MixSettingsStatus.recoveryRequired) {
-          throw MixSettingsRecoveryException(rollback);
-        }
-        throw StateError('audio device changed before session load');
-      }
-      // The remap is control-surface configuration outside the rig the engine
-      // applies, so it leaves through its own seam rather than
-      // `SessionRig`. Its two halves belong on opposite sides of the apply.
-      //
-      // Release first: a held momentary's captured state has to be written back
-      // onto the OUTGOING rig. Run after the apply it would instead stamp the
-      // old session's values onto the chains the new one just installed,
-      // bringing a freshly loaded session up bypassed.
-      try {
-        _releaseHeldBindings();
-      } on Object {
-        final rollback = await _mixSettings.rollbackExclusive(
-          device: device,
-          checkpoint: checkpoint,
-        );
-        if (rollback.status == MixSettingsStatus.recoveryRequired) {
-          throw MixSettingsRecoveryException(rollback);
-        }
-        rethrow;
+    },
+    reserveSessionLoad: true,
+  );
+
+  /// Retries the stopped loaded rig's exact retained boot image and bindings.
+  Future<void> retryLoadedSession() => _run(
+    () => _captureSettings.runExclusive(() async {
+      final name = _pendingLoadedName;
+      final bindings = _pendingLoadedBindings;
+      final sessions = _pendingLoadedSessions;
+      if (name == null ||
+          bindings == null ||
+          sessions == null ||
+          !_fxPersistence.sessionBootRecoveryRequired) {
+        throw StateError('no loaded session needs boot recovery');
       }
       try {
-        await _looper.applySession(rig);
-      } on Object {
-        _looper.stopEngine();
-        final rollback = await _mixSettings.rollbackExclusive(
-          device: device,
-          checkpoint: checkpoint,
+        await _fxPersistence.retrySessionBoot();
+        _onPedalBindings(bindings);
+        _fxPersistence.completeSessionBoot();
+        _looper.clearSessionBootStartBlock();
+        _pendingLoadedName = null;
+        _pendingLoadedBindings = null;
+        _pendingLoadedSessions = null;
+        return _ActionResult(
+          SessionOutcome.loaded,
+          currentName: name,
+          sessions: sessions,
         );
-        if (rollback.status == MixSettingsStatus.recoveryRequired) {
-          throw MixSettingsRecoveryException(rollback);
-        }
-        rethrow;
+      } on Object catch (error) {
+        throw _SessionBootException(error);
       }
-      // Commit last: only once the rig actually landed. `applySession` can
-      // throw, and `_run` catches everything — committing before it would leave
-      // the pedal dispatching a failed session's bindings against the rig that
-      // is still loaded, a mapping the user never activated.
-      _onPedalBindings(bundle.session.pedalBindings);
-      return _ActionResult(
-        SessionOutcome.loaded,
-        currentName: _slugOf(name),
-        sessions: await _repository.listSessions(),
-      );
     }),
+    allowBootRecovery: true,
   );
 
   /// Renames session [from] to [to]. If [from] is the open session, the current
@@ -436,7 +444,72 @@ class SessionCubit extends Cubit<SessionState> {
   /// Runs [action] with the standard working → success/failure envelope,
   /// folding its durable-catalog changes into the next state and preserving the
   /// open session + list across the transition.
-  Future<void> _run(Future<_ActionResult> Function() action) async {
+  Future<void> _run(
+    Future<_ActionResult> Function() action, {
+    bool allowBootRecovery = false,
+    bool reserveSessionLoad = false,
+  }) {
+    if (_closing || isClosed) return Future<void>.value();
+    final operation = _performRun(
+      action,
+      allowBootRecovery: allowBootRecovery,
+      reserveSessionLoad: reserveSessionLoad,
+    );
+    _track(operation);
+    return operation;
+  }
+
+  void _track(Future<void> operation) {
+    late final Future<void> settled;
+    settled = operation.then<void>(
+      (_) => _activeOperations.remove(settled),
+      onError: (Object error, StackTrace stack) =>
+          _activeOperations.remove(settled),
+    );
+    _activeOperations.add(settled);
+  }
+
+  Future<void> _performRun(
+    Future<_ActionResult> Function() action, {
+    required bool allowBootRecovery,
+    required bool reserveSessionLoad,
+  }) async {
+    if (!allowBootRecovery && _fxPersistence.sessionBootRecoveryRequired) {
+      emit(
+        state.copyWith(
+          status: SessionStatus.failure,
+          error: SessionError.bootPersistence,
+          errorMessage: 'session boot settings still need recovery',
+          bootRecoveryRequired: true,
+        ),
+      );
+      return;
+    }
+    if (!allowBootRecovery &&
+        !reserveSessionLoad &&
+        _fxPersistence.sessionTransitionActive) {
+      emit(
+        state.copyWith(
+          status: SessionStatus.failure,
+          error: SessionError.unknown,
+          errorMessage: 'session load is still in progress',
+        ),
+      );
+      return;
+    }
+    if (reserveSessionLoad) {
+      if (_fxPersistence.sessionTransitionActive) {
+        emit(
+          state.copyWith(
+            status: SessionStatus.failure,
+            error: SessionError.unknown,
+            errorMessage: 'a session load is already active',
+          ),
+        );
+        return;
+      }
+      _fxPersistence.reserveSessionLoad();
+    }
     emit(state.copyWith(status: SessionStatus.working));
     try {
       final result = await action();
@@ -448,6 +521,17 @@ class SessionCubit extends Cubit<SessionState> {
           currentSessionName: result.currentName,
           clearCurrentSession: result.clearCurrent,
           sessions: result.sessions,
+          bootRecoveryRequired: false,
+        ),
+      );
+    } on _SessionBootException catch (error) {
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          status: SessionStatus.failure,
+          error: SessionError.bootPersistence,
+          errorMessage: '${error.cause}',
+          bootRecoveryRequired: true,
         ),
       );
     } on SessionException catch (error) {
@@ -472,12 +556,29 @@ class SessionCubit extends Cubit<SessionState> {
     }
   }
 
+  @override
+  Future<void> close() {
+    final closing = _closingFuture;
+    if (closing != null) return closing;
+    _closing = true;
+    return _closingFuture = () async {
+      await Future.wait(_activeOperations.toList());
+      await super.close();
+    }();
+  }
+
   static SessionError _classify(SessionException error) => switch (error) {
     SessionSampleRateMismatch() => SessionError.sampleRateMismatch,
     SessionUnsupportedVersion() => SessionError.unsupportedVersion,
     SessionNameCollision() => SessionError.nameCollision,
     SessionCorruptLayers() => SessionError.corruptLayers,
   };
+}
+
+class _SessionBootException implements Exception {
+  const _SessionBootException(this.cause);
+
+  final Object cause;
 }
 
 /// What a session action changed: its success [outcome] plus any durable

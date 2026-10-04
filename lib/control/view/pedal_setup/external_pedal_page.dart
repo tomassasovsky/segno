@@ -7,16 +7,14 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/binding_labels.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
-import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
-import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
-import 'package:segno/control/view/control_value_readout.dart';
+import 'package:segno/control/view/control_availability_view.dart';
 import 'package:segno/control/view/pedal_setup/expression_calibration_panel.dart';
 import 'package:segno/control/view/pedal_setup/expression_controls_panel.dart';
 import 'package:segno/control/view/pedal_setup/expression_position_panel.dart';
@@ -25,10 +23,6 @@ import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/playback_options_cubit.dart';
-import 'package:segno/looper/cubit/record_options_cubit.dart';
-import 'package:segno/looper/cubit/record_timing_cubit.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -516,18 +510,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
-    final clickVolume = context.watch<TempoCubit>().clickVolume;
-    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
-    final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
-    final oneShotSnapshot = context
-        .watch<PlaybackOptionsCubit>()
-        .oneShotSnapshot;
-    final recordLengthSnapshot = context
-        .watch<RecordOptionsCubit>()
-        .recordLengthSnapshot;
-    final recordTimingSnapshot = context
-        .watch<RecordTimingCubit>()
-        .recordTimingSnapshot;
+    final availability = controlAvailability(context, watch: true);
     final names = context.watch<TracksCubit>().state.names;
     return [
       for (final mapping in expression.mappings)
@@ -540,59 +523,22 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             mapping.target,
           ).destination,
           control: expressionRowName(l10n, names, looper, mapping.target),
-          available: looper.valueTargetResolves(
-            mapping.target,
-            clickVolume: clickVolume,
-            clickModeSnapshot: clickModeSnapshot,
-            decaySnapshot: decaySnapshot,
-            oneShotSnapshot: oneShotSnapshot,
-            recordLengthSnapshot: recordLengthSnapshot,
-            recordTimingSnapshot: recordTimingSnapshot,
+          available: availability.resolves(mapping.target),
+          disabledReason: controlEditBlockLabel(
+            l10n,
+            availability.blockedBy(mapping.target),
           ),
-          disabledReason:
-              clickModeDisabledReason(
-                l10n,
-                mapping.target,
-                clickModeSnapshot,
-              ) ??
-              recordLengthDisabledReason(
-                l10n,
-                mapping.target,
-                recordLengthSnapshot,
-              ) ??
-              recordTimingDisabledReason(
-                l10n,
-                mapping.target,
-                recordTimingSnapshot,
-              ),
           art: expressionTargetArt(looper, mapping.target),
         ),
     ];
   }
 
   List<ExpressionDestination> _destinations(BuildContext context) {
-    final clickVolume = context.watch<TempoCubit>().clickVolume;
-    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
-    final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
-    final oneShotSnapshot = context
-        .watch<PlaybackOptionsCubit>()
-        .oneShotSnapshot;
-    final recordLengthSnapshot = context
-        .watch<RecordOptionsCubit>()
-        .recordLengthSnapshot;
-    final recordTimingSnapshot = context
-        .watch<RecordTimingCubit>()
-        .recordTimingSnapshot;
-    return expressionDestinations(
+    final availability = controlAvailability(context, watch: true);
+    return controlDestinations(
       context.l10n,
       context.watch<TracksCubit>().state.names,
-      context.read<LooperRepository>(),
-      clickVolume: clickVolume,
-      clickModeSnapshot: clickModeSnapshot,
-      decaySnapshot: decaySnapshot,
-      oneShotSnapshot: oneShotSnapshot,
-      recordLengthSnapshot: recordLengthSnapshot,
-      recordTimingSnapshot: recordTimingSnapshot,
+      availability,
     );
   }
 
@@ -647,36 +593,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     ExternalJackSetup jack,
     ControlValueTarget target,
   ) {
-    if (target is ClickVolumeTarget &&
-        context.read<TempoCubit>().clickVolume == null) {
-      return;
-    }
-    if (target is ClickModeValueTarget &&
-        context.read<TempoCubit>().clickModeSnapshot?.canEdit != true) {
-      return;
-    }
-    if (target is DecayValueTarget &&
-        context.read<PlaybackOptionsCubit>().decaySnapshot == null) {
-      return;
-    }
-    if (target is OneShotValueTarget &&
-        context.read<PlaybackOptionsCubit>().oneShotSnapshot == null) {
-      return;
-    }
-    if (target is RecordLengthValueTarget &&
-        context.read<RecordOptionsCubit>().recordLengthSnapshot?.canEdit(
-              target.address,
-            ) !=
-            true) {
-      return;
-    }
-    if (target is RecordTimingValueTarget &&
-        context.read<RecordTimingCubit>().recordTimingSnapshot?.canEdit(
-              target.address,
-            ) !=
-            true) {
-      return;
-    }
+    if (!controlAvailability(context).canAssign(target)) return;
     final replacing = _replacing;
     final expression = jack.expression;
     if (target == replacing) {
@@ -1080,18 +997,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
-    final clickVolume = context.watch<TempoCubit>().clickVolume;
-    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
-    final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
-    final oneShotSnapshot = context
-        .watch<PlaybackOptionsCubit>()
-        .oneShotSnapshot;
-    final recordLengthSnapshot = context
-        .watch<RecordOptionsCubit>()
-        .recordLengthSnapshot;
-    final recordTimingSnapshot = context
-        .watch<RecordTimingCubit>()
-        .recordTimingSnapshot;
+    final availability = controlAvailability(context, watch: true);
     final names = context.watch<TracksCubit>().state.names;
     final controls = button.controls;
     final rows = [
@@ -1100,7 +1006,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           activation: activation,
           destination: fxStageLabel(l10n, names, activation.target.address),
           name: expressionActivationName(l10n, looper, activation.target),
-          available: looper.bindingResolves(activation.target),
+          available: availability.resolves(activation.target),
           art: expressionTargetArt(looper, activation.target),
         ),
       for (final parameter in controls.parameters)
@@ -1113,31 +1019,11 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             parameter.target,
           ).destination,
           name: expressionRowName(l10n, names, looper, parameter.target),
-          available: looper.valueTargetResolves(
-            parameter.target,
-            clickVolume: clickVolume,
-            clickModeSnapshot: clickModeSnapshot,
-            decaySnapshot: decaySnapshot,
-            oneShotSnapshot: oneShotSnapshot,
-            recordLengthSnapshot: recordLengthSnapshot,
-            recordTimingSnapshot: recordTimingSnapshot,
+          available: availability.resolves(parameter.target),
+          disabledReason: controlEditBlockLabel(
+            l10n,
+            availability.blockedBy(parameter.target),
           ),
-          disabledReason:
-              clickModeDisabledReason(
-                l10n,
-                parameter.target,
-                clickModeSnapshot,
-              ) ??
-              recordLengthDisabledReason(
-                l10n,
-                parameter.target,
-                recordLengthSnapshot,
-              ) ??
-              recordTimingDisabledReason(
-                l10n,
-                parameter.target,
-                recordTimingSnapshot,
-              ),
           art: expressionTargetArt(looper, parameter.target),
         ),
     ];
@@ -1237,18 +1123,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     ExternalSwitchSetup button,
   ) {
     final l10n = context.l10n;
-    final clickVolume = context.watch<TempoCubit>().clickVolume;
-    final clickModeSnapshot = context.watch<TempoCubit>().clickModeSnapshot;
-    final decaySnapshot = context.watch<PlaybackOptionsCubit>().decaySnapshot;
-    final oneShotSnapshot = context
-        .watch<PlaybackOptionsCubit>()
-        .oneShotSnapshot;
-    final recordLengthSnapshot = context
-        .watch<RecordOptionsCubit>()
-        .recordLengthSnapshot;
-    final recordTimingSnapshot = context
-        .watch<RecordTimingCubit>()
-        .recordTimingSnapshot;
+    final availability = controlAvailability(context, watch: true);
     final surface = context.surface;
     final destination = _buttonDestination;
     final choosingControl =
@@ -1318,67 +1193,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                     onParameter: (control) {
                       // Both values start at what the parameter holds NOW, so
                       // adding the mapping invents no sound change.
-                      final acceptedClick = context
-                          .read<TempoCubit>()
-                          .clickVolume;
-                      final acceptedClickMode = context
-                          .read<TempoCubit>()
-                          .clickModeSnapshot;
-                      final acceptedDecay = context
-                          .read<PlaybackOptionsCubit>()
-                          .decaySnapshot;
-                      final acceptedOneShot = context
-                          .read<PlaybackOptionsCubit>()
-                          .oneShotSnapshot;
-                      if (control.target is ClickVolumeTarget &&
-                          acceptedClick == null) {
-                        return;
-                      }
-                      if (control.target is ClickModeValueTarget &&
-                          acceptedClickMode?.canEdit != true) {
-                        return;
-                      }
-                      if (control.target is DecayValueTarget &&
-                          acceptedDecay == null) {
-                        return;
-                      }
-                      if (control.target is OneShotValueTarget &&
-                          acceptedOneShot == null) {
-                        return;
-                      }
-                      final acceptedLength = context
-                          .read<RecordOptionsCubit>()
-                          .recordLengthSnapshot;
-                      if (control.target is RecordLengthValueTarget &&
-                          acceptedLength?.canEdit(
-                                (control.target as RecordLengthValueTarget)
-                                    .address,
-                              ) !=
-                              true) {
-                        return;
-                      }
-                      final acceptedTiming = context
-                          .read<RecordTimingCubit>()
-                          .recordTimingSnapshot;
-                      if (control.target is RecordTimingValueTarget &&
-                          acceptedTiming?.canEdit(
-                                (control.target as RecordTimingValueTarget)
-                                    .address,
-                              ) !=
-                              true) {
-                        return;
-                      }
-                      final now =
-                          context.read<LooperRepository>().readValueTarget(
-                            control.target,
-                            clickVolume: acceptedClick,
-                            clickModeSnapshot: acceptedClickMode,
-                            decaySnapshot: acceptedDecay,
-                            oneShotSnapshot: acceptedOneShot,
-                            recordLengthSnapshot: acceptedLength,
-                            recordTimingSnapshot: acceptedTiming,
-                          ) ??
-                          0;
+                      final available = controlAvailability(context);
+                      if (!available.canAssign(control.target)) return;
+                      final now = available.value(control.target);
+                      if (now == null) return;
                       _addButtonControl(
                         setup,
                         jack,
@@ -1400,17 +1218,11 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                     },
                   )
                 : ExpressionDestinationPicker(
-                    destinations: expressionDestinations(
+                    destinations: controlDestinations(
                       l10n,
                       context.watch<TracksCubit>().state.names,
-                      context.read<LooperRepository>(),
+                      availability,
                       withActivations: true,
-                      clickVolume: clickVolume,
-                      clickModeSnapshot: clickModeSnapshot,
-                      decaySnapshot: decaySnapshot,
-                      oneShotSnapshot: oneShotSnapshot,
-                      recordLengthSnapshot: recordLengthSnapshot,
-                      recordTimingSnapshot: recordTimingSnapshot,
                     ),
                     kind: _kind,
                     columns: 1,
@@ -1433,6 +1245,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     ExternalControls next,
     Object target,
   ) {
+    if (!controlAvailability(context).canAssign(target)) return;
     setState(() {
       _buttonPick = null;
       _replacingButtonControl = null;

@@ -19,7 +19,6 @@ import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_presets_cubit.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/fx/fx_effect_editor.dart';
@@ -219,6 +218,16 @@ void main() {
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => repository.laneCount(any())).thenAnswer((call) {
+      final channel = call.positionalArguments.first as int;
+      return repository.state.tracks
+              .where((track) => track.channel == channel)
+              .firstOrNull
+              ?.lanes
+              .length ??
+          0;
+    });
     when(() => repository.monitorEffects(any())).thenReturn([
       _fx('m1', TrackEffectType.delay, placement: FxPlacement.pre),
       _fx('m2', TrackEffectType.reverb),
@@ -284,14 +293,13 @@ void main() {
     );
     final inputs = InputsCubit(repository: repository, settings: settings);
     final outputs = OutputsCubit(repository: repository, settings: settings);
+    final fxPersistence = FxChainPersistence(looper: repository);
     final monitors = MonitorCubit(
-      fxPersistence: FxChainPersistence(looper: repository),
+      fxPersistence: fxPersistence,
       repository: repository,
       settings: settings,
       mixSettings: testMixSettings(repository, settings: settings),
-    );
-    await monitors.syncFromRepository();
-    final tempo = TempoCubit(repository: repository, settings: settings);
+    )..projectFromRepository();
     final tracks = TracksCubit(settings: settings);
     presets = FxPresetsCubit(settings: settings);
     await presets.load();
@@ -299,7 +307,6 @@ void main() {
       inputs,
       outputs,
       monitors,
-      tempo,
       tracks,
       presets,
     ]) {
@@ -323,15 +330,20 @@ void main() {
             routingGraphThemeFromSurface(SurfaceTheme.dark),
           ],
         ),
-        home: RepositoryProvider<LooperRepository>.value(
-          value: repository,
+        home: MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider<LooperRepository>.value(value: repository),
+            RepositoryProvider<SettingsRepository>.value(value: settings),
+            RepositoryProvider<FxChainPersistence>.value(
+              value: fxPersistence,
+            ),
+          ],
           child: MultiBlocProvider(
             providers: [
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider.value(value: inputs),
               BlocProvider.value(value: outputs),
               BlocProvider.value(value: monitors),
-              BlocProvider.value(value: tempo),
               BlocProvider.value(value: tracks),
               BlocProvider.value(value: presets),
             ],
