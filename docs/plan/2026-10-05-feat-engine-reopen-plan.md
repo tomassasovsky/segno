@@ -6,8 +6,10 @@ Owner decisions (2026-10-05, recorded on #1140) are binding and repeated inline.
 Base: `origin/codex/fade-clear-history` (top of the Fade stack, PR #1145).
 
 This document was written against the native tree before the work and edited
-afterwards to describe what Part 1 actually built. Part 2 (repository and app
-wiring) is unchanged from the original plan and remains to do.
+afterwards to describe what Part 1 actually built, including the two review
+findings on PR #1158 (a second complete pass lost; the whole-rig
+CLEARED_PENDING blast radius). Part 2 (repository and app wiring) is unchanged
+from the original plan and remains to do.
 
 ## Current behaviour (verified, pre-change)
 
@@ -44,11 +46,14 @@ wiring) is unchanged from the original plan and remains to do.
 
 ```c
 typedef enum le_reopen_outcome { LE_REOPEN_RETAINED = 0, LE_REOPEN_CLEARED_RATE = 1,
-  LE_REOPEN_CLEARED_CAP = 2, LE_REOPEN_CLEARED_PENDING = 3 } le_reopen_outcome;
-LE_EXPORT int32_t le_engine_reopen(le_engine*, const le_config*, int32_t* outcome);
+  LE_REOPEN_CLEARED_CAP = 2, LE_REOPEN_RETAINED_PARTIAL = 3 } le_reopen_outcome;
+/* dropped_track_mask: bit t = track t dropped (RETAINED_PARTIAL); NULL to not ask */
+LE_EXPORT int32_t le_engine_reopen(le_engine*, const le_config*, int32_t* outcome,
+    int32_t* dropped_track_mask);
 /* device-free twin, next to le_engine_configure */
 LE_EXPORT int32_t le_engine_reopen_configured(le_engine*, int32_t sample_rate,
-    int32_t in, int32_t out, int32_t max_loop_frames, int32_t* outcome);
+    int32_t in, int32_t out, int32_t max_loop_frames, int32_t* outcome,
+    int32_t* dropped_track_mask);
 /* the device-lost flag flip, now public so a host can rehearse its reconnect */
 LE_EXPORT void le_engine_mark_device_lost(le_engine*);
 ```
@@ -76,15 +81,17 @@ thread only; the callback is gone, so every field below is owned.
    live, so the comparison is like for like).
 2. Decide (`le_engine_reopen_outcome`): negotiated `sample_rate !=
    engine->sample_rate` → `CLEARED_RATE`; clamped `max_loop_frames !=
-   engine->max_loop_frames` → `CLEARED_CAP`; any track with
-   `state_cmds_posted > a_state_acks`, `cancel_pending`,
-   `clear_restore_pending`, or EMPTY with `a_len > 0` (a Session import whose
-   commit never applied) → `CLEARED_PENDING`. Any cleared outcome runs the
-   existing `le_engine_configure` unchanged.
-3. Retained: `le_engine_quiesce_workers` (cache/restore join, perf drain stop
-   with `DEVICE_CHANGED`, render cancel, rings released, `perf = {0}`) →
-   `le_engine_reopen_file_retired` → `le_engine_reopen_settle` →
-   `le_engine_reset_runtime` (which ends with `a_configured = 1`).
+   engine->max_loop_frames` → `CLEARED_CAP`; these two run the existing
+   `le_engine_configure` unchanged and are the ONLY whole-engine clears.
+   Otherwise each track with `state_cmds_posted > a_state_acks`,
+   `cancel_pending`, `clear_restore_pending`, or EMPTY with `a_len > 0` (a
+   Session import whose commit never applied) goes into the drop mask;
+   a non-zero mask reads `RETAINED_PARTIAL`, else `RETAINED`.
+3. Retained (both): `le_engine_quiesce_workers` (cache/restore join, perf
+   drain stop with `DEVICE_CHANGED`, render cancel, rings released,
+   `perf = {0}`) → `le_engine_reopen_file_retired(mask)` →
+   `le_engine_reopen_settle(mask)` → `le_engine_reset_runtime` (which ends
+   with `a_configured = 1`).
 
 ### The configure split (`engine.c`)
 
@@ -109,13 +116,16 @@ unchanged.
 ### `le_engine_reopen_file_retired` (`engine_commands.c`, control side)
 
 Runs while the event ring and the audio thread's dub bookkeeping are intact:
-pops every retired-layer / cancel event with **no replenish**; runs
-`le_collect_clear` per track so a Clear that applied in its last block but was
-never collected gets its restore point's Fade amount (`clear_cmd_ack` is zeroed
-by the runtime reset, which would otherwise strand `fade_ready = 0`); files a
-parked `dub_retire_slot`, or a shadow frozen complete in `dub_slot`
-(`dub_count >= dub_len`), through `le_handle_retired` with `dub_gen_audio` as a
-committed layer; then drops `outstanding_count`, `queued_undo`,
+pops every retired-layer / cancel event with **no replenish**; skips tracks in
+the drop mask; runs `le_collect_clear` per track so a Clear that applied in its
+last block but was never collected gets its restore point's Fade amount
+(`clear_cmd_ack` is zeroed by the runtime reset, which would otherwise strand
+`fade_ready = 0`); files a parked `dub_retire_slot` AND a shadow frozen complete
+in `dub_slot` (`dub_count >= dub_len`) — both can exist when the event ring was
+full across two pass boundaries, since `le_dub_boundary` returns early while a
+retire is stuck — oldest first, through `le_handle_retired` with
+`dub_gen_audio`, as committed layers (review finding 1: the first build filed
+only one of them); then drops `outstanding_count`, `queued_undo`,
 `dub_punch_out_posted`, `depth_republish`, `pending_lane_trim` and republishes
 the undo depth.
 
@@ -130,10 +140,14 @@ Owner decisions applied, per track:
    drift (the drain now calls the same helper live → shadow). A pass without an
    armed shadow stays merged, as today at spare starvation.
 2. `RECORDING`, or `seam_capture > 0` (a just-finalized later track whose
-   trailing fold has not landed; `xfade_capture > 0` is RECORDING): drop the
-   take — EMPTY, length 0, multiple 1, stacks and depths zeroed, `a_recoverable`
-   0 on every lane, Fade reset to unity with a new generation, `free_clock`
-   reset. A defining take leaves the clock unset. Recording never resumes.
+   trailing fold has not landed; `xfade_capture > 0` is RECORDING), or a track
+   in the drop mask: drop the track (`le_reopen_drop_track`) — EMPTY, length 0,
+   multiple 1, stacks and depths zeroed, `a_recoverable` 0 on every lane, Fade
+   reset to unity with a new generation, `free_clock` reset. A defining take
+   leaves the clock unset. Recording never resumes. A drop that leaves every
+   track EMPTY resets the master, loop bars and grid total exactly as
+   `handle_clear` does (a rig that was already all-EMPTY — undone to empty with
+   its redo pending — keeps its master: nothing was dropped).
 3. `PLAYING`/`OVERDUBBING`/`STOPPED` with content → `STOPPED`; `fade.frames = 0`
    so `le_fade_tick` re-origins at the frozen amount and resumes toward the
    unchanged target at the unchanged full-travel seconds (no wall-clock
@@ -150,16 +164,40 @@ Owner decisions applied, per track:
    an output bit `>= ch_out` — proven under ASAN by the test below rather than
    assumed.
 
+### Decision record: the pending rule is per track (review finding 2)
+
+The first build made any unapplied Clear/Undo/Redo/cancel clear the WHOLE rig
+(`CLEARED_PENDING` → `le_engine_configure`). The review's probe showed what
+that costs: a device loss stops the callbacks but `le_push_cmd` is
+configured-gated, so a single Undo press on an empty track during the outage
+was accepted and the reopen then wiped every other track's retained loop. The
+state command was never half-applied — acks are bumped inside the apply
+handlers and the stop is synchronous, so an unacked command is still unpopped
+in the ring; only that one track's control-side pre-mutation (`le_track_set_len
+(t, 0)`, the redo push, `a_multiple = 1`) is out of step.
+
+Decision, under the owner's standing delivery rules (rule 2: preserve recorded
+material; rule 5: drop uncertain native state, with a notice): the pending rule
+is scoped to the track it concerns. That track is dropped exactly like a take
+still capturing (EMPTY, length 0, history and shadows gone, Fade reset) and
+named in `dropped_track_mask`; every other track takes the normal retained
+path; the outcome reads `RETAINED_PARTIAL`. Whole-engine clears remain only
+`CLEARED_RATE` / `CLEARED_CAP`. This narrows the owner-accepted edge (b) — "a
+loss within one block of an unapplied Clear/Undo/Redo/cancel clears loops
+with a notice" — to its intent: the uncertain material is still dropped and
+still reported, but the loops the press never touched are kept. Part 2 turns
+the mask into the notice.
+
 ### Edge-case defaults taken in Part 1 (not covered by an owner decision)
 
 - A queued undo tap (`queued_undo > 0`, deferred behind an in-flight layer) is
   control-side intent, not a half-applied audio-thread command, so it does NOT
-  trigger `CLEARED_PENDING`; the retained path drops the tap with the pass it
-  was waiting on. A pending `lane_growth_command` is likewise not pending state:
-  the repository re-posts its routing.
+  drop its track; the retained path drops the tap with the pass it was waiting
+  on. A pending `lane_growth_command` is likewise not pending state: the
+  repository re-posts its routing.
 - A Session import without its commit (EMPTY track with `a_len > 0`) IS
-  `CLEARED_PENDING`: turning it into a STOPPED track with no master clock would
-  invent transport state.
+  dropped (and reported): turning it into a STOPPED track with no master clock
+  would invent transport state.
 - The recorded source image (`image_gain`/`image_pan`) is material: a take
   captured at image gain 0.5 plays back at 0.5 after a retained reopen, with the
   live fader reset to unity like every other setting.
@@ -176,8 +214,10 @@ only), so `le_engine_start`/`le_engine_reopen` run through a fake
 ### Dart seam (`segno_engine` only; no repository/app caller)
 
 `EngineLifecycle.reopen(EngineConfig) -> ReopenResult` (a record of
-`EngineResult` and `ReopenOutcome {retained, clearedRate, clearedCap,
-clearedPending}`; an unknown code reads `clearedPending`, never `retained`).
+`EngineResult`, `ReopenOutcome {retained, clearedRate, clearedCap,
+retainedPartial}` and `droppedTracks`, the bitmask; `keepsMaterial` is true
+for the two retained values; an unknown code reads `clearedCap`, never a
+retained value).
 `NativeAudioEngine.reopen` → `le_engine_reopen`; `PumpedNativeEngine.reopen` →
 `le_engine_reopen_configured` with the config's shape, plus
 `simulateDeviceLoss()` (flips the published device-present flag through
@@ -189,7 +229,7 @@ ffigen enum list.
 
 ### Tests (literal-PCM oracles)
 
-`src/test/test_engine_reopen.h`, 14 tests: same-rate retention (exact PCM per
+`src/test/test_engine_reopen.h`, 16 tests: same-rate retention (exact PCM per
 lane and per layer, depths, multiple 2, take ids, crown, STOPPED at head 0,
 silent until Play, Play sums both heads from frame 0, undo/redo/overdub keep
 working); partial first take dropped (defining and later track); partial
@@ -200,12 +240,18 @@ image); parked retire filed; seam crossfade take and trailing-fold take
 dropped; Fade frozen at 0.75 and resuming at the original rate, stale
 admissions refused, fresh admission accepted; cleared history kept (collected
 and uncollected); rate/cap mismatch outcomes and default-cap retention; the
-five pending shapes plus the committed Session counter-example; fewer channels
+review's repro (an Undo pressed on track 1 while the device was away leaves
+track 0's loop byte-exact, track 1 dropped and reported); the five pending
+shapes each dropping only their track (with the rig-empty master reset) plus
+the committed Session counter-example and a pending press that does not widen
+a rate clear; two complete passes at the loss both filed, oldest first; fewer
+channels
 (output buffer sized exactly to the device, ASAN); the fake-backend lifecycle
 (preconditions, open failure untouched, start failure retained+stopped, retry,
 rate change through negotiation); performance capture ends with
-`device_changed`. Dart: `reopen_outcome_test.dart` (codes, mock), two real-FFI
-tests in `pumped_native_engine_test.dart`.
+`device_changed`. Dart: `reopen_outcome_test.dart` (codes, `keepsMaterial`,
+mock), three real-FFI tests in `pumped_native_engine_test.dart` (retained,
+rate-cleared, and the per-track drop with its mask).
 
 ```success-criteria
 GOAL: A stopped, configured engine can reopen a same-rate device with its recorded material, history, clock and Fade envelopes intact, and refuses retention explicitly otherwise.
@@ -213,7 +259,7 @@ SUCCESS CRITERIA:
 - Same-rate reopen preserves every layer's PCM, undo/redo depth, multiples, master length, crown and take ids; content tracks read STOPPED, produce silence until Play, then play from the loop head. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - A partial first take reads EMPTY after reopen; a partial overdub pass is reverted sample-exactly while the previously retired layer remains undoable; a parked retired slot is filed. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Fade resumes from the frozen amount at the original full-travel rate under the new lifetime; pre-loss admissions cannot apply. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- Rate or cap mismatch and mid-flight history report the matching CLEARED outcome and leave the engine exactly as le_engine_configure does; fewer input/output channels retain material with silent out-of-range routes and no out-of-bounds write. | verify: EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
+- Rate or cap mismatch report the matching CLEARED outcome and leave the engine exactly as le_engine_configure does; a state command unapplied at the loss drops only its own track, reported in the mask, with every other loop byte-exact; fewer input/output channels retain material with silent out-of-range routes and no out-of-bounds write. | verify: EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
 - Bindings, symbol parity and the C++ shim repro stay clean; stale ring commands never fire after reopen. | verify: dart analyze --fatal-infos lib test packages && packages/segno_engine/tool/check_ffi_symbols.sh <built lib>
 NON-GOALS:
 - Resampling, resuming recording, replaying pending commands, repository wiring, UI.
@@ -234,9 +280,11 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
    `_importTracks` clearing; native history survived, so `_historyFx`,
    `_clearRestore`, `_pendingClearUndo*` and `_waveforms` stay valid and
    `_drainHistoryFx` republishes pending history recipes after the replay. On
-   any `cleared*`, fold exactly as today and publish `Stream<EngineReopened>`
-   (`retained`, `outcome`, `previousSampleRate`, `newSampleRate`) next to
-   `fxReplayConfirmed`.
+   `retainedPartial`, do the same but fold/clear the Dart-side history and
+   waveform state of exactly the tracks in `droppedTracks`. On any
+   `cleared*`, fold exactly as today. Publish `Stream<EngineReopened>`
+   (`outcome`, `droppedTracks`, `previousSampleRate`, `newSampleRate`) next
+   to `fxReplayConfirmed`.
 3. Supervisor fix (`_attemptReconnect`): return early without touching
    `_lastAttemptSignature` when the admission predicate refuses (this folds in
    the `_sessionBootStartBlocked` bug); record the signature only after
@@ -248,10 +296,11 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
    its own stationary image.
 5. Notice: `AudioSetupCubit._detectConnectivity` already raises one
    `DeviceConnectivity.lost/restored` banner. Subscribe to `EngineReopened`;
-   when `!retained`, raise `restoredMaterialCleared` with both rates instead of
+   on `cleared*`, raise `restoredMaterialCleared` with both rates instead of
    plain `restored` (one banner for one cause, #860) with a Reload Session
    action, reusing the `sessionErrorSampleRate` phrasing family with a new EN/ES
-   key. Retained reopens keep today's banner.
+   key; on `retainedPartial`, a variant naming the dropped tracks (the notice
+   rule 5 requires). Fully retained reopens keep today's banner.
 6. Tests: `packages/looper_repository/test/reopen_native_test.dart`
    (actual-native with `PumpedNativeEngine.simulateDeviceLoss` and a
    ticker-driven supervisor; a pinned-device enumeration hook on
@@ -288,9 +337,12 @@ device id is never auto-reopened), and the Fade listening check.
 
 ## Open owner questions (Part 1 took the defaults above; confirm or override)
 
-1. Queued undo tap at the loss: dropped with the pass (taken) vs
-   `CLEARED_PENDING`.
+1. Queued undo tap at the loss: dropped with the pass (taken) vs dropping the
+   track.
 2. Recorded source image kept with the material (taken) vs reset to unity with
    the live faders.
-3. Un-committed Session import at the loss: `CLEARED_PENDING` (taken) vs
-   keeping the imported lengths for a later commit.
+3. Un-committed Session import at the loss: that track dropped and reported
+   (taken) vs keeping the imported lengths for a later commit.
+4. The per-track pending rule above was decided under the standing delivery
+   rules rather than by an explicit owner call; confirm it reads as the intent
+   of edge (b).

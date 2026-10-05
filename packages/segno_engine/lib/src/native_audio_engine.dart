@@ -139,22 +139,27 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     final cfgPtr = calloc<le_config>();
     final outcomePtr = calloc<Int32>();
+    final droppedPtr = calloc<Int32>();
     try {
       config.writeTo(cfgPtr);
-      // RETAINED (0) until the native side writes a decision: a failed open
-      // never reaches the settle step and leaves the material in place.
+      // RETAINED (0), nothing dropped, until the native side writes a
+      // decision: a failed open never reaches the settle step and leaves the
+      // material in place.
       outcomePtr.value = 0;
+      droppedPtr.value = 0;
       final result = EngineResult.fromCode(
-        _bindings.le_engine_reopen(_engine, cfgPtr, outcomePtr),
+        _bindings.le_engine_reopen(_engine, cfgPtr, outcomePtr, droppedPtr),
       );
       return (
         result: result,
         outcome: ReopenOutcome.fromCode(outcomePtr.value),
+        droppedTracks: droppedPtr.value,
       );
     } finally {
       calloc
         ..free(cfgPtr)
-        ..free(outcomePtr);
+        ..free(outcomePtr)
+        ..free(droppedPtr);
     }
   }
 
@@ -2432,8 +2437,10 @@ class PumpedNativeEngine extends NativeAudioEngine {
     final inputs = config.inputChannels > 0 ? config.inputChannels : 1;
     final outputs = config.outputChannels > 0 ? config.outputChannels : 1;
     final outcomePtr = calloc<Int32>();
+    final droppedPtr = calloc<Int32>();
     try {
       outcomePtr.value = 0;
+      droppedPtr.value = 0;
       final result = EngineResult.fromCode(
         _bindings.le_engine_reopen_configured(
           _engine,
@@ -2442,6 +2449,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
           outputs,
           config.maxLoopFrames,
           outcomePtr,
+          droppedPtr,
         ),
       );
       if (result.isOk) {
@@ -2453,9 +2461,12 @@ class PumpedNativeEngine extends NativeAudioEngine {
       return (
         result: result,
         outcome: ReopenOutcome.fromCode(outcomePtr.value),
+        droppedTracks: droppedPtr.value,
       );
     } finally {
-      calloc.free(outcomePtr);
+      calloc
+        ..free(outcomePtr)
+        ..free(droppedPtr);
     }
   }
 

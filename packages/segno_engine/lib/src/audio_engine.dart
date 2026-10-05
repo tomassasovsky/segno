@@ -74,9 +74,10 @@ typedef FadeAdmission = ({EngineResult result, int request});
 
 /// What [EngineLifecycle.reopen] did with the recorded material.
 ///
-/// Mirrors the native `le_reopen_outcome`. Only [retained] keeps the loops;
-/// every `cleared*` value means the engine was reset exactly as a fresh
-/// [EngineLifecycle.start] would have, and names why.
+/// Mirrors the native `le_reopen_outcome`. [retained] and [retainedPartial]
+/// keep the loops (the latter except the tracks named in the result's
+/// `droppedTracks`); every `cleared*` value means the engine was reset exactly
+/// as a fresh [EngineLifecycle.start] would have, and names why.
 enum ReopenOutcome {
   /// Loops, history and Fade envelopes kept; content tracks come back stopped.
   retained,
@@ -87,29 +88,42 @@ enum ReopenOutcome {
   /// The requested loop cap differs from the buffers the material lives in.
   clearedCap,
 
-  /// A Clear, Undo, Redo, cancel or Session commit was still unapplied when
-  /// the device was lost; half-applied state is not reconciled.
-  clearedPending;
+  /// Retained, except the tracks in `droppedTracks`: a Clear, Undo, Redo,
+  /// cancel or Session commit on them was still unapplied when the device was
+  /// lost, so they come back empty; every other track keeps its loop.
+  retainedPartial;
 
   /// Maps a native `le_reopen_outcome` integer to a [ReopenOutcome].
   ///
-  /// Unknown values map to [clearedPending]: the conservative reading, since
-  /// a caller that does not recognise the code must not assume the loops are
-  /// still there.
+  /// Unknown values map to [clearedCap]: the conservative reading, since a
+  /// caller that does not recognise the code must not assume the loops are
+  /// still there, and a mismatched buffer shape is the nearest reason a
+  /// library/bindings skew could stand for.
   static ReopenOutcome fromCode(int code) => switch (code) {
     0 => ReopenOutcome.retained,
     1 => ReopenOutcome.clearedRate,
-    2 => ReopenOutcome.clearedCap,
-    _ => ReopenOutcome.clearedPending,
+    3 => ReopenOutcome.retainedPartial,
+    _ => ReopenOutcome.clearedCap,
   };
+
+  /// Whether any recorded material survived the reopen.
+  bool get keepsMaterial =>
+      this == ReopenOutcome.retained || this == ReopenOutcome.retainedPartial;
 }
 
-/// The result of [EngineLifecycle.reopen]: the call's [EngineResult] and,
-/// once the open succeeded, what happened to the material. `outcome` is
-/// meaningful only when the engine actually reached its settle step — on a
-/// failed open ([EngineResult.device] with nothing changed) it reads
-/// [ReopenOutcome.retained] because the loops are indeed still there.
-typedef ReopenResult = ({EngineResult result, ReopenOutcome outcome});
+/// The result of [EngineLifecycle.reopen]: the call's [EngineResult], what
+/// happened to the material once the open succeeded, and `droppedTracks`, a
+/// bitmask (bit `t` = track `t`) of the tracks a
+/// [ReopenOutcome.retainedPartial] reopen dropped (0 otherwise). `outcome` is
+/// meaningful only when the engine
+/// actually reached its settle step — on a failed open ([EngineResult.device]
+/// with nothing changed) it reads [ReopenOutcome.retained] because the loops
+/// are indeed still there.
+typedef ReopenResult = ({
+  EngineResult result,
+  ReopenOutcome outcome,
+  int droppedTracks,
+});
 
 /// Thrown when an [AudioEngine] operation fails.
 class EngineException implements Exception {
@@ -155,9 +169,12 @@ abstract interface class EngineLifecycle {
   /// Fade envelopes are kept and every content track comes back stopped at
   /// the loop head; a take still capturing at the loss is dropped (a first
   /// recording leaves its track empty, an in-progress overdub pass is
-  /// reverted). Otherwise the engine is reset as [start] would and the
-  /// result's `outcome` names why. Settings the caller replays after a
-  /// start (routing, mix, FX, monitors, output gates) are reset either way.
+  /// reverted). A track whose Clear, Undo, Redo, cancel or Session commit the
+  /// engine never applied is dropped the same way and reported in the
+  /// result's `droppedTracks`; the other tracks keep their loops. Only a
+  /// sample-rate or loop-cap change resets the whole engine as [start] would,
+  /// and the result's `outcome` names why. Settings the caller replays after
+  /// a start (routing, mix, FX, monitors, output gates) are reset either way.
   ///
   /// A failed open leaves everything as it was (retry later); a failed start
   /// returns [EngineResult.device] with the material already settled per the

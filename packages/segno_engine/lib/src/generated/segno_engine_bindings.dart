@@ -1050,33 +1050,41 @@ class SegnoEngineBindings {
   /// before: LE_ERR_ALREADY_RUNNING while running, LE_ERR_NOT_RUNNING when never
   /// configured (a cold engine goes through le_engine_start). Opens the device
   /// like le_engine_start, then — at the same negotiated sample rate and loop
-  /// cap, with no half-applied history command — keeps every lane's PCM, the
-  /// undo/redo history, loop multiples, take ids and the crown, and brings each
-  /// content track back STOPPED at the loop head with its Fade frozen (the ramp
-  /// resumes toward its target at the original full-travel rate on the next
-  /// Play). A take still capturing at the loss is dropped: a first recording
-  /// leaves its track EMPTY, an in-progress overdub pass is reverted sample-
-  /// exactly (committed layers stay), a take still in its seam crossfade or
-  /// trailing fold goes with it. Recording never resumes. Otherwise the engine
-  /// is reset exactly as le_engine_start does and *outcome names why
-  /// (LE_REOPEN_CLEARED_*). A running performance capture ends with
-  /// DEVICE_CHANGED either way. Every setting the host replays after a start
-  /// (routing, mix, FX, monitors, conditioning, output gates) is reset here
-  /// too; routes to inputs or outputs the new device lacks stay silent.
+  /// cap — keeps every lane's PCM, the undo/redo history, loop multiples, take
+  /// ids and the crown, and brings each content track back STOPPED at the loop
+  /// head with its Fade frozen (the ramp resumes toward its target at the
+  /// original full-travel rate on the next Play). A take still capturing at the
+  /// loss is dropped: a first recording leaves its track EMPTY, an in-progress
+  /// overdub pass is reverted sample-exactly (committed layers stay), a take
+  /// still in its seam crossfade or trailing fold goes with it. Recording never
+  /// resumes. A track whose Clear/Undo/Redo/cancel or Session commit the audio
+  /// thread never applied is dropped the same way — EMPTY, its history gone —
+  /// and named in *dropped_track_mask (bit t = track t, NULL to not ask), with
+  /// *outcome LE_REOPEN_RETAINED_PARTIAL; every other track is retained. A
+  /// drop that empties the rig resets the master as a clear does. Only another
+  /// sample rate or loop cap clears the whole engine, exactly as le_engine_start
+  /// does, with *outcome LE_REOPEN_CLEARED_RATE / _CAP and a zero mask. A
+  /// running performance capture ends with DEVICE_CHANGED either way. Every
+  /// setting the host replays after a start (routing, mix, FX, monitors,
+  /// conditioning, output gates) is reset here too; routes to inputs or outputs
+  /// the new device lacks stay silent.
   ///
   /// Returns LE_OK or an le_result error. A failed open changes nothing (the
-  /// material is still held, still stopped), so the caller may retry. A failed
-  /// start returns LE_ERR_DEVICE with the material already settled per
-  /// *outcome — still retained and stopped on LE_REOPEN_RETAINED.
+  /// material is still held, still stopped, *outcome and the mask untouched), so
+  /// the caller may retry. A failed start returns LE_ERR_DEVICE with the material
+  /// already settled per *outcome — still retained and stopped on
+  /// LE_REOPEN_RETAINED / _PARTIAL.
   int le_engine_reopen(
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_config> config,
     ffi.Pointer<ffi.Int32> outcome,
+    ffi.Pointer<ffi.Int32> dropped_track_mask,
   ) {
     return _le_engine_reopen(
       engine,
       config,
       outcome,
+      dropped_track_mask,
     );
   }
 
@@ -1087,6 +1095,7 @@ class SegnoEngineBindings {
             ffi.Pointer<le_engine>,
             ffi.Pointer<le_config>,
             ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
           )
         >
       >('le_engine_reopen');
@@ -1095,6 +1104,7 @@ class SegnoEngineBindings {
         int Function(
           ffi.Pointer<le_engine>,
           ffi.Pointer<le_config>,
+          ffi.Pointer<ffi.Int32>,
           ffi.Pointer<ffi.Int32>,
         )
       >();
@@ -1135,8 +1145,8 @@ class SegnoEngineBindings {
   /// le_engine_reopen without the device: the retention decision, the material
   /// settle and the runtime reset, on an engine le_engine_configure (or a
   /// previous start) already configured. `max_loop_frames <= 0` selects the
-  /// default, as in le_engine_configure. Same preconditions, results and
-  /// *outcome values as le_engine_reopen.
+  /// default, as in le_engine_configure. Same preconditions, results, *outcome
+  /// values and dropped-track mask as le_engine_reopen.
   int le_engine_reopen_configured(
     ffi.Pointer<le_engine> engine,
     int sample_rate,
@@ -1144,6 +1154,7 @@ class SegnoEngineBindings {
     int output_channels,
     int max_loop_frames,
     ffi.Pointer<ffi.Int32> outcome,
+    ffi.Pointer<ffi.Int32> dropped_track_mask,
   ) {
     return _le_engine_reopen_configured(
       engine,
@@ -1152,6 +1163,7 @@ class SegnoEngineBindings {
       output_channels,
       max_loop_frames,
       outcome,
+      dropped_track_mask,
     );
   }
 
@@ -1165,6 +1177,7 @@ class SegnoEngineBindings {
             ffi.Int32,
             ffi.Int32,
             ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
           )
         >
       >('le_engine_reopen_configured');
@@ -1176,6 +1189,7 @@ class SegnoEngineBindings {
           int,
           int,
           int,
+          ffi.Pointer<ffi.Int32>,
           ffi.Pointer<ffi.Int32>,
         )
       >();
@@ -7469,9 +7483,11 @@ enum le_reopen_outcome {
   /// max_loop_frames differs from the buffers
   LE_REOPEN_CLEARED_CAP(2),
 
-  /// a Clear/Undo/Redo/cancel or Session commit
-  /// was still unapplied at the loss
-  LE_REOPEN_CLEARED_PENDING(3);
+  /// retained, except the tracks named in the
+  /// dropped mask: a Clear/Undo/Redo/cancel or
+  /// Session commit on them was still
+  /// unapplied at the loss
+  LE_REOPEN_RETAINED_PARTIAL(3);
 
   final int value;
   const le_reopen_outcome(this.value);
@@ -7480,7 +7496,7 @@ enum le_reopen_outcome {
     0 => LE_REOPEN_RETAINED,
     1 => LE_REOPEN_CLEARED_RATE,
     2 => LE_REOPEN_CLEARED_CAP,
-    3 => LE_REOPEN_CLEARED_PENDING,
+    3 => LE_REOPEN_RETAINED_PARTIAL,
     _ => throw ArgumentError('Unknown value for le_reopen_outcome: $value'),
   };
 }

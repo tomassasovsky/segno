@@ -1679,20 +1679,61 @@ static void le_dub_block_update(le_engine* e, uint64_t frame) {
   }
 }
 
+/* Drops a track whole at a reopen: the take it was capturing, or the
+ * bookkeeping a state command the audio thread never applied had already
+ * moved. EMPTY, nothing recoverable, fresh Fade; a defining take leaves the
+ * clock unset. A fresh capture started on an empty history
+ * (le_begin_empty_capture clears redo and drops a cleared history), and a
+ * pending Clear/Undo/Redo has pre-mutated the stacks it was about to apply,
+ * so neither history is worth keeping. */
+static void le_reopen_drop_track(le_engine* e, le_track* t) {
+  le_audio_rev_bump(t); /* [R1] reopen: the take is gone */
+  store_i32(&t->a_state, LE_TRACK_EMPTY);
+  le_track_set_len(t, 0);
+  store_i32(&t->a_multiple, 1);
+  store_i32(&t->a_sync_divisor, 0);
+  t->undo_count = 0;
+  t->redo_count = 0;
+  t->empty_len = 0;
+  t->clear_restore_slot = -1;
+  store_i32(&t->a_undo_depth, 0);
+  store_i32(&t->a_clear_restore, 0);
+  store_i32(&t->a_redo_depth, 0);
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    store_i32(&t->lanes[l].a_recoverable, 0);
+    t->lanes[l].pending_mute = 0;
+  }
+  le_fade_reset(e, t, 0); /* nothing left to fade; new generation */
+  /* Free/Song: a track reading EMPTY never carries an established clock of
+   * its own (handle_clear's invariant). */
+  le_loop_clock_reset(&t->free_clock);
+  t->free_iteration = 0;
+}
+
 /* Retained reopen (#1140), audio-side half — see engine_core.h. Control
  * thread, device closed: the audio thread is gone, so its fields are owned
  * here and nothing below is RT-bounded. le_engine_reopen_file_retired has
  * already filed every complete pass, so an armed shadow left with coverage is
  * a PARTIAL pass. Owner decisions (2026-10-05): loops come back STOPPED,
- * recording never resumes, a partial pass is discarded. */
-void le_engine_reopen_settle(le_engine* e) {
+ * recording never resumes, a partial pass is discarded. Standing delivery
+ * rules: keep recorded material, drop only the uncertain state — so a track
+ * named in `drop_mask` goes, and only that track. */
+void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
   if (e == NULL) return;
   const int32_t mode = load_i32(&e->a_looper_mode);
   const int free_mode =
       mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG;
+  int dropped_any = 0;
   for (int32_t ch = 0; ch < e->track_count; ++ch) {
     le_track* t = &e->tracks[ch];
     const int32_t st = load_i32(&t->a_state);
+    /* A take still capturing is dropped whole: a first recording (defining
+     * or not, including one parked in its deferred seam crossfade) and a
+     * just-finalized take whose trailing seam fold (#728) has not landed
+     * (`xfade_capture > 0` is RECORDING). So is a track whose state command
+     * the audio thread never saw. Recording never resumes. */
+    const int drop = st == LE_TRACK_RECORDING || t->seam_capture > 0 ||
+                     (drop_mask & (1u << ch)) != 0;
 
     /* An in-progress overdub pass: every write of the pass saved its pre-value
      * into the armed shadow at the same index, so walking the covered
@@ -1701,7 +1742,7 @@ void le_engine_reopen_settle(le_engine* e) {
      * positions the pass never wrote, so those copy back unchanged. A pass
      * running without an armed shadow (spare starvation) cannot be reverted
      * and stays merged — the same coherent result it has today. */
-    if (t->dub_slot >= 0 && t->dub_len > 0 && t->dub_count > 0 &&
+    if (!drop && t->dub_slot >= 0 && t->dub_len > 0 && t->dub_count > 0 &&
         t->dub_count < t->dub_len) {
       const int32_t base = free_mode ? t->free_clock.length : e->clock.length;
       if (base > 0) {
@@ -1718,35 +1759,9 @@ void le_engine_reopen_settle(le_engine* e) {
       }
     }
 
-    /* A take still capturing is dropped whole: a first recording (defining
-     * or not, including one parked in its deferred seam crossfade) and a
-     * just-finalized take whose trailing seam fold (#728) has not landed.
-     * The track reads EMPTY; a defining take leaves the clock unset. */
-    if (st == LE_TRACK_RECORDING || t->seam_capture > 0) {
-      le_audio_rev_bump(t); /* [R1] reopen: the take is gone */
-      store_i32(&t->a_state, LE_TRACK_EMPTY);
-      le_track_set_len(t, 0);
-      store_i32(&t->a_multiple, 1);
-      store_i32(&t->a_sync_divisor, 0);
-      /* A fresh capture started on an empty history (le_begin_empty_capture
-       * clears redo and drops a cleared history); nothing it retired in the
-       * last few ms survives the take it belonged to. */
-      t->undo_count = 0;
-      t->redo_count = 0;
-      t->empty_len = 0;
-      t->clear_restore_slot = -1;
-      store_i32(&t->a_undo_depth, 0);
-      store_i32(&t->a_clear_restore, 0);
-      store_i32(&t->a_redo_depth, 0);
-      for (int l = 0; l < LE_MAX_LANES; ++l) {
-        store_i32(&t->lanes[l].a_recoverable, 0);
-        t->lanes[l].pending_mute = 0;
-      }
-      le_fade_reset(e, t, 0); /* nothing left to fade; new generation */
-      /* Free/Song: a track reading EMPTY never carries an established clock
-       * of its own (handle_clear's invariant). */
-      le_loop_clock_reset(&t->free_clock);
-      t->free_iteration = 0;
+    if (drop) {
+      le_reopen_drop_track(e, t);
+      dropped_any = 1;
     } else if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING ||
                st == LE_TRACK_STOPPED) {
       store_i32(&t->a_state, load_i32(&t->lanes[0].a_len) > 0
@@ -1781,6 +1796,23 @@ void le_engine_reopen_settle(le_engine* e) {
   for (int32_t ch = 0; ch < e->track_count; ++ch) {
     e->tracks[ch].free_clock.position = 0;
     e->tracks[ch].free_iteration = 0;
+  }
+  /* A drop that leaves every track EMPTY resets the master so a new loop can
+   * be defined — exactly handle_clear's rule (a rig that was already all
+   * EMPTY, e.g. undone to empty with its redo pending, keeps its master: no
+   * drop happened, nothing changed). The loop-derived grid dies with it; the
+   * tempo value and source survive (D6). */
+  if (dropped_any) {
+    int all_empty = 1;
+    for (int32_t ch = 0; ch < e->track_count; ++ch) {
+      if (load_i32(&e->tracks[ch].a_state) != LE_TRACK_EMPTY) all_empty = 0;
+    }
+    if (all_empty) {
+      le_loop_clock_reset(&e->clock);
+      store_i32(&e->a_master_len, 0);
+      store_i32(&e->a_loop_bars, 0);
+      e->grid_total_beats = 0;
+    }
   }
   /* A rig that kept content keeps (or, lacking one, gains) its crown; a
    * dropped take uncrowns nothing a clear would not have. */
