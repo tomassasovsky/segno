@@ -19,6 +19,7 @@ import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
@@ -242,8 +243,10 @@ void main() {
     timing = RecordTimingCubit(settings: timingOwner);
     addTearDown(() => unawaited(timing.close()));
     await timingOwner.load();
+    final fade = testFadeSettings();
+    addTearDown(() => unawaited(fade.close()));
     control = ControlCubit(
-      fadeSettings: testFadeSettings(),
+      fadeSettings: fade,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       clickVolumeControl: tempo,
@@ -288,6 +291,7 @@ void main() {
         home: MultiRepositoryProvider(
           providers: [
             RepositoryProvider<LooperRepository>.value(value: looper),
+            RepositoryProvider<FadeSettings>.value(value: fade),
             RepositoryProvider<PedalRepository>.value(value: pedal),
           ],
           child: MultiBlocProvider(

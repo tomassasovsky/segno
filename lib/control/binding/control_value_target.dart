@@ -60,6 +60,8 @@ sealed class ControlValueTarget extends Equatable {
     TrackRecordLengthTarget(:final channel) => channel >= 0 && channel < 8,
     DefaultRecordTimingTarget() => true,
     TrackRecordTimingTarget(:final channel) => channel >= 0 && channel < 8,
+    DefaultFadeTarget() => true,
+    TrackFadeTarget(:final channel) => channel >= 0 && channel < 8,
   };
 
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
@@ -102,6 +104,9 @@ sealed class ControlValueTarget extends Equatable {
       if (ctl == 'defaultRecordTiming') {
         return raw.length == 1 ? const DefaultRecordTimingTarget() : null;
       }
+      if (ctl == 'fadeSeconds') {
+        return raw.length == 1 ? const DefaultFadeTarget() : null;
+      }
       final index = raw['index'];
       final lane = raw['lane'];
       if (index is! int || index < 0) return null;
@@ -124,6 +129,7 @@ sealed class ControlValueTarget extends Equatable {
           TrackRecordLengthTarget(index),
         'trackRecordTiming' when indexed && index < 8 =>
           TrackRecordTimingTarget(index),
+        'trackFadeSeconds' when indexed && index < 8 => TrackFadeTarget(index),
         _ => null,
       };
     }
@@ -671,6 +677,70 @@ final class TrackRecordTimingTarget extends RecordTimingValueTarget {
   @override
   String canonicalString() =>
       jsonEncode({'ctl': 'trackRecordTiming', 'index': channel});
+
+  @override
+  List<Object?> get props => [channel];
+}
+
+/// A Fade duration endpoint: 0.5–30 s in 0.5 s steps, stored in mappings as
+/// normalized travel across those 60 values.
+sealed class FadeValueTarget extends ControlValueTarget {
+  /// Creates a Fade duration target.
+  const FadeValueTarget();
+
+  /// The fixed track, or null for the Default inherited by tracks without an
+  /// override.
+  int? get channel;
+
+  static const _minMs = 500;
+  static const _stepMs = 500;
+  static const _steps = 59;
+
+  /// Converts normalized source travel into a whole number of 0.5 s steps,
+  /// in milliseconds.
+  int toDomain(double normalized) {
+    if (!normalized.isFinite) {
+      throw ArgumentError.value(normalized, 'normalized');
+    }
+    return _minMs + (normalized.clamp(0.0, 1.0) * _steps).round() * _stepMs;
+  }
+
+  /// Converts an accepted duration in milliseconds into normalized travel.
+  double fromDomain(int milliseconds) =>
+      (milliseconds.clamp(_minMs, _minMs + _steps * _stepMs) - _minMs) /
+      (_steps * _stepMs);
+
+  /// One relative-controller detent moves one 0.5 s step.
+  double get relativeStep => 1 / _steps;
+}
+
+/// The Fade duration inherited by tracks without an override.
+final class DefaultFadeTarget extends FadeValueTarget {
+  /// Creates the default Fade duration target.
+  const DefaultFadeTarget();
+
+  @override
+  int? get channel => null;
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'fadeSeconds'});
+
+  @override
+  List<Object?> get props => ['fadeSeconds'];
+}
+
+/// One fixed track's effective Fade duration, including an empty track slot.
+/// Writing it while the track inherits the Default creates its override.
+final class TrackFadeTarget extends FadeValueTarget {
+  /// Creates a track Fade duration target for zero-based [channel].
+  const TrackFadeTarget(this.channel);
+
+  @override
+  final int channel;
+
+  @override
+  String canonicalString() =>
+      jsonEncode({'ctl': 'trackFadeSeconds', 'index': channel});
 
   @override
   List<Object?> get props => [channel];

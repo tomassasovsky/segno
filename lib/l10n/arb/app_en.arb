@@ -5997,5 +5997,18 @@
                 "type": "int"
             }
         }
+    },
+    "fadeDurationLabel": "Fade duration",
+    "@fadeDurationLabel": {
+        "description": "Name of the Fade duration control in MIDI and external mapping pickers and rows."
+    },
+    "fadeDurationReadout": "{value} s",
+    "@fadeDurationReadout": {
+        "description": "A mapped Fade duration in seconds with one decimal, for example 4.0 s.",
+        "placeholders": {
+            "value": {
+                "type": "String"
+            }
+        }
     }
 }

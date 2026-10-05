@@ -55,6 +55,7 @@ typedef _RecordLengthOrigin = ({RecordLengthLifetime lifetime, int revision});
 typedef _RecordTimingOrigin = ({RecordTimingLifetime lifetime, int revision});
 typedef _ClickModeOrigin = ({ClickModeLifetime lifetime, int revision});
 typedef _RecordStartOrigin = ({RecordStartLifetime lifetime, int revision});
+typedef _FadeOrigin = ({int lifetime, int revision});
 typedef _ControlOrigins = ({
   Map<MixValueTarget, int> mix,
   ClickVolumeLifetime? click,
@@ -64,6 +65,7 @@ typedef _ControlOrigins = ({
   Map<RecordTimingValueTarget, _RecordTimingOrigin> recordTiming,
   Map<ClickModeValueTarget, _ClickModeOrigin> clickMode,
   Map<CountInValueTarget, _RecordStartOrigin> recordStart,
+  Map<FadeValueTarget, _FadeOrigin> fade,
 });
 
 /// The press/long-press state machine every gestural footswitch shares.
@@ -211,6 +213,7 @@ class ControlCubit extends Cubit<ControlState> {
        _recordTiming = recordTimingControl,
        _clickMode = clickModeControl,
        _recordStart = recordStartControl,
+       _fade = fadeSettings,
        _footFadeActions = FootFadeActions(
          repository: looper,
          settings: fadeSettings,
@@ -293,6 +296,17 @@ class ControlCubit extends Cubit<ControlState> {
       _supersedeParameterClaims(target);
       _onOrdinaryFxWrite(target, target.fromDomain(pair.countInBars));
     });
+    _fadeLifetime = _fade.lifetime;
+    _fadeOrdinarySub = _fade.ordinaryChanges.listen((change) {
+      final target = change.channel == null
+          ? const DefaultFadeTarget()
+          : TrackFadeTarget(change.channel!);
+      if (change.milliseconds == null) {
+        _supersedeParameterClaims(target);
+      } else {
+        _onOrdinaryFxWrite(target, target.fromDomain(change.milliseconds!));
+      }
+    });
     _midiSession = _looper.sessionRevision;
     _midiCapture = midiDevices?.session;
     _looperSub = _looper.looperState.listen(_onLooperState);
@@ -347,6 +361,10 @@ class ControlCubit extends Cubit<ControlState> {
   final RecordStartControl _recordStart;
   late RecordStartLifetime _recordStartLifetime;
   late final StreamSubscription<RecordStartSettings> _recordStartOrdinarySub;
+  final FadeSettings _fade;
+  late int _fadeLifetime;
+  late final StreamSubscription<({int? channel, int? milliseconds})>
+  _fadeOrdinarySub;
   final ClickModeControl _clickMode;
   late ClickModeLifetime _clickModeLifetime;
   late final StreamSubscription<ClickMode> _clickModeOrdinarySub;
@@ -683,7 +701,8 @@ class ControlCubit extends Cubit<ControlState> {
                 row.target is RecordLengthValueTarget ||
                 row.target is RecordTimingValueTarget ||
                 row.target is ClickModeValueTarget ||
-                row.target is CountInValueTarget)
+                row.target is CountInValueTarget ||
+                row.target is FadeValueTarget)
               if (row.condition == ExternalValueCondition.heldReleased)
                 row.target: row.inactive,
       },
@@ -797,7 +816,8 @@ class ControlCubit extends Cubit<ControlState> {
                       target is RecordLengthValueTarget ||
                       target is RecordTimingValueTarget ||
                       target is ClickModeValueTarget ||
-                      target is CountInValueTarget) &&
+                      target is CountInValueTarget ||
+                      target is FadeValueTarget) &&
                   (_externalInvalidatedMix[input]?.contains(target) ?? false),
             );
             (_externalNumericReleases[input] ??= {}).addAll(parameters);
@@ -826,30 +846,7 @@ class ControlCubit extends Cubit<ControlState> {
           parameters.removeWhere(
             (target, _) =>
                 !_controlValueResolves(target, cleanup: held == false) ||
-                (target is DecayValueTarget &&
-                    !_decayOriginCurrent(target, origins.decay[target])) ||
-                (target is OneShotValueTarget &&
-                    !_oneShotOriginCurrent(target, origins.oneShot[target])) ||
-                (target is RecordLengthValueTarget &&
-                    !_recordLengthOriginCurrent(
-                      target,
-                      origins.recordLength[target],
-                    )) ||
-                (target is RecordTimingValueTarget &&
-                    !_recordTimingOriginCurrent(
-                      target,
-                      origins.recordTiming[target],
-                    )) ||
-                (target is ClickModeValueTarget &&
-                    !_clickModeOriginCurrent(
-                      target,
-                      origins.clickMode[target],
-                    )) ||
-                (target is CountInValueTarget &&
-                    !_recordStartOriginCurrent(
-                      target,
-                      origins.recordStart[target],
-                    )),
+                !_ownerOriginCurrent(target, origins),
           );
           activations.removeWhere(
             (target, _) => !_looper.bindingResolves(target),
@@ -868,42 +865,7 @@ class ControlCubit extends Cubit<ControlState> {
               target: _looper.bindingEnabled(target),
           };
           void recordParameter(ControlValueTarget target) {
-            if (target is DecayValueTarget &&
-                !_decayOriginCurrent(target, origins.decay[target])) {
-              return;
-            }
-            if (target is OneShotValueTarget &&
-                !_oneShotOriginCurrent(target, origins.oneShot[target])) {
-              return;
-            }
-            if (target is RecordLengthValueTarget &&
-                !_recordLengthOriginCurrent(
-                  target,
-                  origins.recordLength[target],
-                )) {
-              return;
-            }
-            if (target is RecordTimingValueTarget &&
-                !_recordTimingOriginCurrent(
-                  target,
-                  origins.recordTiming[target],
-                )) {
-              return;
-            }
-            if (target is ClickModeValueTarget &&
-                !_clickModeOriginCurrent(
-                  target,
-                  origins.clickMode[target],
-                )) {
-              return;
-            }
-            if (target is CountInValueTarget &&
-                !_recordStartOriginCurrent(
-                  target,
-                  origins.recordStart[target],
-                )) {
-              return;
-            }
+            if (!_ownerOriginCurrent(target, origins)) return;
             if (held == false) {
               _externalMixReleased[input]?.remove(target);
               _parameterHolders[target]?.remove(trigger);
@@ -917,7 +879,8 @@ class ControlCubit extends Cubit<ControlState> {
                   target is RecordLengthValueTarget ||
                   target is RecordTimingValueTarget ||
                   target is ClickModeValueTarget ||
-                  target is CountInValueTarget) {
+                  target is CountInValueTarget ||
+                  target is FadeValueTarget) {
                 _retireMixBaseline(target);
                 _externalMixReleased[input]?.remove(target);
                 if (requestedReleased[target] case final low?) {
@@ -1240,11 +1203,39 @@ class ControlCubit extends Cubit<ControlState> {
                 recordParameter(target);
               }
             }
+            if (entry.key case final FadeValueTarget target) {
+              final origin = origins.fade[target];
+              if (origin == null ||
+                  !entry.value.isFinite ||
+                  !_fadeOriginCurrent(target, origin)) {
+                continue;
+              }
+              final released = held == true
+                  ? requestedReleased[target]
+                  : held == false
+                  ? _survivingMidiReleased(target, excluding: trigger)
+                  : null;
+              final accepted = await _fade.setControllerDuration(
+                target.channel,
+                target.toDomain(entry.value),
+                lifetime: origin.lifetime,
+                revision: origin.revision,
+                releasedMilliseconds: released == null
+                    ? null
+                    : target.toDomain(released),
+              );
+              if (cancelled()) return;
+              if (accepted && _fadeOriginCurrent(target, origin)) {
+                applied = true;
+                recordParameter(target);
+              }
+            }
             switch (entry.key) {
               case FxParamTarget() ||
                   MixValueTarget() ||
                   ClickVolumeTarget() ||
                   DecayValueTarget() ||
+                  FadeValueTarget() ||
                   OneShotValueTarget() ||
                   RecordLengthValueTarget() ||
                   RecordTimingValueTarget() ||
@@ -3567,6 +3558,14 @@ class ControlCubit extends Cubit<ControlState> {
       _recordStartLifetime = startLifetime;
       _supersedeParameterClaims(const CountInValueTarget());
     }
+    final fadeLifetime = _fade.lifetime;
+    if (_fadeLifetime != fadeLifetime) {
+      _fadeLifetime = fadeLifetime;
+      <FadeValueTarget>[
+        const DefaultFadeTarget(),
+        for (var channel = 0; channel < 8; channel++) TrackFadeTarget(channel),
+      ].forEach(_supersedeParameterClaims);
+    }
     final clickLifetime = _clickVolume.clickVolumeLifetime;
     if (_clickLifetime != clickLifetime) {
       _clickLifetime = clickLifetime;
@@ -3838,6 +3837,7 @@ class ControlCubit extends Cubit<ControlState> {
     await _recordTimingOrdinarySub.cancel();
     await _clickModeOrdinarySub.cancel();
     await _recordStartOrdinarySub.cancel();
+    await _fadeOrdinarySub.cancel();
     await Future.wait(_bindingDecisions.values.toList());
     await _restoreWait;
     _heldRestore.clear();

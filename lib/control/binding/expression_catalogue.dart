@@ -13,6 +13,7 @@ import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// Picker categories; Loop controls are separate from FX stage categories.
 enum ExpressionDestinationKind {
@@ -257,6 +258,16 @@ class ExpressionDestination extends Equatable {
     group: l10n.loopTimingLabel,
     control: l10n.loopTimingLabel,
   ),
+  DefaultFadeTarget() => (
+    destination: l10n.expressionDestinationLoopDefaults,
+    group: l10n.fadeDurationLabel,
+    control: l10n.fadeDurationLabel,
+  ),
+  TrackFadeTarget(:final channel) => (
+    destination: l10n.trackName(trackNames, channel),
+    group: l10n.fadeDurationLabel,
+    control: l10n.fadeDurationLabel,
+  ),
   MasterGainTarget() => (
     destination: l10n.fxEditorMasterTitle,
     group: l10n.fxEditorMasterTitle,
@@ -284,7 +295,8 @@ String expressionRowName(
   return name.group == name.destination ||
           ((target is RecordTimingValueTarget ||
                   target is ClickModeValueTarget ||
-                  target is CountInValueTarget) &&
+                  target is CountInValueTarget ||
+                  target is FadeValueTarget) &&
               name.group == name.control)
       ? name.control
       : '${name.group} · ${name.control}';
@@ -309,6 +321,7 @@ List<ExpressionDestination> expressionDestinations(
   ClickModeSnapshot? clickModeSnapshot,
   double? clickVolume,
   DecaySnapshot? decaySnapshot,
+  FadeDurations? fadeDurations,
   OneShotSnapshot? oneShotSnapshot,
   RecordLengthSnapshot? recordLengthSnapshot,
   RecordStartSnapshot? recordStartSnapshot,
@@ -333,6 +346,7 @@ List<ExpressionDestination> expressionDestinations(
     clickModeSnapshot: clickModeSnapshot,
     clickVolume: clickVolume,
     decaySnapshot: decaySnapshot,
+    fadeDurations: fadeDurations,
     oneShotSnapshot: oneShotSnapshot,
     recordLengthSnapshot: recordLengthSnapshot,
     recordStartSnapshot: recordStartSnapshot,
@@ -460,7 +474,8 @@ String _addressLabel(
   TrackDecayTarget(:final channel) ||
   TrackOneShotTarget(:final channel) ||
   TrackRecordLengthTarget(:final channel) ||
-  TrackRecordTimingTarget(:final channel) => _trackPlace(channel),
+  TrackRecordTimingTarget(:final channel) ||
+  TrackFadeTarget(:final channel) => _trackPlace(channel),
   LaneVolumeTarget(:final channel, :final lane) => _placeOfAddress(
     FxAddress(stage: FxStage.loop, index: channel, lane: lane),
   ),
@@ -489,7 +504,8 @@ String _addressLabel(
   DefaultDecayTarget() ||
   DefaultOneShotTarget() ||
   DefaultRecordLengthTarget() ||
-  DefaultRecordTimingTarget() => (
+  DefaultRecordTimingTarget() ||
+  DefaultFadeTarget() => (
     id: 'loop:defaults',
     kind: ExpressionDestinationKind.loopControls,
     order: _loopControlsOrder,

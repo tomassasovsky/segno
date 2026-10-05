@@ -15,6 +15,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
@@ -222,8 +223,10 @@ void main() {
     if (currentBars != 0) {
       expect((await record.setDefaultLengthBars(currentBars)).isOk, isTrue);
     }
+    final fade = testFadeSettings();
+    addTearDown(() => unawaited(fade.close()));
     control = ControlCubit(
-      fadeSettings: testFadeSettings(),
+      fadeSettings: fade,
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
       recordStartControl: FakeRecordStartControl(),
@@ -260,6 +263,7 @@ void main() {
         home: MultiRepositoryProvider(
           providers: [
             RepositoryProvider<LooperRepository>.value(value: looper),
+            RepositoryProvider<FadeSettings>.value(value: fade),
             // The map's indicators read the frame the app last handed the
             // pedal.
             RepositoryProvider<PedalRepository>.value(value: pedal),

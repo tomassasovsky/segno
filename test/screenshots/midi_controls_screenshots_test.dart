@@ -23,6 +23,7 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
@@ -317,8 +318,10 @@ void main() {
       sessionRevision: 1,
       mixGeneration: 1,
     ));
+    final fade = testFadeSettings();
+    addTearDown(() => unawaited(fade.close()));
     control = ControlCubit(
-      fadeSettings: testFadeSettings(),
+      fadeSettings: fade,
       decayControl: decay,
       oneShotControl: decay,
       recordLengthControl: record,
@@ -341,8 +344,11 @@ void main() {
     addTearDown(() => unawaited(midi.close()));
     await control.load();
     await tester.pumpWidget(
-      RepositoryProvider<LooperRepository>.value(
-        value: looper,
+      MultiRepositoryProvider(
+        providers: [
+          RepositoryProvider<LooperRepository>.value(value: looper),
+          RepositoryProvider<FadeSettings>.value(value: fade),
+        ],
         child: MultiBlocProvider(
           providers: [
             BlocProvider.value(value: control),

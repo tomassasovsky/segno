@@ -13,6 +13,7 @@ import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -391,6 +392,37 @@ void main() {
         );
       },
     );
+
+    test('Fade duration sits in Loop defaults and on all eight tracks', () {
+      final destinations = expressionDestinations(
+        l10n,
+        names,
+        looper,
+        fadeDurations: FadeDurations.defaults,
+      );
+      final loop = destinations.singleWhere((d) => d.id == 'loop:defaults');
+      expect(loop.controls.single.target, const DefaultFadeTarget());
+      expect(loop.controls.single.label, l10n.fadeDurationLabel);
+      for (var channel = 0; channel < 8; channel++) {
+        final track = destinations.singleWhere((d) => d.id == 'track:$channel');
+        final row = track.controls.singleWhere(
+          (c) => c.target == TrackFadeTarget(channel),
+        );
+        expect(row.label, l10n.fadeDurationLabel);
+        expect(
+          expressionRowName(l10n, names, looper, row.target),
+          l10n.fadeDurationLabel,
+        );
+      }
+      expect(
+        expressionDestinations(
+          l10n,
+          names,
+          looper,
+        ).expand((d) => d.controls).map((c) => c.target),
+        isNot(contains(isA<FadeValueTarget>())),
+      );
+    });
 
     test('Loop/Once shares one Playback group after decay', () {
       final destinations = expressionDestinations(
