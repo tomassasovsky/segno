@@ -172,6 +172,38 @@ static void le_unpark_stopped(le_engine* e, uint64_t frame) {
  * actually flip log a synthetic unmute so a perf-log replay matches. */
 static void le_apply_capture_image(le_engine* e, le_track* t, uint64_t frame);
 
+static void le_fade_log(le_engine* e, int ch, uint64_t frame) {
+  const le_fade* fade = &e->tracks[ch].fade;
+  le_plog_push(e, frame, (le_command){.code = LE_PLOG_FADE,
+      .fade_log = {ch, (float)fade->amount, fade->target, fade->seconds}});
+}
+
+static void le_fade_reset(le_engine* e, le_track* t, uint64_t frame) {
+  t->fade = (le_fade){1, 1, 0};
+  t->fade_sample = 1;
+  if (t->fade_generation != UINT64_MAX) ++t->fade_generation;
+  le_fade_log(e, (int)(t - e->tracks), frame);
+}
+
+static void le_fade_publish(le_engine* e, le_track* t) {
+  atomic_fetch_add_explicit(&t->a_fade_revision, 1, memory_order_seq_cst);
+#ifdef LE_NATIVE_TESTS
+  if (t == &e->tracks[0] && le_test_fade_hook) le_test_fade_hook(e, 1);
+#else
+  (void)e;
+#endif
+  float amount = (float)t->fade.amount;
+  uint32_t bits;
+  memcpy(&bits, &amount, sizeof(bits));
+  atomic_store_explicit(&t->a_fade_amount, bits, memory_order_seq_cst);
+  memcpy(&bits, &t->fade.target, sizeof(bits));
+  atomic_store_explicit(&t->a_fade_target, bits, memory_order_seq_cst);
+  memcpy(&bits, &t->fade.seconds, sizeof(bits));
+  atomic_store_explicit(&t->a_fade_seconds, bits, memory_order_seq_cst);
+  atomic_store_explicit(&t->a_fade_generation, t->fade_generation, memory_order_seq_cst);
+  atomic_fetch_add_explicit(&t->a_fade_revision, 1, memory_order_seq_cst);
+}
+
 static void le_capture_start_unmute(le_engine* e, le_track* t,
                                     uint64_t frame) {
   le_apply_capture_image(e, t, frame);
@@ -1274,6 +1306,7 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
     reset_track_viz(e, ch);
     le_audio_rev_bump(t); /* [R1] record finalize (void take -> EMPTY) */
     store_i32(&t->a_state, LE_TRACK_EMPTY);
+    le_fade_reset(e, t, frame);
     le_track_set_len(t, 0);
     store_i32(&t->a_multiple, 1);
     store_i32(&t->a_sync_divisor, 0);
@@ -1706,6 +1739,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
         t->record_pos = 0;
         t->record_start = 0;
         le_loop_clock_reset(&e->clock);
+        le_fade_reset(e, t, frame);
         store_i32(&t->a_state, LE_TRACK_RECORDING);
         le_arm_length_preset_target(e, t); /* A6: may arm an N-bars target */
       } else {
@@ -1722,6 +1756,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
         t->record_pos = e->clock.position;
         t->record_start = t->record_pos;
         t->start_iter = e->loop_iteration;
+        le_fade_reset(e, t, frame);
         store_i32(&t->a_state, LE_TRACK_RECORDING);
       }
       /* The transport fact: this track actually began recording THIS frame —
@@ -1809,6 +1844,7 @@ static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
   }
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
+  le_fade_reset(e, t, frame);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
   store_i32(&t->a_sync_divisor, 0); /* B3: division state dies too */
@@ -2092,6 +2128,7 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
   t->length_preset_target_frames = 0;
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
+  le_fade_reset(e, t, frame);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
   /* B3, D18: the track's own division state dies with its content — a
@@ -2923,6 +2960,32 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
        * defining-loop finalizes (sync_grid_to_loop), never a live grid. */
       store_i32(&e->a_sync_tempo, cmd->arg_f != 0.0f ? 1 : 0);
       break;
+    case LE_CMD_RESET_FADE:
+      if (valid_channel(e, cmd->arg_i)) le_fade_reset(e, &e->tracks[cmd->arg_i], frame);
+      break;
+    case LE_CMD_FADE: {
+      le_track* t = &e->tracks[cmd->fade.channel];
+      const le_fade_image* image = &cmd->fade.image;
+      const int accepted = image->lifetime == e->fade_lifetime &&
+          image->generation == t->fade_generation &&
+          t->fade_generation != UINT64_MAX &&
+          load_i32(&t->lanes[0].a_len) > 0 &&
+          (cmd->fade.install || load_i32(&t->a_state) != LE_TRACK_EMPTY);
+      if (accepted) {
+        if (cmd->fade.install) {
+          t->fade.amount = image->amount;
+          t->fade.target = image->target;
+        } else {
+          t->fade.target = t->fade.target == 0 ? 1 : 0;
+        }
+        t->fade.seconds = image->full_travel_seconds;
+        t->fade.frames = 0;
+        le_fade_log(e, cmd->fade.channel, frame);
+      }
+      atomic_store_explicit(&e->fade_receipts[cmd->fade.slot].result,
+                             accepted ? LE_OK : LE_ERR_INVALID, memory_order_relaxed);
+      break;
+    }
     case LE_CMD_SET_RECORD_TIMING: {
       const le_record_timing_settings* v = &cmd->timing.settings;
       int accepted = le_record_timing_valid(v);
@@ -3571,6 +3634,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                                     .master_len = e->clock.length,
                                     .iteration = (int32_t)e->loop_iteration,
                                 }});
+      for (int t = 0; t < e->track_count; ++t) le_fade_log(e, t, frame);
       break;
     case LE_CMD_PERF_DISARM:
       /* Stop touching the rings for good before le_perf_disarm's quiescent
@@ -5606,7 +5670,7 @@ static inline void mix_tracks_frame(
       wl *= pan_gl[t][l];
       wr *= pan_gr[t][l];
       if (!trk_has_fx[t]) {
-        const float gain = load_f32(&tr->a_gain_bits);
+        const float gain = load_f32(&tr->a_gain_bits) * tr->fade_sample;
         wl *= gain;
         wr *= gain;
         /* Empty Track chain (the default and the migration state): the legacy
@@ -5695,7 +5759,7 @@ static inline void mix_tracks_frame(
       fx_apply_chain_with_gain(&tr->bus.fx, sr, fx_cap, &bus_l, &bus_r,
                      trk_fx_count[t], trk_fx_type[t], trk_fx_params[t],
                      trk_fx_enabled[t], trk_fx_pre_count[t],
-                     load_f32(&tr->a_gain_bits));
+                     load_f32(&tr->a_gain_bits) * tr->fade_sample);
       if (at_has_fx) {
         le_fx_route_frame(rec, ch_out, bus_mask, bus_l, bus_r);
       } else {
@@ -6137,6 +6201,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * grid and count-in starts can publish another image inside this block. */
   e->capture_image_dirty = 0;
   for (uint32_t f = 0; f < frames; ++f) {
+    for (int t = 0; t < tc; ++t)
+      e->tracks[t].fade_sample = le_fade_tick(&e->tracks[t].fade, sr);
     /* Input metering + sound-activated record + latency harness. When the harness
      * owns the frame it has already written `out`, so skip the rest. */
     if (process_input_frame(e, in, in_c, out, f, ch_in, ch_out, tc, sr,
@@ -6396,6 +6462,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                           e->record_start_publish_revision, memory_order_relaxed);
     e->record_start_publish_pending = 0;
   }
+  for (int t = 0; t < tc; ++t) le_fade_publish(e, &e->tracks[t]);
   atomic_store_explicit(&e->a_commands_published, e->commands_applied,
                          memory_order_release);
 }

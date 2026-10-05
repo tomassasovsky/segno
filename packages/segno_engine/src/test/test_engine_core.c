@@ -20479,6 +20479,10 @@ static void run_perf_render_golden_master_parity(int follow,
   process_const(e, 0.6f, loop_len, out);
   process_const(e, 0.6f, loop_len, out);
 
+  uint64_t fade_request;
+  CHECK(le_engine_toggle_fade(e, 0, 0.5f, &fade_request) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+
   /* Scripted performance: FX engage + sweep, volume ride, mute/unmute,
    * master gain, limiter — every command below is real, applied to the
    * live engine, not a hand-authored log fixture. */
@@ -20496,6 +20500,9 @@ static void run_perf_render_golden_master_parity(int follow,
   CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
   process_const(e, 0.6f, loop_len, out);
   CHECK(le_engine_set_lane_mute(e, 0, 0, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+
+  CHECK(le_engine_toggle_fade(e, 0, 1.0f, &fade_request) == LE_OK);
   process_const(e, 0.6f, loop_len, out);
 
   CHECK(le_engine_set_master_gain(e, 0.7f) == LE_OK);
@@ -27932,6 +27939,11 @@ static void test_whole_track_pre_processes_the_combination(void) {
     }
     CHECK(fabsf(out[2 * 31] - one_signal) < 1e-3f);
     CHECK(fabsf(out[2 * 31 + 1] - one_signal) < 1e-3f);
+    uint64_t fade_id;
+    CHECK(le_engine_toggle_fade(e, 0, .5f, &fade_id) == LE_OK);
+    wt_pump(e, 64, out);
+    CHECK(fabsf(out[2 * 31] - one_signal * (1 - 31.0f / 24000)) < 1e-3f);
+    CHECK(fabsf(out[2 * 31 + 1] - one_signal * (1 - 31.0f / 24000)) < 1e-3f);
     le_engine_destroy(e);
   }
 }
@@ -29131,9 +29143,9 @@ static void test_output_fx_logs_exact_edits_track_fx_stays_manifest_only(void) {
   static unsigned char buf[16384];
   const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
   CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
-  /* Exactly the arm plus five output facts: no track setter leaks through. */
+  /* Arm + complete Fade images + five output facts: no track FX setter leaks. */
   const size_t entries = log_entry_count(n);
-  CHECK(entries == 6);
+  CHECK(entries == 6 + LE_MAX_TRACKS);
   const int codes[] = {LE_PLOG_PERF_ARMED, LE_CMD_SET_OUTPUT_FX,
     LE_CMD_SET_OUTPUT_FX_COUNT, LE_PLOG_SET_OUTPUT_FX_PARAM,
     LE_PLOG_SET_OUTPUT_FX_ENABLED, LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED};
@@ -32867,7 +32879,17 @@ static void test_record_start_owned_cancel_survives_queued_pair(void) {
   }
 }
 
+#include "test_engine_fade.h"
+
 int main(void) {
+  test_fade_samples();
+  test_fade_retrigger_and_stopped();
+  test_fade_images_and_receipts();
+  test_fade_independent_tracks_and_capture();
+  test_fade_lane_cache_and_tails();
+  test_fade_import_before_audibility();
+  test_fade_coherent_publication();
+  test_fade_actual_arm_render();
   test_record_start_owned_cancel_survives_queued_pair();
   test_record_start_capture_and_no_source_refusal();
   test_record_start_selected_source_triggers();

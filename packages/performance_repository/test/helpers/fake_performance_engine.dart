@@ -367,6 +367,17 @@ class FakePerformanceEngine implements AudioEngine {
   }
 
   @override
+  FadeAdmission toggleFade({required int channel, required double seconds}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  FadeAdmission installFade({required int channel, required FadeImage image}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  EngineResult? readFadeResult(int request) => EngineResult.invalid;
+
+  @override
   EngineResult setMix(EngineMixSettings settings) {
     if (!settings.isValid) return EngineResult.invalid;
     mixRevision = settings.revision;

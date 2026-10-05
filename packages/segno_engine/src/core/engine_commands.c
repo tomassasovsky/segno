@@ -2215,6 +2215,70 @@ int32_t le_engine_set_output_mask(le_engine* engine, int32_t channel,
                                                         (uint32_t)mask}});
 }
 
+static int le_fade_image_valid(const le_fade_image* v) {
+  return v && isfinite(v->amount) && v->amount >= 0 && v->amount <= 1 &&
+      isfinite(v->target) && v->target >= 0 && v->target <= 1 &&
+      isfinite(v->full_travel_seconds) &&
+      ((v->full_travel_seconds == 0 && v->amount == v->target) ||
+       (v->full_travel_seconds >= 0.5f && v->full_travel_seconds <= 30));
+}
+
+static int32_t le_fade_admit(le_engine* e, int32_t channel,
+                             le_fade_image image, int install,
+                             uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request || channel < 0 || channel >= e->track_count ||
+      !le_fade_image_valid(&image)) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  if (image.lifetime != e->fade_lifetime || e->fade_next_request == UINT64_MAX)
+    return LE_ERR_INVALID;
+  int slot = 0;
+  while (slot < LE_RING_CAPACITY && e->fade_receipts[slot].request) ++slot;
+  if (slot == LE_RING_CAPACITY) return LE_ERR_NOT_READY;
+  const uint64_t id = ++e->fade_next_request;
+  e->fade_receipts[slot].request = id;
+  atomic_store_explicit(&e->fade_receipts[slot].result, LE_ERR_NOT_READY,
+                         memory_order_relaxed);
+  const int32_t result = le_push_cmd(e, (le_command){.code = LE_CMD_FADE,
+      .fade = {channel, slot, install, image}});
+  if (result != LE_OK) {
+    e->fade_receipts[slot].request = 0;
+    return result;
+  }
+  e->fade_receipts[slot].command = e->commands_posted;
+  *request = id;
+  return LE_OK;
+}
+
+int32_t le_engine_toggle_fade(le_engine* e, int32_t channel, float seconds,
+                              uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || channel < 0 || channel >= e->track_count ||
+      !isfinite(seconds) || seconds < 0.5f || seconds > 30) return LE_ERR_INVALID;
+  const le_fade_image image = {1, 1, seconds, e->fade_lifetime,
+      atomic_load_explicit(&e->tracks[channel].a_fade_generation, memory_order_seq_cst)};
+  return le_fade_admit(e, channel, image, 0, request);
+}
+
+int32_t le_engine_install_fade(le_engine* e, int32_t channel,
+                               const le_fade_image* image, uint64_t* request) {
+  if (!image) { if (request) *request = 0; return LE_ERR_INVALID; }
+  return le_fade_admit(e, channel, *image, 1, request);
+}
+
+int32_t le_engine_read_fade_result(le_engine* e, uint64_t request, int32_t* result) {
+  if (!e || !request || !result) return LE_ERR_INVALID;
+  for (int i = 0; i < LE_RING_CAPACITY; ++i) {
+    if (e->fade_receipts[i].request != request) continue;
+    if (e->fade_receipts[i].command > atomic_load_explicit(
+          &e->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
+    *result = atomic_load_explicit(&e->fade_receipts[i].result, memory_order_relaxed);
+    e->fade_receipts[i].request = 0;
+    return LE_OK;
+  }
+  return LE_ERR_INVALID;
+}
+
 int32_t le_engine_set_record_offset(le_engine* engine, int32_t frames) {
   return le_push(engine, LE_CMD_SET_RECORD_OFFSET, frames, 0.0f);
 }

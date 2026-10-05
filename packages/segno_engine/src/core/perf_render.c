@@ -1,3 +1,4 @@
+#include "engine_fade.h"
 /*
  * perf_render.c — see perf_render.h.
  *
@@ -480,6 +481,7 @@ static int le_pr_collect_channels(const le_pr_manifest* m, int32_t* out,
 
 typedef struct le_pr_log_entry {
   uint64_t frame;
+  int ordinal; /* file order preserves same-frame callback command ordering */
   le_log_command cmd;
 } le_pr_log_entry;
 
@@ -488,8 +490,7 @@ static int le_pr_frame_cmp(const void* a, const void* b) {
   const le_pr_log_entry* eb = (const le_pr_log_entry*)b;
   if (ea->frame < eb->frame) return -1;
   if (ea->frame > eb->frame) return 1;
-  return 0; /* qsort is not required to be stable; same-frame ties are rare
-            * and this render doesn't depend on their relative order */
+  return (ea->ordinal > eb->ordinal) - (ea->ordinal < eb->ordinal);
 }
 
 /* Loads and frame-sorts every entry in events.log. Returns the entry count
@@ -536,6 +537,7 @@ static int le_pr_load_log(const char* dir, le_pr_log_entry** out_entries) {
   while (n < max_entries &&
         fread(raw, 1, LE_PR_EVENTS_ENTRY_BYTES, f) == LE_PR_EVENTS_ENTRY_BYTES) {
     le_pr_log_entry* e = &entries[n++];
+    e->ordinal = n - 1;
     memcpy(&e->frame, raw, 8);
     memcpy(&e->cmd.code, raw + 8, 4);
     /* The 16-byte union payload, copied as a block rather than per-arm: every
@@ -1075,6 +1077,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
 
   le_pr_fx_chain chain;
   le_pr_fx_chain_init_from_lane(&chain, arm_lane);
+  le_fade fade = {1, 1, 0};
   float track_gain = (float)le_json_number(
       arm_track != NULL ? le_json_get(arm_track, "volume") : NULL, 1.0);
   float volume = (float)le_json_number(le_json_get(arm_lane, "volume"), 1.0);
@@ -1246,6 +1249,10 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
             volume = cmd->lanef.value;
           }
           break;
+        case LE_PLOG_FADE:
+          if (cmd->fade_log.channel == channel)
+            fade = (le_fade){cmd->fade_log.amount, cmd->fade_log.target, cmd->fade_log.seconds};
+          break;
         case LE_CMD_SET_VOLUME:
           if (cmd->arg_i == channel) track_gain = cmd->arg_f;
           break;
@@ -1287,8 +1294,9 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     float r = in;
     fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r, chain.count,
                    chain.type, chain.params, effective);
-    l *= track_gain;
-    r *= track_gain;
+    const float gain = track_gain * le_fade_tick(&fade, m->sample_rate);
+    l *= gain;
+    r *= gain;
     wet[f] = l;
     const float far = fabsf(pan) >= 1 ? 0 : cosf(fabsf(pan) * 1.57079632679f);
     l *= pan > 0 ? far : 1;

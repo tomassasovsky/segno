@@ -96,6 +96,11 @@ typedef struct le_command {
       int32_t count;
       int32_t bars[LE_MAX_TRACKS];
     } presets;
+    struct {
+      int32_t channel, slot, install;
+      le_fade_image image;
+    } fade;
+    struct { int32_t channel; float amount, target, seconds; } fade_log;
     le_mix_settings mix;
     struct le_prepared_fx* recipe;
     struct {
