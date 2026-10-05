@@ -1450,6 +1450,7 @@ void main() {
       final reopened = engine.reopen(config);
       expect(reopened.result, EngineResult.ok);
       expect(reopened.outcome, ReopenOutcome.retained);
+      expect(reopened.droppedTracks, 0);
       final s = engine.snapshot();
       expect(s.devicePresent, isTrue);
       expect(s.tracks[0].state, TrackState.stopped);
@@ -1483,6 +1484,35 @@ void main() {
       expect(reopened.outcome, ReopenOutcome.clearedRate);
       expect(engine.snapshot().sampleRate, 44100);
       expect(engine.snapshot().tracks[0].state, TrackState.empty);
+    });
+
+    test('an undo pressed while the device was away drops only its track', () {
+      final engine = PumpedNativeEngine()..start(config);
+      addTearDown(engine.dispose);
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 64, input: .5);
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.record(channel: 1), EngineResult.ok);
+      engine.pump(frames: 64, input: .25);
+      expect(engine.record(channel: 1), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().tracks[1].state, TrackState.playing);
+      final before = engine.exportTrack(0);
+      engine.simulateDeviceLoss();
+      expect(engine.stop(), EngineResult.ok);
+      // No callbacks run: the press sits in the ring, never applied.
+      expect(engine.undo(channel: 1), EngineResult.ok);
+      final reopened = engine.reopen(config);
+      expect(reopened.result, EngineResult.ok);
+      expect(reopened.outcome, ReopenOutcome.retainedPartial);
+      expect(reopened.droppedTracks, 1 << 1);
+      final s = engine.snapshot();
+      expect(s.tracks[0].state, TrackState.stopped);
+      expect(s.tracks[0].lengthFrames, 64);
+      expect(engine.exportTrack(0), before);
+      expect(s.tracks[1].state, TrackState.empty);
+      expect(s.tracks[1].lengthFrames, 0);
     });
   }, skip: skip);
 }

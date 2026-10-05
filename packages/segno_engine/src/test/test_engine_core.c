@@ -32980,7 +32980,9 @@ int main(void) {
   test_reopen_fade_frozen_then_resumes();
   test_reopen_keeps_clear_history();
   test_reopen_mismatch_clears();
-  test_reopen_pending_state_clears();
+  test_reopen_pending_press_drops_only_that_track();
+  test_reopen_pending_state_drops_track();
+  test_reopen_files_two_complete_passes();
   test_reopen_fewer_channels_keeps_material();
   test_reopen_device_lifecycle();
   test_reopen_ends_performance_capture();

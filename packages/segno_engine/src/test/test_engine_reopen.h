@@ -2,10 +2,20 @@
  * production entry points. Included by test_engine_core.c after
  * test_engine_fade.h (reuses its fixture, fade_process and fade_install_at). */
 
-/* Same device shape as make_configured_engine: the retained path. */
-static int32_t reopen_same(le_engine* e) {
+/* Same device shape as make_configured_engine: the retained path. The mask
+ * names the tracks dropped for a state command the callback never applied. */
+static int32_t reopen_same_mask(le_engine* e, int32_t* mask) {
   int32_t outcome = -99;
-  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 1000, &outcome) == LE_OK);
+  *mask = -99;
+  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 1000, &outcome, mask) ==
+        LE_OK);
+  return outcome;
+}
+
+static int32_t reopen_same(le_engine* e) {
+  int32_t mask;
+  const int32_t outcome = reopen_same_mask(e, &mask);
+  CHECK(mask == 0);
   return outcome;
 }
 
@@ -228,7 +238,7 @@ static void test_reopen_reverts_partial_overdub_pass(void) {
   CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
 
   int32_t outcome = -1;
-  CHECK(le_engine_reopen_configured(e, 48000, 2, 2, 1000, &outcome) == LE_OK);
+  CHECK(le_engine_reopen_configured(e, 48000, 2, 2, 1000, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
   const float pre0[LOOP_N] = {1.25f, 1.25f, 1.25f, 1.25f};
   const float pre1[LOOP_N] = {2.5f, 2.5f, 2.5f, 2.5f};
@@ -309,7 +319,7 @@ static void test_reopen_reverts_pass_mid_drain(void) {
   CHECK(e->tracks[0].dub_count > 0 && e->tracks[0].dub_count < len);
 
   int32_t outcome = -1;
-  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, len + 60000, &outcome) ==
+  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, len + 60000, &outcome, NULL) ==
         LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
   float* back = (float*)malloc((size_t)len * sizeof(float));
@@ -369,7 +379,7 @@ static void test_reopen_drops_seam_take(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
   int32_t outcome = -1;
-  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, cap, &outcome) == LE_OK);
+  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, cap, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
@@ -397,7 +407,7 @@ static void test_reopen_drops_seam_take(void) {
   pump_frames(e, 0.5f, 100);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, cap, &outcome) == LE_OK);
+  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, cap, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
@@ -428,7 +438,7 @@ static void test_reopen_fade_frozen_then_resumes(void) {
   CHECK(le_engine_toggle_fade(e, 0, 1.0f, &pending) == LE_OK); /* unapplied */
 
   int32_t outcome = -1;
-  CHECK(le_engine_reopen_configured(e, sr, 1, 1, 1000, &outcome) == LE_OK);
+  CHECK(le_engine_reopen_configured(e, sr, 1, 1, 1000, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
   int32_t result = 0;
   CHECK(le_engine_read_fade_result(e, pending, &result) == LE_ERR_INVALID);
@@ -500,7 +510,7 @@ static void test_reopen_mismatch_clears(void) {
   record_base_loop(e, 1.0f);
   reopen_overdub_pass(e, 0.5f);
   int32_t outcome = -1;
-  CHECK(le_engine_reopen_configured(e, 44100, 1, 1, 1000, &outcome) == LE_OK);
+  CHECK(le_engine_reopen_configured(e, 44100, 1, 1, 1000, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_CLEARED_RATE);
   le_engine_get_snapshot(e, &s);
   CHECK(s.sample_rate == 44100);
@@ -515,7 +525,7 @@ static void test_reopen_mismatch_clears(void) {
 
   e = make_configured_engine();
   record_base_loop(e, 1.0f);
-  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 2000, &outcome) == LE_OK);
+  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 2000, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_CLEARED_CAP);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
@@ -526,40 +536,97 @@ static void test_reopen_mismatch_clears(void) {
   e = le_engine_create();
   CHECK(le_engine_configure(e, 48000, 1, 1, 0) == LE_OK);
   record_base_loop(e, 1.0f);
-  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 0, &outcome) == LE_OK);
+  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 0, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
   reopen_check_const(e, 0, 1.0f, LOOP_N);
   le_engine_destroy(e);
 }
 
-/* A state command, a cancel or a Session commit still unapplied at the loss
- * clears with CLEARED_PENDING instead of reconciling half-applied state. */
-static void test_reopen_pending_state_clears(void) {
-  printf("test_reopen_pending_state_clears\n");
+/* A press made while the device is away (the ring is configured-gated) on
+ * ONE track never costs the others: that track is dropped and reported, every
+ * other loop stays byte-exact. The reviewer's repro for #1140. */
+static void test_reopen_pending_press_drops_only_that_track(void) {
+  printf("test_reopen_pending_press_drops_only_that_track\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  int32_t mask;
+  record_base_loop(e, 1.0f);
+  reopen_align_head(e);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 2.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  /* Device lost here; no more callbacks. One undo press on track 1 (no
+   * layers: UNDO_TO_EMPTY posted, never applied). */
+  CHECK(le_engine_undo(e, 1) == LE_OK);
+  CHECK(reopen_same_mask(e, &mask) == LE_REOPEN_RETAINED_PARTIAL);
+  CHECK(mask == 0x2);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].length_frames == LOOP_N);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].length_frames == 0);
+  CHECK(s.tracks[1].undo_depth == 0 && s.tracks[1].redo_depth == 0);
+  CHECK(s.master_length_frames == LOOP_N);
+  CHECK(s.primary_track == 0);
+  reopen_check_const(e, 0, 1.0f, LOOP_N);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(out[i] == 1.0f); /* track 0 alone */
+  le_engine_destroy(e);
+}
+
+/* Each unapplied state shape drops its own track with RETAINED_PARTIAL and
+ * the matching mask bit; a drop that empties the rig resets the master as a
+ * clear does; only a rate or cap mismatch clears the whole engine. */
+static void test_reopen_pending_state_drops_track(void) {
+  printf("test_reopen_pending_state_drops_track\n");
   le_snapshot s;
   float out[64];
+  int32_t mask;
   float pcm[LOOP_N] = {0.5f, 0.5f, 0.5f, 0.5f};
 
-  le_engine* e = make_configured_engine(); /* unapplied CLEAR */
+  le_engine* e = make_configured_engine(); /* unapplied CLEAR, only content */
   record_base_loop(e, 1.0f);
   CHECK(le_engine_clear(e, 0) == LE_OK);
-  CHECK(reopen_same(e) == LE_REOPEN_CLEARED_PENDING);
+  CHECK(reopen_same_mask(e, &mask) == LE_REOPEN_RETAINED_PARTIAL);
+  CHECK(mask == 0x1);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].state == LE_TRACK_EMPTY && s.master_length_frames == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY && s.tracks[0].length_frames == 0);
+  CHECK(s.master_length_frames == 0); /* the rig is empty: master reset */
+  CHECK(s.primary_track == -1);
+  record_base_loop(e, 0.5f); /* a new defining take works */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N);
   le_engine_destroy(e);
 
   e = make_configured_engine(); /* unapplied UNDO_TO_EMPTY */
   record_base_loop(e, 1.0f);
   CHECK(le_engine_undo(e, 0) == LE_OK);
-  CHECK(reopen_same(e) == LE_REOPEN_CLEARED_PENDING);
+  CHECK(reopen_same_mask(e, &mask) == LE_REOPEN_RETAINED_PARTIAL);
+  CHECK(mask == 0x1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY && s.tracks[0].redo_depth == 0);
+  CHECK(s.master_length_frames == 0);
   le_engine_destroy(e);
 
   e = make_configured_engine(); /* unapplied REDO_FROM_EMPTY */
   record_base_loop(e, 1.0f);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY && s.tracks[0].redo_depth == 1);
+  CHECK(s.master_length_frames == LOOP_N);
   CHECK(le_engine_redo(e, 0) == LE_OK);
-  CHECK(reopen_same(e) == LE_REOPEN_CLEARED_PENDING);
+  CHECK(reopen_same_mask(e, &mask) == LE_REOPEN_RETAINED_PARTIAL);
+  CHECK(mask == 0x1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY && s.tracks[0].redo_depth == 0);
+  CHECK(s.master_length_frames == 0);
   le_engine_destroy(e);
 
   e = make_configured_engine(); /* cancelled take, event not yet filed */
@@ -568,12 +635,19 @@ static void test_reopen_pending_state_clears(void) {
   process_const(e, 2.0f, 2, out);
   CHECK(le_engine_undo(e, 1) == LE_OK);
   CHECK(e->tracks[1].cancel_pending);
-  CHECK(reopen_same(e) == LE_REOPEN_CLEARED_PENDING);
+  CHECK(reopen_same_mask(e, &mask) == LE_REOPEN_RETAINED_PARTIAL);
+  CHECK(mask == 0x2);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY && s.tracks[1].redo_depth == 0);
+  CHECK(s.master_length_frames == LOOP_N);
+  reopen_check_const(e, 0, 1.0f, LOOP_N);
   le_engine_destroy(e);
 
   e = make_configured_engine(); /* Session import without its commit */
   CHECK(le_engine_import_track(e, 0, pcm, LOOP_N) == LE_OK);
-  CHECK(reopen_same(e) == LE_REOPEN_CLEARED_PENDING);
+  CHECK(reopen_same_mask(e, &mask) == LE_REOPEN_RETAINED_PARTIAL);
+  CHECK(mask == 0x1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].length_frames == 0);
   le_engine_destroy(e);
@@ -587,6 +661,54 @@ static void test_reopen_pending_state_clears(void) {
   CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
   reopen_check_const(e, 0, 0.5f, LOOP_N);
   le_engine_destroy(e);
+
+  e = make_configured_engine(); /* a pending press never widens a rate clear */
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  int32_t outcome = -1;
+  mask = -99;
+  CHECK(le_engine_reopen_configured(e, 44100, 1, 1, 1000, &outcome, &mask) ==
+        LE_OK);
+  CHECK(outcome == LE_REOPEN_CLEARED_RATE);
+  CHECK(mask == 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.sample_rate == 44100 && s.tracks[0].state == LE_TRACK_EMPTY);
+  le_engine_destroy(e);
+}
+
+/* Two complete passes at the loss — the older parked on a full event ring,
+ * the newer frozen complete in the armed slot — are BOTH filed, oldest first. */
+static void test_reopen_files_two_complete_passes(void) {
+  printf("test_reopen_files_two_complete_passes\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in: two shadows posted */
+  le_command junk = {0};
+  junk.code = 9999;
+  while (le_ring_push(&e->evt_ring, junk)) {
+  }
+  process_const(e, 0.5f, LOOP_N, out); /* pass 1 completes, parks */
+  CHECK(e->tracks[0].dub_retire_slot >= 0);
+  const int32_t parked = e->tracks[0].dub_retire_slot;
+  process_const(e, 0.5f, LOOP_N, out); /* pass 2 completes, frozen */
+  CHECK(e->tracks[0].dub_slot >= 0 && e->tracks[0].dub_slot != parked);
+  CHECK(e->tracks[0].dub_count >= e->tracks[0].dub_len);
+  CHECK(e->tracks[0].dub_retire_slot == parked);
+  reopen_check_const(e, 0, 2.0f, LOOP_N);
+  CHECK(reopen_same(e) == LE_REOPEN_RETAINED);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].undo_depth == 2);
+  reopen_check_const(e, 0, 2.0f, LOOP_N);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  reopen_check_const(e, 0, 1.5f, LOOP_N); /* the newer pass peels first */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  reopen_check_const(e, 0, 1.0f, LOOP_N);
+  le_engine_destroy(e);
 }
 
 /* A device with fewer channels keeps the material; a lane routed to an input
@@ -598,7 +720,7 @@ static void test_reopen_fewer_channels_keeps_material(void) {
   le_snapshot s;
   record_two_lane(e, 1.0f, 2.0f);
   int32_t outcome = -1;
-  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 1000, &outcome) == LE_OK);
+  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 1000, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
   le_engine_get_snapshot(e, &s);
   CHECK(s.input_channels == 1 && s.output_channels == 1);
@@ -687,8 +809,8 @@ static void test_reopen_device_lifecycle(void) {
   int32_t outcome = 77;
 
   le_engine* cold = le_engine_create();
-  CHECK(le_engine_reopen(cold, &cfg, &outcome) == LE_ERR_NOT_RUNNING);
-  CHECK(le_engine_reopen_configured(cold, 48000, 1, 1, 1000, &outcome) ==
+  CHECK(le_engine_reopen(cold, &cfg, &outcome, NULL) == LE_ERR_NOT_RUNNING);
+  CHECK(le_engine_reopen_configured(cold, 48000, 1, 1, 1000, &outcome, NULL) ==
         LE_ERR_NOT_RUNNING);
   CHECK(outcome == 77);
   le_engine_destroy(cold);
@@ -698,8 +820,8 @@ static void test_reopen_device_lifecycle(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.running == 1 && s.device_present == 1);
   record_base_loop(e, 1.0f);
-  CHECK(le_engine_reopen(e, &cfg, &outcome) == LE_ERR_ALREADY_RUNNING);
-  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 1000, &outcome) ==
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_ERR_ALREADY_RUNNING);
+  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 1000, &outcome, NULL) ==
         LE_ERR_ALREADY_RUNNING);
   CHECK(le_engine_stop(e) == LE_OK);
   le_engine_get_snapshot(e, &s);
@@ -709,7 +831,7 @@ static void test_reopen_device_lifecycle(void) {
   /* Open failure: untouched, still PLAYING-with-content, no outcome. */
   fake_open_result = LE_ERR_DEVICE;
   fake_closes = 0;
-  CHECK(le_engine_reopen(e, &cfg, &outcome) == LE_ERR_DEVICE);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_ERR_DEVICE);
   CHECK(outcome == 77);
   CHECK(fake_closes == 0);
   le_engine_get_snapshot(e, &s);
@@ -723,7 +845,7 @@ static void test_reopen_device_lifecycle(void) {
   /* Start failure after retention: retained, stopped, device closed. */
   fake_open_result = LE_OK;
   fake_start_result = LE_ERR_DEVICE;
-  CHECK(le_engine_reopen(e, &cfg, &outcome) == LE_ERR_DEVICE);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_ERR_DEVICE);
   CHECK(outcome == LE_REOPEN_RETAINED);
   CHECK(fake_closes == 1);
   le_engine_get_snapshot(e, &s);
@@ -735,8 +857,10 @@ static void test_reopen_device_lifecycle(void) {
   /* The retry retains again and runs. */
   fake_start_result = LE_OK;
   outcome = 77;
-  CHECK(le_engine_reopen(e, &cfg, &outcome) == LE_OK);
+  int32_t mask = -99;
+  CHECK(le_engine_reopen(e, &cfg, &outcome, &mask) == LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
+  CHECK(mask == 0);
   le_engine_get_snapshot(e, &s);
   CHECK(s.running == 1 && s.device_present == 1);
   CHECK(s.sample_rate == 48000 && s.buffer_frames == 64);
@@ -751,7 +875,7 @@ static void test_reopen_device_lifecycle(void) {
   /* The device comes back at another rate: cleared, explicitly. */
   CHECK(le_engine_stop(e) == LE_OK);
   fake_rate = 44100;
-  CHECK(le_engine_reopen(e, &cfg, &outcome) == LE_OK);
+  CHECK(le_engine_reopen(e, &cfg, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_CLEARED_RATE);
   le_engine_get_snapshot(e, &s);
   CHECK(s.running == 1);

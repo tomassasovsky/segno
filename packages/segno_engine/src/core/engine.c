@@ -881,41 +881,45 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   return LE_OK;
 }
 
-/* Whether the retained path may run for a reopen negotiating [sample_rate] /
- * [max_loop_frames] (already clamped), or which CLEARED outcome applies
- * (owner decisions on #1140). Material is kept only at the same rate and the
- * same cap: no resampling, no buffer regrowth. Half-applied control
- * bookkeeping clears too — a state command (CLEAR / UNDO_TO_EMPTY /
+/* Decides a reopen negotiating [sample_rate] / [max_loop_frames] (already
+ * clamped), per the owner decisions on #1140 and the standing delivery rules
+ * (keep recorded material; drop only the uncertain state, with a notice).
+ * Material is kept only at the same rate and the same cap: no resampling, no
+ * buffer regrowth — a mismatch clears the whole engine. Otherwise every track
+ * is retained except those whose control-side bookkeeping no longer matches
+ * what the audio thread applied: a state command (CLEAR / UNDO_TO_EMPTY /
  * REDO_FROM_EMPTY) posted but not acked, a cancelled take whose event never
  * landed, a Clear mailbox still awaiting its report, or a Session import
- * whose commit never applied (an EMPTY track carrying a length) —
- * reconciling any of those would mean guessing what the audio thread would
- * have done. An undo tap merely QUEUED behind an in-flight layer is
- * control-side intent, not half-applied state: the retained path drops the
- * tap with the pass it was waiting on (le_engine_reopen_file_retired). */
+ * whose commit never applied (an EMPTY track carrying a length). Those tracks
+ * are named in *drop_mask and dropped the way a take still capturing is
+ * (le_engine_reopen_settle); the rest keep their loops. An undo tap merely
+ * QUEUED behind an in-flight layer is control-side intent, not half-applied
+ * state: the retained path drops the tap with the pass it was waiting on
+ * (le_engine_reopen_file_retired). */
 static int32_t le_engine_reopen_outcome(le_engine* engine, int32_t sample_rate,
-                                        int32_t max_loop_frames) {
+                                        int32_t max_loop_frames,
+                                        uint32_t* drop_mask) {
+  *drop_mask = 0u;
   if (sample_rate != engine->sample_rate) return LE_REOPEN_CLEARED_RATE;
   if (max_loop_frames != engine->max_loop_frames) return LE_REOPEN_CLEARED_CAP;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
-    if (tr->state_cmds_posted >
+    const int pending =
+        tr->state_cmds_posted >
             atomic_load_explicit(&tr->a_state_acks, memory_order_acquire) ||
-        tr->cancel_pending || tr->clear_restore_pending) {
-      return LE_REOPEN_CLEARED_PENDING;
-    }
-    if (load_i32(&tr->a_state) == LE_TRACK_EMPTY &&
-        load_i32(&tr->lanes[0].a_len) > 0) {
-      return LE_REOPEN_CLEARED_PENDING; /* imported, never committed */
-    }
+        tr->cancel_pending || tr->clear_restore_pending ||
+        (load_i32(&tr->a_state) == LE_TRACK_EMPTY &&
+         load_i32(&tr->lanes[0].a_len) > 0); /* imported, never committed */
+    if (pending) *drop_mask |= 1u << t;
   }
-  return LE_REOPEN_RETAINED;
+  return *drop_mask ? LE_REOPEN_RETAINED_PARTIAL : LE_REOPEN_RETAINED;
 }
 
 int32_t le_engine_reopen_configured(le_engine* engine, int32_t sample_rate,
                                     int32_t input_channels,
                                     int32_t output_channels,
-                                    int32_t max_loop_frames, int32_t* outcome) {
+                                    int32_t max_loop_frames, int32_t* outcome,
+                                    int32_t* dropped_track_mask) {
   if (engine == NULL || outcome == NULL) return LE_ERR_INVALID;
   if (atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_ALREADY_RUNNING;
@@ -926,10 +930,12 @@ int32_t le_engine_reopen_configured(le_engine* engine, int32_t sample_rate,
   if (engine->fade_lifetime == UINT64_MAX) return LE_ERR_INVALID;
   le_clamp_shape(&sample_rate, &input_channels, &output_channels,
                  &max_loop_frames);
-  const int32_t decision =
-      le_engine_reopen_outcome(engine, sample_rate, max_loop_frames);
+  uint32_t drop_mask = 0u;
+  const int32_t decision = le_engine_reopen_outcome(engine, sample_rate,
+                                                    max_loop_frames, &drop_mask);
   *outcome = decision;
-  if (decision != LE_REOPEN_RETAINED) {
+  if (dropped_track_mask != NULL) *dropped_track_mask = (int32_t)drop_mask;
+  if (decision == LE_REOPEN_CLEARED_RATE || decision == LE_REOPEN_CLEARED_CAP) {
     return le_engine_configure(engine, sample_rate, input_channels,
                                output_channels, max_loop_frames);
   }
@@ -938,8 +944,8 @@ int32_t le_engine_reopen_configured(le_engine* engine, int32_t sample_rate,
    * dub/seam bookkeeping are still intact — the runtime reset afterwards
    * re-initialises both rings. */
   le_engine_quiesce_workers(engine);
-  le_engine_reopen_file_retired(engine);
-  le_engine_reopen_settle(engine);
+  le_engine_reopen_file_retired(engine, drop_mask);
+  le_engine_reopen_settle(engine, drop_mask);
   le_engine_reset_runtime(engine, sample_rate, input_channels,
                           output_channels, max_loop_frames);
   return LE_OK;
@@ -1317,7 +1323,7 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
 }
 
 int32_t le_engine_reopen(le_engine* engine, const le_config* config,
-                         int32_t* outcome) {
+                         int32_t* outcome, int32_t* dropped_track_mask) {
   if (engine == NULL || config == NULL || outcome == NULL) return LE_ERR_INVALID;
   if (atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_ALREADY_RUNNING;
@@ -1336,14 +1342,14 @@ int32_t le_engine_reopen(le_engine* engine, const le_config* config,
 
   const int32_t rc = le_engine_reopen_configured(
       engine, info.sample_rate, info.input_channels, info.output_channels,
-      config->max_loop_frames, outcome);
+      config->max_loop_frames, outcome, dropped_track_mask);
   if (rc != LE_OK) {
     be->close(engine);
     return rc;
   }
   /* A start failure closes the device and reports LE_ERR_DEVICE with the
-   * material already settled (retained and stopped, or cleared per
-   * *outcome), so the next attempt can still retain it. */
+   * material already settled (retained and stopped, cleared, or partly
+   * dropped per *outcome), so the next attempt can still retain it. */
   return le_engine_publish_and_start(engine, be, config, &info);
 }
 

@@ -194,18 +194,23 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel);
 /* Retained reopen (#1140), control-side half — defined in engine_commands.c.
  * With the device closed and the workers joined, files every completed
  * overdub pass the audio thread handed off (events still in the ring, a
- * parked retire, a frozen complete shadow) as committed undo layers,
- * completes an applied Clear's restore point, and drops the posted shadows
- * and queued undo taps. Runs BEFORE le_engine_reopen_settle. */
-void le_engine_reopen_file_retired(le_engine* engine);
+ * parked retire, a frozen complete shadow — oldest first) as committed undo
+ * layers, completes an applied Clear's restore point, and drops the posted
+ * shadows and queued undo taps. Tracks in `drop_mask` (bit t = track t) are
+ * about to be dropped whole and are skipped. Runs BEFORE
+ * le_engine_reopen_settle. */
+void le_engine_reopen_file_retired(le_engine* engine, uint32_t drop_mask);
 
 /* Retained reopen (#1140), audio-side half — defined in engine_process.c.
  * Reverts a partial overdub pass to its pre-pass image, drops a take still
- * capturing (first recording, seam crossfade or trailing fold), parks every
- * content track STOPPED at the loop head, freezes the Fade envelopes and
- * republishes the per-track atomics. Runs after le_engine_reopen_file_retired
- * and before le_engine_reset_runtime re-initialises the rings. */
-void le_engine_reopen_settle(le_engine* engine);
+ * capturing (first recording, seam crossfade or trailing fold) and every
+ * track in `drop_mask` (a state command the audio thread never applied),
+ * parks every other content track STOPPED at the loop head, freezes the Fade
+ * envelopes and republishes the per-track atomics. A drop that empties the
+ * whole rig resets the master, as a clear does. Runs after
+ * le_engine_reopen_file_retired and before le_engine_reset_runtime
+ * re-initialises the rings. */
+void le_engine_reopen_settle(le_engine* engine, uint32_t drop_mask);
 
 /* Ensures lane [ln]'s pool slot [slot] holds a buffer of >= [frames] frames
  * (control thread only; the caller guarantees the audio thread is not reading

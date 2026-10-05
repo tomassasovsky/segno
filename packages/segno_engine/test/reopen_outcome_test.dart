@@ -7,12 +7,20 @@ void main() {
       expect(ReopenOutcome.fromCode(0), ReopenOutcome.retained);
       expect(ReopenOutcome.fromCode(1), ReopenOutcome.clearedRate);
       expect(ReopenOutcome.fromCode(2), ReopenOutcome.clearedCap);
-      expect(ReopenOutcome.fromCode(3), ReopenOutcome.clearedPending);
+      expect(ReopenOutcome.fromCode(3), ReopenOutcome.retainedPartial);
     });
 
     test('reads an unknown code as cleared, never as retained', () {
-      expect(ReopenOutcome.fromCode(-1), ReopenOutcome.clearedPending);
-      expect(ReopenOutcome.fromCode(42), ReopenOutcome.clearedPending);
+      expect(ReopenOutcome.fromCode(-1), ReopenOutcome.clearedCap);
+      expect(ReopenOutcome.fromCode(42), ReopenOutcome.clearedCap);
+      expect(ReopenOutcome.fromCode(-1).keepsMaterial, isFalse);
+    });
+
+    test('only the two retained outcomes keep material', () {
+      expect(ReopenOutcome.retained.keepsMaterial, isTrue);
+      expect(ReopenOutcome.retainedPartial.keepsMaterial, isTrue);
+      expect(ReopenOutcome.clearedRate.keepsMaterial, isFalse);
+      expect(ReopenOutcome.clearedCap.keepsMaterial, isFalse);
     });
   });
 
@@ -39,6 +47,7 @@ void main() {
       final reopened = engine.reopen(engine.defaultConfig);
       expect(reopened.result, EngineResult.ok);
       expect(reopened.outcome, ReopenOutcome.retained);
+      expect(reopened.droppedTracks, 0);
       expect(engine.snapshot().isRunning, isTrue);
       expect(engine.snapshot().devicePresent, isTrue);
     });

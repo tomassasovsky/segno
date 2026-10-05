@@ -133,6 +133,7 @@ class FakeAudioEngine implements AudioEngine {
   ReopenResult reopenResult = (
     result: EngineResult.ok,
     outcome: ReopenOutcome.retained,
+    droppedTracks: 0,
   );
 
   @override
