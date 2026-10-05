@@ -11680,6 +11680,29 @@ static void test_perf_layer_persists_through_pool_eviction(void) {
   le_engine_destroy(e);
 }
 
+/* A pass that retires in the last block before DISARM logs LAYER_RETIRED,
+ * but its event can still be queued when disarm runs. The renderer now fails
+ * an unlisted retire, so disarm must stage it before stopping the drain. */
+static void test_perf_layer_retired_just_before_disarm_is_listed(void) {
+  printf("test_perf_layer_retired_just_before_disarm_is_listed\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  process_const(e, 0.5f, LOOP_N, out);    /* one pass retires; event queued */
+  drain(e);                               /* process only: event not handled */
+  CHECK(le_perf_disarm(e) == LE_OK);
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  static char json[262144];
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+  CHECK(count_layer_entries_for_test(json) == 1);
+  le_engine_destroy(e);
+}
+
 /* Acceptance criterion: clearing a track mid-overdub while armed loses no
  * already-retired layer. Two full passes retire two layers, then a third
  * pass is left mid-flight (never reaches dub_len) when clear fires — the two
@@ -33163,6 +33186,7 @@ int main(void) {
   test_perf_events_log_fx_param_sweep_monotonic_frames();
   test_perf_events_log_readable_after_abrupt_stop();
   test_perf_layer_persists_through_pool_eviction();
+  test_perf_layer_retired_just_before_disarm_is_listed();
   test_perf_layer_persists_through_clear_during_dub();
   test_perf_layer_persists_through_redo_invalidation();
   test_perf_layer_hand_off_ordering_on_write_failure();

@@ -535,15 +535,20 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
 static void le_stage_retired_layer(le_engine* engine, int32_t channel,
                                    int32_t slot, uint32_t generation,
                                    int32_t restored_len, uint32_t restore_id) {
-  /* A queued ARM already owns its worker/ring before callback acknowledgement. */
-  if (restore_id ? engine->perf.drain == NULL :
-      !atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
-    return;
-  }
+  /* A queued ARM already owns its worker/ring before callback acknowledgement,
+   * and a retire logged before DISARM applied is still handled here after the
+   * callback clears a_perf_armed: the drain, not the flag, bounds staging. */
+  if (engine->perf.drain == NULL) return;
   if (channel < 0 || channel >= engine->track_count) return;
   le_track* t = &engine->tracks[channel];
   const int32_t frame_count = restore_id ? restored_len : load_i32(&t->lanes[0].a_len);
-  if (frame_count <= 0) return; /* nothing recorded into this slot */
+  if (frame_count <= 0) {
+    /* A retire handled after CLEAR emptied the track has lost its length; the
+     * renderer fails that stem, so record why. */
+    if (!restore_id) atomic_fetch_add_explicit(&engine->a_perf_layer_overruns,
+                                               1u, memory_order_relaxed);
+    return;
+  }
   const int32_t lane_count = le_lanes_active(t);
 
   le_staged_layer entry = {0};
@@ -4265,6 +4270,10 @@ int32_t le_perf_disarm(le_engine* engine) {
     if (atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire) ||
         !le_engine_commands_settled(engine)) return LE_ERR_DEVICE;
   }
+
+  /* Stage retires the callback logged before DISARM applied; their events
+   * may still be queued, and the drain's final pass writes what they stage. */
+  le_engine_drain_events(engine);
 
   /* The audio thread has confirmed quiescent (or there is no concurrent
    * writer at all — the device-free test pump). Stop and join the drain
