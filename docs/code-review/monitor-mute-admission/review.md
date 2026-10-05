@@ -7,9 +7,11 @@ correction below is bound to its final source manifest. Human merge gate.
 ## Result
 
 Independent bug, architecture, simplicity and test-quality reviews are clean.
-The full app run and static checks pass on the frozen correction. The requested Claude review found the missing Retry path in the
-original head; the correction still requires its own adversarial re-review.
-The combined gate remains pending. No readiness or merge claim is made.
+The full app run and static checks pass on the frozen correction. Claude's
+adversarial review confirmed the Retry repair, then exposed competing recovery
+notices during Session replacement. The presentation correction below is
+verified locally and independently reviewed; its Claude re-review remains pending.
+No readiness or merge claim is made.
 
 ## Behavior and ownership
 
@@ -83,3 +85,34 @@ telemetry-disabled and symbol evidence may be reused only after confirming
 unchanged inputs. Conditional app skips and source reviews are not physical
 appliance, audio or visual validation. The notice reuses accepted components;
 no Pen geometry or design departure is introduced.
+
+## Session notice follow-up
+
+Adversarial review of `a24b7777` confirmed the restore ownership correction but
+identified a misleading Monitor Retry during a Session reservation or failed
+boot-settings save. A composed widget test also proved that the existing Session
+Retry Snackbar was not reachable above the actual Sessions dialog.
+
+The App now suppresses Monitor Retry while that exact Session obligation owns
+recovery, and presents the existing Session retry operation through the shared
+recovery notice. Session emissions reconcile the existing Monitor failure fact;
+an aborted load makes Monitor Retry available again. One presentation scheduling
+flag coalesces same-frame notices. Ordinary Session outcomes retain their
+existing Snackbars. No persistence, engine or recovery-owner behavior changes.
+
+Three regressions failed before the correction. The final tests use the real
+App, Session and Monitor owners with controlled I/O failures. They tap Retry
+above the open Sessions dialog, fail and retry again, test Power suppression and
+return, and observe saved routing plus Monitor projection after success.
+
+- Full app: 3,040 passed, 49 conditional skips, no failures; coverage
+  27,388 / 29,602 (92.5208%, required 90%).
+- Strict analysis, explicit formatting and diff checks pass. Bloc lint
+  positively scanned 794 files with no issues.
+- Four source/test paths stayed frozen through verification; manifest SHA-256
+  `9d0e3199a02bad8dabe09c95a09e6983ebc7b33389c9e7ee34e42850a9104dee`.
+- Independent bug, architecture, test-quality and simplicity review found no
+  actionable defect in those same four frozen files and their relevant callers.
+- This follow-up changes only application presentation and composed App tests.
+  Native and repository behavior retain their earlier evidence; the full app
+  run is new evidence, not a rerun claim for those unchanged lower layers.
