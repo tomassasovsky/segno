@@ -461,7 +461,15 @@ class FxChainPersistence {
 
   /// Saves input routing and mute alongside its confirmed, Released FX values.
   /// An absent monitor is persisted as disabled, including after session load.
+  /// Set while the saved input monitors could not be restored: the
+  /// repository then holds DEFAULTS, and a monitor save would write them over
+  /// the player's saved mode, routing, mute and FX. Input-stage editors refuse
+  /// and monitor saves write nothing until Retry restores (mirrored from the
+  /// monitor owner's state).
+  bool inputRestoreFailed = false;
+
   Future<void> _saveMonitor(int input, SettingsRepository settings) async {
+    if (inputRestoreFailed) return;
     final session = _looper.sessionRevision;
     final monitor = _looper.allMonitors()[input] ?? InputMonitor(input: input);
     final encoded = encodeFxChain(

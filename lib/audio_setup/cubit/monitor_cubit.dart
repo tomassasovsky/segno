@@ -117,6 +117,13 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// own keys and stay available.
   bool get _editable => !isClosed && !state.restoreFailed;
 
+  @override
+  void onChange(Change<MonitorState> change) {
+    super.onChange(change);
+    // Every input-stage writer (FX page, controller bindings) checks this.
+    _fxPersistence.inputRestoreFailed = change.nextState.restoreFailed;
+  }
+
   /// Inputs announced before that, to be read once it has.
   final Set<int> _heldReads = {};
 
