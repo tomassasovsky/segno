@@ -107,3 +107,24 @@ intervening unrelated edits. On this head, unrelated-envelope preservation after
 ordinary mute is not claimed. Test actual App Retry, early failure, Session and
 disposal supersession, concurrent/repeated retries and notice dismissal across
 Power overlay. Reuse English/Spanish toast layout and the existing Retry label.
+
+## Session recovery notice ownership
+
+The adversarial re-review confirms the failed-restore Retry correction, but its
+notice can compete with an active Session load. Keep Monitor's incomplete-restore
+fact and suppress its notice while the existing Session reservation or boot-image
+debt owns recovery. Reconcile on the existing Session state stream so cancellation
+can restore a genuine Monitor Retry even when its failure flag has not changed.
+Do not suppress unrelated Session save/export work or change either restore owner.
+
+A real Sessions-dialog test also reproduces an inaccessible boot-recovery Retry:
+its Snackbar is behind the modal. Present only that existing Session recovery
+action through the shared settings-notice presenter and remove its old Snackbar,
+leaving other Session outcomes unchanged. Reuse its existing localized text and
+retryLoadedSession operation, including Power suppression and lifetime guards.
+
+Prove success-overlap has no false Monitor notice, pre-apply failure restores a
+working Monitor Retry, and post-apply boot failure exposes a hit-testable Session
+Retry through the actual dialog. Failed Retry retains its debt; successful Retry
+projects the replacement only after the Session owner finishes. No new recovery
+coordinator, stream, timer, state copy, persistence format or native change.
