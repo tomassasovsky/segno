@@ -841,7 +841,7 @@ class SettingsRepository {
     await _serializedWrite;
     final value = await _store.getInt(_clickModeKey);
     if (value != null && (value < 0 || value > 3)) {
-      throw const FormatException('Invalid Hear click setting');
+      throw FormatException('Invalid Hear click setting', value);
     }
     return value;
   }
@@ -879,20 +879,7 @@ class SettingsRepository {
     return _store.getDouble(_clickVolumeKey);
   }
 
-  /// Loads Click startup intent; an absent scalar means unity.
-  Future<double> loadClickVolume() async =>
-      await readClickVolumeCheckpoint() ?? 1;
-
-  /// Saves and verifies the Click scalar through the existing writer.
-  Future<void> saveClickVolume(double volume) => _serialize(() async {
-    await _writeDoubleScalar(
-      _clickVolumeKey,
-      volume,
-      'Click volume was not saved',
-    );
-  });
-
-  /// Restores the exact old scalar, including an absent preference.
+  /// Writes and verifies the exact scalar, including an absent preference.
   Future<void> restoreClickVolumeCheckpoint(double? checkpoint) =>
       _serialize(() async {
         await _writeDoubleScalar(

@@ -62,6 +62,8 @@ Future<AutoStartResult> tryAutoStartEngine({
 
   // Read exact intent before starting audio. An absent preference selects
   // First recording without writing a preference or changing click routing.
+  // An unreadable preference makes only Hear click unavailable: audio starts
+  // with the repository's Off, and the owner's Retry repairs the stored key.
   try {
     final savedMode = await settings.readClickModeCheckpoint();
     final request = repository.setClickMode(
@@ -72,13 +74,7 @@ Future<AutoStartResult> tryAutoStartEngine({
       throw StateError('Saved Hear click replay refused: ${result.name}');
     }
   } on Object catch (error) {
-    AppLog.error('audio auto-start: saved Hear click failed: $error');
-    repository.stopEngine();
-    return (
-      started: false,
-      asioDrivers: const <AudioDevice>[],
-      recoveryConfig: null,
-    );
+    AppLog.error('audio auto-start: saved Hear click unavailable: $error');
   }
 
   // Validate every scalar before changing any decay. Fixed empty tracks and
@@ -352,13 +348,13 @@ Future<AutoStartResult> _tryAutoStartEngine({
     repository.stopEngine();
     return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
+  // An unconfirmed Hear click replay is the owner's recovery, not a reason
+  // to stop audio.
   final startupClick = await repository.settleClickMode();
   if (!startupClick.isOk) {
     AppLog.error(
-      'audio auto-start: Hear click replay refused ${startupClick.name}',
+      'audio auto-start: Hear click replay unconfirmed ${startupClick.name}',
     );
-    repository.stopEngine();
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
   final startupLength = await repository.settleLengthSettings();
   if (!startupLength.isOk) {
@@ -725,10 +721,8 @@ Future<bool> _firstRunAutoStart({
   final startupClick = await repository.settleClickMode();
   if (!startupClick.isOk) {
     AppLog.error(
-      'audio first-run: Hear click replay refused ${startupClick.name}',
+      'audio first-run: Hear click replay unconfirmed ${startupClick.name}',
     );
-    repository.stopEngine();
-    return false;
   }
   final startupLength = await repository.settleLengthSettings();
   if (!startupLength.isOk) {

@@ -22,6 +22,7 @@ import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:looper_repository/src/models/tuner_reading.dart';
 import 'package:looper_repository/src/plugin_catalog.dart';
+import 'package:looper_repository/src/settings_receipt.dart';
 import 'package:segno_engine/segno_engine.dart'
     hide
         AudioBackend,
@@ -94,27 +95,7 @@ class _PendingRecordStart {
   final ({int countInBars, bool soundStart}) prior;
   final int expectedRevision;
   final bool startup;
-  final observation = _ReceiptObservation();
-}
-
-class _PendingClickMode {
-  _PendingClickMode({
-    required this.mode,
-    required this.restart,
-    required this.recovery,
-    required this.recoveryRestart,
-    required this.prior,
-    required this.expectedRevision,
-    required this.startup,
-  });
-  final ClickMode mode;
-  final ClickMode restart;
-  final ClickMode recovery;
-  final ClickMode recoveryRestart;
-  final ClickMode prior;
-  final int expectedRevision;
-  final bool startup;
-  final observation = _ReceiptObservation();
+  final observation = ReceiptObservation();
 }
 
 class _PendingTiming {
@@ -134,7 +115,7 @@ class _PendingTiming {
   final int expectedRevision;
   final EngineSnapshot prior;
   final bool startup;
-  final observation = _ReceiptObservation();
+  final observation = ReceiptObservation();
 }
 
 class _LengthIntent {
@@ -164,7 +145,7 @@ class _PendingLengthSettings {
   final List<int> priorBars;
   final LooperMode priorMode;
   final bool startup;
-  final observation = _ReceiptObservation();
+  final observation = ReceiptObservation();
 }
 
 /// Builds the production [AudioEngine] backed by the native segno engine.
@@ -197,6 +178,9 @@ AudioEngine createNativeAudioEngine() => NativeAudioEngine();
     ),
   );
 }
+
+/// The Click stage's linear gain ceiling; unity is half of its travel.
+const double kMaxClickGain = 2;
 
 /// Owns the [AudioEngine] and is the single source of looper truth.
 ///
@@ -444,18 +428,19 @@ class LooperRepository {
   int _tsDen = 4;
   bool _syncTempo = true;
   GridDivision _quantizeDiv = GridDivision.off;
-  ClickMode _clickMode = ClickMode.off;
-  ClickMode _clickModeRestart = ClickMode.off;
-  _PendingClickMode? _pendingClickMode;
-  ({ClickMode mode, ClickMode restart})? _clickModeRecovery;
-  EngineResult _lastClickModeResult = EngineResult.ok;
-  final _clickModeFailures = StreamController<EngineResult>.broadcast();
+  late final _clickMode = SettingsReceipt<ClickMode>(
+    ClickMode.off,
+    send: _sendClickMode,
+    running: () => _intendRunning,
+    publish: () => _reproject(forcePublication: true),
+  );
   int _clickMask = 0;
-  double _clickVolume = 1;
-  double _clickRestartVolume = 1;
-  _PendingClickVolume? _pendingClickVolume;
-  EngineResult _lastClickVolumeResult = EngineResult.ok;
-  bool _clickRecoveryStartBlocked = false;
+  late final _clickVolume = SettingsReceipt<double>(
+    1,
+    send: _sendClickVolume,
+    running: () => _intendRunning,
+    publish: () => _reproject(forcePublication: true),
+  );
   bool _sessionBootStartBlocked = false;
 
   /// Whether a loaded rig still owes its complete boot settings image.
@@ -466,15 +451,6 @@ class LooperRepository {
 
   /// Releases the session boot fence only after its image and bindings commit.
   void clearSessionBootStartBlock() => _sessionBootStartBlocked = false;
-
-  /// Whether Click uncertainty prevents another engine start.
-  bool get clickVolumeRecoveryRequired => _clickRecoveryStartBlocked;
-
-  /// Fences restart until the Click owner restores its exact checkpoint.
-  void blockStartForClickRecovery() => _clickRecoveryStartBlocked = true;
-
-  /// Clears only Click recovery; Mixer recovery retains its own fence.
-  void clearClickRecoveryStartBlock() => _clickRecoveryStartBlocked = false;
 
   /// The five-mode axis (B2a, D4). Remembered and re-applied on every
   /// successful (re)start, exactly like the tempo grid settings above: the
@@ -876,11 +852,12 @@ class LooperRepository {
       entry.value?.complete(EngineResult.notReady);
       _pendingFades[entry.key] = null;
     }
+    for (final receipt in [_clickMode, _clickVolume]) {
+      receipt.cancel();
+    }
     _cancelTiming();
-    _cancelClickMode();
     _cancelRecordStart();
     _cancelLengthSettings();
-    _cancelClickVolume();
     _cancelOneShot();
     _cancelMix();
     _mixGeneration++;
@@ -1631,9 +1608,9 @@ class LooperRepository {
       tsDen: _tsDen,
       syncTempo: _syncTempo,
       quantizeDiv: _quantizeDiv,
-      clickMode: _clickMode,
+      clickMode: _clickMode.live,
       clickMask: _clickMask,
-      clickVolume: _clickVolume,
+      clickVolume: _clickVolume.live,
       countInBars: _recordStart.countInBars,
       recDub: _recDub,
       autoRecord: _recordStart.soundStart,
@@ -2131,7 +2108,7 @@ class LooperRepository {
 
   // Null observations are expired callers with native claims still to drain.
   // Admission drains too because normal polling stops without UI subscribers.
-  final Map<int, _ReceiptObservation?> _pendingFades = {};
+  final Map<int, ReceiptObservation?> _pendingFades = {};
   bool _drainFade(int request) {
     if (!_pendingFades.containsKey(request)) return false;
     final result = _engine.readFadeResult(request);
@@ -2152,7 +2129,7 @@ class LooperRepository {
     _drainFades();
     final admission = admit();
     if (!admission.result.isOk) return Future.value(admission.result);
-    final observation = _ReceiptObservation();
+    final observation = ReceiptObservation();
     _pendingFades[admission.request] = observation;
     _watchReceipt(
       observation,
@@ -2183,7 +2160,7 @@ class LooperRepository {
   }) => _requestFade(() => _engine.installFade(channel: channel, image: image));
 
   void _watchReceipt(
-    _ReceiptObservation observation, {
+    ReceiptObservation observation, {
     required bool Function() settle,
     required void Function() expire,
   }) {
@@ -2198,8 +2175,8 @@ class LooperRepository {
     var changed = _drainFades();
     for (final observation in [
       _pendingOneShot?.observation,
-      _pendingClickVolume?.observation,
-      _pendingClickMode?.observation,
+      _clickVolume.observation,
+      _clickMode.observation,
       _pendingRecordStart?.observation,
       _pendingTiming?.observation,
       _pendingLengthSettings?.observation,
@@ -2375,7 +2352,7 @@ class LooperRepository {
       currentBeat: s.currentBeat,
       // Raw mode may change before the callback publishes its command fence.
       // Every repository consumer observes the same receipt-confirmed choice.
-      clickMode: _clickMode,
+      clickMode: _clickMode.live,
       clickMask: s.clickMask,
       clickVolume: s.clickVolume,
       // The repository's own re-apply cache, like the record start settings
@@ -2545,11 +2522,9 @@ class LooperRepository {
     if (_applyingSessionRevision != null ||
         _sessionBootStartBlocked ||
         _mixRecoveryStartBlocked ||
-        _clickRecoveryStartBlocked ||
         oneShotRecoveryRequired ||
         lengthRecoveryRequired ||
         recordTimingRecoveryRequired ||
-        clickModeRecoveryRequired ||
         recordStartRecoveryRequired) {
       return EngineResult.notReady;
     }
@@ -2567,15 +2542,12 @@ class LooperRepository {
       _intendRunning = true;
       // Do not project this partial startup: remembered track lengths and
       // other rig settings are replayed below before the final projection.
-      final clickResult = _engine.setClickVolume(_clickRestartVolume);
+      // An owed Click value replays here, so a reconnect resolves it.
+      final clickResult = _clickVolume.replay();
       if (!clickResult.isOk) {
         stopEngine();
         return clickResult;
       }
-      _pendingClickVolume = _PendingClickVolume(
-        _clickRestartVolume,
-        _clickRestartVolume,
-      );
       // A fresh start resets the engine's quantize flag and monitor masks;
       // re-apply the desired state so it survives device changes / reconnects.
       final timingResult = _requestTiming(
@@ -2587,7 +2559,6 @@ class LooperRepository {
         stopEngine();
         return timingResult;
       }
-      _watchClickVolume(_pendingClickVolume!);
       _engine
         ..setRecDub(enabled: _recDub)
         ..setDefaultMultiple(multiple: _defaultMultiple)
@@ -2631,10 +2602,7 @@ class LooperRepository {
         stopEngine();
         return startResult;
       }
-      final modeResult = _requestClickMode(
-        _clickModeRestart,
-        startup: true,
-      );
+      final modeResult = _clickMode.replay();
       if (!modeResult.isOk) {
         stopEngine();
         return modeResult;
@@ -2979,7 +2947,7 @@ class LooperRepository {
       }
     }
     _intendRunning = false;
-    _clickVolume = _clickRestartVolume;
+    _clickVolume.retireLive();
     _stopReconnectPolling();
     // The engine tears down all plugin slots on stop; drop our stale handles so
     // a later param set doesn't address a freed slot.
@@ -3916,10 +3884,10 @@ class LooperRepository {
     _timingRecovery = null;
     _timingRecoveryRestart = null;
     _lastTimingResult = EngineResult.ok;
-    _clickModeRecovery = null;
+    _clickMode.reset();
+    _clickVolume.reset();
     _recordStartRecovery = null;
     _lastRecordStartResult = EngineResult.ok;
-    _lastClickModeResult = EngineResult.ok;
     _oneShotRecoveryIntent = null;
     _oneShotRecoveryRestart = null;
     _lastOneShotResult = EngineResult.ok;
@@ -7585,13 +7553,13 @@ class LooperRepository {
   }
 
   /// Accepted Released choice used on a device restart.
-  ClickMode get clickModeRestartIntent => _clickModeRestart;
+  ClickMode get clickModeRestartIntent => _clickMode.restart;
 
   /// No Hear click request is awaiting its callback receipt.
-  bool get clickModeSettled => _pendingClickMode == null;
+  bool get clickModeSettled => _clickMode.settled;
 
-  /// Native uncertainty requires explicit recovery before more mode edits.
-  bool get clickModeRecoveryRequired => _clickModeRecovery != null;
+  /// An uncertain receipt owes its Released choice until Retry or restart.
+  bool get clickModeRecoveryRequired => _clickMode.recoveryRequired;
 
   /// Actual capture locks Hear click; armed/count-in alone remains editable.
   bool get clickModeCaptureLocked =>
@@ -7603,135 +7571,54 @@ class LooperRepository {
       );
 
   /// Refusals/uncertainty from explicit edits and autonomous replay.
-  Stream<EngineResult> get clickModeFailures => _clickModeFailures.stream;
-
-  EngineResult _reportClickMode(EngineResult result) {
-    if (!_clickModeFailures.isClosed) _clickModeFailures.add(result);
-    return result;
-  }
-
-  void _cancelClickMode() {
-    final pending = _pendingClickMode;
-    _pendingClickMode = null;
-
-    if (pending != null) {
-      _lastClickModeResult = EngineResult.notReady;
-      pending.observation.complete(EngineResult.notReady);
-    }
-  }
+  Stream<EngineResult> get clickModeFailures => _clickMode.failures;
 
   /// Stages or enqueues Hear click, with separate durable Released intent.
-  EngineResult setClickMode(ClickMode mode, {ClickMode? releasedMode}) =>
-      _requestClickMode(mode, releasedMode: releasedMode);
+  EngineResult setClickMode(ClickMode mode, {ClickMode? releasedMode}) {
+    final result = _clickMode.request(mode, restart: releasedMode);
+    _reproject();
+    return result.isOk && _clickMode.settled ? _clickMode.lastResult : result;
+  }
 
-  EngineResult _requestClickMode(
-    ClickMode mode, {
-    ClickMode? releasedMode,
-    bool startup = false,
-  }) {
-    if (_pendingClickMode != null || clickModeRecoveryRequired) {
-      return EngineResult.notReady;
+  ({EngineResult result, ReceiptCheck? check}) _sendClickMode(
+    ClickMode mode,
+  ) {
+    if (clickModeCaptureLocked) {
+      return (result: EngineResult.invalid, check: null);
     }
-    final restart = releasedMode ?? mode;
-    if (!_intendRunning) {
-      _clickMode = mode;
-      _clickModeRestart = restart;
-      _lastClickModeResult = EngineResult.ok;
-      _reproject();
-      return EngineResult.ok;
-    }
-    if (clickModeCaptureLocked) return EngineResult.invalid;
     final prior = _engine.snapshot();
     final result = _engine.setClickMode(mode);
-    if (!result.isOk) return result;
-    final pending = _PendingClickMode(
-      mode: mode,
-      restart: restart,
-      recovery: startup ? restart : _clickMode,
-      recoveryRestart: startup ? restart : _clickModeRestart,
-      prior: prior.clickMode,
-      expectedRevision: (prior.clickModeRevision + 1) & 0xffffffff,
-      startup: startup,
+    final expected = (prior.clickModeRevision + 1) & 0xffffffff;
+    return (
+      result: result,
+      // Acquire BEFORE sampling: the revision fence names this exact command.
+      check: () {
+        if (!_engine.commandsSettled) return null;
+        final snapshot = _engine.snapshot();
+        if (snapshot.clickModeRevision != expected) return null;
+        final result = EngineResult.fromCode(snapshot.clickModeResult);
+        if (result.isOk && snapshot.clickMode == mode) {
+          return (verdict: ReceiptVerdict.accepted, result: result);
+        }
+        if (!result.isOk && snapshot.clickMode == prior.clickMode) {
+          return (verdict: ReceiptVerdict.refused, result: result);
+        }
+        return (verdict: ReceiptVerdict.uncertain, result: result);
+      },
     );
-    _pendingClickMode = pending;
-    _watchReceipt(
-      pending.observation,
-      settle: _settleClickMode,
-      expire: () => _failClickMode(pending, EngineResult.notReady),
-    );
-    if (!startup) _reproject();
-    return _pendingClickMode == null ? _lastClickModeResult : EngineResult.ok;
-  }
-
-  bool _settleClickMode() {
-    final pending = _pendingClickMode;
-    // Acquire BEFORE sampling; no await, publication, or next writer until
-    // this exact receipt has been read and classified under the reservation.
-    if (pending == null || !_engine.commandsSettled) return false;
-    final snapshot = _engine.snapshot();
-    if (snapshot.clickModeRevision != pending.expectedRevision) return false;
-    final result = EngineResult.fromCode(snapshot.clickModeResult);
-    if (result.isOk && snapshot.clickMode == pending.mode) {
-      _pendingClickMode = null;
-
-      _clickMode = pending.mode;
-      _clickModeRestart = pending.restart;
-      _lastClickModeResult = EngineResult.ok;
-      pending.observation.complete(EngineResult.ok);
-    } else if (!result.isOk &&
-        snapshot.clickMode == pending.prior &&
-        !pending.startup) {
-      _pendingClickMode = null;
-
-      _lastClickModeResult = result;
-      pending.observation.complete(result);
-      _reportClickMode(result);
-    } else {
-      _failClickMode(pending, EngineResult.invalid);
-    }
-    return true;
-  }
-
-  void _failClickMode(_PendingClickMode pending, EngineResult result) {
-    if (!identical(_pendingClickMode, pending)) return;
-    _pendingClickMode = null;
-
-    _clickModeRecovery = (
-      mode: pending.recovery,
-      restart: pending.recoveryRestart,
-    );
-    _lastClickModeResult = result;
-    pending.observation.complete(result);
-    // Never stop an active take to repair a future Click policy.
-    if (!clickModeCaptureLocked) stopEngine();
-    _reportClickMode(result);
   }
 
   /// Bounded exact revision/result/actual-mode confirmation.
   Future<EngineResult> settleClickMode({
     Duration pollInterval = const Duration(milliseconds: 10),
     int attempts = 50,
-  }) async {
-    final pending = _pendingClickMode;
-    if (pending == null) return _lastClickModeResult;
-    return pending.observation.wait(
-      pollInterval: pollInterval,
-      attempts: attempts,
-    );
-  }
+  }) => _clickMode.settle(pollInterval: pollInterval, attempts: attempts);
 
-  /// Explicit Retry repairs only the current repository obligation.
+  /// Retry re-requests the owed choice while running and stages it stopped.
   EngineResult recoverClickMode() {
-    final recovery = _clickModeRecovery;
-    if (recovery == null) return EngineResult.ok;
-    if (clickModeCaptureLocked) return EngineResult.notReady;
-    if (_intendRunning) stopEngine();
-    _clickMode = recovery.mode;
-    _clickModeRestart = recovery.restart;
-    _clickModeRecovery = null;
-    _lastClickModeResult = EngineResult.ok;
+    final result = _clickMode.recover();
     _reproject();
-    return EngineResult.ok;
+    return result;
   }
 
   /// Routes the click to the output channels set in [mask]. Remembered and
@@ -7750,91 +7637,57 @@ class LooperRepository {
   /// callers must await [settleClickVolume] before treating them as accepted.
   EngineResult setClickVolume(double volume, {double? releasedVolume}) {
     final restartVolume = releasedVolume ?? volume;
-    if (!volume.isFinite ||
-        volume < 0 ||
-        volume > 2 ||
-        !restartVolume.isFinite ||
-        restartVolume < 0 ||
-        restartVolume > 2) {
+    if (!_validClickGain(volume) || !_validClickGain(restartVolume)) {
       return EngineResult.invalid;
     }
-    if (_pendingClickVolume != null) return EngineResult.notReady;
-    if (!_intendRunning) {
-      _clickVolume = volume;
-      _clickRestartVolume = restartVolume;
-      _lastClickVolumeResult = EngineResult.ok;
-      _reproject();
-      return EngineResult.ok;
-    }
-    if (_clickRecoveryStartBlocked) return EngineResult.notReady;
-    final result = _engine.setClickVolume(volume);
-    if (!result.isOk) return result;
-    final pending = _PendingClickVolume(volume, restartVolume);
-    _pendingClickVolume = pending;
-    _watchClickVolume(pending);
+    final result = _clickVolume.request(volume, restart: releasedVolume);
     _reproject();
-    return EngineResult.ok;
+    return result.isOk && _clickVolume.settled
+        ? _clickVolume.lastResult
+        : result;
   }
 
-  /// Whether the most recent admitted Click command has a callback receipt.
-  bool get clickVolumeSettled =>
-      _pendingClickVolume == null && _lastClickVolumeResult.isOk;
+  static bool _validClickGain(double gain) =>
+      gain.isFinite && gain >= 0 && gain <= kMaxClickGain;
 
-  void _watchClickVolume(_PendingClickVolume pending) {
-    _watchReceipt(
-      pending.observation,
-      settle: _settlePendingClickVolume,
-      expire: () {
-        if (!identical(_pendingClickVolume, pending)) return;
-        blockStartForClickRecovery();
-        stopEngine();
-      },
-    );
-  }
+  ({EngineResult result, ReceiptCheck? check}) _sendClickVolume(
+    double volume,
+  ) => (
+    result: _engine.setClickVolume(volume),
+    // A drained queue publishing another gain did not accept this write.
+    check: () {
+      if (!_engine.commandsSettled) return null;
+      final actual = _engine.snapshot().clickVolume;
+      return actual.isFinite && (actual - volume).abs() <= 1e-6
+          ? (verdict: ReceiptVerdict.accepted, result: EngineResult.ok)
+          : (verdict: ReceiptVerdict.uncertain, result: EngineResult.invalid);
+    },
+  );
 
-  bool _settlePendingClickVolume() {
-    final pending = _pendingClickVolume;
-    if (pending == null || !_engine.commandsSettled) return false;
-    final actual = _engine.snapshot().clickVolume;
-    final result = actual.isFinite && (actual - pending.volume).abs() <= 1e-6
-        ? EngineResult.ok
-        : EngineResult.invalid;
-    _pendingClickVolume = null;
-    _lastClickVolumeResult = result;
-    if (result.isOk) {
-      _clickVolume = pending.volume;
-      _clickRestartVolume = pending.restartVolume;
-    } else {
-      // A drained queue with a different published gain is not an accepted
-      // write. Stop uncertain audio before the owner restores durable intent.
-      blockStartForClickRecovery();
-      stopEngine();
-    }
-    pending.observation.complete(result);
-    return true;
-  }
+  /// Accepted Released gain used on a device restart.
+  double get clickVolumeRestartIntent => _clickVolume.restart;
 
-  void _cancelClickVolume() {
-    final pending = _pendingClickVolume;
-    _pendingClickVolume = null;
-    if (pending != null) {
-      _lastClickVolumeResult = EngineResult.notReady;
-      pending.observation.complete(EngineResult.notReady);
-    }
-  }
+  /// No Click gain command is awaiting its callback receipt.
+  bool get clickVolumeSettled => _clickVolume.settled;
+
+  /// An uncertain receipt owes its Released gain until Retry or restart.
+  bool get clickVolumeRecoveryRequired => _clickVolume.recoveryRequired;
+
+  /// Refusals/uncertainty from explicit edits and autonomous replay.
+  Stream<EngineResult> get clickVolumeFailures => _clickVolume.failures;
 
   /// Awaits command publication and actual gain readback, independently of UI
-  /// polling. Timeout stops processing so no late queued high can sound.
+  /// polling.
   Future<EngineResult> settleClickVolume({
     Duration pollInterval = const Duration(milliseconds: 10),
     int attempts = 50,
-  }) async {
-    final pending = _pendingClickVolume;
-    if (pending == null) return _lastClickVolumeResult;
-    return pending.observation.wait(
-      pollInterval: pollInterval,
-      attempts: attempts,
-    );
+  }) => _clickVolume.settle(pollInterval: pollInterval, attempts: attempts);
+
+  /// Retry re-requests the owed gain while running and stages it stopped.
+  EngineResult recoverClickVolume() {
+    final result = _clickVolume.recover();
+    _reproject();
+    return result;
   }
 
   /// Sets one future-recording length override. Null inherits the default;
@@ -8223,7 +8076,8 @@ class LooperRepository {
     await _recoveryRefusals.close();
     await _lengthSettingsFailures.close();
     await _timingFailures.close();
-    await _clickModeFailures.close();
+    await _clickMode.dispose();
+    await _clickVolume.dispose();
     await _recordStartFailures.close();
     await _recordingInputRequired.close();
     await _mixSettingsFailures.close();
@@ -8364,7 +8218,7 @@ class _PendingMix {
   final _MixIntent intent;
   final int revision;
   final bool startup;
-  final observation = _ReceiptObservation();
+  final observation = ReceiptObservation();
 }
 
 class _PendingImage {
@@ -8394,13 +8248,6 @@ class _FxPreparationRefused implements Exception {
   final EngineResult result;
 }
 
-class _PendingClickVolume {
-  _PendingClickVolume(this.volume, this.restartVolume);
-  final double volume;
-  final double restartVolume;
-  final observation = _ReceiptObservation();
-}
-
 final class _OneShotIntent {
   _OneShotIntent(Map<int, bool> overrides, {required this.defaultValue})
     : overrides = Map.unmodifiable(overrides);
@@ -8422,77 +8269,5 @@ final class _PendingOneShot {
   final _OneShotIntent recovery;
   final _OneShotIntent restart;
   final _OneShotIntent recoveryRestart;
-  final observation = _ReceiptObservation();
-}
-
-/// One admission deadline and observer per settings receipt. Family classifiers
-/// decide acceptance and recovery; consumers only await this work.
-final class _ReceiptObservation {
-  static const _interval = Duration(milliseconds: 10);
-  static const _timeout = Duration(milliseconds: 500);
-  final _completed = Completer<EngineResult>();
-  Timer? _deadline;
-  Timer? _observer;
-  final _shortenedDeadlines = <Timer>[];
-  bool Function()? _settle;
-  void Function()? _expire;
-  void Function()? _publish;
-
-  void start({
-    required bool Function() settle,
-    required void Function() expire,
-    required void Function() publish,
-  }) {
-    _settle = settle;
-    _expire = expire;
-    _publish = publish;
-    // Relative timers are independent of the wall clock. Later awaiters never
-    // restart this admitted request's native uncertainty cutoff.
-    _deadline = Timer(_timeout, () => _observe(expired: true));
-    _observer = Timer.periodic(_interval, (_) => _observe());
-  }
-
-  bool check() {
-    if (_completed.isCompleted) return false;
-    return _settle?.call() ?? false;
-  }
-
-  void complete(EngineResult result) {
-    _deadline?.cancel();
-    _observer?.cancel();
-    for (final timer in _shortenedDeadlines) {
-      timer.cancel();
-    }
-    _shortenedDeadlines.clear();
-    _completed.complete(result);
-  }
-
-  Future<EngineResult> wait({
-    required Duration pollInterval,
-    required int attempts,
-  }) {
-    if (_completed.isCompleted) return _completed.future;
-    final micros = pollInterval.inMicroseconds;
-    final budget = micros <= 0 || attempts <= 0 ? 0 : micros * attempts;
-    _observe();
-    // Each shorter budget starts when requested, independently of any delayed
-    // observation ticks. All waiters still share the one receipt completion;
-    // none can move or replace its original admission deadline.
-    if (!_completed.isCompleted && budget < _timeout.inMicroseconds) {
-      _shortenedDeadlines.add(
-        Timer(Duration(microseconds: budget), () => _observe(expired: true)),
-      );
-    }
-    return _completed.future;
-  }
-
-  void _observe({bool expired = false}) {
-    if (_completed.isCompleted) return;
-    if (check()) {
-      _publish?.call();
-    } else if (expired) {
-      _expire?.call();
-      _publish?.call();
-    }
-  }
+  final observation = ReceiptObservation();
 }

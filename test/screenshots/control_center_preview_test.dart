@@ -410,6 +410,9 @@ void main() {
     when(() => looper.clickModeFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
+    when(() => looper.clickVolumeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     when(() => looper.recordTimingFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );

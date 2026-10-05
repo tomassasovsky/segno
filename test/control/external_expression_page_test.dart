@@ -82,6 +82,9 @@ void main() {
     when(() => looper.clickModeFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
+    when(() => looper.clickVolumeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     when(() => looper.clickModeCaptureLocked).thenReturn(false);
     when(() => looper.clickModeSettled).thenReturn(true);
     looperStates = StreamController<LooperState>.broadcast();

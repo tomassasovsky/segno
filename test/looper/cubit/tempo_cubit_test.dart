@@ -46,7 +46,7 @@ void main() {
     act: (cubit) async {
       expect(cubit.state.confirmedClickMode, isNull);
       expect(cubit.state.recordStartSnapshot, isNull);
-      await owner.loadClickMode();
+      await owner.clickModeOwner.load();
       expect(cubit.state.confirmedClickMode, ClickMode.recFirst);
       expect(cubit.state.recordStartSnapshot, isNull);
       await owner.loadRecordStart();
@@ -64,12 +64,12 @@ void main() {
     act: (cubit) async {
       await owner.load();
       await cubit.close();
-      expect((await owner.setClickMode(ClickMode.playRec)).isOk, isTrue);
+      expect((await owner.clickModeOwner.set(ClickMode.playRec)).isOk, isTrue);
       final reopened = TempoCubit(settings: owner);
       expect(reopened.state, same(owner.state));
       expect(reopened.state.confirmedClickMode, ClickMode.playRec);
       await reopened.setClickVolume(.5);
-      expect(owner.clickVolume, .5);
+      expect(owner.clickVolumeOwner.value, .5);
       await reopened.close();
     },
   );
@@ -88,9 +88,9 @@ void main() {
       gate.complete();
       await pending;
       expect(cubit.state, same(closedState));
-      expect(owner.confirmedClickMode, ClickMode.rec);
+      expect(owner.state.confirmedClickMode, ClickMode.rec);
       expect(store.values['tempo.click_mode'], 1);
-      expect((await owner.flushClickMode()).isOk, isTrue);
+      expect((await owner.clickModeOwner.flush()).isOk, isTrue);
     },
   );
 }

@@ -238,12 +238,12 @@ void main() {
       'absence and explicit unity remain distinct after restoration',
       () async {
         expect(await repository.readClickVolumeCheckpoint(), isNull);
-        await repository.saveClickVolume(1.5);
+        await repository.restoreClickVolumeCheckpoint(1.5);
         await repository.restoreClickVolumeCheckpoint(null);
         expect(store.values.containsKey('tempo.click_volume'), isFalse);
-        await repository.saveClickVolume(1);
+        await repository.restoreClickVolumeCheckpoint(1);
         final checkpoint = await repository.readClickVolumeCheckpoint();
-        await repository.saveClickVolume(.25);
+        await repository.restoreClickVolumeCheckpoint(.25);
         await repository.restoreClickVolumeCheckpoint(checkpoint);
         expect(store.values['tempo.click_volume'], 1);
       },
@@ -251,24 +251,30 @@ void main() {
     test(
       'unconfirmed scalar write is rejected and next write still works',
       () async {
-        await repository.saveClickVolume(.5);
+        await repository.restoreClickVolumeCheckpoint(.5);
         store.discardNextWriteKey = 'tempo.click_volume';
-        await expectLater(repository.saveClickVolume(1.5), throwsStateError);
+        await expectLater(
+          repository.restoreClickVolumeCheckpoint(1.5),
+          throwsStateError,
+        );
         expect(await repository.readClickVolumeCheckpoint(), .5);
-        await repository.saveClickVolume(.25);
-        expect(await repository.loadClickVolume(), .25);
+        await repository.restoreClickVolumeCheckpoint(.25);
+        expect(await repository.readClickVolumeCheckpoint(), .25);
       },
     );
     test(
       'write-then-failure checkpoint can restore exact prior scalar',
       () async {
-        await repository.saveClickVolume(.5);
+        await repository.restoreClickVolumeCheckpoint(.5);
         final checkpoint = await repository.readClickVolumeCheckpoint();
         store.failAfterWriteKey = 'tempo.click_volume';
-        await expectLater(repository.saveClickVolume(1.5), throwsStateError);
+        await expectLater(
+          repository.restoreClickVolumeCheckpoint(1.5),
+          throwsStateError,
+        );
         expect(store.values['tempo.click_volume'], 1.5);
         await repository.restoreClickVolumeCheckpoint(checkpoint);
-        expect(await repository.loadClickVolume(), .5);
+        expect(await repository.readClickVolumeCheckpoint(), .5);
       },
     );
     test('failed restoration is not reported as confirmed', () async {
@@ -1824,13 +1830,13 @@ void main() {
   });
 
   group('click volume', () {
-    test('defaults to 1.0 when unset', () async {
-      expect(await repository.loadClickVolume(), 1.0);
+    test('reads absence as absence', () async {
+      expect(await repository.readClickVolumeCheckpoint(), isNull);
     });
 
     test('round-trips a saved volume', () async {
-      await repository.saveClickVolume(0.5);
-      expect(await repository.loadClickVolume(), 0.5);
+      await repository.restoreClickVolumeCheckpoint(0.5);
+      expect(await repository.readClickVolumeCheckpoint(), 0.5);
     });
   });
 

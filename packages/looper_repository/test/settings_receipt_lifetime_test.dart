@@ -30,7 +30,7 @@ void main() {
     });
   }
 
-  check('querying Click mismatch cannot stop audio; observer classifies it', (
+  check('querying Click mismatch cannot classify it; the observer does', (
     time,
     engine,
     repository,
@@ -46,7 +46,8 @@ void main() {
     time.elapse(const Duration(milliseconds: 10));
     expect(repository.clickVolumeRecoveryRequired, isTrue);
     expect(repository.sessionTransport.clickVolume, 1);
-    expect(engine.calls.where((call) => call == 'stop'), hasLength(1));
+    // Uncertainty owes the value; it never stops audio.
+    expect(engine.calls.where((call) => call == 'stop'), isEmpty);
   });
 
   check('Once readiness query cannot accept a newly published vector', (
@@ -95,7 +96,7 @@ void main() {
     time.elapse(const Duration(milliseconds: 1));
     expect(later, EngineResult.notReady);
     expect(repository.clickVolumeRecoveryRequired, isTrue);
-    expect(engine.calls.where((call) => call == 'stop'), hasLength(1));
+    expect(engine.calls.where((call) => call == 'stop'), isEmpty);
   });
 
   check('a shorter caller budget stays bounded when another waiter arrives', (
@@ -124,7 +125,7 @@ void main() {
     time.elapse(const Duration(milliseconds: 10));
     expect(early, EngineResult.notReady);
     expect(later, EngineResult.notReady);
-    expect(engine.calls.where((call) => call == 'stop'), hasLength(1));
+    expect(engine.calls.where((call) => call == 'stop'), isEmpty);
   });
 
   check('a new short budget does not consume undelivered earlier ticks', (
@@ -149,7 +150,7 @@ void main() {
     expect(result, isNull);
     time.elapse(const Duration(milliseconds: 1));
     expect(result, EngineResult.notReady);
-    expect(engine.calls.where((call) => call == 'stop'), hasLength(1));
+    expect(engine.calls.where((call) => call == 'stop'), isEmpty);
   });
 
   for (final jump in [const Duration(days: 1), const Duration(days: -1)]) {
@@ -169,7 +170,7 @@ void main() {
         time.elapse(const Duration(milliseconds: 1));
         expect(repository.clickVolumeRecoveryRequired, isTrue);
         expect(repository.sessionTransport.clickVolume, 1);
-        expect(engine.calls.where((call) => call == 'stop'), hasLength(1));
+        expect(engine.calls.where((call) => call == 'stop'), isEmpty);
       });
     });
   }

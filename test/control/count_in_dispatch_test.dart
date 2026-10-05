@@ -135,7 +135,7 @@ class _Rig {
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: looper),
       clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: owner,
+      clickModeControl: owner.clickModeControl,
       recordStartControl: owner,
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),

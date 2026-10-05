@@ -435,9 +435,9 @@ void main() {
         }
       }
 
-      for (final malformed in <Object>['2', 1.5, -1, 4]) {
+      for (final malformed in <Object>['2', 1.5, -1, 4, 9]) {
         test(
-          'invalid Hear click $malformed stays intact and stops startup',
+          'invalid Hear click $malformed stays intact and audio starts Off',
           () async {
             store.values['tempo.click_mode'] = malformed;
             final result = await tryAutoStartEngine(
@@ -445,11 +445,13 @@ void main() {
               settings: settings,
               mixSettings: testMixSettings(repository, settings: settings),
             );
-            expect(result.started, isFalse);
-            expect(result.recoveryConfig, isNull);
-            expect(engine.startCalls, 0);
+            // Only Hear click is unavailable; its owner's Retry repairs it.
+            expect(result.started, isTrue);
+            expect(engine.startCalls, 1);
+            expect(engine.stopCalls, 0);
             expect(store.values['tempo.click_mode'], malformed);
-            expect(engine.clickModeRequests, isEmpty);
+            expect(engine.clickModeRequests, [ClickMode.off]);
+            expect(repository.sessionTransport.clickMode, ClickMode.off);
           },
         );
       }
@@ -471,31 +473,48 @@ void main() {
         expect(engine.snapshot().clickMode, ClickMode.off);
       });
 
-      for (final refused in [false, true]) {
-        test(
-          'unconfirmed Hear click replay blocks startup; refused=$refused',
-          () async {
-            final failed = _ClickModeBootEngine()
-              ..refuseMode = refused
-              ..publishClickModeCommands = false;
-            final looper = LooperRepository(
-              engine: failed,
-              ticker: const Stream<void>.empty(),
-            );
-            addTearDown(looper.dispose);
-            store.values['tempo.click_mode'] = 3;
-            final result = await tryAutoStartEngine(
-              repository: looper,
-              settings: settings,
-              mixSettings: testMixSettings(looper, settings: settings),
-            );
-            expect(result.started, isFalse);
-            expect(failed.startCalls, 1);
-            expect(failed.stopCalls, greaterThan(0));
-            expect(store.values['tempo.click_mode'], 3);
-          },
+      test('a refused Hear click replay admission blocks startup', () async {
+        final failed = _ClickModeBootEngine()
+          ..refuseMode = true
+          ..publishClickModeCommands = false;
+        final looper = LooperRepository(
+          engine: failed,
+          ticker: const Stream<void>.empty(),
         );
-      }
+        addTearDown(looper.dispose);
+        store.values['tempo.click_mode'] = 3;
+        final result = await tryAutoStartEngine(
+          repository: looper,
+          settings: settings,
+          mixSettings: testMixSettings(looper, settings: settings),
+        );
+        expect(result.started, isFalse);
+        expect(failed.startCalls, 1);
+        expect(failed.stopCalls, greaterThan(0));
+        expect(store.values['tempo.click_mode'], 3);
+      });
+
+      test('an unconfirmed Hear click replay owes the choice and audio keeps '
+          'running', () async {
+        final failed = _ClickModeBootEngine()..publishClickModeCommands = false;
+        final looper = LooperRepository(
+          engine: failed,
+          ticker: const Stream<void>.empty(),
+        );
+        addTearDown(looper.dispose);
+        store.values['tempo.click_mode'] = 3;
+        final result = await tryAutoStartEngine(
+          repository: looper,
+          settings: settings,
+          mixSettings: testMixSettings(looper, settings: settings),
+        );
+        expect(result.started, isTrue);
+        expect(failed.startCalls, 1);
+        expect(failed.stopCalls, 0);
+        expect(looper.clickModeRecoveryRequired, isTrue);
+        expect(looper.clickModeRestartIntent.code, 3);
+        expect(store.values['tempo.click_mode'], 3);
+      });
     });
 
     group('complete Record timing startup', () {

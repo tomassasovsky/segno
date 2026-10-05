@@ -3,10 +3,14 @@ import 'dart:async';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
+import 'package:segno/looper/model/click_mode.dart';
+import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/tempo_state.dart';
 
-/// A coherent accepted owner used by controller and presentation fixtures.
-class MockClickTempoSettings extends Mock implements TempoSettings {
+/// A coherent accepted owner used by controller and presentation fixtures; it
+/// also serves as both Click ports, as the owners' adapters do in production.
+class MockClickTempoSettings extends Mock
+    implements TempoSettings, ClickVolumeControl, ClickModeControl {
   MockClickTempoSettings({double? clickVolume = 1}) {
     when(() => recordStartSnapshot).thenReturn(null);
     when(() => confirmedRecordStart).thenReturn(null);

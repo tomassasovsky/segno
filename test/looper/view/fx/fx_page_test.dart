@@ -248,6 +248,9 @@ void main() {
     when(() => repository.clickModeFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
+    when(() => repository.clickVolumeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
     when(() => repository.clickModeSettled).thenReturn(true);
     // These pages do not initialize or edit recording-start preferences. The

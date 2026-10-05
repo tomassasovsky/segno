@@ -1,35 +1,38 @@
 import 'dart:async';
 
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/looper/model/click_mode.dart';
-import 'package:segno/looper/model/click_volume.dart';
+import 'package:segno/looper/application/settings_families.dart';
+import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/tempo_state.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-/// Owns the tempo grid, click, and count-in settings (plan A5): loads the
-/// persisted intent on [load], applies each setter to the [LooperRepository]
-/// (the live engine) AND persists it via [SettingsRepository] — mirroring
-/// the single application-owned transaction shape.
+/// Owns the tempo grid and count-in settings (plan A5), and presents the
+/// Click volume and Hear click owners in one [TempoState]: loads the persisted
+/// intent on [load], applies each setter to the [LooperRepository] (the live
+/// engine) AND persists it via [SettingsRepository].
 ///
 /// [tapTempo] is the one exception: a momentary action forwarded straight to
 /// the repository, never persisted (see [LooperRepository.tapTempo]'s doc —
 /// there is nothing meaningful to remember; the resulting tempo, if any, is
 /// the engine's own runtime state).
-class TempoSettings
-    implements ClickVolumeControl, ClickModeControl, RecordStartControl {
+class TempoSettings implements RecordStartControl {
   /// Creates a [TempoSettings] driving [repository], persisted through
   /// [settings]. Starts at the tempo-free defaults until [load] restores the
   /// saved values.
   TempoSettings({
     required LooperRepository repository,
     required SettingsRepository settings,
-    Duration clickPollInterval = const Duration(milliseconds: 10),
-    int clickPollAttempts = 50,
   }) : _repository = repository,
        _settings = settings,
-       _clickPollInterval = clickPollInterval,
-       _clickPollAttempts = clickPollAttempts {
+       clickVolumeOwner = SettingsOwner(
+         repository: repository,
+         family: ClickVolumeFamily(repository: repository, settings: settings),
+       ),
+       clickModeOwner = SettingsOwner(
+         repository: repository,
+         family: HearClickFamily(repository: repository, settings: settings),
+       ) {
     _startFailureSubscription = _repository.recordStartSettingsFailures.listen((
       result,
     ) {
@@ -45,21 +48,24 @@ class TempoSettings
         );
       }
     });
-    _acceptedClickLifetime = clickVolumeLifetime;
     _subscription = _repository.looperState.listen(_onLooperState);
-    _modeFailureSubscription = _repository.clickModeFailures.listen((result) {
-      if (!_modeApplying && !_closing) {
-        _reportMode(
-          ClickModeOutcome(
-            _repository.clickModeRecoveryRequired
-                ? ClickModeStatus.recoveryRequired
-                : ClickModeStatus.rejected,
-            engineResult: result,
-          ),
-        );
-      }
-    });
+    _ownerSubscriptions = [
+      clickVolumeOwner.changes.listen((_) => _syncFromRepository()),
+      clickModeOwner.changes.listen((_) => _syncFromRepository()),
+    ];
   }
+
+  /// The Click volume transaction.
+  final SettingsOwner<double, double?> clickVolumeOwner;
+
+  /// The Hear click transaction.
+  final SettingsOwner<ClickMode, int?> clickModeOwner;
+
+  /// ControlCubit's Click volume port over [clickVolumeOwner].
+  late final clickVolumeControl = ClickVolumeOwnerControl(clickVolumeOwner);
+
+  /// ControlCubit's Hear click port over [clickModeOwner].
+  late final clickModeControl = ClickModeOwnerControl(clickModeOwner);
 
   TempoState _state = const TempoState();
   final _states = StreamController<TempoState>.broadcast(sync: true);
@@ -73,342 +79,12 @@ class TempoSettings
   void _emit(TempoState next) {
     if (_states.isClosed) return;
     final published = next.copyWith(
-      clickModeInitialized: _modeInitialized,
+      clickModeInitialized: clickModeOwner.initialized,
       recordStartInitialized: _startInitialized,
     );
     if (_state == published) return;
     _state = published;
     _states.add(published);
-  }
-
-  late final StreamSubscription<EngineResult> _modeFailureSubscription;
-  Future<void>? _modeLoadFuture;
-  bool _modeInitialized = false;
-  bool _modeApplying = false;
-  int _modeRevision = 0;
-  ClickModeLifetime? _modeLifetime;
-  ({int? checkpoint, ClickModeLifetime lifetime})? _modeStoreRecovery;
-  final _ordinaryMode = StreamController<ClickMode>.broadcast(sync: true);
-  final _modeFailures = StreamController<ClickModeOutcome>.broadcast(
-    sync: true,
-  );
-  ClickModeOutcome _lastModeOutcome = const ClickModeOutcome(
-    ClickModeStatus.rejected,
-  );
-
-  /// Last accepted choice for readout, retained while recovery blocks editing.
-  /// Null until initialization has confirmed a mode at least once.
-  ClickMode? get confirmedClickMode =>
-      _modeInitialized ? state.clickMode : null;
-
-  @override
-  ClickModeSnapshot? get clickModeSnapshot =>
-      state.clickModeReady && !_closing && !_states.isClosed
-      ? ClickModeSnapshot(
-          mode: state.clickMode,
-          captureLocked: state.clickModeCaptureLocked,
-        )
-      : null;
-  @override
-  ClickMode get durableClickMode => _repository.clickModeRestartIntent;
-  @override
-  ClickModeLifetime get clickModeLifetime => (
-    sessionRevision: _repository.sessionRevision,
-    mixGeneration: _repository.mixGeneration,
-  );
-  @override
-  int get clickModeRevision => _modeRevision;
-  @override
-  Stream<ClickMode> get ordinaryClickModeChanges => _ordinaryMode.stream;
-
-  /// Failed Hear click attempts and persistent recovery obligations.
-  Stream<ClickModeOutcome> get clickModeFailures => _modeFailures.stream;
-
-  bool get _modeRecoveryPending =>
-      _modeStoreRecovery != null || _repository.clickModeRecoveryRequired;
-  bool get _modeReady =>
-      _modeInitialized &&
-      !_modeApplying &&
-      !_modeRecoveryPending &&
-      _repository.clickModeSettled;
-
-  ClickModeOutcome _reportMode(ClickModeOutcome outcome) {
-    if (outcome.status == ClickModeStatus.superseded) return outcome;
-    _lastModeOutcome = outcome;
-    if (!_closing && !_states.isClosed) {
-      if (outcome.status == ClickModeStatus.recoveryRequired) {
-        _emit(state.copyWith(clickModeReady: false));
-      }
-      if (!outcome.isOk) _modeFailures.add(outcome);
-    }
-    return outcome;
-  }
-
-  /// Initializes Hear click independently from volume and miscellaneous tempo.
-  Future<void> loadClickMode() => _modeLoadFuture ??= _restoreClickMode();
-
-  Future<void> _restoreClickMode() async {
-    final session = _repository.sessionRevision;
-    try {
-      int? saved;
-      try {
-        saved = await _settings.readClickModeCheckpoint();
-      } on Object {
-        // A recalled session is newer authority than a failed startup read.
-        // Device-only changes still require validating the saved preference.
-        if (session == _repository.sessionRevision) rethrow;
-      }
-      while (!_closing && !_states.isClosed) {
-        final origin = clickModeLifetime;
-        final done = await _queueTempo(() async {
-          if (_closing || _states.isClosed) return true;
-          if (origin != clickModeLifetime) return false;
-          _modeApplying = true;
-          try {
-            await _repository.settleClickMode();
-            if (_closing || _states.isClosed) return true;
-            if (origin != clickModeLifetime) return false;
-            if (_repository.clickModeRecoveryRequired) {
-              _reportMode(
-                const ClickModeOutcome(ClickModeStatus.recoveryRequired),
-              );
-              return true;
-            }
-            if (origin.sessionRevision == session) {
-              var result = _repository.setClickMode(
-                ClickMode.fromCode(saved ?? 2),
-              );
-              if (result.isOk) result = await _repository.settleClickMode();
-              if (_closing || _states.isClosed) return true;
-              if (origin != clickModeLifetime) return false;
-              if (!result.isOk) {
-                _reportMode(
-                  ClickModeOutcome(
-                    ClickModeStatus.recoveryRequired,
-                    engineResult: result,
-                  ),
-                );
-                return true;
-              }
-            }
-            _modeInitialized = true;
-            _modeLifetime = clickModeLifetime;
-            _reportMode(const ClickModeOutcome(ClickModeStatus.applied));
-            return true;
-          } finally {
-            _modeApplying = false;
-            _syncFromRepository();
-          }
-        });
-        if (done) return;
-      }
-    } on Object catch (error) {
-      if (!_closing && !_states.isClosed) {
-        _reportMode(
-          ClickModeOutcome(ClickModeStatus.recoveryRequired, error: error),
-        );
-      }
-    }
-  }
-
-  @override
-  Future<ClickModeOutcome> setClickMode(ClickMode mode) =>
-      _writeMode(mode, ordinary: true);
-
-  @override
-  Future<ClickModeOutcome> setControllerClickMode(
-    ClickMode mode, {
-    required ClickModeLifetime lifetime,
-    required int revision,
-    ClickMode? releasedMode,
-  }) => _writeMode(
-    mode,
-    lifetime: lifetime,
-    revision: revision,
-    releasedMode: releasedMode,
-  );
-
-  Future<ClickModeOutcome> _writeMode(
-    ClickMode mode, {
-    bool ordinary = false,
-    ClickModeLifetime? lifetime,
-    int? revision,
-    ClickMode? releasedMode,
-  }) async {
-    final origin = lifetime ?? clickModeLifetime;
-    await loadClickMode();
-    return _queueTempo(() async {
-      bool current() =>
-          origin == clickModeLifetime &&
-          (revision == null || revision == _modeRevision);
-      if (!current()) return const ClickModeOutcome(ClickModeStatus.superseded);
-      if (_closing ||
-          _states.isClosed ||
-          !_modeInitialized ||
-          _modeRecoveryPending ||
-          !_repository.clickModeSettled ||
-          _repository.clickModeCaptureLocked) {
-        return _reportMode(
-          ClickModeOutcome(
-            _modeRecoveryPending
-                ? ClickModeStatus.recoveryRequired
-                : ClickModeStatus.rejected,
-            engineResult: EngineResult.notReady,
-          ),
-        );
-      }
-      int? checkpoint;
-      var attempted = false;
-      _modeApplying = true;
-      try {
-        checkpoint = await _settings.readClickModeCheckpoint();
-        if (!current() || _closing || _states.isClosed) {
-          return const ClickModeOutcome(ClickModeStatus.superseded);
-        }
-        attempted = true;
-        await _settings.restoreClickModeCheckpoint((releasedMode ?? mode).code);
-        if (!current() || _closing || _states.isClosed) {
-          throw const _ClickModeRefusal(ClickModeStatus.superseded);
-        }
-        if (_repository.clickModeCaptureLocked) {
-          throw const _ClickModeRefusal(ClickModeStatus.rejected);
-        }
-        var result = _repository.setClickMode(mode, releasedMode: releasedMode);
-        if (result.isOk) result = await _repository.settleClickMode();
-        if (!current() || _closing || _states.isClosed) {
-          throw const _ClickModeRefusal(ClickModeStatus.superseded);
-        }
-        if (!result.isOk) {
-          throw _ClickModeRefusal(ClickModeStatus.rejected, result: result);
-        }
-        if (ordinary) {
-          ++_modeRevision;
-          _ordinaryMode.add(mode);
-        }
-        return _reportMode(
-          ClickModeOutcome(
-            ClickModeStatus.applied,
-            deferred: !_repository.sessionTransport.isRunning,
-          ),
-        );
-      } on Object catch (error) {
-        if (attempted) {
-          try {
-            await _settings.restoreClickModeCheckpoint(checkpoint);
-          } on Object catch (rollbackError) {
-            _modeStoreRecovery = (checkpoint: checkpoint, lifetime: origin);
-            return _reportMode(
-              ClickModeOutcome(
-                ClickModeStatus.recoveryRequired,
-                error: rollbackError,
-              ),
-            );
-          }
-        }
-        if (!current() || _closing || _states.isClosed) {
-          return const ClickModeOutcome(ClickModeStatus.superseded);
-        }
-        return _reportMode(
-          ClickModeOutcome(
-            _repository.clickModeRecoveryRequired
-                ? ClickModeStatus.recoveryRequired
-                : error is _ClickModeRefusal
-                ? error.status
-                : ClickModeStatus.rejected,
-            engineResult: error is _ClickModeRefusal ? error.result : null,
-            error: error,
-          ),
-        );
-      } finally {
-        _modeApplying = false;
-        _syncFromRepository();
-      }
-    });
-  }
-
-  /// Healthy compensated refusals do not poison the orderly shutdown barrier.
-  Future<ClickModeOutcome> flushClickMode() async {
-    await loadClickMode();
-    await _tempoTail;
-    final wasSettled = _repository.clickModeSettled;
-    final result = await _repository.settleClickMode();
-    if (!_modeInitialized || _modeRecoveryPending) {
-      return _reportMode(
-        ClickModeOutcome(
-          ClickModeStatus.recoveryRequired,
-          engineResult: result,
-        ),
-      );
-    }
-    if (!wasSettled && !result.isOk) {
-      return _reportMode(
-        ClickModeOutcome(ClickModeStatus.rejected, engineResult: result),
-      );
-    }
-    _syncFromRepository();
-    return ClickModeOutcome(
-      ClickModeStatus.applied,
-      deferred: !_repository.sessionTransport.isRunning,
-    );
-  }
-
-  /// Explicit recovery repairs storage and the current native obligation.
-  Future<ClickModeOutcome> recoverClickMode() async {
-    await loadClickMode();
-    final outcome = await _queueTempo(() async {
-      if (_closing || _states.isClosed) {
-        return const ClickModeOutcome(ClickModeStatus.rejected);
-      }
-      try {
-        final storage = _modeStoreRecovery;
-        if (storage != null) {
-          await _settings.restoreClickModeCheckpoint(storage.checkpoint);
-          if (_closing || _states.isClosed) {
-            return const ClickModeOutcome(ClickModeStatus.superseded);
-          }
-          _modeStoreRecovery = null;
-        }
-        if (_repository.clickModeRecoveryRequired) {
-          final result = _repository.recoverClickMode();
-          if (!result.isOk) {
-            return _reportMode(
-              ClickModeOutcome(
-                ClickModeStatus.recoveryRequired,
-                engineResult: result,
-              ),
-            );
-          }
-        }
-        if (!_modeInitialized) {
-          return const ClickModeOutcome(ClickModeStatus.applied);
-        }
-        final result = await _repository.settleClickMode();
-        if (!_repository.clickModeSettled || _modeRecoveryPending) {
-          return _reportMode(
-            ClickModeOutcome(
-              ClickModeStatus.recoveryRequired,
-              engineResult: result,
-            ),
-          );
-        }
-        _syncFromRepository();
-        return _reportMode(
-          ClickModeOutcome(
-            ClickModeStatus.applied,
-            deferred: !_repository.sessionTransport.isRunning,
-          ),
-        );
-      } on Object catch (error) {
-        return _reportMode(
-          ClickModeOutcome(ClickModeStatus.recoveryRequired, error: error),
-        );
-      }
-    });
-    if (outcome.isOk && !_modeInitialized) {
-      await _restoreClickMode();
-      return _lastModeOutcome;
-    }
-    return outcome;
   }
 
   late final StreamSubscription<EngineResult> _startFailureSubscription;
@@ -799,42 +475,10 @@ class TempoSettings
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
   late final StreamSubscription<LooperState> _subscription;
+  late final List<StreamSubscription<void>> _ownerSubscriptions;
   int _userEditRevision = 0;
-  final Duration _clickPollInterval;
-  final int _clickPollAttempts;
   Future<void> _tempoTail = Future<void>.value();
-  final _ordinaryClick = StreamController<double>.broadcast(sync: true);
-  final _clickFailures = StreamController<ClickVolumeOutcome>.broadcast();
   bool _closing = false;
-  bool _clickBusy = false;
-  bool _clickObservationQueued = false;
-  double? _releasedClick;
-  ClickVolumeLifetime? _acceptedClickLifetime;
-  ({double? checkpoint, double volume, ClickVolumeLifetime lifetime})?
-  _clickRecovery;
-
-  bool get _clickRecoveryPending =>
-      _clickRecovery != null || _repository.clickVolumeRecoveryRequired;
-
-  @override
-  double? get clickVolume => state.clickReady && !_closing && !_states.isClosed
-      ? state.clickVolume
-      : null;
-
-  @override
-  double get durableClickVolume => _releasedClick ?? state.clickVolume;
-
-  @override
-  ClickVolumeLifetime get clickVolumeLifetime => (
-    sessionRevision: _repository.sessionRevision,
-    mixGeneration: _repository.mixGeneration,
-  );
-
-  @override
-  Stream<double> get ordinaryClickVolumeChanges => _ordinaryClick.stream;
-
-  /// Refusals and recovery obligations shared by both touch and controllers.
-  Stream<ClickVolumeOutcome> get clickVolumeFailures => _clickFailures.stream;
 
   Future<T> _queueTempo<T>(Future<T> Function() operation) {
     final result = _tempoTail.then((_) => operation());
@@ -845,212 +489,51 @@ class TempoSettings
     return result;
   }
 
-  /// Waits for every Click write, including ordinary touch edits.
-  Future<ClickVolumeOutcome> flushClickVolume() async {
-    try {
-      await _loadFuture;
-      await _tempoTail;
-      await _queueTempo(_observeClickReplay);
-    } on Object catch (error) {
-      return _reportClick(
-        ClickVolumeOutcome(ClickVolumeStatus.rejected, error: error),
-      );
-    }
-    if (!state.clickReady ||
-        _clickRecoveryPending ||
-        !_repository.clickVolumeSettled) {
-      return _reportClick(
-        ClickVolumeOutcome(
-          _clickRecoveryPending
-              ? ClickVolumeStatus.recoveryRequired
-              : ClickVolumeStatus.rejected,
-          engineResult: EngineResult.notReady,
-        ),
-      );
-    }
-    return ClickVolumeOutcome(
-      ClickVolumeStatus.applied,
-      deferred: !_repository.sessionTransport.isRunning,
-    );
-  }
-
   /// Session callers acquire Mixer before this gate, never the reverse.
+  /// Click volume and Hear click capture their durable values even while
+  /// unavailable; Count-in still refuses.
   Future<T> runTempoExclusive<T>(Future<T> Function() operation) async {
     await load();
-    return _queueTempo(() async {
-      await _repository.settleRecordStartSettings();
-      if (!_startInitialized ||
-          _startRecoveryPending ||
-          !_repository.recordStartSettingsSettled) {
-        throw StateError('Recording start is unavailable for session capture');
-      }
-      await _repository.settleClickMode();
-      if (!_modeInitialized ||
-          _modeRecoveryPending ||
-          !_repository.clickModeSettled) {
-        throw StateError('Hear click is unavailable for session capture');
-      }
-      if (!state.clickReady ||
-          _clickRecoveryPending ||
-          _closing ||
-          _states.isClosed) {
-        throw StateError('Click volume is unavailable for session capture');
-      }
-      final checkpoint = await _settings.readClickVolumeCheckpoint();
-      final priorDurable = durableClickVolume;
-      final lifetime = clickVolumeLifetime;
-      try {
-        return await operation();
-      } finally {
-        if (_repository.clickVolumeRecoveryRequired && _clickRecovery == null) {
-          await _recoverFailedClick(
-            checkpoint,
-            priorDurable,
-            false,
-            lifetime: lifetime,
-          );
-        }
-        _syncFromRepository();
-      }
-    });
+    return clickVolumeOwner.runExclusive(
+      () => clickModeOwner.runExclusive(
+        () => _queueTempo(() async {
+          await _repository.settleRecordStartSettings();
+          if (!_startInitialized ||
+              _startRecoveryPending ||
+              !_repository.recordStartSettingsSettled) {
+            throw StateError(
+              'Recording start is unavailable for session capture',
+            );
+          }
+          if (_closing || _states.isClosed) {
+            throw StateError('Tempo settings are closing');
+          }
+          try {
+            return await operation();
+          } finally {
+            _syncFromRepository();
+          }
+        }),
+      ),
+    );
   }
-
-  ClickVolumeOutcome _reportClick(ClickVolumeOutcome outcome) {
-    if (!outcome.isOk &&
-        outcome.status != ClickVolumeStatus.superseded &&
-        !_clickFailures.isClosed) {
-      _clickFailures.add(outcome);
-    }
-    return outcome;
-  }
-
-  /// Reestablishes the exact preference and deferred runtime intent, stopped.
-  Future<ClickVolumeOutcome> recoverClickVolume() => _queueTempo(() async {
-    if (_clickRecovery == null && _repository.clickVolumeRecoveryRequired) {
-      await _adoptClickRecovery();
-    }
-    var recovery = _clickRecovery;
-    if (recovery == null) {
-      if (_closing ||
-          _states.isClosed ||
-          !state.clickReady ||
-          !_repository.clickVolumeSettled) {
-        return _reportClick(
-          const ClickVolumeOutcome(
-            ClickVolumeStatus.rejected,
-            engineResult: EngineResult.notReady,
-          ),
-        );
-      }
-      try {
-        await _settings.readClickVolumeCheckpoint();
-        return _reportClick(
-          ClickVolumeOutcome(
-            ClickVolumeStatus.applied,
-            deferred: !_repository.sessionTransport.isRunning,
-          ),
-        );
-      } on Object catch (error) {
-        return _reportClick(
-          ClickVolumeOutcome(ClickVolumeStatus.rejected, error: error),
-        );
-      }
-    }
-    try {
-      await _settings.restoreClickVolumeCheckpoint(recovery.checkpoint);
-      if (_closing || _states.isClosed) {
-        return const ClickVolumeOutcome(ClickVolumeStatus.superseded);
-      }
-      if (clickVolumeLifetime != recovery.lifetime) {
-        // Only the old scalar obligation belongs to this transaction. A
-        // replacement rig's replay failure owns its own confirmed gain.
-        _clickRecovery = null;
-        if (!_repository.clickVolumeRecoveryRequired) {
-          _syncFromRepository();
-          return _reportClick(
-            const ClickVolumeOutcome(ClickVolumeStatus.applied),
-          );
-        }
-        await _adoptClickRecovery();
-        final adopted = _clickRecovery;
-        if (adopted == null) {
-          return _reportClick(
-            const ClickVolumeOutcome(ClickVolumeStatus.recoveryRequired),
-          );
-        }
-        recovery = adopted;
-      }
-      if (_closing ||
-          _states.isClosed ||
-          clickVolumeLifetime != recovery.lifetime) {
-        return const ClickVolumeOutcome(ClickVolumeStatus.superseded);
-      }
-      final result = _repository.setClickVolume(recovery.volume);
-      if (!result.isOk) {
-        return _reportClick(
-          ClickVolumeOutcome(
-            ClickVolumeStatus.recoveryRequired,
-            engineResult: result,
-          ),
-        );
-      }
-      _repository.clearClickRecoveryStartBlock();
-      _clickRecovery = null;
-      _releasedClick = null;
-      _acceptedClickLifetime = clickVolumeLifetime;
-      _emit(state.copyWith(clickVolume: recovery.volume, clickReady: true));
-      return _reportClick(
-        const ClickVolumeOutcome(ClickVolumeStatus.applied, deferred: true),
-      );
-    } on Object catch (error) {
-      return _reportClick(
-        ClickVolumeOutcome(ClickVolumeStatus.recoveryRequired, error: error),
-      );
-    }
-  });
 
   void _onLooperState(LooperState _) => _syncFromRepository();
 
   void _syncFromRepository() {
     if (_closing || _states.isClosed) return;
-    final lifetime = clickVolumeLifetime;
-    final changed =
-        _acceptedClickLifetime != null && _acceptedClickLifetime != lifetime;
-    if (changed && !_clickBusy) {
-      _releasedClick = null;
-      _acceptedClickLifetime = lifetime;
-    }
-    final clickSettled = !_clickBusy && _repository.clickVolumeSettled;
-    if (!_clickBusy &&
-        (changed || _repository.clickVolumeRecoveryRequired) &&
-        !_clickObservationQueued) {
-      _clickObservationQueued = true;
-      unawaited(
-        _queueTempo(_observeClickReplay).whenComplete(() {
-          _clickObservationQueued = false;
-        }),
-      );
-    }
-    if (!_modeApplying && _modeLifetime != clickModeLifetime) {
-      _modeLifetime = clickModeLifetime;
-      _modeRevision = 0;
-    }
     final transport = _repository.sessionTransport;
     _emit(
       TempoState(
         bpm: transport.tempoBpm,
         tsNum: transport.tsNum,
         tsDen: transport.tsDen,
-        clickMode: !_modeApplying && _modeInitialized
-            ? transport.clickMode
-            : state.clickMode,
-        clickModeReady: _modeReady,
-        clickModeCaptureLocked: _repository.clickModeCaptureLocked,
+        clickMode: clickModeOwner.live,
+        clickModeReady: clickModeOwner.ready,
+        clickModeCaptureLocked: clickModeOwner.captureLocked,
         clickOutputMask: transport.clickMask,
-        clickVolume: clickSettled && (state.clickReady || changed)
-            ? transport.clickVolume
-            : state.clickVolume,
-        clickReady: state.clickReady || changed && clickSettled,
+        clickVolume: clickVolumeOwner.live,
+        clickReady: clickVolumeOwner.ready,
         countInBars: !_startApplying && _startInitialized
             ? transport.countInBars
             : state.countInBars,
@@ -1061,42 +544,6 @@ class TempoSettings
         recordStartCaptureLocked: _repository.recordStartCaptureLocked,
       ),
     );
-  }
-
-  Future<void> _observeClickReplay() async {
-    if (_closing || _states.isClosed) return;
-    if (_repository.sessionTransport.isRunning &&
-        !_repository.clickVolumeSettled) {
-      await _repository.settleClickVolume(
-        pollInterval: _clickPollInterval,
-        attempts: _clickPollAttempts,
-      );
-    }
-    if (_repository.clickVolumeRecoveryRequired && _clickRecovery == null) {
-      await _adoptClickRecovery();
-    }
-    _syncFromRepository();
-  }
-
-  Future<void> _adoptClickRecovery() async {
-    final lifetime = clickVolumeLifetime;
-    final volume = _repository.sessionTransport.clickVolume;
-    try {
-      final checkpoint = await _settings.readClickVolumeCheckpoint();
-      if (_closing ||
-          _states.isClosed ||
-          lifetime != clickVolumeLifetime ||
-          !_repository.clickVolumeRecoveryRequired) {
-        return;
-      }
-      await _recoverFailedClick(checkpoint, volume, false, lifetime: lifetime);
-    } on Object catch (error) {
-      // The checkpoint remains unknown; explicit Retry reads it again before
-      // attempting any restoration. Never invent an absent scalar.
-      _reportClick(
-        ClickVolumeOutcome(ClickVolumeStatus.recoveryRequired, error: error),
-      );
-    }
   }
 
   Future<void>? _closeFuture;
@@ -1110,23 +557,20 @@ class TempoSettings
     await Future.wait<void>([
       ?_loadFuture,
       ?_startLoadFuture,
-      ?_modeLoadFuture,
     ]).then<void>((_) {}, onError: (Object _, StackTrace _) {});
     await _tempoTail;
     try {
       await Future.wait<void>([
         _subscription.cancel(),
-        _modeFailureSubscription.cancel(),
         _startFailureSubscription.cancel(),
+        for (final subscription in _ownerSubscriptions) subscription.cancel(),
       ]);
     } finally {
       await Future.wait<void>([
+        clickVolumeOwner.close(),
+        clickModeOwner.close(),
         _startFailures.close(),
         _ordinaryStart.close(),
-        _ordinaryMode.close(),
-        _modeFailures.close(),
-        _ordinaryClick.close(),
-        _clickFailures.close(),
         _states.close(),
       ]);
     }
@@ -1136,7 +580,8 @@ class TempoSettings
   /// the repository.
   Future<void> load() => _loadFuture ??= Future.wait<void>([
     _restore(),
-    loadClickMode(),
+    clickVolumeOwner.load(),
+    clickModeOwner.load(),
     loadRecordStart(),
   ]).then((_) {});
 
@@ -1146,60 +591,22 @@ class TempoSettings
     final bpm = await _settings.loadTempoBpm();
     final (tsNum, tsDen) = await _settings.loadTimeSignature();
     final clickOutputMask = await _settings.loadClickOutputMask();
-    final clickVolume = await _settings.loadClickVolume();
     if (_states.isClosed) return;
     if (sessionRevision != _repository.sessionRevision ||
         userEditRevision != _userEditRevision) {
       _syncFromRepository();
       return;
     }
-    var restored = state;
     // An unset tempo must not become a manual 30 BPM grid.
-    if (bpm > 0 && _repository.setTempo(bpm).isOk) {
-      restored = restored.copyWith(bpm: bpm);
-    }
-    if (_repository.setTimeSignature(tsNum, tsDen).isOk) {
-      restored = restored.copyWith(tsNum: tsNum, tsDen: tsDen);
-    }
-    if (_repository.setClickOutput(clickOutputMask).isOk) {
-      restored = restored.copyWith(clickOutputMask: clickOutputMask);
-    }
-    ClickVolumeOutcome? restoredClick;
-    await _queueTempo(() async {
-      if (sessionRevision != _repository.sessionRevision ||
-          userEditRevision != _userEditRevision ||
-          _closing ||
-          _states.isClosed) {
-        return;
-      }
-      restoredClick = await _writeClickVolume(
-        clickVolume,
-        lifetime: clickVolumeLifetime,
-        persist: false,
-        publish: false,
-      );
-    });
-    if (_closing || _states.isClosed) return;
-    if (sessionRevision != _repository.sessionRevision ||
-        userEditRevision != _userEditRevision) {
-      _syncFromRepository();
-      return;
-    }
-    restored = restored.copyWith(
-      clickVolume: restoredClick?.isOk ?? false
-          ? clickVolume
-          : state.clickVolume,
-      clickReady: (restoredClick?.isOk ?? false) || state.clickReady,
-    );
+    final tempoApplied = bpm > 0 && _repository.setTempo(bpm).isOk;
+    final signatureApplied = _repository.setTimeSignature(tsNum, tsDen).isOk;
+    final outputApplied = _repository.setClickOutput(clickOutputMask).isOk;
     _emit(
-      restored.copyWith(
-        countInBars: state.countInBars,
-        soundStart: state.soundStart,
-        recordStartReady: state.recordStartReady,
-        recordStartCaptureLocked: state.recordStartCaptureLocked,
-        clickMode: state.clickMode,
-        clickModeReady: state.clickModeReady,
-        clickModeCaptureLocked: state.clickModeCaptureLocked,
+      state.copyWith(
+        bpm: tempoApplied ? bpm : null,
+        tsNum: signatureApplied ? tsNum : null,
+        tsDen: signatureApplied ? tsDen : null,
+        clickOutputMask: outputApplied ? clickOutputMask : null,
       ),
     );
   }
@@ -1245,205 +652,6 @@ class TempoSettings
     await _settings.saveClickOutputMask(mask);
   }
 
-  /// Applies ordinary touch intent through the same durable Click owner.
-  Future<ClickVolumeOutcome> setClickVolume(double volume) {
-    _userEditRevision++;
-    final lifetime = clickVolumeLifetime;
-    return _queueTempo(
-      () => _writeClickVolume(volume, lifetime: lifetime, ordinary: true),
-    );
-  }
-
-  @override
-  Future<ClickVolumeOutcome> setControllerClickVolume(
-    double volume, {
-    required ClickVolumeLifetime lifetime,
-    double? releasedVolume,
-  }) => _queueTempo(
-    () => _writeClickVolume(
-      volume,
-      releasedVolume: releasedVolume,
-      lifetime: lifetime,
-    ),
-  );
-
-  Future<ClickVolumeOutcome> _writeClickVolume(
-    double volume, {
-    required ClickVolumeLifetime lifetime,
-    double? releasedVolume,
-    bool ordinary = false,
-    bool persist = true,
-    bool publish = true,
-  }) async {
-    bool current() => !_states.isClosed && lifetime == clickVolumeLifetime;
-    if (_closing || !current()) {
-      return const ClickVolumeOutcome(ClickVolumeStatus.superseded);
-    }
-    if (_clickRecoveryPending) {
-      return _reportClick(
-        const ClickVolumeOutcome(ClickVolumeStatus.recoveryRequired),
-      );
-    }
-    if (!volume.isFinite ||
-        volume < 0 ||
-        volume > kMaxClickGain ||
-        releasedVolume != null &&
-            (!releasedVolume.isFinite ||
-                releasedVolume < 0 ||
-                releasedVolume > kMaxClickGain)) {
-      return _reportClick(
-        const ClickVolumeOutcome(
-          ClickVolumeStatus.rejected,
-          engineResult: EngineResult.invalid,
-        ),
-      );
-    }
-    final priorDurable = durableClickVolume;
-    double? checkpoint;
-    var saved = false;
-    _clickBusy = true;
-    try {
-      checkpoint = await _settings.readClickVolumeCheckpoint();
-      if (!current()) {
-        return const ClickVolumeOutcome(ClickVolumeStatus.superseded);
-      }
-      // Engine startup replays the accepted gain through the same native
-      // queue. Drain that receipt before admitting the owner's next intent.
-      if (_repository.sessionTransport.isRunning &&
-          !_repository.clickVolumeSettled) {
-        final prior = await _repository.settleClickVolume(
-          pollInterval: _clickPollInterval,
-          attempts: _clickPollAttempts,
-        );
-        if (_repository.clickVolumeRecoveryRequired) {
-          return await _recoverFailedClick(
-            checkpoint,
-            priorDurable,
-            false,
-            lifetime: lifetime,
-            result: prior,
-          );
-        }
-        if (!current() || !prior.isOk) {
-          return _reportClick(
-            ClickVolumeOutcome(
-              current()
-                  ? ClickVolumeStatus.rejected
-                  : ClickVolumeStatus.superseded,
-              engineResult: prior,
-            ),
-          );
-        }
-      }
-      if (persist) {
-        // A write may mutate storage and then throw: checkpoint restoration is
-        // required even when its returned Future did not succeed.
-        saved = true;
-        await _settings.saveClickVolume(releasedVolume ?? volume);
-      }
-      if (!current()) {
-        if (saved) await _settings.restoreClickVolumeCheckpoint(checkpoint);
-        return const ClickVolumeOutcome(ClickVolumeStatus.superseded);
-      }
-      final deferred = !_repository.sessionTransport.isRunning;
-      var result = _repository.setClickVolume(
-        volume,
-        releasedVolume: releasedVolume,
-      );
-      if (result.isOk) {
-        result = await _repository.settleClickVolume(
-          pollInterval: _clickPollInterval,
-          attempts: _clickPollAttempts,
-        );
-      }
-      if (_repository.clickVolumeRecoveryRequired) {
-        return await _recoverFailedClick(
-          checkpoint,
-          priorDurable,
-          saved,
-          lifetime: lifetime,
-          result: result,
-        );
-      }
-      if (!current() || !result.isOk) {
-        if (saved) await _settings.restoreClickVolumeCheckpoint(checkpoint);
-        return _reportClick(
-          ClickVolumeOutcome(
-            current()
-                ? ClickVolumeStatus.rejected
-                : ClickVolumeStatus.superseded,
-            engineResult: result,
-          ),
-        );
-      }
-      _releasedClick = releasedVolume;
-      _acceptedClickLifetime = lifetime;
-      if (publish) _emit(state.copyWith(clickVolume: volume, clickReady: true));
-      if (ordinary) _ordinaryClick.add(volume);
-      return _reportClick(
-        ClickVolumeOutcome(ClickVolumeStatus.applied, deferred: deferred),
-      );
-    } on Object catch (error) {
-      if (saved) {
-        try {
-          await _settings.restoreClickVolumeCheckpoint(checkpoint);
-        } on Object catch (restoreError) {
-          final recovery = await _recoverFailedClick(
-            checkpoint,
-            priorDurable,
-            false,
-            lifetime: lifetime,
-            error: restoreError,
-          );
-          return recovery;
-        }
-      }
-      return _reportClick(
-        ClickVolumeOutcome(ClickVolumeStatus.rejected, error: error),
-      );
-    } finally {
-      _clickBusy = false;
-      if (_acceptedClickLifetime != clickVolumeLifetime) _syncFromRepository();
-    }
-  }
-
-  Future<ClickVolumeOutcome> _recoverFailedClick(
-    double? checkpoint,
-    double priorDurable,
-    bool restore, {
-    required ClickVolumeLifetime lifetime,
-    EngineResult? result,
-    Object? error,
-  }) async {
-    final sameLifetime = lifetime == clickVolumeLifetime;
-    if (sameLifetime && !_repository.clickVolumeRecoveryRequired) {
-      _repository
-        ..blockStartForClickRecovery()
-        ..stopEngine();
-    }
-    _releasedClick = null;
-    _clickRecovery = (
-      checkpoint: checkpoint,
-      volume: priorDurable,
-      lifetime: sameLifetime ? clickVolumeLifetime : lifetime,
-    );
-    var failureError = error;
-    if (restore) {
-      try {
-        await _settings.restoreClickVolumeCheckpoint(checkpoint);
-      } on Object catch (failure) {
-        failureError = failure;
-      }
-    }
-    return _reportClick(
-      ClickVolumeOutcome(
-        ClickVolumeStatus.recoveryRequired,
-        engineResult: result,
-        error: failureError,
-      ),
-    );
-  }
-
   /// Registers a tempo tap; two taps within the engine's window set the
   /// tempo from their interval. A momentary action forwarded straight to the
   /// repository — never persisted (see the class doc).
@@ -1451,12 +659,6 @@ class TempoSettings
     _userEditRevision++;
     return _repository.tapTempo();
   }
-}
-
-final class _ClickModeRefusal implements Exception {
-  const _ClickModeRefusal(this.status, {this.result});
-  final ClickModeStatus status;
-  final EngineResult? result;
 }
 
 final class _RecordStartRefusal implements Exception {

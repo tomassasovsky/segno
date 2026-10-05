@@ -56,11 +56,11 @@ void main() {
       );
       final done = <Future<void>>[
         owner.stream.drain<void>(),
-        owner.clickModeFailures.drain<void>(),
+        owner.clickModeOwner.failures.drain<void>(),
         owner.recordStartFailures.drain<void>(),
-        owner.clickVolumeFailures.drain<void>(),
-        owner.ordinaryClickModeChanges.drain<void>(),
-        owner.ordinaryClickVolumeChanges.drain<void>(),
+        owner.clickVolumeOwner.failures.drain<void>(),
+        owner.clickModeOwner.ordinaryChanges.drain<void>(),
+        owner.clickVolumeOwner.ordinaryChanges.drain<void>(),
         owner.ordinaryRecordStartChanges.drain<void>(),
       ];
       final loading = owner.load();
@@ -107,6 +107,12 @@ void main() {
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.clickVolumeSettled).thenReturn(true);
     when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
+    when(
+      () => repository.clickVolumeFailures,
+    ).thenAnswer((_) => const Stream.empty());
+    when(
+      () => repository.clickVolumeRestartIntent,
+    ).thenAnswer((_) => accepted.clickVolume);
     when(
       () => repository.settleClickVolume(
         pollInterval: any(named: 'pollInterval'),
@@ -170,7 +176,9 @@ void main() {
     ]) {
       stub();
     }
-    when(() => repository.setClickMode(any())).thenAnswer((call) {
+    when(
+      () => repository.setClickMode(any()),
+    ).thenAnswer((call) {
       accepted = _updated(
         accepted,
         clickMode: call.positionalArguments[0] as ClickMode,
@@ -199,7 +207,9 @@ void main() {
       );
       return EngineResult.ok;
     });
-    when(() => repository.setClickVolume(any())).thenAnswer((call) {
+    when(
+      () => repository.setClickVolume(any()),
+    ).thenAnswer((call) {
       accepted = _updated(
         accepted,
         clickVolume: call.positionalArguments[0] as double,
@@ -221,7 +231,7 @@ void main() {
         await settings.saveTimeSignature(7, 8);
         await settings.restoreClickModeCheckpoint(ClickMode.playRec.code);
         await settings.saveClickOutputMask(0x3);
-        await settings.saveClickVolume(0.5);
+        await settings.restoreClickVolumeCheckpoint(0.5);
         await settings.saveRecordStartSettings(
           countInBars: 2,
           soundStart: false,
@@ -337,9 +347,9 @@ void main() {
         await ((TempoSettings cubit) async {
           await cubit.setTempo(96);
           await cubit.setTimeSignature(5, 8);
-          await cubit.setClickMode(ClickMode.rec);
+          await cubit.clickModeOwner.set(ClickMode.rec);
           await cubit.setClickOutput(1);
-          await cubit.setClickVolume(0.5);
+          await cubit.clickVolumeOwner.set(0.5);
           await cubit.setCountInBars(2);
         })(owner);
         await Future<void>.delayed(Duration.zero);
@@ -351,9 +361,16 @@ void main() {
               clickMode: ClickMode.recFirst,
               clickModeReady: true,
             ),
+            // The first Click write loads the owner, which confirms unity.
             const TempoState(
               clickMode: ClickMode.recFirst,
               clickModeReady: true,
+              clickReady: true,
+            ),
+            const TempoState(
+              clickMode: ClickMode.recFirst,
+              clickModeReady: true,
+              clickReady: true,
               soundStart: true,
               recordStartReady: true,
             ),
@@ -364,7 +381,7 @@ void main() {
           expect(await settings.loadTimeSignature(), (4, 4));
           expect(await settings.readClickModeCheckpoint(), isNull);
           expect(await settings.loadClickOutputMask(), 0);
-          expect(await settings.loadClickVolume(), 1);
+          expect(await settings.readClickVolumeCheckpoint(), isNull);
           expect(
             await settings.readRecordStartCheckpoint(),
             (countInBars: 0, soundStart: true),
@@ -410,7 +427,7 @@ void main() {
       addTearDown(owner.close);
       await ((TempoSettings cubit) async {
         // The cache now holds ClickMode.rec.
-        await cubit.setClickMode(ClickMode.rec);
+        await cubit.clickModeOwner.set(ClickMode.rec);
         clearInteractions(repository);
         // A bypass writer (e.g. LooperBloc._toggleMetronome, a pedal press)
         // moves the LIVE engine's click mode directly through the
@@ -423,14 +440,13 @@ void main() {
         // (`rec`) matches the cubit's stale cache exactly, so the old
         // guard (`newValue != state.field`) would have silently skipped
         // the repository call here.
-        await cubit.setClickMode(ClickMode.rec);
+        await cubit.clickModeOwner.set(ClickMode.rec);
       })(owner);
       await Future<void>.delayed(Duration.zero);
       await owner.close();
-      ((TempoSettings _) =>
-          verify(() => repository.setClickMode(ClickMode.rec)).called(1))(
-        owner,
-      );
+      ((TempoSettings _) => verify(
+        () => repository.setClickMode(ClickMode.rec),
+      ).called(1))(owner);
     });
 
     test(
@@ -460,7 +476,8 @@ void main() {
       final states = <TempoState>[];
       final subscription = owner.stream.listen(states.add);
       addTearDown(subscription.cancel);
-      await ((TempoSettings cubit) => cubit.setClickMode(ClickMode.rec))(owner);
+      await ((TempoSettings cubit) =>
+          cubit.clickModeOwner.set(ClickMode.rec))(owner);
       await Future<void>.delayed(Duration.zero);
       await owner.close();
       expect(
@@ -505,15 +522,21 @@ void main() {
         final states = <TempoState>[];
         final subscription = owner.stream.listen(states.add);
         addTearDown(subscription.cancel);
-        await ((TempoSettings cubit) => cubit.setClickVolume(0.75))(owner);
+        await ((TempoSettings cubit) => cubit.clickVolumeOwner.set(0.75))(
+          owner,
+        );
         await Future<void>.delayed(Duration.zero);
         await owner.close();
         expect(
           states,
-          (() => [const TempoState(clickVolume: 0.75, clickReady: true)])(),
+          (() => [
+            // The write loads the owner first, which confirms unity.
+            const TempoState(clickReady: true),
+            const TempoState(clickVolume: 0.75, clickReady: true),
+          ])(),
         );
         await ((TempoSettings _) async {
-          expect(await settings.loadClickVolume(), 0.75);
+          expect(await settings.readClickVolumeCheckpoint(), 0.75);
           verify(() => repository.setClickVolume(0.75)).called(1);
         })(owner);
       },

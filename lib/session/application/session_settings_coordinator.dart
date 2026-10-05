@@ -94,8 +94,8 @@ class SessionSettingsCoordinator {
       settings: settingsFromLooper(
         _looper,
         mix: mix,
-        clickVolume: _tempo.durableClickVolume,
-        clickMode: _tempo.durableClickMode,
+        clickVolume: _tempo.clickVolumeOwner.durable,
+        clickMode: _tempo.clickModeOwner.durable,
         recordStart: _tempo.durableRecordStartSettings,
         decay: _playback.durableDecaySnapshot,
         oneShot: _playback.durableOneShotSnapshot,
