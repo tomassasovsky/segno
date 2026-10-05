@@ -220,7 +220,10 @@ void main() {
   // The post-clear-all toast renders into a toastification overlay, which
   // needs the app's Navigator above it (hence wrapping MaterialApp, not its
   // child). Inert for the tests that never raise a toast.
-  Future<void> pump(WidgetTester tester) => tester.pumpWidget(
+  Future<void> pump(
+    WidgetTester tester, {
+    KeyEventResult Function(FocusNode, KeyEvent)? onAncestorKey,
+  }) => tester.pumpWidget(
     ToastificationWrapper(
       child: MaterialApp(
         theme: AppTheme.neon,
@@ -264,7 +267,9 @@ void main() {
               // audio setup cubit (#453).
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             ],
-            child: const TracksView(),
+            child: onAncestorKey == null
+                ? const TracksView()
+                : Focus(onKeyEvent: onAncestorKey, child: const TracksView()),
           ),
         ),
       ),
@@ -340,6 +345,88 @@ void main() {
     },
   );
 
+  for (final activation in [
+    LogicalKeyboardKey.enter,
+    LogicalKeyboardKey.space,
+  ]) {
+    testWidgets(
+      'Foot Mixer focused buttons activate with ${activation.debugName}',
+      (tester) async {
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+        control.setMode(InteractionMode.mixer);
+        await tester.pump();
+        final exit = find.descendant(
+          of: find.byKey(const Key('foot_mixer_exit')),
+          matching: find.byIcon(Icons.chevron_left),
+        );
+        Focus.of(tester.element(exit)).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(activation);
+        await tester.pump();
+        expect(control.state.mode, InteractionMode.record);
+        control.setMode(InteractionMode.mixer);
+        await tester.pump();
+        final settingsButton = find.descendant(
+          of: find.byType(FootMixerView),
+          matching: find.text('Settings'),
+        );
+        Focus.of(tester.element(settingsButton)).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(activation);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<AnimatedOpacity>(
+                find.byKey(const Key('settingsTray_scrim')),
+              )
+              .opacity,
+          1,
+        );
+        verifyNever(() => bloc.add(const LooperPlayAllPressed()));
+      },
+    );
+  }
+
+  testWidgets(
+    'Foot Mixer preserves modifier shortcuts and blocks plain transport',
+    (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      final passedKeys = <LogicalKeyboardKey>[];
+      await pump(
+        tester,
+        onAncestorKey: (_, event) {
+          if (event is KeyDownEvent) passedKeys.add(event.logicalKey);
+          return KeyEventResult.ignored;
+        },
+      );
+      control.setMode(InteractionMode.mixer);
+      await tester.pump();
+      for (final modifier in [
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.metaLeft,
+      ]) {
+        passedKeys.clear();
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+        verify(() => bloc.add(const LooperUndoPressed(0))).called(1);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+        verify(session.save).called(1);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
+        expect(passedKeys, contains(LogicalKeyboardKey.keyQ));
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+        expect(control.state.mode, InteractionMode.mixer);
+        await tester.sendKeyUpEvent(modifier);
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+      expect(control.state.cursor, 0);
+      verifyNever(() => bloc.add(const LooperPlayAllPressed()));
+      verifyNever(() => bloc.add(const LooperPlayPressed(0)));
+    },
+  );
+
   testWidgets('Foot Mixer refusal is visible above the real Settings tray', (
     tester,
   ) async {
@@ -379,7 +466,7 @@ void main() {
     );
     expect(control.state.footMixerFailure, 1);
     expect(tester.takeException(), isNull);
-    dismissAppToast('footMixerFailure');
+    dismissAppToast(AppToastId.footMixerFailure);
     await tester.pump(const Duration(seconds: 10));
   });
 

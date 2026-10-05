@@ -172,21 +172,6 @@ class TracksCommands {
   /// Kept in sync with `shortcuts_help_sheet.dart` by contract: a row added
   /// here is added there in the same change, or the legend starts lying.
   KeyEventResult handleKey(FocusNode node, KeyEvent event) {
-    final control = context.read<ControlCubit>();
-    if (control.state.mode == InteractionMode.mixer) {
-      final key = event.logicalKey;
-      if (event is KeyDownEvent &&
-          (key == LogicalKeyboardKey.escape ||
-              key == LogicalKeyboardKey.keyM)) {
-        control.setMode(InteractionMode.record);
-        return KeyEventResult.handled;
-      }
-      // Preserve the flow's separate selection and transport contract.
-      // Tab reaches source choices; Settings remains available below.
-      if (key != LogicalKeyboardKey.tab && key != LogicalKeyboardKey.keyS) {
-        return KeyEventResult.handled;
-      }
-    }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
     // Let Tab / Shift+Tab fall through so keyboard focus can traverse into the
@@ -234,6 +219,19 @@ class TracksCommands {
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored; // let OS / menu shortcuts through
+    }
+
+    if (mode == InteractionMode.mixer) {
+      if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
+        overlay.setMode(InteractionMode.record);
+        return KeyEventResult.handled;
+      }
+      // Let focused Material controls activate through the ancestor Shortcuts.
+      // Plain transport/digit keys still belong to this separate flow.
+      if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space) {
+        return KeyEventResult.ignored;
+      }
+      if (key != LogicalKeyboardKey.keyS) return KeyEventResult.handled;
     }
 
     // Common to both modes.

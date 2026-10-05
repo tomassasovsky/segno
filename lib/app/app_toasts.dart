@@ -27,6 +27,7 @@ abstract final class AppToastId {
   static const recoveryRefused = 'app_recoveryRefused_toast';
   static const undoClearAll = 'app_undoClearAll_snackbar';
   static const undoClearAllAction = 'app_undoClearAll_snackbar_action';
+  static const footMixerFailure = 'app_footMixerFailure_error';
   static const mixSettings = 'app_mixSettings_error';
   static const clickSettings = 'app_clickSettings_error';
   static const decaySettings = 'app_decaySettings_error';

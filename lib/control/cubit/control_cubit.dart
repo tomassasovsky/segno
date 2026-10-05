@@ -2080,7 +2080,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.fx:
         toggleTrackChain(channel);
       case InteractionMode.mixer:
-        selectFootMixerSlot(channel % 4);
+        break;
       case InteractionMode.custom:
         // Inert here: the switch runs its assignment at the press. Note the
         // on-screen surfaces still call this — selection happens at their

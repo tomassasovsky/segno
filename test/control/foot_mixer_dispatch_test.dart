@@ -168,6 +168,23 @@ void main() {
     tearDown: () => rig.close(),
   );
 
+  blocTest<ControlCubit, ControlState>(
+    'legacy track press is inert in Mixer',
+    build: () {
+      rig = _Rig();
+      return rig.control;
+    },
+    act: (control) => control
+      ..selectTrack(1)
+      ..setMode(InteractionMode.mixer)
+      ..trackPressed(0),
+    verify: (control) {
+      expect(control.state.footMixer.channel, 1);
+      expect(control.state.cursor, 1);
+    },
+    tearDown: () => rig.close(),
+  );
+
   Future<_Rig> setup(
     _Clock tester, {
     Set<int> recorded = const {0, 1, 4},

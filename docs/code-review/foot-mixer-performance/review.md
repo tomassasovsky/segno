@@ -1,8 +1,8 @@
 # Foot Mixer review
 
-Issue #1123. Base: `029245043b4b6247b1835261932dee7cdaf161ba` (#1129).
+Issue #1123. Base: `35f28ee2eefb52b915a471d02cad5f9a2e6dd837` (#1129).
 Human merge gate. Final source binding:
-`15e0e4b3601ef4fb616bb8876836b81586d398e0d192afd63f83a056af04e205`.
+`8036abb0b6946c52576514b585c581d6c3545873a0cc399b966b2726b09ef7fa`.
 
 ## Scope
 
@@ -47,14 +47,26 @@ remaining issue in this correction. The full suite also caught a missing mock
 mute status; its fixture now models admitted state and asserts both the visible
 mute cue and durable mute-on and mute-off values. No production behavior was weakened.
 
-PR-readiness review found no mechanical issues in the original feature. The
-actual Claude review of this feature stopped at its session quota before a
-verdict; it remains incomplete. Prerequisite #1128 now supplies explicit Retry
-for failed Monitor restoration and has passed local independent reviews and its
-full app checks. Its additional Claude re-review remains pending. Prerequisite
-#1129 passed actual Claude re-review before this restack; its PR delta is byte
-identical afterward. Current-head CI and all outstanding reviews remain required.
-Neither this feature nor the whole stack is declared ready to merge here.
+Actual Claude review completed and identified two further presentation defects.
+After incomplete Monitor restoration, Foot Mixer read from a withheld cache while
+its controls changed accepted repository values. The view now observes the existing
+repository stream and shares the dispatch projection. Normal restored gain already
+updated correctly; that broader reviewer premise was disproved. No second cache,
+owner or restore bypass was added.
+
+Mixer's keyboard guard also swallowed focused button activation and modifier
+shortcuts. It now preserves the existing shortcut handling and Material activation,
+while ordinary transport keys remain isolated. The unused modulo track selection
+was removed, and failure notices use the shared identifier registry.
+
+Root independently reviewed the five production paths and four test files for
+bugs, architecture, simplicity and test quality. Real composed App tests reproduce
+the failed-restore mismatch; normal restore is a passing control. Focused Exit and
+Settings activation, Ctrl/Cmd routing and plain transport isolation are verified.
+The final full suite passes. The bounded Claude re-review of this correction and
+CI on its published head remain required. Prerequisites #1128 and #1129 now have
+clean reviews and passing CI; older stack reviews remain in progress. No merge
+readiness claim is made here.
 
 The combined regression confirms that a newly saved mute value survives Retry:
 failed restore, accepted mute changes, then recovery restores the saved mode,
@@ -66,7 +78,7 @@ durable values. Actual native sample checks remain separate below.
 
 Frozen application and affected repository source passed:
 
-- Application: 3,127 tests passed, 49 conditional skips; 92.40% coverage under the
+- Application: 3,137 tests passed, 49 conditional skips; 92.64% coverage under the
   configured CI exclusions (90% required).
 - Looper repository: 745 passed, zero skipped; 95.84% coverage (95% required).
   Five real-native sample tests confirm live gain/mute do not alter capture PCM,
