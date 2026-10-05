@@ -2270,10 +2270,16 @@ class NativeAudioEngine implements AudioEngine {
     final donePtr = calloc<Int32>();
     final progressPtr = calloc<Int32>();
     try {
-      _bindings.le_perf_render_poll(_engine, donePtr, progressPtr, nullptr);
+      final result = _bindings.le_perf_render_poll(
+        _engine,
+        donePtr,
+        progressPtr,
+        nullptr,
+      );
       return PerformanceRenderProgress(
         done: donePtr.value != 0,
         progressPercent: progressPtr.value,
+        failed: !EngineResult.fromCode(result).isOk,
       );
     } finally {
       calloc

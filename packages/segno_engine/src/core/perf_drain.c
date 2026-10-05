@@ -1252,6 +1252,14 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
   if (d->layers_dropped)
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "  \"layers_dropped\": %u,\n", d->layers_dropped);
+  /* Retired images the engine refused to stage (copy allocation failure or
+   * a full staging ring): their retires are logged but have no manifest
+   * entry, so the renderer must not treat them as complete either. */
+  const uint32_t layer_overruns = atomic_load_explicit(
+      &d->engine->a_perf_layer_overruns, memory_order_relaxed);
+  if (layer_overruns)
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                   "  \"layer_overruns\": %u,\n", layer_overruns);
 
   if (report_disk_full || atomic_load_explicit(&d->disk_full, memory_order_acquire)) {
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
