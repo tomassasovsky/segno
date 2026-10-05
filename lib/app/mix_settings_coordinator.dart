@@ -193,6 +193,10 @@ class MixSettingsCoordinator {
   bool _closed = false;
   MixSettingsOutcome? _recovery;
 
+  /// Whether ordinary edits may enter the shared restore/publication boundary.
+  bool get acceptingEdits =>
+      !_closed && _exclusiveCount == 0 && _recovery == null;
+
   /// Whether the last durable rollback still needs explicit recovery.
   bool get recoveryRequired => _recovery != null;
   (String, String?)? _recoveryCheckpoint;
@@ -428,7 +432,7 @@ class MixSettingsCoordinator {
   }) {
     final _ = durableSnapshot;
     if (_recovery case final recovery?) return Future.value(recovery);
-    if (_closed || _exclusiveCount != 0) {
+    if (!acceptingEdits) {
       return Future.value(
         _report(
           const MixSettingsOutcome(
@@ -1056,7 +1060,7 @@ class MixSettingsCoordinator {
     if (channels.isEmpty || channels.any((channel) => !_track(channel))) {
       return _reject();
     }
-    if (_closed || _exclusiveCount != 0 || _recovery != null) {
+    if (!acceptingEdits) {
       return toggleTrackSolo(channel: channels.first);
     }
     // Queue every member before draining, so the whole set enters one native

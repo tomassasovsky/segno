@@ -140,6 +140,7 @@ class FootMixerActions {
           repository: repository,
           settings: settings,
           persistence: persistence,
+          mixSettings: mix,
           input: selected.channel,
           muted: !repository.monitorMuted(selected.channel),
         );
