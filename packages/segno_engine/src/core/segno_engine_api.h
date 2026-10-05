@@ -2945,7 +2945,11 @@ LE_EXPORT int32_t le_perf_render_begin(le_engine* engine,
  * progressively as each track's stem completes, not only once `*done`).
  * Safe to call whether or not a render is active — with none active,
  * `*done` reads 1, `*progress_pct` reads 100, `*track_count` reads 0. Any
- * output pointer may be NULL to skip that field. Returns LE_OK, or
+ * output pointer may be NULL to skip that field. Returns LE_OK while
+ * rendering, with none active, or after a finished render; after a render
+ * that could not read a complete, valid manifest it returns that terminal
+ * failure (LE_ERR_INVALID for unusable data, LE_ERR_DEVICE when the worker
+ * could not allocate) with `*done` 1 and no invented track results. Returns
  * LE_ERR_INVALID for a null engine. */
 LE_EXPORT int32_t le_perf_render_poll(le_engine* engine, int32_t* done,
                                      int32_t* progress_pct,

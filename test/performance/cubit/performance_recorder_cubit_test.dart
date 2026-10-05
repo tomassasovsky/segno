@@ -719,6 +719,39 @@ void main() {
       expect(completed.result, isA<PerformanceRecordDone>());
     });
 
+    test('PerformanceRecordPartial when the render cannot use its manifest '
+        '(no track results)', () async {
+      engine
+        ..renderStatuses = const []
+        ..renderProgress = const PerformanceRenderProgress(
+          done: true,
+          progressPercent: 100,
+          failed: true,
+        );
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
+
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
+      expect(completed.result, isA<PerformanceRecordPartial>());
+    });
+
+    test('a valid render with zero tracks is still Done', () async {
+      engine.renderStatuses = const [];
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
+
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
+      expect(completed.result, isA<PerformanceRecordDone>());
+    });
+
     test('PerformanceRecordPartial when at least one track fails', () async {
       engine.renderStatuses = const [
         PerformanceRenderTrackStatus(channel: 0, succeeded: true),
