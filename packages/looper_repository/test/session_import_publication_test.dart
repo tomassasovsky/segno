@@ -8,7 +8,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show EngineSnapshot, PumpedNativeEngine, TrackSnapshot;
+    show EngineSnapshot, FadeAdmission, PumpedNativeEngine, TrackSnapshot;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -18,6 +18,29 @@ class _ImportEngine extends PumpedNativeEngine {
   @override
   EngineSnapshot snapshot() =>
       super.snapshot().copyWith(devicePresent: deviceAvailable);
+
+  bool holdFinalization = false;
+  bool finalized = false;
+  bool holdFade = false;
+  bool fadePosted = false;
+  int? refusedFadeChannel;
+
+  @override
+  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
+    final result = super.finalizeLayers(channel, undoCount, redoCount);
+    if (result.isOk) finalized = true;
+    return result;
+  }
+
+  @override
+  FadeAdmission installFade({required int channel, required FadeImage image}) {
+    if (channel == refusedFadeChannel) {
+      return (result: EngineResult.notReady, request: 0);
+    }
+    final result = super.installFade(channel: channel, image: image);
+    if (result.result.isOk) fadePosted = true;
+    return result;
+  }
 
   bool holdCommit = false;
   bool holdSettings = false;
@@ -30,7 +53,10 @@ class _ImportEngine extends PumpedNativeEngine {
   int stops = 0;
 
   bool get canPump =>
-      (!holdCommit || !committed) && (!holdSettings || !settingsPosted);
+      (!holdCommit || !committed) &&
+      (!holdSettings || !settingsPosted) &&
+      (!holdFinalization || !finalized) &&
+      (!holdFade || !fadePosted);
 
   @override
   EngineResult setRecordStartSettings({
@@ -81,16 +107,21 @@ class _ImportEngine extends PumpedNativeEngine {
   }
 }
 
-SessionRig _rig({bool secondTrack = false}) => SessionRig(
+SessionRig _rig({
+  bool secondTrack = false,
+  double amount = 1,
+  double pcm = .25,
+}) => SessionRig(
   baseLengthFrames: 256,
   tracks: [
     for (final channel in [0, if (secondTrack) 1])
       SessionRigTrack(
+        fadeAmount: channel == 0 ? amount : 0,
         channel: channel,
         lanes: [
           SessionRigLane(
             lane: 0,
-            layers: [Float32List.fromList(List.filled(256, .25))],
+            layers: [Float32List.fromList(List.filled(256, pcm))],
             volume: 1,
             muted: false,
             outputMask: 1,
@@ -218,6 +249,115 @@ void main() {
       pump.cancel();
       await subscription.cancel();
       await repository.dispose();
+    });
+
+    test(
+      'finalized material waits for its identity before stationary install',
+      () async {
+        engine.holdFinalization = true;
+        final loading = repository.applySession(
+          _rig(secondTrack: true, amount: .25, pcm: .5),
+        );
+        await _until(() => engine.finalized);
+        expect(engine.fadePosted, isFalse);
+        expect(engine.committed, isFalse);
+        expect(repository.play(), EngineResult.notReady);
+        expect(
+          repository.state.tracks.every((t) => t.state == TrackState.empty),
+          isTrue,
+        );
+        engine.holdFinalization = false;
+        await loading;
+        states.forEach(_coherent);
+        expect(repository.state.tracks[0].fade.amount, .25);
+        expect(repository.state.tracks[1].fade.amount, 0);
+        engine.pump(frames: 1);
+        expect(engine.snapshot().outputPeaks[0], 0);
+        expect(repository.play(), EngineResult.ok);
+        engine.pump(frames: 1);
+        // Only track 0 contributes: PCM .5 times coefficient .25.
+        expect(engine.snapshot().outputPeaks[0], closeTo(.125, 1e-6));
+        expect(repository.play(channel: 1), EngineResult.ok);
+        engine.pump(frames: 1024);
+        for (final channel in [0, 1]) {
+          final track = engine.snapshot().tracks[channel];
+          expect(track.fade.amount, channel == 0 ? .25 : 0);
+          expect(track.fade.target, track.fade.amount);
+          expect(track.fade.fullTravelSeconds, 0);
+          expect(track.undoDepth, 0);
+          expect(engine.exportTrack(channel), everyElement(.5));
+        }
+      },
+    );
+
+    test('second image refusal clears a partially installed vector', () async {
+      engine.refusedFadeChannel = 1;
+      await expectLater(
+        repository.applySession(_rig(secondTrack: true, amount: .25)),
+        throwsStateError,
+      );
+      expect(engine.fadePosted, isTrue);
+      expect(engine.committed, isFalse);
+      expect(
+        repository.state.tracks.every((t) => t.state == TrackState.empty),
+        isTrue,
+      );
+      states.forEach(_coherent);
+      engine.refusedFadeChannel = null;
+      await repository.applySession(_rig(amount: .6));
+      expect(engine.snapshot().tracks[0].fade.amount, closeTo(.6, 1e-6));
+    });
+
+    for (final boundary in ['finalization', 'install']) {
+      test(
+        'retirement during $boundary cannot install onto replacement material',
+        () async {
+          engine
+            ..holdFinalization = boundary == 'finalization'
+            ..holdFade = boundary == 'install';
+          final loading = repository.applySession(_rig(amount: .25));
+          final failed = expectLater(loading, throwsStateError);
+          await _until(
+            () => boundary == 'finalization'
+                ? engine.finalized
+                : engine.fadePosted,
+          );
+          repository.stopEngine();
+          engine
+            ..holdFinalization = false
+            ..holdFade = false
+            ..pump(frames: 0);
+          await failed;
+          // New Session import; no reconnect-retention claim.
+          expect(
+            repository.startEngine(const EngineConfig(maxLoopFrames: 8192)),
+            EngineResult.ok,
+          );
+          await repository.applySession(_rig(amount: .6));
+          expect(engine.snapshot().tracks[0].fade.amount, closeTo(.6, 1e-6));
+        },
+      );
+    }
+
+    test('timed-out image cannot affect the next imported material', () async {
+      engine.holdFade = true;
+      final loading = repository.applySession(
+        _rig(amount: .25),
+        clearPollInterval: const Duration(milliseconds: 1),
+      );
+      await _until(() => engine.fadePosted);
+      await expectLater(loading, throwsStateError);
+      expect(engine.committed, isFalse);
+      expect(engine.stops, greaterThan(0));
+      engine
+        ..holdFade = false
+        ..pump(frames: 0);
+      expect(
+        repository.startEngine(const EngineConfig(maxLoopFrames: 8192)),
+        EngineResult.ok,
+      );
+      await repository.applySession(_rig(amount: .6));
+      expect(engine.snapshot().tracks[0].fade.amount, closeTo(.6, 1e-6));
     });
 
     test(

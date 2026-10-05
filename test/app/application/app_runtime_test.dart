@@ -169,22 +169,78 @@ void main() {
         await runtime.start();
         await runtime.fade.setDefault(6000);
         await runtime.fade.setOverride(0, 6000);
+        engine.nextSnapshot = engine.nextSnapshot.copyWith(
+          sampleRate: 48000,
+          isRunning: true,
+          devicePresent: true,
+        );
         when(() => sessions.read(any())).thenAnswer(
           (_) async => (
             session: const Session(
               sampleRate: 48000,
               channels: 1,
-              baseLengthFrames: 0,
-              tracks: [],
+              baseLengthFrames: 128,
+              tracks: [
+                SessionTrack(
+                  channel: 0,
+                  multiple: 1,
+                  lengthFrames: 128,
+                  fadeAmount: .25,
+                  lanes: [
+                    SessionLane(
+                      lane: 0,
+                      volume: 1,
+                      muted: false,
+                      outputMask: 1,
+                      inputChannel: 0,
+                      layers: [SessionLayer(file: 'track0.wav')],
+                    ),
+                  ],
+                ),
+                SessionTrack(
+                  channel: 1,
+                  multiple: 1,
+                  lengthFrames: 128,
+                  fadeAmount: 0,
+                  lanes: [
+                    SessionLane(
+                      lane: 0,
+                      volume: 1,
+                      muted: false,
+                      outputMask: 1,
+                      inputChannel: 0,
+                      layers: [SessionLayer(file: 'track1.wav')],
+                    ),
+                  ],
+                ),
+              ],
               defaultFadeDurationMs: 12000,
             ),
-            laneStems: <(int, int), List<Float32List>>{},
+            laneStems: {
+              (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
+              (1, 0): [Float32List(128)..fillRange(0, 128, .5)],
+            },
           ),
         );
         store.refuseFade = true;
         await runtime.session.loadNamed('Incoming');
         expect(runtime.session.state.bootRecoveryRequired, isTrue);
         expect(repository.sessionBootRecoveryRequired, isTrue);
+        // This fake's snapshot is scripted independently of stop(). Publish the
+        // stopped device observation while retaining the accepted material.
+        engine.nextSnapshot = engine.nextSnapshot.copyWith(
+          isRunning: false,
+          devicePresent: false,
+        );
+        expect(repository.play(), EngineResult.notReady);
+        expect(repository.state.tracks.take(2).map((t) => t.fade.amount), [
+          .25,
+          0,
+        ]);
+        expect(
+          repository.state.tracks.take(2).map((t) => t.state),
+          everyElement(TrackState.stopped),
+        );
         await expectLater(runtime.fade.setDefault(2000), throwsStateError);
         expect(await runtime.fade.recover(), isFalse);
         await runtime.session.retryLoadedSession();
@@ -196,6 +252,14 @@ void main() {
         expect(runtime.fade.confirmed, FadeDurations(defaultMs: 12000));
         expect(await runtime.fade.recover(), isTrue);
         expect(runtime.fade.confirmed.overrides, isEmpty);
+        expect(repository.state.tracks.take(2).map((t) => t.fade.amount), [
+          .25,
+          0,
+        ]);
+        expect(
+          repository.state.tracks.take(2).map((t) => t.state),
+          everyElement(TrackState.stopped),
+        );
       },
     );
 
@@ -242,47 +306,59 @@ void main() {
       },
     );
 
-    test(
-      'invalid incoming vector fails before disarm or stored setup changes',
-      () async {
-        await runtime.start();
-        await runtime.fade.setDefault(6000);
-        final oldRevision = repository.sessionRevision;
-        final oldBytes = store.values['looper.fade_durations'];
-        final directory = await Directory.systemTemp.createTemp(
-          'fade-preflight-',
-        );
-        exportsDirectory = directory.path;
-        addTearDown(() => directory.delete(recursive: true));
-        engine.publishPerfCommands = true;
-        expect(await performance.arm(), EngineResult.ok);
-        final capture = performance.armedDirectory;
-        expect(capture, isNotNull);
-        expect(engine.snapshot().isPerfArmed, isTrue);
-        final disarms = engine.perfDisarmCalls;
-        when(() => sessions.read(any())).thenAnswer(
-          (_) async => (
-            session: const Session(
-              sampleRate: 48000,
-              channels: 1,
-              baseLengthFrames: 0,
-              tracks: [],
-              defaultFadeDurationMs: 501,
+    for (final amount in [null, double.nan, -.1, 1.1]) {
+      test(
+        'invalid incoming vector ($amount) fails before disarm '
+        'or stored setup changes',
+        () async {
+          await runtime.start();
+          await runtime.fade.setDefault(6000);
+          final oldRevision = repository.sessionRevision;
+          final oldBytes = store.values['looper.fade_durations'];
+          final directory = await Directory.systemTemp.createTemp(
+            'fade-preflight-',
+          );
+          exportsDirectory = directory.path;
+          addTearDown(() => directory.delete(recursive: true));
+          engine.publishPerfCommands = true;
+          expect(await performance.arm(), EngineResult.ok);
+          final capture = performance.armedDirectory;
+          expect(capture, isNotNull);
+          expect(engine.snapshot().isPerfArmed, isTrue);
+          final disarms = engine.perfDisarmCalls;
+          when(() => sessions.read(any())).thenAnswer(
+            (_) async => (
+              session: Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 0,
+                tracks: [
+                  if (amount != null)
+                    SessionTrack(
+                      channel: 0,
+                      multiple: 1,
+                      lengthFrames: 128,
+                      fadeAmount: amount,
+                      lanes: const [],
+                    ),
+                ],
+                defaultFadeDurationMs: amount == null ? 501 : 4000,
+              ),
+              laneStems: <(int, int), List<Float32List>>{},
             ),
-            laneStems: <(int, int), List<Float32List>>{},
-          ),
-        );
-        await runtime.session.loadNamed('invalid');
-        expect(runtime.session.state.status, SessionStatus.failure);
-        expect(repository.sessionRevision, oldRevision);
-        expect(engine.perfDisarmCalls, disarms);
-        expect(engine.snapshot().isPerfArmed, isTrue);
-        expect(performance.armedDirectory, capture);
-        expect(store.values['looper.fade_durations'], oldBytes);
-        expect(runtime.fade.confirmed.defaultMs, 6000);
-        expect(runtime.fxPersistence.sessionTransitionActive, isFalse);
-      },
-    );
+          );
+          await runtime.session.loadNamed('invalid');
+          expect(runtime.session.state.status, SessionStatus.failure);
+          expect(repository.sessionRevision, oldRevision);
+          expect(engine.perfDisarmCalls, disarms);
+          expect(engine.snapshot().isPerfArmed, isTrue);
+          expect(performance.armedDirectory, capture);
+          expect(store.values['looper.fade_durations'], oldBytes);
+          expect(runtime.fade.confirmed.defaultMs, 6000);
+          expect(runtime.fxPersistence.sessionTransitionActive, isFalse);
+        },
+      );
+    }
   });
 
   test('stopped Session stays reserved through the real boot write', () async {
@@ -304,6 +380,7 @@ void main() {
           baseLengthFrames: 128,
           tracks: [
             SessionTrack(
+              fadeAmount: 1,
               channel: 0,
               multiple: 1,
               lengthFrames: 128,

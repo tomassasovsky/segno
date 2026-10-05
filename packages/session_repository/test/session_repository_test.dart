@@ -34,6 +34,7 @@ void main() {
         baseLengthFrames: 4,
         tracks: [
           SessionTrack(
+            fadeAmount: 1,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,

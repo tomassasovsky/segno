@@ -8,6 +8,21 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 stationary Session Fade (#1139)
+
+Sessions now save recorded tracks' current Fade amounts and restore them as
+stationary levels before publishing stopped playback. Material finalization and
+all Fade confirmations complete first; rejected or retired imports are cleaned up.
+The implementation extends five existing production files without another owner
+or native API. Exact Session schema 11 requires the saved amounts.
+
+The [review](code-review/session-fade-levels/review.md) records 3,166 passing app
+tests, 716 ordinary Looper tests and 116 Session tests, plus 21 actual-native
+focused checks. Coverage floors, analysis, formatting and positive Bloc lint pass.
+Independent review repaired two test issues without production changes. Claude,
+published-head CI and human merge remain separate gates. Full-engine reopen
+retention (#1140), Clear/history and public Fade controls are separate follow-ups.
+
 ## October 2026 Fade duration persistence (#1137)
 
 Fade defaults and explicit per-track durations now survive startup and Session

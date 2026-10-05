@@ -11,6 +11,7 @@ void main() {
     baseLengthFrames: 96000,
     tracks: [
       SessionTrack(
+        fadeAmount: 1,
         channel: 0,
         multiple: 1,
         lengthFrames: 96000,
@@ -34,6 +35,7 @@ void main() {
         ],
       ),
       SessionTrack(
+        fadeAmount: 1,
         channel: 1,
         multiple: 2,
         lengthFrames: 192000,
@@ -114,6 +116,48 @@ void main() {
         r'\"index\":5}","behavior":"momentary"}]',
   );
 
+  group('SessionTrack Fade amount', () {
+    test('strictly preserves stationary endpoints and value identity', () {
+      final original = session.tracks.first;
+      for (final amount in [0.0, .25, 1.0]) {
+        final json = {...original.toJson(), 'fadeAmount': amount};
+        final decoded = SessionTrack.fromJson(json);
+        expect(decoded.fadeAmount, amount);
+        expect(decoded.toJson()['fadeAmount'], amount);
+        expect(SessionTrack.fromJson(decoded.toJson()), decoded);
+        expect(
+          SessionTrack.fromJson(decoded.toJson()).hashCode,
+          decoded.hashCode,
+        );
+        if (amount != original.fadeAmount) {
+          expect(decoded, isNot(original));
+        }
+      }
+    });
+    test(
+      'rejects missing and malformed amounts rather than assuming unity',
+      () {
+        final json = session.tracks.first.toJson()..remove('fadeAmount');
+        expect(() => SessionTrack.fromJson(json), throwsFormatException);
+        for (final invalid in [
+          null,
+          '0.5',
+          true,
+          -.1,
+          1.1,
+          double.nan,
+          double.infinity,
+          double.negativeInfinity,
+        ]) {
+          expect(
+            () => SessionTrack.fromJson({...json, 'fadeAmount': invalid}),
+            throwsFormatException,
+          );
+        }
+      },
+    );
+  });
+
   group('Session', () {
     test('round-trips through JSON (including jsonEncode/decode)', () {
       final json = jsonDecode(jsonEncode(session.toJson()));
@@ -192,15 +236,15 @@ void main() {
         );
       }
       expect(
-        () => Session.fromJson({...json, 'version': 9}),
+        () => Session.fromJson({...json, 'version': 10}),
         throwsA(isA<SessionUnsupportedVersion>()),
       );
     });
 
-    test('serializes the manifest version (v10)', () {
+    test('serializes the manifest version (v11)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 10);
+      expect(json['version'], 11);
       expect(json['baseLengthFrames'], 96000);
     });
 
@@ -632,6 +676,7 @@ void main() {
         'multiple': 1,
         'lengthFrames': 96000,
         'stem': 'track0.wav',
+        'fadeAmount': 1,
       };
       expect(() => SessionTrack.fromJson(track), throwsA(isA<TypeError>()));
     });

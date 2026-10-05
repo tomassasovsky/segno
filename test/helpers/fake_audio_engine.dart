@@ -230,12 +230,20 @@ class FakeAudioEngine implements AudioEngine {
   FadeAdmission toggleFade({required int channel, required double seconds}) =>
       (result: EngineResult.invalid, request: 0);
 
-  @override
-  FadeAdmission installFade({required int channel, required FadeImage image}) =>
-      (result: EngineResult.invalid, request: 0);
+  final Map<int, FadeImage> installedFades = {};
+  final Map<int, EngineResult> _fadeResults = {};
+  int _fadeRequest = 0;
 
   @override
-  EngineResult? readFadeResult(int request) => EngineResult.invalid;
+  FadeAdmission installFade({required int channel, required FadeImage image}) {
+    installedFades[channel] = image;
+    final request = ++_fadeRequest;
+    _fadeResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  EngineResult? readFadeResult(int request) => _fadeResults.remove(request);
 
   @override
   EngineResult setMix(EngineMixSettings settings) {
@@ -1396,6 +1404,7 @@ class FakeAudioEngine implements AudioEngine {
       if (length == null || length == 0) return EngineResult.invalid;
       tracks[entry.key] = TrackSnapshot(
         state: TrackState.stopped,
+        fade: installedFades[entry.key] ?? const FadeImage(),
         volume: 1,
         muted: false,
         lengthFrames: length,
@@ -1800,6 +1809,7 @@ class _LengthTrack extends TrackSnapshot {
          peakL: source.peakL,
          peakR: source.peakR,
          state: source.state,
+         fade: source.fade,
          volume: source.volume,
          muted: source.muted,
          lengthFrames: source.lengthFrames,

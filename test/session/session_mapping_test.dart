@@ -805,6 +805,7 @@ void main() {
           baseLengthFrames: 4,
           tracks: [
             SessionTrack(
+              fadeAmount: 1,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
@@ -940,6 +941,7 @@ void main() {
           baseLengthFrames: 4,
           tracks: [
             SessionTrack(
+              fadeAmount: 1,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
@@ -1000,6 +1002,7 @@ void main() {
             baseLengthFrames: 4,
             tracks: [
               SessionTrack(
+                fadeAmount: 1,
                 channel: 0,
                 multiple: 1,
                 lengthFrames: 4,
@@ -1045,6 +1048,7 @@ void main() {
       final bundle = (
         session: sessionWith([
           SessionTrack(
+            fadeAmount: 1,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -1093,6 +1097,7 @@ void main() {
       final bundle = (
         session: sessionWith([
           SessionTrack(
+            fadeAmount: 1,
             channel: 0,
             multiple: 1,
             lengthFrames: 1,
@@ -1138,12 +1143,14 @@ void main() {
           trackLengthPresetOverrides: const {0: 4, 2: 8},
           tracks: [
             SessionTrack(
+              fadeAmount: 1,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
               lanes: [lane(0, 'track0_lane0_L0.wav')],
             ),
             SessionTrack(
+              fadeAmount: 1,
               channel: 2,
               multiple: 1,
               lengthFrames: 4,
@@ -1175,6 +1182,7 @@ void main() {
       final bundle = (
         session: sessionWith([
           SessionTrack(
+            fadeAmount: 1,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -1200,12 +1208,14 @@ void main() {
       final bundle = (
         session: sessionWith([
           SessionTrack(
+            fadeAmount: 1,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
             lanes: [lane(0, 'track0_lane0_L0.wav')],
           ),
           SessionTrack(
+            fadeAmount: 1,
             channel: 1,
             multiple: 1,
             lengthFrames: 4,

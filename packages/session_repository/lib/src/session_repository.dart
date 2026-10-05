@@ -707,6 +707,7 @@ class SessionRepository {
           channel: i,
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
+          fadeAmount: track.fade.amount,
           lanes: lanes,
         ),
       );

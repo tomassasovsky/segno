@@ -73,11 +73,15 @@ class SessionRigTrack {
   /// Creates a [SessionRigTrack].
   const SessionRigTrack({
     required this.channel,
+    required this.fadeAmount,
     required this.lanes,
   });
 
   /// Track channel index.
   final int channel;
+
+  /// Saved coefficient, installed stationary before Session commit.
+  final double fadeAmount;
 
   /// The track's lanes, each with its own audio, routing, and mix. Lane 0 is
   /// first — it is the primary import that resets the track's undo state.
