@@ -27,6 +27,7 @@ import 'package:segno_engine/segno_engine.dart'
 import 'package:segno_engine/segno_engine.dart'
     show EngineSnapshot, LaneSnapshot, TrackSnapshot;
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 
@@ -125,6 +126,7 @@ void main() {
         ),
         settings: settingsFromLooper(
           looper,
+          fade: FadeDurations.defaults,
           recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
           clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
@@ -210,6 +212,7 @@ void main() {
       expect(
         settingsFromLooper(
           looper,
+          fade: FadeDurations.defaults,
           recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
           clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
@@ -277,6 +280,7 @@ void main() {
         expect(engine.snapshot().tempoBpm, 0);
         final settings = settingsFromLooper(
           looper,
+          fade: FadeDurations.defaults,
           recordStart: RecordStartSettings(countInBars: 2, soundStart: false),
           clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(
@@ -342,6 +346,7 @@ void main() {
           );
         final inherited = settingsFromLooper(
           looper,
+          fade: FadeDurations.defaults,
           recordStart: RecordStartSettings(countInBars: 0, soundStart: true),
           clickMode: looper.sessionTransport.clickMode,
           recordTiming: RecordTimingSnapshot(

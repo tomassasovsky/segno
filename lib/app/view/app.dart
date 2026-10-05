@@ -193,6 +193,7 @@ class _AppState extends State<App> {
   late final RecordTimingCubit _timingView;
   StreamSubscription<RecordLengthOutcome>? _recordLengthFailureSubscription;
   StreamSubscription<RecordTimingOutcome>? _recordTimingFailureSubscription;
+  StreamSubscription<Object?>? _fadeFailureSubscription;
   StreamSubscription<DecayOutcome>? _decayFailureSubscription;
   StreamSubscription<OneShotOutcome>? _oneShotFailureSubscription;
 
@@ -247,6 +248,7 @@ class _AppState extends State<App> {
         .listen(
           _showRecordTimingFailure,
         );
+    _fadeFailureSubscription = _runtime.fade.results.listen(_showFadeFailure);
     unawaited(
       _runtime.start().catchError((Object error, StackTrace stack) {
         AppLog.error('settings startup failed', error: error, stack: stack);
@@ -270,6 +272,7 @@ class _AppState extends State<App> {
     unawaited(_oneShotFailureSubscription?.cancel());
     unawaited(_recordLengthFailureSubscription?.cancel());
     unawaited(_recordTimingFailureSubscription?.cancel());
+    unawaited(_fadeFailureSubscription?.cancel());
     _controlNotices.dispose();
     unawaited(
       _closeControlOwners().catchError((Object error, StackTrace stack) {
@@ -505,6 +508,31 @@ class _AppState extends State<App> {
         needsRecovery: recovery
             ? () => !_runtime.timing.state.recordTimingReady
             : null,
+      ),
+    );
+  }
+
+  void _showFadeFailure(Object? error) {
+    if (!mounted) return;
+    if (error == null) {
+      _controlNotices.dismiss(AppToastId.fadeSettings);
+      return;
+    }
+    AppLog.error('Fade duration settings: $error');
+    final recovery = _runtime.fade.needsRecovery;
+    _controlNotices.show(
+      ControlSettingsNotice(
+        id: AppToastId.fadeSettings,
+        title: (context) => Text(
+          recovery
+              ? context.l10n.fadeSettingsRecoveryTitle
+              : context.l10n.fadeSettingsRefusedTitle,
+        ),
+        description: recovery
+            ? (context) => Text(context.l10n.fadeSettingsRecoveryBody)
+            : null,
+        retry: recovery ? _runtime.fade.recover : null,
+        needsRecovery: recovery ? () => _runtime.fade.needsRecovery : null,
       ),
     );
   }

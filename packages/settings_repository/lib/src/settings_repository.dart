@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:local_storage_client/local_storage_client.dart';
 import 'package:pub_semver/pub_semver.dart';
+import 'package:settings_repository/src/fade_durations.dart';
 
 /// Exact recording timing scalars. Missing tracks inherit; zero does not.
 typedef RecordTimingCheckpoint = ({
@@ -235,6 +236,29 @@ class SettingsRepository {
     }
     if (await _store.getDouble(key) != value) throw StateError(failure);
   }
+
+  static const _fadeDurationsKey = 'looper.fade_durations';
+
+  /// Exact stored bytes/absence, ordered after preceding settings writes.
+  Future<String?> readFadeDurationsCheckpoint() =>
+      _serialize(() => _store.getString(_fadeDurationsKey));
+
+  /// Writes the complete vector and verifies its exact encoded record.
+  Future<void> saveFadeDurations(FadeDurations value) =>
+      restoreFadeDurationsCheckpoint(jsonEncode(value.toJson()));
+
+  /// Restores exact bytes/absence and verifies even noncanonical valid JSON.
+  Future<void> restoreFadeDurationsCheckpoint(String? record) =>
+      _serialize(() async {
+        if (record == null) {
+          await _store.remove(_fadeDurationsKey);
+        } else {
+          await _store.setString(_fadeDurationsKey, record);
+        }
+        if (await _store.getString(_fadeDurationsKey) != record) {
+          throw StateError('Fade duration persistence was not confirmed');
+        }
+      });
 
   Future<T> _serialize<T>(Future<T> Function() write) {
     final operation = _serializedWrite.then((_) => write());

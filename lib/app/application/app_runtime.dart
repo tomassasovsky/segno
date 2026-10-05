@@ -10,6 +10,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
@@ -44,6 +45,11 @@ class AppRuntime {
     playback = PlaybackSettings(repository: repository, settings: settings);
     record = RecordSettings(repository: repository, settings: settings);
     timing = RecordTimingSettings(repository: repository, settings: settings);
+    fade = FadeSettings(
+      settings: settings,
+      blocked: () => takeLocked,
+      sessionBlocked: () => fxPersistence.sessionTransitionActive,
+    );
     power = PowerOffCubit(
       flush: prepareShutdown,
       pedalGoodbye: pedal.goodbye,
@@ -94,6 +100,7 @@ class AppRuntime {
         playback: playback,
         record: record,
         timing: timing,
+        fade: fade,
       ),
       exportDirectory: exportDirectory,
       currentPedalBindings: () => control.state.bindings.encode(),
@@ -117,6 +124,7 @@ class AppRuntime {
   late final PlaybackSettings playback;
   late final RecordSettings record;
   late final RecordTimingSettings timing;
+  late final FadeSettings fade;
 
   /// Single transport, controller, session and shutdown actors.
   late final LooperBloc looper;
@@ -140,6 +148,7 @@ class AppRuntime {
       playback.load(),
       record.load(),
       timing.load(),
+      fade.load(),
       control.load(),
     ]).then((_) {});
   }
@@ -165,6 +174,9 @@ class AppRuntime {
       if (!retry) rethrow;
     }
     if (retry) {
+      if (!await fade.recover()) {
+        throw StateError('Fade duration settings still need recovery');
+      }
       final mixResult = await mix.recover();
       if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);
       final click = await tempo.recoverClickVolume();
@@ -199,6 +211,7 @@ class AppRuntime {
         retireControls: true,
       );
     }
+    await fade.flush();
     await fxPersistence.flush();
     final receipt = Completer<void>();
     looper.add(LooperPersistFlush(receipt: receipt));
@@ -261,6 +274,7 @@ class AppRuntime {
       // UI teardown starts debounced saves; confirm them while their owners
       // and the repository still live. A failure must not skip disposal.
       fxPersistence.flush,
+      fade.close,
       timing.close,
       record.close,
       playback.close,

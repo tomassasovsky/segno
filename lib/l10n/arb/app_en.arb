@@ -5894,5 +5894,8 @@
     "fxMutedInMixer": "Muted in Mixer",
     "@fxMutedInMixer": {
         "description": "Live input Effects cue when the independent Mixer mute remains enabled; Hear live stays unchanged."
-    }
+    },
+    "fadeSettingsRecoveryTitle": "Fade duration needs recovery",
+    "fadeSettingsRefusedTitle": "Fade duration change was not saved",
+    "fadeSettingsRecoveryBody": "Retry to recover the Fade duration settings."
 }

@@ -869,6 +869,65 @@ void main() {
       expect(savedAtHalt, saved);
     });
 
+    for (final recovery in ['Retry', 'Session', 'Power']) {
+      testWidgets(
+        'Fade startup notice resolves through $recovery',
+        (tester) async {
+          final store = FakeKeyValueStore()
+            ..values['looper.fade_durations'] =
+                '{"defaultMs":501,"overrides":{}}';
+          settings = SettingsRepository(store: store);
+          final bundles = _NoticeSessionRepository();
+          sessionRepository = bundles;
+          var halted = false;
+          await pumpApp(
+            tester,
+            NoopWaveformWindowService(),
+            powerOff: () async => halted = true,
+          );
+          expect(find.text('Fade duration needs recovery'), findsOneWidget);
+          if (recovery == 'Session') {
+            final context = tester.element(find.byType(TracksView));
+            bundles.readRelease.complete();
+            final loading = context.read<SessionCubit>().loadNamed(
+              'Replacement',
+            );
+            await tester.pumpAndSettle();
+            await loading;
+            expect(
+              context.read<SessionCubit>().state.outcome,
+              SessionOutcome.loaded,
+            );
+          } else if (recovery == 'Power') {
+            final context = tester.element(find.byType(TracksView));
+            final power = context.read<PowerOffCubit>()
+              ..press(const PowerOffSnapshot());
+            await tester.pumpAndSettle();
+            expect(halted, isFalse);
+            store.values.remove('looper.fade_durations');
+            power.retryPowerOff(const PowerOffSnapshot());
+            await tester.pumpAndSettle();
+            await tester.pump(const Duration(seconds: 6));
+            expect(halted, isTrue);
+          } else {
+            store.values.remove('looper.fade_durations');
+            await tester.tap(
+              find.descendant(
+                of: find.byKey(const Key(AppToastId.fadeSettings)),
+                matching: find.text('Retry'),
+              ),
+            );
+            await tester.pumpAndSettle();
+          }
+          expect(find.text('Fade duration needs recovery'), findsNothing);
+          expect(debugAppToastActive(AppToastId.fadeSettings), isFalse);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+          expect(debugAppToastActive(AppToastId.fadeSettings), isFalse);
+        },
+      );
+    }
+
     testWidgets('power off waits for an ordinary Click preference', (
       tester,
     ) async {

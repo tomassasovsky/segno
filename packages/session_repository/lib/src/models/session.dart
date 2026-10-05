@@ -712,6 +712,8 @@ class Session {
     this.primaryTrack = -1,
     this.defaultOneShot = false,
     this.defaultLengthPresetBars = 0,
+    this.defaultFadeDurationMs = 4000,
+    this.trackFadeDurationOverrides = const {},
     this.trackRecordTimingOverrides = const {},
     this.trackOverdubDecayOverrides = const {},
     this.trackOneShotOverrides = const {},
@@ -781,6 +783,10 @@ class Session {
       countInBars: (json['countInBars'] as num).toInt(),
       looperMode: _readEnum(json['looperMode'], LooperMode.values),
       primaryTrack: (json['primaryTrack'] as num).toInt(),
+      defaultFadeDurationMs: _fadeDuration(json['defaultFadeDurationMs']),
+      trackFadeDurationOverrides: _fadeOverrides(
+        json['trackFadeDurationOverrides'],
+      ),
       defaultOneShot: json['defaultOneShot'] as bool,
       defaultLengthPresetBars: (json['defaultLengthPresetBars'] as num).toInt(),
       trackRecordTimingOverrides: _readOverrides(
@@ -826,7 +832,7 @@ class Session {
   }
 
   /// The current manifest schema stores per-track settings and all FX stages.
-  static const int formatVersion = 9;
+  static const int formatVersion = 10;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -925,6 +931,12 @@ class Session {
   /// Default length for future recordings: zero is Auto, otherwise bars.
   final int defaultLengthPresetBars;
 
+  /// Full-travel Fade time for tracks inheriting Default.
+  final int defaultFadeDurationMs;
+
+  /// Explicit Custom durations in milliseconds, including equality to Default.
+  final Map<int, int> trackFadeDurationOverrides;
+
   /// Explicit record timing choices, including choices equal to the default.
   final Map<int, RecordTiming> trackRecordTimingOverrides;
 
@@ -1019,6 +1031,10 @@ class Session {
     'primaryTrack': primaryTrack,
     'defaultOneShot': defaultOneShot,
     'defaultLengthPresetBars': defaultLengthPresetBars,
+    'defaultFadeDurationMs': defaultFadeDurationMs,
+    'trackFadeDurationOverrides': {
+      for (final e in trackFadeDurationOverrides.entries) '${e.key}': e.value,
+    },
     'trackRecordTimingOverrides': {
       for (final entry in trackRecordTimingOverrides.entries)
         '${entry.key}': entry.value.name,
@@ -1086,6 +1102,11 @@ class Session {
           _listEquals(trackChains, other.trackChains) &&
           defaultOneShot == other.defaultOneShot &&
           defaultLengthPresetBars == other.defaultLengthPresetBars &&
+          defaultFadeDurationMs == other.defaultFadeDurationMs &&
+          _mapEquals(
+            trackFadeDurationOverrides,
+            other.trackFadeDurationOverrides,
+          ) &&
           syncTempo == other.syncTempo &&
           recDub == other.recDub &&
           autoRecord == other.autoRecord &&
@@ -1149,6 +1170,8 @@ class Session {
     _mapHash(trackOverdubDecayOverrides),
     _mapHash(trackOneShotOverrides),
     _mapHash(trackLengthPresetOverrides),
+    defaultFadeDurationMs,
+    _mapHash(trackFadeDurationOverrides),
     _mapHash(trackPans),
     _mapHash(trackLevels),
     _laneMapHash(laneInputs),
@@ -1284,4 +1307,29 @@ List<SessionOutputChain> _readOutputChains(Object? value) {
     throw const FormatException('duplicate output chain destination');
   }
   return chains;
+}
+
+int _fadeDuration(Object? value) {
+  if (value is! int || value < 500 || value > 30000 || value % 500 != 0) {
+    throw const FormatException('Invalid Fade duration');
+  }
+  return value;
+}
+
+Map<int, int> _fadeOverrides(Object? value) {
+  if (value is! Map<String, dynamic>) {
+    throw const FormatException('Missing or invalid Fade overrides');
+  }
+  return Map.unmodifiable({
+    for (final entry in value.entries)
+      _fadeChannel(entry.key): _fadeDuration(entry.value),
+  });
+}
+
+int _fadeChannel(String key) {
+  final channel = int.tryParse(key);
+  if (channel == null || channel < 0 || channel > 7 || '$channel' != key) {
+    throw const FormatException('Invalid Fade track');
+  }
+  return channel;
 }
