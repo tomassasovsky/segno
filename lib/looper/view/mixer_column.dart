@@ -835,24 +835,40 @@ class _StripPanBarState extends State<_StripPanBar> {
 
 /// The level's caption: the word and the gain the marker below is at.
 class _StripGainCaption extends StatelessWidget {
-  const _StripGainCaption({required this.volume, required this.channel});
+  const _StripGainCaption({
+    required this.volume,
+    required this.channel,
+    required this.fade,
+  });
 
   final double volume;
   final int channel;
+
+  /// The saved level stays the readout; an attenuating Fade replaces only the
+  /// caption, so the number never pretends to be the audible level.
+  final FadeImage fade;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
+    final cue = fade.amount != fade.target
+        ? l10n.mixerFading
+        : fade.amount <= 0
+        ? l10n.footFadeFadedOut
+        : fade.amount < 1
+        ? l10n.mixerFadeLevel((fade.amount * 100).round())
+        : null;
     return ShrinkToWidth(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           AppText(
-            l10n.mixerLevel,
+            cue ?? l10n.mixerLevel,
+            key: Key('mixer_gain_caption_$channel'),
             style: TextStyle(
               fontFamily: SurfaceTheme.displayFont,
-              color: surface.textSecondary,
+              color: cue == null ? surface.textSecondary : surface.warning,
               fontSize: 22,
               height: 1,
             ),
@@ -1010,7 +1026,11 @@ class _StripMeterState extends State<_StripMeter> {
       children: [
         SizedBox(
           height: MixerColumn._captionHeight,
-          child: _StripGainCaption(volume: gain, channel: channel),
+          child: _StripGainCaption(
+            volume: gain,
+            channel: channel,
+            fade: widget.track.fade,
+          ),
         ),
         const SizedBox(height: MixerColumn._captionGap),
         Expanded(

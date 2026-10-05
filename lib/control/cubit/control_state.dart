@@ -20,6 +20,8 @@ class ControlState extends Equatable {
     this.pedalSetupRuntimeUnsaved = false,
     this.footMixer = const FootMixerSelection(),
     this.footMixerFailure = 0,
+    this.footFade = const FootFadeSelection(),
+    this.footFadeFailure = 0,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -106,6 +108,12 @@ class ControlState extends Equatable {
 
   /// Repeated failed Mixer mute actions notify the current flow once each.
   final int footMixerFailure;
+
+  /// Transient Fade time selection; the visible bank is [activeBank].
+  final FootFadeSelection footFade;
+
+  /// Each refused Fade gesture notifies the current flow once.
+  final int footFadeFailure;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -218,6 +226,8 @@ class ControlState extends Equatable {
     bool? pedalSetupRuntimeUnsaved,
     FootMixerSelection? footMixer,
     int? footMixerFailure,
+    FootFadeSelection? footFade,
+    int? footFadeFailure,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -248,6 +258,8 @@ class ControlState extends Equatable {
         pedalSetupPersistenceUncertain ?? this.pedalSetupPersistenceUncertain,
     footMixer: footMixer ?? this.footMixer,
     footMixerFailure: footMixerFailure ?? this.footMixerFailure,
+    footFade: footFade ?? this.footFade,
+    footFadeFailure: footFadeFailure ?? this.footFadeFailure,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -280,6 +292,8 @@ class ControlState extends Equatable {
     pedalSetupRuntimeUnsaved,
     footMixer,
     footMixerFailure,
+    footFade,
+    footFadeFailure,
     cursor,
     activeBank,
     excluded,
