@@ -38,6 +38,7 @@ void main() {
     () async {
       final empty = EngineSnapshot(
         isRunning: true,
+        devicePresent: true,
         sampleRate: 48000,
         bufferFrames: 128,
         framesProcessed: 0,

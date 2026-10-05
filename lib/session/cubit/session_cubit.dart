@@ -236,6 +236,14 @@ class SessionCubit extends Cubit<SessionState> {
             await _repository.bundlePath(name),
           );
           final rig = rigFromBundle(bundle);
+          if (rig.tracks.isNotEmpty) {
+            final live = _looper.state;
+            if (!live.transport.isRunning || !live.status.devicePresent) {
+              throw StateError(
+                'audio device must be running before session load',
+              );
+            }
+          }
           final candidate = MixSettingsSnapshot.fromRig(rig);
           if (!candidate.isValid) throw StateError('session mix is invalid');
           final disarmed = await _performance.disarmAndFinalize();
@@ -303,10 +311,15 @@ class SessionCubit extends Cubit<SessionState> {
               }
               rethrow;
             }
+            // Keep transport admission closed across apply and boot storage.
+            // The callback continues processing the imported, stopped tracks.
+            _looper.blockStartForSessionBoot();
             try {
               await _looper.applySession(rig);
             } on Object {
-              _looper.stopEngine();
+              _looper
+                ..stopEngine()
+                ..clearSessionBootStartBlock();
               final rollback = await _mixSettings.rollbackExclusive(
                 device: device,
                 checkpoint: checkpoint,
@@ -317,7 +330,6 @@ class SessionCubit extends Cubit<SessionState> {
               rethrow;
             }
             applied = true;
-            _looper.blockStartForSessionBoot();
             _pendingLoadedName = loadedName;
             _pendingLoadedBindings = bundle.session.pedalBindings;
             _pendingLoadedSessions = sessions;

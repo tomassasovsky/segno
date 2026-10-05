@@ -54,6 +54,22 @@ class _WriteThenThrowPersistence implements MixSettingsPersistence {
   }
 }
 
+class _BootStore extends FakeKeyValueStore {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  bool fail = false;
+
+  @override
+  Future<void> setString(String key, String value) async {
+    if (key == 'all_tracks_fx_chain') {
+      if (!entered.isCompleted) entered.complete();
+      await release.future;
+      if (fail) throw StateError('boot storage refused');
+    }
+    await super.setString(key, value);
+  }
+}
+
 const _session = Session(
   sampleRate: 48000,
   channels: 1,
@@ -536,6 +552,138 @@ void main() {
         ),
       ).thenAnswer((_) async => _session);
     }
+
+    blocTest<SessionCubit, SessionState>(
+      'audio load without processing refuses before disarm or storage',
+      setUp: () {
+        stubCatalog();
+        mixPersistence = _WriteThenThrowPersistence();
+        when(() => repository.read(any())).thenAnswer(
+          (_) async => (
+            session: const Session(
+              sampleRate: 48000,
+              channels: 1,
+              baseLengthFrames: 128,
+              tracks: [
+                SessionTrack(
+                  channel: 0,
+                  multiple: 1,
+                  lengthFrames: 128,
+                  lanes: [
+                    SessionLane(
+                      lane: 0,
+                      volume: 1,
+                      muted: false,
+                      outputMask: 1,
+                      inputChannel: 0,
+                      layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            laneStems: {
+              (0, 0): [Float32List(128)],
+            },
+          ),
+        );
+      },
+      build: build,
+      act: (cubit) => cubit.loadNamed('A'),
+      verify: (cubit) {
+        expect(cubit.state.status, SessionStatus.failure);
+        expect(
+          cubit.state.errorMessage,
+          contains('audio device must be running'),
+        );
+        expect(
+          (mixPersistence as _WriteThenThrowPersistence).durable,
+          'previous mix',
+        );
+        expect((mixPersistence as _WriteThenThrowPersistence).restores, 0);
+        verifyNever(performance.disarmAndFinalize);
+        verifyNever(() => looper.applySession(any()));
+        verifyNever(looper.blockStartForSessionBoot);
+        verifyNever(looper.stopEngine);
+        expect(fxPersistence.sessionTransitionActive, isFalse);
+      },
+    );
+
+    for (final failBoot in [false, true]) {
+      late _BootStore boot;
+      var blocked = false;
+      blocTest<SessionCubit, SessionState>(
+        'boot admission remains held through persistence and retry '
+        'fail=$failBoot',
+        setUp: () {
+          stubCatalog();
+          blocked = false;
+          boot = _BootStore()..fail = failBoot;
+          settings = SettingsRepository(store: boot);
+          when(
+            looper.blockStartForSessionBoot,
+          ).thenAnswer((_) => blocked = true);
+          when(
+            looper.clearSessionBootStartBlock,
+          ).thenAnswer((_) => blocked = false);
+          when(() => repository.read(any())).thenAnswer(
+            (_) async => (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          );
+          when(() => looper.applySession(any())).thenAnswer((_) async {
+            expect(blocked, isTrue);
+          });
+        },
+        build: build,
+        act: (cubit) async {
+          final load = cubit.loadNamed('A');
+          await boot.entered.future;
+          expect(blocked, isTrue);
+          expect(cubit.state.status, SessionStatus.working);
+          boot.release.complete();
+          await load;
+          expect(blocked, failBoot);
+          if (failBoot) {
+            expect(cubit.state.bootRecoveryRequired, isTrue);
+            verify(looper.stopEngine).called(1);
+            boot.fail = false;
+            await cubit.retryLoadedSession();
+          }
+        },
+        verify: (cubit) {
+          expect(blocked, isFalse);
+          expect(cubit.state.outcome, SessionOutcome.loaded);
+          verify(() => looper.applySession(any())).called(1);
+          expect(fxPersistence.sessionTransitionActive, isFalse);
+        },
+      );
+    }
+
+    blocTest<SessionCubit, SessionState>(
+      'failed apply cancels its boot admission block',
+      setUp: () {
+        stubCatalog();
+        when(() => repository.read(any())).thenAnswer(
+          (_) async =>
+              (session: _session, laneStems: <(int, int), List<Float32List>>{}),
+        );
+        when(() => looper.applySession(any())).thenThrow(StateError('refused'));
+      },
+      build: build,
+      act: (cubit) => cubit.loadNamed('A'),
+      verify: (cubit) {
+        expect(cubit.state.status, SessionStatus.failure);
+        verifyInOrder([
+          looper.blockStartForSessionBoot,
+          () => looper.applySession(any()),
+          looper.stopEngine,
+          looper.clearSessionBootStartBlock,
+        ]);
+        expect(fxPersistence.sessionTransitionActive, isFalse);
+      },
+    );
 
     test('load closes control admission before the catalog read', () async {
       stubCatalog();

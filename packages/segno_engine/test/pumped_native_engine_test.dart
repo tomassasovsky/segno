@@ -514,7 +514,7 @@ void main() {
     engine.pump(frames: 0);
 
     final s = engine.snapshot();
-    expect(s.tracks.first.state, TrackState.playing);
+    expect(s.tracks.first.state, TrackState.stopped);
     expect(s.tracks.first.laneCount, 2);
     expect(engine.exportTrackLane(0, 0), everyElement(closeTo(0.5, 1e-6)));
     expect(engine.exportTrackLane(0, 1), everyElement(closeTo(-0.25, 1e-6)));
@@ -622,7 +622,7 @@ void main() {
     engine.pump(frames: 0);
 
     s = engine.snapshot();
-    expect(s.tracks.first.state, TrackState.playing);
+    expect(s.tracks.first.state, TrackState.stopped);
     expect(s.tracks.first.undoDepth, 1);
     expect(s.tracks.first.redoDepth, 1);
 

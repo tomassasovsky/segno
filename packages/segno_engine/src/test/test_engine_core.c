@@ -3697,6 +3697,7 @@ static void test_seam_capture_cleared_by_reconfigure(void) {
   for (int i = 0; i < N; ++i) stem[i] = (float)(0.25 * sin(0.001 * (double)i));
   CHECK(le_engine_import_track(e, 1, stem, N) == LE_OK);
   CHECK(le_engine_commit_session(e, N, 0) == LE_OK);
+  CHECK(le_engine_play(e, 1) == LE_OK);
   drain(e);
   feed_const(e, 1.0f, 1024, NULL, NULL);
   drain(e);
@@ -5237,6 +5238,7 @@ static void test_session_import_restores_musical_grid_without_resizing(void) {
   pcm[2345] = 0.5f;
   CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 3500) == LE_OK);
   CHECK(le_engine_commit_session(e, 3500, 1) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_snapshot snapshot;
   le_engine_get_snapshot(e, &snapshot);
@@ -5286,6 +5288,7 @@ static void test_session_import_preserves_actual_bar_count(void) {
     CHECK(le_engine_restore_tempo(e, saved.tempo_bpm, saved.tempo_source) == LE_OK);
     CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 100) == LE_OK);
     CHECK(le_engine_commit_session(e, 100, saved.loop_bars) == LE_OK);
+    CHECK(le_engine_play(e, 0) == LE_OK);
     tg_advance(e, 1);
     le_snapshot restored;
     le_engine_get_snapshot(e, &restored);
@@ -14735,6 +14738,7 @@ static void test_multi_lane_long_loop_dub_roundtrip(void) {
   }
   CHECK(le_engine_finalize_layers(e, 0, depth, 0) == LE_OK);
   CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].lane_count == 2);
@@ -15538,6 +15542,7 @@ static void test_session_export_import_roundtrip(void) {
   CHECK(le_engine_import_track(e, 0, stem0, LOOP_N) == LE_OK);
   CHECK(le_engine_import_track(e, 1, stem1, 2 * LOOP_N) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
 
   le_engine_get_snapshot(e, &s);
@@ -15657,6 +15662,7 @@ static void test_import_track_lane_multi_lane_roundtrip(void) {
   CHECK(le_engine_import_track_lane(e, 0, 0, lane0, LOOP_N) == LE_OK);
   CHECK(le_engine_import_track_lane(e, 0, 1, lane1, LOOP_N) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
 
   le_engine_get_snapshot(e, &s);
@@ -15742,6 +15748,7 @@ static void test_layer_export_import_roundtrip(void) {
   }
   CHECK(le_engine_finalize_layers(e, 0, 1, 1) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
 
   le_engine_get_snapshot(e, &s);
@@ -15841,6 +15848,7 @@ static void test_layer_multi_lane_roundtrip(void) {
   }
   CHECK(le_engine_finalize_layers(e, 0, 1, 0) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].lane_count == 2);
@@ -15896,6 +15904,7 @@ static void test_layer_overdub_after_reload_no_corruption(void) {
   }
   CHECK(le_engine_finalize_layers(e, 0, 1, 1) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
@@ -15966,6 +15975,7 @@ static void test_layer_reconstruct_two_redo(void) {
   }
   CHECK(le_engine_finalize_layers(e, 0, 1, 2) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
 
   le_engine_get_snapshot(e, &s);
@@ -16747,6 +16757,7 @@ static void test_record_image_fresh_capture_admits_first_shadow(void) {
         CHECK(le_engine_import_track(e, 1, pcm, 1024) == LE_OK);
       }
       CHECK(le_engine_commit_session(e, 1024, 0) == LE_OK);
+      CHECK(le_engine_play(e, 0) == LE_OK);
       CHECK(le_engine_set_track_multiple(e, 1, 1) == LE_OK);
       CHECK(le_engine_set_lane_input(e, 1, 0, 0) == LE_OK);
       drain(e);
@@ -16832,6 +16843,7 @@ static void test_record_image_grid_clear_is_in_capture_batch(void) {
         for (int i = 0; i < original_frames; ++i) pcm[i] = .3f;
         CHECK(le_engine_import_track(e, 0, pcm, original_frames) == LE_OK);
         CHECK(le_engine_commit_session(e, original_frames, 0) == LE_OK);
+        CHECK(le_engine_play(e, 0) == LE_OK);
         drain(e);
       }
       /* Leave CANCEL_TAKE / UNDO_TO_EMPTY unapplied. The next capture must
@@ -16969,6 +16981,7 @@ static void test_record_image_deferred_shadow_survives_until_capture(void) {
       for (int i = 0; i < 1024; ++i) pcm[i] = .4f;
       CHECK(le_engine_import_track(e, 1, pcm, 1024) == LE_OK);
       CHECK(le_engine_commit_session(e, 1024, 0) == LE_OK);
+      CHECK(le_engine_play(e, 1) == LE_OK);
       drain(e);
       CHECK(e->tracks[1].pending_capture_shadow == 0);
       CHECK(le_engine_export_track(e, 1, pcm, 1024) == 1024);
@@ -28039,6 +28052,7 @@ static le_engine* recipe_boundary_engine(int mode) {
     for (int i = 0; i < 4096; ++i) samples[i] = .2f;
     CHECK(le_engine_import_track_lane(e, 0, 0, samples, 4096) == LE_OK);
     CHECK(le_engine_commit_session(e, 4096, 0) == LE_OK);
+    CHECK(le_engine_play(e, 0) == LE_OK);
     drain(e);
   }
   le_fx_recipe old = test_drive_recipe(.25f);
@@ -32122,6 +32136,7 @@ static void test_session_import_round_trips_recoverable(void) {
   CHECK(le_engine_import_track_lane(e, 0, 0, pcm, LOOP_N) == LE_OK);
   CHECK(le_engine_import_track_lane(e, 0, 1, pcm, LOOP_N) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
   CHECK(lane_recoverable(e, 0) == 1);
   CHECK(lane_recoverable(e, 1) == 1);
@@ -32879,9 +32894,36 @@ static void test_record_start_owned_cancel_survives_queued_pair(void) {
   }
 }
 
+static void test_session_commit_stays_stopped_until_play(void) {
+  printf("test_session_commit_stays_stopped_until_play\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 8000, 1, 1, 2048) == LE_OK);
+  float pcm[128], input[256] = {0}, output[256];
+  for (int i = 0; i < 128; ++i) pcm[i] = .5f;
+  CHECK(le_engine_import_track(e, 0, pcm, 128) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, pcm, 128) == LE_OK);
+  CHECK(le_engine_commit_session(e, 128, 0) == LE_OK);
+  le_engine_process(e, output, input, 256);
+  for (int i = 0; i < 256; ++i) CHECK(output[i] == 0);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 128);
+  CHECK(s.master_position_frames == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  le_engine_process(e, output, input, 256);
+  for (int i = 0; i < 256; ++i) CHECK(fabsf(output[i] - 1.0f) < 1e-6f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  le_engine_destroy(e);
+}
+
 #include "test_engine_fade.h"
 
 int main(void) {
+  test_session_commit_stays_stopped_until_play();
   test_fade_samples();
   test_fade_retrigger_and_stopped();
   test_fade_images_and_receipts();
