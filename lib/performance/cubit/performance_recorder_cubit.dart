@@ -515,10 +515,17 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     );
     if (!progress.done) return;
     _renderPoller?.cancel();
-    unawaited(_finishRender(dir).whenComplete(completer.complete));
+    unawaited(
+      _finishRender(
+        dir,
+        renderFailed: progress.failed,
+      ).whenComplete(completer.complete),
+    );
   }
 
-  Future<void> _finishRender(String dir) async {
+  /// [renderFailed]: the worker could not use the manifest at all, so there
+  /// are no track results to inspect; the captured bundle and master stay.
+  Future<void> _finishRender(String dir, {bool renderFailed = false}) async {
     // A full volume must not take the capture down with it. Observed on the
     // appliance: `writeFrom failed ... No space left on device` escaped
     // _writeDawExports, and because it is awaited on this method's FIRST line
@@ -538,7 +545,9 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       tracks = const [];
     }
     _captureDir = null;
-    final anyFailed = _performance.renderTrackStatuses.any((s) => !s.succeeded);
+    final anyFailed =
+        renderFailed ||
+        _performance.renderTrackStatuses.any((s) => !s.succeeded);
     final manifest = _readManifest(dir);
     final stoppedEarly = _stopReason ?? _stopReasonOf(manifest);
     _stopReason = null;

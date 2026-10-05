@@ -38,6 +38,7 @@
 #include "perf_render.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,12 +63,6 @@
 /* ---- tuning ---- */
 #define LE_PR_PATH_MAX 960
 #define LE_PR_FULL_PATH_MAX (LE_PR_PATH_MAX + 64)
-/* 8192 for the snapshots, plus room for a full layer manifest: the drain
- * lists up to LE_LAYER_STAGING_RING_CAPACITY entries of ~12 nodes each, which
- * a fixed 8192 could not parse past ~650 retired layers. Heap, render-thread
- * only, allocated once per render. */
-#define LE_PR_JSON_ARENA_NODES \
-  (8192 + 16 * (int)LE_LAYER_STAGING_RING_CAPACITY)
 #define LE_PR_EVENTS_ENTRY_BYTES 28 /* matches perf_drain.c's on-disk layout,
                                     * docs/design/performance-event-log-format.md */
 #define LE_PR_MAX_SEGMENTS 4096 /* per-track content-source transitions; a
@@ -150,6 +145,7 @@ struct le_perf_render {
   _Atomic int done;
   _Atomic int progress_pct;
   _Atomic int track_count; /* number of valid entries in results[] so far */
+  _Atomic int32_t result;  /* terminal LE_* status, valid once done == 1 */
 
   le_pr_track_result results[LE_MAX_TRACKS];
 
@@ -331,33 +327,62 @@ typedef struct le_pr_manifest {
   uint32_t output_enabled_mask;
 } le_pr_manifest;
 
-static int le_pr_load_manifest(const char* dir, char** out_text,
-                               le_json_arena* arena, le_json_value** out_root,
-                               le_pr_manifest* out) {
+/* Loads and validates performance.json. Returns LE_OK, LE_ERR_INVALID for a
+ * missing, short, unparseable or invalid manifest, or LE_ERR_DEVICE when the
+ * worker cannot allocate. The parser arena is sized from the complete text:
+ * every JSON value after the root follows a ':' (object member), a '['
+ * (first array element) or a ',' (later element/member), so counting those
+ * bytes bounds the node count without a second parser (punctuation inside
+ * strings only overestimates). arena->nodes is owned by the caller even on
+ * failure. */
+static int32_t le_pr_load_manifest(const char* dir, char** out_text,
+                                   le_json_arena* arena,
+                                   le_json_value** out_root,
+                                   le_pr_manifest* out) {
   char path[LE_PR_FULL_PATH_MAX];
   snprintf(path, sizeof(path), "%s/performance.json", dir);
   FILE* f = fopen(path, "rb");
-  if (f == NULL) return 0;
-  fseek(f, 0, SEEK_END);
-  const long size = ftell(f);
-  fseek(f, 0, SEEK_SET);
-  if (size <= 0) {
+  if (f == NULL) return LE_ERR_INVALID;
+  long size = -1;
+  if (fseek(f, 0, SEEK_END) == 0) size = ftell(f);
+  if (size <= 0 || (unsigned long)size >= (unsigned long)SIZE_MAX ||
+      fseek(f, 0, SEEK_SET) != 0) {
     fclose(f);
-    return 0;
+    return LE_ERR_INVALID;
   }
   char* text = (char*)malloc((size_t)size + 1);
   if (text == NULL) {
     fclose(f);
-    return 0;
+    return LE_ERR_DEVICE;
   }
   const size_t got = fread(text, 1, (size_t)size, f);
   fclose(f);
+  if (got != (size_t)size) { /* a short read is not a complete manifest */
+    free(text);
+    return LE_ERR_INVALID;
+  }
   text[got] = '\0';
+
+  size_t nodes = 1;
+  for (size_t i = 0; i < got; ++i) {
+    nodes += text[i] == ':' || text[i] == ',' || text[i] == '[';
+  }
+  if (nodes > (size_t)INT_MAX || nodes > SIZE_MAX / sizeof(le_json_value)) {
+    free(text);
+    return LE_ERR_INVALID;
+  }
+  arena->nodes = (le_json_value*)malloc(nodes * sizeof(le_json_value));
+  arena->capacity = (int)nodes;
+  arena->used = 0;
+  if (arena->nodes == NULL) {
+    free(text);
+    return LE_ERR_DEVICE;
+  }
 
   le_json_value* root = le_json_parse(text, arena);
   if (root == NULL) {
     free(text);
-    return 0;
+    return LE_ERR_INVALID;
   }
 
   out->sample_rate = (int32_t)le_json_number(le_json_get(root, "sample_rate"), 0);
@@ -367,7 +392,7 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
   const le_json_value* policy = le_json_get(arm, "followOutput");
   if (policy == NULL || policy->type != LE_JSON_BOOL) {
     free(text);
-    return 0;
+    return LE_ERR_INVALID;
   }
   /* The master phase anchor is NOT read from armSnapshot any more — the
    * PERF_ARMED fact in events.log supplies it (#262). le_pr_fill_perf_armed
@@ -384,7 +409,7 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
       bus_number < 0 || bus_number >= LE_MAX_OUTPUT_BUSES ||
       floor(bus_number) != bus_number)) {
     free(text);
-    return 0;
+    return LE_ERR_INVALID;
   }
   out->arm_capture_bus = (int32_t)bus_number;
   const le_json_value* mask = le_json_get(arm, "captureMask");
@@ -393,13 +418,13 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
       mask_number < 1 || mask_number > UINT32_MAX ||
       floor(mask_number) != mask_number) {
     free(text);
-    return 0;
+    return LE_ERR_INVALID;
   }
   out->capture_mask = (uint32_t)mask_number;
   const uint32_t selected_pair = 3u << (2 * out->arm_capture_bus);
   if ((out->capture_mask & ~selected_pair) != 0) {
     free(text);
-    return 0;
+    return LE_ERR_INVALID;
   }
   const le_json_value* level = le_json_get(arm, "outputLevel");
   const double level_number = le_json_number(level, 1);
@@ -413,7 +438,7 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
         !isfinite(enabled_number) || enabled_number < 0 ||
         enabled_number > UINT32_MAX || floor(enabled_number) != enabled_number))) {
     free(text);
-    return 0;
+    return LE_ERR_INVALID;
   }
   out->arm_output_level = (float)level_number;
   out->arm_output_muted = le_json_bool(muted, 0);
@@ -421,7 +446,7 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
   out->arm_output = arm;
   *out_text = text;
   *out_root = root;
-  return 1;
+  return LE_OK;
 }
 
 /* Finds channel `channel`'s track entry within a `tracks` array (either
@@ -1518,14 +1543,11 @@ static void le_pr_worker_main(void* arg) {
 
   char* text = NULL;
   le_json_value* root = NULL;
-  le_json_value* arena_nodes =
-      (le_json_value*)malloc((size_t)LE_PR_JSON_ARENA_NODES * sizeof(le_json_value));
-  le_json_arena arena = {.nodes = arena_nodes,
-                        .capacity = LE_PR_JSON_ARENA_NODES,
-                        .used = 0};
+  le_json_arena arena = {0};
   le_pr_manifest manifest = {0};
-  int loaded = arena_nodes != NULL &&
-              le_pr_load_manifest(r->capture_dir, &text, &arena, &root, &manifest);
+  const int32_t status =
+      le_pr_load_manifest(r->capture_dir, &text, &arena, &root, &manifest);
+  const int loaded = status == LE_OK;
 
   le_pr_log_entry* log = NULL;
   int log_count = loaded ? le_pr_load_log(r->capture_dir, &log) : 0;
@@ -1649,8 +1671,11 @@ static void le_pr_worker_main(void* arg) {
   free(master_accum);
   free(log);
   free(text);
-  free(arena_nodes);
+  free(arena.nodes);
 
+  /* An unusable manifest is a failed render, not a valid empty one: publish
+   * the terminal status before `done`, whose release orders it for pollers. */
+  atomic_store_explicit(&r->result, status, memory_order_relaxed);
   atomic_store_explicit(&r->progress_pct, 100, memory_order_relaxed);
   atomic_store_explicit(&r->done, 1, memory_order_release);
 }
@@ -1701,16 +1726,16 @@ int32_t le_perf_render_poll(le_engine* engine, int32_t* done,
     if (track_count != NULL) *track_count = 0;
     return LE_OK;
   }
-  if (done != NULL) {
-    *done = atomic_load_explicit(&r->done, memory_order_acquire);
-  }
+  const int finished = atomic_load_explicit(&r->done, memory_order_acquire);
+  if (done != NULL) *done = finished;
   if (progress_pct != NULL) {
     *progress_pct = atomic_load_explicit(&r->progress_pct, memory_order_relaxed);
   }
   if (track_count != NULL) {
     *track_count = atomic_load_explicit(&r->track_count, memory_order_acquire);
   }
-  return LE_OK;
+  return finished ? atomic_load_explicit(&r->result, memory_order_relaxed)
+                  : LE_OK;
 }
 
 int32_t le_perf_render_track_status(le_engine* engine, int32_t index,
