@@ -9,6 +9,7 @@ import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// A present target can be temporarily locked without losing its identity.
 enum ControlEditBlock {
@@ -27,6 +28,7 @@ class ControlAvailability {
     this.clickVolume,
     this.clickModeSnapshot,
     this.decaySnapshot,
+    this.fadeDurations,
     this.oneShotSnapshot,
     this.recordLengthSnapshot,
     this.recordStartSnapshot,
@@ -37,6 +39,7 @@ class ControlAvailability {
   final double? clickVolume;
   final ClickModeSnapshot? clickModeSnapshot;
   final DecaySnapshot? decaySnapshot;
+  final FadeDurations? fadeDurations;
   final OneShotSnapshot? oneShotSnapshot;
   final RecordLengthSnapshot? recordLengthSnapshot;
   final RecordStartSnapshot? recordStartSnapshot;
@@ -46,6 +49,7 @@ class ControlAvailability {
     clickVolume: clickVolume,
     clickModeSnapshot: clickModeSnapshot,
     decaySnapshot: decaySnapshot,
+    fadeDurations: fadeDurations,
     oneShotSnapshot: oneShotSnapshot,
     recordLengthSnapshot: recordLengthSnapshot,
     recordStartSnapshot: recordStartSnapshot,
@@ -58,6 +62,7 @@ class ControlAvailability {
       clickVolume: clickVolume,
       clickModeSnapshot: clickModeSnapshot,
       decaySnapshot: decaySnapshot,
+      fadeDurations: fadeDurations,
       oneShotSnapshot: oneShotSnapshot,
       recordLengthSnapshot: recordLengthSnapshot,
       recordStartSnapshot: recordStartSnapshot,
@@ -95,6 +100,7 @@ class ControlAvailability {
     clickVolume: clickVolume,
     clickModeSnapshot: clickModeSnapshot,
     decaySnapshot: decaySnapshot,
+    fadeDurations: fadeDurations,
     oneShotSnapshot: oneShotSnapshot,
     recordLengthSnapshot: recordLengthSnapshot,
     recordStartSnapshot: recordStartSnapshot,

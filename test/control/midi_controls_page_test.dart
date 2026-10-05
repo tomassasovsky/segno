@@ -25,6 +25,7 @@ import 'package:segno/control/view/midi_controls/midi_segmented.dart';
 import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
@@ -305,8 +306,10 @@ void main() {
     timing = RecordTimingCubit(settings: timingOwner);
     addTearDown(() => unawaited(timing.close()));
     await timingOwner.load();
+    final fade = testFadeSettings();
+    addTearDown(() => unawaited(fade.close()));
     control = ControlCubit(
-      fadeSettings: testFadeSettings(),
+      fadeSettings: fade,
       looper: looper,
       clickVolumeControl: tempo,
       clickModeControl: tempo,
@@ -329,8 +332,11 @@ void main() {
     addTearDown(() => unawaited(midi.close()));
     await control.load();
     await tester.pumpWidget(
-      RepositoryProvider<LooperRepository>.value(
-        value: looper,
+      MultiRepositoryProvider(
+        providers: [
+          RepositoryProvider<LooperRepository>.value(value: looper),
+          RepositoryProvider<FadeSettings>.value(value: fade),
+        ],
         child: MultiBlocProvider(
           providers: [
             BlocProvider.value(value: control),

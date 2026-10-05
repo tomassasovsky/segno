@@ -247,6 +247,48 @@ void main() {
       }
     });
 
+    test('Fade duration identity and half-second travel are exact', () {
+      const defaults = DefaultFadeTarget();
+      const track = TrackFadeTarget(7);
+      expect(defaults.canonicalString(), '{"ctl":"fadeSeconds"}');
+      expect(track.canonicalString(), '{"ctl":"trackFadeSeconds","index":7}');
+      expect(ControlValueTarget.tryParse(defaults.canonicalString()), defaults);
+      expect(ControlValueTarget.tryParse(track.canonicalString()), track);
+      expect(defaults.channel, isNull);
+      expect(track.channel, 7);
+      expect(const TrackFadeTarget(8).isStructurallyValid, isFalse);
+      // 0.5 s to 30 s is 60 values, so 59 equal intervals of travel.
+      for (final (travel, milliseconds) in <(double, int)>[
+        (0, 500),
+        (1 / 59, 1000),
+        (7 / 59, 4000),
+        (1, 30000),
+        (-1, 500),
+        (2, 30000),
+      ]) {
+        expect(defaults.toDomain(travel), milliseconds);
+      }
+      // Nearest half second: 0.4 of 59 intervals is 23.6, so 24 steps.
+      expect(defaults.toDomain(0.4), 12500);
+      expect(defaults.fromDomain(500), 0);
+      expect(defaults.fromDomain(4000), 7 / 59);
+      expect(defaults.fromDomain(30000), 1);
+      expect(defaults.relativeStep, 1 / 59);
+      expect(() => defaults.toDomain(double.nan), throwsArgumentError);
+      expect(() => defaults.toDomain(double.infinity), throwsArgumentError);
+      for (final malformed in [
+        '{"ctl":"fadeSeconds","index":0}',
+        '{"ctl":"trackFadeSeconds"}',
+        '{"ctl":"trackFadeSeconds","index":8}',
+        '{"ctl":"trackFadeSeconds","index":-1}',
+        '{"ctl":"trackFadeSeconds","index":0.5}',
+        '{"ctl":"trackFadeSeconds","index":"0"}',
+        '{"ctl":"trackFadeSeconds","index":0,"lane":0}',
+      ]) {
+        expect(ControlValueTarget.tryParse(malformed), isNull);
+      }
+    });
+
     test('Loop/Once identities are fixed and threshold at half travel', () {
       const defaults = DefaultOneShotTarget();
       const track = TrackOneShotTarget(7);

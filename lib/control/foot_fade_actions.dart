@@ -15,9 +15,9 @@ class FootFadeActions {
   /// Sole owner of next-gesture durations.
   final FadeSettings settings;
 
-  /// Confirmed durations, or null while settings need recovery.
-  FadeDurations? get durations =>
-      settings.needsRecovery ? null : settings.confirmed;
+  /// Live durations, including a held controller value, or null while
+  /// settings need recovery.
+  FadeDurations? get durations => settings.needsRecovery ? null : settings.live;
 
   /// Reads the same projection used by the screen, without retaining it.
   FootFadeProjection project(
