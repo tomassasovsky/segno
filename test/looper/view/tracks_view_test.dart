@@ -418,9 +418,12 @@ void main() {
         expect(control.state.mode, InteractionMode.mixer);
         await tester.sendKeyUpEvent(modifier);
       }
+      passedKeys.clear();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+      expect(passedKeys, isEmpty);
       expect(control.state.cursor, 0);
       verifyNever(() => bloc.add(const LooperPlayAllPressed()));
       verifyNever(() => bloc.add(const LooperPlayPressed(0)));

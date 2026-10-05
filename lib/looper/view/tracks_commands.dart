@@ -229,7 +229,9 @@ class TracksCommands {
       // Let focused Material controls activate through the ancestor Shortcuts.
       // Plain transport/digit keys still belong to this separate flow.
       if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space) {
-        return KeyEventResult.ignored;
+        return node.hasPrimaryFocus
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
       }
       if (key != LogicalKeyboardKey.keyS) return KeyEventResult.handled;
     }
