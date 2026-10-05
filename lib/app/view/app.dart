@@ -796,6 +796,7 @@ class _AppState extends State<App> {
           ),
         ],
         child: _AppView(
+          controlNotices: _controlNotices,
           waveformWindow: widget.waveformWindow,
           displayCount: widget.displayCount,
           waveformWindowOpenDelay: widget.waveformWindowOpenDelay,
@@ -809,11 +810,13 @@ class _AppState extends State<App> {
 /// closes the secondary waveform window for tracks mode.
 class _AppView extends StatefulWidget {
   const _AppView({
+    required this.controlNotices,
     required this.waveformWindow,
     required this.waveformWindowOpenDelay,
     this.displayCount,
   });
 
+  final ControlSettingsNotices controlNotices;
   final WaveformWindowService waveformWindow;
   final int Function()? displayCount;
   final Duration waveformWindowOpenDelay;
@@ -826,6 +829,7 @@ class _AppViewState extends State<_AppView> {
   late final WaveformDisplayController _display;
   StreamSubscription<WaveformDisplayFailure>? _displayFailures;
   StreamSubscription<RecoveryRefusal>? _recoverySub;
+  bool _restoreNoticeScheduled = false;
 
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
@@ -840,6 +844,7 @@ class _AppViewState extends State<_AppView> {
   @override
   void initState() {
     super.initState();
+    _reconcileRestoreNotices();
     _recoverySub = context.read<LooperRepository>().recoveryRefusals.listen(
       _showRecoveryRefusal,
     );
@@ -863,6 +868,60 @@ class _AppViewState extends State<_AppView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_bootstrapWindow());
     });
+  }
+
+  void _reconcileRestoreNotices() {
+    if (_restoreNoticeScheduled) return;
+    _restoreNoticeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restoreNoticeScheduled = false;
+      if (!mounted) return;
+      final monitor = context.read<MonitorCubit>();
+      if (monitor.isClosed) return;
+      final session = context.read<SessionCubit>();
+      final persistence = context.read<FxChainPersistence>();
+      bool needsSessionRecovery() =>
+          !session.isClosed && session.state.bootRecoveryRequired;
+      if (!needsSessionRecovery()) {
+        widget.controlNotices.dismiss(AppToastId.sessionBootRecovery);
+      } else if (session.state.status == SessionStatus.failure) {
+        widget.controlNotices.show(
+          ControlSettingsNotice(
+            id: AppToastId.sessionBootRecovery,
+            title: (context) => Text(context.l10n.sessionBootRecoveryTitle),
+            description: (context) =>
+                Text(context.l10n.sessionBootRecoveryBody),
+            needsRecovery: needsSessionRecovery,
+            retry: () async {
+              await session.retryLoadedSession();
+              return !session.isClosed && !session.state.bootRecoveryRequired;
+            },
+          ),
+        );
+      }
+      bool needsMonitorRecovery() =>
+          !monitor.isClosed &&
+          monitor.state.restoreFailed &&
+          !persistence.sessionTransitionActive &&
+          !session.state.bootRecoveryRequired;
+      if (!needsMonitorRecovery()) {
+        widget.controlNotices.dismiss(AppToastId.monitorRestore);
+        return;
+      }
+      widget.controlNotices.show(
+        ControlSettingsNotice(
+          id: AppToastId.monitorRestore,
+          title: (context) => Text(context.l10n.monitorRestoreFailedTitle),
+          description: (context) => Text(context.l10n.monitorRestoreFailedBody),
+          needsRecovery: needsMonitorRecovery,
+          retry: () async {
+            await monitor.load();
+            return !monitor.isClosed && !monitor.state.restoreFailed;
+          },
+        ),
+      );
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   WaveformDisplayContext _displayContext() {
@@ -1175,6 +1234,14 @@ class _AppViewState extends State<_AppView> {
 
     return MultiBlocListener(
       listeners: [
+        BlocListener<SessionCubit, SessionState>(
+          listener: (_, _) => _reconcileRestoreNotices(),
+        ),
+        BlocListener<MonitorCubit, MonitorState>(
+          listenWhen: (previous, current) =>
+              previous.restoreFailed != current.restoreFailed,
+          listener: (_, _) => _reconcileRestoreNotices(),
+        ),
         BlocListener<ControlCubit, ControlState>(
           listener: (_, _) => _updateDisplayContext(),
         ),

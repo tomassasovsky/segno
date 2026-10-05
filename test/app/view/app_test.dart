@@ -17,16 +17,19 @@ import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_gate.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/session/session.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -276,6 +279,71 @@ class _RecordStartStore extends FakeKeyValueStore {
       throw StateError('Recording start compensation unavailable');
     }
     await super.remove(key);
+  }
+}
+
+class _MonitorRestoreStore extends FakeKeyValueStore {
+  bool refuseRead = true;
+  bool refuseBootWrite = false;
+  Completer<void>? readGate;
+
+  @override
+  Future<void> setString(String key, String value) async {
+    if (refuseBootWrite && key == 'monitor_input_mode.0') {
+      throw StateError('monitor boot image unavailable');
+    }
+    await super.setString(key, value);
+  }
+
+  @override
+  Future<String?> getString(String key) async {
+    if (key == 'monitor_input_mode.0') await readGate?.future;
+    if (refuseRead && key == 'monitor_input_mode.0') {
+      throw StateError('saved monitor temporarily unreadable');
+    }
+    return super.getString(key);
+  }
+}
+
+class _NoticeSessionRepository extends SessionRepository {
+  _NoticeSessionRepository() : super(engine: FakeAudioEngine());
+
+  final readEntered = Completer<void>();
+  final readRelease = Completer<void>();
+  bool refuseRead = false;
+
+  @override
+  Future<String> bundlePath(String name) async => name;
+
+  @override
+  Future<List<SessionSummary>> listSessions() async => const [
+    SessionSummary(name: 'Replacement'),
+  ];
+
+  @override
+  Future<SessionBundle> read(String directory) async {
+    if (!readEntered.isCompleted) readEntered.complete();
+    await readRelease.future;
+    if (refuseRead) throw StateError('session read unavailable');
+    return (
+      session: const Session(
+        sampleRate: 48000,
+        channels: 2,
+        baseLengthFrames: 0,
+        tracks: [],
+        monitors: [
+          SessionMonitor(
+            input: 0,
+            mode: 'on',
+            outputMask: 16,
+            volume: .65,
+            muted: true,
+            encoded: '',
+          ),
+        ],
+      ),
+      laneStems: <(int, int), List<Float32List>>{},
+    );
   }
 }
 
@@ -931,6 +999,242 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     });
+
+    for (final cancelLoad in [false, true]) {
+      testWidgets(
+        'monitor notice yields during Session load; cancel=$cancelLoad',
+        (
+          tester,
+        ) async {
+          final store = _MonitorRestoreStore()
+            ..refuseRead = false
+            ..readGate = Completer<void>();
+          settings = SettingsRepository(store: store);
+          await settings.saveMonitorInputMode(0, mode: 'on');
+          await settings.saveMonitorOutput(0, 8);
+          final bundles = _NoticeSessionRepository()..refuseRead = cancelLoad;
+          sessionRepository = bundles;
+          addTearDown(() {
+            if (!bundles.readRelease.isCompleted) {
+              bundles.readRelease.complete();
+            }
+          });
+          repository.startEngine(const EngineConfig());
+          await pumpApp(tester, NoopWaveformWindowService());
+          final context = tester.element(find.byType(TracksView));
+          final monitor = context.read<MonitorCubit>();
+          final session = context.read<SessionCubit>();
+          final load = session.loadNamed('Replacement');
+          expect(
+            context.read<FxChainPersistence>().sessionTransitionActive,
+            isTrue,
+          );
+          store.readGate!.complete();
+          await bundles.readEntered.future;
+          await tester.pumpAndSettle();
+          expect(monitor.state.restoreFailed, isTrue);
+          expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+          expect(find.text('Input monitoring needs recovery'), findsNothing);
+          bundles.readRelease.complete();
+          await load;
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const Key('tracks_session_snackbar')),
+            findsOneWidget,
+          );
+          if (cancelLoad) {
+            expect(session.state.status, SessionStatus.failure);
+            expect(monitor.state.restoreFailed, isTrue);
+            final retry = find
+                .descendant(
+                  of: find.byKey(const Key(AppToastId.monitorRestore)),
+                  matching: find.text('Retry'),
+                )
+                .hitTestable();
+            expect(retry, findsOneWidget);
+            await tester.tap(retry);
+            await tester.pumpAndSettle();
+            expect(monitor.state.forInput(0).outputMask, 8);
+          } else {
+            expect(session.state.outcome, SessionOutcome.loaded);
+            expect(monitor.state.forInput(0).outputMask, 16);
+            expect(monitor.state.forInput(0).volume, .65);
+          }
+          expect(monitor.state.restoreFailed, isFalse);
+          expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 100));
+        },
+      );
+    }
+
+    testWidgets('monitor notice yields to actionable Session boot Retry', (
+      tester,
+    ) async {
+      final store = _MonitorRestoreStore();
+      settings = SettingsRepository(store: store);
+      final bundles = _NoticeSessionRepository();
+      bundles.readRelease.complete();
+      sessionRepository = bundles;
+      repository.startEngine(const EngineConfig());
+      await pumpApp(tester, NoopWaveformWindowService());
+      final context = tester.element(find.byType(TracksView));
+      final monitor = context.read<MonitorCubit>();
+      final session = context.read<SessionCubit>();
+      expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+      store
+        ..refuseRead = false
+        ..refuseBootWrite = true;
+      await tester.tap(find.byKey(const Key('stage_library')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      // Catalog refresh is unrelated work; it must not suppress Monitor Retry.
+      expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+      await tester.tap(find.text('Replacement'));
+      await tester.pumpAndSettle();
+      expect(session.state.bootRecoveryRequired, isTrue);
+      expect(session.state.error, SessionError.bootPersistence);
+      expect(engine.snapshot().isRunning, isFalse);
+      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+      expect(monitor.state.inputs, isEmpty);
+      expect(debugAppToastActive(AppToastId.sessionBootRecovery), isTrue);
+      expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
+      final retry = find
+          .descendant(
+            of: find.byKey(const Key(AppToastId.sessionBootRecovery)),
+            matching: find.text('Retry'),
+          )
+          .hitTestable();
+      expect(retry, findsOneWidget);
+      expect(find.text('Retry').hitTestable(), findsOneWidget);
+      final power = context.read<PowerOffCubit>()
+        ..press(const PowerOffSnapshot(anyHasContent: true));
+      await tester.pumpAndSettle();
+      expect(debugAppToastActive(AppToastId.sessionBootRecovery), isFalse);
+      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+      power.keepPlaying();
+      await tester.pumpAndSettle();
+      expect(retry, findsOneWidget);
+      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+      expect(session.state.bootRecoveryRequired, isTrue);
+      expect(monitor.state.inputs, isEmpty);
+      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
+      expect(find.text('Retry').hitTestable(), findsOneWidget);
+      store.refuseBootWrite = false;
+      await tester.tap(find.text('Retry').hitTestable());
+      await tester.pumpAndSettle();
+      expect(session.state.bootRecoveryRequired, isFalse);
+      expect(session.state.outcome, SessionOutcome.loaded);
+      expect(monitor.state.restoreFailed, isFalse);
+      expect(monitor.state.forInput(0).outputMask, 16);
+      expect(monitor.state.forInput(0).volume, .65);
+      expect(await settings.loadMonitorOutput(0), 16);
+      expect(debugAppToastActive(AppToastId.sessionBootRecovery), isFalse);
+      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+      expect(find.text('Retry').hitTestable(), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 100));
+    });
+
+    testWidgets('initial monitor restore failure exposes persistent Retry', (
+      tester,
+    ) async {
+      final store = _MonitorRestoreStore();
+      settings = SettingsRepository(store: store);
+      await settings.saveMonitorInputMode(0, mode: 'on');
+      await settings.saveMonitorOutput(0, 8);
+      await settings.saveMonitorVolume(0, .35);
+      await settings.saveMonitorMute(0, muted: true);
+      await pumpApp(tester, NoopWaveformWindowService());
+      final monitor = tester
+          .element(find.byType(TracksView))
+          .read<MonitorCubit>();
+      expect(monitor.state.restoreFailed, isTrue);
+      expect(find.text('Input monitoring needs recovery'), findsOneWidget);
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(monitor.state.restoreFailed, isTrue);
+      expect(find.text('Retry'), findsOneWidget);
+      store.refuseRead = false;
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(monitor.state.restoreFailed, isFalse);
+      expect(monitor.state.forInput(0).mode, MonitorMode.on);
+      expect(monitor.state.forInput(0).outputMask, 8);
+      expect(find.text('Input monitoring needs recovery'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 100));
+    });
+
+    for (final projectBeforeFrame in [false, true]) {
+      testWidgets(
+        'idle monitor failure requests frame; projected=$projectBeforeFrame',
+        (
+          tester,
+        ) async {
+          final gate = Completer<void>();
+          final store = _MonitorRestoreStore()..readGate = gate;
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final monitor = tester
+              .element(find.byType(TracksView))
+              .read<MonitorCubit>();
+          expect(tester.binding.hasScheduledFrame, isFalse);
+          final failed = monitor.stream.firstWhere(
+            (state) => state.restoreFailed,
+          );
+          gate.complete();
+          await failed;
+          // Drain stream listeners without pumping a frame: failure itself must
+          // request one, rather than depending on another player interaction.
+          await Future<void>.value();
+          expect(tester.binding.hasScheduledFrame, isTrue);
+          if (projectBeforeFrame) monitor.projectFromRepository();
+          await tester.pumpAndSettle();
+          expect(
+            find.text('Input monitoring needs recovery'),
+            projectBeforeFrame ? findsNothing : findsOneWidget,
+          );
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 100));
+        },
+      );
+    }
+
+    testWidgets(
+      'Session projection retires monitor recovery across Power overlay',
+      (
+        tester,
+      ) async {
+        final store = _MonitorRestoreStore();
+        settings = SettingsRepository(store: store);
+        await pumpApp(tester, NoopWaveformWindowService());
+        final monitor = tester
+            .element(find.byType(TracksView))
+            .read<MonitorCubit>();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+        final power =
+            tester.element(find.byType(TracksView)).read<PowerOffCubit>()
+              ..press(const PowerOffSnapshot(anyHasContent: true));
+        await tester.pumpAndSettle();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+        power.keepPlaying();
+        await tester.pumpAndSettle();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+        power.press(const PowerOffSnapshot(anyHasContent: true));
+        await tester.pumpAndSettle();
+        monitor.projectFromRepository();
+        await tester.pumpAndSettle();
+        power.keepPlaying();
+        await tester.pumpAndSettle();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
+      },
+    );
 
     for (final malformed in [false, true]) {
       testWidgets(

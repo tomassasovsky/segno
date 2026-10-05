@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -51,6 +52,59 @@ class _BlockedMonitorModeStore extends FakeKeyValueStore {
       await release.future;
     }
     await super.setString(key, value);
+  }
+}
+
+class _RefusingMuteEngine extends FakeAudioEngine {
+  bool refuseMute = false;
+  final monitorSteps = <({bool enabled, bool muted, int output})>[];
+
+  EngineResult _sampleMonitor(int input, EngineResult result) {
+    if (result.isOk) {
+      monitorSteps.add((
+        enabled: monitorInputEnabled[input] ?? false,
+        muted: monitorMute[input] ?? false,
+        output: monitorOutput[input] ?? 3,
+      ));
+    }
+    return result;
+  }
+
+  @override
+  EngineResult setMonitorInputMute({required int input, required bool muted}) {
+    if (refuseMute) return EngineResult.invalid;
+    return _sampleMonitor(
+      input,
+      super.setMonitorInputMute(input: input, muted: muted),
+    );
+  }
+
+  @override
+  EngineResult setMonitorInputEnabled({
+    required int input,
+    required bool enabled,
+  }) => _sampleMonitor(
+    input,
+    super.setMonitorInputEnabled(input: input, enabled: enabled),
+  );
+
+  @override
+  EngineResult setMonitorInputOutput({required int input, required int mask}) =>
+      _sampleMonitor(
+        input,
+        super.setMonitorInputOutput(input: input, mask: mask),
+      );
+}
+
+class _FailingMuteStore extends FakeKeyValueStore {
+  bool failMute = false;
+
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    if (failMute && key == 'monitor_mute.0') {
+      throw StateError('mute storage failed');
+    }
+    await super.setBool(key, value: value);
   }
 }
 
@@ -306,6 +360,194 @@ void main() {
     ).thenReturn(true);
   });
 
+  group('real monitor mute admission', () {
+    late _RefusingMuteEngine engine;
+    late _FailingMuteStore store;
+    late LooperRepository live;
+    late SettingsRepository saved;
+    late MixSettingsCoordinator mix;
+    late FxChainPersistence fx;
+
+    setUp(() {
+      engine = _RefusingMuteEngine();
+      store = _FailingMuteStore();
+      live = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      )..startEngine(const EngineConfig());
+      saved = SettingsRepository(store: store);
+      mix = testMixSettings(live, settings: saved);
+      fx = FxChainPersistence(looper: live);
+    });
+
+    tearDown(() async {
+      store.failMute = false;
+      await fx.close();
+      await mix.close();
+      await live.dispose();
+    });
+
+    MonitorCubit buildLive() => MonitorCubit(
+      repository: live,
+      settings: saved,
+      mixSettings: mix,
+      fxPersistence: fx,
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'refused mute stays absent from view and unrelated saves; retry persists',
+      build: buildLive,
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.setMode(0, MonitorMode.on);
+        await cubit.setMute(0, muted: false);
+        await fx.flush();
+        final announcements = <int>[];
+        final watch = live.monitorChanges.listen(announcements.add);
+        engine.refuseMute = true;
+        await expectLater(cubit.setMute(0, muted: true), throwsStateError);
+        await pumpEventQueue();
+        expect(announcements, isEmpty);
+        expect(engine.monitorMute[0], isFalse);
+        expect(live.monitorMuted(0), isFalse);
+        expect(cubit.state.forInput(0).muted, isFalse);
+        expect(await saved.loadMonitorMute(0), isFalse);
+        await cubit.setOutputMask(0, 1);
+        await fx.flush();
+        expect(await saved.loadMonitorMute(0), isFalse);
+        await watch.cancel();
+        engine.refuseMute = false;
+        await cubit.setMute(0, muted: true);
+        await fx.flush();
+        expect(engine.monitorMute[0], isTrue);
+        expect(live.monitorMuted(0), isTrue);
+        expect(cubit.state.forInput(0).muted, isTrue);
+        expect(await saved.loadMonitorMute(0), isTrue);
+        live.stopEngine();
+        engine.monitorMute.clear();
+        expect(live.startEngine(const EngineConfig()), EngineResult.ok);
+        expect(engine.monitorMute[0], isTrue);
+      },
+      errors: () => [isA<StateError>()],
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'accepted mute control persists while stopped and replays at start',
+      build: buildLive,
+      act: (cubit) async {
+        await cubit.load();
+        live.stopEngine();
+        await cubit.setMute(0, muted: true);
+        await fx.flush();
+        expect(engine.monitorMute[0], isNull);
+        expect(live.monitorMuted(0), isTrue);
+        expect(cubit.state.forInput(0).muted, isTrue);
+        expect(await saved.loadMonitorMute(0), isTrue);
+        expect(live.startEngine(const EngineConfig()), EngineResult.ok);
+        expect(engine.monitorMute[0], isTrue);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'accepted mute survives storage refusal and explicit flush retries',
+      build: buildLive,
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.setMute(0, muted: false);
+        await fx.flush();
+        store.failMute = true;
+        await expectLater(cubit.setMute(0, muted: true), throwsStateError);
+        await pumpEventQueue();
+        expect(engine.monitorMute[0], isTrue);
+        expect(live.monitorMuted(0), isTrue);
+        expect(cubit.state.forInput(0).muted, isTrue);
+        expect(await saved.loadMonitorMute(0), isFalse);
+        await expectLater(fx.flush(), throwsStateError);
+        store.failMute = false;
+        await fx.flush();
+        expect(await saved.loadMonitorMute(0), isTrue);
+      },
+      errors: () => allOf(isNotEmpty, everyElement(isA<StateError>())),
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'restore refuses mute before enabling, routing or applying saved effects',
+      setUp: () async {
+        await saved.saveMonitorInputMode(0, mode: 'on');
+        await saved.saveMonitorOutput(0, 1);
+        await saved.saveMonitorMute(0, muted: true);
+        await saved.saveMonitorEffects(
+          0,
+          encodeFxChain(
+            FxChainEnvelope(
+              entries: [
+                BuiltInEffect(type: TrackEffectType.drive),
+              ],
+            ),
+          ),
+        );
+        engine.refuseMute = true;
+      },
+      build: buildLive,
+      act: (cubit) => cubit.load(),
+      verify: (cubit) {
+        expect(engine.monitorInputEnabled, isEmpty);
+        expect(engine.monitorOutput, isEmpty);
+        expect(live.monitorMode(0), MonitorMode.off);
+        expect(live.monitorOutput(0), 3);
+        expect(cubit.state.inputs, isEmpty);
+        expect(live.monitorMuted(0), isFalse);
+        expect(live.monitorEffects(0), isEmpty);
+      },
+      errors: () => [isA<StateError>()],
+    );
+
+    for (final mode in [MonitorMode.off, MonitorMode.on]) {
+      blocTest<MonitorCubit, MonitorState>(
+        'restore ${mode.name} unmutes only after mode and replacement route',
+        setUp: () async {
+          live
+            ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+            ..setMonitorOutput(input: 0, mask: 1)
+            ..setMonitorMute(input: 0, muted: true);
+          await saved.saveMonitorInputMode(0, mode: mode.name);
+          await saved.saveMonitorOutput(0, 2);
+          await saved.saveMonitorMute(0, muted: false);
+          engine.monitorSteps.clear();
+        },
+        build: buildLive,
+        act: (cubit) => cubit.load(),
+        verify: (cubit) {
+          expect(engine.monitorSteps, isNotEmpty);
+          for (final step in engine.monitorSteps) {
+            if (step.enabled && !step.muted) {
+              expect(mode, MonitorMode.on);
+              expect(step.output, 2);
+            }
+          }
+          expect(engine.monitorSteps.last, (
+            enabled: mode == MonitorMode.on,
+            muted: false,
+            output: 2,
+          ));
+          expect(cubit.state.forInput(0).muted, isFalse);
+        },
+      );
+    }
+
+    blocTest<MonitorCubit, MonitorState>(
+      'closed monitor cannot submit a new mute',
+      build: buildLive,
+      act: (cubit) async {
+        await cubit.close();
+        await cubit.setMute(0, muted: true);
+        expect(live.monitorMuted(0), isFalse);
+        expect(engine.monitorMute, isEmpty);
+        expect(await saved.loadMonitorMute(0), isNull);
+      },
+    );
+  });
+
   /// Writes through with no debounce, so a test's assertion does not have to
   /// outlive a pending write. The debounce itself is covered in its own group.
   MonitorCubit build() => MonitorCubit(
@@ -329,7 +571,7 @@ void main() {
     },
     build: build,
     act: (cubit) => cubit.load(),
-    expect: () => <MonitorState>[],
+    expect: () => [const MonitorState(restoreFailed: true)],
     errors: () => [isA<FormatException>()],
     verify: (_) {
       verifyNever(

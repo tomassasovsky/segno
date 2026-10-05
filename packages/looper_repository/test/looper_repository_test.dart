@@ -230,6 +230,49 @@ final _laneSnapshot = EngineSnapshot(
   ]),
 );
 
+class _RefusingMonitorMuteEngine extends FakeAudioEngine {
+  bool refuseMute = false;
+  int muteCalls = 0;
+  final monitorSteps = <({bool enabled, bool muted, int output})>[];
+
+  EngineResult _sampleMonitor(int input, EngineResult result) {
+    if (result.isOk) {
+      monitorSteps.add((
+        enabled: monitorInputEnabled[input] ?? false,
+        muted: monitorMute[input] ?? false,
+        output: monitorOutput[input] ?? 3,
+      ));
+    }
+    return result;
+  }
+
+  @override
+  EngineResult setMonitorInputMute({required int input, required bool muted}) {
+    muteCalls++;
+    if (refuseMute) return EngineResult.invalid;
+    return _sampleMonitor(
+      input,
+      super.setMonitorInputMute(input: input, muted: muted),
+    );
+  }
+
+  @override
+  EngineResult setMonitorInputEnabled({
+    required int input,
+    required bool enabled,
+  }) => _sampleMonitor(
+    input,
+    super.setMonitorInputEnabled(input: input, enabled: enabled),
+  );
+
+  @override
+  EngineResult setMonitorInputOutput({required int input, required int mask}) =>
+      _sampleMonitor(
+        input,
+        super.setMonitorInputOutput(input: input, mask: mask),
+      );
+}
+
 void main() {
   late FakeAudioEngine engine;
   late StreamController<void> ticker;
@@ -4192,6 +4235,154 @@ void main() {
       repo.startEngine(const EngineConfig());
       expect(engine.monitorVolume[0], 0.5);
     });
+
+    test(
+      'refused monitor mute does not publish intent; accepted retry does',
+      () async {
+        final refusing = _RefusingMonitorMuteEngine();
+        engine = refusing;
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        final changes = <int>[];
+        final watch = repo.monitorChanges.listen(changes.add);
+        addTearDown(watch.cancel);
+        refusing.refuseMute = true;
+        expect(
+          repo.setMonitorMute(input: 0, muted: true),
+          EngineResult.invalid,
+        );
+        await pumpEventQueue();
+        expect(repo.monitorMuted(0), isFalse);
+        expect(repo.allMonitors(), isEmpty);
+        expect(engine.monitorMute, isEmpty);
+        expect(changes, isEmpty);
+        refusing.refuseMute = false;
+        expect(repo.setMonitorMute(input: 0, muted: true), EngineResult.ok);
+        await pumpEventQueue();
+        expect(repo.monitorMuted(0), isTrue);
+        expect(engine.monitorMute[0], isTrue);
+        expect(changes, [0]);
+      },
+    );
+
+    test(
+      'invalid monitor mute identity never enters native or remembered rig',
+      () {
+        final counting = _RefusingMonitorMuteEngine();
+        engine = counting;
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        for (final input in [-1, kMaxMonitoredInputs]) {
+          expect(
+            repo.setMonitorMute(input: input, muted: true),
+            EngineResult.invalid,
+          );
+        }
+        expect(counting.muteCalls, 0);
+        expect(repo.allMonitors(), isEmpty);
+      },
+    );
+
+    test(
+      'failed startup mute replay stops engine and preserves offline intent',
+      () {
+        final refusing = _RefusingMonitorMuteEngine()..refuseMute = true;
+        engine = refusing;
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        expect(repo.setMonitorMute(input: 0, muted: true), EngineResult.ok);
+        repo.setMonitorInputMode(input: 0, mode: MonitorMode.on);
+        expect(refusing.muteCalls, 0);
+        expect(repo.startEngine(const EngineConfig()), EngineResult.invalid);
+        expect(engine.calls, contains('stop'));
+        expect(engine.monitorInputEnabled, isEmpty);
+        expect(repo.monitorMuted(0), isTrue);
+        refusing.refuseMute = false;
+        expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+        expect(engine.monitorMute[0], isTrue);
+        expect(engine.monitorInputEnabled[0], isTrue);
+      },
+    );
+
+    for (final defined in [false, true]) {
+      test(
+        'session ${defined ? 'application' : 'reset'} reports mute refusal',
+        () async {
+          final refusing = _RefusingMonitorMuteEngine();
+          engine = refusing;
+          final repo = buildRepo()..startEngine(const EngineConfig());
+          addTearDown(repo.dispose);
+          if (!defined) repo.setMonitorMute(input: 0, muted: true);
+          refusing.refuseMute = true;
+          await expectLater(
+            repo.applySession(
+              SessionRig(
+                monitors: [
+                  if (defined)
+                    const SessionRigMonitor(
+                      input: 0,
+                      mode: MonitorMode.on,
+                      outputMask: 3,
+                      volume: 1,
+                      muted: true,
+                      effects: [],
+                    ),
+                ],
+              ),
+              clearPollInterval: Duration.zero,
+            ),
+            throwsStateError,
+          );
+          expect(repo.monitorMuted(0), !defined);
+          if (defined) expect(engine.monitorInputEnabled, isEmpty);
+        },
+      );
+    }
+
+    for (final mode in [MonitorMode.off, MonitorMode.on]) {
+      test(
+        'session ${mode.name} unmutes only after mode and replacement route',
+        () async {
+          final traced = _RefusingMonitorMuteEngine();
+          engine = traced;
+          final repo = buildRepo()
+            ..startEngine(const EngineConfig())
+            ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+            ..setMonitorOutput(input: 0, mask: 1)
+            ..setMonitorMute(input: 0, muted: true);
+          addTearDown(repo.dispose);
+          traced.monitorSteps.clear();
+          await repo.applySession(
+            SessionRig(
+              monitors: [
+                SessionRigMonitor(
+                  input: 0,
+                  mode: mode,
+                  outputMask: 2,
+                  volume: 1,
+                  muted: false,
+                  effects: const [],
+                ),
+              ],
+            ),
+            clearPollInterval: Duration.zero,
+          );
+          expect(traced.monitorSteps, isNotEmpty);
+          for (final step in traced.monitorSteps) {
+            if (step.enabled && !step.muted) {
+              expect(mode, MonitorMode.on);
+              expect(step.output, 2);
+            }
+          }
+          expect(traced.monitorSteps.last, (
+            enabled: mode == MonitorMode.on,
+            muted: false,
+            output: 2,
+          ));
+          expect(repo.monitorMuted(0), isFalse);
+        },
+      );
+    }
 
     test('setMonitorMute mutes the chain and reapplies on restart', () {
       final repo = buildRepo()
