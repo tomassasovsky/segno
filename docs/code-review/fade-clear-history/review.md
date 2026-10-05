@@ -51,9 +51,13 @@ passing final evidence. Reviewers did not duplicate the author's test runs.
 
 General ordinary history reconstruction remains #1143: unsupported material
 changes fail the affected derived stem instead of silently exporting stale audio.
-The separately captured master remains available. Large-manifest parsing and
-whole-render failure reporting remain #1144; its native capacity test proves the
-incomplete marker, not successful parsing of an oversized manifest. Multi-lane
+The separately captured master remains available. A full layer manifest no
+longer stops the capture: the drain drops later images, reports
+`layers_dropped`, and keeps recording master and monitors; the renderer fails
+any stem whose logged retire or restoration is unlisted (adversarial review
+finding, owner decision 2026-10-05). The render arena now covers a full
+manifest; input-derived sizing and whole-render failure reporting remain #1144.
+Multi-lane
 reconstruction, full-engine reopen (#1140), physical devices and listening tests
 are outside this proof.
 

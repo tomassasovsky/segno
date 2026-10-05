@@ -19037,6 +19037,44 @@ static void test_perf_render_stitching_mid_loop_arm(void) {
   run_perf_render_stitching_case("stitch_armphase", 4800, 4, 16, 9, 6, 2000);
 }
 
+/* A logged retire whose layer the bounded manifest dropped must fail the stem,
+ * never keep playing the pre-retire image as if nothing had changed. */
+static void test_perf_render_unlisted_retire_fails_stem(void) {
+  printf("test_perf_render_unlisted_retire_fails_stem\n");
+  const char* dir = render_test_dir("unlisted_retire");
+  const int32_t sr = 4800;
+  const float content[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track1.wav", dir);
+  test_write_wav_mono(wav_path, content, 4, sr);
+  test_write_manifest(dir,
+      "{\"sample_rate\": 4800, \"capture_frames\": 12, "
+      "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": 1, \"tracks\": "
+      "[{\"channel\": 1, \"volume\": 1, \"lanes\": [{\"lane\": 0, "
+      "\"deferred\": false, \"pcmRef\": \"track1.wav\"}]}]}, "
+      "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": [], "
+      "\"layers_dropped\": 1}");
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
+    test_write_log_entry(
+        lf, 6,
+        (le_command){.code = LE_PLOG_LAYER_RETIRED,
+                     .evt = {.channel = 1, .slot = 1, .generation = 1}});
+    fclose(lf);
+  }
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+  int32_t channel = -1, succeeded = -1;
+  CHECK(le_perf_render_track_status(e, 0, &channel, &succeeded) == LE_OK);
+  CHECK(channel == 1 && succeeded == 0);
+  le_engine_destroy(e);
+}
+
 /* Acceptance: a track recorded fresh while armed (absent from armSnapshot,
  * present only in disarmSnapshot) renders silence up to its logged
  * RECORD_END frame, then the disarm-snapshot content, looped. */
@@ -33392,6 +33430,7 @@ int main(void) {
   test_perf_render_stitching_long_loop();
   test_perf_render_stitching_mid_loop_arm();
   test_perf_render_fresh_recorded_while_armed();
+  test_perf_render_unlisted_retire_fails_stem();
   test_perf_render_disarm_anchors_by_take_identity();
   test_perf_render_progress_and_cancel();
   test_perf_render_concurrent_with_live_engine();
