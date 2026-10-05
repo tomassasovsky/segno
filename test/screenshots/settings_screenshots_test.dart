@@ -218,6 +218,7 @@ void main() {
     addTearDown(() => unawaited(mixSettings.close()));
     tempoOwner = TempoSettings(repository: repository, settings: settings);
     control = ControlCubit(
+      fadeSettings: testFadeSettings(),
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),

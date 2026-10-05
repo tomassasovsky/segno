@@ -78,6 +78,7 @@ class AppRuntime {
       clickVolumeControl: tempo,
       clickModeControl: tempo,
       recordStartControl: tempo,
+      fadeSettings: fade,
       pedal: pedal,
       performance: performance,
       controller: controllers,

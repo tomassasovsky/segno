@@ -8,7 +8,7 @@ extension _FootMixerControl on ControlCubit {
       state.mode == InteractionMode.mixer &&
       !_fxPersistence.sessionTransitionActive;
 
-  void _cancelMixerHolds() {
+  void _cancelSurfaceHolds() {
     for (final button in PedalButton.values) {
       _systemGesture(button)?.cancel();
     }

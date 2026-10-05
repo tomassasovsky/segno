@@ -153,7 +153,9 @@ final List<ControlInvariant> controlInvariants = [
       InteractionMode.record => PedalMode.rec,
       InteractionMode.mute => PedalMode.play,
       InteractionMode.fx => PedalMode.fx,
-      InteractionMode.custom || InteractionMode.mixer => PedalMode.custom,
+      InteractionMode.custom ||
+      InteractionMode.mixer ||
+      InteractionMode.fade => PedalMode.custom,
     };
     if (c.frame.mode != want) {
       return 'frame mode ${c.frame.mode} != overlay mode ${c.overlay.mode}';
@@ -174,8 +176,9 @@ final List<ControlInvariant> controlInvariants = [
     return null;
   }),
   ControlInvariant('empty-track-dark', (c) {
-    // Rec and Mute only. FX and Custom report their assigned function state,
-    // which need not depend on whether this track contains audio.
+    // Rec, Mute and Fade. FX and Custom report their assigned function
+    // state, which need not depend on whether this track contains audio; an
+    // empty track cannot be attenuated (Clear resets its envelope).
     if (c.overlay.mode == InteractionMode.fx ||
         c.overlay.mode == InteractionMode.custom ||
         c.overlay.mode == InteractionMode.mixer) {

@@ -29,6 +29,7 @@ import '../helpers/fake_key_value_store.dart';
 import '../helpers/fake_one_shot_control.dart';
 import '../helpers/fake_record_length_control.dart';
 import '../helpers/fake_record_timing_control.dart';
+import '../helpers/test_fade_settings.dart';
 
 const _countIn = CountInValueTarget();
 
@@ -126,6 +127,7 @@ class _Rig {
       exportsRoot: () async => Directory.systemTemp.path,
     );
     cubit = ControlCubit(
+      fadeSettings: testFadeSettings(),
       looper: looper,
       pedal: pedal,
       settings: settings,

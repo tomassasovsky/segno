@@ -14,6 +14,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
+import 'package:segno/looper/view/foot_fade_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
@@ -52,6 +53,7 @@ class _TracksViewState extends State<TracksView> {
   void dispose() {
     dismissAppToast(AppToastId.undoClearAll);
     dismissAppToast(AppToastId.footMixerFailure);
+    dismissAppToast(AppToastId.footFadeFailure);
     super.dispose();
   }
 
@@ -133,6 +135,17 @@ class _TracksViewState extends State<TracksView> {
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),
+          BlocListener<ControlCubit, ControlState>(
+            listenWhen: (before, after) =>
+                before.footFadeFailure != after.footFadeFailure &&
+                after.mode == InteractionMode.fade,
+            listener: (context, _) => showAppToast(
+              id: AppToastId.footFadeFailure,
+              type: ToastificationType.error,
+              title: Text(context.l10n.footFadeFailure),
+              autoCloseDuration: const Duration(seconds: 5),
+            ),
+          ),
           BlocListener<SessionCubit, SessionState>(
             // React to a settled action — a save/load/export that finished or
             // failed — never the transient `working` tick; plus the
@@ -195,6 +208,8 @@ class _TracksViewState extends State<TracksView> {
                       body: SafeArea(
                         child: mode == InteractionMode.mixer
                             ? const FootMixerView()
+                            : mode == InteractionMode.fade
+                            ? const FootFadeView()
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [

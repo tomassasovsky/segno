@@ -236,7 +236,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
         // Amber, the hue the pedal's own MODE LED throws for custom — one
         // colour for the mode wherever it is shown.
         InteractionMode.custom ||
-        InteractionMode.mixer => (outline: ledAmber, fill: cardHigh),
+        InteractionMode.mixer ||
+        InteractionMode.fade => (outline: ledAmber, fill: cardHigh),
       };
 
   /// Pedal LED palette — the on-screen pedal faceplate renders the firmware's

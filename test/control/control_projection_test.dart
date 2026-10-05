@@ -131,6 +131,43 @@ void main() {
   });
 
   group('projectTrackLed', () {
+    test('Fade mode: lit while fading or faded, dark at full level', () {
+      final looper = _stateWith(
+        _tracksWith(const [
+          Track(state: TrackState.playing, lengthFrames: 48000),
+          Track(
+            channel: 1,
+            state: TrackState.playing,
+            lengthFrames: 48000,
+            fade: FadeImage(amount: 0, target: 0),
+          ),
+          Track(
+            channel: 2,
+            state: TrackState.stopped,
+            lengthFrames: 48000,
+            fade: FadeImage(amount: .5, fullTravelSeconds: 4),
+          ),
+        ]),
+      );
+      const overlay = ControlState(mode: InteractionMode.fade);
+      expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.off);
+      expect(projectTrackLed(looper, overlay, 1), PedalTrackLed.blue);
+      // A stopped track still reports its envelope, never audibility.
+      expect(projectTrackLed(looper, overlay, 2), PedalTrackLed.blue);
+      expect(projectTrackLed(looper, overlay, 3), PedalTrackLed.off);
+    });
+
+    test('Fade mode: an emptied track stays dark before its reset lands', () {
+      // Clear publishes EMPTY before the callback publishes the unity image.
+      final looper = _stateWith(
+        _tracksWith(const [
+          Track(fade: FadeImage(amount: 0, target: 0)),
+        ]),
+      );
+      const overlay = ControlState(mode: InteractionMode.fade);
+      expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.off);
+    });
+
     test('Mute mode: armed and audible reads green, muted reads off', () {
       final looper = _stateWith(
         _tracksWith(const [

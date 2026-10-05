@@ -24,6 +24,7 @@ import '../../helpers/fake_one_shot_control.dart';
 import '../../helpers/fake_record_length_control.dart';
 import '../../helpers/fake_record_start_control.dart';
 import '../../helpers/fake_record_timing_control.dart';
+import '../../helpers/test_fade_settings.dart';
 import '../../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -92,6 +93,7 @@ void main() {
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
+      fadeSettings: testFadeSettings(),
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),

@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -21,6 +20,7 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -114,9 +114,15 @@ void main() {
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
+  late FadeSettings fade;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
+    fade = FadeSettings(
+      settings: settings,
+      blocked: () => false,
+      sessionBlocked: () => false,
+    );
     bloc = _MockLooperBloc();
     // Nothing lost by default; the device-lost scene below re-stubs audio.
     audioSetup = _MockAudioSetupCubit();
@@ -183,6 +189,7 @@ void main() {
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
+      fadeSettings: fade,
     );
     addTearDown(control.close);
     session = _MockSessionCubit();
@@ -233,6 +240,7 @@ void main() {
             // SettingsRepository; share the fixture the cubits already use so
             // the tray reads the same store.
             RepositoryProvider<SettingsRepository>.value(value: settings),
+            RepositoryProvider<FadeSettings>.value(value: fade),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -367,6 +375,58 @@ void main() {
       await expectLater(
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_mixer_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // The accepted Fade Pen frames (docs/design/fade-previews/pen): shared
+  // Default, a track override, Bank B, and the Spanish strings.
+  for (final scene in ['default', 'custom', 'bank', 'spanish']) {
+    testWidgets('Foot Fade $scene accepted scene', (tester) async {
+      Track track(int channel, {bool faded = false}) => Track(
+        channel: channel,
+        state: TrackState.playing,
+        lengthFrames: 48000,
+        fade: faded ? const FadeImage(amount: 0, target: 0) : const FadeImage(),
+      );
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            track(0),
+            track(1, faded: true),
+            track(2),
+            const Track(channel: 3),
+            track(4, faded: true),
+            track(5),
+            track(6),
+            const Track(channel: 7),
+          ],
+        ),
+      );
+      await tester.runAsync(() async {
+        await settings.saveFadeDurations(
+          FadeDurations(overrides: const {1: 8000, 4: 2000}),
+        );
+        await fade.load();
+      });
+      control.setMode(InteractionMode.fade);
+      if (scene == 'custom') control.selectFootFadeTrackTime(1);
+      if (scene == 'bank') control.browseBank(1);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_fade_$scene.png'),
       );
     }, skip: !hasScreenshotFonts);
   }

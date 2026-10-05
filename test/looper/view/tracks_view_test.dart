@@ -177,6 +177,7 @@ void main() {
     mixSettings = testMixSettings(repository, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
+      fadeSettings: testFadeSettings(),
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
@@ -1834,6 +1835,55 @@ void main() {
         () => bloc.add(captureAny(that: isA<LooperTrackPanChanged>())),
       ).captured.cast<LooperTrackPanChanged>();
       expect(centred.last.pan, 0);
+    });
+
+    testWidgets('a Fade replaces only the caption, never the saved level', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          tracks: [
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 1000,
+              fade: FadeImage(amount: .5, target: 0, fullTravelSeconds: 4),
+            ),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 1000,
+              fade: FadeImage(amount: 0, target: 0),
+            ),
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              lengthFrames: 1000,
+              fade: FadeImage(amount: .25, target: .25),
+            ),
+            Track(channel: 3, state: TrackState.playing, lengthFrames: 1000),
+          ],
+        ),
+      );
+      await pump(tester);
+      await showMixer(tester);
+      String caption(int channel) => tester
+          .widget<AppText>(find.byKey(Key('mixer_gain_caption_$channel')))
+          .data!;
+      expect(caption(0), 'Fading');
+      expect(caption(1), 'Faded out');
+      expect(caption(2), 'Fade 25%');
+      expect(caption(3), isNot(anyOf('Fading', 'Faded out')));
+      for (var channel = 0; channel < 4; channel++) {
+        expect(
+          tester
+              .widget<AppText>(find.byKey(Key('mixer_gain_readout_$channel')))
+              .data,
+          tester
+              .widget<AppText>(find.byKey(const Key('mixer_gain_readout_3')))
+              .data,
+          reason: 'every track keeps its saved unity level',
+        );
+      }
     });
 
     testWidgets('the level marker rides the meter, commits once, and a double '

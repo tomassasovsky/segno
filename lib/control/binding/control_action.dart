@@ -162,7 +162,10 @@ enum TrackOperation {
   undo('undo'),
 
   /// Redo the track's latest undone audio edit.
-  redo('redo');
+  redo('redo'),
+
+  /// Fade the track out, or back in, at its effective Fade duration.
+  fade('fade');
 
   const TrackOperation(this.token);
 
@@ -343,6 +346,7 @@ final class ModeAction extends ControlAction {
     InteractionMode.fx => 'fx',
     InteractionMode.custom => 'custom',
     InteractionMode.mixer => 'mixer',
+    InteractionMode.fade => 'fade',
   };
 
   @override
