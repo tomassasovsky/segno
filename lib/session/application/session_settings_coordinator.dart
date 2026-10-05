@@ -1,12 +1,14 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// Coordinates session capture with the live settings transaction owners.
 ///
@@ -21,13 +23,15 @@ class SessionSettingsCoordinator {
     required PlaybackSettings playback,
     required RecordSettings record,
     required RecordTimingSettings timing,
+    required FadeSettings fade,
   }) : _looper = looper,
        _mix = mix,
        _fx = fx,
        _tempo = tempo,
        _playback = playback,
        _record = record,
-       _timing = timing;
+       _timing = timing,
+       _fade = fade;
 
   final LooperRepository _looper;
   final MixSettingsCoordinator _mix;
@@ -36,19 +40,29 @@ class SessionSettingsCoordinator {
   final PlaybackSettings _playback;
   final RecordSettings _record;
   final RecordTimingSettings _timing;
+  final FadeSettings _fade;
 
   /// Excludes settings edits through capture and the caller's session I/O.
   /// All session operations acquire these gates in this one order.
   Future<T> runExclusive<T>(Future<T> Function() operation) =>
-      _mix.runExclusive(
-        () => _tempo.runTempoExclusive(
-          () => _playback.runPlaybackExclusive(
-            () => _record.runRecordExclusive(
-              () => _timing.runRecordTimingExclusive(operation),
+      _fade.runExclusive(
+        (admittedEdits) => _mix.runExclusive(
+          () => _tempo.runTempoExclusive(
+            () => _playback.runPlaybackExclusive(
+              () => _record.runRecordExclusive(
+                () => _timing.runRecordTimingExclusive(() async {
+                  await admittedEdits;
+                  return operation();
+                }),
+              ),
             ),
           ),
         ),
       );
+
+  /// Completes the exact accepted Session setup within the held scope.
+  Future<void> installFade(FadeDurations incoming) =>
+      _fade.installSession(incoming);
 
   /// Settles accepted edits and captures their Released values together.
   /// Called inside [runExclusive]; [stillOwned] fences the session lifetime.
@@ -87,6 +101,7 @@ class SessionSettingsCoordinator {
         oneShot: _playback.durableOneShotSnapshot,
         recordLength: _record.durableRecordLengthSnapshot,
         recordTiming: _timing.durableRecordTimingSnapshot,
+        fade: _fade.confirmed,
       ),
     );
   }

@@ -7,6 +7,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
@@ -95,6 +96,13 @@ void main() {
       await record.load();
       timing = RecordTimingSettings(repository: looper, settings: settings);
       await timing.load();
+      final fade = FadeSettings(
+        settings: settings,
+        blocked: () => false,
+        sessionBlocked: () => false,
+      );
+      await fade.load();
+      addTearDown(fade.close);
       projection = FxChainPersistence(looper: looper);
       mix = MixSettingsCoordinator(
         repository: looper,
@@ -118,6 +126,7 @@ void main() {
         mixPersistence: SettingsMixPersistence(settings),
         fxPersistence: projection,
         captureSettings: SessionSettingsCoordinator(
+          fade: fade,
           looper: looper,
           mix: mix,
           fx: projection,

@@ -13,6 +13,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
@@ -71,6 +72,18 @@ void main() {
         settings: settings,
       );
       await timing.load();
+      final fade = FadeSettings(
+        settings: settings,
+        blocked: () => false,
+        sessionBlocked: () => false,
+      );
+      await fade.load();
+      addTearDown(() async {
+        // Complete the fake-clock stream before awaiting the real close.
+        final closed = fade.close();
+        await tester.pump();
+        await closed;
+      });
       addTearDown(() => unawaited(timing.close()));
       final pedal = _MockPedalCubit();
       when(() => pedal.state).thenReturn(const PedalState());
@@ -172,6 +185,7 @@ void main() {
                   fxPersistence: fxPersistence,
                   mixPersistence: mixPersistence,
                   captureSettings: SessionSettingsCoordinator(
+                    fade: fade,
                     looper: repository,
                     mix: mixSettings,
                     fx: fxPersistence,

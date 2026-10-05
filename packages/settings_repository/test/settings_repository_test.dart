@@ -119,6 +119,43 @@ void main() {
     repository = SettingsRepository(store: store);
   });
 
+  group('Fade duration record', () {
+    test(
+      'orders after other scalar writes and restores exact bytes or absence',
+      () async {
+        expect(await repository.readFadeDurationsCheckpoint(), isNull);
+        store.boolWrite = Completer<void>();
+        final mute = repository.saveLaneMute(0, 0, muted: true);
+        await store.boolEntered.future;
+        final fade = repository.saveFadeDurations(
+          FadeDurations(overrides: const {0: 4000}),
+        );
+        final read = repository.readFadeDurationsCheckpoint();
+        store.boolWrite!.complete();
+        await Future.wait([mute, fade]);
+        expect(await read, '{"defaultMs":4000,"overrides":{"0":4000}}');
+        const original = '{ "overrides": {}, "defaultMs":500 }';
+        await repository.restoreFadeDurationsCheckpoint(original);
+        expect(await repository.readFadeDurationsCheckpoint(), original);
+        await repository.restoreFadeDurationsCheckpoint(null);
+        expect(await repository.readFadeDurationsCheckpoint(), isNull);
+      },
+    );
+
+    test('reports a lost write without poisoning the shared tail', () async {
+      store.discardNextWriteKey = 'looper.fade_durations';
+      await expectLater(
+        repository.saveFadeDurations(FadeDurations.defaults),
+        throwsStateError,
+      );
+      await repository.saveFadeDurations(FadeDurations(defaultMs: 30000));
+      expect(
+        await repository.readFadeDurationsCheckpoint(),
+        '{"defaultMs":30000,"overrides":{}}',
+      );
+    });
+  });
+
   group('lane mute scalar', () {
     test(
       'orders a rapid pair of writes and reads behind blocked storage',

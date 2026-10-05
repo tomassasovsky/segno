@@ -7,6 +7,7 @@ import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// Bloc-layer mapping between the session bundle (data) and the looper
 /// repository (domain) — the two never depend on each other, so the
@@ -109,6 +110,7 @@ SessionSettings settingsFromLooper(
   required OneShotSnapshot oneShot,
   required RecordLengthSnapshot recordLength,
   required RecordTimingSnapshot recordTiming,
+  required FadeDurations fade,
   MixSettingsSnapshot? mix,
 }) {
   final transport = looper.sessionTransport;
@@ -124,6 +126,8 @@ SessionSettings settingsFromLooper(
     recordTiming: recordTiming.defaultTiming,
     overdubDecay: decay.defaultPercent,
     defaultOneShot: oneShot.defaultOneShot,
+    defaultFadeDurationMs: fade.defaultMs,
+    trackFadeDurationOverrides: fade.overrides,
     defaultLengthPresetBars: recordLength.defaultBars,
     trackRecordTimingOverrides: recordTiming.trackOverrides,
     trackOverdubDecayOverrides: decay.trackOverrides,

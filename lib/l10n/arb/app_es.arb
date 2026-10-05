@@ -2659,5 +2659,8 @@
     "footMixerUndo": "DESHACER",
     "footMixerFailure": "No se pudo completar el cambio del mezclador. Inténtalo de nuevo.",
     "footMixerMutedLevel": "{value}% · Silenciado",
-    "fxMutedInMixer": "Silenciado en Mezclador"
+    "fxMutedInMixer": "Silenciado en Mezclador",
+    "fadeSettingsRecoveryTitle": "Hay que recuperar la duración de Fade",
+    "fadeSettingsRefusedTitle": "No se guardó el cambio de duración de Fade",
+    "fadeSettingsRecoveryBody": "Reintenta recuperar los ajustes de duración de Fade."
 }

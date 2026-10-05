@@ -8,6 +8,20 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 Fade duration persistence (#1137)
+
+Fade defaults and explicit per-track durations now survive startup and Session
+save/recall through one settings writer. Failed writes restore the previous
+record or require explicit recovery. Incoming Session settings finish before
+the existing boot barrier releases; an active fade keeps its original rate.
+
+The [review](code-review/fade-duration-settings/review.md) records 3,162 passing
+app tests (49 conditional skips), 198 settings tests and 114 Session tests, with
+all applicable coverage floors met. Analysis, formatting and 811-file Bloc lint
+pass. Independent reviews are clean after bounded fixes. Actual Claude,
+published-head CI and human merge approval remain separate gates. Coefficient
+recall/reconnect, Clear/history and Fade controls are still separate follow-ups.
+
 ## October 2026 stopped Session recall (#1134)
 
 Session recall now publishes recorded tracks stopped, with timing and crown
