@@ -39,6 +39,7 @@ import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/mock_click_tempo_settings.dart';
 import '../helpers/mock_decay_playback_settings.dart';
+import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -242,6 +243,7 @@ void main() {
     addTearDown(() => unawaited(timing.close()));
     await timingOwner.load();
     control = ControlCubit(
+      fadeSettings: testFadeSettings(),
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       clickVolumeControl: tempo,

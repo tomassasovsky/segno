@@ -160,6 +160,7 @@ void main() {
               // happens with the tree, not in an awaited teardown.
               BlocProvider<ControlCubit>(
                 create: (_) => ControlCubit(
+                  fadeSettings: testFadeSettings(),
                   decayControl: playback,
                   oneShotControl: playback,
                   recordLengthControl: recordOptions,

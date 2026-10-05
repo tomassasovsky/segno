@@ -118,6 +118,7 @@ void main() {
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
     final control = ControlCubit(
+      fadeSettings: testFadeSettings(),
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),

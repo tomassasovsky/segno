@@ -189,6 +189,12 @@ void main() {
     given(const ControlState(mode: InteractionMode.fade, activeBank: 1));
     await pump(tester);
     expect(find.text('Bank B'), findsOneWidget);
+    final bank = find
+        .ancestor(of: pedal(PedalButton.bank), matching: find.byType(Semantics))
+        .evaluate()
+        .map((element) => element.widget as Semantics)
+        .firstWhere((semantics) => semantics.properties.label == 'Bank B');
+    expect(bank.properties.selected, isTrue, reason: 'mirrors the Bank LED');
     expect(
       find.descendant(
         of: pedal(PedalButton.track1),

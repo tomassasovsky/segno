@@ -402,10 +402,11 @@ class _FootFadePedal extends StatelessWidget {
       enabled:
           track?.available ??
           (role.hold != FootFadeAction.resetTime || timeEditable),
-      // The selection bar mirrors the physical LED: lit while fading or
-      // faded out, and on Exit, the way back to Tracks.
+      // The selection bar mirrors the physical LED: a track while fading or
+      // faded out, Bank on bank B, and Exit, the way back to Tracks.
       selected:
           role.press == FootFadeAction.exit ||
+          (role.press == FootFadeAction.nextBank && projection.bank == 1) ||
           (track != null && track.available && track.attenuated),
       onPressed: control.footFadePressed,
       onReleased: control.footFadeReleased,

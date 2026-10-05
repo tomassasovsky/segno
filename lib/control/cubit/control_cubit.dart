@@ -191,7 +191,7 @@ class ControlCubit extends Cubit<ControlState> {
     required RecordTimingControl recordTimingControl,
     required ClickModeControl clickModeControl,
     required RecordStartControl recordStartControl,
-    FadeSettings? fadeSettings,
+    required FadeSettings fadeSettings,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
     Duration Function()? midiClock,
@@ -211,9 +211,10 @@ class ControlCubit extends Cubit<ControlState> {
        _recordTiming = recordTimingControl,
        _clickMode = clickModeControl,
        _recordStart = recordStartControl,
-       _footFadeActions = fadeSettings == null
-           ? null
-           : FootFadeActions(repository: looper, settings: fadeSettings),
+       _footFadeActions = FootFadeActions(
+         repository: looper,
+         settings: fadeSettings,
+       ),
        _midiDevices = midiDevices,
        _midiClock = midiClock,
        _learnTimeout = learnTimeout,
@@ -1405,12 +1406,9 @@ class ControlCubit extends Cubit<ControlState> {
   // One threshold for Undo, Mode, Record/Play, track holds, Stop restore and
   // assigned FX holds. Read at press time; the fresh default is 800 ms.
   Duration _longPress = const Duration(milliseconds: 800);
-  Object _footMixerVisit = Object();
+  Object _surfaceVisit = Object();
   (int, int)? _footMixerSource;
-  // Null when this composition has no Fade duration owner: Fade mode and
-  // Fade actions are then refused rather than guessing a duration.
-  final FootFadeActions? _footFadeActions;
-  int? _footFadeSession;
+  final FootFadeActions _footFadeActions;
   late final _footMixerActions = FootMixerActions(
     repository: _looper,
     settings: _settings,
@@ -1608,7 +1606,7 @@ class ControlCubit extends Cubit<ControlState> {
       final source = (_looper.sessionRevision, _looper.mixGeneration);
       if (_footMixerSource != source) {
         _footMixerSource = source;
-        _cancelMixerHolds();
+        _cancelSurfaceHolds();
         next = next.copyWith(
           footMixer: _footMixerActions.domain(state.footMixer.domain),
         );
@@ -1620,19 +1618,14 @@ class ControlCubit extends Cubit<ControlState> {
         );
       }
     }
-    final fade = _footFadeActions;
-    if (state.mode == InteractionMode.fade && fade != null) {
-      if (_footFadeSession != _looper.sessionRevision) {
-        _footFadeSession = _looper.sessionRevision;
-        _cancelMixerHolds();
-        next = next.copyWith(footFade: const FootFadeSelection());
-      } else {
-        next = next.copyWith(
-          footFade: fade
-              .project(state.footFade, bank: next.activeBank, looper: looper)
-              .selection,
-        );
-      }
+    // A time target whose track lost its material falls back to Default.
+    // Pending holds already retire on a Session change (_armGesture).
+    if (state.mode == InteractionMode.fade) {
+      next = next.copyWith(
+        footFade: _footFadeActions
+            .project(state.footFade, bank: next.activeBank, looper: looper)
+            .selection,
+      );
     }
     if (next != state) emit(next);
   }
@@ -1769,7 +1762,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// table).
   void setMode(InteractionMode next) {
     if (next == state.mode) return;
-    _footMixerVisit = Object();
+    _surfaceVisit = Object();
     // Leaving the mode the bindings live in strands any held momentary — the
     // release will arrive with the foot in a mode that no longer dispatches
     // it, or not at all. Restore first (B1), before the emit re-projects.
@@ -1795,9 +1788,6 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
       case InteractionMode.fade:
-        // Without a duration owner there is nothing a Fade gesture could ask.
-        if (_footFadeActions == null) return;
-        _footFadeSession = _looper.sessionRevision;
         emit(
           state.copyWith(
             mode: next,
@@ -2429,11 +2419,11 @@ class ControlCubit extends Cubit<ControlState> {
   /// Fades the recorded track in visible [slot] of the current bank.
   Future<void> toggleFootFadeTrack(int slot) async {
     final fade = _footFadeActions;
-    if (!_fadeEditable || fade == null || slot < 0 || slot >= 4) return;
+    if (!_fadeEditable || slot < 0 || slot >= 4) return;
     // An empty track is unavailable, not a failure: nothing to report.
     final projection = fade.project(state.footFade, bank: state.activeBank);
     if (!projection.trackAt(slot).available) return;
-    final visit = _footMixerVisit;
+    final visit = _surfaceVisit;
     final session = _looper.sessionRevision;
     final result = await fade.toggle(projection.channelAt(slot));
     if (!result.isOk) _reportFadeFailure(visit, session);
@@ -2442,7 +2432,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// Selects the recorded track in visible [slot] as the time target.
   void selectFootFadeTrackTime(int slot) {
     final fade = _footFadeActions;
-    if (!_fadeEditable || fade == null) return;
+    if (!_fadeEditable) return;
     emit(
       state.copyWith(
         footFade: fade.selectTrackTime(
@@ -2463,14 +2453,14 @@ class ControlCubit extends Cubit<ControlState> {
   /// Shortens (-1) or lengthens (1) the selected duration by one step.
   Future<void> stepFootFadeTime(int direction) async {
     final fade = _footFadeActions;
-    if (!_fadeEditable || fade == null) return;
+    if (!_fadeEditable) return;
     await _footFadeTimeEdit(() => fade.step(state.footFade, direction));
   }
 
   /// A track inherits Default again; Default returns to four seconds.
   Future<void> resetFootFadeTime() async {
     final fade = _footFadeActions;
-    if (!_fadeEditable || fade == null) return;
+    if (!_fadeEditable) return;
     await _footFadeTimeEdit(() => fade.reset(state.footFade));
   }
 
@@ -2487,7 +2477,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// Selects the Mixer source without changing the transport cursor or bank.
   void selectFootMixerDomain(FootMixerDomain domain) {
     if (!_mixerEditable || domain == state.footMixer.domain) return;
-    _cancelMixerHolds();
+    _cancelSurfaceHolds();
     emit(state.copyWith(footMixer: _footMixerActions.domain(domain)));
   }
 
@@ -2526,7 +2516,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// Toggles selected mute, or the slot resolved when a pedal hold fires.
   Future<void> toggleFootMixerMute([int? slot]) async {
     if (!_mixerEditable) return;
-    final visit = _footMixerVisit;
+    final visit = _surfaceVisit;
     final session = _looper.sessionRevision;
     final generation = _looper.mixGeneration;
     await _footMixerActions.toggleMute(
@@ -2535,7 +2525,7 @@ class ControlCubit extends Cubit<ControlState> {
       onError: (error, stack) {
         if (isClosed) return;
         addError(error, stack);
-        if (identical(visit, _footMixerVisit) &&
+        if (identical(visit, _surfaceVisit) &&
             state.mode == InteractionMode.mixer &&
             _looper.sessionRevision == session &&
             _looper.mixGeneration == generation) {
@@ -2920,9 +2910,8 @@ class ControlCubit extends Cubit<ControlState> {
       case TrackOperation.redo:
         return _looper.redo(channel: channel).isOk;
       case TrackOperation.fade:
-        final fade = _footFadeActions;
-        if (fade == null || track == null) return false;
-        return fade.toggle(channel).then((result) => result.isOk);
+        if (track == null) return false;
+        return _footFadeActions.toggle(channel).then((result) => result.isOk);
     }
   }
 
@@ -3720,10 +3709,19 @@ class ControlCubit extends Cubit<ControlState> {
       TrackOperationAction(operation: TrackOperation.solo) => everyTrack(
         (track) => track.solo,
       ),
-      TrackOperationAction(operation: TrackOperation.fade) => everyTrack(
-        (track) =>
-            track.fade.amount < 1 || track.fade.amount != track.fade.target,
-      ),
+      // Empty tracks cannot fade, so only recorded scope members count; at
+      // least one must hold material.
+      TrackOperationAction(operation: TrackOperation.fade) => () {
+        final recorded = [
+          for (final channel in channels)
+            if (channel >= 0 &&
+                channel < looper.tracks.length &&
+                looper.tracks[channel].hasContent)
+              looper.tracks[channel],
+        ];
+        return recorded.isNotEmpty &&
+            recorded.every((track) => track.fade.attenuated);
+      }(),
       CommandAction(command: ControlCommand.recordPerformance) =>
         _performanceArmed,
       CommandAction(command: ControlCommand.recordPlay) => contact,

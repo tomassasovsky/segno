@@ -153,6 +153,7 @@ class _Rig {
     );
     fx = FxChainPersistence(looper: looper);
     cubit = ControlCubit(
+      fadeSettings: testFadeSettings(),
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),

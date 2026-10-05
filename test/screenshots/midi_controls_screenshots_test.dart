@@ -318,6 +318,7 @@ void main() {
       mixGeneration: 1,
     ));
     control = ControlCubit(
+      fadeSettings: testFadeSettings(),
       decayControl: decay,
       oneShotControl: decay,
       recordLengthControl: record,

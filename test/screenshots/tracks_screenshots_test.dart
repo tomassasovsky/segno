@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -20,8 +19,8 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
-import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';

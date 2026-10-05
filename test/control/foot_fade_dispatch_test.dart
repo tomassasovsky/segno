@@ -13,7 +13,8 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
-import 'package:segno_engine/segno_engine.dart' show FadeAdmission, TrackSnapshot;
+import 'package:segno_engine/segno_engine.dart'
+    show FadeAdmission, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -41,8 +42,38 @@ class _Engine extends FakeAudioEngine {
 
 const _holdThreshold = Duration(milliseconds: 820);
 
+TrackSnapshot _recorded({FadeImage fade = const FadeImage()}) => TrackSnapshot(
+  state: TrackState.playing,
+  volume: 1,
+  muted: false,
+  lengthFrames: 48000,
+  undoDepth: 0,
+  rms: 0,
+  peak: 0,
+  fade: fade,
+);
+
+/// Publishes recorded tracks [recorded], with [faded] ones at zero.
+void _publish(
+  _Engine engine, {
+  required Set<int> recorded,
+  Set<int> faded = const {},
+}) => engine.nextSnapshot = engine.nextSnapshot.copyWith(
+  tracks: [
+    for (var channel = 0; channel < 8; channel++)
+      if (recorded.contains(channel))
+        _recorded(
+          fade: faded.contains(channel)
+              ? const FadeImage(amount: 0, target: 0)
+              : const FadeImage(),
+        )
+      else
+        const TrackSnapshot.empty(),
+  ],
+);
+
 class _Rig {
-  _Rig({Set<int> recorded = const {0, 1, 4}, this.withFade = true}) {
+  _Rig({Set<int> recorded = const {0, 1, 4}}) {
     engine.nextSnapshot = engine.nextSnapshot.copyWith(
       tracks: [
         for (var channel = 0; channel < 8; channel++)
@@ -89,12 +120,11 @@ class _Rig {
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
       recordTimingControl: FakeRecordTimingControl(),
-      fadeSettings: withFade ? fade : null,
+      fadeSettings: fade,
     );
     link.hello();
   }
 
-  final bool withFade;
   final engine = _Engine();
   final store = FakeKeyValueStore();
   final ticks = StreamController<void>.broadcast();
@@ -164,22 +194,15 @@ void main() {
     await _pump();
   }
 
-  test(
-    'entry selects the shared Default without a Fade owner refusing',
-    () async {
-      final rig = await enter();
-      final bare = _Rig(withFade: false);
-      try {
-        expect(rig.control.state.mode, InteractionMode.fade);
-        expect(rig.control.state.footFade, const FootFadeSelection());
-        bare.control.setMode(InteractionMode.fade);
-        expect(bare.control.state.mode, InteractionMode.record);
-      } finally {
-        await rig.close();
-        await bare.close();
-      }
-    },
-  );
+  test('entry selects the shared Default', () async {
+    final rig = await enter();
+    try {
+      expect(rig.control.state.mode, InteractionMode.fade);
+      expect(rig.control.state.footFade, const FootFadeSelection());
+    } finally {
+      await rig.close();
+    }
+  });
 
   test('a track tap fades on release at the effective duration', () async {
     final rig = await enter();
@@ -291,6 +314,33 @@ void main() {
     }
   });
 
+  test('rapid steps queued behind a pending write each count', () async {
+    final rig = await enter();
+    try {
+      await Future.wait([
+        rig.control.stepFootFadeTime(1),
+        rig.control.stepFootFadeTime(1),
+      ]);
+      expect(await rig.stored(), FadeDurations(defaultMs: 5000));
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('Fade mode lights faded track switches only', () async {
+    final rig = await enter();
+    try {
+      _publish(rig.engine, recorded: {0, 1, 4}, faded: {1});
+      rig.ticks.add(null);
+      await _pump();
+      final mask = rig.link.lastFrame!.activeButtonMask;
+      expect(mask & (1 << PedalButton.track2.index), isNonZero);
+      expect(mask & (1 << PedalButton.track1.index), 0);
+    } finally {
+      await rig.close();
+    }
+  });
+
   test('an edge step changes nothing', () async {
     final rig = await enter();
     try {
@@ -365,6 +415,15 @@ void main() {
       expect(
         rig.engine.toggles.map((toggle) => toggle.$1).toSet(),
         {0, 1, 4},
+      );
+      // The assignment reports active once every RECORDED track is faded;
+      // empty tracks 2, 3, 5, 6 and 7 cannot fade and must not block it.
+      _publish(rig.engine, recorded: {0, 1, 4}, faded: {0, 1, 4});
+      rig.ticks.add(null);
+      await _pump();
+      expect(
+        rig.link.lastFrame!.activeButtonMask & (1 << PedalButton.clear.index),
+        isNonZero,
       );
     } finally {
       await rig.close();

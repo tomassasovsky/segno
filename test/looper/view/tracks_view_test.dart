@@ -177,6 +177,7 @@ void main() {
     mixSettings = testMixSettings(repository, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
+      fadeSettings: testFadeSettings(),
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),

@@ -62,26 +62,13 @@ class FootFadeActions {
     );
   }
 
-  /// One step shorter or longer; an edge step is a no-op. Editing an
-  /// inherited track time creates its override. Control keeps the selection
-  /// normalized, so only the durations are read here.
+  /// One step shorter (-1) or longer (1); see [FadeSettings.step].
   Future<void> step(FootFadeSelection selection, int direction) async {
-    final durations = this.durations;
     if (durations == null) return;
-    final channel = selection.timeChannel;
-    final milliseconds = channel == null
-        ? durations.defaultMs
-        : durations.effectiveMs(channel);
-    final next = (milliseconds + direction * FootFadeProjection.stepMs).clamp(
-      FootFadeProjection.minimumMs,
-      FootFadeProjection.maximumMs,
+    await settings.step(
+      deltaMs: direction * FootFadeProjection.stepMs,
+      channel: selection.timeChannel,
     );
-    if (next == milliseconds) return;
-    if (channel == null) {
-      await settings.setDefault(next);
-    } else {
-      await settings.setOverride(channel, next);
-    }
   }
 
   /// A track inherits Default again; Default returns to four seconds.

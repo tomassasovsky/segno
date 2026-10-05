@@ -96,8 +96,7 @@ PedalTrackLed projectTrackLed(
       return PedalTrackLed.off;
     case InteractionMode.fade:
       // Lit while fading or faded out; never a claim about audibility.
-      final fade = track?.fade;
-      return fade != null && (fade.amount < 1 || fade.amount != fade.target)
+      return (track?.fade.attenuated ?? false)
           ? PedalTrackLed.blue
           : PedalTrackLed.off;
     case InteractionMode.custom:
