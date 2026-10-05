@@ -262,7 +262,16 @@ class FadeSettings {
     return _enqueue(() async {
       try {
         await _repairStorage();
-        if (!_loaded) await _read();
+        if (!_loaded) {
+          try {
+            await _read();
+          } on FormatException {
+            // An unreadable record can never load; Retry repairs it to the
+            // declared defaults rather than failing forever (fail safe).
+            await _settings.saveFadeDurations(FadeDurations.defaults);
+            await _read();
+          }
+        }
         _results.add(null);
         return true;
       } on Object catch (error) {
@@ -295,6 +304,7 @@ class FadeSettings {
     // Controller intent captured for the outgoing Session is superseded,
     // and the incoming image replaces any temporary held value.
     _lifetime++;
+    _live = _confirmed;
     await _repairStorage();
     await _persist(incoming);
   }

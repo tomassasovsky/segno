@@ -396,7 +396,7 @@ void main() {
     });
 
     test(
-      'malformed startup remains recoverable without silently defaulting',
+      'malformed startup never defaults silently; explicit Retry repairs it',
       () async {
         await owner.close();
         store.values[key] = '{"defaultMs":500.5,"overrides":{}}';
@@ -407,10 +407,14 @@ void main() {
         );
         await expectLater(owner.load(), throwsFormatException);
         expect(owner.needsRecovery, isTrue);
-        expect(await owner.recover(), isFalse);
-        store.values[key] = '{"defaultMs":500,"overrides":{}}';
+        expect(store.values[key], '{"defaultMs":500.5,"overrides":{}}');
         expect(await owner.recover(), isTrue);
-        expect(owner.confirmed.defaultMs, 500);
+        expect(owner.needsRecovery, isFalse);
+        expect(owner.confirmed, FadeDurations.defaults);
+        expect(
+          FadeDurations.fromJson(jsonDecode(store.values[key]! as String)),
+          FadeDurations.defaults,
+        );
       },
     );
   });

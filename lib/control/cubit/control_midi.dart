@@ -1247,6 +1247,7 @@ extension MidiControlEditing on ControlCubit {
       (cleanup &&
           (target is ClickModeValueTarget ||
               target is CountInValueTarget ||
+              target is FadeValueTarget ||
               target is RecordTimingValueTarget && target.address.isValid)) ||
       _looper.valueTargetResolves(
         target,
