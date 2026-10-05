@@ -464,8 +464,15 @@ int le_resolve_device_id(ma_context* ctx, int capture, const char* want,
  * only backend this engine ships, so every choice resolves to it. (The ASIO
  * backend was Windows-only and went with the desktop targets; LE_BACKEND_ASIO
  * survives as a reserved value so persisted settings still parse.) */
+#ifdef LE_NATIVE_TESTS
+const le_device_backend* le_test_backend_override = NULL;
+#endif
+
 const le_device_backend* le_select_backend(int32_t backend) {
   (void)backend;
+#ifdef LE_NATIVE_TESTS
+  if (le_test_backend_override != NULL) return le_test_backend_override;
+#endif
   return &le_miniaudio_backend;
 }
 

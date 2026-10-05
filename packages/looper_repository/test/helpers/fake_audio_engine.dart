@@ -72,6 +72,19 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Result returned by [reopen].
+  ReopenResult reopenResult = (
+    result: EngineResult.ok,
+    outcome: ReopenOutcome.retained,
+  );
+
+  @override
+  ReopenResult reopen(EngineConfig config) {
+    lastConfig = config;
+    calls.add('reopen');
+    return reopenResult;
+  }
+
   /// How many times [snapshot] was called — the FFI walk a periodic reader
   /// must not pay per tick.
   int snapshotCalls = 0;

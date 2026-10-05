@@ -126,6 +126,23 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// How many times [reopen] was called.
+  int reopenCalls = 0;
+
+  /// Result returned by [reopen]; a successful one marks the engine running.
+  ReopenResult reopenResult = (
+    result: EngineResult.ok,
+    outcome: ReopenOutcome.retained,
+  );
+
+  @override
+  ReopenResult reopen(EngineConfig config) {
+    reopenCalls++;
+    lastConfig = config;
+    if (reopenResult.result.isOk) _running = true;
+    return reopenResult;
+  }
+
   @override
   CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
 
