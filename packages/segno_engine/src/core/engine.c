@@ -1316,6 +1316,7 @@ int32_t le_engine_measure_latency(le_engine* engine) {
 
 #ifdef LE_NATIVE_TESTS
 void (*le_test_fade_hook)(le_engine*, int) = NULL;
+void (*le_test_stop_record_hook)(le_engine*, int) = NULL;
 void (*le_test_record_timing_hook)(le_engine*, int) = NULL;
 void (*le_test_click_mode_hook)(le_engine*, int) = NULL;
 void (*le_test_record_start_hook)(le_engine*, int) = NULL;
