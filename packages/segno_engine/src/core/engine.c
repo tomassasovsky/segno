@@ -508,6 +508,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->pending_target = LE_TRACK_EMPTY;
     tr->pending_len = 0;
     tr->pending_master_len = 0;
+    tr->empty_command = 0;
     store_i32(&tr->a_state_acks, 0);
     tr->dub_generation = 0;
     atomic_store_explicit(&engine->a_record_timing_track[t], -1,
