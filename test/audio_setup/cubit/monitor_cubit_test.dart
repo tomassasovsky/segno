@@ -452,6 +452,7 @@ void main() {
                   repository: live,
                   settings: saved,
                   persistence: fx,
+                  mixSettings: mix,
                   input: 0,
                   muted: muted,
                 )
@@ -544,6 +545,7 @@ void main() {
         repository: live,
         settings: saved,
         persistence: fx,
+        mixSettings: mix,
         input: 0,
         muted: true,
       );
@@ -578,6 +580,7 @@ void main() {
           repository: live,
           settings: saved,
           persistence: fx,
+          mixSettings: mix,
           input: 0,
           muted: true,
         );
