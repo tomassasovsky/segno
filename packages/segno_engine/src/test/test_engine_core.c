@@ -32967,8 +32967,25 @@ static void test_session_commit_stays_stopped_until_play(void) {
 }
 
 #include "test_engine_fade.h"
+#include "test_engine_reopen.h"
 
 int main(void) {
+  test_reopen_same_rate_retains_material();
+  test_reopen_drops_partial_first_take();
+  test_reopen_reverts_partial_overdub_pass();
+  test_reopen_reverts_partial_pass_across_segments();
+  test_reopen_reverts_pass_mid_drain();
+  test_reopen_files_parked_retire();
+  test_reopen_drops_seam_take();
+  test_reopen_fade_frozen_then_resumes();
+  test_reopen_keeps_clear_history();
+  test_reopen_mismatch_clears();
+  test_reopen_pending_press_drops_only_that_track();
+  test_reopen_pending_state_drops_track();
+  test_reopen_files_two_complete_passes();
+  test_reopen_fewer_channels_keeps_material();
+  test_reopen_device_lifecycle();
+  test_reopen_ends_performance_capture();
   test_session_commit_stays_stopped_until_play();
   test_fade_clear_boundary();
   test_fade_clear_pressure_and_frozen();

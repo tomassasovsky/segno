@@ -411,6 +411,12 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult stop() => EngineResult.ok;
   @override
+  ReopenResult reopen(EngineConfig config) => (
+    result: EngineResult.ok,
+    outcome: ReopenOutcome.retained,
+    droppedTracks: 0,
+  );
+  @override
   LoopbackInfo detectLoopback() => const LoopbackInfo.none();
   @override
   List<AudioDevice> enumerateDevices() => const [];

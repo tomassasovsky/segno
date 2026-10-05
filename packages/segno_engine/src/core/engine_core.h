@@ -186,6 +186,32 @@ extern void (*le_test_record_start_hook)(le_engine*, int);
  * engine.c as le_monitor_input_reset.) */
 void le_lane_reset(le_lane* ln, int32_t input_channel);
 
+/* The settings half of le_lane_reset: routing, live mix, mute, effects and
+ * cache bookkeeping back to defaults, material (buffers, a_live/a_len/
+ * a_recoverable, source image) untouched. Defined in engine.c. */
+void le_lane_reset_settings(le_lane* ln, int32_t input_channel);
+
+/* Retained reopen (#1140), control-side half — defined in engine_commands.c.
+ * With the device closed and the workers joined, files every completed
+ * overdub pass the audio thread handed off (events still in the ring, a
+ * parked retire, a frozen complete shadow — oldest first) as committed undo
+ * layers, completes an applied Clear's restore point, and drops the posted
+ * shadows and queued undo taps. Tracks in `drop_mask` (bit t = track t) are
+ * about to be dropped whole and are skipped. Runs BEFORE
+ * le_engine_reopen_settle. */
+void le_engine_reopen_file_retired(le_engine* engine, uint32_t drop_mask);
+
+/* Retained reopen (#1140), audio-side half — defined in engine_process.c.
+ * Reverts a partial overdub pass to its pre-pass image, drops a take still
+ * capturing (first recording, seam crossfade or trailing fold) and every
+ * track in `drop_mask` (a state command the audio thread never applied),
+ * parks every other content track STOPPED at the loop head, freezes the Fade
+ * envelopes and republishes the per-track atomics. A drop that empties the
+ * whole rig resets the master, as a clear does. Runs after
+ * le_engine_reopen_file_retired and before le_engine_reset_runtime
+ * re-initialises the rings. */
+void le_engine_reopen_settle(le_engine* engine, uint32_t drop_mask);
+
 /* Ensures lane [ln]'s pool slot [slot] holds a buffer of >= [frames] frames
  * (control thread only; the caller guarantees the audio thread is not reading
  * the slot's CONTENT — an EMPTY track's live slot, or a slot outside
