@@ -408,6 +408,15 @@ class LooperRepository {
   final _recordStartFailures = StreamController<EngineResult>.broadcast();
   final _recordingInputRequired = StreamController<int>.broadcast();
 
+  /// A fresh capture the engine refused with [EngineResult.notReady]: the
+  /// one-block window after an Undo-to-empty, Clear or cancelled take in which
+  /// the callback may still hold the track's buffers (#1146). Retried exactly
+  /// once from the poll, after a further callback block has published; a
+  /// second refusal is reported on [recordRefusals].
+  _RecordRetry? _recordRetry;
+  bool _retryingRecord = false;
+  final _recordRefusals = StreamController<int>.broadcast();
+
   /// The desired global master output gain (`0..1`), re-applied to the engine
   /// on every successful (re)start so it survives device changes and
   /// reconnects. Unity (`1.0`) until set.
@@ -2214,6 +2223,7 @@ class LooperRepository {
     final receiptsSettled = _observeSettingsReceipts();
     _drainHistoryFx();
     final snapshot = _snapshotAndSettleImages();
+    _retryRefusedRecord(snapshot);
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
     // A measurement auto-sets the engine's offset (it never flows through
@@ -3196,6 +3206,13 @@ class LooperRepository {
       _reproject();
     } else {
       detached.forEach(_engine.discardPreparedPlugin);
+      // The engine's own fresh-capture refusal (#1146): the callback may
+      // still hold this track's buffers for one block. Owed one retry.
+      if (result == EngineResult.notReady &&
+          state == TrackState.empty &&
+          !_retryingRecord) {
+        _recordRetry = _RecordRetry(channel, snapshot.framesProcessed);
+      }
     }
     return result;
   }
@@ -7427,6 +7444,51 @@ class LooperRepository {
   /// Empty Sound-start target needing a real selected recording input.
   Stream<int> get recordingInputRequired => _recordingInputRequired.stream;
 
+  /// Fresh-capture Record presses the engine refused twice (the channel): the
+  /// press is lost and the player should press again. Low stakes, so a toast.
+  Stream<int> get recordRefusals => _recordRefusals.stream;
+
+  /// Whether a Record press on [channel] the engine refused is still waiting
+  /// for its one retry — the press counts as accepted until it resolves.
+  bool recordRetryPending(int channel) => _recordRetry?.channel == channel;
+
+  /// Runs the one retry a refused fresh-capture press is owed, once a further
+  /// callback block has published (frames advanced or the ring settled), or
+  /// after [_recordRetryPollLimit] polls without either. A track that is no
+  /// longer a fresh target (a later press landed, a redo) supersedes the
+  /// press silently; a second refusal is reported.
+  void _retryRefusedRecord(EngineSnapshot snapshot) {
+    final retry = _recordRetry;
+    if (retry == null) return;
+    final published =
+        snapshot.framesProcessed != retry.framesProcessed ||
+        _engine.commandsSettled;
+    if (!published && ++retry.polls < _recordRetryPollLimit) return;
+    _recordRetry = null;
+    final track = retry.channel < snapshot.tracks.length
+        ? snapshot.tracks[retry.channel]
+        : null;
+    if (track == null ||
+        track.state != TrackState.empty ||
+        track.pending ||
+        track.pendingLaunch != null ||
+        track.countInCancelGrace) {
+      return;
+    }
+    _retryingRecord = true;
+    EngineResult result;
+    try {
+      result = record(channel: retry.channel);
+    } finally {
+      _retryingRecord = false;
+    }
+    if (!result.isOk && !_recordRefusals.isClosed) {
+      _recordRefusals.add(retry.channel);
+    }
+  }
+
+  static const _recordRetryPollLimit = 4;
+
   EngineResult _reportRecordStart(EngineResult result) {
     if (!_recordStartFailures.isClosed) _recordStartFailures.add(result);
     return result;
@@ -8226,6 +8288,7 @@ class LooperRepository {
     await _clickModeFailures.close();
     await _recordStartFailures.close();
     await _recordingInputRequired.close();
+    await _recordRefusals.close();
     await _mixSettingsFailures.close();
     await _controller.close();
   }
@@ -8386,6 +8449,20 @@ class _PendingImage {
   final Map<int, int> inheritedInputs;
   final Map<int, Map<String, PluginSlotHandle>> inheritedHandles;
   final bool clearOnCommit;
+}
+
+/// One refused fresh-capture press waiting for its retry (#1146).
+class _RecordRetry {
+  _RecordRetry(this.channel, this.framesProcessed);
+
+  final int channel;
+
+  /// The callback's frame count at the refusal: a different count on a later
+  /// poll means at least one further block has published.
+  final int framesProcessed;
+
+  /// Polls waited without seeing publication.
+  int polls = 0;
 }
 
 class _FxPreparationRefused implements Exception {

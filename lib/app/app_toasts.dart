@@ -13,6 +13,7 @@ abstract final class AppToastId {
   static const clickModeSettings = 'app_clickModeSettings_banner';
   static const recordStartSettings = 'app_recordStartSettings_banner';
   static const recordingInputRequired = 'app_recordingInputRequired_toast';
+  static const recordRefused = 'app_recordRefused_toast';
   static const deviceRestored = 'app_deviceRestored_snackbar';
   static const midiLost = 'app_midiLost_toast';
   static const midiRestored = 'app_midiRestored_snackbar';
