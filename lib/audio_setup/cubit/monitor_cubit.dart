@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/monitor_mute.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Per-hardware-input live-monitor configuration.
@@ -476,13 +477,16 @@ class MonitorCubit extends Cubit<MonitorState> {
   Future<void> setMute(int input, {required bool muted}) async {
     if (isClosed) return;
     try {
-      final result = _repository.setMonitorMute(input: input, muted: muted);
-      if (!result.isOk) {
-        throw StateError('monitor mute was refused: ${result.name}');
-      }
-      final next = state.forInput(input).copyWith(muted: muted);
-      emit(state.withInput(next));
-      await _persistMonitor(next);
+      await applyMonitorMute(
+        repository: _repository,
+        settings: _settings,
+        persistence: _fxPersistence,
+        input: input,
+        muted: muted,
+        onAccepted: () => emit(
+          state.withInput(state.forInput(input).copyWith(muted: muted)),
+        ),
+      );
     } on Object catch (error, stack) {
       if (!isClosed) addError(error, stack);
       rethrow;

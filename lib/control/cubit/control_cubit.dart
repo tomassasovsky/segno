@@ -28,6 +28,8 @@ import 'package:segno/control/binding/pedal_binding_set.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/control_projection.dart';
+import 'package:segno/control/foot_mixer_actions.dart';
+import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/click_volume.dart';
@@ -40,6 +42,7 @@ import 'package:segno/looper/model/record_timing.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'control_midi.dart';
+part 'control_foot_mixer.dart';
 part 'control_state.dart';
 
 typedef _DecayOrigin = ({DecayLifetime lifetime, int revision});
@@ -1394,7 +1397,17 @@ class ControlCubit extends Cubit<ControlState> {
   // One threshold for Undo, Mode, Record/Play, track holds, Stop restore and
   // assigned FX holds. Read at press time; the fresh default is 800 ms.
   Duration _longPress = const Duration(milliseconds: 800);
-  final _pressedButtons = <PedalButton>{};
+  Object _footMixerVisit = Object();
+  (int, int)? _footMixerSource;
+  late final _footMixerActions = FootMixerActions(
+    repository: _looper,
+    settings: _settings,
+    mix: _mixSettings,
+    persistence: _fxPersistence,
+  );
+
+  final _physicalContact = Object();
+  final _pressedButtons = <PedalButton, Object>{};
   final _bindingGestures = <PedalButton, _HoldGesture>{};
   // Remembers the completed action identity, not its enabled value. The LED
   // always reads that action's current function state from the rig.
@@ -1579,6 +1592,22 @@ class ControlCubit extends Cubit<ControlState> {
       );
     }
 
+    if (state.mode == InteractionMode.mixer) {
+      final source = (_looper.sessionRevision, _looper.mixGeneration);
+      if (_footMixerSource != source) {
+        _footMixerSource = source;
+        _cancelMixerHolds();
+        next = next.copyWith(
+          footMixer: _footMixerActions.domain(state.footMixer.domain),
+        );
+      } else {
+        next = next.copyWith(
+          footMixer: _footMixerActions
+              .project(state.footMixer, looper: looper)
+              .selection,
+        );
+      }
+    }
     if (next != state) emit(next);
   }
 
@@ -1597,7 +1626,7 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.record => InteractionMode.mute,
     InteractionMode.mute => InteractionMode.fx,
     InteractionMode.fx => InteractionMode.custom,
-    InteractionMode.custom => InteractionMode.record,
+    InteractionMode.custom || InteractionMode.mixer => InteractionMode.record,
   });
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
@@ -1712,6 +1741,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// table).
   void setMode(InteractionMode next) {
     if (next == state.mode) return;
+    _footMixerVisit = Object();
     // Leaving the mode the bindings live in strands any held momentary — the
     // release will arrive with the foot in a mode that no longer dispatches
     // it, or not at all. Restore first (B1), before the emit re-projects.
@@ -1734,6 +1764,16 @@ class ControlCubit extends Cubit<ControlState> {
               for (final track in _tracks)
                 if (_playable(track)) track.channel,
             },
+          ),
+        );
+      case InteractionMode.mixer:
+        _footMixerSource = (_looper.sessionRevision, _looper.mixGeneration);
+        emit(
+          state.copyWith(
+            mode: next,
+            footMixer: _footMixerActions.enter(state.cursor),
+            excluded: const {},
+            parkedResume: const {},
           ),
         );
       case InteractionMode.custom:
@@ -1846,6 +1886,7 @@ class ControlCubit extends Cubit<ControlState> {
     if (_takeLocked()) return;
     switch (state.mode) {
       case InteractionMode.record:
+      case InteractionMode.mixer:
         _recAdvance(state.cursor);
       case InteractionMode.mute:
         _muteRecPlay();
@@ -1973,6 +2014,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.record:
         _recStop(state.cursor);
       case InteractionMode.mute:
+      case InteractionMode.mixer:
         parkAll();
       case InteractionMode.fx:
         panicTrackChains();
@@ -2037,6 +2079,8 @@ class ControlCubit extends Cubit<ControlState> {
         _muteTrackPressed(channel);
       case InteractionMode.fx:
         toggleTrackChain(channel);
+      case InteractionMode.mixer:
+        break;
       case InteractionMode.custom:
         // Inert here: the switch runs its assignment at the press. Note the
         // on-screen surfaces still call this — selection happens at their
@@ -2285,9 +2329,108 @@ class ControlCubit extends Cubit<ControlState> {
   /// undone-to-empty track).
   void redo(int channel) => _looper.redo(channel: channel);
 
+  /// Admits a screen contact into the same ledger as physical pedals.
+  /// Its originating token also qualifies release and cancellation.
+  void footMixerPressed(PedalButton button, Object contact) {
+    if (state.mode != InteractionMode.mixer || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the screen contact that was admitted may complete this gesture.
+  void footMixerReleased(PedalButton button, Object contact) =>
+      _handleEvent(ButtonReleased(button), contact: contact);
+
+  /// Accessible semantic activation uses the same role as timed contacts.
+  void activateFootMixerPedal(PedalButton button, {bool hold = false}) {
+    if (!_mixerEditable) return;
+    final role = FootMixerProjection.pedalRoles[button]!;
+    final action = hold ? role.hold : role.press;
+    if (action != null) _dispatchMixerAction(action, role.slot);
+  }
+
+  /// Cancels an abandoned screen contact without dispatching its short action.
+  void footMixerCancelled(PedalButton button, Object contact) {
+    if (isClosed ||
+        _inputRetired ||
+        !identical(_pressedButtons[button], contact)) {
+      return;
+    }
+    _systemGesture(button)?.cancel();
+    _pressedButtons.remove(button);
+    _acceptedContacts.remove(button);
+    _pushProjected();
+  }
+
+  /// Selects the Mixer source without changing the transport cursor or bank.
+  void selectFootMixerDomain(FootMixerDomain domain) {
+    if (!_mixerEditable || domain == state.footMixer.domain) return;
+    _cancelMixerHolds();
+    emit(state.copyWith(footMixer: _footMixerActions.domain(domain)));
+  }
+
+  /// Selects one available visible channel; repeated selection is harmless.
+  void selectFootMixerSlot(int slot) {
+    if (!_mixerEditable || slot < 0 || slot >= 4) return;
+    emit(
+      state.copyWith(
+        footMixer: _footMixerActions.select(state.footMixer, slot),
+      ),
+    );
+  }
+
+  /// Advances the local page, selecting its first available channel.
+  void nextFootMixerPage() {
+    if (!_mixerEditable) return;
+    emit(
+      state.copyWith(
+        footMixer: _footMixerActions.nextPage(state.footMixer),
+      ),
+    );
+  }
+
+  /// Adds a relative gain step through the shared transaction owner.
+  Future<void> stepFootMixerGain(int direction) async {
+    if (!_mixerEditable) return;
+    await _footMixerActions.step(state.footMixer, direction);
+  }
+
+  /// Resets only the selected gain to unity.
+  Future<void> resetFootMixerGain() async {
+    if (!_mixerEditable) return;
+    await _footMixerActions.reset(state.footMixer);
+  }
+
+  /// Toggles selected mute, or the slot resolved when a pedal hold fires.
+  Future<void> toggleFootMixerMute([int? slot]) async {
+    if (!_mixerEditable) return;
+    final visit = _footMixerVisit;
+    final session = _looper.sessionRevision;
+    final generation = _looper.mixGeneration;
+    await _footMixerActions.toggleMute(
+      state.footMixer,
+      slot: slot,
+      onError: (error, stack) {
+        if (isClosed) return;
+        addError(error, stack);
+        if (identical(visit, _footMixerVisit) &&
+            state.mode == InteractionMode.mixer &&
+            _looper.sessionRevision == session &&
+            _looper.mixGeneration == generation) {
+          emit(state.copyWith(footMixerFailure: state.footMixerFailure + 1));
+        }
+      },
+    );
+  }
+
   /// An encoder detent turn: accumulates into the master output gain.
   void encoderTurned(int delta) {
     if (_inputRetired || _takeLocked()) return;
+    if (state.mode == InteractionMode.mixer) {
+      for (var step = 0; step < delta.abs(); step++) {
+        unawaited(stepFootMixerGain(delta.sign));
+      }
+      return;
+    }
     final value = (_masterGain + delta * _encoderStep).clamp(0.0, 1.0);
     if (_looper.setMasterGain(value).isOk) {
       _masterGain = value;
@@ -2302,14 +2445,16 @@ class ControlCubit extends Cubit<ControlState> {
   // Inbound pedal events -> the same intent methods (via PedalRepository)
   // ---------------------------------------------------------------------------
 
-  void _handleEvent(PedalEvent event) {
+  void _handleEvent(PedalEvent event, {Object? contact}) {
     if (_inputRetired) return;
+    final owner = contact ?? _physicalContact;
     switch (event) {
       case ButtonPressed(:final button):
-        _onPress(button);
+        _onPress(button, owner);
         _pushProjected();
       case ButtonReleased(:final button):
-        if (!_pressedButtons.remove(button)) break;
+        if (!identical(_pressedButtons[button], owner)) break;
+        _pressedButtons.remove(button);
         _acceptedContacts.remove(button);
         if (button == PedalButton.clear) _clearPressToken = null;
         if (button == PedalButton.clear) _onClearRelease();
@@ -2345,15 +2490,20 @@ class ControlCubit extends Cubit<ControlState> {
     _ => _trackHoldGestures[button],
   };
 
-  void _onPress(PedalButton button) {
+  void _onPress(PedalButton button, Object owner) {
     if (_takeLocked()) return;
     if (_pendingRestore.any((key) => key.button == button)) return;
-    if (!_pressedButtons.add(button)) return;
+    if (_pressedButtons.containsKey(button)) return;
+    _pressedButtons[button] = owner;
     _customDispatchTokens.remove(button);
     _log(
       'press ${button.name}  [mode=${state.mode.name} '
       'cursor=${state.cursor}]',
     );
+    if (state.mode == InteractionMode.mixer) {
+      _onMixerPress(button);
+      return;
+    }
     if (state.mode == InteractionMode.custom) {
       // These two physical exits cannot be assigned. They act on contact,
       // without a second action waiting on the release.
@@ -2402,7 +2552,9 @@ class ControlCubit extends Cubit<ControlState> {
         final accepted = switch (state.mode) {
           InteractionMode.record => !_takeLocked() && _recAdvance(state.cursor),
           InteractionMode.mute => !_takeLocked() && _muteRecPlay(),
-          InteractionMode.fx || InteractionMode.custom => false,
+          InteractionMode.fx ||
+          InteractionMode.custom ||
+          InteractionMode.mixer => false,
         };
         if (accepted) _acceptedContacts.add(button);
         _armRecordHold();
@@ -2524,7 +2676,7 @@ class ControlCubit extends Cubit<ControlState> {
       return;
     }
     _customLastActions[key] = (action: action, channels: channels);
-    if (_pressedButtons.contains(button)) _customActiveKeys[button] = key;
+    if (_pressedButtons.containsKey(button)) _customActiveKeys[button] = key;
     _pushProjected();
   }
 
@@ -2687,7 +2839,7 @@ class ControlCubit extends Cubit<ControlState> {
       if (!accepted ||
           isClosed ||
           !identical(_clearPressToken, token) ||
-          !_pressedButtons.contains(PedalButton.clear)) {
+          !_pressedButtons.containsKey(PedalButton.clear)) {
         return;
       }
       _clearHeld = true;
@@ -2763,7 +2915,7 @@ class ControlCubit extends Cubit<ControlState> {
         if (state.mode != InteractionMode.fx) return;
         _log('fx chains restored (long-press)');
         final accepted = _sweepTrackChains(enabled: true);
-        if (accepted && _pressedButtons.contains(PedalButton.stop)) {
+        if (accepted && _pressedButtons.containsKey(PedalButton.stop)) {
           _acceptedContacts.add(PedalButton.stop);
         } else {
           _acceptedContacts.remove(PedalButton.stop);
@@ -3197,16 +3349,16 @@ class ControlCubit extends Cubit<ControlState> {
           display.binding == binding &&
           (display.scope != BindingScope.selected ||
               display.cursor == state.cursor ||
-              _pressedButtons.contains(button))) {
+              _pressedButtons.containsKey(button))) {
         bound[ledChannel] = display.behavior == BindingBehavior.momentary
-            ? _pressedButtons.contains(button) &&
+            ? _pressedButtons.containsKey(button) &&
                   _heldRestore.containsKey(binding.key)
             : _looper.bindingEnabled(display.target);
         continue;
       }
       if (binding.behavior == BindingBehavior.momentary) {
         bound[ledChannel] =
-            _pressedButtons.contains(button) &&
+            _pressedButtons.containsKey(button) &&
             _heldRestore.containsKey(binding.key);
         continue;
       }
@@ -3389,7 +3541,7 @@ class ControlCubit extends Cubit<ControlState> {
     final action = completed ? last.action : pair.press ?? pair.hold;
     if (action == null || action is UnavailableAction) return false;
     final contact =
-        _customActiveKeys[button] == key && _pressedButtons.contains(button);
+        _customActiveKeys[button] == key && _pressedButtons.containsKey(button);
     // A completed contact retains its fired target. After release,
     // selected-scope feedback follows the cursor the next stomp will use.
     final channels = completed && contact

@@ -118,6 +118,7 @@ class TracksCommands {
       InteractionMode.mute => l10n.a11yModeMute,
       InteractionMode.fx => l10n.a11yModeFx,
       InteractionMode.custom => l10n.a11yModeCustom,
+      InteractionMode.mixer => l10n.actionModeMixer,
     });
   }
 
@@ -220,6 +221,21 @@ class TracksCommands {
       return KeyEventResult.ignored; // let OS / menu shortcuts through
     }
 
+    if (mode == InteractionMode.mixer) {
+      if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
+        overlay.setMode(InteractionMode.record);
+        return KeyEventResult.handled;
+      }
+      // Let focused Material controls activate through the ancestor Shortcuts.
+      // Plain transport/digit keys still belong to this separate flow.
+      if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space) {
+        return node.hasPrimaryFocus
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
+      }
+      if (key != LogicalKeyboardKey.keyS) return KeyEventResult.handled;
+    }
+
     // Common to both modes.
     if (key == LogicalKeyboardKey.keyM) {
       toggleMode();
@@ -294,6 +310,8 @@ class TracksCommands {
             // missing channel as "off" and dispatch enable forever.
             announceFxChainToggle(channel);
             bloc.add(LooperTrackChainToggled(channel));
+          case InteractionMode.mixer:
+            break;
           case InteractionMode.custom:
             // Selection only: what a control does in Custom controls is
             // assigned per FOOTSWITCH, and a digit key is not one.

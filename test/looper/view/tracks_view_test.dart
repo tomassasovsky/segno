@@ -19,9 +19,11 @@ import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
@@ -126,6 +128,7 @@ void main() {
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(repository.allMonitors).thenReturn(const {});
     when(() => repository.laneCount(any())).thenReturn(1);
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
@@ -217,7 +220,10 @@ void main() {
   // The post-clear-all toast renders into a toastification overlay, which
   // needs the app's Navigator above it (hence wrapping MaterialApp, not its
   // child). Inert for the tests that never raise a toast.
-  Future<void> pump(WidgetTester tester) => tester.pumpWidget(
+  Future<void> pump(
+    WidgetTester tester, {
+    KeyEventResult Function(FocusNode, KeyEvent)? onAncestorKey,
+  }) => tester.pumpWidget(
     ToastificationWrapper(
       child: MaterialApp(
         theme: AppTheme.neon,
@@ -261,7 +267,9 @@ void main() {
               // audio setup cubit (#453).
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             ],
-            child: const TracksView(),
+            child: onAncestorKey == null
+                ? const TracksView()
+                : Focus(onKeyEvent: onAncestorKey, child: const TracksView()),
           ),
         ),
       ),
@@ -300,6 +308,169 @@ void main() {
     await pump(tester);
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     handle.dispose();
+  });
+
+  testWidgets(
+    'Foot Mixer is distinct from the normal Mixer and pages all inputs',
+    (tester) async {
+      seed(
+        const LooperState(
+          status: EngineStatus(inputChannels: 18),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1),
+          ],
+        ),
+      );
+      tracks.showView(StageView.mixer);
+      await pump(tester);
+      control.setMode(InteractionMode.mixer);
+      await tester.pump();
+      expect(find.byType(FootMixerView), findsOneWidget);
+      expect(find.byKey(const Key('stage_mixer_run')), findsNothing);
+      await tester.tap(find.text('Inputs'));
+      await tester.pump();
+      for (var page = 0; page < 4; page++) {
+        await tester.tap(find.byKey(const Key('foot_mixer_pedal_bank')));
+        await tester.pump();
+      }
+      expect(find.text('Inputs 17–18'), findsOneWidget);
+      expect(control.state.activeBank, 0);
+      expect(control.state.cursor, 0);
+      expect(control.state.footMixer.domain, FootMixerDomain.inputs);
+      await tester.tap(find.byKey(const Key('foot_mixer_exit')));
+      await tester.pump();
+      expect(find.byType(FootMixerView), findsNothing);
+      expect(find.byKey(const Key('stage_mixer_run')), findsOneWidget);
+    },
+  );
+
+  for (final activation in [
+    LogicalKeyboardKey.enter,
+    LogicalKeyboardKey.space,
+  ]) {
+    testWidgets(
+      'Foot Mixer focused buttons activate with ${activation.debugName}',
+      (tester) async {
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+        control.setMode(InteractionMode.mixer);
+        await tester.pump();
+        final exit = find.descendant(
+          of: find.byKey(const Key('foot_mixer_exit')),
+          matching: find.byIcon(Icons.chevron_left),
+        );
+        Focus.of(tester.element(exit)).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(activation);
+        await tester.pump();
+        expect(control.state.mode, InteractionMode.record);
+        control.setMode(InteractionMode.mixer);
+        await tester.pump();
+        final settingsButton = find.descendant(
+          of: find.byType(FootMixerView),
+          matching: find.text('Settings'),
+        );
+        Focus.of(tester.element(settingsButton)).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(activation);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<AnimatedOpacity>(
+                find.byKey(const Key('settingsTray_scrim')),
+              )
+              .opacity,
+          1,
+        );
+        verifyNever(() => bloc.add(const LooperPlayAllPressed()));
+      },
+    );
+  }
+
+  testWidgets(
+    'Foot Mixer preserves modifier shortcuts and blocks plain transport',
+    (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      final passedKeys = <LogicalKeyboardKey>[];
+      await pump(
+        tester,
+        onAncestorKey: (_, event) {
+          if (event is KeyDownEvent) passedKeys.add(event.logicalKey);
+          return KeyEventResult.ignored;
+        },
+      );
+      control.setMode(InteractionMode.mixer);
+      await tester.pump();
+      for (final modifier in [
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.metaLeft,
+      ]) {
+        passedKeys.clear();
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+        verify(() => bloc.add(const LooperUndoPressed(0))).called(1);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+        verify(session.save).called(1);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
+        expect(passedKeys, contains(LogicalKeyboardKey.keyQ));
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+        expect(control.state.mode, InteractionMode.mixer);
+        await tester.sendKeyUpEvent(modifier);
+      }
+      passedKeys.clear();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+      expect(passedKeys, isEmpty);
+      expect(control.state.cursor, 0);
+      verifyNever(() => bloc.add(const LooperPlayAllPressed()));
+      verifyNever(() => bloc.add(const LooperPlayPressed(0)));
+    },
+  );
+
+  testWidgets('Foot Mixer refusal is visible above the real Settings tray', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+      ),
+    );
+    when(() => repository.trackMuted(0)).thenReturn(false);
+    when(
+      () => repository.setMute(muted: true),
+    ).thenReturn(EngineResult.invalid);
+    when(() => repository.laneMuted(any(), any())).thenReturn(false);
+    when(() => repository.fxRecipesSettled).thenReturn(true);
+    when(() => repository.laneEffects(any(), any())).thenReturn(const []);
+    when(() => repository.laneChainEnabled(any(), any())).thenReturn(true);
+    when(
+      () => repository.laneChainInheritedFrom(any(), any()),
+    ).thenReturn(const []);
+    await pump(tester);
+    control.setMode(InteractionMode.mixer);
+    await tester.pump();
+    tester.element(find.byType(SettingsTray)).read<SettingsTrayCubit>().open();
+    await tester.pumpAndSettle();
+    await control.toggleFootMixerMute();
+    await tester.pumpAndSettle();
+    expect(
+      find
+          .text('The Mixer change could not be completed. Try again.')
+          .hitTestable(),
+      findsOneWidget,
+    );
+    expect(control.state.footMixerFailure, 1);
+    expect(tester.takeException(), isNull);
+    dismissAppToast(AppToastId.footMixerFailure);
+    await tester.pump(const Duration(seconds: 10));
   });
 
   testWidgets('renders a tile per track', (tester) async {

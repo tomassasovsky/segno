@@ -18,18 +18,21 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_gate.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -999,6 +1002,112 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     });
+
+    for (final failedRestore in [false, true]) {
+      testWidgets('Foot Mixer live input gain; failed restore=$failedRestore', (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(1920, 1080);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        settings = SettingsRepository(
+          store: _MonitorRestoreStore()..refuseRead = failedRestore,
+        );
+        engine.nextSnapshot = engine.nextSnapshot.copyWith(inputChannels: 2);
+        repository.startEngine(const EngineConfig());
+        await pumpApp(tester, NoopWaveformWindowService());
+        final context = tester.element(find.byType(TracksView));
+        final monitor = context.read<MonitorCubit>();
+        final control = context.read<ControlCubit>()
+          ..setMode(InteractionMode.mixer)
+          ..selectFootMixerDomain(FootMixerDomain.inputs);
+        await tester.pumpAndSettle();
+        final gain = find.byKey(const Key('foot_mixer_selected_gain'));
+        expect(tester.widget<AppText>(gain).data, '100%');
+        await tester.tap(find.byKey(const Key('foot_mixer_pedal_undo')));
+        await tester.pumpAndSettle();
+        expect(repository.monitorVolume(0), closeTo(.95, 1e-9));
+        expect(tester.widget<AppText>(gain).data, '95%');
+        expect(
+          tester
+              .widget<LinearProgressIndicator>(
+                find.byKey(const Key('foot_mixer_gain_bar')),
+              )
+              .value,
+          closeTo(.95, 1e-9),
+        );
+        // External/MIDI controllers share this exact transaction owner.
+        await context.read<MixSettingsCoordinator>().setControllerValues({
+          const MonitorVolumeTarget(0): .4,
+        });
+        await tester.pumpAndSettle();
+        expect(tester.widget<AppText>(gain).data, '40%');
+        expect(repository.monitorVolume(0), .4);
+        await context.read<MixSettingsCoordinator>().setControllerValues({
+          const MonitorVolumeTarget(0): .98,
+        });
+        await tester.pumpAndSettle();
+        expect(tester.widget<AppText>(gain).data, '98%');
+        expect(find.text('Limit · Hold reset'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('foot_mixer_pedal_clear')));
+        await tester.pumpAndSettle();
+        expect(repository.monitorVolume(0), .98);
+        expect(tester.widget<AppText>(gain).data, '98%');
+        expect(control.state.footMixer.domain, FootMixerDomain.inputs);
+        expect(monitor.state.restoreFailed, failedRestore);
+        if (failedRestore) expect(monitor.state.inputs, isEmpty);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
+      });
+    }
+
+    testWidgets(
+      'Foot Mixer mute caption follows admitted input after failed restore',
+      (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(1920, 1080);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        settings = SettingsRepository(store: _MonitorRestoreStore());
+        engine.nextSnapshot = engine.nextSnapshot.copyWith(inputChannels: 2);
+        repository.startEngine(const EngineConfig());
+        await pumpApp(tester, NoopWaveformWindowService());
+        final context = tester.element(find.byType(TracksView));
+        final monitor = context.read<MonitorCubit>();
+        context.read<ControlCubit>()
+          ..setMode(InteractionMode.mixer)
+          ..selectFootMixerDomain(FootMixerDomain.inputs);
+        await tester.pumpAndSettle();
+        final pedal = find.byKey(const Key('foot_mixer_pedal_track1'));
+        final hold = await tester.startGesture(tester.getCenter(pedal));
+        await tester.pump(const Duration(milliseconds: 801));
+        await hold.up();
+        await tester.pumpAndSettle();
+        expect(repository.monitorMuted(0), isTrue);
+        expect(await settings.loadMonitorMute(0), isTrue);
+        expect(monitor.state.restoreFailed, isTrue);
+        expect(monitor.state.inputs, isEmpty);
+        expect(
+          find.descendant(of: pedal, matching: find.text('Hold · Unmute')),
+          findsOneWidget,
+        );
+        expect(find.text('100% · Muted'), findsOneWidget);
+        final unmute = await tester.startGesture(tester.getCenter(pedal));
+        await tester.pump(const Duration(milliseconds: 801));
+        await unmute.up();
+        await tester.pumpAndSettle();
+        expect(repository.monitorMuted(0), isFalse);
+        expect(
+          find.descendant(of: pedal, matching: find.text('Hold · Mute')),
+          findsOneWidget,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
+      },
+    );
 
     for (final cancelLoad in [false, true]) {
       testWidgets(

@@ -37,7 +37,10 @@ enum InteractionMode {
   /// MODE and BANK keep their jobs here as everywhere: MODE is the way out
   /// and BANK is the way to the other four track switches, and the binding
   /// model refuses to hold an assignment on either.
-  custom;
+  custom,
+
+  /// Foot-controlled track playback and live-input gain/mute.
+  mixer;
 
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes the current stored identity.

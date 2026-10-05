@@ -1073,7 +1073,8 @@ class _HearLive extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final monitor = context.watch<MonitorCubit>();
-    final mode = monitor.state.forInput(input).mode;
+    final state = monitor.state.forInput(input);
+    final mode = state.mode;
     return Row(
       children: [
         for (final (value, label) in <(MonitorMode, String)>[
@@ -1091,6 +1092,13 @@ class _HearLive extends StatelessWidget {
             fontSize: 20,
           ),
           const SizedBox(width: 5),
+        ],
+        if (state.muted) ...[
+          const SizedBox(width: 16),
+          AppText(
+            l10n.fxMutedInMixer,
+            style: TextStyle(color: context.surface.warning, fontSize: 20),
+          ),
         ],
       ],
     );
