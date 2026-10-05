@@ -16,10 +16,12 @@ void main() {
       : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
+  late StreamController<void> ticks;
 
   setUp(() {
     engine = PumpedNativeEngine();
-    repository = LooperRepository(engine: engine, ticker: const Stream.empty());
+    ticks = StreamController<void>.broadcast(sync: true);
+    repository = LooperRepository(engine: engine, ticker: ticks.stream);
     expect(
       repository.startEngine(
         const EngineConfig(
@@ -39,7 +41,101 @@ void main() {
     expect(engine.play(), EngineResult.ok);
     engine.pump(frames: 0);
   });
-  tearDown(() => repository.dispose());
+  tearDown(() async {
+    await repository.dispose();
+    await ticks.close();
+  });
+
+  test(
+    'group Clear restores distinct stationary amounts and ordinary mute',
+    () async {
+      final subscription = repository.looperState.listen((_) {});
+      addTearDown(subscription.cancel);
+      await Future<void>.delayed(Duration.zero);
+      for (final channel in [1, 2]) {
+        expect(
+          engine.importTrack(
+            channel,
+            Float32List.fromList(List.filled(128, .5)),
+          ),
+          EngineResult.ok,
+        );
+      }
+      expect(engine.commitSession(128, loopBars: 0), EngineResult.ok);
+      expect(engine.play(), EngineResult.ok);
+      expect(engine.play(channel: 2), EngineResult.ok);
+      engine.pump(frames: 0);
+      for (final entry in {0: .25, 1: .6, 2: .5}.entries) {
+        final identity = engine.snapshot().tracks[entry.key].fade;
+        final installed = repository.installFade(
+          channel: entry.key,
+          image: FadeImage(
+            amount: entry.value,
+            target: entry.value,
+            lifetime: identity.lifetime,
+            generation: identity.generation,
+          ),
+        );
+        engine.pump(frames: 0);
+        expect(await installed, EngineResult.ok);
+      }
+      expect(repository.stopTrack(channel: 1), EngineResult.ok);
+      expect(
+        repository.setLaneMute(muted: true, channel: 1, lane: 0),
+        EngineResult.ok,
+      );
+      expect(engine.record(channel: 2), EngineResult.ok);
+      engine.pump(frames: 64);
+      expect(repository.clearAll([0, 1, 2, 3]), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(repository.undoClearAll(), EngineResult.ok);
+      engine.pump(frames: 0); // acknowledge restored empty FX recipe
+      ticks.add(null); // existing poll admits the waiting grouped audio Undo
+      engine.pump(frames: 1);
+      final tracks = engine.snapshot().tracks;
+      expect(tracks[0].state, TrackState.playing);
+      expect(tracks[1].state, TrackState.stopped);
+      expect(tracks[2].state, TrackState.stopped);
+      expect(tracks[3].state, TrackState.empty);
+      for (final entry in {0: .25, 1: .6, 2: .5}.entries) {
+        final image = tracks[entry.key].fade;
+        expect(image.amount, closeTo(entry.value, 1e-6));
+        expect(image.target, closeTo(entry.value, 1e-6));
+        expect(image.fullTravelSeconds, 0);
+      }
+      expect(tracks[1].muted, isTrue);
+      expect(repository.laneMuted(1, 0), isTrue);
+      expect(tracks[2].muted, isFalse);
+      expect(engine.snapshot().outputPeaks[0], closeTo(.125, 1e-6));
+      expect(engine.exportTrack(0), everyElement(.5));
+    },
+    skip: skip,
+  );
+
+  test(
+    'public mute-only lane retains its intent after individual Clear Undo',
+    () async {
+      final subscription = repository.looperState.listen((_) {});
+      addTearDown(subscription.cancel);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        repository.setLaneMute(muted: true, channel: 0, lane: 0),
+        EngineResult.ok,
+      );
+      engine.pump(frames: 0);
+      expect(repository.clear(), EngineResult.ok);
+      expect(repository.laneMuted(0, 0), isFalse);
+      engine.pump(frames: 0);
+      expect(repository.undo(), EngineResult.ok);
+      engine.pump(frames: 0);
+      ticks.add(null);
+      engine.pump(frames: 1);
+      expect(engine.snapshot().tracks[0].muted, isTrue);
+      expect(repository.laneMuted(0, 0), isTrue);
+      expect(engine.snapshot().outputPeaks[0], 0);
+    },
+    skip: skip,
+  );
 
   test(
     'rapid requests retain exact native outcomes and coherent projection',

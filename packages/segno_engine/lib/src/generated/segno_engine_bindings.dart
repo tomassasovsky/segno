@@ -6041,14 +6041,6 @@ enum le_command_code {
   /// emptied track holds for redo (0: nothing
   /// was captured, nothing to redo).
   LE_EVT_TAKE_CANCELLED(101),
-
-  /// a user clear landed on a capturing track:
-  /// the take was finalized STOPPED first and
-  /// then erased. frozen arm — channel, len,
-  /// master_len, generation — completes
-  /// the restore point the control thread left
-  /// pending (0 len: a void take, no way back).
-  LE_EVT_CLEAR_FROZEN(102),
   LE_CMD_SET_FX_RECIPE(77),
 
   /// one complete timing vector and receipt
@@ -6145,7 +6137,6 @@ enum le_command_code {
     76 => LE_CMD_SET_ALL_TRACKS_FX_COUNT,
     100 => LE_EVT_LAYER_RETIRED,
     101 => LE_EVT_TAKE_CANCELLED,
-    102 => LE_EVT_CLEAR_FROZEN,
     77 => LE_CMD_SET_FX_RECIPE,
     78 => LE_CMD_SET_RECORD_TIMING,
     79 => LE_CMD_STOP_RECORD_CONTROL,

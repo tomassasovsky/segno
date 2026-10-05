@@ -111,6 +111,7 @@ typedef struct le_command {
       le_record_image image;
       struct le_prepared_fx* recipes;
     } record_image;
+    struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
     struct { /* COMMIT_SESSION: exact recorded span and musical bar count. */
       int32_t base_frames, loop_bars;
     } session;
@@ -118,16 +119,15 @@ typedef struct le_command {
       le_record_timing_settings settings;
       uint32_t revision;
     } timing;
-    struct { /* LE_EVT_CLEAR_FROZEN: a stopped take, tagged by its CLEAR. */
-      int32_t channel, len, master_len;
-      uint32_t generation;
-    } frozen;
     struct { /* LE_CMD_RESTORE_CLEAR: undo of an undoable clear. `state` is the
               * pre-clear LE_TRACK_*; `master_len` re-establishes the grid when
               * the clear emptied the last track and reset the clock (0 = the
               * clear left the grid standing). The multiple is derived from the
               * base, exactly as LE_CMD_REDO_FROM_EMPTY does. */
       int32_t channel, len, state, master_len;
+      float fade_amount;
+      int32_t source_slot;
+      uint32_t image_id;
     } restore;
   };
 } le_command;

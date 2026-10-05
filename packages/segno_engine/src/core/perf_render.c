@@ -62,11 +62,12 @@
 /* ---- tuning ---- */
 #define LE_PR_PATH_MAX 960
 #define LE_PR_FULL_PATH_MAX (LE_PR_PATH_MAX + 64)
-#define LE_PR_JSON_ARENA_NODES 8192 /* generous for a full performance.json —
-                                    * see json_read.h; a manifest this large
-                                    * would need > 1000 layer entries or
-                                    * hundreds of lane/fx entries to exhaust
-                                    * this */
+/* 8192 for the snapshots, plus room for a full layer manifest: the drain
+ * lists up to LE_LAYER_STAGING_RING_CAPACITY entries of ~12 nodes each, which
+ * a fixed 8192 could not parse past ~650 retired layers. Heap, render-thread
+ * only, allocated once per render. */
+#define LE_PR_JSON_ARENA_NODES \
+  (8192 + 16 * (int)LE_LAYER_STAGING_RING_CAPACITY)
 #define LE_PR_EVENTS_ENTRY_BYTES 28 /* matches perf_drain.c's on-disk layout,
                                     * docs/design/performance-event-log-format.md */
 #define LE_PR_MAX_SEGMENTS 4096 /* per-track content-source transitions; a
@@ -219,7 +220,8 @@ static float* le_pr_read_wav_mono(const char* path, int32_t* out_frames) {
  * above. */
 static float* le_pr_read_layer_lane0(const char* path, int32_t frame_count,
                                      int32_t lane_count) {
-  if (frame_count <= 0 || lane_count <= 0) return NULL;
+  if (frame_count <= 0 || lane_count <= 0 || lane_count > LE_MAX_LANES ||
+      (size_t)frame_count > SIZE_MAX / (sizeof(float) * (size_t)lane_count)) return NULL;
   FILE* f = fopen(path, "rb");
   if (f == NULL) return NULL;
   float* interleaved =
@@ -230,8 +232,9 @@ static float* le_pr_read_layer_lane0(const char* path, int32_t frame_count,
   }
   const size_t want = (size_t)frame_count * (size_t)lane_count;
   const size_t got = fread(interleaved, sizeof(float), want, f);
+  const int complete = got == want && fgetc(f) == EOF && !ferror(f);
   fclose(f);
-  if (got != want) {
+  if (!complete) {
     free(interleaved);
     return NULL;
   }
@@ -311,6 +314,9 @@ typedef struct le_pr_manifest {
   const le_json_value* arm_tracks;    /* armSnapshot.tracks array, or NULL */
   const le_json_value* disarm_tracks; /* disarmSnapshot.tracks array, or NULL */
   const le_json_value* layers;        /* layers array, or NULL */
+  /* Retired images the drain dropped once the bounded manifest filled. Only
+   * then does an unlisted retire mean missing material (see the matcher). */
+  int layers_dropped;
   /* Required capture policy: both taps follow selected output FX. Follow
    * additionally replays that bus's level/mute; neither includes hardware
    * Mono/Balance, global master gain, or limiter. */
@@ -370,6 +376,7 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
   const le_json_value* disarm = le_json_get(root, "disarmSnapshot");
   out->disarm_tracks = disarm != NULL ? le_json_get(disarm, "tracks") : NULL;
   out->layers = le_json_get(root, "layers");
+  out->layers_dropped = le_json_number(le_json_get(root, "layers_dropped"), 0) > 0;
   out->arm_follow_output = policy->bool_value;
   const le_json_value* bus = le_json_get(arm, "captureBus");
   const double bus_number = le_json_number(bus, 0);
@@ -451,19 +458,29 @@ static const le_json_value* le_pr_find_lane0(const le_json_value* tracks,
   return NULL;
 }
 
-/* Every distinct channel that appears in either snapshot's tracks array —
- * the set of tracks this render considers non-empty and worth a stem. */
-static int le_pr_collect_channels(const le_pr_manifest* m, int32_t* out,
-                                  int cap) {
+typedef struct le_pr_log_entry {
+  uint64_t frame;
+  int ordinal; /* file order preserves same-frame callback command ordering */
+  le_log_command cmd;
+} le_pr_log_entry;
+
+/* Snapshot material and callback-confirmed restored material both own stems,
+ * including a restore that was cleared again before the disarm snapshot. */
+static int le_pr_collect_channels(const le_pr_manifest* m,
+                                  const le_pr_log_entry* log, int log_count,
+                                  int32_t* out, int cap) {
   int n = 0;
   for (int pass = 0; pass < 2; ++pass) {
     const le_json_value* tracks = pass == 0 ? m->arm_tracks : m->disarm_tracks;
     const int count = le_json_length(tracks);
     for (int i = 0; i < count && n < cap; ++i) {
       const le_json_value* track = le_json_at(tracks, i);
+      char state[16];
+      if (pass == 0 && le_json_string(le_json_get(track, "state"), state, sizeof(state)) &&
+          strcmp(state, "empty") == 0) continue; /* metadata, until an applied source */
       const int32_t channel =
           (int32_t)le_json_number(le_json_get(track, "channel"), -1);
-      if (channel < 0) continue;
+      if (channel < 0 || channel >= LE_MAX_TRACKS) continue;
       int seen = 0;
       for (int k = 0; k < n; ++k) {
         if (out[k] == channel) {
@@ -474,16 +491,21 @@ static int le_pr_collect_channels(const le_pr_manifest* m, int32_t* out,
       if (!seen) out[n++] = channel;
     }
   }
+  for (int i = 0; i < log_count && n < cap; ++i) {
+    if (log[i].cmd.code != LE_PLOG_CLEAR_RESTORE &&
+        log[i].cmd.code != LE_PLOG_RESTORE_TRANSPORT) continue;
+    const int32_t channel = log[i].cmd.restore_log.channel;
+    if (channel < 0 || channel >= LE_MAX_TRACKS) continue;
+    int seen = 0;
+    for (int k = 0; k < n; ++k) if (out[k] == channel) seen = 1;
+    if (!seen) out[n++] = channel;
+  }
   return n;
 }
 
 /* ---- events.log access ---- */
 
-typedef struct le_pr_log_entry {
-  uint64_t frame;
-  int ordinal; /* file order preserves same-frame callback command ordering */
-  le_log_command cmd;
-} le_pr_log_entry;
+
 
 static int le_pr_frame_cmp(const void* a, const void* b) {
   const le_pr_log_entry* ea = (const le_pr_log_entry*)a;
@@ -578,9 +600,36 @@ static void le_pr_fill_perf_armed(const le_pr_log_entry* log, int log_count,
   }
 }
 
+/* Resolve the typed image once. Duplicate or missing identity is corruption,
+ * not an invitation to substitute the arm image or a recycled layer slot. */
+static float* le_pr_restore_image(const char* dir, const le_pr_manifest* m,
+                                  int channel, uint32_t id, int32_t* len) {
+  const le_json_value* found = NULL;
+  if (!id) return NULL;
+  for (int i = 0; i < le_json_length(m->layers); ++i) {
+    const le_json_value* v = le_json_at(m->layers, i);
+    if (le_json_number(le_json_get(v, "kind"), 0) != 1 ||
+        le_json_number(le_json_get(v, "channel"), -1) != channel ||
+        le_json_number(le_json_get(v, "restore_id"), 0) != id) continue;
+    if (found) return NULL;
+    found = v;
+  }
+  if (!found) return NULL;
+  const double frames = le_json_number(le_json_get(found, "frame_count"), 0);
+  const double lanes = le_json_number(le_json_get(found, "lane_count"), 0);
+  if (frames <= 0 || frames > INT32_MAX || frames != floor(frames) ||
+      lanes < 1 || lanes > LE_MAX_LANES || lanes != floor(lanes)) return NULL;
+  char filename[64], path[LE_PR_FULL_PATH_MAX];
+  if (!le_json_string(le_json_get(found, "filename"), filename, sizeof(filename))) return NULL;
+  snprintf(path, sizeof(path), "%s/%s", dir, filename);
+  *len = (int32_t)frames;
+  return le_pr_read_layer_lane0(path, *len, (int32_t)lanes);
+}
+
 /* ---- per-track segment reconstruction ---- */
 
 typedef struct le_pr_segment {
+  int owns_image, silent;
   uint64_t start_frame;
   uint64_t phase0;   /* loop position (image index) the segment plays from at
                       * start_frame — stems are PHASE-LOCKED to what the
@@ -616,7 +665,8 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
                                  uint64_t phase0, float* image,
                                  int32_t image_len) {
   if (b->segment_count >= LE_PR_MAX_SEGMENTS) {
-    free(image); /* dropped: better a short render than an overflow */
+    free(image);
+    b->load_failed = 1; /* never report a successful truncated reconstruction */
     return;
   }
   /* A later transition can only ever move forward in time; if two events
@@ -626,6 +676,8 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
    * start_frame <= f) already resolves that correctly without special-casing
    * it here. */
   le_pr_segment* seg = &b->segments[b->segment_count++];
+  seg->owns_image = 1;
+  seg->silent = 0;
   seg->start_frame = start_frame;
   seg->phase0 = image_len > 0 ? phase0 % (uint64_t)image_len : 0;
   seg->image = image;
@@ -744,9 +796,7 @@ static uint64_t le_pr_record_end_phase(const le_pr_manifest* m,
  * `*out_failed` set if a pcmRef/layer file this channel's manifest entries
  * actually name could not be read (the per-stem "partial success" failure
  * this part's acceptance criteria describe) or the stem buffer itself could
- * not be allocated. A channel with no manifest presence at all is never
- * passed here — `le_pr_collect_channels` only returns channels that appear
- * in at least one snapshot. */
+ * not be allocated. Channels can come from either snapshot or an applied restoration fact. */
 static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
                                  const le_pr_log_entry* log, int log_count,
                                  int32_t channel, int32_t* out_failed) {
@@ -823,11 +873,41 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       disarm_lane != NULL
           ? (int32_t)le_json_number(le_json_get(disarm_lane, "takeId"), 0)
           : 0;
+  uint32_t restore_id = 0;
+  float* restore_image = NULL; /* owned by the initial source segment */
+  int32_t restore_len = 0;
   for (int i = 0; i < log_count; ++i) {
     const le_pr_log_entry* e = &log[i];
-    if (e->cmd.code == LE_PLOG_RECORD_END && e->cmd.take.channel == channel &&
+    if ((e->cmd.code == LE_PLOG_CLEAR_RESTORE || e->cmd.code == LE_PLOG_RESTORE_TRANSPORT) &&
+        e->cmd.restore_log.channel == channel) {
+      const int initial = e->cmd.code == LE_PLOG_CLEAR_RESTORE;
+      const uint32_t id = e->cmd.restore_log.image_id;
+      const int32_t state = e->cmd.restore_log.state, phase = e->cmd.restore_log.phase;
+      if (initial) {
+        restore_image = le_pr_restore_image(dir, m, channel, id, &restore_len);
+        restore_id = id;
+      }
+      if (!restore_image || !id || id != restore_id || phase < 0 || phase >= restore_len ||
+          (state != LE_TRACK_PLAYING && state != LE_TRACK_STOPPED)) {
+        if (initial) free(restore_image);
+        build.load_failed = 1;
+        break;
+      }
+      le_pr_append_segment(&build, e->frame, phase,
+                           initial ? restore_image : NULL, initial ? restore_len : 0);
+      if (build.load_failed) break;
+      le_pr_segment* seg = &build.segments[build.segment_count - 1];
+      seg->silent = state == LE_TRACK_STOPPED;
+      if (!initial) {
+        seg->owns_image = 0;
+        seg->image = restore_image;
+        seg->image_len = restore_len;
+        seg->phase0 = phase;
+      }
+    } else if (e->cmd.code == LE_PLOG_RECORD_END && e->cmd.take.channel == channel &&
         disarm_lane != NULL && disarm_take_id != 0 &&
         e->cmd.take.take_id == disarm_take_id) {
+      restore_id = 0;
       {
         const le_json_value* pcm_ref_value =
             le_json_get(disarm_lane, "pcmRef");
@@ -868,9 +948,16 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       }
     } else if (e->cmd.code == LE_PLOG_LAYER_RETIRED &&
               e->cmd.evt.channel == channel) {
+      restore_id = 0;
       const int layer_n = le_json_length(m->layers);
+      /* In a capture whose full manifest dropped images, an unlisted retire
+       * fails this stem rather than replaying the stale image. Otherwise the
+       * existing tolerance stands: a retire handled at a disarm or Clear edge
+       * may be unstaged, and keeps the prior image for that short tail. */
+      int listed = 0;
       for (int li = 0; li < layer_n; ++li) {
         const le_json_value* layer = le_json_at(m->layers, li);
+        if (le_json_number(le_json_get(layer, "kind"), 0) != 0) continue;
         const int32_t l_channel =
             (int32_t)le_json_number(le_json_get(layer, "channel"), -1);
         const int32_t l_slot =
@@ -881,6 +968,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
             l_gen != e->cmd.evt.generation) {
           continue;
         }
+        listed = 1;
         const int32_t frame_count =
             (int32_t)le_json_number(le_json_get(layer, "frame_count"), 0);
         const int32_t lane_count =
@@ -935,21 +1023,24 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         }
         break;
       }
+      if (!listed && m->layers_dropped) build.load_failed = 1;
     } else if (e->cmd.code == LE_CMD_CLEAR && e->cmd.arg_i == channel) {
+      restore_id = 0;
       le_pr_append_segment(&build, e->frame, 0, NULL, 0);
     }
+    if (build.load_failed) break;
   }
 
   if (build.load_failed) {
     *out_failed = 1;
-    for (int i = 0; i < build.segment_count; ++i) free(build.segments[i].image);
+    for (int i = 0; i < build.segment_count; ++i) if (build.segments[i].owns_image) free(build.segments[i].image);
     return NULL;
   }
 
   float* stem = (float*)calloc((size_t)m->capture_frames, sizeof(float));
   if (stem == NULL) {
     *out_failed = 1;
-    for (int i = 0; i < build.segment_count; ++i) free(build.segments[i].image);
+    for (int i = 0; i < build.segment_count; ++i) if (build.segments[i].owns_image) free(build.segments[i].image);
     return NULL;
   }
 
@@ -960,7 +1051,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       seg_index++;
     }
     const le_pr_segment* seg = &build.segments[seg_index];
-    if (seg->image != NULL && seg->image_len > 0) {
+    if (!seg->silent && seg->image != NULL && seg->image_len > 0) {
       /* Phase-locked (#255): the segment's image plays from the loop
        * position it was actually at when the segment activated, not from
        * its own index 0 — stems reproduce exactly what the performer
@@ -971,7 +1062,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     }
   }
 
-  for (int i = 0; i < build.segment_count; ++i) free(build.segments[i].image);
+  for (int i = 0; i < build.segment_count; ++i) if (build.segments[i].owns_image) free(build.segments[i].image);
   return stem;
 }
 
@@ -1444,7 +1535,7 @@ static void le_pr_worker_main(void* arg) {
 
   int32_t channels[LE_MAX_TRACKS];
   const int channel_count =
-      loaded ? le_pr_collect_channels(&manifest, channels, LE_MAX_TRACKS) : 0;
+      loaded ? le_pr_collect_channels(&manifest, log, log_count, channels, LE_MAX_TRACKS) : 0;
 
   /* Master accumulator: the sum of every channel's wet contribution, before
    * the master gain + limiter pass runs over it once, after every channel
