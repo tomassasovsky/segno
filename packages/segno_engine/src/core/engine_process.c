@@ -3678,7 +3678,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         const int32_t mode = load_i32(&e->a_looper_mode);
         if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) break;
       }
-      /* Establish the master loop and start every imported track (EMPTY with a
+      /* Establish the master loop and park every imported track (EMPTY with a
        * loaded length) at its whole-loop multiple. The PCM and per-track length
        * were written by le_engine_import_track before this command was posted,
        * so they are visible here (the ring publishes them release/acquire).
@@ -3711,7 +3711,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
          * prior clear+reimport cycle never leaks a stale divisor. */
         store_i32(&tr->a_sync_divisor, 0);
         tr->start_iter = 0;
-        store_i32(&tr->a_state, LE_TRACK_PLAYING);
+        store_i32(&tr->a_state, LE_TRACK_STOPPED);
       }
       /* A session that saved no crown still gets one: its lowest recorded
        * track. A saved crown is pushed by the control thread before or

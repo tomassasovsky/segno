@@ -1887,6 +1887,7 @@ void main() {
     /// passes immediately and the boot restore has tracks to walk.
     EngineSnapshot clearedSnapshot() => const EngineSnapshot(
       isRunning: true,
+      devicePresent: true,
       sampleRate: 48000,
       bufferFrames: 128,
       framesProcessed: 0,

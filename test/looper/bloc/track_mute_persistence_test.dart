@@ -304,6 +304,10 @@ void main() {
     });
 
     test('Session apply and boot sync survive a fresh bootstrap', () async {
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        isRunning: true,
+        devicePresent: true,
+      );
       await settings.saveLaneMute(7, kMaxLanes - 1, muted: true);
       fx.reserveSessionLoad();
       await fx.beginSessionLoad();

@@ -36,6 +36,7 @@ void main() {
       EngineResult.ok,
     );
     expect(engine.commitSession(128, loopBars: 0), EngineResult.ok);
+    expect(engine.play(), EngineResult.ok);
     engine.pump(frames: 0);
   });
   tearDown(() => repository.dispose());
