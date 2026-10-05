@@ -85,6 +85,7 @@ inline T le_cxx_atomic_exchange(T* slot, V value) {
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
 #include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
+#include "engine_fade.h"
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
 #include "segno_engine_api.h"  /* le_engine typedef, le_config, le_device_info,
@@ -829,6 +830,13 @@ static inline le_hist_entry le_hist_layer(int32_t slot) {
  * stacks and the lanes own only the buffers. */
 typedef struct le_track {
   _Atomic uint32_t a_gain_bits; /* independent whole-track playback gain */
+  le_fade fade; /* callback-owned; never changes saved Mixer gain */
+  float fade_sample;
+  uint64_t fade_generation;
+  _Atomic uint64_t a_fade_revision, a_fade_generation;
+  _Atomic uint32_t a_fade_amount, a_fade_target, a_fade_seconds;
+  le_fade_image fade_cache; /* sole control reader's coherent cache */
+  uint64_t fade_cache_revision;
   le_lane lanes[LE_MAX_LANES];
 
   /* This track's own level: every lane summed, not lane 0's (#655).
@@ -1616,6 +1624,11 @@ struct le_engine {
    * or refusal. Configure resets it with the command counters. */
   uint64_t lane_growth_command;
   uint64_t input_routing_command; /* fresh Sound admission reads only applied routes */
+  uint64_t fade_lifetime, fade_next_request; /* control-owned; never reused */
+  struct {
+    uint64_t request, command;
+    _Atomic int32_t result;
+  } fade_receipts[LE_RING_CAPACITY];
   uint64_t commands_posted;
   uint64_t commands_applied;
   /* Callback-only: image publication invalidates the current frame snapshots. */

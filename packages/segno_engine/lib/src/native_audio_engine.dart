@@ -736,6 +736,58 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  FadeAdmission toggleFade({required int channel, required double seconds}) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    try {
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_toggle_fade(_engine, channel, seconds, request),
+      );
+      return (result: result, request: request.value);
+    } finally {
+      calloc.free(request);
+    }
+  }
+
+  @override
+  FadeAdmission installFade({required int channel, required FadeImage image}) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    final value = calloc<le_fade_image>();
+    try {
+      value.ref
+        ..amount = image.amount
+        ..target = image.target
+        ..full_travel_seconds = image.fullTravelSeconds
+        ..lifetime = image.lifetime
+        ..generation = image.generation;
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_install_fade(_engine, channel, value, request),
+      );
+      return (result: result, request: request.value);
+    } finally {
+      calloc
+        ..free(value)
+        ..free(request);
+    }
+  }
+
+  @override
+  EngineResult? readFadeResult(int request) {
+    _checkAlive();
+    final result = calloc<Int32>();
+    try {
+      final status = EngineResult.fromCode(
+        _bindings.le_engine_read_fade_result(_engine, request, result),
+      );
+      if (status == EngineResult.notReady) return null;
+      return status.isOk ? EngineResult.fromCode(result.value) : status;
+    } finally {
+      calloc.free(result);
+    }
+  }
+
+  @override
   EngineResult setMix(EngineMixSettings settings) {
     _checkAlive();
     if (!settings.isValid) return EngineResult.invalid;

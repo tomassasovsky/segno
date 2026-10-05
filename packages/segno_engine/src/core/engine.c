@@ -316,7 +316,7 @@ static void le_output_bus_reset(le_output_bus* o) {
 int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                             int32_t input_channels, int32_t output_channels,
                             int32_t max_loop_frames) {
-  if (engine == NULL) return LE_ERR_INVALID;
+  if (engine == NULL || engine->fade_lifetime == UINT64_MAX) return LE_ERR_INVALID;
 
   /* Loop-stage wet cache (part 2, [R2](d)): join the render worker and free
    * every cache allocation BEFORE any pool buffer below is freed — the
@@ -392,6 +392,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->record_timing_command = 0;
   engine->record_timing_publish_pending = 0;
   engine->record_timing_cache = (le_record_timing_readback){.result = LE_OK};
+  ++engine->fade_lifetime;
+  for (int i = 0; i < LE_RING_CAPACITY; ++i) engine->fade_receipts[i].request = 0;
   /* Mode is a persistent setting; only request receipts reset with the ring. */
   atomic_store_explicit(&engine->a_click_mode_revision, 0, memory_order_relaxed);
   store_i32(&engine->a_click_mode_result, LE_OK);
@@ -412,6 +414,16 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->redo_count = 0;
     store_i32(&tr->a_state, LE_TRACK_EMPTY);
     store_f32(&tr->a_gain_bits, 1.0f);
+    tr->fade = (le_fade){1.0, 1.0f, 0.0f};
+    tr->fade_sample = 1.0f;
+    tr->fade_generation = 1;
+    atomic_store(&tr->a_fade_revision, 0);
+    atomic_store(&tr->a_fade_generation, 1);
+    store_f32(&tr->a_fade_amount, 1.0f);
+    store_f32(&tr->a_fade_target, 1.0f);
+    store_f32(&tr->a_fade_seconds, 0.0f);
+    tr->fade_cache = (le_fade_image){1, 1, 0, engine->fade_lifetime, 1};
+    tr->fade_cache_revision = 0;
     /* Meters settle to silence with everything else (#655). */
     store_f32(&tr->a_trk_rms_bits, 0.0f);
     store_f32(&tr->a_trk_peak_bits, 0.0f);
@@ -1278,6 +1290,8 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   }
   /* Click mode requires the typed single-flight receipt. Raw posts cannot
    * bypass that reservation or publish revisionless competing settings. */
+  if (code == LE_CMD_RESET_FADE) return LE_ERR_INVALID;
+  if (code == LE_CMD_FADE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_CLICK_MODE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_RECORD_START) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_LOOPER_MODE) {
@@ -1295,6 +1309,7 @@ int32_t le_engine_measure_latency(le_engine* engine) {
 /* ---- looper control (push gated on `configured`, so tests work device-free) */
 
 #ifdef LE_NATIVE_TESTS
+void (*le_test_fade_hook)(le_engine*, int) = NULL;
 void (*le_test_record_timing_hook)(le_engine*, int) = NULL;
 void (*le_test_click_mode_hook)(le_engine*, int) = NULL;
 void (*le_test_record_start_hook)(le_engine*, int) = NULL;

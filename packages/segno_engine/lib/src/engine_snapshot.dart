@@ -546,6 +546,45 @@ enum PendingLaunchAction {
   };
 }
 
+/// One coherent native Fade envelope and its material identity.
+@immutable
+class FadeImage {
+  /// Creates one coherent, source-owned envelope image.
+  const FadeImage({
+    this.amount = 1,
+    this.target = 1,
+    this.fullTravelSeconds = 0,
+    this.lifetime = 0,
+    this.generation = 0,
+  });
+
+  /// Current multiplier, independent of saved Mixer gain.
+  final double amount;
+
+  /// Destination multiplier.
+  final double target;
+
+  /// Seconds for a full traversal; zero denotes a stationary image.
+  final double fullTravelSeconds;
+
+  /// Native configuration identity.
+  final int lifetime;
+
+  /// Native recorded-material identity within that configuration.
+  final int generation;
+  @override
+  bool operator ==(Object other) =>
+      other is FadeImage &&
+      amount == other.amount &&
+      target == other.target &&
+      fullTravelSeconds == other.fullTravelSeconds &&
+      lifetime == other.lifetime &&
+      generation == other.generation;
+  @override
+  int get hashCode =>
+      Object.hash(amount, target, fullTravelSeconds, lifetime, generation);
+}
+
 /// An immutable per-track projection of the native `le_track_snapshot`.
 ///
 /// A track is a multi-lane container: it owns the transport (state, multiple,
@@ -563,6 +602,8 @@ class TrackSnapshot {
     required this.undoDepth,
     required this.rms,
     required this.peak,
+    this.fade = const FadeImage(),
+    this.fadeRevision = 0,
     this.clearRestore = false,
     this.redoDepth = 0,
     this.multiple = 1,
@@ -590,7 +631,9 @@ class TrackSnapshot {
 
   /// An empty track.
   const TrackSnapshot.empty()
-    : state = TrackState.empty,
+    : fade = const FadeImage(),
+      fadeRevision = 0,
+      state = TrackState.empty,
       volume = 1,
       muted = false,
       lengthFrames = 0,
@@ -630,6 +673,14 @@ class TrackSnapshot {
     le_track_snapshot native, [
     List<LaneSnapshot> lanes = const [],
   ]) => TrackSnapshot(
+    fade: FadeImage(
+      amount: native.fade.amount,
+      target: native.fade.target,
+      fullTravelSeconds: native.fade.full_travel_seconds,
+      lifetime: native.fade.lifetime,
+      generation: native.fade.generation,
+    ),
+    fadeRevision: native.fade_revision,
     state: TrackState.fromCode(native.state),
     volume: native.volume,
     muted: native.muted != 0,
@@ -667,6 +718,12 @@ class TrackSnapshot {
     peakR: native.peak_r,
     lanes: lanes,
   );
+
+  /// Complete callback-published Fade image.
+  final FadeImage fade;
+
+  /// Sequence of the coherent native tuple publication.
+  final int fadeRevision;
 
   /// State-machine phase.
   final TrackState state;

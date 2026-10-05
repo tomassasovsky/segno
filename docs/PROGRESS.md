@@ -8,6 +8,22 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 native track Fade (#1131)
+
+The native Fade capability now has independent per-track envelopes, confirmed
+callback results and matching performance-log rendering. It changes neither
+saved Mixer gain nor recorded PCM. Existing playback remains at full Fade level;
+user-facing control and durable Session/reconnect composition are separate parts.
+
+The [review](code-review/foot-fade-native/review.md) binds the candidate and its
+checks: native standard, sanitizer, telemetry-disabled and C++17 pass, as do all
+187 FFI symbol lookups. App tests pass 3,137 cases at 92.634% coverage; ordinary
+Looper coverage is 95.136%, with four additional actual-native Fade tests.
+Analyzer, formatter and 806-file Bloc lint pass. Independent reviews repaired a
+Session-retirement receipt leak and have no remaining actionable finding.
+Actual Claude review, published-head CI and human merge remain separate gates;
+no appliance validation or deployment is claimed.
+
 ## October 2026 recording-start pair (#1026)
 
 Count-in and Sound-start now share one confirmed setting across Recording,
