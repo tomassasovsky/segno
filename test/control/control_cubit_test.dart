@@ -2070,6 +2070,38 @@ void main() {
         expect(cubit.state.parkedResume, isEmpty); // consumed
       });
 
+      test('a running snapshot before Stop lands keeps the latched set', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        cubit
+          ..toggleMode() // Mute while running
+          ..stop(); // latches the running set
+        expect(cubit.state.parkedResume, {0, 1});
+        // A poll lands before the engine applies the stops: still running.
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        expect(cubit.state.parkedResume, {0, 1});
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+        );
+        expect(
+          cubit.state.parkedResume,
+          {0, 1},
+          reason: 'parked with the latch',
+        );
+      });
+
       test('a second Rec/Play during a deferred launch keeps the deselected '
           'member out', () {
         setEngine(
