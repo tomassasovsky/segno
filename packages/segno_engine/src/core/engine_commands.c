@@ -438,6 +438,33 @@ static void le_mark_empty_cmd(le_engine* engine, le_track* t) {
   t->empty_command = engine->commands_posted;
 }
 
+/* Tickets a successfully posted command that can empty [channel] on the audio
+ * thread WITHOUT a state command of its own: a cancellation that reaches a
+ * take inside its launch grace (DISARM, STOP_RECORD_CONTROL, CANCEL_COUNT_IN
+ * -> handle_record -> apply_undo_to_empty), or a stop/finish that finalizes a
+ * RECORDING take which captured nothing (finalize_new_track's void take ->
+ * EMPTY). Unconditional on purpose: the control view cannot tell a void take
+ * from a kept one (a RECORD posted in the same block still reads EMPTY here),
+ * and a ticket on a track that keeps its content is never consulted — the
+ * guard reads it only while the track is EMPTY, and the next emptying
+ * re-tickets. Called after the push, so commands_posted counts the command. */
+static void le_ticket_emptying(le_engine* engine, int32_t channel) {
+  if (channel < 0 || channel >= engine->track_count) return;
+  engine->tracks[channel].empty_command = engine->commands_posted;
+}
+
+/* DISARM empties a track only through its launch: a take inside its grace
+ * (handle_record -> apply_undo_to_empty), or a pending launch the count-in may
+ * commit before the DISARM applies. An ordinary arm cancellation empties
+ * nothing, and must stay re-armable within the same block. */
+static void le_ticket_launch_cancel(le_engine* engine, int32_t channel) {
+  if (channel < 0 || channel >= engine->track_count) return;
+  le_track* t = &engine->tracks[channel];
+  if (load_i32(&t->a_launch_grace) || load_i32(&t->a_pending_launch)) {
+    le_ticket_emptying(engine, channel);
+  }
+}
+
 /* The master grid a clear on [t] must record for its restore point: what an
  * in-flight restore on this track is about to re-establish, else the wire's
  * — the grid twin of le_effective_len. */
@@ -903,7 +930,9 @@ static int32_t le_cancel_arm(le_engine* engine, int32_t channel) {
    * audio thread even though control now reads unarmed. The internal callers
    * are void and have always discarded this; returning it is what lets the
    * public le_engine_cancel_arm tell its caller the arm may still fire. */
-  return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+  if (rc == LE_OK) le_ticket_launch_cancel(engine, channel);
+  return rc;
 }
 
 /* Whether any track is driving the loop clock (playing or capturing). A
@@ -1539,7 +1568,14 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
    * defining capture still rides one batch
    * (test_record_image_grid_clear_is_in_capture_batch). Cancellations (a
    * second press on a pending arm) prepare nothing and are exempt; the
-   * trigger-2 immediate case is refused below without preparing. */
+   * trigger-2 immediate case is refused below without touching PCM (the grid
+   * redefinition it passes through drops history and posts no buffer edit).
+   *
+   * Residual: emptyings the audio thread decides on its own — a quantized
+   * finish arm firing on a take that captured nothing, a launch commit
+   * closing another channel's grace take (close_active_capture) — have no
+   * command of their own to ticket; the ticket then dates from the command
+   * that scheduled them, so the firing block itself is not fenced. */
   if (st == LE_TRACK_EMPTY &&
       !(engine->armed[channel] && load_i32(&t->a_pending) &&
         (sound_arm || quantized_arm || engine->armed_trigger[channel] == 2))) {
@@ -1673,8 +1709,10 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     engine->armed_trigger[channel] = 1; /* input-level trigger */
     le_begin_empty_capture(engine, channel, image != NULL);
     le_prepare_new_capture(engine, t);
-    return le_post_record_image(engine, channel, LE_CMD_ARM, 1.0f, 0, image,
-                                fresh_shadow, clear_first);
+    const int32_t rc = le_post_record_image(engine, channel, LE_CMD_ARM, 1.0f,
+                                           0, image, fresh_shadow, clear_first);
+    if (rc == LE_OK) le_ticket_emptying(engine, channel); /* see the RECORD post */
+    return rc;
   }
 
   /* Quantized: defer the action to the next base-loop top instead of acting on
@@ -1726,6 +1764,13 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     }
     const int32_t rc = le_post_record_image(engine, channel, LE_CMD_ARM, 0.0f,
                                            0, image, fresh_shadow, clear_first);
+    /* A quantized finish of a take that has captured nothing empties it when
+     * the arm fires; the ticket covers the ARM's own block (the firing block
+     * is autonomous — see the guard's residual note). A start is ticketed for
+     * the same reason as the immediate RECORD post below. */
+    if (rc == LE_OK && (st == LE_TRACK_EMPTY || st == LE_TRACK_RECORDING)) {
+      le_ticket_emptying(engine, channel);
+    }
     return rc;
   }
 
@@ -1765,6 +1810,16 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   t->dub_punch_out_posted = 0;
   const int32_t rc = le_post_record_image(engine, channel, LE_CMD_RECORD, 0.0f,
       st == LE_TRACK_EMPTY && !has_master, image, fresh_shadow, clear_first);
+  /* Finishing a take that has captured nothing empties the track (#1146).
+   * The second press of such a pair lands inside the block that starts the
+   * take, so this thread still reads it as EMPTY and classifies it as another
+   * start — the audio thread applies it as the void finish. Ticket starts as
+   * well as finishes, then: the ticket is consulted only while the track
+   * reads EMPTY with that block unpublished, which is exactly this window.
+   * Punch-ins on PLAYING/STOPPED content never empty and are left alone. */
+  if (rc == LE_OK && (st == LE_TRACK_EMPTY || st == LE_TRACK_RECORDING)) {
+    le_ticket_emptying(engine, channel);
+  }
   /* Pre-arm ONE shadow slot for a fresh capture that is bound to run straight
    * into overdub (rec/dub, or a non-defining fixed multiple). Posted AFTER the
    * RECORD command so it orders behind handle_record's EMPTY-case drop of any
@@ -1808,7 +1863,9 @@ int32_t le_engine_record_with_image(le_engine* engine, int32_t channel,
 }
 
 int32_t le_engine_stop_track(le_engine* engine, int32_t channel) {
-  return le_push(engine, LE_CMD_STOP, channel, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_STOP, channel, 0.0f);
+  if (rc == LE_OK) le_ticket_emptying(engine, channel); /* void take -> EMPTY */
+  return rc;
 }
 int32_t le_engine_play(le_engine* engine, int32_t channel) {
   if (!engine || channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
@@ -2496,12 +2553,23 @@ int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel) {
    * in the polled snapshot. DISARM is cancellation-only, so it cannot stop old
    * playback/capture or erase audio, and cannot consume a later FIFO request. */
   const int result = le_push(engine, LE_CMD_DISARM, channel, 0.0f);
-  if (result == LE_OK) engine->armed[channel] = 0;
+  if (result == LE_OK) {
+    engine->armed[channel] = 0;
+    le_ticket_launch_cancel(engine, channel);
+  }
   return result;
 }
 
+/* Every track a count-in cancellation can reach: each one in its launch grace
+ * is emptied by handle_record when the cancellation applies. */
+static void le_ticket_grace_cohort(le_engine* engine) {
+  for (int32_t c = 0; c < engine->track_count; ++c) le_ticket_launch_cancel(engine, c);
+}
+
 int32_t le_engine_cancel_count_in(le_engine* engine) {
-  return le_push(engine, LE_CMD_CANCEL_COUNT_IN, 0, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_CANCEL_COUNT_IN, 0, 0.0f);
+  if (rc == LE_OK) le_ticket_grace_cohort(engine);
+  return rc;
 }
 
 int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
@@ -2528,6 +2596,12 @@ int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
   if (result == LE_OK && action) {
     engine->armed[channel] = action == 1;
     engine->armed_trigger[channel] = 0;
+  }
+  if (result == LE_OK) {
+    /* Either half can empty a track: the count-in cancellation sweeps every
+     * grace take, the finish may close a void take on this channel. */
+    le_ticket_grace_cohort(engine);
+    le_ticket_emptying(engine, channel);
   }
   return result;
 }
@@ -2564,7 +2638,9 @@ int32_t le_engine_finalize_take(le_engine* engine, int32_t channel) {
   if (engine->armed[channel] && load_i32(&t->a_pending) != 0) {
     return LE_ERR_INVALID;
   }
-  return le_push(engine, LE_CMD_FINALIZE_TAKE, channel, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_FINALIZE_TAKE, channel, 0.0f);
+  if (rc == LE_OK) le_ticket_emptying(engine, channel); /* void take -> EMPTY */
+  return rc;
 }
 
 
@@ -2843,8 +2919,12 @@ int32_t le_engine_toggle_section(le_engine* engine, int32_t channel) {
      * same deadlock le_engine_record's quantize branch avoids for record
      * arms (see its comment above). The held position IS the primary's
      * loop top by definition, so act immediately instead of arming. */
-    return le_push(engine, st == LE_TRACK_STOPPED ? LE_CMD_PLAY : LE_CMD_STOP,
-                   channel, 0.0f);
+    const int32_t rc = le_push(
+        engine, st == LE_TRACK_STOPPED ? LE_CMD_PLAY : LE_CMD_STOP, channel, 0.0f);
+    if (rc == LE_OK && st == LE_TRACK_RECORDING) {
+      le_ticket_emptying(engine, channel); /* void take -> EMPTY */
+    }
+    return rc;
   }
   if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
     engine->armed[channel] = 0; /* spent: the boundary already fired it */
@@ -2861,7 +2941,11 @@ int32_t le_engine_toggle_section(le_engine* engine, int32_t channel) {
   }
   engine->armed[channel] = 1;
   engine->armed_trigger[channel] = 2; /* Band section-transport trigger */
-  return le_push(engine, LE_CMD_ARM, channel, 2.0f);
+  const int32_t rc = le_push(engine, LE_CMD_ARM, channel, 2.0f);
+  /* The fired toggle stops a RECORDING take (le_fire_section_arm): a void one
+   * empties. Covers the ARM's block; the firing block is autonomous. */
+  if (rc == LE_OK && st == LE_TRACK_RECORDING) le_ticket_emptying(engine, channel);
+  return rc;
 }
 
 /* ---- MIDI clock (Phase C/E, D15; see segno_engine_api.h's MIDI-clock
