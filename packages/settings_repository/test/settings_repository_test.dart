@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pub_semver/pub_semver.dart';
@@ -199,7 +200,7 @@ void main() {
   });
 
   group('live-input gain admission', () {
-    for (final raw in ['-0.1', '1.01', '1e999']) {
+    for (final raw in ['-0.1', '2.5', '1e999']) {
       test(
         'rejects saved monitor gain $raw without changing saved bytes',
         () async {
@@ -215,6 +216,29 @@ void main() {
             throwsFormatException,
           );
           expect(store.values, {'mix_settings': checkpoint});
+        },
+      );
+    }
+    for (final raw in ['1.01', '2']) {
+      test(
+        'reads legacy monitor gain $raw as unity and writes it back once',
+        () async {
+          store.values['mix_settings'] =
+              '{"trackLevels":{"0":1.5},"monitorLevels":{"0":0.5,"1":$raw}}';
+          final loaded = await repository.loadMixSettings('device');
+          expect(loaded.monitorLevels[0], 0.5);
+          expect(loaded.monitorLevels[1] ?? 1, 1);
+          expect(loaded.trackLevels[0], 1.5, reason: 'track gain untouched');
+          final stored =
+              jsonDecode(store.values['mix_settings']! as String)
+                  as Map<String, dynamic>;
+          final monitors = stored['monitorLevels'] as Map<String, dynamic>;
+          expect(
+            monitors.values.every((gain) => (gain as num) <= 1),
+            isTrue,
+            reason: 'storage no longer carries a gain above unity',
+          );
+          expect(await repository.loadMonitorVolume(1), 1);
         },
       );
     }
