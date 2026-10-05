@@ -229,6 +229,11 @@ class MonitorCubit extends Cubit<MonitorState> {
     // to be persisted back or every launch re-mints DIFFERENT ids for the
     // same legacy chain. Only that case writes; a chain that already had ids
     // is read, not rewritten.
+    // The saved monitors are applied: the restore has succeeded, so clear the
+    // failed state BEFORE persisting minted ids, or the input write gate
+    // (mirrored into FxChainPersistence) would skip that one-time save.
+    if (!stillOwned()) return;
+    if (state.restoreFailed) emit(MonitorState(inputs: state.inputs));
     for (final monitor in restored.values) {
       if (!stillOwned()) return;
       final applied = _repository.monitorEffects(monitor.input);
