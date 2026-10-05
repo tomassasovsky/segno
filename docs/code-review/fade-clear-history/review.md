@@ -53,9 +53,12 @@ General ordinary history reconstruction remains #1143: unsupported material
 changes fail the affected derived stem instead of silently exporting stale audio.
 The separately captured master remains available. A full layer manifest no
 longer stops the capture: the drain drops later images, reports
-`layers_dropped`, and keeps recording master and monitors; the renderer fails
-any stem whose logged retire or restoration is unlisted (adversarial review
-finding, owner decision 2026-10-05). The render arena now covers a full
+`layers_dropped`, and keeps recording master and monitors; in such a capture
+the renderer fails any stem whose logged retire is unlisted (adversarial review
+finding, owner decision 2026-10-05). Unconditional fail-closed matching was
+tried and reverted: unstaged retires at disarm, Clear, device-change and
+arm edges are preexisting and would have turned brief stale tails into failed
+stems; exact logged-retire staging and ordered key matching belong to #1143. The render arena now covers a full
 manifest; input-derived sizing and whole-render failure reporting remain #1144.
 Multi-lane
 reconstruction, full-engine reopen (#1140), physical devices and listening tests
