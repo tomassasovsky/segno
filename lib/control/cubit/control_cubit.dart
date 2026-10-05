@@ -3453,8 +3453,8 @@ class ControlCubit extends Cubit<ControlState> {
     } else if (_takeLocked()) {
       _retireAllExternal();
     }
-    final previous = _looperState;
-    final wasParked = previous != null && isParked(previous);
+    // `_l` falls back to the repository's state before the first event.
+    final wasParked = isParked(_l);
     _looperState = looperState;
     _retryExternalReleases();
     _checkMidiSessionAndCleanup();
