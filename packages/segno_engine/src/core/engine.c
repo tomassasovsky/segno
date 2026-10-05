@@ -490,9 +490,15 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->outstanding_count = 0;
     tr->queued_undo = 0;
     tr->dub_punch_out_posted = 0;
+    tr->perf_restore_active = 0;
     tr->clear_restore_pending = 0;
     tr->clear_restore_slot = -1;
     tr->clear_restore_generation = 0;
+    atomic_store_explicit(&tr->a_clear_revision, 0, memory_order_relaxed);
+    atomic_store_explicit(&tr->a_clear_generation, 0, memory_order_relaxed);
+    atomic_store_explicit(&tr->a_clear_fade_amount, 0, memory_order_relaxed);
+    atomic_store_explicit(&tr->a_clear_len, 0, memory_order_relaxed);
+    atomic_store_explicit(&tr->a_clear_master_len, 0, memory_order_relaxed);
     tr->cancel_pending = 0;
     tr->depth_republish = 0;
     tr->empty_len = 0;

@@ -136,6 +136,8 @@ typedef enum le_perf_log_code {
   /* Transport facts fired from inside the audio thread's command drain /
    * per-frame loop, carrying the exact sample-accurate frame. Both are new in
    * events.log version 4 (#262). */
+  LE_PLOG_CLEAR_RESTORE = 322, /* restore_log: applied image/state/first-sample phase */
+  LE_PLOG_RESTORE_TRANSPORT = 323, /* restore_log: same image, new state/phase */
   LE_PLOG_FADE = 321, /* fade_log: exact callback image, including arm/reset */
   LE_PLOG_PERF_ARMED = 315,   /* LE_CMD_PERF_ARM applied: the master loop phase
                                * at capture frame 0. `perf_arm` arm: {position,
@@ -191,11 +193,10 @@ typedef struct le_log_command {
     struct { int32_t channel, slot; uint32_t generation; } evt;
     struct { int32_t channel, take_id; } take;
     struct { int32_t channel; float amount, target, seconds; } fade_log;
+    struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
     struct { int32_t position, master_len, iteration; } perf_arm;
     struct { int32_t value; uint32_t sequence; } clock;
     struct { int32_t base_frames, loop_bars; } session;
-    struct { int32_t channel, len, master_len; uint32_t generation; } frozen;
-    struct { int32_t channel, len, state, master_len; } restore;
   };
 } le_log_command;
 

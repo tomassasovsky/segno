@@ -8,6 +8,21 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 Clear history and Fade (#1142)
+
+Clear and grouped Clear now retain the Fade amount applied at the audio boundary;
+Undo restores stationary levels before playback, with ordinary mute and frozen
+history preserved. Performance capture records exact restored material through
+its existing staging and renderer owners. Invalid source transitions fail their
+derived stems while the independently recorded master remains usable.
+
+The [review](code-review/fade-clear-history/review.md) records the native safety
+matrix, six actual-native repository tests, all 187 FFI symbols, package coverage
+and independent source reviews. Production adds 323 lines and removes 108, with
+no additional state owner. General history replay (#1143), whole-render manifest
+errors (#1144), reopen (#1140) and Fade controls remain separate work. Actual
+Claude, published-head CI and human merge gates remain pending independently.
+
 ## October 2026 stationary Session Fade (#1139)
 
 Sessions now save recorded tracks' current Fade amounts and restore them as
@@ -396,6 +411,10 @@ install hook remain unchanged. A failed inspection stops the release build.
   ```sh
   bash packages/segno_engine/src/test/run_native_tests.sh
   ```
+  Concurrent native configurations need separate `TMPDIR` directories: the
+  script uses fixed executable names there, so sharing a directory can make
+  builds overwrite another run's binaries.
+
   The script self-locates (no preceding `cd` needed) and builds/runs the
   engine core test suite and the MIDI test suite on every desktop OS
   (`gcc`/`gnu11` by default, overridable via `CC`), plus macOS-only plugin

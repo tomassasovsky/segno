@@ -508,12 +508,6 @@ typedef enum le_command_code {
                                 * channel, value = the finalized length the
                                 * emptied track holds for redo (0: nothing
                                 * was captured, nothing to redo). */
-  LE_EVT_CLEAR_FROZEN = 102,   /* a user clear landed on a capturing track:
-                                * the take was finalized STOPPED first and
-                                * then erased. frozen arm — channel, len,
-                                * master_len, generation — completes
-                                * the restore point the control thread left
-                                * pending (0 len: a void take, no way back). */
   LE_CMD_SET_FX_RECIPE = 77,
   LE_CMD_SET_RECORD_TIMING = 78, /* one complete timing vector and receipt */
   LE_CMD_STOP_RECORD_CONTROL = 79, /* cohort cancel or non-acquiring capture finish */

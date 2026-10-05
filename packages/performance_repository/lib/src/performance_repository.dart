@@ -1039,8 +1039,8 @@ class PerformanceRepository {
   }
 
   /// Exports every currently-settled lane's PCM as a WAV directly into
-  /// `<dir>/loops/`, and returns one [PerformanceTrackSnapshot] per non-empty
-  /// track. A track currently capturing (recording/overdubbing) contributes
+  /// `<dir>/loops/`, and returns metadata for every active lane at arm, including empty
+  /// tracks that can be restored during capture. A track currently capturing (recording/overdubbing) contributes
   /// `deferred: true` lane entries instead of exporting (D-SNAP) — its buffer
   /// is being written by the audio thread and exporting it would tear.
   /// [stampTakeId] writes each track's settled take id onto its lane-0 entry
@@ -1062,12 +1062,18 @@ class PerformanceRepository {
           track.state == TrackState.overdubbing;
       final lanes = <PerformanceLaneSnapshot>[];
       for (var laneIndex = 0; laneIndex < track.lanes.length; laneIndex++) {
-        if (capturing) {
+        final lane = track.lanes[laneIndex];
+        final laneChain = writeChains
+            ? _laneChain(chains, channel, laneIndex)
+            : null;
+        if (capturing || (writeChains && lane.lengthFrames <= 0)) {
           lanes.add(
             PerformanceLaneSnapshot(
               lane: laneIndex,
               lengthFrames: 0,
               deferred: true,
+              effects: laneChain?.effects ?? const [],
+              chainEnabled: laneChain?.chainEnabled ?? true,
               volume: track.lanes[laneIndex].volume,
               pan: track.lanes[laneIndex].pan,
               muted: track.lanes[laneIndex].muted,
@@ -1076,7 +1082,6 @@ class PerformanceRepository {
           );
           continue;
         }
-        final lane = track.lanes[laneIndex];
         if (lane.lengthFrames <= 0) continue;
         final pcm = _engine.exportTrackLane(channel, laneIndex);
         if (pcm.isEmpty) continue;
@@ -1091,9 +1096,6 @@ class PerformanceRepository {
             channels: 1,
           ),
         );
-        final laneChain = writeChains
-            ? _laneChain(chains, channel, laneIndex)
-            : null;
         lanes.add(
           PerformanceLaneSnapshot(
             lane: laneIndex,

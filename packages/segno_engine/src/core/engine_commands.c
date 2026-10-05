@@ -187,6 +187,8 @@ static int32_t le_layer_slot_frames(const le_engine* engine, int32_t len) {
 static void le_post_dub_shadows(le_engine* engine, int32_t channel,
                                 int32_t target) {
   le_track* t = &engine->tracks[channel];
+  /* Old callback shadows remain owned until the pending Clear completes. */
+  if (t->clear_restore_pending) return;
   const int32_t lanes = le_lanes_active(t);
   const int32_t want = le_layer_slot_frames(engine, le_track_settled_len(t));
   if (target > LE_DUB_SHADOWS) target = LE_DUB_SHADOWS;
@@ -310,7 +312,7 @@ static void le_clear_redo(le_track* t) {
  * take, which the new recording replaces wholesale. Dropping both restores the
  * pre-#219 semantic exactly: after clear-then-record, undo depth is 0. */
 static void le_drop_clear_history(le_track* t) {
-  /* A frozen take still waiting for its restore point (LE_EVT_CLEAR_FROZEN)
+  /* A frozen take still waiting for its Clear completion
    * is about to be recorded over too: the point can never be filed, and the
    * layers kept beneath it belong to the erased take — they go with it. */
   if (t->clear_restore_pending) {
@@ -531,18 +533,23 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
  * LE_MAX_LANES) or need a size-keyed free-list recycled back across the
  * thread boundary. Neither is in scope here. */
 static void le_stage_retired_layer(le_engine* engine, int32_t channel,
-                                   int32_t slot, uint32_t generation) {
-  if (!atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
+                                   int32_t slot, uint32_t generation,
+                                   int32_t restored_len, uint32_t restore_id) {
+  /* A queued ARM already owns its worker/ring before callback acknowledgement. */
+  if (restore_id ? engine->perf.drain == NULL :
+      !atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
     return;
   }
   if (channel < 0 || channel >= engine->track_count) return;
   le_track* t = &engine->tracks[channel];
-  const int32_t frame_count = load_i32(&t->lanes[0].a_len);
+  const int32_t frame_count = restore_id ? restored_len : load_i32(&t->lanes[0].a_len);
   if (frame_count <= 0) return; /* nothing recorded into this slot */
   const int32_t lane_count = le_lanes_active(t);
 
   le_staged_layer entry = {0};
   entry.channel = channel;
+  entry.kind = restore_id != 0;
+  entry.restore_id = restore_id;
   entry.lane_count = lane_count;
   entry.frame_count = frame_count;
   entry.slot = slot;
@@ -552,7 +559,7 @@ static void le_stage_retired_layer(le_engine* engine, int32_t channel,
 
   for (int32_t l = 0; l < lane_count; ++l) {
     const float* src = t->lanes[l].pool[slot];
-    if (src == NULL) {
+    if (src == NULL || t->lanes[l].pool_cap[slot] < frame_count) {
       /* Shouldn't happen for an active lane whose track just retired a pass
        * on this slot (le_post_dub_shadows allocates every active lane's
        * buffer before posting it) — fail closed rather than copy garbage. */
@@ -587,9 +594,12 @@ static void le_handle_retired(le_engine* engine, const le_command* evt,
   const int32_t ch = evt->evt.channel;
   if (ch < 0 || ch >= engine->track_count) return;
   le_track* t = &engine->tracks[ch];
-  le_stage_retired_layer(engine, ch, evt->evt.slot, evt->evt.generation);
-  if (evt->evt.generation != t->dub_generation) {
-    return; /* pre-clear era: the slot was already reclaimed by the clear */
+  le_stage_retired_layer(engine, ch, evt->evt.slot, evt->evt.generation, 0, 0);
+  const int frozen_predecessor = t->clear_restore_pending &&
+      t->dub_generation == t->clear_restore_generation &&
+      evt->evt.generation + 1u == t->clear_restore_generation;
+  if (evt->evt.generation != t->dub_generation && !frozen_predecessor) {
+    return; /* no current Clear owns this retired era */
   }
   for (int k = 0; k < t->outstanding_count; ++k) {
     if (t->outstanding_slots[k] == evt->evt.slot) {
@@ -653,38 +663,6 @@ static void le_handle_take_cancelled(le_engine* engine, const le_command* evt) {
   }
 }
 
-/* LE_EVT_CLEAR_FROZEN landed: a user clear on a capturing track finalized the
- * take STOPPED and erased it. Complete the restore point le_clear_track left
- * pending with the length and grid the finalize decided; the erased take's
- * layers already sit beneath it on the stack. A void take (len 0) had no
- * content to keep: the pending point and the stack it guarded are dropped,
- * as a plain clear would have. */
-static void le_handle_clear_frozen(le_engine* engine, const le_command* evt) {
-  const int32_t ch = evt->frozen.channel;
-  if (ch < 0 || ch >= engine->track_count) return;
-  le_track* t = &engine->tracks[ch];
-  if (!t->clear_restore_pending ||
-      evt->frozen.generation != t->clear_restore_generation) return;
-  t->clear_restore_pending = 0;
-  const int32_t len = evt->frozen.len;
-  if (len <= 0 || t->undo_count >= LE_POOL_SLOTS) {
-    t->undo_count = 0;
-    le_publish_undo_depth(t);
-    le_track_drop_recoverable_if_dead(t);
-    return;
-  }
-  le_hist_entry e = {0};
-  e.kind = LE_HIST_CLEAR;
-  e.slot = t->clear_restore_slot;
-  e.len = len;
-  e.master_len = evt->frozen.master_len;
-  e.multiple = e.master_len > 0 && len >= e.master_len ? len / e.master_len : 1;
-  e.state = LE_TRACK_STOPPED;
-  e.muted_mask = 0; /* a capturing track is never observed muted */
-  t->undo_stack[t->undo_count++] = e;
-  le_publish_undo_depth(t);
-}
-
 static void le_handle_event(le_engine* engine, const le_command* evt,
                             int replenish) {
   switch (evt->code) {
@@ -694,11 +672,62 @@ static void le_handle_event(le_engine* engine, const le_command* evt,
     case LE_EVT_TAKE_CANCELLED:
       le_handle_take_cancelled(engine, evt);
       break;
-    case LE_EVT_CLEAR_FROZEN:
-      le_handle_clear_frozen(engine, evt);
-      break;
     default:
       break;
+  }
+}
+
+/* A latched report is not consumed until the matching control-owned point
+ * exists. This includes callback completion between post and finish_clear. */
+static void le_collect_clear(le_engine* engine, le_track* t) {
+  if (!t->clear_cmd_ack || t->clear_cmd_ack >
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) return;
+  const uint32_t first = atomic_load_explicit(&t->a_clear_revision, memory_order_seq_cst);
+  if (first & 1u) return;
+  const uint32_t generation = atomic_load_explicit(&t->a_clear_generation, memory_order_seq_cst);
+  const uint32_t bits = atomic_load_explicit(&t->a_clear_fade_amount, memory_order_seq_cst);
+  const int32_t len = atomic_load_explicit(&t->a_clear_len, memory_order_seq_cst);
+  const int32_t master_len = atomic_load_explicit(&t->a_clear_master_len, memory_order_seq_cst);
+#ifdef LE_NATIVE_TESTS
+  if (le_test_fade_hook) le_test_fade_hook(engine, 3);
+#endif
+  const uint32_t last = atomic_load_explicit(&t->a_clear_revision, memory_order_seq_cst);
+  if (first != last || generation != t->clear_restore_generation) return;
+  float amount;
+  memcpy(&amount, &bits, sizeof(amount));
+  if (t->clear_restore_pending) {
+    /* Readiness follows every preceding layer retirement. A drain before the
+     * acquire could miss one, so collect those layers before placing CLEAR. */
+    le_command evt;
+    while (le_ring_pop(&engine->evt_ring, &evt)) le_handle_event(engine, &evt, 1);
+    if (!t->clear_restore_pending || generation != t->clear_restore_generation) return;
+    t->clear_restore_pending = 0;
+    if (len <= 0) {
+      t->undo_count = 0;
+      le_publish_undo_depth(t);
+      le_track_drop_recoverable_if_dead(t);
+      return;
+    }
+    /* Each layer owns a distinct pool slot, while the live slot is pinned.
+     * Thus even the final in-flight retirement leaves one entry for CLEAR. */
+    le_hist_entry e = {0};
+    e.kind = LE_HIST_CLEAR;
+    e.slot = t->clear_restore_slot;
+    e.len = len;
+    e.master_len = master_len;
+    e.multiple = master_len > 0 && len >= master_len ? len / master_len : 1;
+    e.state = LE_TRACK_STOPPED;
+    e.clear_generation = generation;
+    e.fade_amount = amount;
+    e.fade_ready = 1;
+    t->undo_stack[t->undo_count++] = e;
+    le_publish_undo_depth(t);
+  } else if (le_history_is_cleared(t)) {
+    le_hist_entry* e = &t->undo_stack[t->undo_count - 1];
+    if (e->clear_generation == generation && !e->fade_ready) {
+      e->fade_amount = amount;
+      e->fade_ready = 1;
+    }
   }
 }
 
@@ -728,6 +757,7 @@ void le_engine_drain_events(le_engine* engine) {
    * to the merge, the same coherent behaviour as spare starvation. */
   for (int32_t ch = 0; ch < engine->track_count; ++ch) {
     le_track* t = &engine->tracks[ch];
+    le_collect_clear(engine, t);
     /* A depth held back while a restore was in flight: publish it now that
      * the audio thread has applied the state (see le_publish_undo_depth). */
     if (t->depth_republish &&
@@ -1207,6 +1237,7 @@ static void le_prepare_clear(le_track* t, int freeze) {
   t->clear_restore_pending = freeze;
   t->clear_restore_slot = freeze ? load_i32(&t->lanes[0].a_live) : -1;
   t->clear_restore_generation = t->dub_generation + 1;
+  t->clear_cmd_ack = t->state_cmds_posted + 1;
   t->dub_punch_out_posted = 0;
   t->depth_republish = 0;
   t->queued_undo = 0;
@@ -1696,6 +1727,7 @@ static int le_build_restore_point(le_engine* engine, le_track* t,
 
   le_hist_entry e = {0};
   e.kind = LE_HIST_CLEAR;
+  e.clear_generation = t->dub_generation + 1;
   e.slot = load_i32(&t->lanes[0].a_live);
   e.len = len;
   e.state = st;
@@ -1727,12 +1759,17 @@ static int32_t le_clear_track(le_engine* engine, int32_t channel,
   }
   le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
+  /* An undoable nonempty Clear must never silently become destructive when
+   * history cannot hold its point. Layer slots plus the pinned live slot bound
+   * ordinary reachable history below this limit, including pending retirements. */
+  if (push_restore && le_effective_state(t) != LE_TRACK_EMPTY &&
+      t->undo_count >= LE_POOL_SLOTS) return LE_ERR_NOT_READY;
   le_hist_entry restore = {0};
   const int keep = push_restore && le_build_restore_point(engine, t, &restore);
   /* A user clear on a CAPTURING track (accepted design, slice 2): the take
    * is frozen STOPPED at the clear and kept restorable. Its length is not
    * known until the audio thread finalizes it, so the restore point is
-   * completed by LE_EVT_CLEAR_FROZEN; arg_f = 1 asks handle_clear to
+   * completed by the Clear mailbox; arg_f = 1 asks handle_clear to
    * finalize first and report. */
   const int32_t est = le_effective_state(t);
   const int freeze = push_restore && !keep &&
@@ -1935,6 +1972,11 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   const int32_t gate = le_engine_history_mode_gate(engine, 1u << channel, 0);
   if (gate != LE_OK) return gate;
   le_track* t = &engine->tracks[channel];
+  /* The gate acquired the Clear acknowledgement after the caller's drain.
+   * Collect again before copying history or posting any restoration mutes. */
+  le_collect_clear(engine, t);
+  if (!le_history_is_cleared(t) ||
+      !t->undo_stack[t->undo_count - 1].fade_ready) return LE_ERR_NOT_READY;
   const le_hist_entry e = t->undo_stack[t->undo_count - 1];
   const int32_t lanes = le_lanes_active(t);
 
@@ -1948,7 +1990,20 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   cmd.restore.len = e.len;
   cmd.restore.state = e.state;
   cmd.restore.master_len = e.master_len;
+  cmd.restore.fade_amount = e.fade_amount;
+  cmd.restore.source_slot = e.slot;
+  if (engine->perf.drain != NULL) {
+    if (engine->perf.next_restore_id == UINT32_MAX) {
+      atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u, memory_order_relaxed);
+    } else {
+      cmd.restore.image_id = ++engine->perf.next_restore_id;
+      le_stage_retired_layer(engine, channel, e.slot, 0, e.len, cmd.restore.image_id);
+    }
+  }
   if (le_push_cmd(engine, cmd) != LE_OK) return LE_ERR_INVALID;
+#ifdef LE_NATIVE_TESTS
+  if (le_test_fade_hook) le_test_fade_hook(engine, 4);
+#endif
 
   t->undo_count--;
   /* Cannot fail: one entry off the undo stack for the one added here. */
@@ -4067,6 +4122,7 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
                              engine->perf.layer_staging_storage,
                              LE_LAYER_STAGING_RING_CAPACITY);
 
+  engine->perf.next_restore_id = 0;
   /* Spawn the drain thread before publishing to the audio thread: it only
    * ever reads through le_audio_ring_pop (never allocates/frees the ring
    * buffers themselves), so starting it slightly early is harmless — it just
