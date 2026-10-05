@@ -186,11 +186,16 @@ class SessionTrack {
     required this.channel,
     required this.multiple,
     required this.lengthFrames,
+    required this.fadeAmount,
     required this.lanes,
   });
 
   /// Projects a [SessionTrack] from a current-schema JSON map.
   factory SessionTrack.fromJson(Map<String, dynamic> json) {
+    final amount = json['fadeAmount'];
+    if (amount is! num || !amount.isFinite || amount < 0 || amount > 1) {
+      throw const FormatException('invalid track Fade amount');
+    }
     final lanes = [
       for (final l in json['lanes'] as List<dynamic>)
         SessionLane.fromJson(l as Map<String, dynamic>),
@@ -226,6 +231,7 @@ class SessionTrack {
       channel: channel,
       multiple: (json['multiple'] as num).toInt(),
       lengthFrames: (json['lengthFrames'] as num).toInt(),
+      fadeAmount: amount.toDouble(),
       lanes: lanes,
     );
   }
@@ -239,6 +245,9 @@ class SessionTrack {
   /// Captured length in frames (`multiple` × the base length).
   final int lengthFrames;
 
+  /// Captured Fade coefficient, recalled as a stationary amount.
+  final double fadeAmount;
+
   /// The track's lanes, each with its own mix/routing and audio layers.
   final List<SessionLane> lanes;
 
@@ -247,6 +256,7 @@ class SessionTrack {
     'channel': channel,
     'multiple': multiple,
     'lengthFrames': lengthFrames,
+    'fadeAmount': fadeAmount,
     'lanes': [for (final l in lanes) l.toJson()],
   };
 
@@ -258,6 +268,7 @@ class SessionTrack {
           channel == other.channel &&
           multiple == other.multiple &&
           lengthFrames == other.lengthFrames &&
+          fadeAmount == other.fadeAmount &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -265,6 +276,7 @@ class SessionTrack {
     channel,
     multiple,
     lengthFrames,
+    fadeAmount,
     Object.hashAll(lanes),
   );
 }
@@ -673,7 +685,7 @@ class SessionOutputSetup {
 }
 
 /// A saved Segno session, paired with per-lane, per-layer WAV files in a
-/// `.segno` bundle directory. Only the current schema 9 is accepted.
+/// `.segno` bundle directory. Only the current schema 11 is accepted.
 ///
 /// Track settings are session-level maps, independent of audio entries.
 /// Missing entries inherit the session default; explicit values, including
@@ -832,7 +844,7 @@ class Session {
   }
 
   /// The current manifest schema stores per-track settings and all FX stages.
-  static const int formatVersion = 10;
+  static const int formatVersion = 11;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';

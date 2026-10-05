@@ -664,6 +664,7 @@ void main() {
           laneCounts: const {0: 1},
           tracks: [
             SessionRigTrack(
+              fadeAmount: 1,
               channel: 0,
               lanes: [
                 SessionRigLane(
@@ -730,6 +731,7 @@ void main() {
           trackPans: const {0: -0.25},
           tracks: [
             SessionRigTrack(
+              fadeAmount: 1,
               channel: 0,
               lanes: [
                 SessionRigLane(
@@ -792,6 +794,7 @@ void main() {
             baseLengthFrames: 4,
             tracks: [
               SessionRigTrack(
+                fadeAmount: 1,
                 channel: 0,
                 lanes: [
                   SessionRigLane(

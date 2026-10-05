@@ -287,6 +287,66 @@ class _RefusingMonitorMuteEngine extends FakeAudioEngine {
 }
 
 void main() {
+  test(
+    'invalid Session Fade amounts refuse before revision or engine mutation',
+    () async {
+      final engine = FakeAudioEngine();
+      final repository = LooperRepository(engine: engine);
+      addTearDown(repository.dispose);
+      expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        isRunning: true,
+        devicePresent: true,
+        sampleRate: 48000,
+      );
+      SessionRig rig(double amount) => SessionRig(
+        baseLengthFrames: 4,
+        tracks: [
+          SessionRigTrack(
+            channel: 0,
+            fadeAmount: amount,
+            lanes: [
+              SessionRigLane(
+                lane: 0,
+                layers: [
+                  Float32List.fromList([.5, .5, .5, .5]),
+                ],
+                volume: 1,
+                muted: false,
+                outputMask: 1,
+                inputChannel: 0,
+              ),
+            ],
+          ),
+        ],
+      );
+      final revision = repository.sessionRevision;
+      final before = repository.state.tracks;
+      final calls = [...engine.calls];
+      for (final amount in [double.nan, double.infinity, -.1, 1.1]) {
+        await expectLater(
+          repository.applySession(rig(amount)),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'preflight error',
+              'session mix cannot be restored',
+            ),
+          ),
+        );
+        expect(repository.sessionRevision, revision);
+        expect(repository.state.tracks, before);
+        expect(engine.calls, calls);
+      }
+      // The same live, complete rig passes when only its amount becomes valid.
+      await repository.applySession(rig(.25));
+      expect(repository.sessionRevision, revision + 1);
+      expect(repository.state.tracks[0].state, TrackState.stopped);
+      expect(repository.state.tracks[0].fade.amount, .25);
+      expect(engine.importedTracks[0], everyElement(.5));
+    },
+  );
+
   late FakeAudioEngine engine;
   late StreamController<void> ticker;
 
@@ -6100,6 +6160,7 @@ void main() {
       int outputMask = 0x3,
       int inputChannel = 0,
     }) => SessionRigTrack(
+      fadeAmount: 1,
       channel: channel,
       lanes: [
         SessionRigLane(
@@ -7052,6 +7113,7 @@ void main() {
             baseLengthFrames: 4,
             tracks: [
               SessionRigTrack(
+                fadeAmount: 1,
                 channel: 0,
                 lanes: [
                   SessionRigLane(
@@ -7107,6 +7169,7 @@ void main() {
             baseLengthFrames: 4,
             tracks: [
               SessionRigTrack(
+                fadeAmount: 1,
                 channel: 0,
                 lanes: [
                   SessionRigLane(

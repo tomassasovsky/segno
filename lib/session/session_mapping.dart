@@ -365,6 +365,11 @@ MonitorMode _monitorMode(SessionMonitor monitor) =>
 List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
   final tracks = <SessionRigTrack>[];
   for (final track in bundle.session.tracks) {
+    if (!track.fadeAmount.isFinite ||
+        track.fadeAmount < 0 ||
+        track.fadeAmount > 1) {
+      throw const FormatException('invalid track Fade amount');
+    }
     final lanes = <SessionRigLane>[];
     for (final lane in track.lanes) {
       final layers = bundle.laneStems[(track.channel, lane.lane)];
@@ -388,6 +393,7 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
       tracks.add(
         SessionRigTrack(
           channel: track.channel,
+          fadeAmount: track.fadeAmount,
           lanes: lanes,
         ),
       );

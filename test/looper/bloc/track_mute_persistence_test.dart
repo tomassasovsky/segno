@@ -316,6 +316,7 @@ void main() {
           baseLengthFrames: 4,
           tracks: [
             SessionRigTrack(
+              fadeAmount: 1,
               channel: 0,
               lanes: [
                 SessionRigLane(
