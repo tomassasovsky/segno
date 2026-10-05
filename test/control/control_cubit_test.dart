@@ -2058,7 +2058,69 @@ void main() {
         verify(() => looper.play()).called(1);
         verify(() => looper.play(channel: 1)).called(1);
         verifyNever(() => looper.play(channel: 2));
+        // A deferred launch (count-in, quantized) leaves the loop parked, so
+        // the membership is kept until the loop is observed running.
+        expect(cubit.state.parkedResume, {0, 1});
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
         expect(cubit.state.parkedResume, isEmpty); // consumed
+      });
+
+      test('a running snapshot before Stop lands keeps the latched set', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        cubit
+          ..toggleMode() // Mute while running
+          ..stop(); // latches the running set
+        expect(cubit.state.parkedResume, {0, 1});
+        // A poll lands before the engine applies the stops: still running.
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        expect(cubit.state.parkedResume, {0, 1});
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+        );
+        expect(
+          cubit.state.parkedResume,
+          {0, 1},
+          reason: 'parked with the latch',
+        );
+      });
+
+      test('a second Rec/Play during a deferred launch keeps the deselected '
+          'member out', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+        );
+        cubit
+          ..toggleMode() // parkedResume = {0, 1}
+          ..trackPressed(1); // deselect track 2 while parked
+        expect(cubit.state.parkedResume, {0});
+        cubit
+          ..recPlay() // deferred: the loop stays parked
+          ..recPlay(); // toggles the same member, cancelling the launch
+        verify(() => looper.play()).called(2);
+        verifyNever(() => looper.play(channel: 1));
+        verifyNever(() => looper.setMute(muted: false, channel: 1));
+        expect(cubit.state.parkedResume, {0});
       });
 
       test('parked with an empty resume set falls back to ALL content', () {
@@ -2138,7 +2200,8 @@ void main() {
             for (var channel = 0; channel < 3; channel++) {
               verify(() => looper.play(channel: channel)).called(1);
             }
-            expect(cubit.state.parkedResume, parked ? isEmpty : before);
+            // Kept until a snapshot shows the loop running.
+            expect(cubit.state.parkedResume, before);
           },
         );
       }
