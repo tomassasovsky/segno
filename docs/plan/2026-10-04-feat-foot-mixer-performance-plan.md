@@ -14,7 +14,8 @@ changes, each with its own checks and human merge gate:
 
 The prerequisite probes and repairs are published separately: shared input gain
 #1126, monitor mute #1128, and track-mute durability #1129. Part 2 reuses those
-corrected owners. Their additional Claude and human merge gates remain open.
+corrected owners. The mute prerequisites have clean reviews; older Claude reviews and the human
+merge gates remain open.
 No unused foundation or partial destination will be published.
 
 ## Goal and scope

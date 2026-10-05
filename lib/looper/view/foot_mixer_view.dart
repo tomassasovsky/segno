@@ -25,12 +25,26 @@ class FootMixerView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final repository = context.read<LooperRepository>();
+    return StreamBuilder<int>(
+      stream: repository.monitorChanges,
+      builder: (context, _) => _FootMixerContent(
+        monitors: repository.allMonitors(),
+      ),
+    );
+  }
+}
+
+class _FootMixerContent extends StatelessWidget {
+  const _FootMixerContent({required this.monitors});
+
+  final Map<int, InputMonitor> monitors;
+
+  @override
+  Widget build(BuildContext context) {
     final control = context.read<ControlCubit>();
     final selection = context.select<ControlCubit, FootMixerSelection>(
       (cubit) => cubit.state.footMixer,
-    );
-    final monitors = context.select<MonitorCubit, Map<int, InputMonitor>>(
-      (cubit) => cubit.state.inputs,
     );
     final projection = context.select<LooperBloc, FootMixerProjection>(
       (bloc) => projectFootMixer(bloc.state, selection, monitors: monitors),

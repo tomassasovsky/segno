@@ -22,7 +22,7 @@ class _Control extends MockCubit<ControlState> implements ControlCubit {}
 class _Looper extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
-class _Monitors extends MockCubit<MonitorState> implements MonitorCubit {}
+class _Repository extends Mock implements LooperRepository {}
 
 class _Inputs extends MockCubit<InputsState> implements InputsCubit {}
 
@@ -32,7 +32,7 @@ void main() {
   late _Control control;
   late Map<PedalButton, Object> contacts;
   late _Looper looper;
-  late _Monitors monitors;
+  late _Repository repository;
   late _Inputs inputs;
   late _Tracks tracks;
 
@@ -47,7 +47,11 @@ void main() {
       });
     }
     looper = _Looper();
-    monitors = _Monitors();
+    repository = _Repository();
+    when(repository.allMonitors).thenReturn(const {});
+    when(
+      () => repository.monitorChanges,
+    ).thenAnswer((_) => const Stream<int>.empty());
     inputs = _Inputs();
     tracks = _Tracks();
     whenListen(
@@ -82,11 +86,6 @@ void main() {
       ),
     );
     whenListen(
-      monitors,
-      const Stream<MonitorState>.empty(),
-      initialState: const MonitorState(),
-    );
-    whenListen(
       inputs,
       const Stream<InputsState>.empty(),
       initialState: const InputsState(names: {0: 'Guitar'}),
@@ -104,15 +103,17 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpApp(
-      MultiBlocProvider(
-        providers: [
-          BlocProvider<ControlCubit>.value(value: control),
-          BlocProvider<LooperBloc>.value(value: looper),
-          BlocProvider<MonitorCubit>.value(value: monitors),
-          BlocProvider<InputsCubit>.value(value: inputs),
-          BlocProvider<TracksCubit>.value(value: tracks),
-        ],
-        child: const Scaffold(body: FootMixerView()),
+      RepositoryProvider<LooperRepository>.value(
+        value: repository,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<ControlCubit>.value(value: control),
+            BlocProvider<LooperBloc>.value(value: looper),
+            BlocProvider<InputsCubit>.value(value: inputs),
+            BlocProvider<TracksCubit>.value(value: tracks),
+          ],
+          child: const Scaffold(body: FootMixerView()),
+        ),
       ),
     );
   }
@@ -394,13 +395,9 @@ void main() {
     when(
       () => looper.state,
     ).thenReturn(const LooperState(status: EngineStatus(inputChannels: 2)));
-    when(() => monitors.state).thenReturn(
-      const MonitorState(
-        inputs: {
-          0: InputMonitor(input: 0, mode: MonitorMode.auto, volume: .98),
-        },
-      ),
-    );
+    when(repository.allMonitors).thenReturn(const {
+      0: InputMonitor(input: 0, mode: MonitorMode.auto, volume: .98),
+    });
     await pump(tester);
     expect(find.text('Auto · Live off'), findsOneWidget);
     expect(find.text('Limit · Hold reset'), findsOneWidget);

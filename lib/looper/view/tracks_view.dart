@@ -51,7 +51,7 @@ class _TracksViewState extends State<TracksView> {
   @override
   void dispose() {
     dismissAppToast(AppToastId.undoClearAll);
-    dismissAppToast('footMixerFailure');
+    dismissAppToast(AppToastId.footMixerFailure);
     super.dispose();
   }
 
@@ -127,7 +127,7 @@ class _TracksViewState extends State<TracksView> {
                 before.footMixerFailure != after.footMixerFailure &&
                 after.mode == InteractionMode.mixer,
             listener: (context, _) => showAppToast(
-              id: 'footMixerFailure',
+              id: AppToastId.footMixerFailure,
               type: ToastificationType.error,
               title: Text(context.l10n.footMixerFailure),
               autoCloseDuration: const Duration(seconds: 5),
