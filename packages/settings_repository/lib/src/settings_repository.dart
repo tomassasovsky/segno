@@ -1601,7 +1601,16 @@ class SettingsRepository {
     final saved = await _readMixSettings();
     if (saved.legacyMonitorGain) {
       // Persist the repaired unity gain once, so storage stops carrying it.
-      await _serialize(() async => _writeMixSettings(await _readMixSettings()));
+      // Best effort: the repaired value is already what every reader sees,
+      // and a failing store must not abort startup; a later mix write
+      // repairs it.
+      try {
+        await _serialize(
+          () async => _writeMixSettings(await _readMixSettings()),
+        );
+      } on Object {
+        // Retried implicitly by the next mix write.
+      }
     }
     return (
       trackLevels: saved.trackLevels,

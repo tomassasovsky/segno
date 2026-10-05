@@ -242,6 +242,14 @@ void main() {
         },
       );
     }
+    test('a failing legacy write-back still loads the repaired gain', () async {
+      store
+        ..values['mix_settings'] = '{"monitorLevels":{"1":1.5}}'
+        ..failNextKey = 'mix_settings';
+      final loaded = await repository.loadMixSettings('device');
+      expect(loaded.monitorLevels[1] ?? 1, 1);
+    });
+
     test('writes accept unity and refuse invalid monitor gain', () async {
       await repository.saveMonitorVolume(0, 0.5);
       final before = Map<String, Object>.of(store.values);

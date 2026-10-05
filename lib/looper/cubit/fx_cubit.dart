@@ -78,7 +78,8 @@ class FxCubit extends Cubit<FxState> {
     final trackExists = rig.tracks.any((track) => track.channel == index);
     return switch (address.stage) {
       FxStage.input =>
-        index >= 0 &&
+        !_persistence.inputRestoreFailed &&
+                index >= 0 &&
                 index < rig.status.inputChannels &&
                 (rig.status.excludedInputMask & (1 << index)) == 0
             ? _repository.monitorEffects(index)
