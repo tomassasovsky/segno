@@ -5897,5 +5897,105 @@
     },
     "fadeSettingsRecoveryTitle": "Fade duration needs recovery",
     "fadeSettingsRefusedTitle": "Fade duration change was not saved",
-    "fadeSettingsRecoveryBody": "Retry to recover the Fade duration settings."
+    "fadeSettingsRecoveryBody": "Retry to recover the Fade duration settings.",
+    "actionModeFade": "Fade",
+    "@actionModeFade": {
+        "description": "Foot Fade performance surface."
+    },
+    "actionOperationFade": "Fade",
+    "@actionOperationFade": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeDefaultTime": "Default fade time",
+    "@footFadeDefaultTime": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeTrackTime": "{track} fade time",
+    "@footFadeTrackTime": {
+        "description": "Foot Fade performance surface.",
+        "placeholders": {
+            "track": {
+                "type": "String"
+            }
+        }
+    },
+    "footFadeCustom": "Custom",
+    "@footFadeCustom": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeUsesDefault": "Uses default",
+    "@footFadeUsesDefault": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeSeconds": "{value}s",
+    "@footFadeSeconds": {
+        "description": "Foot Fade performance surface.",
+        "placeholders": {
+            "value": {
+                "type": "String"
+            }
+        }
+    },
+    "footFadeFullLevel": "Full level",
+    "@footFadeFullLevel": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeFadedOut": "Faded out",
+    "@footFadeFadedOut": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeFadingOut": "Fading out",
+    "@footFadeFadingOut": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeFadingIn": "Fading in",
+    "@footFadeFadingIn": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeTimeUp": "Time +",
+    "@footFadeTimeUp": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeTimeDown": "Time −",
+    "@footFadeTimeDown": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeHoldUseDefault": "Hold · Use default",
+    "@footFadeHoldUseDefault": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeBank": "Bank {bank}",
+    "@footFadeBank": {
+        "description": "Foot Fade performance surface.",
+        "placeholders": {
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "footFadeHoldDefaultTime": "Hold · Default time",
+    "@footFadeHoldDefaultTime": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeHoldTime": "Hold · Time",
+    "@footFadeHoldTime": {
+        "description": "Foot Fade performance surface."
+    },
+    "footFadeFailure": "The fade could not be started. Try again.",
+    "@footFadeFailure": {
+        "description": "Foot Fade performance surface."
+    },
+    "mixerFading": "Fading",
+    "@mixerFading": {
+        "description": "Foot Fade performance surface."
+    },
+    "mixerFadeLevel": "Fade {value}%",
+    "@mixerFadeLevel": {
+        "description": "Mixer strip caption while a stationary Fade attenuates the track.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            }
+        }
+    }
 }

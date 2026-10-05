@@ -40,7 +40,10 @@ enum InteractionMode {
   custom,
 
   /// Foot-controlled track playback and live-input gain/mute.
-  mixer;
+  mixer,
+
+  /// Foot-controlled independent track fades and their durations.
+  fade;
 
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes the current stored identity.

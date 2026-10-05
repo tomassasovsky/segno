@@ -549,6 +549,7 @@ class _AppState extends State<App> {
       providers: [
         RepositoryProvider.value(value: widget.repository),
         RepositoryProvider.value(value: _runtime.timing),
+        RepositoryProvider.value(value: _runtime.fade),
         RepositoryProvider.value(value: _runtime.record),
         RepositoryProvider.value(value: widget.controllerRepository),
         RepositoryProvider.value(value: widget.midiDeviceRepository),

@@ -119,6 +119,7 @@ class TracksCommands {
       InteractionMode.fx => l10n.a11yModeFx,
       InteractionMode.custom => l10n.a11yModeCustom,
       InteractionMode.mixer => l10n.actionModeMixer,
+      InteractionMode.fade => l10n.actionModeFade,
     });
   }
 
@@ -221,7 +222,7 @@ class TracksCommands {
       return KeyEventResult.ignored; // let OS / menu shortcuts through
     }
 
-    if (mode == InteractionMode.mixer) {
+    if (mode == InteractionMode.mixer || mode == InteractionMode.fade) {
       if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
         overlay.setMode(InteractionMode.record);
         return KeyEventResult.handled;
@@ -309,6 +310,7 @@ class TracksCommands {
             announceFxChainToggle(channel);
             bloc.add(LooperTrackChainToggled(channel));
           case InteractionMode.mixer:
+          case InteractionMode.fade:
             break;
           case InteractionMode.custom:
             // Selection only: what a control does in Custom controls is

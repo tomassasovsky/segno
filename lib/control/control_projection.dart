@@ -13,6 +13,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/invariants.dart';
+import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -93,6 +94,12 @@ PedalTrackLed projectTrackLed(
       return PedalTrackLed.off;
     case InteractionMode.mixer:
       return PedalTrackLed.off;
+    case InteractionMode.fade:
+      // Lit while fading or faded out; never a claim about audibility.
+      final fade = track?.fade;
+      return fade != null && (fade.amount < 1 || fade.amount != fade.target)
+          ? PedalTrackLed.blue
+          : PedalTrackLed.off;
     case InteractionMode.custom:
       return customFunctions[channel] ?? false
           ? PedalTrackLed.blue
@@ -192,7 +199,9 @@ PedalStateFrame projectFrame(
       InteractionMode.record => PedalMode.rec,
       InteractionMode.mute => PedalMode.play,
       InteractionMode.fx => PedalMode.fx,
-      InteractionMode.custom || InteractionMode.mixer => PedalMode.custom,
+      InteractionMode.custom ||
+      InteractionMode.mixer ||
+      InteractionMode.fade => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -243,6 +252,10 @@ int _physicalButtonMask(
                       FootMixerProjection.pedalRoles[button]!.slot!
             : acceptedContacts.contains(button),
       PedalButton.bank => overlay.activeBank == 1,
+      _
+          when overlay.mode == InteractionMode.fade &&
+              FootFadeProjection.pedalRoles[button]!.slot == null =>
+        acceptedContacts.contains(button),
       _ when overlay.mode == InteractionMode.custom =>
         physicalCustomStates[button] ?? false,
       PedalButton.track1 ||
