@@ -3835,6 +3835,9 @@ class LooperRepository {
           (t) =>
               t.channel < 0 ||
               t.channel >= 8 ||
+              !t.fadeAmount.isFinite ||
+              t.fadeAmount < 0 ||
+              t.fadeAmount > 1 ||
               t.lanes.any(
                 (l) =>
                     l.lane < 0 ||
@@ -4406,6 +4409,40 @@ class LooperRepository {
           throw StateError(
             'failed to finalize track ${track.channel}: ${finalized.name}',
           );
+        }
+      }
+      // Finalization queues a material reset. Its callback must publish the
+      // new Fade generation before an image can target that imported material.
+      var finalized = false;
+      for (var attempt = 0; attempt < attempts; attempt++) {
+        requireCurrent();
+        if (_engine.commandsSettled) {
+          finalized = true;
+          break;
+        }
+        await Future<void>.delayed(interval);
+      }
+      if (!finalized) throw StateError('session material reset did not settle');
+      requireCurrent();
+      final imported = _engine.snapshot();
+      for (final track in rig.tracks) {
+        requireCurrent();
+        if (track.channel >= imported.tracks.length) {
+          throw StateError('session Fade track is unavailable');
+        }
+        final identity = imported.tracks[track.channel].fade;
+        final result = await installFade(
+          channel: track.channel,
+          image: FadeImage(
+            amount: track.fadeAmount,
+            target: track.fadeAmount,
+            lifetime: identity.lifetime,
+            generation: identity.generation,
+          ),
+        );
+        requireCurrent();
+        if (!result.isOk) {
+          throw StateError('failed to install Session Fade: ${result.name}');
         }
       }
       // An empty session establishes no master: the engine stays free to define

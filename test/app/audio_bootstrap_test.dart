@@ -1998,6 +1998,7 @@ void main() {
           // reaches lane 1 if the write-back re-persisted the lane count.
           tracks: [
             SessionRigTrack(
+              fadeAmount: 1,
               channel: 0,
               lanes: [
                 SessionRigLane(

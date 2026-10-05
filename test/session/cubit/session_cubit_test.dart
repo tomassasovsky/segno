@@ -576,6 +576,7 @@ void main() {
               baseLengthFrames: 128,
               tracks: [
                 SessionTrack(
+                  fadeAmount: 1,
                   channel: 0,
                   multiple: 1,
                   lengthFrames: 128,
