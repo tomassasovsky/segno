@@ -74,6 +74,7 @@ void main() {
           EngineResult.ok,
         );
         expect(engine.commitSession(4096, loopBars: 0), EngineResult.ok);
+        expect(engine.play(channel: 1), EngineResult.ok);
         engine.pump(frames: 0);
         expect(
           repository.setLaneOutput(channel: 1, lane: 0, mask: 2),

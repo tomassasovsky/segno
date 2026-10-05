@@ -6,6 +6,7 @@ static le_engine* fade_fixture(int sr) {
   for (int i = 0; i < 128; ++i) pcm[i] = 0.5f;
   CHECK(le_engine_import_track(e, 0, pcm, 128) == LE_OK);
   CHECK(le_engine_commit_session(e, 128, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
   return e;
 }
@@ -137,6 +138,7 @@ static void test_fade_independent_tracks_and_capture(void) {
   for (int i = 0; i < 128; ++i) pcm[i] = .25f;
   CHECK(le_engine_import_track(e, 1, pcm, 128) == LE_OK);
   CHECK(le_engine_commit_session(e, 128, 0) == LE_OK);
+  CHECK(le_engine_play(e, 1) == LE_OK);
   CHECK(le_engine_set_track_volume(e, 0, .5f) == LE_OK);
   drain(e);
   uint64_t a, b;
@@ -240,6 +242,7 @@ static void test_fade_import_before_audibility(void) {
   CHECK(out[0] == 0);
   fade_result(e, request, LE_OK);
   CHECK(le_engine_commit_session(e, 128, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
   le_engine_process(e, out, in, 1);
   CHECK(out[0] == .125f); // no unity sample between commit and image install
   CHECK(le_engine_clear(e, 0) == LE_OK); drain(e);

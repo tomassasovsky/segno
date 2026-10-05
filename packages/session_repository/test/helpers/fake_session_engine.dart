@@ -302,7 +302,7 @@ class FakeSessionEngine implements AudioEngine {
       if (track.state == TrackState.empty && track.lengthFrames > 0) {
         track
           ..multiple = track.lengthFrames ~/ baseFrames
-          ..state = TrackState.playing;
+          ..state = TrackState.stopped;
       }
     }
     return EngineResult.ok;

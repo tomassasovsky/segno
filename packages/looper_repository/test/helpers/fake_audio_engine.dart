@@ -1471,7 +1471,7 @@ class FakeAudioEngine implements AudioEngine {
       final depths = finalizedLayers[entry.key];
       if (depths == null) return EngineResult.invalid;
       tracks[entry.key] = TrackSnapshot(
-        state: TrackState.playing,
+        state: TrackState.stopped,
         volume: 1,
         muted: false,
         lengthFrames: entry.value.length,

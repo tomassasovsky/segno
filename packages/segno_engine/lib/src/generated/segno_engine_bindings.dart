@@ -4952,7 +4952,7 @@ class SegnoEngineBindings {
 
   /// Loads `frames` mono frames of PCM into track `channel`'s buffer and records
   /// the length. The track must be EMPTY (LE_ERR_INVALID otherwise); the unfilled
-  /// tail is zeroed. The track starts playing on le_engine_commit_session. Returns
+  /// tail is zeroed. The track becomes STOPPED on le_engine_commit_session. Returns
   /// LE_OK or an le_result error. Equivalent to le_engine_import_track_lane with
   /// lane == 0.
   int le_engine_import_track(
@@ -5167,8 +5167,8 @@ class SegnoEngineBindings {
   late final _le_engine_finalize_layers = _le_engine_finalize_layersPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
-  /// Establishes the master loop at `base_frames` and starts every imported track
-  /// (EMPTY with a loaded length) playing at its whole-loop multiple
+  /// Establishes the master loop at `base_frames` and parks every imported track
+  /// (EMPTY with a loaded length) STOPPED at its whole-loop multiple
   /// (length / base_frames). Restores exactly `loop_bars` musical bars over that
   /// span; zero keeps the loop grid-free even when a tempo is known. The caller
   /// restores tempo/source/signature before this commit. Does not infer bars
@@ -5806,8 +5806,8 @@ enum le_command_code {
   /// (default 0 = no outputs).
   LE_CMD_SET_CLICK_OUTPUT(22),
 
-  /// session arm: base_frames and loop_bars;
-  /// publish grid and start imported tracks
+  /// session commit: base_frames and loop_bars;
+  /// publish grid with imported tracks stopped
   LE_CMD_COMMIT_SESSION(23),
 
   /// arg_f = 0..LE_MAX_GAIN (the click's ONLY

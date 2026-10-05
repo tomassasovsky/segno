@@ -1395,7 +1395,7 @@ class FakeAudioEngine implements AudioEngine {
       final length = _importedLengths[(entry.key, entry.value.$1)];
       if (length == null || length == 0) return EngineResult.invalid;
       tracks[entry.key] = TrackSnapshot(
-        state: TrackState.playing,
+        state: TrackState.stopped,
         volume: 1,
         muted: false,
         lengthFrames: length,

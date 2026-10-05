@@ -252,8 +252,8 @@ typedef enum le_command_code {
   LE_CMD_SET_CLICK_OUTPUT = 22,  /* click output routing. trackmask arm:
                                   * channel unused, mask = output bitmask
                                   * (default 0 = no outputs). */
-  LE_CMD_COMMIT_SESSION = 23,    /* session arm: base_frames and loop_bars;
-                                  * publish grid and start imported tracks */
+  LE_CMD_COMMIT_SESSION = 23,    /* session commit: base_frames and loop_bars;
+                                  * publish grid with imported tracks stopped */
   LE_CMD_SET_CLICK_VOLUME = 24,  /* arg_f = 0..LE_MAX_GAIN (the click's ONLY
                                   * gain stage — master gain never applies). */
   LE_CMD_SET_RECORD_START = 25, /* typed pair + edit kind + callback receipt */
@@ -2995,7 +2995,7 @@ LE_EXPORT uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine,
 /* ---- session persistence ---- *
  * Save: read each track's loop PCM with le_engine_export_track. Load: clear the
  * engine (so every track is EMPTY), le_engine_import_track each stem, then
- * le_engine_commit_session to establish the master and start playback. Per-track
+ * le_engine_commit_session to establish the master with tracks stopped. Per-track
  * buffers are mono (one sample per frame). */
 
 /* Copies up to `max_frames` frames of track `channel`'s mono loop into `out`;
@@ -3022,7 +3022,7 @@ LE_EXPORT int32_t le_engine_export_track_lane(le_engine* engine,
 
 /* Loads `frames` mono frames of PCM into track `channel`'s buffer and records
  * the length. The track must be EMPTY (LE_ERR_INVALID otherwise); the unfilled
- * tail is zeroed. The track starts playing on le_engine_commit_session. Returns
+ * tail is zeroed. The track becomes STOPPED on le_engine_commit_session. Returns
  * LE_OK or an le_result error. Equivalent to le_engine_import_track_lane with
  * lane == 0. */
 LE_EXPORT int32_t le_engine_import_track(le_engine* engine, int32_t channel,
@@ -3081,8 +3081,8 @@ LE_EXPORT int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
                                             int32_t undo_count,
                                             int32_t redo_count);
 
-/* Establishes the master loop at `base_frames` and starts every imported track
- * (EMPTY with a loaded length) playing at its whole-loop multiple
+/* Establishes the master loop at `base_frames` and parks every imported track
+ * (EMPTY with a loaded length) STOPPED at its whole-loop multiple
  * (length / base_frames). Restores exactly `loop_bars` musical bars over that
  * span; zero keeps the loop grid-free even when a tempo is known. The caller
  * restores tempo/source/signature before this commit. Does not infer bars

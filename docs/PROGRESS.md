@@ -8,6 +8,20 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 stopped Session recall (#1134)
+
+Session recall now publishes recorded tracks stopped, with timing and crown
+preserved, and keeps ordinary transport edits blocked until saved settings finish
+applying. Explicit Play starts the recalled material. Unavailable audio devices
+are rejected before destructive work; settings-only empty loads still work.
+
+The [review](code-review/stopped-session-recall/review.md) records the local gates:
+3,142 app tests, 715 ordinary Looper tests, 112 Session tests and 356 Engine tests
+pass; coverage meets every affected floor. Native safety configurations, FFI,
+analysis, formatting and positive Bloc lint pass. Independent reviews are clean;
+Claude review, published-head CI and human merge approval remain separate gates.
+This prerequisite does not complete Fade duration or Session persistence.
+
 ## October 2026 native track Fade (#1131)
 
 The native Fade capability now has independent per-track envelopes, confirmed

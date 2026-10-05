@@ -1147,7 +1147,8 @@ abstract interface class SessionIo {
   Float32List exportTrackLane(int channel, int lane);
 
   /// Loads mono [pcm] into the EMPTY track [channel] for a session restore.
-  /// Pair with [commitSession] to establish the master and play. Returns
+  /// Pair with [commitSession] to establish the master with tracks stopped.
+  /// Returns
   /// [EngineResult.invalid] if the track is not empty. Equivalent to
   /// [importTrackLane] with `lane == 0`.
   EngineResult importTrack(int channel, Float32List pcm);
@@ -1182,8 +1183,8 @@ abstract interface class SessionIo {
   /// or mismatched-length) reconstruction.
   EngineResult finalizeLayers(int channel, int undoCount, int redoCount);
 
-  /// Establishes the master loop at [baseFrames] and starts every imported
-  /// track playing at its whole-loop multiple.
+  /// Establishes the master loop at [baseFrames] and leaves every imported
+  /// track stopped at its whole-loop multiple. Launch with [AudioEngine.play].
   EngineResult commitSession(int baseFrames, {required int loopBars});
 }
 

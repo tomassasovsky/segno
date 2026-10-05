@@ -17,6 +17,7 @@ EngineSnapshot _rig(
   int outputBusCount = 0,
 }) => EngineSnapshot(
   isRunning: true,
+  devicePresent: true,
   sampleRate: 48000,
   bufferFrames: 128,
   inputChannels: 2,

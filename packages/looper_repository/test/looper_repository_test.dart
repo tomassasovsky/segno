@@ -6078,6 +6078,7 @@ void main() {
     /// the apply's settle wait passes immediately.
     EngineSnapshot clearedSnapshot() => EngineSnapshot(
       isRunning: true,
+      devicePresent: true,
       sampleRate: 48000,
       bufferFrames: 128,
       framesProcessed: 0,
@@ -6595,6 +6596,7 @@ void main() {
         // its lowest populated track, as the native commit does.
         engine.nextSnapshot = const EngineSnapshot(
           isRunning: true,
+          devicePresent: true,
           sampleRate: 48000,
           bufferFrames: 128,
           framesProcessed: 0,
@@ -6620,7 +6622,7 @@ void main() {
         // The raw snapshot the UI would otherwise read straight off still
         // says 1 — but the projected state must not leak it.
         expect(engine.nextSnapshot.primaryTrack, 1);
-        expect(repo.state.tracks[0].state, TrackState.playing);
+        expect(repo.state.tracks[0].state, TrackState.stopped);
         expect(repo.state.transport.primaryTrack, 0);
       },
     );

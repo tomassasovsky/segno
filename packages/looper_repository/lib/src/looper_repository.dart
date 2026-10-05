@@ -287,7 +287,9 @@ class LooperRepository {
   int? _applyingSessionRevision;
 
   bool get _sessionAudioReserved =>
-      _applyingSessionRevision != null || _importTracks != null;
+      _applyingSessionRevision != null ||
+      _importTracks != null ||
+      _sessionBootStartBlocked;
   EngineConfig? _lastEngineConfig;
 
   /// Whether the user intends the engine to be running (set on a successful
@@ -3798,6 +3800,12 @@ class LooperRepository {
     Duration clearPollInterval = const Duration(milliseconds: 8),
     int clearPollAttempts = 64,
   }) async {
+    if (rig.tracks.isNotEmpty) {
+      final snapshot = _engine.snapshot();
+      if (!snapshot.isRunning || !snapshot.devicePresent) {
+        throw StateError('audio device must be running before session import');
+      }
+    }
     if (rig.outputChains.keys.any((bus) => bus < 0 || bus >= kMaxOutputBuses)) {
       throw StateError('session output chains cannot be restored');
     }
@@ -4408,7 +4416,7 @@ class LooperRepository {
           loopBars: rig.loopBars,
         );
         if (!committed.isOk) {
-          throw StateError('failed to start the session: ${committed.name}');
+          throw StateError('failed to commit the session: ${committed.name}');
         }
       }
 
@@ -4422,7 +4430,7 @@ class LooperRepository {
                 if (track.channel >= snapshot.tracks.length) return false;
                 final actual = snapshot.tracks[track.channel];
                 final primary = track.lanes.first;
-                return actual.state == TrackState.playing &&
+                return actual.state == TrackState.stopped &&
                     actual.lengthFrames == primary.livePcm.length &&
                     actual.undoDepth == primary.undoCount &&
                     actual.redoDepth == primary.redoCount;

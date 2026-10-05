@@ -8,11 +8,17 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show PumpedNativeEngine, TrackSnapshot;
+    show EngineSnapshot, PumpedNativeEngine, TrackSnapshot;
 
 import 'helpers/fake_audio_engine.dart';
 
 class _ImportEngine extends PumpedNativeEngine {
+  bool deviceAvailable = true;
+
+  @override
+  EngineSnapshot snapshot() =>
+      super.snapshot().copyWith(devicePresent: deviceAvailable);
+
   bool holdCommit = false;
   bool holdSettings = false;
   bool settingsPosted = false;
@@ -113,6 +119,25 @@ void _coherent(LooperState state) {
 }
 
 void main() {
+  test('settings-only Session restores before device startup', () async {
+    final engine = FakeAudioEngine();
+    final repository = LooperRepository(engine: engine);
+    addTearDown(repository.dispose);
+    repository.blockStartForSessionBoot();
+    await repository.applySession(
+      const SessionRig(tempoBpm: 96, tempoSource: TempoSource.manual),
+    );
+    expect(repository.sessionTransport.tempoBpm, 96);
+    expect(
+      repository.state.tracks.every((track) => track.state == TrackState.empty),
+      isTrue,
+    );
+    expect(engine.committedBaseFrames, isNull);
+    expect(repository.startEngine(const EngineConfig()), EngineResult.notReady);
+    repository.clearSessionBootStartBlock();
+    expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+  });
+
   test('stop supersedes apply before its first wait returns', () async {
     final engine = FakeAudioEngine();
     final repository = LooperRepository(engine: engine);
@@ -196,6 +221,47 @@ void main() {
     });
 
     test(
+      'Session boot reservation spans stopped import until release',
+      () async {
+        repository.blockStartForSessionBoot();
+        await repository.applySession(_rig());
+        expect(repository.state.tracks[0].state, TrackState.stopped);
+        engine.pump();
+        expect(engine.snapshot().outputRms, 0);
+        expect(engine.snapshot().masterPositionFrames, 0);
+        expect(repository.play(), EngineResult.notReady);
+        expect(repository.record(), EngineResult.notReady);
+        expect(repository.undo(), EngineResult.notReady);
+        expect(repository.redo(), EngineResult.notReady);
+        expect(repository.clear(), EngineResult.notReady);
+        expect(repository.clearAll([0]), EngineResult.notReady);
+        expect(repository.undoClearAll(), EngineResult.notReady);
+        expect(repository.stopTrack(), EngineResult.ok);
+        engine.pump(frames: 0);
+        repository.clearSessionBootStartBlock();
+        expect(repository.play(), EngineResult.ok);
+        engine.pump(frames: 256);
+        expect(engine.snapshot().outputRms, closeTo(.25, 1e-6));
+      },
+    );
+
+    test(
+      'audio recall refuses absent device before replacing the rig',
+      () async {
+        await repository.applySession(_rig());
+        engine.deviceAvailable = false;
+        final session = repository.sessionRevision;
+        final generation = repository.mixGeneration;
+        engine.staged = false;
+        await expectLater(repository.applySession(_rig()), throwsStateError);
+        expect(repository.sessionRevision, session);
+        expect(repository.mixGeneration, generation);
+        expect(engine.staged, isFalse);
+        expect(engine.snapshot().tracks[0].lengthFrames, 256);
+      },
+    );
+
+    test(
       'apply reserves native acquisition and history before importing',
       () async {
         engine
@@ -277,7 +343,7 @@ void main() {
       expect(completed, isFalse);
       engine.holdCommit = false;
       await loading;
-      expect(repository.state.tracks[0].state, TrackState.playing);
+      expect(repository.state.tracks[0].state, TrackState.stopped);
       expect(repository.state.tracks[0].lengthFrames, 256);
       expect(engine.exportTrack(0).first, closeTo(.25, .00001));
     });

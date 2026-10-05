@@ -27,6 +27,8 @@ class _ReadGateStore extends FakeKeyValueStore {
   final midiReadEntered = Completer<void>();
   Completer<void>? fxWrite;
   final fxWriteEntered = Completer<void>();
+  Completer<void>? bootWrite;
+  final bootWriteEntered = Completer<void>();
   bool refuseFx = false;
   bool refuseMute = false;
   int fxWrites = 0;
@@ -41,6 +43,10 @@ class _ReadGateStore extends FakeKeyValueStore {
 
   @override
   Future<void> setString(String key, String value) async {
+    if (key == 'all_tracks_fx_chain' && bootWrite != null) {
+      if (!bootWriteEntered.isCompleted) bootWriteEntered.complete();
+      await bootWrite!.future;
+    }
     if (key == 'track_fx_chain.0') {
       fxWrites++;
       if (!fxWriteEntered.isCompleted) fxWriteEntered.complete();
@@ -139,6 +145,81 @@ void main() {
     ),
     laneStems: <(int, int), List<Float32List>>{},
   ));
+
+  test('stopped Session stays reserved through the real boot write', () async {
+    engine.nextSnapshot = engine.nextSnapshot.copyWith(
+      isRunning: true,
+      devicePresent: true,
+      sampleRate: 48000,
+    );
+    await runtime.start();
+    store.bootWrite = Completer<void>();
+    addTearDown(() {
+      if (!store.bootWrite!.isCompleted) store.bootWrite!.complete();
+    });
+    when(() => sessions.read(any())).thenAnswer(
+      (_) async => (
+        session: const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 128,
+          tracks: [
+            SessionTrack(
+              channel: 0,
+              multiple: 1,
+              lengthFrames: 128,
+              lanes: [
+                SessionLane(
+                  lane: 0,
+                  volume: .4,
+                  muted: false,
+                  outputMask: 1,
+                  inputChannel: 0,
+                  layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                ),
+              ],
+            ),
+          ],
+        ),
+        laneStems: {
+          (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
+        },
+      ),
+    );
+    final loading = runtime.session.loadNamed('Incoming');
+    await store.bootWriteEntered.future;
+    expect(repository.state.tracks[0].state, TrackState.stopped);
+    final before = (
+      engine.playCalls,
+      engine.recordCalls,
+      engine.undoCalls,
+      engine.redoCalls,
+    );
+    runtime.looper
+      ..add(const LooperPlayPressed(0))
+      ..add(const LooperRecordPressed(0))
+      ..add(const LooperUndoPressed(0))
+      ..add(const LooperRedoPressed(0));
+    expect(repository.play(), EngineResult.notReady);
+    expect(repository.undo(), EngineResult.notReady);
+    expect(repository.redo(), EngineResult.notReady);
+    await pumpEventQueue();
+    expect((
+      engine.playCalls,
+      engine.recordCalls,
+      engine.undoCalls,
+      engine.redoCalls,
+    ), before);
+    expect(repository.state.tracks[0].state, TrackState.stopped);
+    store.bootWrite!.complete();
+    await loading;
+    expect(runtime.session.state.outcome, SessionOutcome.loaded);
+    expect(repository.sessionBootRecoveryRequired, isFalse);
+    expect(repository.state.tracks[0].state, TrackState.stopped);
+    runtime.looper.add(const LooperPlayPressed(0));
+    await pumpEventQueue();
+    expect(engine.playCalls, before.$1 + 1);
+  });
 
   test(
     'close drains session before its controls and cuts encoder ingress',
