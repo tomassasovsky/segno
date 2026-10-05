@@ -17242,6 +17242,140 @@ static void test_record_waits_for_block_publication_not_state_ack(void) {
   le_engine_destroy(e);
 }
 
+/* Emptyings that carry no state command of their own (a cancelled launch
+ * grace, a void take) must still ticket the block that applies them. The hook
+ * presses Record at the stage-5 seam of that block: the track already reads
+ * EMPTY, the block has not published, and the press would zero the live buffer
+ * over the parked master — so it must be refused and the buffer kept intact. */
+static int g_emptying_rc, g_emptying_fired, g_emptying_zeroed;
+static void emptying_seam_hook(le_engine* e, int stage) {
+  if (stage != 5) return;
+  le_test_fade_hook = NULL;
+  g_emptying_fired = 1;
+  le_track* t = &e->tracks[0];
+  le_lane* ln = &t->lanes[0];
+  const int live = load_i32(&ln->a_live);
+  CHECK(load_i32(&t->a_state) == LE_TRACK_EMPTY);
+  CHECK(!le_engine_commands_settled(e));
+  float before[8];
+  memcpy(before, ln->pool[live], sizeof before);
+  g_emptying_rc = le_engine_record(e, 0);
+  g_emptying_zeroed = memcmp(before, ln->pool[live], sizeof before) != 0;
+}
+
+/* A master on track 1 (sr 8000, 20000-frame cap), playing with the clock at
+ * the loop top; parked when `park` (a held transport admits a count-in). Either
+ * way a grid exists, so a fresh capture on track 0 zeroes its live buffer. */
+static le_engine* emptying_fixture(int park) {
+  le_engine* e = tg_make_engine(8000);
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  tg_feed(e, .5f, 8000);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  tg_advance(e, 8000 / 100 + 64);
+  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING);
+  const int32_t len = load_i32(&e->a_master_len);
+  CHECK(len > 0);
+  tg_advance(e, (len - load_i32(&e->a_master_pos)) % len);
+  CHECK(load_i32(&e->a_master_pos) == 0);
+  if (park) {
+    CHECK(le_engine_stop_track(e, 1) == LE_OK);
+    drain(e);
+    CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
+  }
+  CHECK(le_engine_commands_settled(e));
+  return e;
+}
+
+static void emptying_press_and_retry(le_engine* e) {
+  g_emptying_fired = 0;
+  g_emptying_rc = 0;
+  g_emptying_zeroed = 1;
+  le_test_fade_hook = emptying_seam_hook;
+  tg_advance(e, 64); /* the block that applies the emptying */
+  le_test_fade_hook = NULL;
+  CHECK(g_emptying_fired);
+  CHECK(g_emptying_rc == LE_ERR_NOT_READY);
+  CHECK(!g_emptying_zeroed);
+  /* That block has published: the same press is admitted. */
+  CHECK(le_engine_commands_settled(e));
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_EMPTY);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+}
+
+static void test_record_refuses_after_grace_cancel_until_published(void) {
+  printf("test_record_refuses_after_grace_cancel_until_published\n");
+  /* 0: the cancellation rides LE_CMD_RECORD (le_record_impl); 1: LE_CMD_DISARM
+   * (le_engine_cancel_arm, the host's path during countInCancelGrace);
+   * 2: LE_CMD_STOP_RECORD_CONTROL; 3: LE_CMD_CANCEL_COUNT_IN. */
+  for (int via = 0; via <= 3; ++via) {
+    le_engine* e = emptying_fixture(1);
+    CHECK(record_start_count(e, 1) == LE_OK);
+    CHECK(le_engine_record(e, 0) == LE_OK); /* deferred into the count-in */
+    drain(e);
+    CHECK(load_i32(&e->tracks[0].a_pending_launch) == 1);
+    int guard = 0;
+    while (!load_i32(&e->tracks[0].a_launch_grace) && guard++ < 10000)
+      tg_advance(e, 64);
+    CHECK(load_i32(&e->tracks[0].a_launch_grace) == 1);
+    CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+    le_lane* ln = &e->tracks[0].lanes[0];
+    for (int i = 0; i < 8; ++i) ln->pool[load_i32(&ln->a_live)][i] = 1.0f;
+    const uint64_t before = e->tracks[0].empty_command;
+    switch (via) {
+      case 0: CHECK(le_engine_record(e, 0) == LE_OK); break;
+      case 1: CHECK(le_engine_cancel_arm(e, 0) == LE_OK); break;
+      case 2: CHECK(le_engine_stop_record_control(e, 0) == LE_OK); break;
+      default: CHECK(le_engine_cancel_count_in(e) == LE_OK); break;
+    }
+    CHECK(e->tracks[0].empty_command == e->commands_posted);
+    CHECK(e->tracks[0].empty_command > before);
+    emptying_press_and_retry(e);
+    le_engine_destroy(e);
+  }
+}
+
+static void test_record_refuses_after_void_take_until_published(void) {
+  printf("test_record_refuses_after_void_take_until_published\n");
+  /* Stop inside the block that starts the take at the loop top: it finalizes
+   * with nothing captured and the track empties (finalize_new_track's void
+   * take), with no state command to ticket it. */
+  le_engine* e = emptying_fixture(0);
+  le_lane* ln = &e->tracks[0].lanes[0];
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  /* The press over the master already zeroed the live buffer: mark it so the
+   * seam press's own zeroing would be observable. */
+  for (int i = 0; i < 8; ++i) ln->pool[load_i32(&ln->a_live)][i] = 1.0f;
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  CHECK(e->tracks[0].empty_command == e->commands_posted);
+  emptying_press_and_retry(e);
+  le_engine_destroy(e);
+}
+
+static void test_record_second_press_in_start_block_waits_for_publication(void) {
+  printf("test_record_second_press_in_start_block_waits_for_publication\n");
+  /* A second Record press inside the block that starts a take still reads
+   * EMPTY here, so it is classified as another start; the audio thread would
+   * apply it as a void finish. The start is ticketed, so a second start that
+   * would zero the live buffer over the master waits for publication instead
+   * of racing it; after the block the take records and a press finishes it. */
+  le_engine* e = emptying_fixture(0);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(e->tracks[0].empty_command == e->commands_posted);
+  const uint64_t posted = e->commands_posted;
+  CHECK(le_engine_record(e, 0) == LE_ERR_NOT_READY);
+  CHECK(e->commands_posted == posted);
+  tg_advance(e, 64);
+  CHECK(le_engine_commands_settled(e));
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* the finish, as usual */
+  tg_advance(e, 64);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
+  le_engine_destroy(e);
+}
+
 static void test_record_image_deferred_shadow_survives_until_capture(void) {
   printf("test_record_image_deferred_shadow_survives_until_capture\n");
   for (int sound = 0; sound <= 1; ++sound) {
@@ -33385,6 +33519,9 @@ int main(void) {
   test_record_refuses_zeroing_callback_held_live();
   test_record_refuses_replacing_callback_held_history_shadow();
   test_record_waits_for_block_publication_not_state_ack();
+  test_record_refuses_after_grace_cancel_until_published();
+  test_record_refuses_after_void_take_until_published();
+  test_record_second_press_in_start_block_waits_for_publication();
   test_record_image_deferred_shadow_survives_until_capture();
   test_record_image_acceptance_and_arm();
   test_armed_image_keeps_live_faders_and_cancel_drops_context();
