@@ -176,12 +176,12 @@ final List<ControlInvariant> controlInvariants = [
     return null;
   }),
   ControlInvariant('empty-track-dark', (c) {
-    // Rec and Mute only. FX and Custom report their assigned function state,
-    // which need not depend on whether this track contains audio.
+    // Rec, Mute and Fade. FX and Custom report their assigned function
+    // state, which need not depend on whether this track contains audio; an
+    // empty track cannot be attenuated (Clear resets its envelope).
     if (c.overlay.mode == InteractionMode.fx ||
         c.overlay.mode == InteractionMode.custom ||
-        c.overlay.mode == InteractionMode.mixer ||
-        c.overlay.mode == InteractionMode.fade) {
+        c.overlay.mode == InteractionMode.mixer) {
       return null;
     }
     for (final t in c.looper.tracks) {

@@ -85,6 +85,7 @@ class _Rig {
       exportsRoot: () async => Directory.systemTemp.path,
     );
     control = ControlCubit(
+      fadeSettings: testFadeSettings(),
       looper: looper,
       pedal: pedal,
       settings: settings,

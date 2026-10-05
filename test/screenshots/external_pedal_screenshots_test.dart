@@ -296,6 +296,7 @@ void main() {
     addTearDown(() => unawaited(timing.close()));
     await timingOwner.load();
     final control = ControlCubit(
+      fadeSettings: testFadeSettings(),
       decayControl: decay,
       oneShotControl: decay,
       recordLengthControl: record,

@@ -114,6 +114,7 @@ class _Rig {
       exportsRoot: () async => Directory.systemTemp.path,
     );
     cubit = ControlCubit(
+      fadeSettings: testFadeSettings(),
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),

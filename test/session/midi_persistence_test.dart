@@ -194,6 +194,7 @@ void main() {
             sources: [ConsoleCtrlSource(pedal)],
           );
           control = ControlCubit(
+            fadeSettings: testFadeSettings(),
             decayControl: playback,
             oneShotControl: playback,
             recordLengthControl: record,

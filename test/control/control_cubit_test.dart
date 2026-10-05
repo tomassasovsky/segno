@@ -337,6 +337,7 @@ void main() {
       // snapshot has to exist before the first one; setEngine() re-stubs it.
       when(() => looper.state).thenReturn(_stateWith(_emptyTracks()));
       cubit = ControlCubit(
+        fadeSettings: testFadeSettings(),
         decayControl: FakeDecayControl(),
         oneShotControl: FakeOneShotControl(),
         recordLengthControl: FakeRecordLengthControl(),
@@ -1945,6 +1946,7 @@ void main() {
 
       test('takeLocked suppresses recPlay', () {
         final locked = ControlCubit(
+          fadeSettings: testFadeSettings(),
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
@@ -1967,6 +1969,7 @@ void main() {
 
       test('takeLocked suppresses rec-mode trackPressed', () {
         final locked = ControlCubit(
+          fadeSettings: testFadeSettings(),
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
@@ -1989,6 +1992,7 @@ void main() {
 
       test('takeLocked suppresses togglePerformanceRecord', () {
         final locked = ControlCubit(
+          fadeSettings: testFadeSettings(),
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
@@ -2016,6 +2020,7 @@ void main() {
         await pumpEventQueue();
         addTearDown(lockedPedal.dispose);
         final locked = ControlCubit(
+          fadeSettings: testFadeSettings(),
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
@@ -2538,6 +2543,7 @@ void main() {
           );
           addTearDown(recordingPerformance.dispose);
           final armedCubit = ControlCubit(
+            fadeSettings: testFadeSettings(),
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: FakeRecordLengthControl(),
@@ -2587,6 +2593,7 @@ void main() {
         );
         addTearDown(unarmedPerformance.dispose);
         final unarmedCubit = ControlCubit(
+          fadeSettings: testFadeSettings(),
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
@@ -2623,6 +2630,7 @@ void main() {
           );
           addTearDown(recordingPerformance.dispose);
           final armedCubit = ControlCubit(
+            fadeSettings: testFadeSettings(),
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: FakeRecordLengthControl(),
@@ -2765,6 +2773,7 @@ void main() {
           // before this was wired both armed with an empty chain set, so a
           // capture documented no FX at all.
           final wired = ControlCubit(
+            fadeSettings: testFadeSettings(),
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: FakeRecordLengthControl(),
@@ -4005,6 +4014,7 @@ void main() {
         );
 
         final reloaded = ControlCubit(
+          fadeSettings: testFadeSettings(),
           decayControl: FakeDecayControl(),
           oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
@@ -4106,6 +4116,7 @@ void main() {
           await pumpEventQueue();
           addTearDown(idlePedal.dispose);
           final idle = ControlCubit(
+            fadeSettings: testFadeSettings(),
             decayControl: FakeDecayControl(),
             oneShotControl: FakeOneShotControl(),
             recordLengthControl: FakeRecordLengthControl(),

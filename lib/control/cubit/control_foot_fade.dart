@@ -6,7 +6,6 @@ extension _FootFadeControl on ControlCubit {
       !_inputRetired &&
       !_takeLocked() &&
       state.mode == InteractionMode.fade &&
-      _footFadeActions != null &&
       !_fxPersistence.sessionTransitionActive;
 
   void _onFadePress(PedalButton button) {
@@ -24,11 +23,9 @@ extension _FootFadeControl on ControlCubit {
     }
     // A pending track hold follows a bank change until it fires: the slot
     // resolves against the bank current at activation, never at contact.
-    final session = _looper.sessionRevision;
+    // _armGesture already retires the gesture on a Session change.
     void dispatch(FootFadeAction action) {
-      if (_fadeEditable && _looper.sessionRevision == session) {
-        _dispatchFadeAction(action, role.slot);
-      }
+      if (_fadeEditable) _dispatchFadeAction(action, role.slot);
     }
 
     _armGesture(
@@ -68,7 +65,7 @@ extension _FootFadeControl on ControlCubit {
   /// Reports a refused gesture once, unless the flow it belonged to ended.
   void _reportFadeFailure(Object visit, int session) {
     if (isClosed ||
-        !identical(visit, _footMixerVisit) ||
+        !identical(visit, _surfaceVisit) ||
         state.mode != InteractionMode.fade ||
         _looper.sessionRevision != session) {
       return;

@@ -144,9 +144,6 @@ class FootFadeProjection extends Equatable {
   /// The shortest duration, in milliseconds.
   static const minimumMs = 500;
 
-  /// The longest duration, in milliseconds.
-  static const maximumMs = 30000;
-
   /// One duration step, in milliseconds.
   static const stepMs = 500;
 
@@ -210,12 +207,6 @@ class FootFadeProjection extends Equatable {
         ? durations.defaultMs
         : durations.effectiveMs(channel);
   }
-
-  /// Whether one shorter step fits.
-  bool get canShorten => (selectedMs ?? minimumMs) > minimumMs;
-
-  /// Whether one longer step fits.
-  bool get canLengthen => (selectedMs ?? maximumMs) < maximumMs;
 
   @override
   List<Object?> get props => [selection, bank, tracks, durations];

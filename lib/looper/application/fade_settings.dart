@@ -87,6 +87,25 @@ class FadeSettings {
     return FadeDurations(defaultMs: value.defaultMs, overrides: overrides);
   });
 
+  /// Moves Default, or one track's effective time ([channel] non-null), by
+  /// [deltaMs] within 0.5–30 s. Applied to the value confirmed when the edit
+  /// runs, so rapid steps queued behind a pending write each count. Stepping
+  /// an inherited track time creates its override; an edge step is a no-op.
+  Future<void> step({required int deltaMs, int? channel}) => _edit((value) {
+    final current = channel == null
+        ? value.defaultMs
+        : value.effectiveMs(channel);
+    final next = (current + deltaMs).clamp(500, 30000);
+    if (next == current) return value;
+    if (channel == null) {
+      return FadeDurations(defaultMs: next, overrides: value.overrides);
+    }
+    return FadeDurations(
+      defaultMs: value.defaultMs,
+      overrides: {...value.overrides, channel: next},
+    );
+  });
+
   Future<void> _edit(FadeDurations Function(FadeDurations) change) {
     if (_closing || _exclusive != 0 || _blocked()) {
       return Future<void>.error(
@@ -95,6 +114,7 @@ class FadeSettings {
     }
     return _enqueue(() async {
       final next = change(confirmed);
+      if (next == _confirmed) return;
       try {
         await _persist(next);
       } on Object catch (error) {

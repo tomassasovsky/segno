@@ -572,6 +572,10 @@ class FadeImage {
 
   /// Native recorded-material identity within that configuration.
   final int generation;
+
+  /// Fading or faded below full level: what Fade feedback reports. Says
+  /// nothing about audibility (a stopped or muted track may be attenuated).
+  bool get attenuated => amount < 1 || amount != target;
   @override
   bool operator ==(Object other) =>
       other is FadeImage &&

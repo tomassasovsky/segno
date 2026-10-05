@@ -34,6 +34,7 @@ import '../helpers/fake_key_value_store.dart';
 import '../helpers/fake_record_start_control.dart';
 import '../helpers/mock_click_tempo_settings.dart';
 import '../helpers/mock_decay_playback_settings.dart';
+import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -222,6 +223,7 @@ void main() {
       expect((await record.setDefaultLengthBars(currentBars)).isOk, isTrue);
     }
     control = ControlCubit(
+      fadeSettings: testFadeSettings(),
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
       recordStartControl: FakeRecordStartControl(),
