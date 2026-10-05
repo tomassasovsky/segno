@@ -1409,6 +1409,7 @@ class ControlCubit extends Cubit<ControlState> {
   Object _surfaceVisit = Object();
   (int, int)? _footMixerSource;
   final FootFadeActions _footFadeActions;
+  int _footFadeSession = 0;
   late final _footMixerActions = FootMixerActions(
     repository: _looper,
     settings: _settings,
@@ -1618,14 +1619,23 @@ class ControlCubit extends Cubit<ControlState> {
         );
       }
     }
-    // A time target whose track lost its material falls back to Default.
-    // Pending holds already retire on a Session change (_armGesture).
+    // A new Session starts from Default; a time target whose track lost its
+    // material falls back to it too. Pending holds already retire on a
+    // Session change (_armGesture).
     if (state.mode == InteractionMode.fade) {
+      final session = _looper.sessionRevision;
       next = next.copyWith(
-        footFade: _footFadeActions
-            .project(state.footFade, bank: next.activeBank, looper: looper)
-            .selection,
+        footFade: session != _footFadeSession
+            ? const FootFadeSelection()
+            : _footFadeActions
+                  .project(
+                    state.footFade,
+                    bank: next.activeBank,
+                    looper: looper,
+                  )
+                  .selection,
       );
+      _footFadeSession = session;
     }
     if (next != state) emit(next);
   }
@@ -1788,6 +1798,7 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
       case InteractionMode.fade:
+        _footFadeSession = _looper.sessionRevision;
         emit(
           state.copyWith(
             mode: next,
