@@ -505,6 +505,61 @@ void main() {
       expect(engine.perfArmed, isFalse);
     });
 
+    test(
+      'empty arm lanes preserve settings without PCM through finalize',
+      () async {
+        engine.seedLane(
+          0,
+          0,
+          Float32List(0),
+          trackState: TrackState.empty,
+          volume: 0.6,
+          laneVolume: 0.4,
+          lanePan: -0.5,
+          laneMuted: true,
+        );
+        final effect = BuiltInEffect(type: TrackEffectType.drive);
+        expect(
+          await repo.arm(
+            chains: PerformanceChains(
+              laneChains: [
+                PerformanceLaneChain(
+                  channel: 0,
+                  lane: 0,
+                  effects: [effect],
+                  chainEnabled: false,
+                ),
+              ],
+            ),
+          ),
+          EngineResult.ok,
+        );
+        final dir = repo.armedDirectory!;
+        expect(Directory('$dir/loops').existsSync(), isFalse);
+        writeNativeSidecar(dir, captureFrames: 128);
+        expect(await repo.disarmAndFinalize(), EngineResult.ok);
+        final manifest = PerformanceManifest.fromJson(
+          jsonDecode(File('$dir/performance.json').readAsStringSync())
+              as Map<String, dynamic>,
+        );
+        final track = manifest.armSnapshot!.tracks.single;
+        expect(track.state, TrackState.empty);
+        expect(track.volume, 0.6);
+        final lane = track.lanes.single;
+        expect(lane.lengthFrames, 0);
+        expect(lane.deferred, isTrue);
+        expect(lane.pcmFile, isNull);
+        expect(lane.volume, 0.4);
+        expect(lane.pan, -0.5);
+        expect(lane.muted, isTrue);
+        expect(lane.outputMask, 3);
+        expect(lane.effects.single.typeCode, TrackEffectType.drive.code);
+        expect(lane.chainEnabled, isFalse);
+        expect(manifest.disarmSnapshot!.tracks, isEmpty);
+        expect(Directory('$dir/loops').existsSync(), isFalse);
+      },
+    );
+
     test('writes the arm-time snapshot for every settled lane', () async {
       engine
         ..seedLane(0, 0, Float32List.fromList([1, 1, 1, 1]))
@@ -1139,7 +1194,39 @@ void main() {
         await armAndSeedNative(engine, repo);
         final dir = repo.armedDirectory!;
 
+        final nativeFile = File('$dir/performance.json');
+        final native =
+            jsonDecode(nativeFile.readAsStringSync()) as Map<String, dynamic>;
+        final layers = [
+          {
+            'kind': 0,
+            'restore_id': 0,
+            'channel': 0,
+            'slot': 2,
+            'generation': 3,
+            'frame': 64,
+            'frame_count': 128,
+            'lane_count': 1,
+            'filename': 'layer-0-64-2.pcm',
+          },
+          {
+            'kind': 1,
+            'restore_id': 1,
+            'channel': 0,
+            'slot': 0,
+            'generation': 0,
+            'frame': 256,
+            'frame_count': 128,
+            'lane_count': 2,
+            'filename': 'restore-0-1.pcm',
+          },
+        ];
+        native['layers'] = layers;
+        nativeFile.writeAsStringSync(jsonEncode(native));
         await repo.disarm();
+        final finalized =
+            jsonDecode(nativeFile.readAsStringSync()) as Map<String, dynamic>;
+        expect(finalized['layers'], equals(layers));
 
         final manifest = PerformanceManifest.fromJson(
           jsonDecode(File('$dir/performance.json').readAsStringSync())

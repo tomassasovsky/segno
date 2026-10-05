@@ -9152,12 +9152,13 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * on-disk format, not just the in-memory ring. ---- */
 #define LE_TEST_EVENTS_HEADER_BYTES 12
 #define LE_TEST_EVENTS_ENTRY_BYTES 28
-/* The version perf_drain.c writes today. 4 = the PERF_ARMED/TRANSPORT_HELD
+/* The version perf_drain.c writes today. 5 = applied Clear restore facts;
+ * 4 = the PERF_ARMED/TRANSPORT_HELD
  * facts + RECORD_END's take-id payload (#262/#819); 3 = unpaired RECORD_ABORT
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 4
+#define LE_TEST_EVENTS_VERSION 5
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -24205,14 +24206,16 @@ static void test_freezing_clear_ignores_superseded_report(void) {
   tg_advance(e, 500);
   CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
   tg_advance(e, 1);
-  le_command old_report;
-  CHECK(le_ring_pop(&e->evt_ring, &old_report) == 1);
-  CHECK(old_report.code == LE_EVT_CLEAR_FROZEN);
+  const uint32_t old_generation = atomic_load(&e->tracks[0].a_clear_generation);
+  const int32_t old_len = atomic_load(&e->tracks[0].a_clear_len);
+  CHECK(old_len == 500);
   /* Hold the completed old report while a fresh take replaces its history. */
   CHECK(le_engine_record(e, 0) == LE_OK);
   tg_advance(e, 750);
   CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
-  CHECK(le_ring_push(&e->evt_ring, old_report) == 1);
+  /* The old completion remains latched until the new callback overwrites it;
+   * merely polling must not attach that old image to the new pending point. */
+  CHECK(atomic_load(&e->tracks[0].a_clear_generation) == old_generation);
   CHECK(le_engine_clear_restore_pending(e, 0) == 1);
   tg_advance(e, 1);
   CHECK(le_engine_clear_restore_pending(e, 0) == 0);
@@ -32924,6 +32927,12 @@ static void test_session_commit_stays_stopped_until_play(void) {
 
 int main(void) {
   test_session_commit_stays_stopped_until_play();
+  test_fade_clear_boundary();
+  test_fade_clear_pressure_and_frozen();
+  test_fade_clear_coherent_read();
+  test_fade_clear_history();
+  test_fade_clear_late_retirement();
+  test_fade_clear_superseded_retirement();
   test_fade_samples();
   test_fade_retrigger_and_stopped();
   test_fade_images_and_receipts();
@@ -32932,6 +32941,14 @@ int main(void) {
   test_fade_import_before_audibility();
   test_fade_coherent_publication();
   test_fade_actual_arm_render();
+  test_fade_restore_capture_lifetime();
+  test_fade_restore_history_replacement();
+  test_fade_restore_frozen_render();
+  test_fade_restore_surviving_grid_phase();
+  test_fade_restore_source_end_edges();
+  test_fade_restore_staging_and_manifest_capacity();
+  test_fade_grouped_muted_restore_stems();
+  test_fade_restore_overdub_source_end();
   test_record_start_owned_cancel_survives_queued_pair();
   test_record_start_capture_and_no_source_refusal();
   test_record_start_selected_source_triggers();

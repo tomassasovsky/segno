@@ -178,7 +178,16 @@ static void le_fade_log(le_engine* e, int ch, uint64_t frame) {
       .fade_log = {ch, (float)fade->amount, fade->target, fade->seconds}});
 }
 
+/* End only the captured restored-image lifetime; musical state is unchanged. */
+static void le_perf_restore_end(le_engine* e, le_track* t, uint64_t frame) {
+  if (t->perf_restore_active && e->perf.armed)
+    le_plog_push(e, frame, (le_command){.code = LE_PLOG_RESTORE_TRANSPORT,
+        .restore_log = {(int32_t)(t - e->tracks), 0, LE_TRACK_EMPTY, 0}});
+  t->perf_restore_active = 0;
+}
+
 static void le_fade_reset(le_engine* e, le_track* t, uint64_t frame) {
+  t->perf_restore_active = 0;
   t->fade = (le_fade){1, 1, 0};
   t->fade_sample = 1;
   if (t->fade_generation != UINT64_MAX) ++t->fade_generation;
@@ -1844,6 +1853,7 @@ static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
   }
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
+  le_perf_restore_end(e, t, frame);
   le_fade_reset(e, t, frame);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
@@ -2072,12 +2082,14 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
   e->launch_grace[ch] = 0;
   store_i32(&e->tracks[ch].a_launch_grace, 0);
   le_track* t = &e->tracks[ch];
+  const float fade_amount = t->fade.amount;
+  int32_t frozen_len = 0, frozen_master_len = 0;
   le_reset_track_playback(t);
   /* A user clear on a capturing track (accepted design, slice 2): freeze the
    * take STOPPED at the clear boundary first — the same finalize a stop press
    * runs, so a defining take still sets the grid and a later take keeps its
    * whole-loop span with silence past what was captured — then report what
-   * the restore point needs (LE_EVT_CLEAR_FROZEN) and erase as usual. The
+   * the restore point needs and erase as usual. The
    * capture is never resumed: undo brings the frozen take back STOPPED. */
   if (freeze) {
     const int32_t st = load_i32(&t->a_state);
@@ -2100,17 +2112,9 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
       store_i32(&t->a_state, LE_TRACK_STOPPED);
       le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 0, frame);
     }
-    const int32_t frozen_len =
-        load_i32(&t->a_state) == LE_TRACK_STOPPED ? load_i32(&t->lanes[0].a_len)
-                                                  : 0;
-    const le_command evt = {
-        .code = LE_EVT_CLEAR_FROZEN,
-        .frozen = {ch, frozen_len, load_i32(&e->a_master_len),
-                   t->dub_gen_audio + 1}};
-    /* A full ring (stalled audio callbacks) loses the report: the pending
-     * point is then dropped by the next capture, and the erased take is not
-     * restorable — the same outcome as a plain clear. */
-    (void)le_ring_push(&e->evt_ring, evt);
+    frozen_len = load_i32(&t->a_state) == LE_TRACK_STOPPED
+                     ? load_i32(&t->lanes[0].a_len) : 0;
+    frozen_master_len = load_i32(&e->a_master_len);
   }
   le_audio_rev_bump(t); /* [R1] clear: the track's content is gone */
   t->record_pos = 0;
@@ -2213,6 +2217,16 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
     }
   }
   le_primary_reconcile(e); /* the last take's clear takes the crown with it */
+  /* Publish before the acknowledgement. Unlike the event ring, this one-slot
+   * mailbox remains available until control can attach the matching point. */
+  uint32_t bits;
+  memcpy(&bits, &fade_amount, sizeof(bits));
+  atomic_fetch_add_explicit(&t->a_clear_revision, 1, memory_order_seq_cst);
+  atomic_store_explicit(&t->a_clear_generation, t->dub_gen_audio, memory_order_seq_cst);
+  atomic_store_explicit(&t->a_clear_fade_amount, bits, memory_order_seq_cst);
+  atomic_store_explicit(&t->a_clear_len, frozen_len, memory_order_seq_cst);
+  atomic_store_explicit(&t->a_clear_master_len, frozen_master_len, memory_order_seq_cst);
+  atomic_fetch_add_explicit(&t->a_clear_revision, 1, memory_order_seq_cst);
   atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
   /* Undo/redo stacks and each lane's a_live are reset by le_engine_clear on the
    * control thread; the audio thread only resets the state/transport here. */
@@ -2874,6 +2888,16 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         le_restore_track_clock(e, t, len, cmd->restore.master_len, frame);
         le_track_set_len(t, len);
         t->start_iter = 0;
+        t->fade = (le_fade){cmd->restore.fade_amount, cmd->restore.fade_amount, 0};
+        t->fade_sample = cmd->restore.fade_amount;
+        t->perf_restore_id = cmd->restore.image_id;
+        t->perf_restore_slot = cmd->restore.source_slot;
+        t->perf_restore_active = e->perf.armed;
+        t->perf_restore_state = -1;
+        if (e->perf.armed && !cmd->restore.image_id)
+          atomic_fetch_add_explicit(&e->a_perf_layer_overruns, 1u, memory_order_relaxed);
+        if (t->fade_generation != UINT64_MAX) t->fade_generation++;
+        le_fade_log(e, ch, frame);
         store_i32(&t->a_state, cmd->restore.state);
         le_primary_reconcile(e); /* a restored only take is crowned again */
         /* The clear-restore edge case of undo: same semantic code as every
@@ -3616,6 +3640,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         e->perf.output_muted = load_i32(&e->outputs[bus].a_muted);
         e->perf.output_enabled_mask = atomic_load_explicit(&e->a_output_enabled_mask, memory_order_relaxed);
       }
+      for (int t = 0; t < e->track_count; ++t) e->tracks[t].perf_restore_active = 0;
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
       /* Transport fact (#262): the master loop phase at THIS frame — capture
@@ -5273,6 +5298,9 @@ static inline void mix_tracks_frame(
           atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
     }
   }
+#ifdef LE_NATIVE_TESTS
+  if (le_test_fade_hook) le_test_fade_hook(e, 5);
+#endif
   /* Latency compensation: captured input is recorded this many frames earlier so
    * it aligns with what the player heard. Monitoring stays live (it is no longer
    * folded into the loop buffer at the playhead). */
@@ -5338,6 +5366,27 @@ static inline void mix_tracks_frame(
     if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) {
       e->trk_play_pos[t] = seg_base[t] + trk_pos[t];
     } /* a stopped track HOLDS its last read index; an empty one publishes 0 */
+    le_track* tr = &e->tracks[t];
+    if (tr->perf_restore_active && e->perf.armed) {
+      const int32_t len = load_i32(&tr->lanes[0].a_len);
+      const int32_t phase = len > 0 ? e->trk_play_pos[t] % len : 0;
+      if (st[t] != LE_TRACK_PLAYING && st[t] != LE_TRACK_STOPPED) {
+        le_perf_restore_end(e, tr, perf_frame_base + f);
+      } else if (!idle[t] && buf[t][0] != tr->lanes[0].pool[tr->perf_restore_slot]) {
+        /* A same-span history swap has no exact image in this capture. End
+         * the restored source explicitly: never render its old PCM as new. */
+        le_perf_restore_end(e, tr, perf_frame_base + f);
+      } else {
+        if (tr->perf_restore_state != st[t] ||
+            (st[t] == LE_TRACK_PLAYING && tr->perf_restore_next_pos != phase)) {
+          le_plog_push(e, perf_frame_base + f, (le_command){
+              .code = tr->perf_restore_state < 0 ? LE_PLOG_CLEAR_RESTORE : LE_PLOG_RESTORE_TRANSPORT,
+              .restore_log = {t, tr->perf_restore_id, st[t], phase}});
+        }
+        tr->perf_restore_state = st[t];
+        tr->perf_restore_next_pos = len > 0 ? (phase + 1) % len : 0;
+      }
+    }
   }
 
   /* The looper mix is additive: clear this output frame, then sum every active

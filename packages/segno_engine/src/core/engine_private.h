@@ -803,6 +803,9 @@ typedef struct {
                        * re-establish it — the track's own len is not enough
                        * (this track may be a multiple of the base). */
   uint32_t muted_mask; /* CLEAR: pre-clear per-lane mute bits (bit l = lane l) */
+  uint32_t clear_generation;
+  float fade_amount; /* stationary amount at the callback Clear boundary */
+  int fade_ready;
 } le_hist_entry;
 
 /* Positional aggregate init, not the designated initializer the rest of the
@@ -967,13 +970,22 @@ typedef struct le_track {
   int32_t empty_len; /* len to restore on redo-from-empty (0 = none) */
   /* control: a user clear posted on a CAPTURING track. The restore point
    * needs the length the finalize decides, so it is filed when
-   * LE_EVT_CLEAR_FROZEN comes back; until then the stack keeps the erased
+   * the Clear mailbox completes; until then the stack keeps the erased
    * take's layers and `clear_restore_slot` names the live slot they and the
    * frozen take share (kept allocated). A fresh capture drops the pending
    * point with the history (le_drop_clear_history). */
+  uint32_t perf_restore_id; /* callback: current captured restored image */
+  int perf_restore_active, perf_restore_state, perf_restore_next_pos, perf_restore_slot;
   int clear_restore_pending;
   int32_t clear_restore_slot;
   uint32_t clear_restore_generation; /* the CLEAR that owns this report */
+  /* Callback writes; control makes one bounded coherent copy. Atomic payload
+   * fields make concurrent overwrite race-free, including a rejected copy. */
+  _Atomic uint32_t a_clear_revision;
+  _Atomic uint32_t a_clear_generation;
+  _Atomic uint32_t a_clear_fade_amount;
+  _Atomic int32_t a_clear_len;
+  _Atomic int32_t a_clear_master_len;
   /* control: LE_CMD_CANCEL_TAKE posted and its LE_EVT_TAKE_CANCELLED not yet
    * filed. A clear or a fresh capture in between supersedes the cancel, so
    * the late event must not file a redo slot the track no longer owns. */
@@ -1312,6 +1324,7 @@ typedef struct le_perf_capture {
    * (le_stage_retired_layer, engine_commands.c), drained by perf_drain.c
    * into numbered layer files + sidecar manifest entries. Re-initialised on
    * every arm, same as the two rings above. */
+  uint32_t next_restore_id; /* sole control producer, reset after joined capture */
   le_layer_staging_ring layer_staging_ring;
   le_staged_layer layer_staging_storage[LE_LAYER_STAGING_RING_CAPACITY];
 

@@ -645,6 +645,8 @@ typedef struct le_pd_gap {
  * layer_staging_ring.h and docs/design/performance-event-log-format.md). */
 typedef struct le_pd_layer_manifest_entry {
   int32_t channel;
+  int32_t kind;
+  uint32_t restore_id;
   int32_t slot;
   uint32_t generation;
   uint64_t frame;
@@ -794,6 +796,8 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  *       "first RECORD_END while content-free" disarm proxy) were deleted with
  *       no fallback (AGENTS.md), so a pre-4 capture no longer has a supported
  *       phase anchor and renders correctly only if re-captured.
+ *   5 — applied Clear restoration and its state/phase/source-end facts
+ *       (322/323) reference capture-local immutable restored images.
  * Without the bump, "no 314 in this file" is indistinguishable from "the
  * writer did not know about 314". No reader in this repo gates on the field —
  * le_pr_load_log and daw_export's EventLogReader both check the magic and skip
@@ -803,7 +807,7 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  * this codebase can reject. */
 static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
   static const char magic[4] = {'P', 'L', 'E', 'V'};
-  const uint32_t version = 4;
+  const uint32_t version = 5;
   if (!le_pd_write(f, magic, sizeof(magic))) return 0;
   if (!le_pd_write(f, &version, sizeof(version))) return 0;
   if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;
@@ -852,8 +856,11 @@ static int le_pd_drain_log_ring(FILE* f, le_perf_log_ring* ring) {
 static int le_pd_write_staged_layer(le_perf_drain* d,
                                     const le_staged_layer* entry) {
   char filename[64];
-  snprintf(filename, sizeof(filename), "layer-%d-%llu-%d.pcm", entry->channel,
-          (unsigned long long)entry->frame, entry->slot);
+  if (entry->kind == 1)
+    snprintf(filename, sizeof(filename), "restore-%d-%u.pcm", entry->channel, entry->restore_id);
+  else
+    snprintf(filename, sizeof(filename), "layer-%d-%llu-%d.pcm", entry->channel,
+             (unsigned long long)entry->frame, entry->slot);
   char path[LE_PD_FULL_PATH_MAX];
   snprintf(path, sizeof(path), "%s/%s", d->capture_dir, filename);
 
@@ -884,9 +891,12 @@ static int le_pd_write_staged_layer(le_perf_drain* d,
 
   for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
 
-  if (ok && d->layer_count < LE_PD_MAX_LAYERS) {
+  if (ok && d->layer_count >= LE_PD_MAX_LAYERS) ok = 0;
+  if (ok) {
     le_pd_layer_manifest_entry* m = &d->layers[d->layer_count];
     m->channel = entry->channel;
+    m->kind = entry->kind;
+    m->restore_id = entry->restore_id;
     m->slot = entry->slot;
     m->generation = entry->generation;
     m->frame = entry->frame;
@@ -1223,15 +1233,15 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "%s{\"channel\": %d, \"slot\": %d, \"generation\": %u, "
                    "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": %d, "
-                   "\"filename\": \"%s\"}",
+                   "\"kind\": %d, \"restore_id\": %u, \"filename\": \"%s\"}",
                    i == 0 ? "" : ", ", m->channel, m->slot, m->generation,
                    (unsigned long long)m->frame, m->frame_count,
-                   m->lane_count, m->filename);
+                   m->lane_count, m->kind, m->restore_id, m->filename);
   }
   if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
   off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "],\n");
 
-  if (report_disk_full) {
+  if (report_disk_full || atomic_load_explicit(&d->disk_full, memory_order_acquire)) {
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "  \"stopped_early\": \"disk_full\",\n");
   } else if (atomic_load_explicit(&d->device_changed, memory_order_acquire)) {

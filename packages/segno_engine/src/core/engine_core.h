@@ -169,6 +169,8 @@ int le_record_timing_valid(const le_record_timing_settings* settings);
 #ifdef LE_NATIVE_TESTS
 /* Deterministic test instrumentation: 1 odd, 2 partial write, 3 copied read,
  * 4 image FX preparation. No hook exists in production builds. */
+/* Fade: 1 odd publication, 2 snapshot copy, 3 Clear mailbox copy,
+ * 4 Restore posted before control live-slot publication, 5 selected PCM. */
 extern void (*le_test_fade_hook)(le_engine*, int);
 extern void (*le_test_record_timing_hook)(le_engine*, int);
 /* 1: Click mode/result applied, before command publication. */

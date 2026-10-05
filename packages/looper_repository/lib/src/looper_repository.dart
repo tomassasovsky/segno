@@ -3575,13 +3575,14 @@ class LooperRepository {
   /// stale entry is inert instead, because it is only ever applied when
   /// [AudioEngine.undoRestoresClear] says a restore actually happened.
   void _snapshotForClearRestore(int channel) {
-    // The union of chain-carrying AND flag-carrying lanes (the same set
-    // [_dropTakeState] resets): a lane with an empty chain but a disabled
-    // flag must round-trip its flag through clear→undo too.
+    // Include mute-only lanes: an empty enabled chain still has remembered
+    // mute intent that must round-trip through Clear and Undo.
     final lanes = {
       for (final key in _laneEffects.keys)
         if (key.$1 == channel) key.$2,
       for (final key in _laneChainEnabled.keys)
+        if (key.$1 == channel) key.$2,
+      for (final key in _laneMute.keys)
         if (key.$1 == channel) key.$2,
     };
     _clearRestore[channel] = {

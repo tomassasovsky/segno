@@ -4,6 +4,7 @@ import 'package:segno_engine/segno_engine.dart';
 
 class _FakeLane {
   double volume = 1;
+  double pan = 0;
   bool muted = false;
   int lengthFrames = 0;
   Float32List pcm = Float32List(0);
@@ -71,6 +72,9 @@ class FakePerformanceEngine implements AudioEngine {
     bool solo = false,
     int multiple = 1,
     int settledTakeId = 0,
+    double laneVolume = 1,
+    double lanePan = 0,
+    bool laneMuted = false,
   }) {
     final track = _tracks[channel]
       ..state = trackState
@@ -83,6 +87,9 @@ class FakePerformanceEngine implements AudioEngine {
       track.lanes.add(_FakeLane());
     }
     track.lanes[lane]
+      ..volume = laneVolume
+      ..pan = lanePan
+      ..muted = laneMuted
       ..pcm = pcm
       ..lengthFrames = pcm.length;
   }
@@ -162,6 +169,7 @@ class FakePerformanceEngine implements AudioEngine {
                 inputChannel: 0,
                 outputMask: 0x3,
                 volume: l.volume,
+                pan: l.pan,
                 muted: l.muted,
                 lengthFrames: l.lengthFrames,
                 rms: 0,

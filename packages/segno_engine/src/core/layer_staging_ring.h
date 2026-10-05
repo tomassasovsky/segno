@@ -50,6 +50,8 @@ extern "C" {
  * see docs/design/performance-event-log-format.md. */
 typedef struct le_staged_layer {
   int32_t channel;
+  int32_t kind; /* 0: retired overdub layer; 1: immutable Clear restore image */
+  uint32_t restore_id; /* nonzero only for kind 1, unique within this capture */
   int32_t lane_count;
   float* lane_pcm[LE_MAX_LANES];
   int32_t frame_count;
