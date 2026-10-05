@@ -10,7 +10,6 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/audio_setup/view/click_volume_section.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
-import 'package:segno/looper/model/click_volume.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -114,7 +113,7 @@ void main() {
         findsOneWidget,
       );
 
-      expect((await tempoOwner.setClickVolume(0.5)).isOk, isTrue);
+      expect((await tempoOwner.clickVolumeOwner.set(0.5)).isOk, isTrue);
       expect(tempo.state.clickVolume, .5);
       expect(repository.sessionTransport.clickVolume, .5);
       await tester.pumpAndSettle();
@@ -124,7 +123,10 @@ void main() {
       );
 
       // The bar reaches the engine's +6 dB ceiling, not 100%.
-      expect((await tempoOwner.setClickVolume(kMaxClickGain)).isOk, isTrue);
+      expect(
+        (await tempoOwner.clickVolumeOwner.set(kMaxClickGain)).isOk,
+        isTrue,
+      );
       expect(repository.sessionTransport.clickVolume, 2);
       await tester.pumpAndSettle();
       expect(

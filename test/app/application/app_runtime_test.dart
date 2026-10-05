@@ -15,8 +15,9 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_gate.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
-import 'package:segno_engine/segno_engine.dart' show FxOwner;
+import 'package:segno_engine/segno_engine.dart' show FxOwner, TrackSnapshot;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -653,6 +654,77 @@ void main() {
     final writesAtClose = store.fxWrites;
     await pumpEventQueue();
     expect(store.fxWrites, writesAtClose);
+  });
+
+  group('Click settings owners', () {
+    Future<void> settled(bool Function() done) async {
+      for (var i = 0; i < 200 && !done(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(done(), isTrue);
+    }
+
+    test('flush reports current state after a capture-locked refusal, a '
+        'cancelled receipt while stopped and a superseded write', () async {
+      await runtime.start();
+      final click = runtime.tempo.clickVolumeOwner;
+      final mode = runtime.tempo.clickModeOwner;
+      final idle = engine.nextSnapshot;
+      engine.nextSnapshot = idle.copyWith(
+        tracks: [
+          const TrackSnapshot(
+            state: TrackState.recording,
+            volume: 1,
+            muted: false,
+            lengthFrames: 0,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+          ),
+          for (var i = 1; i < 8; i++) const TrackSnapshot.empty(),
+        ],
+      );
+      expect((await mode.set(ClickMode.rec)).status, SettingStatus.rejected);
+      engine
+        ..nextSnapshot = idle
+        ..publishClickCommands = false
+        ..commandsAreSettled = false;
+      final cancelled = click.set(1.5);
+      await settled(() => engine.lastClickVolume == 1.5);
+      repository.stopEngine();
+      expect((await cancelled).status, SettingStatus.superseded);
+      engine
+        ..publishClickCommands = true
+        ..commandsAreSettled = true;
+
+      final stale = await click.setController(
+        .25,
+        lifetime: (sessionRevision: -1, mixGeneration: -1),
+      );
+      expect(stale.status, SettingStatus.superseded);
+
+      expect((await click.flush()).status, SettingStatus.applied);
+      expect((await mode.flush()).status, SettingStatus.applied);
+      await runtime.prepareShutdown(retry: false);
+      expect(engine.stopCalls, 1);
+    });
+
+    test('unreadable Hear click keeps audio running and Retry repairs it '
+        'for shutdown', () async {
+      store.values['tempo.click_mode'] = 9;
+      await runtime.start();
+      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(engine.stopCalls, 0);
+      expect(runtime.tempo.clickModeOwner.ready, isFalse);
+      await expectLater(
+        runtime.prepareShutdown(retry: false),
+        throwsStateError,
+      );
+      await runtime.prepareShutdown(retry: true);
+      expect(store.values['tempo.click_mode'], ClickMode.off.code);
+      expect(runtime.tempo.clickModeOwner.value, ClickMode.off);
+      expect(engine.stopCalls, 0);
+    });
   });
 
   test('late controller startup cannot change a disposed rig', () async {

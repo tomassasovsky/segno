@@ -199,6 +199,9 @@ void main() {
     when(() => repository.clickModeFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
+    when(() => repository.clickVolumeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     when(() => repository.clickModeSettled).thenReturn(true);
     when(() => repository.clickModeRecoveryRequired).thenReturn(false);
     when(() => repository.clickModeCaptureLocked).thenAnswer(
@@ -586,7 +589,7 @@ void main() {
     final closeTempoOwner = tempoOwner.close;
     addTearDown(() => unawaited(closeTempoOwner()));
     tempo = TempoCubit(settings: tempoOwner);
-    await tempoOwner.loadClickMode();
+    await tempoOwner.clickModeOwner.load();
     if (loadRecordStart) await tempoOwner.loadRecordStart();
     options = RecordSettings(repository: repository, settings: settings);
     playbackOwner = PlaybackSettings(

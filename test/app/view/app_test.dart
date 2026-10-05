@@ -972,7 +972,8 @@ void main() {
       store.refuseWrite = true;
       unawaited(tempo.setClickVolume(1.5));
       await tester.pump();
-      expect(tempo.state.confirmedClickVolume, 1);
+      // The owed rollback makes Click unavailable until Retry.
+      expect(tempo.state.confirmedClickVolume, isNull);
       power.press(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.flushFailed);
@@ -1764,14 +1765,12 @@ void main() {
           expect(find.text('Hear click needs attention'), findsOneWidget);
           await tester.tap(find.text('Retry'));
           await tester.pumpAndSettle();
-          expect(tempo.state.clickModeReady, !malformed);
-          expect(store.values, before);
-          if (malformed) {
-            expect(find.text('Hear click needs attention'), findsOneWidget);
-          } else {
-            expect(tempo.state.clickModeSnapshot?.mode, ClickMode.off);
-            expect(find.text('Hear click needs attention'), findsNothing);
-          }
+          // A transient read reads cleanly on Retry; malformed data that
+          // stays unreadable is repaired to Off.
+          expect(tempo.state.clickModeReady, isTrue);
+          expect(store.values, before..['tempo.click_mode'] = 0);
+          expect(tempo.state.clickModeSnapshot?.mode, ClickMode.off);
+          expect(find.text('Hear click needs attention'), findsNothing);
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(const Duration(milliseconds: 100));
         },
@@ -1807,7 +1806,10 @@ void main() {
       await tester.pump(const Duration(seconds: 6));
       expect(haltCalls, 1);
       expect(store.values['tempo.click_mode'], 3);
-      expect(context.read<TempoSettings>().durableClickMode, ClickMode.playRec);
+      expect(
+        context.read<TempoSettings>().clickModeOwner.durable,
+        ClickMode.playRec,
+      );
     });
 
     for (final retry in [false, true]) {
@@ -1852,7 +1854,7 @@ void main() {
         }
         expect(store.values.containsKey('tempo.click_mode'), isFalse);
         expect(
-          context.read<TempoSettings>().durableClickMode,
+          context.read<TempoSettings>().clickModeOwner.durable,
           ClickMode.recFirst,
         );
       });
@@ -1885,7 +1887,8 @@ void main() {
       unawaited(
         context
             .read<TempoSettings>()
-            .setClickMode(ClickMode.rec)
+            .clickModeOwner
+            .set(ClickMode.rec)
             .then((v) => accepted = v.isOk),
       );
       await tester.pumpAndSettle();
@@ -1962,7 +1965,10 @@ void main() {
           midi.push(127);
           await tester.pumpAndSettle();
           expect(tempo.state.clickModeSnapshot?.mode, ClickMode.playRec);
-          expect(context.read<TempoSettings>().durableClickMode, ClickMode.off);
+          expect(
+            context.read<TempoSettings>().clickModeOwner.durable,
+            ClickMode.off,
+          );
           rejectingEngine.refuseMode = true;
           if (releasedBeforeShutdown) {
             midi.push(0);

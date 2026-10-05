@@ -115,7 +115,7 @@ class _Rig {
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: looper),
       clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: owner,
+      clickModeControl: owner.clickModeControl,
       recordStartControl: owner,
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
@@ -146,7 +146,7 @@ class _Rig {
   late final PerformanceRepository performance;
   late final ControlCubit cubit;
   int get live => owner.state.clickMode.code;
-  int get durable => owner.durableClickMode.code;
+  int get durable => owner.clickModeOwner.durable.code;
   void pump() {
     for (var i = 0; i < 20; i++) {
       clock
@@ -215,7 +215,7 @@ class _Rig {
   }
 
   void ordinary(ClickMode mode) {
-    unawaited(owner.setClickMode(mode));
+    unawaited(owner.clickModeOwner.set(mode));
     pump();
   }
 
@@ -305,7 +305,10 @@ void main() {
         );
         final r = _Rig(clock, engine, looper);
         try {
-          expect(r.owner.clickModeSnapshot?.mode, ClickMode.recFirst);
+          expect(
+            r.owner.clickModeControl.clickModeSnapshot?.mode,
+            ClickMode.recFirst,
+          );
           final before = engine.snapshot().clickModeRevision;
           // The first physical report establishes contact position; it is not
           // movement and must not replay a saved mapping on attachment.
@@ -377,7 +380,7 @@ void main() {
             expect(engine.snapshot().clickMode, sample.$2);
             expect(engine.snapshot().clickModeRevision, greaterThan(revision));
             revision = engine.snapshot().clickModeRevision;
-            expect(r.owner.clickModeSnapshot?.mode, sample.$2);
+            expect(r.owner.clickModeControl.clickModeSnapshot?.mode, sample.$2);
             expect(r.store.values['tempo.click_mode'], sample.$2.code);
           }
         } finally {

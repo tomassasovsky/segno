@@ -1,8 +1,5 @@
 import 'package:looper_repository/looper_repository.dart';
 
-/// The Click stage's linear gain ceiling; unity is half of its travel.
-const double kMaxClickGain = 2;
-
 /// The session and device that own a captured Click intent.
 typedef ClickVolumeLifetime = ({int sessionRevision, int mixGeneration});
 

@@ -202,6 +202,9 @@ void main() {
     when(() => repository.clickModeFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
+    when(() => repository.clickVolumeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     when(() => repository.recordTimingFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
@@ -367,7 +370,7 @@ void main() {
     }
     await tempo.setTempo(84);
     await tempoOwner.loadRecordStart();
-    await tempoOwner.loadClickMode();
+    await tempoOwner.clickModeOwner.load();
     expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
     await options.load();
     await timingOwner.load();
