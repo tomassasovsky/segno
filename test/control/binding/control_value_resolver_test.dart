@@ -9,6 +9,7 @@ import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -296,6 +297,46 @@ void main() {
         ),
         0.8,
       );
+    });
+
+    test('Fade offers Default and all fixed tracks only when loaded', () {
+      final durations = FadeDurations(
+        defaultMs: 8000,
+        overrides: const {2: 500},
+      );
+      expect(
+        looper.availableValueTargets().whereType<FadeValueTarget>(),
+        isEmpty,
+      );
+      expect(looper.valueTargetResolves(const DefaultFadeTarget()), isFalse);
+      expect(looper.readValueTarget(const TrackFadeTarget(0)), isNull);
+      final offered = looper
+          .availableValueTargets(fadeDurations: durations)
+          .whereType<FadeValueTarget>()
+          .toList();
+      expect(offered, [
+        const DefaultFadeTarget(),
+        for (var channel = 0; channel < 8; channel++) TrackFadeTarget(channel),
+      ]);
+      expect(
+        looper.valueTargetResolves(
+          const TrackFadeTarget(8),
+          fadeDurations: durations,
+        ),
+        isFalse,
+      );
+      // 8 s is 15 half-second steps above 0.5 s; an inheriting track reads
+      // the Default, an override its own time.
+      for (final (target, travel) in <(FadeValueTarget, double)>[
+        (const DefaultFadeTarget(), 15 / 59),
+        (const TrackFadeTarget(0), 15 / 59),
+        (const TrackFadeTarget(2), 0),
+      ]) {
+        expect(
+          looper.readValueTarget(target, fadeDurations: durations),
+          travel,
+        );
+      }
     });
 
     test('Loop/Once distinguishes an unready owner from explicit Loop', () {

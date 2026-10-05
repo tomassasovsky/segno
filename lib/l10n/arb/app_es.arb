@@ -2682,5 +2682,7 @@
     "footFadeHoldTime": "Mantener · Tiempo",
     "footFadeFailure": "No se pudo iniciar el Fade. Inténtalo de nuevo.",
     "mixerFading": "En Fade",
-    "mixerFadeLevel": "Fade {value}%"
+    "mixerFadeLevel": "Fade {value}%",
+    "fadeDurationLabel": "Duración de Fade",
+    "fadeDurationReadout": "{value} s"
 }

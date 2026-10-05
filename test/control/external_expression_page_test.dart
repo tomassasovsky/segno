@@ -18,6 +18,7 @@ import 'package:segno/control/binding/mix_value_scale.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
@@ -271,8 +272,10 @@ void main() {
       sources: [ConsoleCtrlSource(pedal)],
     );
     addTearDown(() => unawaited(controller.dispose()));
+    final fade = testFadeSettings();
+    addTearDown(() => unawaited(fade.close()));
     control = ControlCubit(
-      fadeSettings: testFadeSettings(),
+      fadeSettings: fade,
       decayControl: playback,
       oneShotControl: playback,
       recordLengthControl: record,
@@ -316,6 +319,7 @@ void main() {
         home: MultiRepositoryProvider(
           providers: [
             RepositoryProvider<LooperRepository>.value(value: looper),
+            RepositoryProvider<FadeSettings>.value(value: fade),
             RepositoryProvider<PedalRepository>.value(value: pedal),
           ],
           child: MultiBlocProvider(

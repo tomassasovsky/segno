@@ -267,6 +267,134 @@ void main() {
       },
     );
 
+    group('controller writes', () {
+      FadeDurations stored() =>
+          FadeDurations.fromJson(jsonDecode(store.values[key]! as String));
+      Future<bool> write(
+        int? channel,
+        int milliseconds, {
+        int? released,
+        int? lifetime,
+        int? revision,
+      }) => owner.setControllerDuration(
+        channel,
+        milliseconds,
+        lifetime: lifetime ?? owner.lifetime,
+        revision: revision ?? owner.revision(channel),
+        releasedMilliseconds: released,
+      );
+
+      test('a held value is live while only Released is stored', () async {
+        expect(await write(null, 10000, released: 6000), isTrue);
+        expect(owner.live.defaultMs, 10000);
+        expect(owner.confirmed.defaultMs, 6000);
+        expect(stored().defaultMs, 6000);
+        // The Released write makes live and durable agree again.
+        expect(await write(null, 6000), isTrue);
+        expect(owner.live, owner.confirmed);
+        // A value without an authored Released is itself durable.
+        expect(await write(null, 2500), isTrue);
+        expect((owner.live.defaultMs, stored().defaultMs), (2500, 2500));
+      });
+
+      test('writing an inherited track creates its override', () async {
+        await owner.setDefault(8000);
+        expect(owner.confirmed.overrides, isEmpty);
+        expect(await write(2, 12000, released: 8000), isTrue);
+        expect(owner.live.overrides, {2: 12000});
+        expect(owner.live.effectiveMs(3), 8000);
+        // Released equal to Default is still Custom, not inheritance.
+        expect(stored().overrides, {2: 8000});
+      });
+
+      test('the next gesture steps from the live held value', () async {
+        expect(await write(1, 10000, released: 4000), isTrue);
+        await owner.step(deltaMs: 500, channel: 1);
+        expect(owner.live.overrides, {1: 10500});
+        expect(stored().overrides, {1: 10500});
+      });
+
+      test(
+        'an ordinary edit supersedes older intent at its address only',
+        () async {
+          final changes = <({int? channel, int? milliseconds})>[];
+          final sub = owner.ordinaryChanges.listen(changes.add);
+          final defaultRevision = owner.revision(null);
+          final trackRevision = owner.revision(0);
+          expect(await write(null, 10000, released: 4000), isTrue);
+          // Equal to the stored value, but it replaces the held live value.
+          await owner.setDefault(4000);
+          expect(owner.live.defaultMs, 4000);
+          expect(changes, [(channel: null, milliseconds: 4000)]);
+          expect(owner.revision(null), defaultRevision + 1);
+          expect(owner.revision(0), trackRevision);
+          expect(
+            await write(null, 20000, revision: defaultRevision),
+            isFalse,
+          );
+          expect(owner.live.defaultMs, 4000);
+          expect(await write(0, 20000, revision: trackRevision), isTrue);
+          await owner.setOverride(0, null);
+          expect(changes.last, (channel: 0, milliseconds: null));
+          expect(owner.live.overrides, isEmpty);
+          expect(stored().overrides, isEmpty);
+          await sub.cancel();
+        },
+      );
+
+      test(
+        'a Session install supersedes queued intent and the held value',
+        () async {
+          final lifetime = owner.lifetime;
+          expect(await write(null, 10000, released: 6000), isTrue);
+          late Future<bool> queued;
+          await owner.runExclusive((admittedEdits) async {
+            await admittedEdits;
+            // Queued behind the Session operation, not refused by it.
+            queued = write(null, 20000, lifetime: lifetime);
+            await owner.installSession(FadeDurations(defaultMs: 12000));
+          });
+          expect(await queued, isFalse);
+          expect(owner.lifetime, isNot(lifetime));
+          expect(owner.live, owner.confirmed);
+          expect(owner.live.defaultMs, 12000);
+        },
+      );
+
+      test(
+        'a Session save stores Released and applies queued work after',
+        () async {
+          expect(await write(null, 10000, released: 6000), isTrue);
+          FadeDurations? captured;
+          late Future<bool> release;
+          await owner.runExclusive((admittedEdits) async {
+            await admittedEdits;
+            release = write(null, 6000);
+            captured = owner.confirmed;
+          });
+          expect(captured!.defaultMs, 6000);
+          expect(await release, isTrue);
+          expect(owner.live.defaultMs, 6000);
+        },
+      );
+
+      test('refuses without a write during recovery or out of range', () async {
+        await owner.close();
+        owner = FadeSettings(
+          settings: SettingsRepository(store: store),
+          blocked: () => false,
+          sessionBlocked: () => false,
+        );
+        expect(await write(null, 8000), isFalse);
+        expect(store.values.containsKey(key), isFalse);
+        await owner.load();
+        expect(await write(null, 30500), isFalse);
+        expect(await write(8, 8000), isFalse);
+        expect(store.values.containsKey(key), isFalse);
+        expect(owner.live, FadeDurations.defaults);
+      });
+    });
+
     test(
       'malformed startup remains recoverable without silently defaulting',
       () async {

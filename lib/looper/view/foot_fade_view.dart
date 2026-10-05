@@ -26,7 +26,7 @@ class FootFadeView extends StatelessWidget {
     return StreamBuilder<Object?>(
       stream: settings.results,
       builder: (context, _) => _FootFadeContent(
-        durations: settings.needsRecovery ? null : settings.confirmed,
+        durations: settings.needsRecovery ? null : settings.live,
       ),
     );
   }

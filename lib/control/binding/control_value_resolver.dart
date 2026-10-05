@@ -7,6 +7,7 @@ import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// Resolves a typed [ControlValueTarget] against the live rig — the app-side
 /// half of the continuous binding model, and the twin of part 6b's
@@ -40,6 +41,7 @@ extension ControlValueResolver on LooperRepository {
     ClickModeSnapshot? clickModeSnapshot,
     double? clickVolume,
     DecaySnapshot? decaySnapshot,
+    FadeDurations? fadeDurations,
     OneShotSnapshot? oneShotSnapshot,
     RecordLengthSnapshot? recordLengthSnapshot,
     RecordStartSnapshot? recordStartSnapshot,
@@ -113,6 +115,12 @@ extension ControlValueResolver on LooperRepository {
         targets.add(TrackRecordTimingTarget(channel));
       }
     }
+    if (fadeDurations != null) {
+      targets.add(const DefaultFadeTarget());
+      for (var channel = 0; channel < 8; channel++) {
+        targets.add(TrackFadeTarget(channel));
+      }
+    }
     // The master output always exists, so it is always offerable.
     targets.add(const MasterGainTarget());
     return targets;
@@ -159,6 +167,7 @@ extension ControlValueResolver on LooperRepository {
     ClickModeSnapshot? clickModeSnapshot,
     double? clickVolume,
     DecaySnapshot? decaySnapshot,
+    FadeDurations? fadeDurations,
     OneShotSnapshot? oneShotSnapshot,
     RecordLengthSnapshot? recordLengthSnapshot,
     RecordStartSnapshot? recordStartSnapshot,
@@ -190,6 +199,7 @@ extension ControlValueResolver on LooperRepository {
       recordLengthSnapshot != null && target.isStructurallyValid,
     RecordTimingValueTarget() =>
       recordTimingSnapshot != null && target.isStructurallyValid,
+    FadeValueTarget() => fadeDurations != null && target.isStructurallyValid,
   };
 
   /// The value [target] holds now (normalized `0..1`), or `null` when it does
@@ -202,6 +212,7 @@ extension ControlValueResolver on LooperRepository {
     ClickModeSnapshot? clickModeSnapshot,
     double? clickVolume,
     DecaySnapshot? decaySnapshot,
+    FadeDurations? fadeDurations,
     OneShotSnapshot? oneShotSnapshot,
     RecordLengthSnapshot? recordLengthSnapshot,
     RecordStartSnapshot? recordStartSnapshot,
@@ -241,6 +252,14 @@ extension ControlValueResolver on LooperRepository {
           ? null
           : target.fromDomain(
               recordTimingSnapshot.effectiveTiming(target.address),
+            ),
+    FadeValueTarget(:final channel) =>
+      fadeDurations == null || !target.isStructurallyValid
+          ? null
+          : target.fromDomain(
+              channel == null
+                  ? fadeDurations.defaultMs
+                  : fadeDurations.effectiveMs(channel),
             ),
   };
 

@@ -89,6 +89,23 @@ void main() {
     }
   });
 
+  test('Fade duration endpoints show seconds to one decimal', () async {
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    for (final target in [
+      const DefaultFadeTarget(),
+      const TrackFadeTarget(3),
+    ]) {
+      for (final (position, label) in <(double, String)>[
+        (0, '0.5 s'),
+        (7 / 59, '4.0 s'),
+        (0.4, '12.5 s'),
+        (1, '30.0 s'),
+      ]) {
+        expect(controlValueReadout(l10n, target, position), label);
+      }
+    }
+  });
+
   test('Hear click endpoints show named modes, never a percent', () async {
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
     for (final (position, label) in <(double, String)>[

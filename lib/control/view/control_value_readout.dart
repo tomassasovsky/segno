@@ -44,6 +44,9 @@ String controlValueReadout(
     l10n,
     target.toDomain(normalized),
   ),
+  FadeValueTarget() => l10n.fadeDurationReadout(
+    (target.toDomain(normalized) / 1000).toStringAsFixed(1),
+  ),
   MasterGainTarget() => signalGainReadout(normalized),
 };
 
