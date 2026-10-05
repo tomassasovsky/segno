@@ -866,15 +866,17 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
          atomic_load(&e->perf.layer_staging_ring.tail); ++i) test_sleep_ms(1);
     CHECK(atomic_load(&e->perf.layer_staging_ring.head) == atomic_load(&e->perf.layer_staging_ring.tail));
     if (manifest_full) {
-      // One restoration fills the final manifest entry; the next must report the
-      // bounded manifest as incomplete, never omit its image and claim success.
+      // One restoration fills the final manifest entry; the next is dropped and
+      // counted. Capture continues; the render below fails that stem instead.
       for (int i = 0; i < 2; ++i) {
         CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
         CHECK(le_engine_undo(e, 0) == LE_OK);
         le_engine_process(e, &output, &input, 1);
         CHECK(output == .125f);
       }
-      CHECK(poll_drain_self_stopped_for_test(e->perf.drain, 5000));
+      for (int i = 0; i < 5000 && atomic_load(&e->perf.layer_staging_ring.head) !=
+           atomic_load(&e->perf.layer_staging_ring.tail); ++i) test_sleep_ms(1);
+      CHECK(!le_perf_drain_self_stopped(e->perf.drain));
     }
     CHECK(le_perf_disarm(e) == LE_OK);
     le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
@@ -882,8 +884,9 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
     char* json = malloc(1024 * 1024); CHECK(json != NULL);
     if (json) {
       CHECK(read_file_for_test(path, json, 1024 * 1024) > 0);
+      CHECK(strstr(json, "\"stopped_early\"") == NULL);
+      CHECK((strstr(json, "\"layers_dropped\": 1,") != NULL) == manifest_full);
       if (manifest_full) {
-        CHECK(strstr(json, "\"stopped_early\": \"disk_full\"") != NULL);
         CHECK(count_layer_entries_for_test(json) == (int)LE_LAYER_STAGING_RING_CAPACITY);
         CHECK(strstr(json, "restore-0-2.pcm") != NULL);
         CHECK(strstr(json, "restore-0-3.pcm") == NULL);
@@ -893,14 +896,15 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
       }
       free(json);
     }
-    if (!manifest_full) {
-      snprintf(path, sizeof(path), "%s/master.pcm", dir);
-      float recorded = 0;
-      CHECK(read_binary_file_for_test(path, (unsigned char*)&recorded, sizeof(recorded)) == sizeof(recorded));
-      CHECK(recorded == .125f);
-      fade_finalize_manifest(dir, "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[]}");
-      fade_render_status(e, dir, 0);
-    }
+    // Master keeps every processed frame, including those after the drop.
+    snprintf(path, sizeof(path), "%s/master.pcm", dir);
+    const int frames_processed = manifest_full ? 3 : 1;
+    float recorded[3] = {0};
+    CHECK(read_binary_file_for_test(path, (unsigned char*)recorded,
+        sizeof(float) * frames_processed) == (int)(sizeof(float) * frames_processed));
+    for (int i = 0; i < frames_processed; ++i) CHECK(recorded[i] == .125f);
+    fade_finalize_manifest(dir, "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[]}");
+    fade_render_status(e, dir, 0);
     le_engine_destroy(e);
   }
 }

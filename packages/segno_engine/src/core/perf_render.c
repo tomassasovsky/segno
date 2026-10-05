@@ -62,11 +62,12 @@
 /* ---- tuning ---- */
 #define LE_PR_PATH_MAX 960
 #define LE_PR_FULL_PATH_MAX (LE_PR_PATH_MAX + 64)
-#define LE_PR_JSON_ARENA_NODES 8192 /* generous for a full performance.json —
-                                    * see json_read.h; a manifest this large
-                                    * would need > 1000 layer entries or
-                                    * hundreds of lane/fx entries to exhaust
-                                    * this */
+/* 8192 for the snapshots, plus room for a full layer manifest: the drain
+ * lists up to LE_LAYER_STAGING_RING_CAPACITY entries of ~12 nodes each, which
+ * a fixed 8192 could not parse past ~650 retired layers. Heap, render-thread
+ * only, allocated once per render. */
+#define LE_PR_JSON_ARENA_NODES \
+  (8192 + 16 * (int)LE_LAYER_STAGING_RING_CAPACITY)
 #define LE_PR_EVENTS_ENTRY_BYTES 28 /* matches perf_drain.c's on-disk layout,
                                     * docs/design/performance-event-log-format.md */
 #define LE_PR_MAX_SEGMENTS 4096 /* per-track content-source transitions; a
@@ -945,6 +946,9 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
               e->cmd.evt.channel == channel) {
       restore_id = 0;
       const int layer_n = le_json_length(m->layers);
+      /* A logged retire whose image the manifest lacks (dropped once it
+       * filled) fails this stem rather than replaying the stale image. */
+      int listed = 0;
       for (int li = 0; li < layer_n; ++li) {
         const le_json_value* layer = le_json_at(m->layers, li);
         if (le_json_number(le_json_get(layer, "kind"), 0) != 0) continue;
@@ -958,6 +962,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
             l_gen != e->cmd.evt.generation) {
           continue;
         }
+        listed = 1;
         const int32_t frame_count =
             (int32_t)le_json_number(le_json_get(layer, "frame_count"), 0);
         const int32_t lane_count =
@@ -1012,6 +1017,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         }
         break;
       }
+      if (!listed) build.load_failed = 1;
     } else if (e->cmd.code == LE_CMD_CLEAR && e->cmd.arg_i == channel) {
       restore_id = 0;
       le_pr_append_segment(&build, e->frame, 0, NULL, 0);

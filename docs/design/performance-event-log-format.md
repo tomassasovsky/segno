@@ -45,8 +45,7 @@ when the 28-byte record does.
 | `2`      | An aborted take logs `LE_PLOG_RECORD_ABORT` (314). A `RECORD_END` in a version-2 file always means content was captured. |
 | `3`      | A `RECORD_ABORT` may appear **unpaired**: a count-in cancelled by the immediate-finalize primitive (#405, `LE_CMD_FINALIZE_TAKE`) logs 314 for the counting channel even though no `RECORD_START` ever preceded it (the count-in's commit is what logs the start). In a version-2 file every 314 closes an open `START`; from 3 on, a reader must treat an ABORT with no open `START` as a no-op, not a malformed file. |
 | `4`      | Two new transport facts (#262) — `LE_PLOG_PERF_ARMED` (315) recording the master loop phase at arm, and `LE_PLOG_TRANSPORT_HELD` (316) marking a mid-capture transport hold — and `LE_PLOG_RECORD_END` (301) now carries the `take` arm `{channel, take_id}` instead of a bare channel (#819). The offline renderer **requires** these: the two inferences it used before — the race-stale `armSnapshot.clockFrame` phase anchor and the "first `RECORD_END` while the channel is content-free" disarm-image proxy — were **deleted with no fallback** (AGENTS.md). A pre-4 file has neither fact, so it has no supported phase anchor and no take identity; it still parses (below), but renders correctly only if re-captured. |
-
-| `5` | Applied Clear restoration (322) and restored source state, phase and retirement (323), with exact capture-local image identity. |
+| `5`      | Applied Clear restoration (322) and restored source state, phase and retirement (323), with exact capture-local image identity. |
 
 Neither reader in this repo (`perf_render.c`'s `le_pr_load_log`, the Dart
 `EventLogReader`) gates on the field — both check the magic and skip these four
@@ -297,6 +296,12 @@ Native `layers` entries distinguish ordinary overdub (`kind: 0`, `restore_id: 0`
 from restored material (`kind: 1`, nonzero `restore_id`). Restore files are named
 `restore-<channel>-<restore_id>.pcm`, interleaved across their declared active
 lanes. IDs never repeat within a capture; exhaustion marks capture incomplete.
+The manifest is bounded (`LE_LAYER_STAGING_RING_CAPACITY` entries per capture).
+Once it is full the drain drops later retired images instead of writing them,
+reports the count as `"layers_dropped": N` (omitted while zero) and keeps
+capturing master and monitors. Any stem whose logged retire (`LAYER_RETIRED`)
+or restoration has no manifest entry fails to render; it never replays the
+previous image.
 Existing joined disarm/rearm starts a new namespace. The control thread stages
 the retained image before posting Undo, including while a successful arm is
 awaiting its callback. The existing drain owns file writing and cleanup.

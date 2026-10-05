@@ -685,6 +685,10 @@ struct le_perf_drain {
 
   le_pd_layer_manifest_entry layers[LE_PD_MAX_LAYERS];
   int layer_count;
+  /* Retired images that arrived after the manifest filled. They are dropped,
+   * not written: master/monitor capture continues, and the renderer fails
+   * any stem whose logged retire/restore has no manifest entry. */
+  uint32_t layers_dropped;
 
   /* The sidecar's build buffer, owned by the session and reused by every
    * cycle (#722). It was a per-cycle malloc(512 KB) + free; measurement (see
@@ -864,6 +868,12 @@ static int le_pd_write_staged_layer(le_perf_drain* d,
   char path[LE_PD_FULL_PATH_MAX];
   snprintf(path, sizeof(path), "%s/%s", d->capture_dir, filename);
 
+  if (d->layer_count >= LE_PD_MAX_LAYERS) {
+    for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
+    d->layers_dropped++;
+    return 1;
+  }
+
   int ok = 1;
   FILE* f = fopen(path, "wb");
   if (f == NULL) {
@@ -891,7 +901,6 @@ static int le_pd_write_staged_layer(le_perf_drain* d,
 
   for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
 
-  if (ok && d->layer_count >= LE_PD_MAX_LAYERS) ok = 0;
   if (ok) {
     le_pd_layer_manifest_entry* m = &d->layers[d->layer_count];
     m->channel = entry->channel;
@@ -1240,6 +1249,9 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
   }
   if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
   off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "],\n");
+  if (d->layers_dropped)
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                   "  \"layers_dropped\": %u,\n", d->layers_dropped);
 
   if (report_disk_full || atomic_load_explicit(&d->disk_full, memory_order_acquire)) {
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
