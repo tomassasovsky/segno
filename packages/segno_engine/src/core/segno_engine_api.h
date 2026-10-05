@@ -518,6 +518,8 @@ typedef enum le_command_code {
   LE_CMD_SET_RECORD_TIMING = 78, /* one complete timing vector and receipt */
   LE_CMD_STOP_RECORD_CONTROL = 79, /* cohort cancel or non-acquiring capture finish */
   LE_CMD_CANCEL_COUNT_IN = 80, /* only the shared launch cohort/grace */
+  LE_CMD_FADE = 81, /* checked internal Fade request; never raw-posted */
+  LE_CMD_RESET_FADE = 82, /* internal material-import invalidation */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -829,7 +831,16 @@ typedef struct le_lane_snapshot {
  * input_mask/output_mask/rms/peak fields mirror lane 0 for backward
  * compatibility (a track always has at least one lane); per-lane state is read
  * with le_engine_get_lane. */
+/* One coherent Fade image. Lifetime/generation bind an install to the engine
+ * configuration and recorded material that were observed by the caller. */
+typedef struct le_fade_image {
+  float amount, target, full_travel_seconds;
+  uint64_t lifetime, generation;
+} le_fade_image;
+
 typedef struct le_track_snapshot {
+  le_fade_image fade;
+  uint64_t fade_revision;
   int32_t state;         /* le_track_state */
   float volume;          /* lane 0 volume, 0..LE_MAX_GAIN */
   int32_t muted;         /* lane 0 mute, 0/1 */
@@ -3082,6 +3093,20 @@ LE_EXPORT int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
 LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
                                            int32_t base_frames,
                                            int32_t loop_bars);
+
+/* Fade admission returns a nonzero request id only on LE_OK. Toggle resolves
+ * the opposite target on the callback, with a 0.5..30 second full traversal.
+ * Install accepts amount/target 0..1; zero seconds requires amount == target.
+ * Both use bounded receipt storage and leave the image unchanged on refusal. */
+LE_EXPORT int32_t le_engine_toggle_fade(le_engine* engine, int32_t channel,
+                                       float seconds, uint64_t* request);
+LE_EXPORT int32_t le_engine_install_fade(le_engine* engine, int32_t channel,
+                                        const le_fade_image* image,
+                                        uint64_t* request);
+/* Consumes one completed result. Returns NOT_READY before callback publication,
+ * INVALID for an absent/consumed/retired id; otherwise OK and fills result. */
+LE_EXPORT int32_t le_engine_read_fade_result(le_engine* engine, uint64_t request,
+                                            int32_t* result);
 
 /* Read-only control-thread query: 1 when every successfully queued command
  * has been consumed (including rejected/no-op outcomes) and the callback has

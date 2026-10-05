@@ -46,6 +46,31 @@ le_record_timing_readback le_record_timing_read(le_engine* e, int refresh_cache)
   return result;
 }
 
+static void le_fade_read(le_engine* engine, le_track* tr, le_track_snapshot* out) {
+  const uint64_t first = atomic_load_explicit(&tr->a_fade_revision, memory_order_seq_cst);
+  if (!(first & 1u)) {
+    le_fade_image v = {0};
+    uint32_t bits = atomic_load_explicit(&tr->a_fade_amount, memory_order_seq_cst);
+    memcpy(&v.amount, &bits, sizeof(bits));
+#ifdef LE_NATIVE_TESTS
+    if (le_test_fade_hook) le_test_fade_hook(engine, 2);
+#endif
+    bits = atomic_load_explicit(&tr->a_fade_target, memory_order_seq_cst);
+    memcpy(&v.target, &bits, sizeof(bits));
+    bits = atomic_load_explicit(&tr->a_fade_seconds, memory_order_seq_cst);
+    memcpy(&v.full_travel_seconds, &bits, sizeof(bits));
+    v.lifetime = engine->fade_lifetime;
+    v.generation = atomic_load_explicit(&tr->a_fade_generation, memory_order_seq_cst);
+    const uint64_t last = atomic_load_explicit(&tr->a_fade_revision, memory_order_seq_cst);
+    if (first == last) {
+      tr->fade_cache = v;
+      tr->fade_cache_revision = last;
+    }
+  }
+  out->fade = tr->fade_cache;
+  out->fade_revision = tr->fade_cache_revision;
+}
+
 static void le_timing_track_fields(le_track_snapshot* out, int code) {
   out->quantize_override = code < 0 ? -1 : code != 0;
   out->quantize_div_override = code < 0 ? -1 : code > 0 ? code - 1 : 0;
@@ -67,6 +92,7 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   le_lane* l0 = &tr->lanes[0];
   out->state = active ? load_i32(&tr->a_state) : LE_TRACK_EMPTY;
   out->volume = load_f32(&tr->a_gain_bits);
+  le_fade_read(engine, tr, out);
   out->muted = load_i32(&l0->a_muted);
   out->length_frames = load_i32(&l0->a_len);
   out->multiple = load_i32(&tr->a_multiple);

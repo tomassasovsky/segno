@@ -38,6 +38,7 @@ class Track extends Equatable {
     this.channel = 0,
     this.state = TrackState.empty,
     this.volume = 1,
+    this.fade = const FadeImage(),
     this.muted = false,
     this.pan = 0,
     this.solo = false,
@@ -75,6 +76,9 @@ class Track extends Equatable {
 
   /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
   final double volume;
+
+  /// Native Fade image, separate from saved Mixer gain.
+  final FadeImage fade;
 
   /// Whether the track is muted.
   final bool muted;
@@ -307,6 +311,7 @@ class Track extends Equatable {
     channel,
     state,
     volume,
+    fade,
     muted,
     pan,
     solo,
@@ -352,6 +357,7 @@ class Track extends Equatable {
     channel,
     state,
     volume,
+    fade,
     muted,
     pan,
     solo,

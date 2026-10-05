@@ -21,6 +21,14 @@
 #include "engine_private.h"  /* le_engine, le_track, le_lane, load/store_i32 */
 #include "segno_engine_api.h"
 
+/* Sole control producer reserves room before changing imported material.
+ * The consumer can only free slots between this check and the final push. */
+static int le_import_fade_room(le_engine* e) {
+  const size_t tail = atomic_load_explicit(&e->ring.tail, memory_order_relaxed);
+  const size_t head = atomic_load_explicit(&e->ring.head, memory_order_acquire);
+  return tail - head < e->ring.capacity - 1;
+}
+
 int32_t le_engine_export_track(le_engine* engine, int32_t channel, float* out,
                                int32_t max_frames) {
   if (engine == NULL || out == NULL) return 0;
@@ -84,6 +92,7 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
   /* Reject (rather than silently truncate) a stem that exceeds the buffer cap,
    * so a corrupted/foreign loop fails loudly instead of loading clipped. */
   if (frames > engine->max_loop_frames) return LE_ERR_INVALID;
+  if (lane == 0 && !le_import_fade_room(engine)) return LE_ERR_NOT_READY;
   /* Lane 0 is the primary import: it resets the track's redo/empty accounting
    * (a fresh session take has no undo history). Additional lanes only fill
    * their own buffer — they share the track's one undo span, so they must not
@@ -124,6 +133,7 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
    * lane if it is later un-routed. */
   store_i32(&ln->a_recoverable, 1);
   le_audio_rev_bump(t); /* [R1] session load: imported content replaces all */
+  if (lane == 0) (void)le_push(engine, LE_CMD_RESET_FADE, channel, 0);
   return LE_OK;
 }
 
@@ -260,6 +270,7 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
       if (t->lanes[l].pool_cap[s] < len) return LE_ERR_INVALID;
     }
   }
+  if (!le_import_fade_room(engine)) return LE_ERR_NOT_READY;
   /* Slot index == ordinal: undo layers occupy [0, undo_count), the live buffer
    * sits at undo_count, and the redo layers occupy the top slots newest-last
    * (mirror of le_layer_slot_for_ordinal). */
@@ -278,6 +289,7 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
   le_track_publish_live(t, undo_count);
   store_i32(&t->a_undo_depth, undo_count);
   store_i32(&t->a_redo_depth, redo_count);
+  (void)le_push(engine, LE_CMD_RESET_FADE, channel, 0);
   return LE_OK;
 }
 

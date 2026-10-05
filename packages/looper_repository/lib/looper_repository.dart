@@ -14,6 +14,7 @@ export 'package:segno_engine/segno_engine.dart'
     show
         ClickMode,
         EngineResult,
+        FadeImage,
         GridDivision,
         InputConditioningParam,
         LaneCacheState,

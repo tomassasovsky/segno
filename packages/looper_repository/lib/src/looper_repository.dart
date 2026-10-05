@@ -867,6 +867,13 @@ class LooperRepository {
   /// Retires every pending settings receipt before replacing engine ownership.
   /// Published capture images are reconciled before their old lifetime ends.
   void _retireEngineLifetime() {
+    // Session replacement also retires callers without reconfiguring native
+    // storage. Keep their IDs until a later poll/admission consumes the result
+    // (or INVALID after configure), rather than leaking native receipt slots.
+    for (final entry in _pendingFades.entries) {
+      entry.value?.complete(EngineResult.notReady);
+      _pendingFades[entry.key] = null;
+    }
     _cancelTiming();
     _cancelClickMode();
     _cancelRecordStart();
@@ -2120,6 +2127,59 @@ class LooperRepository {
     _reproject();
   }
 
+  // Null observations are expired callers with native claims still to drain.
+  // Admission drains too because normal polling stops without UI subscribers.
+  final Map<int, _ReceiptObservation?> _pendingFades = {};
+  bool _drainFade(int request) {
+    if (!_pendingFades.containsKey(request)) return false;
+    final result = _engine.readFadeResult(request);
+    if (result == null) return false;
+    _pendingFades.remove(request)?.complete(result);
+    return true;
+  }
+
+  bool _drainFades() {
+    var changed = false;
+    for (final request in _pendingFades.keys.toList()) {
+      if (_drainFade(request)) changed = true;
+    }
+    return changed;
+  }
+
+  Future<EngineResult> _requestFade(FadeAdmission Function() admit) {
+    _drainFades();
+    final admission = admit();
+    if (!admission.result.isOk) return Future.value(admission.result);
+    final observation = _ReceiptObservation();
+    _pendingFades[admission.request] = observation;
+    _watchReceipt(
+      observation,
+      settle: () => _drainFade(admission.request),
+      expire: () {
+        _pendingFades[admission.request] = null;
+        observation.complete(EngineResult.notReady);
+      },
+    );
+    return observation.wait(
+      pollInterval: const Duration(milliseconds: 10),
+      attempts: 50,
+    );
+  }
+
+  /// Completes with the exact callback outcome, never queue acceptance alone.
+  Future<EngineResult> toggleFade({
+    required int channel,
+    required double seconds,
+  }) => _requestFade(
+    () => _engine.toggleFade(channel: channel, seconds: seconds),
+  );
+
+  /// Restores one coherent image to its observed native material lifetime.
+  Future<EngineResult> installFade({
+    required int channel,
+    required FadeImage image,
+  }) => _requestFade(() => _engine.installFade(channel: channel, image: image));
+
   void _watchReceipt(
     _ReceiptObservation observation, {
     required bool Function() settle,
@@ -2133,7 +2193,7 @@ class LooperRepository {
   }
 
   bool _observeSettingsReceipts() {
-    var changed = false;
+    var changed = _drainFades();
     for (final observation in [
       _pendingOneShot?.observation,
       _pendingClickVolume?.observation,
@@ -2354,6 +2414,7 @@ class LooperRepository {
             Track(
               channel: i,
               state: s.tracks[i].state,
+              fade: s.tracks[i].fade,
               // An untouched live fader is unity. Native volume already
               // includes
               // source balance, which must never become a second saved level.

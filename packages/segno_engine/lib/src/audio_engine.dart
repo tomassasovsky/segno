@@ -69,6 +69,9 @@ enum EngineResult {
   bool get isOk => this == EngineResult.ok;
 }
 
+/// Queue admission, distinct from the callback result of this exact request.
+typedef FadeAdmission = ({EngineResult result, int request});
+
 /// Thrown when an [AudioEngine] operation fails.
 class EngineException implements Exception {
   /// Creates an [EngineException] from a failing [result].
@@ -198,6 +201,15 @@ abstract interface class LooperTransport {
   /// Posts one atomic mix edit; confirmation is snapshot.mixRevision after
   /// commandsSettled, not merely the enqueue result.
   EngineResult setMix(EngineMixSettings settings);
+
+  /// Queues a callback-owned toggle, with a full-travel duration in seconds.
+  FadeAdmission toggleFade({required int channel, required double seconds});
+
+  /// Installs a complete image bound to observed native material/lifetime.
+  FadeAdmission installFade({required int channel, required FadeImage image});
+
+  /// Consumes a completed callback result; null means still pending.
+  EngineResult? readFadeResult(int request);
 
   /// Halts track [channel]'s playback, retaining the loop buffer.
   EngineResult stopTrack({int channel = 0});

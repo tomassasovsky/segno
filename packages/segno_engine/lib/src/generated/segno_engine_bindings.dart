@@ -5196,6 +5196,109 @@ class SegnoEngineBindings {
   late final _le_engine_commit_session = _le_engine_commit_sessionPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Fade admission returns a nonzero request id only on LE_OK. Toggle resolves
+  /// the opposite target on the callback, with a 0.5..30 second full traversal.
+  /// Install accepts amount/target 0..1; zero seconds requires amount == target.
+  /// Both use bounded receipt storage and leave the image unchanged on refusal.
+  int le_engine_toggle_fade(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    double seconds,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_toggle_fade(
+      engine,
+      channel,
+      seconds,
+      request,
+    );
+  }
+
+  late final _le_engine_toggle_fadePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_toggle_fade');
+  late final _le_engine_toggle_fade = _le_engine_toggle_fadePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          double,
+          ffi.Pointer<ffi.Uint64>,
+        )
+      >();
+
+  int le_engine_install_fade(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<le_fade_image> image,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_install_fade(
+      engine,
+      channel,
+      image,
+      request,
+    );
+  }
+
+  late final _le_engine_install_fadePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<le_fade_image>,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_install_fade');
+  late final _le_engine_install_fade = _le_engine_install_fadePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<le_fade_image>,
+          ffi.Pointer<ffi.Uint64>,
+        )
+      >();
+
+  /// Consumes one completed result. Returns NOT_READY before callback publication,
+  /// INVALID for an absent/consumed/retired id; otherwise OK and fills result.
+  int le_engine_read_fade_result(
+    ffi.Pointer<le_engine> engine,
+    int request,
+    ffi.Pointer<ffi.Int32> result,
+  ) {
+    return _le_engine_read_fade_result(
+      engine,
+      request,
+      result,
+    );
+  }
+
+  late final _le_engine_read_fade_resultPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Uint64,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_engine_read_fade_result');
+  late final _le_engine_read_fade_result = _le_engine_read_fade_resultPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Int32>)
+      >();
+
   /// Read-only control-thread query: 1 when every successfully queued command
   /// has been consumed (including rejected/no-op outcomes) and the callback has
   /// published its resulting snapshot values; 0 while pending, unconfigured or
@@ -5955,7 +6058,13 @@ enum le_command_code {
   LE_CMD_STOP_RECORD_CONTROL(79),
 
   /// only the shared launch cohort/grace
-  LE_CMD_CANCEL_COUNT_IN(80);
+  LE_CMD_CANCEL_COUNT_IN(80),
+
+  /// checked internal Fade request; never raw-posted
+  LE_CMD_FADE(81),
+
+  /// internal material-import invalidation
+  LE_CMD_RESET_FADE(82);
 
   final int value;
   const le_command_code(this.value);
@@ -6041,6 +6150,8 @@ enum le_command_code {
     78 => LE_CMD_SET_RECORD_TIMING,
     79 => LE_CMD_STOP_RECORD_CONTROL,
     80 => LE_CMD_CANCEL_COUNT_IN,
+    81 => LE_CMD_FADE,
+    82 => LE_CMD_RESET_FADE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -6389,8 +6500,32 @@ final class le_lane_snapshot extends ffi.Struct {
 /// undo/redo depth) and up to lane_count lanes. The volume/muted/length/
 /// input_mask/output_mask/rms/peak fields mirror lane 0 for backward
 /// compatibility (a track always has at least one lane); per-lane state is read
-/// with le_engine_get_lane.
+/// with le_engine_get_lane. */
+/// /* One coherent Fade image. Lifetime/generation bind an install to the engine
+/// configuration and recorded material that were observed by the caller.
+final class le_fade_image extends ffi.Struct {
+  @ffi.Float()
+  external double amount;
+
+  @ffi.Float()
+  external double target;
+
+  @ffi.Float()
+  external double full_travel_seconds;
+
+  @ffi.Uint64()
+  external int lifetime;
+
+  @ffi.Uint64()
+  external int generation;
+}
+
 final class le_track_snapshot extends ffi.Struct {
+  external le_fade_image fade;
+
+  @ffi.Uint64()
+  external int fade_revision;
+
   /// le_track_state
   @ffi.Int32()
   external int state;

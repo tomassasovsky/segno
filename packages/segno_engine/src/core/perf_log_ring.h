@@ -136,6 +136,7 @@ typedef enum le_perf_log_code {
   /* Transport facts fired from inside the audio thread's command drain /
    * per-frame loop, carrying the exact sample-accurate frame. Both are new in
    * events.log version 4 (#262). */
+  LE_PLOG_FADE = 321, /* fade_log: exact callback image, including arm/reset */
   LE_PLOG_PERF_ARMED = 315,   /* LE_CMD_PERF_ARM applied: the master loop phase
                                * at capture frame 0. `perf_arm` arm: {position,
                                * master_len, iteration}. The offline renderer's
@@ -189,6 +190,7 @@ typedef struct le_log_command {
     struct { int32_t channel, lane; float value; } lanef;
     struct { int32_t channel, slot; uint32_t generation; } evt;
     struct { int32_t channel, take_id; } take;
+    struct { int32_t channel; float amount, target, seconds; } fade_log;
     struct { int32_t position, master_len, iteration; } perf_arm;
     struct { int32_t value; uint32_t sequence; } clock;
     struct { int32_t base_frames, loop_bars; } session;
@@ -200,7 +202,7 @@ typedef struct le_log_command {
 /* Explicit extraction also handles the transaction union's stronger alignment:
  * never assume a le_command payload starts four bytes after its code. */
 static inline int le_log_extract(const le_command* command, le_log_command* out) {
-  if (command->code == LE_CMD_SET_MIX || command->code == LE_CMD_RECORD_IMAGE ||
+  if (command->code == LE_CMD_RESET_FADE || command->code == LE_CMD_FADE || command->code == LE_CMD_SET_MIX || command->code == LE_CMD_RECORD_IMAGE ||
       command->code == LE_CMD_SET_LENGTH_PRESETS) return 0;
   out->code = command->code;
   memcpy(&out->arg_i, &command->arg_i, 16);
