@@ -19060,7 +19060,8 @@ static void test_perf_render_unlisted_retire_fails_stem(void) {
                      .evt = {.channel = 1, .slot = 1, .generation = 1}});
     fclose(lf);
   }
-  for (int dropped = 1; dropped >= 0; --dropped) {
+  /* 2: overruns (refused at staging), 1: dropped (manifest full), 0: none. */
+  for (int dropped = 2; dropped >= 0; --dropped) {
     char manifest[1024];
     snprintf(manifest, sizeof(manifest),
         "{\"sample_rate\": 4800, \"capture_frames\": 12, "
@@ -19068,7 +19069,9 @@ static void test_perf_render_unlisted_retire_fails_stem(void) {
         "[{\"channel\": 1, \"volume\": 1, \"lanes\": [{\"lane\": 0, "
         "\"deferred\": false, \"pcmRef\": \"track1.wav\"}]}]}, "
         "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []%s}",
-        dropped ? ", \"layers_dropped\": 1" : "");
+        dropped == 2   ? ", \"layer_overruns\": 1"
+        : dropped == 1 ? ", \"layers_dropped\": 1"
+                       : "");
     test_write_manifest(dir, manifest);
     le_engine* e = le_engine_create();
     CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -19415,10 +19418,6 @@ static void test_perf_render_partial_success(void) {
   le_engine_destroy(e);
 }
 
-/* Acceptance (robustness): pointing a render at a directory with no
- * performance.json (or, separately, a corrupt one) must not hang or crash —
- * the worker should reach `done` with zero tracks, matching a render that
- * legitimately has nothing to do. */
 /* An unusable manifest finishes as a FAILED render (#1144): nonzero poll
  * status, done, and no invented track results. A valid empty manifest is
  * still a successful render with zero tracks, and the same engine renders
@@ -19460,20 +19459,27 @@ static void test_perf_render_missing_or_corrupt_manifest(void) {
   le_engine_destroy(e);
 }
 
-/* A valid manifest larger than the former fixed 8,192-node arena parses: the
- * arena is sized from the complete text, not a guessed constant (#1144). */
+/* A valid manifest larger than any fixed arena this renderer has used (8,192
+ * nodes, then 8,192 + 16 x 2,048 = 40,960) parses and renders a real track:
+ * the arena is sized from the complete text (#1144). */
 static void test_perf_render_large_manifest_parses(void) {
   printf("test_perf_render_large_manifest_parses\n");
   const char* dir = render_test_dir("large-manifest");
-  const int entries = 2100; /* 10 nodes each: well past 8,192 */
-  const size_t cap = 256 + (size_t)entries * 192;
+  const float content[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track1.wav", dir);
+  test_write_wav_mono(wav_path, content, 4, 4800);
+  const int entries = 4300; /* 10 nodes each: ~43,000 > 40,960 */
+  const size_t cap = 512 + (size_t)entries * 192;
   char* text = malloc(cap);
   CHECK(text != NULL);
   if (text == NULL) return;
   size_t off = (size_t)snprintf(text, cap,
       "{\"sample_rate\": 4800, \"capture_frames\": 4, "
       "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": 1, "
-      "\"tracks\": []}, \"disarmSnapshot\": {\"tracks\": []}, \"layers\": [");
+      "\"tracks\": [{\"channel\": 1, \"volume\": 1, \"lanes\": [{\"lane\": 0, "
+      "\"deferred\": false, \"pcmRef\": \"track1.wav\"}]}]}, "
+      "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": [");
   for (int i = 0; i < entries; ++i) {
     off += (size_t)snprintf(text + off, cap - off,
         "%s{\"channel\": 7, \"slot\": %d, \"generation\": %d, \"frame\": 0, "
@@ -19485,7 +19491,17 @@ static void test_perf_render_large_manifest_parses(void) {
   test_write_manifest(dir, text);
   free(text);
   le_engine* e = le_engine_create();
-  expect_render_status(e, dir, LE_OK);
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+  int32_t done = 0, track_count = -1;
+  CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == LE_OK);
+  CHECK(done == 1 && track_count == 1);
+  int32_t channel = -1, succeeded = -1;
+  CHECK(le_perf_render_track_status(e, 0, &channel, &succeeded) == LE_OK);
+  CHECK(channel == 1 && succeeded == 1);
+  float stem[4] = {0};
+  CHECK(test_read_stem(dir, 1, stem, 4) == 4);
+  for (int i = 0; i < 4; ++i) CHECK(fabsf(stem[i] - 0.5f) < 1e-6f);
   le_engine_destroy(e);
 }
 

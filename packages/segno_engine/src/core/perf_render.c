@@ -310,8 +310,9 @@ typedef struct le_pr_manifest {
   const le_json_value* arm_tracks;    /* armSnapshot.tracks array, or NULL */
   const le_json_value* disarm_tracks; /* disarmSnapshot.tracks array, or NULL */
   const le_json_value* layers;        /* layers array, or NULL */
-  /* Retired images the drain dropped once the bounded manifest filled. Only
-   * then does an unlisted retire mean missing material (see the matcher). */
+  /* Retired images missing from the manifest: dropped once it filled
+   * (`layers_dropped`) or refused at staging (`layer_overruns`). Only then
+   * does an unlisted retire mean missing material (see the matcher). */
   int layers_dropped;
   /* Required capture policy: both taps follow selected output FX. Follow
    * additionally replays that bus's level/mute; neither includes hardware
@@ -345,7 +346,8 @@ static int32_t le_pr_load_manifest(const char* dir, char** out_text,
   if (f == NULL) return LE_ERR_INVALID;
   long size = -1;
   if (fseek(f, 0, SEEK_END) == 0) size = ftell(f);
-  if (size <= 0 || (unsigned long)size >= (unsigned long)SIZE_MAX ||
+  /* json_read indexes the text with an int: keep it addressable. */
+  if (size <= 0 || size >= INT_MAX ||
       fseek(f, 0, SEEK_SET) != 0) {
     fclose(f);
     return LE_ERR_INVALID;
@@ -401,7 +403,9 @@ static int32_t le_pr_load_manifest(const char* dir, char** out_text,
   const le_json_value* disarm = le_json_get(root, "disarmSnapshot");
   out->disarm_tracks = disarm != NULL ? le_json_get(disarm, "tracks") : NULL;
   out->layers = le_json_get(root, "layers");
-  out->layers_dropped = le_json_number(le_json_get(root, "layers_dropped"), 0) > 0;
+  out->layers_dropped =
+      le_json_number(le_json_get(root, "layers_dropped"), 0) > 0 ||
+      le_json_number(le_json_get(root, "layer_overruns"), 0) > 0;
   out->arm_follow_output = policy->bool_value;
   const le_json_value* bus = le_json_get(arm, "captureBus");
   const double bus_number = le_json_number(bus, 0);

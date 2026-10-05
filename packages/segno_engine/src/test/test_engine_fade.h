@@ -877,6 +877,9 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
       for (int i = 0; i < 5000 && atomic_load(&e->perf.layer_staging_ring.head) !=
            atomic_load(&e->perf.layer_staging_ring.tail); ++i) test_sleep_ms(1);
       CHECK(!le_perf_drain_self_stopped(e->perf.drain));
+      // One more frame after the drop: a self-stopped drain would not keep it.
+      le_engine_process(e, &output, &input, 1);
+      CHECK(output == .125f);
     }
     CHECK(le_perf_disarm(e) == LE_OK);
     le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
@@ -898,8 +901,8 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
     }
     // Master keeps every processed frame, including those after the drop.
     snprintf(path, sizeof(path), "%s/master.pcm", dir);
-    const int frames_processed = manifest_full ? 3 : 1;
-    float recorded[3] = {0};
+    const int frames_processed = manifest_full ? 4 : 1;
+    float recorded[4] = {0};
     CHECK(read_binary_file_for_test(path, (unsigned char*)recorded,
         sizeof(float) * frames_processed) == (int)(sizeof(float) * frames_processed));
     for (int i = 0; i < frames_processed; ++i) CHECK(recorded[i] == .125f);
