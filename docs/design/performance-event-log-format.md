@@ -299,9 +299,11 @@ lanes. IDs never repeat within a capture; exhaustion marks capture incomplete.
 The manifest is bounded (`LE_LAYER_STAGING_RING_CAPACITY` entries per capture).
 Once it is full the drain drops later retired images instead of writing them,
 reports the count as `"layers_dropped": N` (omitted while zero) and keeps
-capturing master and monitors. Any stem whose logged retire (`LAYER_RETIRED`)
-or restoration has no manifest entry fails to render; it never replays the
-previous image.
+capturing master and monitors. In such a capture any stem whose logged retire
+(`LAYER_RETIRED`) has no manifest entry fails to render instead of replaying the
+previous image; a restoration without its entry always fails. Without drops, an
+unlisted retire keeps the existing edge tolerance (a retire handled after a
+disarm or Clear may be unstaged) and the previous image continues.
 Existing joined disarm/rearm starts a new namespace. The control thread stages
 the retained image before posting Undo, including while a successful arm is
 awaiting its callback. The existing drain owns file writing and cleanup.

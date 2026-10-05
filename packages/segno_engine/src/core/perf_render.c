@@ -314,6 +314,9 @@ typedef struct le_pr_manifest {
   const le_json_value* arm_tracks;    /* armSnapshot.tracks array, or NULL */
   const le_json_value* disarm_tracks; /* disarmSnapshot.tracks array, or NULL */
   const le_json_value* layers;        /* layers array, or NULL */
+  /* Retired images the drain dropped once the bounded manifest filled. Only
+   * then does an unlisted retire mean missing material (see the matcher). */
+  int layers_dropped;
   /* Required capture policy: both taps follow selected output FX. Follow
    * additionally replays that bus's level/mute; neither includes hardware
    * Mono/Balance, global master gain, or limiter. */
@@ -373,6 +376,7 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
   const le_json_value* disarm = le_json_get(root, "disarmSnapshot");
   out->disarm_tracks = disarm != NULL ? le_json_get(disarm, "tracks") : NULL;
   out->layers = le_json_get(root, "layers");
+  out->layers_dropped = le_json_number(le_json_get(root, "layers_dropped"), 0) > 0;
   out->arm_follow_output = policy->bool_value;
   const le_json_value* bus = le_json_get(arm, "captureBus");
   const double bus_number = le_json_number(bus, 0);
@@ -946,8 +950,10 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
               e->cmd.evt.channel == channel) {
       restore_id = 0;
       const int layer_n = le_json_length(m->layers);
-      /* A logged retire whose image the manifest lacks (dropped once it
-       * filled) fails this stem rather than replaying the stale image. */
+      /* In a capture whose full manifest dropped images, an unlisted retire
+       * fails this stem rather than replaying the stale image. Otherwise the
+       * existing tolerance stands: a retire handled at a disarm or Clear edge
+       * may be unstaged, and keeps the prior image for that short tail. */
       int listed = 0;
       for (int li = 0; li < layer_n; ++li) {
         const le_json_value* layer = le_json_at(m->layers, li);
@@ -1017,7 +1023,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         }
         break;
       }
-      if (!listed) build.load_failed = 1;
+      if (!listed && m->layers_dropped) build.load_failed = 1;
     } else if (e->cmd.code == LE_CMD_CLEAR && e->cmd.arg_i == channel) {
       restore_id = 0;
       le_pr_append_segment(&build, e->frame, 0, NULL, 0);
