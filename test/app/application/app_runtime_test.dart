@@ -28,7 +28,16 @@ class _ReadGateStore extends FakeKeyValueStore {
   Completer<void>? fxWrite;
   final fxWriteEntered = Completer<void>();
   bool refuseFx = false;
+  bool refuseMute = false;
   int fxWrites = 0;
+
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    await super.setBool(key, value: value);
+    if (key == 'lane_mute.0.0' && refuseMute) {
+      throw StateError('mute storage wrote then refused');
+    }
+  }
 
   @override
   Future<void> setString(String key, String value) async {
@@ -300,6 +309,25 @@ void main() {
     final saved = decodeFxChain(await settings.loadTrackFxChain(0));
     expect(saved.chainEnabled, isFalse);
   });
+
+  test(
+    'shutdown refuses retained lane mute failure until explicit retry',
+    () async {
+      await runtime.start();
+      store.refuseMute = true;
+      runtime.looper.add(const LooperMuteToggled(0));
+      await pumpEventQueue();
+      expect(repository.laneMuted(0, 0), isTrue);
+      expect(store.values['lane_mute.0.0'], isTrue);
+      await expectLater(
+        runtime.prepareShutdown(retry: false),
+        throwsStateError,
+      );
+      store.refuseMute = false;
+      await runtime.prepareShutdown(retry: true);
+      expect(await settings.loadLaneMute(0, 0), isTrue);
+    },
+  );
 
   test('FX flush failure still closes every application owner', () async {
     await prepareTrackFx();

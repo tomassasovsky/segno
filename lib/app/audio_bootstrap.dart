@@ -480,7 +480,9 @@ Future<AutoStartResult> _tryAutoStartEngine({
   final mintedChains = <Future<void> Function()>[];
   bool admitted(EngineResult result) {
     if (result.isOk) return true;
-    AppLog.error('audio auto-start: saved FX refused result=${result.name}');
+    AppLog.error(
+      'audio auto-start: saved setting refused result=${result.name}',
+    );
     repository.stopEngine();
     return false;
   }
@@ -494,11 +496,19 @@ Future<AutoStartResult> _tryAutoStartEngine({
     for (var lane = 0; lane < laneCount; lane++) {
       final muted = await settings.loadLaneMute(track.channel, lane);
       if (muted != null) {
-        repository.setLaneMute(
-          muted: muted,
-          channel: track.channel,
-          lane: lane,
-        );
+        if (!admitted(
+          repository.setLaneMute(
+            muted: muted,
+            channel: track.channel,
+            lane: lane,
+          ),
+        )) {
+          return (
+            started: false,
+            asioDrivers: asioDrivers,
+            recoveryConfig: null,
+          );
+        }
       }
       final chain = decodeFxChain(
         await settings.loadLaneEffects(track.channel, lane),
@@ -629,7 +639,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
   final restoredFx = await repository.settleFxRecipes();
   if (!restoredFx.isOk) {
     AppLog.error(
-      'audio auto-start: saved FX refused result=${restoredFx.name}',
+      'audio auto-start: saved setting refused result=${restoredFx.name}',
     );
     repository.stopEngine();
     return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);

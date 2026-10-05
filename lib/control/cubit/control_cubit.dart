@@ -11,6 +11,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/track_mute.dart';
 import 'package:segno/control/binding/binding_scope.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
@@ -1004,7 +1005,6 @@ class ControlCubit extends Cubit<ControlState> {
               if (cancelled()) return;
               await saveFxOwner(
                 settings: _settings,
-                looper: _looper,
                 projection: _fxPersistence,
                 address: address,
               );
@@ -1858,6 +1858,18 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  EngineResult _setTrackMute({required bool muted, required int channel}) =>
+      applyTrackMute(
+        looper: _looper,
+        settings: _settings,
+        persistence: _fxPersistence,
+        channel: channel,
+        muted: muted,
+        onError: (error, stack) {
+          if (!isClosed) addError(error, stack);
+        },
+      );
+
   /// Rec mode: advance the cursor track through record / overdub / play. A
   /// muted track is first unmuted and brought back: overdub if its loop still
   /// runs, plain resume if it was parked (the engine unparks the rest of the
@@ -1865,7 +1877,7 @@ class ControlCubit extends Cubit<ControlState> {
   bool _recAdvance(int channel) {
     final track = _trackAt(channel);
     if (track != null && track.muted) {
-      if (!_looper.setMute(muted: false, channel: channel).isOk) return false;
+      if (!_setTrackMute(muted: false, channel: channel).isOk) return false;
       if (track.state == TrackState.stopped) {
         return _looper.play(channel: channel).isOk; // parked -> resume
       } else {
@@ -1896,17 +1908,27 @@ class ControlCubit extends Cubit<ControlState> {
       // deselected member — it is a live take (isParked ignores `recording`,
       // so one can be running under a parked transport) and muting it would
       // punch it out; leave it alone.
+      var muteAccepted = true;
       for (final track in _tracks) {
         if (_playable(track) &&
             !track.isCapturing &&
             !resume.contains(track.channel) &&
             !track.muted) {
-          _looper.setMute(muted: true, channel: track.channel);
+          if (!_setTrackMute(muted: true, channel: track.channel).isOk) {
+            muteAccepted = false;
+          }
         }
       }
+      for (final channel in resume) {
+        if (!_setTrackMute(muted: false, channel: channel).isOk) {
+          muteAccepted = false;
+        }
+      }
+      // The first play resumes every member. Admit the complete mute plan
+      // first, retaining membership for retry if any prerequisite refused.
+      if (!muteAccepted) return false;
       var accepted = false;
       for (final channel in resume) {
-        _looper.setMute(muted: false, channel: channel);
         accepted = _looper.play(channel: channel).isOk || accepted;
       }
       // Consumed: the resumed tracks are now sounding, so the derived armed
@@ -1925,9 +1947,15 @@ class ControlCubit extends Cubit<ControlState> {
       (t) => armed.contains(t.channel) && !t.muted && isSounding(t),
     );
     if (anyAudible && armed.containsAll(all)) return false;
+    var muteAccepted = true;
+    for (final channel in all) {
+      if (!_setTrackMute(muted: false, channel: channel).isOk) {
+        muteAccepted = false;
+      }
+    }
+    if (!muteAccepted) return false;
     var accepted = false;
     for (final channel in all) {
-      _looper.setMute(muted: false, channel: channel);
       accepted = _looper.play(channel: channel).isOk || accepted;
     }
     return accepted;
@@ -1962,7 +1990,7 @@ class ControlCubit extends Cubit<ControlState> {
     if (!_looper.stopRecordControl(channel: channel).isOk) {
       return false;
     }
-    if (!_looper.setMute(muted: true, channel: channel).isOk) return false;
+    if (!_setTrackMute(muted: true, channel: channel).isOk) return false;
     if (track.state == TrackState.playing && _isLastAudibleTrack(channel)) {
       for (final t in _tracks) {
         _looper.stopTrack(channel: t.channel);
@@ -2043,7 +2071,7 @@ class ControlCubit extends Cubit<ControlState> {
     final t = track!;
     if (isParked(_l)) {
       if (!state.parkedResume.contains(channel) && t.muted) {
-        _looper.setMute(muted: false, channel: channel);
+        if (!_setTrackMute(muted: false, channel: channel).isOk) return;
       }
       final next = {...state.parkedResume};
       if (!next.remove(channel)) next.add(channel);
@@ -2054,8 +2082,8 @@ class ControlCubit extends Cubit<ControlState> {
         armedTracks(_l, state).contains(channel) &&
         t.state == TrackState.playing;
     if (live) {
-      final muting = !t.muted;
-      _looper.setMute(muted: muting, channel: channel);
+      final muting = !_looper.trackMuted(channel);
+      if (!_setTrackMute(muted: muting, channel: channel).isOk) return;
       if (muting && _isLastAudibleArmed(channel)) {
         // Muting the last audible track parks the loop with nothing latched:
         // the next Rec/Play resumes the whole content set.
@@ -2065,15 +2093,14 @@ class ControlCubit extends Cubit<ControlState> {
         emit(state.copyWith(parkedResume: const <int>{}));
       }
     } else {
+      if (!_setTrackMute(muted: false, channel: channel).isOk) return;
       // Joining is the explicit un-exclude.
       if (state.excluded.contains(channel)) {
         emit(
           state.copyWith(excluded: {...state.excluded}..remove(channel)),
         );
       }
-      _looper
-        ..setMute(muted: false, channel: channel)
-        ..play(channel: channel);
+      _looper.play(channel: channel);
     }
   }
 
@@ -2157,7 +2184,6 @@ class ControlCubit extends Cubit<ControlState> {
     // routing through the other.
     persistTrackFxChain(
       settings: _settings,
-      looper: _looper,
       projection: _fxPersistence,
       channel: channel,
     );
@@ -2185,7 +2211,9 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   Future<bool> _clearAllAccepted() async {
+    if (_fxPersistence.sessionTransitionActive) return false;
     if (_performanceArmed) await _performance.persistLiveLanes();
+    if (_fxPersistence.sessionTransitionActive) return false;
     // Whether any track we cleared held content: only a content clear leaves a
     // restore point behind (an undone-to-empty redo-only track's does not), so
     // this is the gate on offering whole-rig undo below.
@@ -2199,21 +2227,18 @@ class ControlCubit extends Cubit<ControlState> {
     // One grouped edit (accepted design, slice 2): the repository remembers
     // the group, so the next Undo on any member restores every member.
     if (!_looper.clearAll(cleared).isOk) return false;
+    var muteAccepted = true;
     for (final track in _tracks) {
       if (!cleared.contains(track.channel)) continue;
-      _looper.setMute(muted: false, channel: track.channel);
-      final lanes = track.lanes.isEmpty ? 1 : track.lanes.length;
-      for (var lane = 0; lane < lanes; lane++) {
-        unawaited(
-          _settings.saveLaneMute(track.channel, lane, muted: false),
-        );
+      if (!_setTrackMute(muted: false, channel: track.channel).isOk) {
+        muteAccepted = false;
       }
     }
     // The persist above is an await, so the surface may have been torn down
     // while it ran. The engine clear still happens — it is what the user asked
     // for and the looper outlives this cubit — but the overlay state and the
     // LED frame belong to a console that is no longer there.
-    if (isClosed) return cleared.isNotEmpty;
+    if (isClosed) return cleared.isNotEmpty && muteAccepted;
     emit(
       state.copyWith(
         mode: InteractionMode.record,
@@ -2231,7 +2256,7 @@ class ControlCubit extends Cubit<ControlState> {
     // The clear may be a state no-op (already home) while the held-LED bit
     // still needs to reach the wire.
     _pushProjected();
-    return cleared.isNotEmpty;
+    return cleared.isNotEmpty && muteAccepted;
   }
 
   /// Whole-rig recovery from a clear-all: undoes every track that still holds
@@ -2589,9 +2614,10 @@ class ControlCubit extends Cubit<ControlState> {
     switch (operation) {
       case TrackOperation.mute:
         if (track == null) return false;
-        return _looper
-            .setMute(muted: !_looper.trackMuted(channel), channel: channel)
-            .isOk;
+        return _setTrackMute(
+          muted: !_looper.trackMuted(channel),
+          channel: channel,
+        ).isOk;
       case TrackOperation.solo:
         return _mixSettings
             .toggleTrackSolo(channel: channel)
@@ -2599,7 +2625,9 @@ class ControlCubit extends Cubit<ControlState> {
               (outcome) => outcome.isOk,
             );
       case TrackOperation.clear:
-        return _looper.clear(channel: channel).isOk;
+        if (_fxPersistence.sessionTransitionActive) return false;
+        if (!_looper.clear(channel: channel).isOk) return false;
+        return _setTrackMute(muted: false, channel: channel).isOk;
       case TrackOperation.undo:
         return _looper.undo(channel: channel).isOk;
       case TrackOperation.redo:

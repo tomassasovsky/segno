@@ -1133,7 +1133,6 @@ extension MidiControlEditing on ControlCubit {
         if (session != _looper.sessionRevision || isClosed) break;
         await saveFxOwner(
           settings: _settings,
-          looper: _looper,
           projection: _fxPersistence,
           address: address,
         );
