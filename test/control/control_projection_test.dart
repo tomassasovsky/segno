@@ -157,6 +157,17 @@ void main() {
       expect(projectTrackLed(looper, overlay, 3), PedalTrackLed.off);
     });
 
+    test('Fade mode: an emptied track stays dark before its reset lands', () {
+      // Clear publishes EMPTY before the callback publishes the unity image.
+      final looper = _stateWith(
+        _tracksWith(const [
+          Track(fade: FadeImage(amount: 0, target: 0)),
+        ]),
+      );
+      const overlay = ControlState(mode: InteractionMode.fade);
+      expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.off);
+    });
+
     test('Mute mode: armed and audible reads green, muted reads off', () {
       final looper = _stateWith(
         _tracksWith(const [

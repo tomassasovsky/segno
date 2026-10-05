@@ -95,8 +95,9 @@ PedalTrackLed projectTrackLed(
     case InteractionMode.mixer:
       return PedalTrackLed.off;
     case InteractionMode.fade:
-      // Lit while fading or faded out; never a claim about audibility.
-      return (track?.fade.attenuated ?? false)
+      // Lit while fading or faded out; never a claim about audibility. Only
+      // recorded tracks: Clear publishes EMPTY before its envelope reset.
+      return (track != null && track.hasContent && track.fade.attenuated)
           ? PedalTrackLed.blue
           : PedalTrackLed.off;
     case InteractionMode.custom:
