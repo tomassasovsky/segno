@@ -965,6 +965,9 @@
     "NRPN",
     "overbroad",
     "unclipped",
-    "unpair"
+    "unpair",
+    "acks",
+    "vpos",
+    "vseg"
   ]
 }

@@ -1422,4 +1422,67 @@ void main() {
       }
     });
   }, skip: skip);
+
+  group('reopen through the real FFI', () {
+    const config = EngineConfig(
+      sampleRate: 48000,
+      inputChannels: 1,
+      outputChannels: 1,
+      maxLoopFrames: 1000,
+    );
+
+    test('keeps the recorded loop stopped at the head and resumes on play', () {
+      final engine = PumpedNativeEngine()..start(config);
+      addTearDown(engine.dispose);
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 64, input: .5);
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().tracks[0].state, TrackState.playing);
+      expect(engine.snapshot().tracks[0].lengthFrames, 64);
+      final before = engine.exportTrack(0);
+
+      engine.simulateDeviceLoss();
+      expect(engine.snapshot().devicePresent, isFalse);
+      expect(engine.snapshot().isRunning, isTrue);
+      expect(engine.stop(), EngineResult.ok);
+
+      final reopened = engine.reopen(config);
+      expect(reopened.result, EngineResult.ok);
+      expect(reopened.outcome, ReopenOutcome.retained);
+      final s = engine.snapshot();
+      expect(s.devicePresent, isTrue);
+      expect(s.tracks[0].state, TrackState.stopped);
+      expect(s.tracks[0].lengthFrames, 64);
+      expect(s.masterPositionFrames, 0);
+      expect(engine.exportTrack(0), before);
+      engine.pump(frames: 64);
+      expect(engine.snapshot().masterPositionFrames, 0);
+      expect(engine.play(), EngineResult.ok);
+      engine.pump(frames: 32);
+      expect(engine.snapshot().tracks[0].state, TrackState.playing);
+      expect(engine.snapshot().outputPeaks[0], closeTo(.5, 1e-6));
+    });
+
+    test('a rate change clears and says so', () {
+      final engine = PumpedNativeEngine()..start(config);
+      addTearDown(engine.dispose);
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 64, input: .5);
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 0);
+      final reopened = engine.reopen(
+        const EngineConfig(
+          sampleRate: 44100,
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 1000,
+        ),
+      );
+      expect(reopened.result, EngineResult.ok);
+      expect(reopened.outcome, ReopenOutcome.clearedRate);
+      expect(engine.snapshot().sampleRate, 44100);
+      expect(engine.snapshot().tracks[0].state, TrackState.empty);
+    });
+  }, skip: skip);
 }

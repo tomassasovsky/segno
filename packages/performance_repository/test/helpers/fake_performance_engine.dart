@@ -326,6 +326,9 @@ class FakePerformanceEngine implements AudioEngine {
   @override
   EngineResult stop() => EngineResult.ok;
   @override
+  ReopenResult reopen(EngineConfig config) =>
+      (result: EngineResult.ok, outcome: ReopenOutcome.retained);
+  @override
   LoopbackInfo detectLoopback() => const LoopbackInfo.none();
   @override
   List<AudioDevice> enumerateDevices() => const [];
