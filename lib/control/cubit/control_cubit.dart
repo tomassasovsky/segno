@@ -1586,7 +1586,16 @@ class ControlCubit extends Cubit<ControlState> {
     if (state.excluded.any((c) => !playable(c))) {
       next = next.copyWith(excluded: state.excluded.where(playable).toSet());
     }
-    if (state.parkedResume.any((c) => !playable(c))) {
+    // Consumed once the loop is really running: the derived armed set carries
+    // the resumed members from here.
+    final running = looper.tracks.any(
+      (t) =>
+          t.hasContent &&
+          (t.state == TrackState.playing || t.state == TrackState.overdubbing),
+    );
+    if (running && state.parkedResume.isNotEmpty) {
+      next = next.copyWith(parkedResume: const <int>{});
+    } else if (state.parkedResume.any((c) => !playable(c))) {
       next = next.copyWith(
         parkedResume: state.parkedResume.where(playable).toSet(),
       );
@@ -1972,9 +1981,11 @@ class ControlCubit extends Cubit<ControlState> {
       for (final channel in resume) {
         accepted = _looper.play(channel: channel).isOk || accepted;
       }
-      // Consumed: the resumed tracks are now sounding, so the derived armed
-      // set carries them from here.
-      emit(state.copyWith(parkedResume: const <int>{}));
+      // Kept until the transport is observed running (the reducer clears it
+      // then): with a count-in or quantized launch the plays are deferred, the
+      // loop is still parked, and the parked LEDs and a second Rec/Play (which
+      // toggles the same members, cancelling the pending launch) must keep
+      // using this membership rather than re-deriving every playable track.
       return accepted;
     }
     // Running: expand to every content track unless the full audible set is

@@ -172,6 +172,8 @@ int le_record_timing_valid(const le_record_timing_settings* settings);
 /* Fade: 1 odd publication, 2 snapshot copy, 3 Clear mailbox copy,
  * 4 Restore posted before control live-slot publication, 5 selected PCM. */
 extern void (*le_test_fade_hook)(le_engine*, int);
+/* 1: Stop intent read the cohort, before its command is posted. */
+extern void (*le_test_stop_record_hook)(le_engine*, int);
 extern void (*le_test_record_timing_hook)(le_engine*, int);
 /* 1: Click mode/result applied, before command publication. */
 extern void (*le_test_click_mode_hook)(le_engine*, int);

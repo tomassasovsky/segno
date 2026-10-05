@@ -2403,7 +2403,15 @@ int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
   int cohort = load_i32(&engine->a_counting_in);
   for (int c = 0; c < engine->track_count; ++c)
     cohort |= load_i32(&engine->tracks[c].a_launch_grace);
-  if (!cohort && (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING)) {
+#ifdef LE_NATIVE_TESTS
+  if (le_test_stop_record_hook) le_test_stop_record_hook(engine, 1);
+#endif
+  /* A Stop that saw a countdown (or its launch grace) means "cancel the
+   * cohort", never "finish a capture": post the cancel itself, so one that
+   * lands after the commit and grace is a no-op instead of finalizing the
+   * just-started defining take into a tiny master. */
+  if (cohort) return le_push(engine, LE_CMD_CANCEL_COUNT_IN, 0, 0.0f);
+  if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) {
     const int quantized = le_effective_quantize(engine, channel) &&
         le_rig_effective_master_len(engine) > 0 && le_transport_active(engine);
     const int pending = engine->armed[channel] && load_i32(&t->a_pending);
