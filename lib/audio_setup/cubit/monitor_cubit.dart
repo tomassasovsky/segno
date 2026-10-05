@@ -133,6 +133,10 @@ class MonitorCubit extends Cubit<MonitorState> {
         !_fxPersistence.sessionTransitionActive;
     attempt = _mixSettings
         .runExclusive(() async {
+          if (!stillOwned()) return;
+          // Earlier accepted mute/FX edits must reach storage before this
+          // restore reads it. The shared Mix boundary refuses new mute edits.
+          await _fxPersistence.flush();
           if (stillOwned()) await _restore(stillOwned);
         })
         .catchError((Object error, StackTrace stack) {
@@ -481,6 +485,7 @@ class MonitorCubit extends Cubit<MonitorState> {
         repository: _repository,
         settings: _settings,
         persistence: _fxPersistence,
+        mixSettings: _mixSettings,
         input: input,
         muted: muted,
         onAccepted: () => emit(
