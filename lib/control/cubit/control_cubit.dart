@@ -1560,7 +1560,7 @@ class ControlCubit extends Cubit<ControlState> {
   // The looper reducer: the stored-intent invalidation table.
   // ---------------------------------------------------------------------------
 
-  void _reduce(LooperState looper) {
+  void _reduce(LooperState looper, {bool wasParked = false}) {
     var next = state;
 
     // Cursor: always a valid channel.
@@ -1586,14 +1586,16 @@ class ControlCubit extends Cubit<ControlState> {
     if (state.excluded.any((c) => !playable(c))) {
       next = next.copyWith(excluded: state.excluded.where(playable).toSet());
     }
-    // Consumed once the loop is really running: the derived armed set carries
-    // the resumed members from here.
+    // Consumed on the parked -> running transition: the derived armed set
+    // carries the resumed members from here. Only the transition: a Stop
+    // latches the set while the loop still runs (its stops land a callback
+    // later), and a running snapshot in between must not erase that latch.
     final running = looper.tracks.any(
       (t) =>
           t.hasContent &&
           (t.state == TrackState.playing || t.state == TrackState.overdubbing),
     );
-    if (running && state.parkedResume.isNotEmpty) {
+    if (wasParked && running && state.parkedResume.isNotEmpty) {
       next = next.copyWith(parkedResume: const <int>{});
     } else if (state.parkedResume.any((c) => !playable(c))) {
       next = next.copyWith(
@@ -3451,10 +3453,12 @@ class ControlCubit extends Cubit<ControlState> {
     } else if (_takeLocked()) {
       _retireAllExternal();
     }
+    final previous = _looperState;
+    final wasParked = previous != null && isParked(previous);
     _looperState = looperState;
     _retryExternalReleases();
     _checkMidiSessionAndCleanup();
-    _reduce(looperState);
+    _reduce(looperState, wasParked: wasParked);
     _pendingRestore.toList().forEach(_tryRestoreBinding);
     _pushProjected();
   }
