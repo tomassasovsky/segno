@@ -14,7 +14,7 @@ new owner or public Fade destination.
 
 1. Extend `packages/session_repository/lib/src/models/session.dart` with one
    required saved amount on `SessionTrack`: finite numeric 0–1, inclusive.
-   Bump exact Session schema 10 to 11; reject missing, malformed, nonfinite and
+   Bump exact Session schema 10 to 11; reject missing, malformed, non-finite and
    out-of-range fields before side effects. Update encoding, equality and hash.
    Do not default old Session data or migrate schemas. Persist only amount;
    native lifetime/generation and moving target/rate do not belong on disk.
@@ -37,7 +37,7 @@ new owner or public Fade destination.
    `_importSessionAudio`, inside its current Session reservation. Finalize all
    imported lanes/layers. `finalizeLayers` queues `RESET_FADE`; its material
    generation changes only when the callback applies that command. After **all**
-   finalizations, wait boundedly for `commandsSettled`, recheck the Session
+   finalizations, use a bounded wait for `commandsSettled`, recheck the Session
    revision and mix generation, then read a fresh snapshot for native
    lifetime/material identities. Use the existing `installFade` request for each
    imported track with `amount = target = saved amount` and full-travel seconds
