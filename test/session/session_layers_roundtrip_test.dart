@@ -17,6 +17,7 @@ import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// End-to-end overdub-layer round-trip against the REAL native engine
 /// (device-free pump): record a take, stack overdub passes (and undo some),
@@ -146,6 +147,7 @@ void main() {
       ),
       settings: settingsFromLooper(
         looper,
+        fade: FadeDurations.defaults,
         recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
         clickMode: looper.sessionTransport.clickMode,
         recordTiming: RecordTimingSnapshot(

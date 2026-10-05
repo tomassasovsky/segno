@@ -9,6 +9,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
@@ -156,6 +157,7 @@ void main() {
   late SessionSettingsCoordinator captureSettings;
   late MixSettingsPersistence mixPersistence;
   late SettingsRepository settings;
+  late FadeSettings fade;
   late StreamController<LooperState> looperStates;
 
   setUpAll(() {
@@ -165,6 +167,7 @@ void main() {
   });
 
   SessionSettingsCoordinator buildCapture() => SessionSettingsCoordinator(
+    fade: fade,
     looper: looper,
     mix: mixSettings,
     fx: fxPersistence,
@@ -174,7 +177,7 @@ void main() {
     timing: _TimingOwner(looper),
   );
 
-  setUp(() {
+  setUp(() async {
     repository = _MockSessionRepository();
     looper = _MockLooperRepository();
     performance = _MockPerformanceRepository();
@@ -182,6 +185,13 @@ void main() {
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     addTearDown(looperStates.close);
     settings = SettingsRepository(store: FakeKeyValueStore());
+    fade = FadeSettings(
+      settings: settings,
+      blocked: () => false,
+      sessionBlocked: () => false,
+    );
+    await fade.load();
+    addTearDown(fade.close);
     mixPersistence = SettingsMixPersistence(settings);
     // Default chain getters so the save path's _captureChains() has something
     // to read; individual tests override as needed.

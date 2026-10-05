@@ -80,6 +80,8 @@ class SessionSettings {
     this.overdubDecay = 0,
     this.defaultOneShot = false,
     this.defaultLengthPresetBars = 0,
+    this.defaultFadeDurationMs = 4000,
+    this.trackFadeDurationOverrides = const {},
     this.trackRecordTimingOverrides = const {},
     this.trackOverdubDecayOverrides = const {},
     this.trackOneShotOverrides = const {},
@@ -115,6 +117,10 @@ class SessionSettings {
       overdubDecay = source.overdubDecay,
       defaultOneShot = source.defaultOneShot,
       defaultLengthPresetBars = source.defaultLengthPresetBars,
+      defaultFadeDurationMs = source.defaultFadeDurationMs,
+      trackFadeDurationOverrides = Map.unmodifiable(
+        source.trackFadeDurationOverrides,
+      ),
       trackRecordTimingOverrides = Map.unmodifiable(
         source.trackRecordTimingOverrides,
       ),
@@ -184,6 +190,12 @@ class SessionSettings {
 
   /// Default length for future recordings: zero is Auto, otherwise bars.
   final int defaultLengthPresetBars;
+
+  /// Default full-travel Fade duration in milliseconds.
+  final int defaultFadeDurationMs;
+
+  /// Explicit Custom durations for the eight track slots.
+  final Map<int, int> trackFadeDurationOverrides;
 
   /// Explicit record timing choices for any track.
   final Map<int, RecordTiming> trackRecordTimingOverrides;
@@ -748,6 +760,8 @@ class SessionRepository {
       overdubDecay: settings.overdubDecay,
       defaultOneShot: settings.defaultOneShot,
       defaultLengthPresetBars: settings.defaultLengthPresetBars,
+      defaultFadeDurationMs: settings.defaultFadeDurationMs,
+      trackFadeDurationOverrides: settings.trackFadeDurationOverrides,
       trackRecordTimingOverrides: settings.trackRecordTimingOverrides,
       trackOverdubDecayOverrides: settings.trackOverdubDecayOverrides,
       trackOneShotOverrides: settings.trackOneShotOverrides,

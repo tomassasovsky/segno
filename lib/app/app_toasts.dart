@@ -34,6 +34,9 @@ abstract final class AppToastId {
   static const oneShotSettings = 'app_oneShotSettings_error';
   static const recordLengthSettings = 'app_recordLengthSettings_error';
   static const recordTimingSettings = 'app_recordTimingSettings_error';
+
+  /// Persistent Fade duration storage recovery.
+  static const fadeSettings = 'app_fadeSettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};

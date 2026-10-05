@@ -16,6 +16,7 @@ import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart'
     show FxFingerprint, PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// End-to-end FX-in-session round-trip against the REAL native engine
 /// (device-free pump): record a take, stage lane + monitor chains, SAVE, clear
@@ -120,6 +121,7 @@ void main() {
       ),
       settings: settingsFromLooper(
         looper,
+        fade: FadeDurations.defaults,
         recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
         clickMode: looper.sessionTransport.clickMode,
         recordTiming: RecordTimingSnapshot(

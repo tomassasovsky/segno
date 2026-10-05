@@ -120,10 +120,87 @@ void main() {
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
-    test('serializes the manifest version (v9)', () {
+    test(
+      'Fade duration equality distinguishes Default and Custom membership',
+      () {
+        final base = session.toJson();
+        final changedDefault = Session.fromJson({
+          ...base,
+          'defaultFadeDurationMs': 8000,
+        });
+        final explicitDefault = Session.fromJson({
+          ...base,
+          'trackFadeDurationOverrides': const {'0': 4000},
+        });
+        expect(changedDefault, isNot(session));
+        expect(explicitDefault, isNot(session));
+        expect({session, changedDefault, explicitDefault}, hasLength(3));
+        final forward = Session.fromJson({
+          ...base,
+          'trackFadeDurationOverrides': const {'0': 4000, '7': 8000},
+        });
+        final reversed = Session.fromJson({
+          ...base,
+          'trackFadeDurationOverrides': const {'7': 8000, '0': 4000},
+        });
+        expect(forward, reversed);
+        expect(forward.hashCode, reversed.hashCode);
+        expect({forward, reversed}, hasLength(1));
+      },
+    );
+
+    test('requires exact Fade fields and preserves Custom membership', () {
+      final json = session.toJson()
+        ..['defaultFadeDurationMs'] = 8000
+        ..['trackFadeDurationOverrides'] = {'0': 8000, '7': 500};
+      final decoded = Session.fromJson(json);
+      expect(decoded.defaultFadeDurationMs, 8000);
+      expect(decoded.trackFadeDurationOverrides, {0: 8000, 7: 500});
+      expect(
+        Session.fromJson(decoded.toJson()).trackFadeDurationOverrides,
+        decoded.trackFadeDurationOverrides,
+      );
+      for (final field in [
+        'defaultFadeDurationMs',
+        'trackFadeDurationOverrides',
+      ]) {
+        expect(
+          () => Session.fromJson({...json}..remove(field)),
+          throwsFormatException,
+        );
+      }
+      for (final invalid in [0, 499, 501, 30001, 500.0, '500']) {
+        expect(
+          () => Session.fromJson({...json, 'defaultFadeDurationMs': invalid}),
+          throwsFormatException,
+        );
+        expect(
+          () => Session.fromJson({
+            ...json,
+            'trackFadeDurationOverrides': {'0': invalid},
+          }),
+          throwsFormatException,
+        );
+      }
+      for (final key in ['8', '-1', '00']) {
+        expect(
+          () => Session.fromJson({
+            ...json,
+            'trackFadeDurationOverrides': {key: 500},
+          }),
+          throwsFormatException,
+        );
+      }
+      expect(
+        () => Session.fromJson({...json, 'version': 9}),
+        throwsA(isA<SessionUnsupportedVersion>()),
+      );
+    });
+
+    test('serializes the manifest version (v10)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 9);
+      expect(json['version'], 10);
       expect(json['baseLengthFrames'], 96000);
     });
 

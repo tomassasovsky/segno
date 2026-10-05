@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:controller_repository/controller_repository.dart';
@@ -10,6 +11,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/app_runtime.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_gate.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -30,6 +32,9 @@ class _ReadGateStore extends FakeKeyValueStore {
   Completer<void>? bootWrite;
   final bootWriteEntered = Completer<void>();
   bool refuseFx = false;
+  bool refuseFade = false;
+  Completer<void>? fadeWrite;
+  final fadeWriteEntered = Completer<void>();
   bool refuseMute = false;
   int fxWrites = 0;
 
@@ -43,6 +48,12 @@ class _ReadGateStore extends FakeKeyValueStore {
 
   @override
   Future<void> setString(String key, String value) async {
+    if (key == 'looper.fade_durations') {
+      if (!fadeWriteEntered.isCompleted) fadeWriteEntered.complete();
+      await fadeWrite?.future;
+      await super.setString(key, value);
+      if (refuseFade) throw StateError('Fade write then refusal');
+    }
     if (key == 'all_tracks_fx_chain' && bootWrite != null) {
       if (!bootWriteEntered.isCompleted) bootWriteEntered.complete();
       await bootWrite!.future;
@@ -74,6 +85,8 @@ void main() {
   late _ReadGateStore store;
   late LooperRepository repository;
   late SettingsRepository settings;
+  late PerformanceRepository performance;
+  late String exportsDirectory;
   var closeFailureExpected = false;
   var halts = 0;
 
@@ -96,6 +109,12 @@ void main() {
     sessions = _Sessions();
     when(() => sessions.bundlePath(any())).thenAnswer((_) async => '/test');
     when(sessions.listSessions).thenAnswer((_) async => []);
+    exportsDirectory = '.';
+    performance = PerformanceRepository(
+      engine: engine,
+      exportsRoot: () async => exportsDirectory,
+    );
+    addTearDown(performance.dispose);
     runtime = AppRuntime(
       repository: repository,
       settings: settings,
@@ -103,10 +122,7 @@ void main() {
       controllers: controllers,
       midiDevices: midi,
       pedal: pedal,
-      performance: PerformanceRepository(
-        engine: engine,
-        exportsRoot: () async => '.',
-      ),
+      performance: performance,
       sessions: sessions,
       exportDirectory: () async => '.',
       powerOff: () async => halts++,
@@ -145,6 +161,129 @@ void main() {
     ),
     laneStems: <(int, int), List<Float32List>>{},
   ));
+
+  group('Fade duration Session composition', () {
+    test(
+      'retains incoming setup through boot write failure and explicit Retry',
+      () async {
+        await runtime.start();
+        await runtime.fade.setDefault(6000);
+        await runtime.fade.setOverride(0, 6000);
+        when(() => sessions.read(any())).thenAnswer(
+          (_) async => (
+            session: const Session(
+              sampleRate: 48000,
+              channels: 1,
+              baseLengthFrames: 0,
+              tracks: [],
+              defaultFadeDurationMs: 12000,
+            ),
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+        );
+        store.refuseFade = true;
+        await runtime.session.loadNamed('Incoming');
+        expect(runtime.session.state.bootRecoveryRequired, isTrue);
+        expect(repository.sessionBootRecoveryRequired, isTrue);
+        await expectLater(runtime.fade.setDefault(2000), throwsStateError);
+        expect(await runtime.fade.recover(), isFalse);
+        await runtime.session.retryLoadedSession();
+        expect(runtime.session.state.bootRecoveryRequired, isTrue);
+        store.refuseFade = false;
+        await runtime.session.retryLoadedSession();
+        expect(runtime.session.state.outcome, SessionOutcome.loaded);
+        expect(repository.sessionBootRecoveryRequired, isFalse);
+        expect(runtime.fade.confirmed, FadeDurations(defaultMs: 12000));
+        expect(await runtime.fade.recover(), isTrue);
+        expect(runtime.fade.confirmed.overrides, isEmpty);
+      },
+    );
+
+    test(
+      'real Session save waits for duration and refuses later edits',
+      () async {
+        await runtime.start();
+        registerFallbackValue(const SessionChains());
+        registerFallbackValue(const SessionSettings());
+        SessionSettings? saved;
+        when(
+          () => sessions.save(
+            any(),
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        ).thenAnswer((call) async {
+          saved = call.namedArguments[#settings] as SessionSettings;
+          return const Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 0,
+            tracks: [],
+          );
+        });
+        store.fadeWrite = Completer<void>();
+        final edit = runtime.fade.setOverride(7, 4000);
+        await store.fadeWriteEntered.future;
+        final save = runtime.session.saveAs('durations');
+        await expectLater(runtime.fade.setDefault(8000), throwsStateError);
+        expect(
+          (await runtime.mix.setTrackVolume(.3)).status,
+          MixSettingsStatus.superseded,
+        );
+        expect(saved, isNull);
+        store.fadeWrite!.complete();
+        await edit;
+        await save;
+        expect(runtime.session.state.outcome, SessionOutcome.saved);
+        expect(saved!.defaultFadeDurationMs, 4000);
+        expect(saved!.trackFadeDurationOverrides, {7: 4000});
+      },
+    );
+
+    test(
+      'invalid incoming vector fails before disarm or stored setup changes',
+      () async {
+        await runtime.start();
+        await runtime.fade.setDefault(6000);
+        final oldRevision = repository.sessionRevision;
+        final oldBytes = store.values['looper.fade_durations'];
+        final directory = await Directory.systemTemp.createTemp(
+          'fade-preflight-',
+        );
+        exportsDirectory = directory.path;
+        addTearDown(() => directory.delete(recursive: true));
+        engine.publishPerfCommands = true;
+        expect(await performance.arm(), EngineResult.ok);
+        final capture = performance.armedDirectory;
+        expect(capture, isNotNull);
+        expect(engine.snapshot().isPerfArmed, isTrue);
+        final disarms = engine.perfDisarmCalls;
+        when(() => sessions.read(any())).thenAnswer(
+          (_) async => (
+            session: const Session(
+              sampleRate: 48000,
+              channels: 1,
+              baseLengthFrames: 0,
+              tracks: [],
+              defaultFadeDurationMs: 501,
+            ),
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+        );
+        await runtime.session.loadNamed('invalid');
+        expect(runtime.session.state.status, SessionStatus.failure);
+        expect(repository.sessionRevision, oldRevision);
+        expect(engine.perfDisarmCalls, disarms);
+        expect(engine.snapshot().isPerfArmed, isTrue);
+        expect(performance.armedDirectory, capture);
+        expect(store.values['looper.fade_durations'], oldBytes);
+        expect(runtime.fade.confirmed.defaultMs, 6000);
+        expect(runtime.fxPersistence.sessionTransitionActive, isFalse);
+      },
+    );
+  });
 
   test('stopped Session stays reserved through the real boot write', () async {
     engine.nextSnapshot = engine.nextSnapshot.copyWith(
