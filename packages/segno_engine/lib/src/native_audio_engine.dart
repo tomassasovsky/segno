@@ -19,6 +19,7 @@ import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
+import 'package:segno_engine/src/selected_render.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
@@ -2455,6 +2456,130 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult renderCancel() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_perf_render_cancel(_engine));
+  }
+
+  /// Fills a native request from [request]; the caller frees `path`.
+  void _fillRenderRequest(
+    Pointer<le_render_request> native,
+    RenderRequest request,
+    Pointer<Utf8> path,
+  ) {
+    native.ref
+      ..source_mask = request.sourceMask
+      ..length_bars = request.lengthBars ?? 0
+      ..tails = request.tails.index
+      ..mix_fx = request.mixFx ? 1 : 0
+      ..target = request.target.index
+      ..path = path.cast()
+      ..max_frames = request.maxFrames ?? 0;
+  }
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) {
+    _checkAlive();
+    final native = calloc<le_render_request>();
+    final plan = calloc<le_render_plan>();
+    final path = request.path == null ? nullptr : request.path!.toNativeUtf8();
+    try {
+      _fillRenderRequest(native, request, path);
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_render_measure(_engine, native, plan),
+      );
+      if (!result.isOk) return (result: result, plan: null);
+      final p = plan.ref;
+      return (
+        result: result,
+        plan: RenderPlan(
+          frames: p.frames,
+          method: RenderMethod.fromCode(p.method),
+          beatsMilli: p.beats_milli,
+          tempoSet: p.tempo_set != 0,
+          pluginTracks: renderTracksOfMask(p.plugin_mask),
+          fadedTracks: renderTracksOfMask(p.faded_mask),
+          pendingTracks: renderTracksOfMask(p.pending_mask),
+        ),
+      );
+    } finally {
+      if (path != nullptr) malloc.free(path);
+      calloc
+        ..free(native)
+        ..free(plan);
+    }
+  }
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) {
+    _checkAlive();
+    final native = calloc<le_render_request>();
+    final job = calloc<Uint32>();
+    final path = request.path == null ? nullptr : request.path!.toNativeUtf8();
+    try {
+      _fillRenderRequest(native, request, path);
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_render_begin(_engine, native, job),
+      );
+      return (result: result, job: result.isOk ? job.value : 0);
+    } finally {
+      if (path != nullptr) malloc.free(path);
+      calloc
+        ..free(native)
+        ..free(job);
+    }
+  }
+
+  @override
+  RenderJobStatus? pollRender(int job) {
+    _checkAlive();
+    final state = calloc<Int32>();
+    final permille = calloc<Int32>();
+    final result = calloc<Int32>();
+    try {
+      final rc = _bindings.le_engine_render_poll(
+        _engine,
+        job,
+        state,
+        permille,
+        result,
+      );
+      if (rc != 0) return null;
+      return RenderJobStatus(
+        state: RenderJobState.fromCode(state.value),
+        permille: permille.value,
+        failure: EngineResult.fromCode(result.value),
+      );
+    } finally {
+      calloc
+        ..free(state)
+        ..free(permille)
+        ..free(result);
+    }
+  }
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) {
+    _checkAlive();
+    if (maxFrames <= 0) return null;
+    final out = calloc<Float>(maxFrames * 2);
+    try {
+      final frames = _bindings.le_engine_render_copy(
+        _engine,
+        job,
+        out,
+        maxFrames,
+      );
+      if (frames < 0) return null;
+      return Float32List.fromList(out.asTypedList(frames * 2));
+    } finally {
+      calloc.free(out);
+    }
+  }
+
+  @override
+  EngineResult cancelRender(int job) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_render_cancel(_engine, job),
+    );
   }
 
   @override
