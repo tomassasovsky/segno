@@ -22,7 +22,7 @@ class LoopPenCanvas extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ColoredBox(
-    color: context.surface.background,
+    color: context.surface.frameBackground,
     child: Center(
       child: FittedBox(
         fit: BoxFit.scaleDown,
@@ -83,10 +83,18 @@ class LoopSettingsFrame extends StatelessWidget {
   /// reads as one titlebar rather than a heading with a stray button.
   final Widget? actions;
 
+  /// The title row's top and height in the main area. The pen draws a row
+  /// that carries actions (Settings' Power, the Pedals page's Cancel and
+  /// Save) 64 high at 30, the height of its buttons, and a title alone 72
+  /// high at 28; the title is centred in either.
+  static ({double top, double height}) _titleRow({required bool actions}) =>
+      actions ? (top: 30, height: 64) : (top: 28, height: 72);
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
+    final row = _titleRow(actions: actions != null);
     return LoopPenCanvas(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -94,7 +102,7 @@ class LoopSettingsFrame extends StatelessWidget {
           Container(
             height: kLoopTopBarHeight,
             decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: surface.line)),
+              border: Border(bottom: BorderSide(color: surface.frameRule)),
             ),
             child: Stack(
               children: [
@@ -105,7 +113,8 @@ class LoopSettingsFrame extends StatelessWidget {
                     key: const Key('loop_settings_back'),
                     width: 64,
                     radius: 8,
-                    icon: LucideIcons.arrowLeft,
+                    tone: LoopButtonTone.frame,
+                    icon: LucideIcons.chevronLeft,
                     semanticLabel: l10n.loopSettingsBack,
                     onTap: onBack,
                   ),
@@ -119,7 +128,8 @@ class LoopSettingsFrame extends StatelessWidget {
                     child: AppText(
                       crumb,
                       style: TextStyle(
-                        color: surface.textSecondary,
+                        color: surface.frameCrumb,
+                        fontFamily: SurfaceTheme.frameFont,
                         fontSize: 20,
                         height: 1,
                       ),
@@ -132,7 +142,7 @@ class LoopSettingsFrame extends StatelessWidget {
                     key: const Key('loop_settings_stage'),
                     width: 113,
                     radius: 8,
-                    tone: LoopButtonTone.raised,
+                    tone: LoopButtonTone.frameRaised,
                     label: l10n.loopSettingsStage,
                     onTap: onStage,
                   ),
@@ -145,16 +155,17 @@ class LoopSettingsFrame extends StatelessWidget {
               children: [
                 Positioned(
                   left: titleLeft,
-                  top: 28,
+                  top: row.top,
                   right: 36,
-                  height: 72,
+                  height: row.height,
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: AppText(
                       title,
                       key: const Key('loop_settings_title'),
                       style: TextStyle(
-                        color: surface.textPrimary,
+                        color: surface.frameText,
+                        fontFamily: SurfaceTheme.frameFont,
                         fontSize: 42,
                         letterSpacing: -1.1,
                         height: 1,
@@ -165,8 +176,8 @@ class LoopSettingsFrame extends StatelessWidget {
                 if (actions != null)
                   Positioned(
                     right: titleLeft,
-                    top: 28,
-                    height: 72,
+                    top: row.top,
+                    height: row.height,
                     child: Align(
                       alignment: Alignment.centerRight,
                       child: actions,

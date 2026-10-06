@@ -94,6 +94,7 @@ void main() {
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
+    await loadScreenshotFont('Arimo', ['assets/fonts/Arimo-Regular.ttf']);
     await loadScreenshotFont('JetBrains Mono', [
       'assets/fonts/JetBrainsMono-Regular.ttf',
       'assets/fonts/JetBrainsMono-Medium.ttf',
