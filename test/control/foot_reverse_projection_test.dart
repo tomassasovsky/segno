@@ -92,6 +92,12 @@ void main() {
           pending: true,
         ),
         Track(channel: 5, state: TrackState.playing, lengthFrames: 48000),
+        Track(
+          channel: 6,
+          state: TrackState.playing,
+          lengthFrames: 48000,
+          pendingLaunch: PendingLaunchAction.play,
+        ),
       ]),
       bank: 1,
     );
@@ -105,6 +111,9 @@ void main() {
     // Overdubbing and a pending arm keep the real direction, but are busy.
     expect(track(3), _track(3, recorded: true, busy: true, reversed: true));
     expect(track(4), _track(4, recorded: true, busy: true, reversed: false));
+    // A Count-in launch is pending: the engine refuses the toggle, so the
+    // track reads busy (#1209 delta review, D2).
+    expect(track(6), _track(6, recorded: true, busy: true, reversed: false));
   });
 }
 
