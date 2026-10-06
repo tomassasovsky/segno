@@ -306,7 +306,11 @@ void main() {
         () => repository.setOverdubDecay(any()),
       ).thenReturn(EngineResult.ok),
       () => when(
-        () => repository.setDefaultOneShot(oneShot: any(named: 'oneShot')),
+        () => repository.setOneShotSnapshot(
+          defaultOneShot: any(named: 'defaultOneShot'),
+          trackOverrides: any(named: 'trackOverrides'),
+          released: any(named: 'released'),
+        ),
       ).thenReturn(EngineResult.ok),
     ]) {
       stub();

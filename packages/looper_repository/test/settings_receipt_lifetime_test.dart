@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 
 import 'helpers/fake_audio_engine.dart';
+import 'helpers/one_shot_edits.dart';
 
 void main() {
   void check(

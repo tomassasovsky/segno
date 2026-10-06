@@ -52,13 +52,11 @@ class SessionSettingsCoordinator {
       _fade.runExclusive(
         (admittedEdits) => _mix.runExclusive(
           () => _owners.runExclusive(
-            () => _playback.runPlaybackExclusive(
-              () => _record.runRecordExclusive(
-                () => _timing.runRecordTimingExclusive(() async {
-                  await admittedEdits;
-                  return operation();
-                }),
-              ),
+            () => _record.runRecordExclusive(
+              () => _timing.runRecordTimingExclusive(() async {
+                await admittedEdits;
+                return operation();
+              }),
             ),
           ),
         ),
@@ -101,8 +99,8 @@ class SessionSettingsCoordinator {
         clickVolume: _tempo.clickVolumeOwner.durable,
         clickMode: _tempo.clickModeOwner.durable,
         recordStart: _tempo.recordStartOwner.durable,
-        decay: _playback.durableDecaySnapshot,
-        oneShot: _playback.durableOneShotSnapshot,
+        decay: _playback.decayOwner.durable,
+        oneShot: _playback.oneShotOwner.durable,
         recordLength: _record.durableRecordLengthSnapshot,
         recordTiming: _timing.durableRecordTimingSnapshot,
         fade: _fade.confirmed,

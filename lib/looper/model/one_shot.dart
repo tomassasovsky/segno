@@ -38,6 +38,36 @@ final class OneShotSnapshot extends Equatable {
   bool effectiveOneShot(OneShotAddress address) =>
       trackOverrides[address.channel] ?? defaultOneShot;
 
+  /// The value [address] holds; null for a track that inherits.
+  bool? at(OneShotAddress address) => address.channel == null
+      ? defaultOneShot
+      : trackOverrides[address.channel];
+
+  /// This snapshot with [address] set to [oneShot]; null removes only a
+  /// track's override. Throws for an unsupported address or a null default.
+  OneShotSnapshot withValue(OneShotAddress address, {required bool? oneShot}) {
+    final channel = address.channel;
+    if (!address.isValid || channel == null && oneShot == null) {
+      throw ArgumentError.value(address, 'address');
+    }
+    if (channel == null) {
+      return OneShotSnapshot(
+        defaultOneShot: oneShot!,
+        trackOverrides: trackOverrides,
+      );
+    }
+    final overrides = Map<int, bool>.of(trackOverrides);
+    if (oneShot == null) {
+      overrides.remove(channel);
+    } else {
+      overrides[channel] = oneShot;
+    }
+    return OneShotSnapshot(
+      defaultOneShot: defaultOneShot,
+      trackOverrides: overrides,
+    );
+  }
+
   @override
   List<Object?> get props => [defaultOneShot, trackOverrides];
 }

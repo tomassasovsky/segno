@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/model/one_shot.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/playback_options.dart';
 
 /// Presents application-owned playback preferences and forwards UI choices.
@@ -17,25 +19,37 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions> {
   late final StreamSubscription<PlaybackOptions> _subscription;
 
   Future<void> setOverdubDecay(int percent) async {
-    await _settings.setOverdubDecay(percent);
+    await _settings.decayControl.setOverdubDecay(
+      const DecayAddress.defaults(),
+      percent,
+    );
   }
 
   Future<void> setTrackOverdubDecay({
     required int channel,
     required int? percent,
   }) async {
-    await _settings.setTrackOverdubDecay(channel: channel, percent: percent);
+    await _settings.decayControl.setTrackOverdubDecay(
+      channel: channel,
+      percent: percent,
+    );
   }
 
   Future<void> setDefaultOneShot({required bool value}) async {
-    await _settings.setDefaultOneShot(value: value);
+    await _settings.oneShotControl.setOneShot(
+      const OneShotAddress.defaults(),
+      oneShot: value,
+    );
   }
 
   Future<void> setTrackOneShot({
     required int channel,
     required bool? oneShot,
   }) async {
-    await _settings.setTrackOneShot(channel: channel, oneShot: oneShot);
+    await _settings.oneShotControl.setTrackOneShot(
+      channel: channel,
+      oneShot: oneShot,
+    );
   }
 
   @override

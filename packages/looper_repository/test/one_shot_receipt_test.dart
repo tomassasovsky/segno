@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 
 import 'helpers/fake_audio_engine.dart';
+import 'helpers/one_shot_edits.dart';
 
 class _Engine extends FakeAudioEngine {
   final choices = <({int mask, bool once})>[];
@@ -37,58 +38,41 @@ void main() {
       expect((await repository.settleOneShot()).isOk, isTrue);
       expect(repository.trackOneShotOverrides, {0: false});
     });
+    test('every request sends the whole vector in two grouped commands, '
+        'and Custom false stays out of the default', () async {
+      repository
+        ..setOneShotSnapshot(
+          defaultOneShot: false,
+          trackOverrides: {0: false},
+        )
+        ..startEngine(const EngineConfig());
+      await repository.settleOneShot();
+      engine.choices.clear();
+      repository.setDefaultOneShot(oneShot: true);
+      await repository.settleOneShot();
+      expect(engine.choices, [
+        (mask: 1, once: false),
+        (mask: 254, once: true),
+      ]);
+      expect(engine.trackOneShot[0], isFalse);
+    });
     test(
-      'default excludes Custom false and all Custom needs no callback',
-      () async {
-        repository
-          ..setOneShotSnapshot(
-            defaultOneShot: false,
-            trackOverrides: {0: false},
-          )
-          ..startEngine(const EngineConfig());
-        await repository.settleOneShot();
-        engine.choices.clear();
-        repository.setDefaultOneShot(oneShot: true);
-        await repository.settleOneShot();
-        expect(engine.choices, [(mask: 254, once: true)]);
-        expect(engine.trackOneShot[0], isFalse);
-        repository
-          ..stopEngine()
-          ..setOneShotSnapshot(
-            defaultOneShot: true,
-            trackOverrides: {for (var c = 0; c < 8; c++) c: false},
-          )
-          ..startEngine(const EngineConfig());
-        await repository.settleOneShot();
-        engine.choices.clear();
-        engine.commandsAreSettled = false;
-        expect(repository.setDefaultOneShot(oneShot: false).isOk, isTrue);
-        expect(repository.oneShotSettingsSettled, isTrue);
-        expect(engine.choices, isEmpty);
-      },
-    );
-    test(
-      'partial enqueue stops uncertainty and recovers desired vector',
+      'a partial enqueue owes the vector and Retry lands it, running',
       () async {
         repository.startEngine(const EngineConfig());
         await repository.settleOneShot();
         engine.refuseTrue = true;
-        expect(
-          repository
-              .setOneShotSnapshot(
-                defaultOneShot: true,
-                trackOverrides: {0: false},
-              )
-              .isOk,
-          isFalse,
+        repository.setOneShotSnapshot(
+          defaultOneShot: true,
+          trackOverrides: {0: false},
         );
-        expect(repository.state.status.isConnected, isFalse);
+        expect((await repository.settleOneShot()).isOk, isFalse);
         expect(repository.oneShotRecoveryRequired, isTrue);
-        expect(repository.startEngine(const EngineConfig()).isOk, isFalse);
+        expect(engine.calls.where((call) => call == 'stop'), isEmpty);
         engine.refuseTrue = false;
         expect(repository.recoverOneShotSettings().isOk, isTrue);
-        repository.startEngine(const EngineConfig());
         expect((await repository.settleOneShot()).isOk, isTrue);
+        expect(repository.oneShotRecoveryRequired, isFalse);
         expect(engine.trackOneShot, {
           0: false,
           for (var c = 1; c < 8; c++) c: true,

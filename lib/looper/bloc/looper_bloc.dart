@@ -6,8 +6,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/track_mute.dart';
-import 'package:segno/looper/model/one_shot.dart';
-import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -26,8 +24,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     required LooperRepository repository,
     required MixSettingsCoordinator mixSettings,
     required FxChainPersistence fxPersistence,
-    required DecayControl decayControl,
-    required OneShotControl oneShotControl,
     required RecordLengthControl recordLengthControl,
     required RecordTimingControl recordTimingControl,
     SettingsRepository? settings,
@@ -36,8 +32,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   }) : _repository = repository,
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
-       _decayControl = decayControl,
-       _oneShotControl = oneShotControl,
        _recordLengthControl = recordLengthControl,
        _recordTimingControl = recordTimingControl,
        _settings = settings,
@@ -735,18 +729,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _recordTimingWrites.remove(write);
       }
     });
-    on<LooperTrackOverdubDecayChanged>((event, _) async {
-      final write = _decayControl.setTrackOverdubDecay(
-        channel: event.channel,
-        percent: event.percent,
-      );
-      _decayWrites.add(write);
-      try {
-        await write;
-      } finally {
-        _decayWrites.remove(write);
-      }
-    });
     on<LooperTrackLengthPresetChanged>((event, _) async {
       final write = _recordLengthControl.setTrackRecordLength(
         channel: event.channel,
@@ -757,18 +739,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         await write;
       } finally {
         _recordLengthWrites.remove(write);
-      }
-    });
-    on<LooperOneShotToggled>((event, _) async {
-      final write = _oneShotControl.setTrackOneShot(
-        channel: event.channel,
-        oneShot: event.oneShot,
-      );
-      _oneShotWrites.add(write);
-      try {
-        await write;
-      } finally {
-        _oneShotWrites.remove(write);
       }
     });
     on<LooperTrackPanChanged>((event, _) {
@@ -866,8 +836,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     });
     on<LooperPersistFlush>((event, _) async {
       try {
-        await Future.wait(_decayWrites.toList());
-        await Future.wait(_oneShotWrites.toList());
         await Future.wait(_recordLengthWrites.toList());
         await Future.wait(_recordTimingWrites.toList());
         await _fxPersistence.flush();
@@ -899,14 +867,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   final LooperRepository _repository;
   final MixSettingsCoordinator _mixSettings;
   final FxChainPersistence _fxPersistence;
-  final DecayControl _decayControl;
-  final OneShotControl _oneShotControl;
   final RecordLengthControl _recordLengthControl;
   final RecordTimingControl _recordTimingControl;
   final _recordTimingWrites = <Future<RecordTimingOutcome>>{};
   final _recordLengthWrites = <Future<RecordLengthOutcome>>{};
-  final _oneShotWrites = <Future<OneShotOutcome>>{};
-  final _decayWrites = <Future<DecayOutcome>>{};
   final SettingsRepository? _settings;
   final bool Function() _takeLocked;
 

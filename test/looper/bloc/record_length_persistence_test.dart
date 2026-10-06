@@ -44,8 +44,6 @@ void main() {
       settings: settings,
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: repository),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
       recordLengthControl: owner,
       recordTimingControl: FakeRecordTimingControl(),
     );

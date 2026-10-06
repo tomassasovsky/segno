@@ -104,7 +104,7 @@ void main() {
             looper: looper,
             mix: mix,
             fx: projection,
-            owners: SettingsOwners(tempo.owners),
+            owners: SettingsOwners([...tempo.owners, ...playback.owners]),
             tempo: tempo,
             playback: playback,
             record: record,
@@ -197,8 +197,8 @@ void main() {
           );
           control = ControlCubit(
             fadeSettings: testFadeSettings(),
-            decayControl: playback,
-            oneShotControl: playback,
+            decayControl: playback.decayControl,
+            oneShotControl: playback.oneShotControl,
             recordLengthControl: record,
             recordTimingControl: timing,
             clickVolumeControl: tempo.clickVolumeControl,

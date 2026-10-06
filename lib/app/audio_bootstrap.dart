@@ -38,75 +38,17 @@ Future<AutoStartResult> tryAutoStartEngine({
   // materialize stored keys. An unreadable value makes only its family
   // unavailable: audio starts with the repository's default, and the owner's
   // Retry repairs the stored key.
-  for (final family in <SettingsFamily<Object, Object?>>[
+  // Each family is staged through its own typed call: a list typed
+  // SettingsFamily<Object, Object?> would build checkpoint maps the family
+  // rejects at run time.
+  await _stageOrLog(
     RecordStartFamily(repository: repository, settings: settings),
+  );
+  await _stageOrLog(
     HearClickFamily(repository: repository, settings: settings),
-  ]) {
-    try {
-      await stageStored(family);
-    } on Object catch (error) {
-      AppLog.error(
-        'audio auto-start: saved ${family.key.name} unavailable: $error',
-      );
-    }
-  }
-
-  // Validate every scalar before changing any decay. Fixed empty tracks and
-  // absent overrides are part of the saved intent, just like explicit zero.
-  // Bootstrap owns this initial replay before the runtime owner is created.
-  try {
-    final decay = await Future.wait([
-      settings.readDecayCheckpoint(channel: null),
-      for (var channel = 0; channel < 8; channel++)
-        settings.readDecayCheckpoint(channel: channel),
-    ]);
-    var result = repository.setOverdubDecay(decay.first ?? 0);
-    for (var channel = 0; channel < 8 && result.isOk; channel++) {
-      result = repository.setTrackOverdubDecay(
-        channel: channel,
-        percent: decay[channel + 1],
-      );
-    }
-    if (!result.isOk) {
-      throw StateError('Saved decay replay refused: ${result.name}');
-    }
-  } on Object catch (error) {
-    AppLog.error('audio auto-start: saved decay failed: $error');
-    repository.stopEngine();
-    return (
-      started: false,
-      asioDrivers: const <AudioDevice>[],
-      recoveryConfig: null,
-    );
-  }
-
-  // Validate all nine values before replay, including empty fixed tracks.
-  try {
-    final once = await Future.wait([
-      settings.readOneShotCheckpoint(channel: null),
-      for (var channel = 0; channel < 8; channel++)
-        settings.readOneShotCheckpoint(channel: channel),
-    ]);
-    final request = repository.setOneShotSnapshot(
-      defaultOneShot: once.first ?? false,
-      trackOverrides: {
-        for (var channel = 0; channel < 8; channel++)
-          if (once[channel + 1] != null) channel: once[channel + 1]!,
-      },
-    );
-    final result = request.isOk ? await repository.settleOneShot() : request;
-    if (!result.isOk) {
-      throw StateError('Saved playback replay refused: ${result.name}');
-    }
-  } on Object catch (error) {
-    AppLog.error('audio auto-start: saved playback failed: $error');
-    repository.stopEngine();
-    return (
-      started: false,
-      asioDrivers: const <AudioDevice>[],
-      recoveryConfig: null,
-    );
-  }
+  );
+  await _stageOrLog(DecayFamily(repository: repository, settings: settings));
+  await _stageOrLog(OneShotFamily(repository: repository, settings: settings));
 
   // Mode and all fixed-track length scalars form one startup image. Stage it
   // before starting audio, so no pedal can record against partial defaults.
@@ -188,6 +130,18 @@ Future<AutoStartResult> tryAutoStartEngine({
     );
   }
 });
+
+Future<void> _stageOrLog<V extends Object, C>(
+  SettingsFamily<V, C> family,
+) async {
+  try {
+    await stageStored(family);
+  } on Object catch (error) {
+    AppLog.error(
+      'audio auto-start: saved ${family.key.name} unavailable: $error',
+    );
+  }
+}
 
 Future<AutoStartResult> _tryAutoStartEngine({
   required LooperRepository repository,
@@ -340,10 +294,8 @@ Future<AutoStartResult> _tryAutoStartEngine({
   final startupOnce = await repository.settleOneShot();
   if (!startupOnce.isOk) {
     AppLog.error(
-      'audio auto-start: playback replay refused ${startupOnce.name}',
+      'audio auto-start: playback replay unconfirmed ${startupOnce.name}',
     );
-    repository.stopEngine();
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
   final startupTiming = await repository.settleRecordTimingSettings();
   if (!startupTiming.isOk) {
@@ -706,10 +658,8 @@ Future<bool> _firstRunAutoStart({
   final startupOnce = await repository.settleOneShot();
   if (!startupOnce.isOk) {
     AppLog.error(
-      'audio first-run: playback replay refused ${startupOnce.name}',
+      'audio first-run: playback replay unconfirmed ${startupOnce.name}',
     );
-    repository.stopEngine();
-    return false;
   }
   final startupTiming = await repository.settleRecordTimingSettings();
   if (!startupTiming.isOk) {

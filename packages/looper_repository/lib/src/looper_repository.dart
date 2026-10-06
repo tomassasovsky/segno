@@ -287,10 +287,6 @@ class LooperRepository {
   final Map<int, int> _trackOverdubDecay = {};
   int _restartOverdubDecay = 0;
   final Map<int, int> _restartTrackOverdubDecay = {};
-  EngineResult _decayReplayResult = EngineResult.ok;
-
-  /// Last atomic decay replay result from an engine start.
-  EngineResult get decayReplayResult => _decayReplayResult;
 
   /// Durable default and override membership to replay after device
   /// replacement.
@@ -318,36 +314,25 @@ class LooperRepository {
       ..addAll(trackOverrides);
   }
 
-  bool _restartOneShot = false;
-  final Map<int, bool> _restartTrackOneShot = {};
-  _PendingOneShot? _pendingOneShot;
-  _OneShotIntent? _oneShotRecoveryIntent;
-  _OneShotIntent? _oneShotRecoveryRestart;
-  EngineResult _lastOneShotResult = EngineResult.ok;
+  late final _oneShot = SettingsReceipt<_OneShotIntent>(
+    _OneShotIntent(const {}, defaultValue: false),
+    send: _sendOneShot,
+    running: () => _intendRunning,
+    publish: () => _reproject(forcePublication: true),
+  );
 
-  /// Whether an uncertain callback requires explicit recovery before replay.
-  bool get oneShotRecoveryRequired => _oneShotRecoveryIntent != null;
+  /// An uncertain receipt owes its Released vector until Retry or restart.
+  bool get oneShotRecoveryRequired => _oneShot.recoveryRequired;
 
   /// Durable membership for engine restart and named session capture.
   ({bool defaultOneShot, Map<int, bool> trackOverrides})
   get oneShotRestartIntent => (
-    defaultOneShot: _restartOneShot,
-    trackOverrides: Map.unmodifiable(_restartTrackOneShot),
+    defaultOneShot: _oneShot.restart.defaultValue,
+    trackOverrides: _oneShot.restart.overrides,
   );
 
-  /// Sets authored Released intent without changing audible playback.
-  void setOneShotRestartIntent({
-    required bool defaultOneShot,
-    required Map<int, bool> trackOverrides,
-  }) {
-    if (trackOverrides.keys.any((c) => c < 0 || c >= 8)) {
-      throw ArgumentError('Invalid playback track');
-    }
-    _restartOneShot = defaultOneShot;
-    _restartTrackOneShot
-      ..clear()
-      ..addAll(trackOverrides);
-  }
+  /// Playback refusals and autonomous restart uncertainty.
+  Stream<EngineResult> get oneShotFailures => _oneShot.failures;
 
   /// Per-track forced loop multiples (absent => auto). The global rec/dub and
   /// auto-record (sound-activated) flags. All re-applied on every (re)start.
@@ -829,12 +814,12 @@ class LooperRepository {
       _clickMode,
       _clickVolume,
       _recordStart,
+      _oneShot,
     ]) {
       receipt.cancel();
     }
     _cancelTiming();
     _cancelLengthSettings();
-    _cancelOneShot();
     _cancelMix();
     _mixGeneration++;
     if (_pendingImages.isNotEmpty) _snapshotAndSettleImages();
@@ -1562,9 +1547,6 @@ class LooperRepository {
   /// Changes when session recall takes ownership from startup preferences.
   int get sessionRevision => _sessionRevision;
 
-  bool _defaultOneShot = false;
-  final Map<int, bool> _trackOneShot = {};
-
   /// Future recording presets, including empty tracks.
   Map<int, int> get trackLengthPresetOverrides =>
       Map.unmodifiable(_trackLengthPreset);
@@ -1593,7 +1575,7 @@ class LooperRepository {
       quantize: _quantize,
       recordTiming: defaultRecordTiming,
       overdubDecay: _overdubDecay,
-      defaultOneShot: _defaultOneShot,
+      defaultOneShot: defaultOneShot,
       defaultLengthPresetBars: _defaultLengthPreset,
       defaultMultiple: _defaultMultiple,
       looperMode: _looperMode,
@@ -1602,10 +1584,10 @@ class LooperRepository {
   }
 
   /// Shared playback default: true plays each pass once, false loops.
-  bool get defaultOneShot => _defaultOneShot;
+  bool get defaultOneShot => _oneShot.live.defaultValue;
 
   /// Explicit playback overrides, including custom Loop values.
-  Map<int, bool> get trackOneShotOverrides => Map.unmodifiable(_trackOneShot);
+  Map<int, bool> get trackOneShotOverrides => _oneShot.live.overrides;
 
   /// Explicit record timing overrides, including values equal to the default.
   Map<int, RecordTiming> get trackRecordTimingOverrides =>
@@ -2150,7 +2132,7 @@ class LooperRepository {
   bool _observeSettingsReceipts() {
     var changed = _drainFades();
     for (final observation in [
-      _pendingOneShot?.observation,
+      _oneShot.observation,
       _clickVolume.observation,
       _clickMode.observation,
       _recordStart.observation,
@@ -2354,7 +2336,7 @@ class LooperRepository {
       quantize: _quantize,
       autoRecord: _recordStart.live.soundStart,
       overdubDecay: _overdubDecay,
-      defaultOneShot: _defaultOneShot,
+      defaultOneShot: defaultOneShot,
       defaultLengthPresetBars: _defaultLengthPreset,
       defaultMultiple: _defaultMultiple,
       recordTiming: RecordTiming.of(
@@ -2393,8 +2375,8 @@ class LooperRepository {
               lengthPresetOverride: _trackLengthPreset[i],
               recordTimingOverride: _trackRecordTiming[i],
               overdubDecayOverride: _trackOverdubDecay[i],
-              oneShot: _trackOneShot[i] ?? _defaultOneShot,
-              oneShotOverride: _trackOneShot[i],
+              oneShot: _oneShot.live.effective(i),
+              oneShotOverride: _oneShot.live.overrides[i],
               multiple: s.tracks[i].multiple,
               inputMask: s.tracks[i].inputMask,
               outputMask: s.tracks[i].outputMask,
@@ -2498,7 +2480,6 @@ class LooperRepository {
     if (_applyingSessionRevision != null ||
         _sessionBootStartBlocked ||
         _mixRecoveryStartBlocked ||
-        oneShotRecoveryRequired ||
         lengthRecoveryRequired ||
         recordTimingRecoveryRequired) {
       return EngineResult.notReady;
@@ -2600,34 +2581,29 @@ class LooperRepository {
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
       );
-      final onceResult = _requestOneShot(
-        _OneShotIntent(_restartTrackOneShot, defaultValue: _restartOneShot),
-        0xff,
-        replay: true,
-        startup: true,
-      );
+      final onceResult = _oneShot.replay();
       if (!onceResult.isOk) {
         stopEngine();
         return onceResult;
       }
-      _decayReplayResult = _engine.setOverdubFeedback(
+      var decayReplay = _engine.setOverdubFeedback(
         feedbackOfDecay(_restartOverdubDecay),
       );
-      if (_decayReplayResult.isOk) {
+      if (decayReplay.isOk) {
         // Replay all fixed slots, including inherited ones. An absent entry
         // explicitly clears a former override instead of assuming native reset.
         for (var channel = 0; channel < 8; channel++) {
           final percent = _restartTrackOverdubDecay[channel];
-          _decayReplayResult = _engine.setTrackOverdubFeedback(
+          decayReplay = _engine.setTrackOverdubFeedback(
             channel: channel,
             feedback: percent == null ? null : feedbackOfDecay(percent),
           );
-          if (!_decayReplayResult.isOk) break;
+          if (!decayReplay.isOk) break;
         }
       }
-      if (!_decayReplayResult.isOk) {
+      if (!decayReplay.isOk) {
         stopEngine();
-        return _decayReplayResult;
+        return decayReplay;
       }
       _overdubDecay = _restartOverdubDecay;
       _trackOverdubDecay
@@ -3859,9 +3835,7 @@ class LooperRepository {
     _clickMode.reset();
     _clickVolume.reset();
     _recordStart.reset();
-    _oneShotRecoveryIntent = null;
-    _oneShotRecoveryRestart = null;
-    _lastOneShotResult = EngineResult.ok;
+    _oneShot.reset();
     // Own the settings before the first await. Callers may reuse their maps.
     final recordTimingOverrides = Map.of(rig.trackRecordTimingOverrides);
     final overdubDecayOverrides = Map.of(rig.trackOverdubDecayOverrides);
@@ -3918,8 +3892,9 @@ class LooperRepository {
     // `le_engine_set_one_shot`'s doc), so a track this session does not mark
     // One Shot must be explicitly turned off below or a prior session/live
     // flag would bleed into the freshly loaded one.
-    _trackOneShot.clear();
-    _restartTrackOneShot.clear();
+    _oneShot.adopt(
+      _OneShotIntent(const {}, defaultValue: _oneShot.live.defaultValue),
+    );
     // Same for the record timing and decay overrides (slice 2b): per-track
     // settings that survive `clear`, reset below and re-armed from the rig.
     _trackOverdubDecay.clear();
@@ -7725,221 +7700,90 @@ class LooperRepository {
     return _engine.crownPrimary(channel: channel);
   }
 
-  /// Sets a playback override. `null` removes only this override, making
-  /// the track follow [defaultOneShot] again. Audio and history are unchanged.
-  EngineResult setOneShot({
-    required int channel,
-    required bool? oneShot,
-    bool? releasedOneShot,
-  }) {
-    if (channel < 0 || channel >= 8) return EngineResult.invalid;
-    final overrides = Map<int, bool>.of(_trackOneShot);
-    if (oneShot == null) {
-      overrides.remove(channel);
-    } else {
-      overrides[channel] = oneShot;
-    }
-    final durable = Map<int, bool>.of(_restartTrackOneShot);
-    final released = releasedOneShot ?? oneShot;
-    if (released == null) {
-      durable.remove(channel);
-    } else {
-      durable[channel] = released;
-    }
-    return _requestOneShot(
-      _OneShotIntent(overrides, defaultValue: _defaultOneShot),
-      1 << channel,
-      restart: _OneShotIntent(durable, defaultValue: _restartOneShot),
-    );
-  }
-
-  /// Changes the default for inheritors; Custom false remains Custom.
-  EngineResult setDefaultOneShot({
-    required bool oneShot,
-    bool? releasedOneShot,
-  }) {
-    var mask = 0;
-    for (var c = 0; c < 8; c++) {
-      if (!_trackOneShot.containsKey(c)) mask |= 1 << c;
-    }
-    return _requestOneShot(
-      _OneShotIntent(_trackOneShot, defaultValue: oneShot),
-      mask,
-      restart: _OneShotIntent(
-        _restartTrackOneShot,
-        defaultValue: releasedOneShot ?? oneShot,
-      ),
-    );
-  }
-
-  /// Applies one coherent default/override vector for startup or session recall.
+  /// Stages a stopped vector or requests one callback-confirmed vector, with
+  /// an optional Released vector for restart. Every request sends the whole
+  /// vector and confirms all eight slots.
   EngineResult setOneShotSnapshot({
     required bool defaultOneShot,
     required Map<int, bool> trackOverrides,
+    ({bool defaultOneShot, Map<int, bool> trackOverrides})? released,
   }) {
-    if (trackOverrides.keys.any((c) => c < 0 || c >= 8)) {
+    if (trackOverrides.keys.any((c) => c < 0 || c >= 8) ||
+        (released?.trackOverrides.keys.any((c) => c < 0 || c >= 8) ?? false)) {
       return EngineResult.invalid;
     }
-    return _requestOneShot(
+    final result = _oneShot.request(
       _OneShotIntent(trackOverrides, defaultValue: defaultOneShot),
-      0xff,
-      replay: true,
+      restart: released == null
+          ? null
+          : _OneShotIntent(
+              released.trackOverrides,
+              defaultValue: released.defaultOneShot,
+            ),
     );
+    _reproject();
+    return result.isOk && _oneShot.settled ? _oneShot.lastResult : result;
   }
 
-  void _acceptOneShot(_OneShotIntent intent, {_OneShotIntent? restart}) {
-    _defaultOneShot = intent.defaultValue;
-    _trackOneShot
-      ..clear()
-      ..addAll(intent.overrides);
-    setOneShotRestartIntent(
-      defaultOneShot: (restart ?? intent).defaultValue,
-      trackOverrides: (restart ?? intent).overrides,
-    );
-  }
-
-  EngineResult _requestOneShot(
+  ({EngineResult result, ReceiptCheck? check}) _sendOneShot(
     _OneShotIntent intent,
-    int mask, {
-    bool replay = false,
-    bool startup = false,
-    _OneShotIntent? restart,
-  }) {
-    if (_pendingOneShot != null || oneShotRecoveryRequired) {
-      return EngineResult.notReady;
-    }
-    if (!_intendRunning || mask == 0) {
-      _acceptOneShot(intent, restart: restart);
-      _lastOneShotResult = EngineResult.ok;
-      _reproject();
-      return EngineResult.ok;
-    }
+  ) {
     var admitted = false;
     for (final choice in [false, true]) {
-      var choiceMask = 0;
+      var mask = 0;
       for (var c = 0; c < 8; c++) {
-        if ((mask & (1 << c)) != 0 && intent.effective(c) == choice) {
-          choiceMask |= 1 << c;
-        }
+        if (intent.effective(c) == choice) mask |= 1 << c;
       }
-      if (choiceMask == 0) continue;
-      final result = _engine.setOneShotMask(
-        channels: choiceMask,
-        oneShot: choice,
-      );
+      if (mask == 0) continue;
+      final result = _engine.setOneShotMask(channels: mask, oneShot: choice);
       if (!result.isOk) {
-        if (admitted) {
-          _oneShotRecoveryIntent = replay
-              ? intent
-              : _OneShotIntent(_trackOneShot, defaultValue: _defaultOneShot);
-          _oneShotRecoveryRestart = replay
-              ? (restart ?? intent)
-              : _OneShotIntent(
-                  _restartTrackOneShot,
-                  defaultValue: _restartOneShot,
-                );
-          _lastOneShotResult = result;
-          stopEngine();
-        }
-        return result;
+        // A refusal after the first group was admitted leaves the vector
+        // half-applied: the receipt owes it rather than reporting a refusal.
+        return admitted
+            ? (
+                result: EngineResult.ok,
+                check: () => (
+                  verdict: ReceiptVerdict.uncertain,
+                  result: result,
+                ),
+              )
+            : (result: result, check: null);
       }
       admitted = true;
     }
-    final pending = _PendingOneShot(
-      intent,
-      mask,
-      replay
-          ? intent
-          : _OneShotIntent(_trackOneShot, defaultValue: _defaultOneShot),
-      restart ?? intent,
-      replay
-          ? (restart ?? intent)
-          : _OneShotIntent(_restartTrackOneShot, defaultValue: _restartOneShot),
+    return (
+      result: EngineResult.ok,
+      // True only after actual callback bits match the whole vector.
+      check: () {
+        if (!_engine.commandsSettled) return null;
+        final tracks = _engine.snapshot().tracks;
+        for (var c = 0; c < 8; c++) {
+          if (c >= tracks.length || tracks[c].oneShot != intent.effective(c)) {
+            return (
+              verdict: ReceiptVerdict.uncertain,
+              result: EngineResult.invalid,
+            );
+          }
+        }
+        return (verdict: ReceiptVerdict.accepted, result: EngineResult.ok);
+      },
     );
-    _pendingOneShot = pending;
-    // Autonomous replay has a deadline even without a UI poll or later edit.
-    _watchReceipt(
-      pending.observation,
-      settle: _settlePendingOneShot,
-      expire: () => _failOneShot(pending, EngineResult.notReady),
-    );
-    if (!startup) _reproject();
-    return EngineResult.ok;
   }
 
-  /// True only after actual callback bits match the admitted effective vector.
-  bool get oneShotSettingsSettled =>
-      _pendingOneShot == null &&
-      _lastOneShotResult.isOk &&
-      !oneShotRecoveryRequired;
-
-  bool _settlePendingOneShot() {
-    final pending = _pendingOneShot;
-    if (pending == null || !_engine.commandsSettled) return false;
-    final tracks = _engine.snapshot().tracks;
-    for (var c = 0; c < 8; c++) {
-      if ((pending.mask & (1 << c)) != 0 &&
-          (c >= tracks.length ||
-              tracks[c].oneShot != pending.intent.effective(c))) {
-        _failOneShot(pending, EngineResult.invalid);
-        return true;
-      }
-    }
-    _pendingOneShot = null;
-
-    _acceptOneShot(pending.intent, restart: pending.restart);
-    _lastOneShotResult = EngineResult.ok;
-    pending.observation.complete(EngineResult.ok);
-    return true;
-  }
-
-  void _failOneShot(_PendingOneShot pending, EngineResult result) {
-    if (!identical(_pendingOneShot, pending)) return;
-    _pendingOneShot = null;
-
-    _oneShotRecoveryIntent = pending.recovery;
-    _oneShotRecoveryRestart = pending.recoveryRestart;
-    _lastOneShotResult = result;
-    pending.observation.complete(result);
-    stopEngine();
-  }
-
-  void _cancelOneShot() {
-    final pending = _pendingOneShot;
-    _pendingOneShot = null;
-
-    if (pending != null) {
-      _lastOneShotResult = EngineResult.notReady;
-      pending.observation.complete(EngineResult.notReady);
-    }
-  }
+  /// No playback vector is awaiting its callback receipt.
+  bool get oneShotSettingsSettled => _oneShot.settled;
 
   /// Waits for a callback receipt, with a lifetime-bound timeout.
   Future<EngineResult> settleOneShot({
     Duration pollInterval = const Duration(milliseconds: 10),
     int attempts = 50,
-  }) async {
-    final pending = _pendingOneShot;
-    if (pending == null) return _lastOneShotResult;
-    return pending.observation.wait(
-      pollInterval: pollInterval,
-      attempts: attempts,
-    );
-  }
+  }) => _oneShot.settle(pollInterval: pollInterval, attempts: attempts);
 
-  /// Explicitly makes a stopped uncertain rig coherent and safe to restart.
-  /// This does not claim the device is running or replay a prior lifetime.
+  /// Retry re-requests the owed vector while running and stages it stopped.
   EngineResult recoverOneShotSettings() {
-    final recovery = _oneShotRecoveryIntent;
-    if (recovery == null) return _lastOneShotResult;
-    if (_intendRunning) return EngineResult.notReady;
-    final restart = _oneShotRecoveryRestart;
-    _oneShotRecoveryIntent = null;
-    _oneShotRecoveryRestart = null;
-    _acceptOneShot(recovery, restart: restart);
-    _lastOneShotResult = EngineResult.ok;
+    final result = _oneShot.recover();
     _reproject();
-    return EngineResult.ok;
+    return result;
   }
 
   void _requireSessionSetting(EngineResult result) {
@@ -8148,20 +7992,4 @@ final class _OneShotIntent {
   final bool defaultValue;
   final Map<int, bool> overrides;
   bool effective(int channel) => overrides[channel] ?? defaultValue;
-}
-
-final class _PendingOneShot {
-  _PendingOneShot(
-    this.intent,
-    this.mask,
-    this.recovery,
-    this.restart,
-    this.recoveryRestart,
-  );
-  final _OneShotIntent intent;
-  final int mask;
-  final _OneShotIntent recovery;
-  final _OneShotIntent restart;
-  final _OneShotIntent recoveryRestart;
-  final observation = ReceiptObservation();
 }

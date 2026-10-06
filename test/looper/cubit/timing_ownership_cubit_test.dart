@@ -8,6 +8,8 @@ import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/one_shot.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/playback_options.dart';
 import 'package:segno/looper/model/record_options.dart';
 import 'package:segno/looper/model/record_timing.dart';
@@ -212,7 +214,10 @@ void main() {
         tempo.load(),
       ]);
       await Future<void>.delayed(Duration.zero);
-      await playback.setDefaultOneShot(value: false);
+      await playback.oneShotControl.setOneShot(
+        const OneShotAddress.defaults(),
+        oneShot: false,
+      );
       final timingEdit = quantize.setEnabled(value: false);
       await record.setRecDub(value: false);
       await tempo.clickModeOwner.set(ClickMode.off);
@@ -371,8 +376,14 @@ void main() {
       addTearDown(owner.close);
       await ((PlaybackSettings cubit) async {
         await cubit.load();
-        await cubit.setOverdubDecay(40);
-        await cubit.setDefaultOneShot(value: true);
+        await cubit.decayControl.setOverdubDecay(
+          const DecayAddress.defaults(),
+          40,
+        );
+        await cubit.oneShotControl.setOneShot(
+          const OneShotAddress.defaults(),
+          oneShot: true,
+        );
         await poll();
         expect(
           cubit.state,
