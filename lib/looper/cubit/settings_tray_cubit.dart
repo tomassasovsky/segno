@@ -1,17 +1,13 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:segno/audio_setup/audio_tab.dart';
-import 'package:segno/control/control_tab.dart';
-import 'package:segno/system/system_tab.dart';
 
 part 'settings_tray_state.dart';
 
-/// Drives the console's slide-down quick-access tray (Settings / Signal
-/// graph / WiFi / Tuner / brightness) — the touch-reachable
-/// counterpart to the `S`/`G` keyboard shortcuts on console/kiosk builds,
-/// where the on-screen toolbar is hidden entirely.
+/// Drives the console's slide-down tray, which holds only the tuner.
 ///
-/// Tray open/drag state and destination selection are ephemeral.
+/// The tray's other faces, its navigation rail and the brightness capsule
+/// moved to Settings destinations and the FX page (#1199); the tray itself
+/// goes once the tuner has its foot function. Its drag state is ephemeral.
 class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Creates a [SettingsTrayCubit].
   SettingsTrayCubit() : super(const SettingsTrayState());
@@ -19,12 +15,11 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Live drag progress, clamped to `0..1`. Called every
   /// `onVerticalDragUpdate` frame while the handle is being dragged.
   void dragTo(double progress) {
-    emit(state.copyWith(dragProgress: progress.clamp(0.0, 1.0)));
+    emit(SettingsTrayState(dragProgress: progress.clamp(0.0, 1.0)));
   }
 
   /// Settles a released drag: past the 50% distance threshold snaps open,
-  /// otherwise closed. Distance-only this round — no velocity/fling
-  /// threshold.
+  /// otherwise closed. Distance-only — no velocity/fling threshold.
   void settleFromDrag() {
     if (state.dragProgress > 0.5) {
       open();
@@ -34,22 +29,12 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   }
 
   /// Opens the tray (tap-on-handle, or programmatic).
-  void open() => emit(state.copyWith(dragProgress: 1));
+  void open() => emit(const SettingsTrayState(dragProgress: 1));
 
-  /// Closes the tray (handle activation, drag, or programmatic). Named
-  /// `closeTray` rather than `close` — the latter is `Cubit.close()`, which
-  /// disposes the bloc's stream; overriding it here would be a hard
-  /// invalid-override error, not a UI action. Always returns to the landing
-  /// destination so the next open isn't stuck in a config domain — but
-  /// leaves every
-  /// domain's own tab alone, so returning to a domain lands where it was
-  /// left.
-  void closeTray() => emit(
-    state.copyWith(
-      dragProgress: 0,
-      destination: SettingsTrayDestination.control,
-    ),
-  );
+  /// Closes the tray. Named `closeTray` rather than `close` — the latter is
+  /// `Cubit.close()`, which disposes the bloc's stream; overriding it here
+  /// would be a hard invalid-override error, not a UI action.
+  void closeTray() => emit(const SettingsTrayState());
 
   /// Toggles open/closed. Only ever called from a tap (never mid-drag), so
   /// `dragProgress` is always settled at exactly `0` or `1` here.
@@ -60,35 +45,4 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
       open();
     }
   }
-
-  /// Moves the Control domain's tab.
-  ///
-  /// Deliberately does NOT touch `destination`: the strip is only reachable
-  /// while Control is already showing, so writing a destination here would
-  /// give a tab a say in which domain is up.
-  void showControlTab(ControlTab tab) => emit(state.copyWith(controlTab: tab));
-
-  /// Moves the Audio domain's tab. Same rule as [showControlTab].
-  void showAudioTab(AudioTab tab) => emit(state.copyWith(audioTab: tab));
-
-  /// Moves the System domain's tab. Same rule as [showControlTab].
-  void showSystemTab(SystemTab tab) => emit(state.copyWith(systemTab: tab));
-
-  /// Returns to the landing destination.
-  ///
-  /// Named for what it does, not for the face it reaches: the `home` tile grid
-  /// is gone, and Control is the first face the rail has now that Effects is a
-  /// route rather than a domain.
-  void showLanding() =>
-      emit(state.copyWith(destination: SettingsTrayDestination.control));
-
-  /// Selects [destination] without changing whether the tray is open — the
-  /// navigation rail's one entry point.
-  ///
-  /// Deliberately does NOT set `dragProgress`: the rail is only reachable
-  /// while the tray is already open, and writing an open bit here would give
-  /// the destination a second say in whether the tray is showing. Openness
-  /// stays [SettingsTrayState.dragProgress]'s alone.
-  void showDestination(SettingsTrayDestination destination) =>
-      emit(state.copyWith(destination: destination));
 }

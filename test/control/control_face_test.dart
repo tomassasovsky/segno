@@ -14,11 +14,9 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
-import 'package:segno/control/control_tab.dart';
-import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -56,7 +54,6 @@ void main() {
   late ControlCubit control;
   late PedalRepository pedal;
   late MidiSetupCubit midi;
-  late SettingsTrayCubit tray;
   late SettingsRepository settings;
   late List<TrackEffect> masterChain;
 
@@ -115,11 +112,12 @@ void main() {
     await activity.close();
   });
 
-  /// Mounts the Control face with the providers the real tray inherits.
+  /// Mounts the FX page's pedal assignments with the providers the app
+  /// gives it.
   Future<void> pump(
     WidgetTester tester, {
     MidiConnection connection = const MidiConnection(),
-    Size size = const Size(1600, 1400),
+    Size size = const Size(1920, 1080),
     PedalLink? pedalLink,
     SettingsRepository? pedalSettings,
     Locale? locale,
@@ -165,12 +163,10 @@ void main() {
       ),
     );
     midi = MidiSetupCubit(repository: midiDevices);
-    tray = SettingsTrayCubit();
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).
     addTearDown(() => unawaited(control.close()));
     addTearDown(() => unawaited(midi.close()));
-    addTearDown(() => unawaited(tray.close()));
 
     await tester.pumpWidget(
       MaterialApp(
@@ -189,7 +185,6 @@ void main() {
             providers: [
               BlocProvider.value(value: control),
               BlocProvider.value(value: midi),
-              BlocProvider.value(value: tray),
               BlocProvider.value(value: tracks),
               // The tray asks the link whether a CTRL pedal could deliver: a
               // rig with no MIDI is still bindable from the console.
@@ -199,12 +194,7 @@ void main() {
                 ),
               ),
             ],
-            child: const Scaffold(
-              body: Padding(
-                padding: EdgeInsets.all(19),
-                child: ControlTrayPanel(),
-              ),
-            ),
+            child: const FxPedalAssignmentsPage(),
           ),
         ),
       ),
@@ -213,35 +203,9 @@ void main() {
   }
 
   AppLocalizations l10nOf(WidgetTester tester) =>
-      AppLocalizations.of(tester.element(find.byType(ControlTrayPanel)));
+      AppLocalizations.of(tester.element(find.byType(FxPedalAssignmentsPage)));
 
-  Future<void> showMidi(WidgetTester tester) async {
-    tray.showControlTab(ControlTab.controllers);
-    await tester.pumpAndSettle();
-  }
-
-  group('Control face', () {
-    testWidgets('the tab strip swaps the body', (tester) async {
-      await pump(tester);
-      expect(find.byKey(const Key('pedal_tray_body')), findsOneWidget);
-      expect(find.byKey(const Key('controllers_tray_body')), findsNothing);
-
-      await tester.tap(find.text(l10nOf(tester).controlControllersTab));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('pedal_tray_body')), findsNothing);
-      expect(find.byKey(const Key('controllers_tray_body')), findsOneWidget);
-    });
-
-    testWidgets('the domain names itself once, above the strip', (
-      tester,
-    ) async {
-      await pump(tester);
-      expect(find.text(l10nOf(tester).trayControlLabel), findsOneWidget);
-    });
-  });
-
-  group('Pedal tab', () {
+  group('FX pedal assignments', () {
     testWidgets('draws four transport switches and four track switches', (
       tester,
     ) async {
@@ -471,21 +435,6 @@ void main() {
       expect(find.byKey(Key('pedal_target_$chain')), findsOneWidget);
       await tester.pumpAndSettle();
       expect(find.byKey(Key('pedal_target_$chain')), findsNothing);
-    });
-  });
-
-  group('Controllers tab', () {
-    testWidgets('offers the shared editor without a second mapping list', (
-      tester,
-    ) async {
-      await pump(tester);
-      await showMidi(tester);
-      final l10n = l10nOf(tester);
-      expect(find.byKey(const Key('midi_open_controls')), findsOneWidget);
-      expect(find.text(l10n.midiControlsTitle), findsOneWidget);
-      expect(find.text(l10n.midiControlsEntryDetail), findsOneWidget);
-      expect(find.byKey(const Key('midi_add_sweep')), findsNothing);
-      expect(find.byKey(const Key('midi_fixed_transport')), findsNothing);
     });
   });
 }

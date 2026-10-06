@@ -1,237 +1,76 @@
 import 'dart:async';
 
-import 'package:bloc_test/bloc_test.dart';
-import 'package:controller_repository/controller_repository.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:pedal_repository/pedal_repository.dart';
-import 'package:performance_repository/performance_repository.dart';
-import 'package:segno/app/app_toasts.dart';
-import 'package:segno/app/application/owned_value_port.dart';
-import 'package:segno/app/fx_chain_persistence.dart';
-import 'package:segno/app/mix_settings_coordinator.dart';
-import 'package:segno/appliance/display_brightness_cubit.dart';
-import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
-import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
-import 'package:segno/common/pen_icons.dart';
-import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
-import 'package:segno/looper/view/tray/brightness_capsule.dart';
 import 'package:segno/looper/view/tray/tray.dart';
-import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
+import 'package:segno/tuner/view/tuner_tray_panel.dart';
 import 'package:settings_repository/settings_repository.dart';
-import 'package:toastification/toastification.dart';
-import 'package:wifi_repository/wifi_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _ToggleWifiClient implements WifiClient {
-  bool enabled = true;
-  bool connected = false;
-  String ssid = '';
-
-  @override
-  bool get isSupported => true;
-
-  @override
-  Future<WifiStatus> status() async => WifiStatus(
-    supported: true,
-    enabled: enabled,
-    connected: connected,
-    ssid: ssid,
-  );
-
-  @override
-  Future<List<WifiNetwork>> scan() async => const [];
-
-  @override
-  Future<void> connect(String ssid, {String? psk}) async {}
-
-  @override
-  Future<void> disconnect() async {}
-
-  @override
-  Future<void> forget(String ssid) async {}
-
-  @override
-  Future<void> setEnabled({required bool enabled}) async {
-    this.enabled = enabled;
-  }
-}
-
-class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
-
-class _BrightnessStore extends FakeKeyValueStore {
-  bool failNextBrightnessWrite = false;
-
-  @override
-  Future<void> setDouble(String key, double value) async {
-    if (key == 'ui.brightness' && failNextBrightnessWrite) {
-      failNextBrightnessWrite = false;
-      throw StateError('brightness storage unavailable');
-    }
-    await super.setDouble(key, value);
-  }
-}
-
 void main() {
-  late MixSettingsCoordinator mixSettings;
-  late FxChainPersistence fxPersistence;
   late SettingsTrayCubit cubit;
-  late DisplayBrightnessCubit displayBrightness;
-  late SettingsRepository settings;
-  late _BrightnessStore store;
-  late _MockLooperBloc looperBloc;
-  late _ToggleWifiClient wifiClient;
   late LooperRepository looper;
   late TunerCubit tunerCubit;
   late InputsCubit inputsCubit;
-  late ControlCubit controlCubit;
-  late TracksCubit tracksCubit;
-  late PerformanceRepository performance;
-  late ControllerRepository controller;
 
   setUp(() {
-    resetAppToastsForTest();
-    resetToastificationForTest();
-    store = _BrightnessStore();
-    settings = SettingsRepository(store: store);
-    looperBloc = _MockLooperBloc();
-    when(() => looperBloc.state).thenReturn(const LooperState());
-    whenListen(
-      looperBloc,
-      const Stream<LooperState>.empty(),
-      initialState: const LooperState(),
-    );
+    final settings = SettingsRepository(store: FakeKeyValueStore());
     cubit = SettingsTrayCubit();
-    displayBrightness = DisplayBrightnessCubit(settings: settings);
-    wifiClient = _ToggleWifiClient();
     looper = LooperRepository(engine: FakeAudioEngine());
     tunerCubit = TunerCubit(repository: looper);
     inputsCubit = InputsCubit(settings: settings, repository: looper);
-    // Control is where the tray lands now that Effects is a route, and
-    // `closeTray` returns there — so the SHELL's tests mount that face's
-    // dependencies whether or not they ever look at it.
-    performance = PerformanceRepository(
-      engine: FakeAudioEngine(),
-      exportsRoot: () async => '.',
-    );
-    controller = ControllerRepository(sources: const []);
-    fxPersistence = FxChainPersistence(looper: looper);
-    mixSettings = testMixSettings(looper, settings: settings);
-    addTearDown(() => unawaited(mixSettings.close()));
-    final ownedFade = testFadeSettings();
-    controlCubit = ControlCubit(
-      fxPersistence: fxPersistence,
-      looper: looper,
-      mixSettings: mixSettings,
-      pedal: PedalRepository(NoopPedalLink()),
-      settings: settings,
-      performance: performance,
-      controller: controller,
-      fadeSettings: ownedFade,
-      ownedValues: OwnedValuePort(
-        looper: looper,
-        clickVolume: FakeClickVolumeControl(),
-        clickMode: FakeClickModeControl(),
-        recordStart: FakeRecordStartControl(),
-        decay: FakeDecayControl(),
-        oneShot: FakeOneShotControl(),
-        recordLength: FakeRecordLengthControl(),
-        recordTiming: FakeRecordTimingControl(),
-        fade: ownedFade,
-      ),
-    );
-    tracksCubit = TracksCubit(settings: settings);
   });
   tearDown(() async {
     await cubit.close();
-    await displayBrightness.close();
     await tunerCubit.close();
     await inputsCubit.close();
-    unawaited(controlCubit.close());
-    unawaited(tracksCubit.close());
-    unawaited(controller.dispose());
-    performance.dispose();
     unawaited(looper.dispose());
   });
 
-  Future<void> mount(
-    WidgetTester tester, {
-    VoidCallback? onStageTap,
-  }) => tester.pumpWidget(
-    ToastificationWrapper(
-      child: MaterialApp(
-        theme: AppTheme.neon,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: MultiRepositoryProvider(
-          providers: [
-            RepositoryProvider<WifiRepository>.value(
-              value: WifiRepository(client: wifiClient),
-            ),
-            RepositoryProvider<LooperRepository>.value(value: looper),
-          ],
-          child: MultiBlocProvider(
-            providers: [
-              BlocProvider<SettingsTrayCubit>.value(value: cubit),
-              BlocProvider<DisplayBrightnessCubit>.value(
-                value: displayBrightness,
-              ),
-              BlocProvider<TunerCubit>.value(value: tunerCubit),
-              BlocProvider<InputsCubit>.value(value: inputsCubit),
-              BlocProvider<LooperBloc>.value(value: looperBloc),
-              BlocProvider<ControlCubit>.value(value: controlCubit),
-              BlocProvider<TracksCubit>.value(value: tracksCubit),
-              BlocProvider<MonitorCubit>(
-                create: (_) => MonitorCubit(
-                  fxPersistence: fxPersistence,
-                  mixSettings: mixSettings,
-                  repository: looper,
-                  settings: settings,
+  Future<void> pump(WidgetTester tester, {VoidCallback? onStageTap}) =>
+      tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.neon,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: RepositoryProvider<LooperRepository>.value(
+            value: looper,
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<SettingsTrayCubit>.value(value: cubit),
+                BlocProvider<TunerCubit>.value(value: tunerCubit),
+                BlocProvider<InputsCubit>.value(value: inputsCubit),
+              ],
+              // A Scaffold + Stack mirrors how TracksView actually mounts the
+              // tray: as a Stack sibling over full-screen content, top edge
+              // at (0, 0).
+              child: Scaffold(
+                body: Stack(
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onStageTap,
+                      child: const SizedBox.expand(),
+                    ),
+                    const SettingsTray(),
+                  ],
                 ),
-              ),
-            ],
-            // A Scaffold + Stack mirrors how TracksView actually mounts the
-            // tray: as a Stack sibling over full-screen content, top edge at
-            // (0, 0).
-            child: Scaffold(
-              body: Stack(
-                children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onStageTap,
-                    child: const SizedBox.expand(),
-                  ),
-                  const SettingsTray(),
-                ],
               ),
             ),
           ),
         ),
-      ),
-    ),
-  );
-
-  Future<void> pump(WidgetTester tester, {VoidCallback? onStageTap}) =>
-      mount(tester, onStageTap: onStageTap);
+      );
 
   testWidgets('renders the always-visible handle', (tester) async {
     await pump(tester);
@@ -242,33 +81,6 @@ void main() {
     await pump(tester);
     expect(find.byKey(const Key('settingsTray_scrim')), findsOneWidget);
   });
-
-  testWidgets(
-    'the rail carries every destination, and no tile survives beside it',
-    (tester) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pump();
-
-      for (final target in SettingsTrayDestination.values) {
-        expect(
-          find.byKey(Key('settingsTrayRail_${target.name}')),
-          findsOneWidget,
-          reason: '${target.name} must be reachable from the rail',
-        );
-      }
-
-      // Asserted as absences, because these are exactly what a reader would
-      // expect to still be here. Every one was a tile on the `home` face:
-      // Signal became a rail domain (#533), WiFi and Bluetooth became the
-      // Network domain (#498), and Settings' six sections are each a domain
-      // now — which left the rail entry over them saying "Controls" and
-      // leading nowhere the rail did not already go.
-      for (final gone in ['signal', 'wifi', 'bluetooth', 'settings']) {
-        expect(find.byKey(Key('settingsTray_$gone')), findsNothing);
-      }
-    },
-  );
 
   testWidgets('tapping the handle opens a closed tray', (tester) async {
     await pump(tester);
@@ -520,721 +332,63 @@ void main() {
     });
   });
 
-  group('navigation rail', () {
-    test('every in-tray destination has a rail row', () {
-      // The rail is built from [TrayRailEntry], not from the destinations:
-      // this is what keeps a new destination from being reachable in code
-      // and missing from the rail.
-      for (final destination in SettingsTrayDestination.values) {
-        expect(
-          TrayRailEntry.values.map((e) => e.destination),
-          contains(destination),
-          reason: 'no rail entry for ${destination.name}',
-        );
-      }
-      expect(
-        TrayRailEntry.values.indexOf(TrayRailEntry.loop),
-        TrayRailEntry.values.indexOf(TrayRailEntry.control) + 1,
-        reason: 'the Loop row sits after Control, as the pen stacks them',
-      );
-    });
-
-    testWidgets('renders one item per in-tray destination', (tester) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-
-      for (final destination in SettingsTrayDestination.values) {
-        expect(
-          find.byKey(Key('settingsTrayRail_${destination.name}')),
-          findsOneWidget,
-          reason: 'no rail item for ${destination.name}',
-        );
-      }
-    });
-
-    testWidgets('selecting an item swaps the face without closing', (
+  group('the tuner', () {
+    testWidgets('is the only face: the open sheet shows it directly', (
       tester,
     ) async {
       cubit.open();
       await pump(tester);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('settingsTrayRail_network')));
-      await tester.pumpAndSettle();
-
-      expect(cubit.state.destination, SettingsTrayDestination.network);
-      // The rail lands on the domain at whichever tab it was left on, which
-      // for a fresh cubit is WiFi.
-      expect(find.byKey(const Key('network_tray_panel')), findsOneWidget);
-      expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
-      expect(cubit.state.dragProgress, 1);
-
-      await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
-      await tester.pumpAndSettle();
-
-      // A popover over the face, not a face of its own — `SYSTEM /
-      // brightness` draws the System panel still showing behind it, and
-      // `t/brightness` calls it a popover outright. The destination does not
-      // move, so the rail has not navigated anywhere.
-      expect(find.byKey(const Key('trayBrightness_popover')), findsOneWidget);
-      expect(cubit.state.destination, SettingsTrayDestination.network);
-      expect(find.byKey(const Key('network_tray_panel')), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('trayBrightness_scrim')));
-      await tester.pumpAndSettle();
-
-      // And the scrim closes the popover WITHOUT closing the tray under it.
-      expect(find.byKey(const Key('trayBrightness_popover')), findsNothing);
-      expect(cubit.state.dragProgress, 1);
-    });
-
-    testWidgets('the popover is modal to assistive tech, not just to taps', (
-      tester,
-    ) async {
-      final handle = tester.ensureSemantics();
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
-      await tester.pumpAndSettle();
-
-      // The scrim was a bare `GestureDetector` with `excludeFromSemantics`,
-      // which stops POINTERS and offers a reader nothing at all — no way to
-      // find the dismiss, and no sign the popover is modal. It is a labelled
-      // `ModalBarrier` now.
-      //
-      // NOT asserted: that the rail behind it is unreachable. `BlockSemantics`
-      // is in place, but the rail sits in its own `Semantics(
-      // explicitChildNodes: true)` container and is still reachable by label
-      // here. Left as a known gap rather than a test that claims otherwise.
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.bySemanticsLabel(l10n.dismiss), findsWidgets);
-      expect(find.byKey(const Key('trayBrightness_scrim')), findsOneWidget);
-      handle.dispose();
-    });
-
-    testWidgets('the popover does not survive closing the tray', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('trayBrightness_popover')), findsOneWidget);
-
-      cubit.closeTray();
-      await tester.pumpAndSettle();
-      cubit.open();
-      await tester.pumpAndSettle();
-
-      // `TrayPanel` is never unmounted, so a popover left open stayed open —
-      // and `closeTray` resets the destination under it, so it came back
-      // floating over a face it was never opened from.
-      expect(find.byKey(const Key('trayBrightness_popover')), findsNothing);
-    });
-
-    testWidgets('rail glyphs preserve the custom shapes and Cupertino WiFi', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-
-      // The pen's `NavRail` COMPONENT names lucide icons its own screens do
-      // not draw — `activity` for a sine, `align-justify` for upright bars,
-      // `target` for a bar chart, `speaker` for a cone with waves. Reading the
-      // component is what put the wrong glyphs on this rail twice, so this
-      // preserves the custom geometry, with the owner's chosen Cupertino
-      // WiFi glyph for Network.
-      const drawn = {
-        SettingsTrayDestination.control: PenIcon.control,
-        SettingsTrayDestination.tracks: PenIcon.tracks,
-        SettingsTrayDestination.tuner: PenIcon.tuner,
-      };
-      const fromFont = {
-        SettingsTrayDestination.audio: LucideIcons.volume2,
-        SettingsTrayDestination.network: CupertinoIcons.wifi,
-        SettingsTrayDestination.system: LucideIcons.cpu,
-      };
-
-      for (final entry in drawn.entries) {
-        final view = tester.widget<PenIconView>(
-          find.descendant(
-            of: find.byKey(Key('settingsTrayRail_${entry.key.name}')),
-            matching: find.byType(PenIconView),
-          ),
-        );
-        expect(view.icon, entry.value, reason: entry.key.name);
-        expect(view.size, TrayNavigationRail.iconSize);
-      }
-      for (final entry in fromFont.entries) {
-        final icon = tester.widget<Icon>(
-          find.descendant(
-            of: find.byKey(Key('settingsTrayRail_${entry.key.name}')),
-            matching: find.byType(Icon),
-          ),
-        );
-        expect(icon.icon, entry.value, reason: entry.key.name);
-        expect(icon.size, TrayNavigationRail.iconSize);
-      }
-
-      // And the sun, which is the pen's too and the only rail glyph that is
-      // not a domain.
-      final bright = tester.widget<Icon>(
-        find.descendant(
-          of: find.byKey(const Key('settingsTrayRail_brightness')),
-          matching: find.byType(Icon),
-        ),
-      );
-      expect(bright.icon, LucideIcons.sun);
-    });
-
-    testWidgets('the brightness readout is centred over its capsule', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
-      await tester.pumpAndSettle();
-
-      // The pen's `JFpjr` is centred across the popover's full content width.
-      // Left-aligned, a readout that changes width as it counts — 7%, 72%,
-      // 100% — sits hard against the capsule's left edge and shifts under the
-      // thumb dragging it.
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      final readout = find.text(
-        l10n.trayBrightnessPercent((kDefaultDisplayBrightness * 100).round()),
-      );
-      expect(tester.widget<Text>(readout).textAlign, TextAlign.center);
-
-      final capsule = tester.getRect(
-        find.byKey(const Key('settingsTray_brightness')),
-      );
-      final text = tester.getRect(readout);
-      expect(text.center.dx, closeTo(capsule.center.dx, 0.5));
-    });
-
-    testWidgets('the rail is the size and shape the pen draws', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-
-      // Read off `f1VwZ` and its `NavItem` in `segno-ui.pen`. Every one of
-      // these shipped wrong: a 165 rail, a 24 radius that made each 46px row a
-      // stadium, and 8px of horizontal margin per item on top of the rail's
-      // own inset, which took 16 off every pill.
-      final rail = tester.getRect(find.byType(TrayNavigationRail));
-      expect(rail.width, TrayNavigationRail.width);
-      expect(TrayNavigationRail.width, 180);
-
-      final item = tester.getRect(
-        find.byKey(const Key('settingsTrayRail_effects')),
-      );
-      // 180 less the pen's 10 left and 11 right.
-      expect(item.width, closeTo(159, 0.5));
-      expect(item.height, closeTo(46, 1));
-      expect(item.left - rail.left, closeTo(10, 0.5));
-    });
-
-    testWidgets(
-      'rail labels keep medium weight across selection',
-      (
-        tester,
-      ) async {
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-
-        // Selection is shown by accent tint, pill fill and semantics. The
-        // owner chose the same medium text weight in both states.
-        final surface = tester.element(find.byType(TrayNavigationRail)).surface;
-
-        AppText labelIn(String key) => tester.widget<AppText>(
-          find.descendant(
-            of: find.byKey(Key(key)),
-            matching: find.byType(AppText),
-          ),
-        );
-
-        // Control is the tray's opening destination, so it is the lit one.
-        final selected = labelIn('settingsTrayRail_control');
-        expect(selected.style?.fontSize, 17);
-        expect(selected.style?.fontWeight, FontWeight.w500);
-        expect(selected.style?.color, surface.accent);
-
-        final pill = tester.widget<AnimatedContainer>(
-          find.descendant(
-            of: find.byKey(const Key('settingsTrayRail_control')),
-            matching: find.byType(AnimatedContainer),
-          ),
-        );
-        expect(
-          (pill.decoration as BoxDecoration?)?.color,
-          surface.accentSurface,
-        );
-
-        final unselected = labelIn('settingsTrayRail_network');
-        expect(unselected.style?.fontSize, 17);
-        expect(unselected.style?.fontWeight, selected.style?.fontWeight);
-        expect(unselected.style?.fontWeight, FontWeight.w500);
-        expect(unselected.style?.color, surface.textSecondary);
-
-        await tester.tap(find.byKey(const Key('settingsTrayRail_network')));
-        await tester.pumpAndSettle();
-
-        expect(cubit.state.destination, SettingsTrayDestination.network);
-        expect(cubit.state.dragProgress, 1);
-        expect(
-          labelIn('settingsTrayRail_network').style?.fontWeight,
-          FontWeight.w500,
-        );
-        expect(
-          labelIn('settingsTrayRail_control').style?.fontWeight,
-          FontWeight.w500,
-        );
-        expect(
-          labelIn('settingsTrayRail_network').style?.color,
-          surface.accent,
-        );
-        expect(
-          labelIn('settingsTrayRail_control').style?.color,
-          surface.textSecondary,
-        );
-      },
-    );
-
-    testWidgets('brightness sits at the foot, not under the last domain', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-
-      final rail = tester.getRect(find.byType(TrayNavigationRail));
-      final bright = tester.getRect(
-        find.byKey(const Key('settingsTrayRail_brightness')),
-      );
-      final system = tester.getRect(
-        find.byKey(const Key('settingsTrayRail_system')),
-      );
-
-      // The pen puts a fill spacer between the domains and Bright. Without
-      // it the entry lands directly under System with the whole lower rail
-      // blank — which a golden will happily record as correct.
-      //
-      // Measured against the ITEM GAP rather than a round number: without the
-      // spacer the two are 5 apart, and a threshold that big cannot be reached
-      // by any change to padding. 100 was arbitrary and went red the moment
-      // the pen's own 12px item padding made the eight domains taller.
-      expect(bright.top, greaterThan(system.bottom + 40));
-      expect(rail.bottom - bright.bottom, lessThan(kTrayHandleHeight + 24));
-    });
-
-    testWidgets('the tuner opens in the tray, and the rail is the way out', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byKey(const Key('settingsTrayRail_tuner')));
-      await tester.pumpAndSettle();
-
-      // In the tray, not a dialog — the rail is the way between faces, and
-      // the deleted home-face group was the only thing asserting this.
-      expect(cubit.state.destination, SettingsTrayDestination.tuner);
-      expect(find.byType(AlertDialog), findsNothing);
-      expect(cubit.state.dragProgress, 1);
-
-      // No back chrome on the face. Every other domain leaves by the rail,
-      // and a Back on one of them is a second way out that only that domain
-      // has — which is what made Tuner look like a dialog in a tray.
-      expect(find.byKey(const Key('tuner_back')), findsNothing);
-
-      await tester.tap(find.byKey(const Key('settingsTrayRail_network')));
-      await tester.pumpAndSettle();
-
-      expect(cubit.state.destination, SettingsTrayDestination.network);
-      expect(cubit.state.dragProgress, 1);
-    });
-
-    testWidgets('a tap that misses an item does not dismiss the tray', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-
-      // Below the last rail item, still inside the rail's own column: this
-      // lands on the rail background, which must leave the tray open.
-      //
-      // Deliberately NOT measured from the rail's bottom edge — the drag
-      // handle rides at the open panel's bottom edge, overlapping the rail's
-      // last 21px, so a tap there hits the handle and closes the tray for a
-      // completely different (correct) reason.
-      final rail = tester.getRect(find.byType(TrayNavigationRail));
-      // The gap between the last DOMAIN and the pinned brightness entry —
-      // which is where the rail's bare background now is. Taking the last
-      // item instead would land in the drag handle's 21px, closing the tray
-      // for a different and correct reason.
-      //
-      // Derived from the two entries rather than hard-coded, so adding a
-      // domain moves the tap with them instead of silently landing on one.
-      final lastDomain = tester.getRect(
-        find.byKey(
-          Key('settingsTrayRail_${TrayNavigationRail.domains.last.name}'),
-        ),
-      );
-      final bright = tester.getRect(
-        find.byKey(const Key('settingsTrayRail_brightness')),
-      );
-      final tapPoint = Offset(
-        rail.center.dx,
-        (lastDomain.bottom + bright.top) / 2,
-      );
-      // Assert the point really is rail background before tapping, so a
-      // layout change fails here with an obvious reason rather than through
-      // the dragProgress assertion below.
-      expect(rail.contains(tapPoint), isTrue);
-
-      await tester.tapAt(tapPoint);
-      await tester.pumpAndSettle();
-
-      expect(cubit.state.dragProgress, 1);
-    });
-
-    testWidgets('is in the semantics tree only while the tray is open', (
-      tester,
-    ) async {
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-
-      await pump(tester);
-      await tester.pumpAndSettle();
-      expect(find.bySemanticsLabel(l10n.a11yTrayRail), findsNothing);
-
-      cubit.open();
-      await tester.pumpAndSettle();
-      expect(find.bySemanticsLabel(l10n.a11yTrayRail), findsOneWidget);
-    });
-
-    testWidgets('the tap-absorbing background is not itself an a11y action', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-
-      // The rail's opaque GestureDetector exists purely to stop pointers. If
-      // it stays in the semantics tree it collapses the rail into a single
-      // tappable node whose activation does nothing — so the rail's own
-      // labelled node must carry no tap action of its own.
-      final rail = tester.getSemantics(find.byType(TrayNavigationRail));
-      expect(rail.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
-    });
-
-    testWidgets('focus traversal runs rail before face', (tester) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-
-      // Tab from a cold start: the first stop must be the rail's first item,
-      // not a control on the face beside it. Keyboard and switch-access users
-      // otherwise land mid-face with no way back to navigation.
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.pumpAndSettle();
-
-      final focused = primaryFocus;
-      expect(focused, isNotNull);
       expect(
         find.descendant(
-          of: find.byType(TrayNavigationRail),
-          matching: find.byWidget(focused!.context!.widget),
+          of: find.byType(TrayPanel),
+          matching: find.byKey(const Key('tuner_tray_panel')),
         ),
         findsOneWidget,
-        reason: 'first tab stop landed outside the rail',
       );
+      expect(find.byType(TunerTrayPanel), findsOneWidget);
     });
-  });
 
-  group('brightness capsule', () {
-    /// The slider lives in the rail's popover now, so every test here opens
-    /// it first.
-    Future<void> openBrightness(WidgetTester tester) async {
-      await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
+    testWidgets('a closed tray neither builds nor arms it', (tester) async {
+      await pump(tester);
       await tester.pumpAndSettle();
-    }
 
-    testWidgets('exposes the state default as a 100% semantics value', (
+      expect(cubit.state.dragProgress, 0);
+      expect(find.byType(TunerTrayPanel), findsNothing);
+      expect(tunerCubit.state.isOpen, isFalse);
+    });
+
+    testWidgets('tapping the handle arms the tuner; closing disarms it at '
+        'once and drops the face once the sheet is up', (tester) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('settingsTray_handle')));
+      await tester.pumpAndSettle();
+      expect(tunerCubit.state.isOpen, isTrue);
+
+      await tester.tap(find.byKey(const Key('settingsTray_handle')));
+      await tester.pump();
+      await tester.pump(kTrayMotion ~/ 2);
+      // Still on its way up: the face stays drawn, but no longer listens.
+      expect(find.byType(TunerTrayPanel), findsOneWidget);
+      expect(tunerCubit.state.isOpen, isFalse);
+
+      await tester.pumpAndSettle();
+      expect(find.byType(TunerTrayPanel), findsNothing);
+    });
+
+    testWidgets('a drag arms it from the first frame the sheet shows', (
       tester,
     ) async {
-      final handle = tester.ensureSemantics();
-      cubit.open();
       await pump(tester);
-      await tester.pumpAndSettle();
-      await openBrightness(tester);
-
-      // Slider sets its own semantics boundary — an ancestor label never
-      // merges into it, so `_BrightnessSliderTile` excludes Slider's own
-      // semantics and replaces them wholesale with one node.
-      expect(
-        tester.getSemantics(find.byType(BrightnessCapsule)),
-        isSemantics(
-          isSlider: true,
-          label: 'Brightness',
-          value: '${(kDefaultDisplayBrightness * 100).round()}%',
-          hasIncreaseAction: true,
-          hasDecreaseAction: true,
-        ),
-      );
-      handle.dispose();
-    });
-
-    testWidgets('an app-wide brightness change updates the open and reopened '
-        'popover', (tester) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await openBrightness(tester);
-
-      await displayBrightness.setBrightness(0.42);
+      cubit.dragTo(0.2);
       await tester.pump();
-      expect(find.text('42%'), findsOneWidget);
-      expect(
-        tester.widget<BrightnessCapsule>(find.byType(BrightnessCapsule)).value,
-        0.42,
-      );
-      expect(cubit.state, const SettingsTrayState(dragProgress: 1));
+      expect(tunerCubit.state.isOpen, isTrue);
 
-      await tester.tap(find.byKey(const Key('trayBrightness_scrim')));
+      cubit.settleFromDrag();
       await tester.pumpAndSettle();
-      await openBrightness(tester);
-      expect(find.text('42%'), findsOneWidget);
-      expect(await settings.loadBrightness(), 0.42);
-    });
-
-    testWidgets('failed persistence is caught and a later adjustment retries', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await openBrightness(tester);
-
-      store.failNextBrightnessWrite = true;
-      await tester.tap(find.byKey(const Key('settingsTray_brightness')));
-      await tester.pumpAndSettle();
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.text(l10n.powerOffSaveFailedTitle), findsOneWidget);
-      expect(store.values['ui.brightness'], isNull);
-
-      await tester.drag(
-        find.byKey(const Key('settingsTray_brightness')),
-        const Offset(0, -80),
-      );
-      await tester.pumpAndSettle();
-      expect(await settings.loadBrightness(), displayBrightness.state);
-      await tester.pump(const Duration(seconds: 10));
-      expect(find.text(l10n.powerOffSaveFailedTitle), findsNothing);
-    });
-
-    testWidgets('dragging down (toward the bottom) lowers the value', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await openBrightness(tester);
-
-      final slider = find.byKey(const Key('settingsTray_brightness'));
-      await tester.drag(slider, const Offset(0, 100));
-      await tester.pump();
-
-      expect(displayBrightness.state, lessThan(kDefaultDisplayBrightness));
-    });
-
-    testWidgets('dragging up (toward the top) raises the value', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await openBrightness(tester);
-
-      final slider = find.byKey(const Key('settingsTray_brightness'));
-      await tester.drag(slider, const Offset(0, -300));
-      await tester.pump();
-
-      expect(displayBrightness.state, greaterThan(0.9));
-    });
-
-    testWidgets('a tap moves the value to the tapped position — unlike a plain '
-        'Slider ignoring taps, this one changes value on tap, not just drag', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await openBrightness(tester);
-
-      await tester.tap(find.byKey(const Key('settingsTray_brightness')));
-      await tester.pump();
-
-      // The tapped position, not merely "a brightness": the value is
-      // clamped to 0.1..1 by construction, so a range assertion here
-      // passes whatever the tap does.
-      expect(displayBrightness.state, closeTo(0.55, 0.001));
-    });
-
-    testWidgets('a double tap snaps brightness back to its default', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await openBrightness(tester);
-
-      final box = tester.getRect(
-        find.byKey(const Key('settingsTray_brightness')),
-      );
-      // Three quarters DOWN the capsule — 0.325, nowhere near the default,
-      // so the reset is distinguishable from the taps that ask for it.
-      final spot = Offset(box.center.dx, box.top + box.height * 3 / 4);
-      await tester.tapAt(spot);
-      await tester.pump();
-      expect(displayBrightness.state, closeTo(0.325, 0.001));
-
-      // The same tap twice, inside the double-tap window.
-      await tester.pump(const Duration(milliseconds: 40));
-      await tester.tapAt(spot);
-      await tester.pump();
-
-      expect(
-        displayBrightness.state,
-        closeTo(kDefaultDisplayBrightness, 0.001),
-      );
-    });
-
-    testWidgets(
-      'a single tap keeps the tapped value once the window lapses — no reset',
-      (tester) async {
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-        await openBrightness(tester);
-
-        final box = tester.getRect(
-          find.byKey(const Key('settingsTray_brightness')),
-        );
-        await tester.tapAt(Offset(box.center.dx, box.top + box.height * 3 / 4));
-        // Let the double-tap window lapse rather than leaving a live timer.
-        await tester.pump(kDoubleTapTimeout * 2);
-
-        expect(displayBrightness.state, closeTo(0.325, 0.001));
-      },
-    );
-
-    testWidgets(
-      'two taps far apart are two adjustments, not a reset — the second one '
-      'lands where it was aimed',
-      (tester) async {
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-        await openBrightness(tester);
-
-        final box = tester.getRect(
-          find.byKey(const Key('settingsTray_brightness')),
-        );
-        await tester.tapAt(Offset(box.center.dx, box.top + box.height / 4));
-        await tester.pump(const Duration(milliseconds: 40));
-        await tester.tapAt(Offset(box.center.dx, box.top + box.height * 3 / 4));
-        await tester.pump();
-
-        // The second tap's own spot, NOT the default: two taps further
-        // apart than kDoubleTapSlop are never one double tap, and reading
-        // them as a reset would throw the second one's position away. This
-        // is the gate the old Slider-wrapping widget could not pass — its
-        // Listener reported one constant position for every tap (#623).
-        expect(displayBrightness.state, closeTo(0.325, 0.001));
-        await tester.pump(kDoubleTapTimeout * 2);
-      },
-    );
-
-    testWidgets('the reset confirms itself under the finger', (tester) async {
-      final haptics = <String>[];
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        (call) async {
-          if (call.method == 'HapticFeedback.vibrate') {
-            haptics.add(call.arguments as String? ?? '');
-          }
-          return null;
-        },
-      );
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          SystemChannels.platform,
-          null,
-        ),
-      );
-
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await openBrightness(tester);
-
-      final box = tester.getRect(
-        find.byKey(const Key('settingsTray_brightness')),
-      );
-      final spot = Offset(box.center.dx, box.top + box.height * 3 / 4);
-      await tester.tapAt(spot);
-      await tester.pump(kDoubleTapTimeout * 2);
-      expect(haptics, isEmpty);
-
-      await tester.tapAt(spot);
-      await tester.pump(const Duration(milliseconds: 40));
-      await tester.tapAt(spot);
-      await tester.pump();
-
-      // A 0.325 → full-brightness snap is a visible jump on a screen someone
-      // may be squinting at BECAUSE the brightness is wrong. The same
-      // confirmation ConsoleValueBar gives.
-      expect(haptics, isNotEmpty);
-    });
-
-    testWidgets('the arrow-up key increases the value by the 5% step', (
-      tester,
-    ) async {
-      // Slider's arrow-key step is platform-dependent (10% on iOS/macOS, 5%
-      // elsewhere — see `_adjustmentUnit` in the Flutter SDK's
-      // `slider.dart`) — pinned so this assertion is deterministic on every
-      // machine, not just this one. Reset inline (not via `tearDown`/
-      // `addTearDown`) — the test framework's own foundation-debug-var
-      // check runs before either gets a chance to fire.
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
-      await openBrightness(tester);
-
-      // The tile's own pointer listener requests focus on tap.
-      await tester.tap(find.byKey(const Key('settingsTray_brightness')));
-      await tester.pump();
-      final before = displayBrightness.state;
-
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-      await tester.pump();
-
-      // Flutter steps by `_adjustmentUnit * (max - min)`; with
-      // `min: kMinDisplayBrightness` (0.1) that is 0.05 * 0.9 = 0.045.
-      expect(displayBrightness.state, closeTo(before + 0.045, 0.001));
-      debugDefaultTargetPlatformOverride = null;
+      expect(cubit.state.dragProgress, 0);
+      expect(tunerCubit.state.isOpen, isFalse);
     });
   });
 

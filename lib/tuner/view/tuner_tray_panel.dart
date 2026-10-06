@@ -10,18 +10,20 @@ import 'package:segno/tuner/cubit/tuner_cubit.dart';
 
 /// In-tray chromatic tuner, built to `TUNER / tuner` and `TUNER / tuner-mic`.
 ///
-/// A rail destination rather than a full-screen takeover (#442, decision D6):
-/// the tray is already near-fullscreen, so a takeover buys nothing. **Tuning
+/// The tray's one face (#1199) until the foot Tuner replaces it. **Tuning
 /// does not mute** — the design draws the stage playing behind, with no mute
 /// control and no warning, so the console keeps going while you tune.
 ///
 /// Stateful only to arm and disarm: detection is gated in the engine on the
 /// armed input, so a tuner nobody is looking at costs one atomic load per
-/// audio block. Arming here — where the face is created and disposed — is what
-/// keeps that promise without a lifecycle of its own.
+/// audio block. The tray never unmounts its sheet, so the face arms while
+/// [active] and disarms when it goes false or the face is disposed.
 class TunerTrayPanel extends StatefulWidget {
-  /// Creates a [TunerTrayPanel].
-  const TunerTrayPanel({super.key});
+  /// Creates a [TunerTrayPanel], listening while [active].
+  const TunerTrayPanel({this.active = true, super.key});
+
+  /// Whether the face is showing, and so whether the tuner listens.
+  final bool active;
 
   @override
   State<TunerTrayPanel> createState() => _TunerTrayPanelState();
@@ -33,18 +35,40 @@ class _TunerTrayPanelState extends State<TunerTrayPanel> {
   /// [didChangeDependencies], which is the documented place to do it.
   TunerCubit? _tuner;
 
+  /// Whether this face has the tuner armed.
+  bool _armed = false;
+
+  void _sync() {
+    final tuner = _tuner;
+    if (tuner == null || widget.active == _armed) return;
+    _armed = widget.active;
+    if (_armed) {
+      tuner.arm();
+    } else {
+      tuner.disarm();
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final tuner = context.read<TunerCubit>();
     if (identical(tuner, _tuner)) return;
+    if (_armed) _tuner?.disarm();
+    _armed = false;
     _tuner = tuner;
-    tuner.arm();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(TunerTrayPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
   }
 
   @override
   void dispose() {
-    _tuner?.disarm();
+    if (_armed) _tuner?.disarm();
     super.dispose();
   }
 
