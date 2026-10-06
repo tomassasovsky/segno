@@ -341,7 +341,13 @@ class SessionRepository {
   }
 
   static bool _isFolder(Directory dir) =>
-      !_isBundle(dir.path) && !_isInterruptedSave(dir);
+      !_isBundle(dir.path) && !_isInterruptedSave(dir) && !_isReservation(dir);
+
+  /// An empty directory named like a minted id is a reservation
+  /// ([newSessionId]): a save in flight, or one a crash or a failed copy left
+  /// behind. It is no folder, so it never shows as a chip.
+  static bool _isReservation(Directory dir) =>
+      isMintedSessionId(_basename(dir.path)) && dir.listSync().isEmpty;
 
   static String _requireId(SessionId id) {
     if (!isValidSessionId(id)) {
@@ -732,9 +738,17 @@ class SessionRepository {
     await _requireFreeName(slug);
     final parent = Directory(source).parent.path;
     final id = _reserveId(root, parent: parent);
-    final target = '$parent/$id';
-    _copyDirSync(Directory(source), Directory(target));
-    _rewriteManifestName('$target/${Session.manifestName}', slug);
+    final target = Directory('$parent/$id');
+    try {
+      _copyDirSync(Directory(source), target);
+      _rewriteManifestName('${target.path}/${Session.manifestName}', slug);
+    } on Object {
+      // Everything in the reserved directory is this copy's own: remove it,
+      // so a failed Duplicate leaves neither a half bundle under the
+      // source's name nor an empty reservation. The source is untouched.
+      if (target.existsSync()) target.deleteSync(recursive: true);
+      rethrow;
+    }
     return id;
   }
 
@@ -795,9 +809,13 @@ class SessionRepository {
 
   /// Creates the folder [name] under the root. Throws [SessionNameCollision]
   /// when a folder or bundle already has that directory name and
-  /// [ArgumentError] for an invalid name.
+  /// [ArgumentError] for an invalid name, or one shaped like a session id.
   Future<void> createFolder(String name) async {
     final slug = _requireName(name, 'name');
+    if (isMintedSessionId(slug)) {
+      // An empty folder with an id's name would read as a reservation.
+      throw ArgumentError.value(name, 'name', 'reads as a session id');
+    }
     final root = await _rootPath();
     if (Directory('$root/$slug').existsSync()) {
       throw SessionNameCollision(slug: slug);

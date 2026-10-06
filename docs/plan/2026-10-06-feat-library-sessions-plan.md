@@ -169,8 +169,11 @@ the `.als` all remain reachable.
   the bundle directory when it issues the id, so a same-second Save as and
   Duplicate, or a folder named like an id, cannot share a directory; a save
   that then writes nothing gives the empty directory back
-  (`releaseSessionId`), since an empty directory is a folder (Part 1 review,
-  finding 1). The manifest gains an
+  (`releaseSessionId`) (Part 1 review, finding 1). An empty directory named
+  like a minted id is a reservation, never a folder, so one a crash leaves
+  behind shows no chip; `createFolder` refuses such a name. A Duplicate whose
+  copy fails removes its own partial copy (delta review D1). The manifest
+  gains an
   optional `name` field read leniently; absent, the name is the directory
   basename, which is exactly what every existing bundle shows today (rule 1,
   one line, no migration pass). `formatVersion` stays 11: a bump would turn
