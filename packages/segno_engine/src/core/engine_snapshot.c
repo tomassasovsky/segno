@@ -126,6 +126,7 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->transpose_st = load_i32(&tr->a_transpose_st);
   out->follow_override = load_i32(&tr->a_follow_override);
   out->pitch_override = load_i32(&tr->a_pitch_override);
+  out->span_frames = load_i32(&tr->a_span_clock); /* #1179 Part 4b */
   {
     /* The tempo ratio's pitch on what sounds: the source's length over the
      * span it plays across (the take's own while dry). */
@@ -513,6 +514,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->follow_tempo = load_i32(&engine->a_follow_tempo);
   out->tempo_follow = le_tempo_follow_now(engine);
   out->pitch_follows_speed = load_i32(&engine->a_pitch_follows);
+  out->recorded_length_frames = load_i32(&engine->a_rec_master_len);
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =

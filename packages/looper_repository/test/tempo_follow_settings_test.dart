@@ -22,6 +22,39 @@ void main() {
       await ticks.close();
     });
 
+    test('a Session with a malformed recorded pair, span or override is '
+        'refused before anything is cleared (Part 4b)', () async {
+      repository.startEngine(const EngineConfig());
+      engine.calls.clear();
+      for (final rig in [
+        const SessionRig(
+          tempoBpm: 90,
+          tempoSource: TempoSource.manual,
+          recordedTempoBpm: 120,
+        ),
+        const SessionRig(
+          tempoBpm: 90,
+          tempoSource: TempoSource.manual,
+          recordedLengthFrames: 16000,
+        ),
+        const SessionRig(
+          tempoBpm: 90,
+          tempoSource: TempoSource.manual,
+          recordedTempoBpm: 20,
+          recordedLengthFrames: 16000,
+        ),
+        const SessionRig(
+          recordedTempoBpm: 120,
+          recordedLengthFrames: 16000,
+        ),
+        const SessionRig(trackFollowTempoOverrides: {8: true}),
+        const SessionRig(trackPitchModeOverrides: {-1: PitchMode.unchanged}),
+      ]) {
+        await expectLater(repository.applySession(rig), throwsStateError);
+      }
+      expect(engine.calls, isEmpty);
+    });
+
     test('a vector sends only what the engine does not hold and is accepted '
         'on every receipt', () async {
       repository.startEngine(const EngineConfig());

@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -171,6 +172,14 @@ void main() {
         oneShot: OneShotSnapshot(
           defaultOneShot: looper.defaultOneShot,
           trackOverrides: looper.trackOneShotOverrides,
+        ),
+        followTempo: InheritSnapshot(
+          defaultValue: looper.defaultFollowTempo,
+          trackOverrides: looper.trackFollowTempoOverrides,
+        ),
+        pitchMode: InheritSnapshot(
+          defaultValue: looper.defaultPitchMode,
+          trackOverrides: looper.trackPitchModeOverrides,
         ),
       ),
     );

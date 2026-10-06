@@ -115,6 +115,10 @@ class SessionSettings {
     this.laneCounts = const {},
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
+    this.defaultFollowTempo = true,
+    this.trackFollowTempoOverrides = const {},
+    this.defaultPitchMode = PitchMode.unchanged,
+    this.trackPitchModeOverrides = const {},
   });
 
   SessionSettings._detached(SessionSettings source)
@@ -168,6 +172,14 @@ class SessionSettings {
         muted: Map.unmodifiable(source.outputSetup.muted),
         mono: Map.unmodifiable(source.outputSetup.mono),
         balance: Map.unmodifiable(source.outputSetup.balance),
+      ),
+      defaultFollowTempo = source.defaultFollowTempo,
+      trackFollowTempoOverrides = Map.unmodifiable(
+        source.trackFollowTempoOverrides,
+      ),
+      defaultPitchMode = source.defaultPitchMode,
+      trackPitchModeOverrides = Map.unmodifiable(
+        source.trackPitchModeOverrides,
       );
 
   /// Denominator-note beats per minute; zero means unset.
@@ -268,6 +280,18 @@ class SessionSettings {
 
   /// Session-owned recording trim, mono pan, and stereo pair balance.
   final SessionInputSetup inputSetup;
+
+  /// The Follow tempo default every track inherits (#1179).
+  final bool defaultFollowTempo;
+
+  /// Explicit Follow tempo choices for any track.
+  final Map<int, bool> trackFollowTempoOverrides;
+
+  /// The Pitch default every following track inherits (#1179).
+  final PitchMode defaultPitchMode;
+
+  /// Explicit Pitch choices for any track.
+  final Map<int, PitchMode> trackPitchModeOverrides;
 
   /// The output setup (slice 3b), persisted session-level.
   final SessionOutputSetup outputSetup;
@@ -1695,6 +1719,7 @@ class SessionRepository {
           channel: i,
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
+          spanFrames: _spanOf(snapshot, track),
           fadeAmount: track.fade.amount,
           reversed: track.reversed,
           lanes: lanes,
@@ -1707,6 +1732,31 @@ class SessionRepository {
       tracks: tracks,
       trackLevels: trackLevels,
     );
+  }
+
+  /// The master length a take was laid down against when that is not the
+  /// recorded one (#1179): the engine's span, or the clock in force for a
+  /// take recorded after the last retime (span 0 means "the current clock").
+  /// 0 for a take on the recorded master, or with no recorded pair.
+  static int _spanOf(EngineSnapshot snapshot, TrackSnapshot track) {
+    final recorded = snapshot.recordedLengthFrames;
+    if (recorded <= 0) return 0;
+    final span = track.spanFrames > 0
+        ? track.spanFrames
+        : snapshot.masterLengthFrames;
+    return span == recorded ? 0 : span;
+  }
+
+  /// Whether the captured takes sit on a retimed master (#1179): a recorded
+  /// pair whose length is not the master's, or a take laid down against
+  /// another span.
+  static bool _retimed(_Capture captured) {
+    final snapshot = captured.snapshot;
+    if (captured.tracks.isEmpty || snapshot.recordedLengthFrames <= 0) {
+      return false;
+    }
+    return snapshot.recordedLengthFrames != snapshot.masterLengthFrames ||
+        captured.tracks.any((track) => track.spanFrames > 0);
   }
 
   Session _sessionFrom(
@@ -1765,6 +1815,17 @@ class SessionRepository {
       laneCounts: settings.laneCounts,
       inputSetup: settings.inputSetup,
       outputSetup: settings.outputSetup,
+      // The tempo the takes were laid down at (#1179): only with takes, and
+      // only when a retime moved the master off it, so an unretimed rig
+      // saves 0/0 exactly as schema 13 implied.
+      recordedTempoBpm: _retimed(captured) ? snapshot.recordedTempoBpm : 0,
+      recordedLengthFrames: _retimed(captured)
+          ? snapshot.recordedLengthFrames
+          : 0,
+      defaultFollowTempo: settings.defaultFollowTempo,
+      trackFollowTempoOverrides: settings.trackFollowTempoOverrides,
+      defaultPitchMode: settings.defaultPitchMode,
+      trackPitchModeOverrides: settings.trackPitchModeOverrides,
       clickMode: settings.clickMode,
       clickOutputMask: settings.clickMask,
       clickVolume: settings.clickVolume,

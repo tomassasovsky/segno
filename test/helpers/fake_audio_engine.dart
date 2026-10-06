@@ -1485,6 +1485,15 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult importTrack(int channel, Float32List pcm) => EngineResult.ok;
 
+  /// Spans [importSpan] gave, by channel (#1179 Part 4b).
+  final Map<int, int> importedSpans = {};
+
+  @override
+  EngineResult importSpan(int channel, int spanFrames) {
+    importedSpans[channel] = spanFrames;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       EngineResult.ok;
@@ -1900,6 +1909,7 @@ class _LengthSnapshot extends EngineSnapshot {
          speed: source.speed,
          transposeBypass: source.transposeBypass,
          recordedTempoBpm: source.recordedTempoBpm,
+         recordedLengthFrames: source.recordedLengthFrames,
          followTempo: source.followTempo,
          tempoFollow: source.tempoFollow,
          pitchMode: source.pitchMode,
@@ -1952,6 +1962,7 @@ class _LengthTrack extends TrackSnapshot {
          followTempoOverride: source.followTempoOverride,
          pitchModeOverride: source.pitchModeOverride,
          pitchEffectiveCents: source.pitchEffectiveCents,
+         spanFrames: source.spanFrames,
          volume: source.volume,
          muted: source.muted,
          lengthFrames: source.lengthFrames,

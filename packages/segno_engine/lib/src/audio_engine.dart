@@ -1356,8 +1356,19 @@ abstract interface class SessionIo {
   /// or a torn (missing-image or mismatched-length) reconstruction.
   EngineResult finalizeHistory(int channel, TrackHistory history);
 
+  /// Gives imported track [channel] the span its take was laid down against
+  /// (#1179 Part 4b), as a Session saved it ([TrackSnapshot.spanFrames], or
+  /// the master length in force when that was 0): [commitSession] parks it at
+  /// its length over that span and keeps the span, so a take recorded after
+  /// a retime reads at its own ratio on the recorded clock. Call after the
+  /// track's lane-0 import and before the commit; 0 clears it.
+  /// [EngineResult.invalid] for a track that is not EMPTY with a take, or a
+  /// span past the buffer cap.
+  EngineResult importSpan(int channel, int spanFrames);
+
   /// Establishes the master loop at [baseFrames] and leaves every imported
-  /// track stopped at its whole-loop multiple. Launch with [AudioEngine.play].
+  /// track stopped at its whole-loop multiple (or its length over its
+  /// [importSpan]). Launch with [AudioEngine.play].
   EngineResult commitSession(int baseFrames, {required int loopBars});
 }
 

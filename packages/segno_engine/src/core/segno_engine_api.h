@@ -987,6 +987,10 @@ typedef struct le_track_snapshot {
    * with Follows speed. Speed and Transpose are not included. */
   int32_t pitch_override;
   int32_t pitch_effective_cents;
+  /* Trailing (#1179 Part 4b): the shared-clock length this track's take was
+   * laid down against once a retime moved the clock (0: the clock in force).
+   * A Session saves it so a recall reads every take at its own ratio. */
+  int32_t span_frames;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1417,6 +1421,10 @@ typedef struct le_snapshot {
   /* Trailing (#1179 Part 4a-ii): the Pitch default every track inherits
    * (0 Unchanged, the default; 1 Follows speed). */
   int32_t pitch_follows_speed;
+  /* Trailing (#1179 Part 4b): the master length recorded_tempo_bpm
+   * measured (0 with none). A Session saves the pair, so a recall commits
+   * the takes at the tempo they were laid down at and retimes from there. */
+  int32_t recorded_length_frames;
 } le_snapshot;
 
 /* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part
@@ -3352,9 +3360,23 @@ LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
                                            int32_t* kinds, int32_t* skipped,
                                            int32_t max, int32_t* undo_count);
 
+/* Sets the span an imported take was laid down against (#1179 Part 4b):
+ * the shared-clock length it played over at its own speed, as a Session
+ * saved it from le_track_snapshot.span_frames. Track `channel` must be EMPTY
+ * with lane 0 imported (LE_ERR_INVALID otherwise, and for a span outside
+ * 1..max_loop_frames); 0 clears it. le_engine_commit_session then parks the
+ * track at length / span laps and keeps the span, so a take recorded after a
+ * retime reads at its own ratio on the recorded clock and follows the next
+ * retime like the takes around it. Call after the take's lanes are imported
+ * (a lane-0 le_engine_import_track_lane, or le_engine_import_layer of lane 0
+ * ordinal 0, starts a new take and clears it) and before the commit.
+ * Control thread. */
+LE_EXPORT int32_t le_engine_import_span(le_engine* engine, int32_t channel,
+                                        int32_t span_frames);
+
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple
- * (length / base_frames). Restores exactly `loop_bars` musical bars over that
+ * (length / base_frames, or length / its imported span). Restores exactly `loop_bars` musical bars over that
  * span; zero keeps the loop grid-free even when a tempo is known. The caller
  * restores tempo/source/signature before this commit. Does not infer bars
  * from BPM or change audio length. Requires base_frames > 0 and loop_bars in

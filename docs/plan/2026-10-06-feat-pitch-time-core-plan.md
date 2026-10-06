@@ -1232,6 +1232,67 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
+As built in Part 4b (schema number assigned at landing: 14 on this base, 16
+on the trunk after Multiply/Divide's 14 and the backing player's 15):
+
+- **Owners.** `FollowTempoFamily` and `PitchModeFamily`
+  (`lib/looper/application/audio_tempo_families.dart`) on the shared
+  settings owner, built and projected by `PlaybackSettings` into
+  `PlaybackOptions.followTempo` / `pitchMode` (null while the owner is not
+  ready, so an owed vector is never shown as applied: the 4a-iii review's
+  L1). One stored nullable bool per address, nine addresses each, Pitch
+  stored as "follows speed". Staged before audio opens and settled after
+  start like Loop/Once; refusal and recovery notices like every owned
+  family. **Follow tempo restores On when nothing is stored (E15)**: the
+  engine's own default stays 0, so a bare engine, the renderer and the
+  native suites are unchanged, and the app turns it on with the page that
+  turns it off.
+- **Page.** Screens 07/04 to 07/06: the scope selector, Follow tempo and
+  Pitch with Default/Custom tags and Use default on a track override, the
+  On/Off and Unchanged/Follows speed notes, and a scope that keeps its
+  recorded speed shows Pitch as the readout "Unchanged" with "Pitch stays
+  unchanged at the recorded speed." (06). The "unavailable" line is gone.
+  The hub reads "Follow tempo · Same pitch", "Recorded speed · Same pitch"
+  or "Follow tempo · Pitch follows speed" from the defaults. 07/07 (MIDI
+  clock) waits for #1228's receive. Not drawn, because the pen does not
+  draw them: the mode-switch note (a switch returns a retimed song to its
+  recorded tempo, the 4a review) and a "back to recorded tempo" control
+  (the snapshot exposes `recordedTempoBpm` for it). Adding either is a pen
+  change first. The Pitch readout uses the primary text color; the pen's
+  #c1d4ef has no theme token.
+- **Session.** `recordedTempoBpm` and `recordedLengthFrames` (both or
+  neither), `tracks[].spanFrames`, `defaultFollowTempo`,
+  `trackFollowTempoOverrides`, `defaultPitchMode`,
+  `trackPitchModeOverrides`; strict decode. A rig saves the recorded pair
+  only when its master was retimed or a take sits on another span; a take's
+  span is the engine's `span_frames`, or the master in force for a take
+  laid down after the last retime, and 0 on the recorded master. The
+  conversion from the previous schema fills Follow tempo and Pitch from the
+  live settings (rule 1, schema 8's precedent) and no recorded pair or
+  spans, since nothing could retime before.
+- **Recall of a retimed rig (the coordinator's decision: in 4b).** Native:
+  `le_engine_import_span` gives an imported take its span (kept apart from
+  the live span, which the import's transform reset clears, and cleared by
+  the next lane-0 import), the commit parks the take at length / span laps
+  and keeps the span, and the snapshot carries `recorded_length_frames` and
+  per-track `span_frames`. Repository: Pitch and a temporary all-follow
+  vector before the takes, the tempo restored to the recorded one, the
+  takes committed on the recorded master, then `setTempo` to the session
+  tempo (the retime lands exactly on `baseLengthFrames`, checked), then the
+  session's own Follow vector. The retime needs a follower, and a song
+  retimed and then set to keep its recorded speed has none: hence the
+  temporary vector. After recall the tempo source reads manual (the retime
+  is a `set_tempo`), whatever source the session saved.
+- **Cap policy (coordinator decision, 4a-ii M2).** Stretch renders share the
+  cache cap with the prints; no separate share. A render a track with
+  material uses is never evicted (E7, stopped tracks included per 3a's L2);
+  renders no track wants go first among source renders, after the prints,
+  which the live chain recomputes without an audible change. The Pi 5
+  measurement in 4a-ii's table remains the owner's gate for revisiting it.
+- **Session load keeps storage as it is.** Like Loop/Once, a loaded
+  session's vectors are live and durable for the session; the stored
+  preferences change only by an edit.
+
 ### Part 5. Session for Speed and Transpose, reopen, import Adapt seam (about 300 production lines)
 
 Section 5: Session fields `speed`, `transposeSemitones`, `transposeBypass`

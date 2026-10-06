@@ -1,8 +1,10 @@
 # Session bundle format (`.segno`)
 
+<!-- cspell:ignore retime retimed retimes -->
+
 A saved session is a directory (a `.segno` **bundle**) holding a JSON manifest,
 one WAV per audio layer, and a flattened mixdown. This document describes the
-current **v12** schema. Decode accepts the current schema only (see
+current **v14** schema. Decode accepts the current schema only (see
 [Versioning](#versioning)).
 
 Related: the performance-capture path stores retiring layers with its own
@@ -169,11 +171,11 @@ Note what is *not* here: there are no per-flag manifest fields, and no per-flag
 settings keys either. Every enable bit and every slot id lives inside the one
 string per chain.
 
-## Manifest schema (v12)
+## Manifest schema (v14)
 
 ```jsonc
 {
-  "version": 12,
+  "version": 14,
   "sampleRate": 48000,
   "channels": 1,
   "baseLengthFrames": 96000,
@@ -183,6 +185,8 @@ string per chain.
       "multiple": 1,
       "lengthFrames": 96000,
       "fadeAmount": 1.0,            // v11: the stationary Fade level, 0..1
+      "reversed": false,            // v13: plays reversed (#1162)
+      "spanFrames": 0,              // v14: see "Recorded tempo" below
       "lanes": [
         {
           "lane": 0,
@@ -253,9 +257,33 @@ string per chain.
   "recDub": false,
   "autoRecord": false,
   "defaultMultiple": 1,
-  "pedalBindings": "{…}"            // opaque, app-side model; "" = the global remap
+  "pedalBindings": "{…}",           // opaque, app-side model; "" = the global remap
+
+  // --- v14: Audio & tempo (#1179) ---
+  "recordedTempoBpm": 0.0,          // 0 with recordedLengthFrames 0: no retime
+  "recordedLengthFrames": 0,
+  "defaultFollowTempo": true,
+  "trackFollowTempoOverrides": {},  // channel -> bool
+  "defaultPitchMode": "unchanged",  // or "followsSpeed"
+  "trackPitchModeOverrides": {}     // channel -> mode name
 }
 ```
+
+### Recorded tempo and spans (v14)
+
+With Follow tempo on, a song-tempo change retimes the recorded takes: the
+master moves to the bar count at the new tempo while every take keeps its
+audio, read at its length over the span it plays across. A saved rig whose
+master was retimed records the tempo the takes were laid down at and the
+master length it measured (`recordedTempoBpm`, `recordedLengthFrames`; both 0
+otherwise). A take laid down against another master (after a retime) saves
+that master's length as its `spanFrames`; a take on the recorded master saves
+0. Recall restores the recorded tempo, imports each take with its span
+(`le_engine_import_span`), commits on the recorded master, and then sets the
+session tempo, which retimes from the recorded pair to exactly
+`baseLengthFrames` with every take at the ratio it had. `baseLengthFrames` is
+always the master as saved, so readers that ignore these fields still see the
+song's own length.
 
 Audio never appears in the manifest; it lives in the referenced WAVs.
 
@@ -267,14 +295,14 @@ channel survives a save.
 
 ## Versioning
 
-Writing is always the current version (v12). `Session.fromJson` accepts the
+Writing is always the current version (v14). `Session.fromJson` accepts the
 current version only: any other `version` fails with
 `SessionUnsupportedVersion`, and a non-integer `version` with a
 `FormatException`. Inside the current schema, fields that `toJson` omits at
 their defaults (`pan`, `balance`, the optional maps) read as those defaults.
 
 Opening a bundle goes through `decodeSessionManifest` (#1196,
-`session_migration.dart`). A manifest from v1 to v11 is converted in memory,
+`session_migration.dart`). A manifest from v1 to v13 is converted in memory,
 one step per schema bump, and must then pass the strict decoder; a newer one
 fails with `SessionUnsupportedVersion` and one that cannot be converted with
 `SessionUnconvertible`, leaving the bundle untouched. Once the converted
@@ -374,3 +402,13 @@ envelope):
   with the same Undo, Redo and Peel behavior. `undoCount` and `redoCount`
   count entries, and `layers` holds one image per entry except a redo-side
   Peel marker, plus the live image.
+- **v13** — each track's playback direction (`tracks[].reversed`, #1162). A
+  v12 bundle loads forward, as it always recalled.
+- **v14** — Audio & tempo (#1179): the recorded tempo and master length,
+  each take's span, and the Follow tempo and Pitch defaults and track
+  overrides. A v13 bundle could not have been retimed, so it loads with no
+  recorded pair and no spans; Follow tempo and Pitch were the player's global
+  preferences until then, so the conversion takes the live ones (rule 1, the
+  schema-8 precedent). The number is this branch's next free one: on the
+  trunk after Multiply/Divide and the backing player it lands as v16, its
+  conversion step keyed by 15.

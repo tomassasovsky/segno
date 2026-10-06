@@ -1391,6 +1391,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult importSpan(int channel, int spanFrames) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_import_span(_engine, channel, spanFrames),
+    );
+  }
+
+  @override
   EngineResult commitSession(int baseFrames, {required int loopBars}) {
     _checkAlive();
     return EngineResult.fromCode(

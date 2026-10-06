@@ -136,4 +136,84 @@ void main() {
     },
     skip: skip,
   );
+
+  test(
+    'a Session recall of a retimed rig (#1179 Part 4b) commits the takes on '
+    'the recorded master, retimes to the saved tempo, and installs the '
+    'saved Follow vector even when it has no follower',
+    () async {
+      SessionRigTrack rigTrack(int channel, int frames, {int span = 0}) =>
+          SessionRigTrack(
+            channel: channel,
+            fadeAmount: 1,
+            reversed: false,
+            spanFrames: span,
+            lanes: [
+              SessionRigLane(
+                lane: 0,
+                layers: [
+                  Float32List.fromList(
+                    List.generate(
+                      frames,
+                      (i) => 0.25 * math.sin(2 * math.pi * 220 * i / _rate),
+                    ),
+                  ),
+                ],
+                volume: 1,
+                muted: false,
+                outputMask: 1,
+                inputChannel: 0,
+              ),
+            ],
+          );
+      // Recorded at 120 on one bar (16000); retimed to 90 (21333); track 1
+      // laid down at 90, so its span is the retimed master.
+      final rig = SessionRig(
+        baseLengthFrames: 21333,
+        loopBars: 1,
+        tempoBpm: 90,
+        tempoSource: TempoSource.manual,
+        recordedTempoBpm: 120,
+        recordedLengthFrames: _bar,
+        defaultFollowTempo: false,
+        trackPitchModeOverrides: const {1: PitchMode.followsSpeed},
+        tracks: [rigTrack(0, _bar), rigTrack(1, 21333, span: 21333)],
+      );
+      final callback = Timer.periodic(
+        const Duration(milliseconds: 1),
+        (_) => engine.pump(frames: 0),
+      );
+      try {
+        await repository.applySession(rig);
+      } finally {
+        callback.cancel();
+      }
+      final recalled = engine.snapshot();
+      expect(recalled.masterLengthFrames, 21333);
+      expect(recalled.tempoBpm, 90);
+      expect(recalled.recordedTempoBpm, 120);
+      expect(recalled.recordedLengthFrames, _bar);
+      expect(recalled.tracks[0].spanFrames, _bar);
+      expect(recalled.tracks[1].spanFrames, 21333);
+      expect(recalled.tracks[0].lengthFrames, _bar);
+      expect(recalled.tracks[1].lengthFrames, 21333);
+      // The saved vector: nothing follows now. The takes keep the spans the
+      // retime gave them, so turning Follow on reads each at its ratio.
+      expect(recalled.followTempo, isFalse);
+      expect(repository.defaultFollowTempo, isFalse);
+      expect(recalled.tracks[1].pitchModeOverride, PitchMode.followsSpeed);
+      expect(
+        repository.setFollowTempoSettings(
+          defaultFollow: true,
+          trackOverrides: const {},
+        ),
+        EngineResult.ok,
+      );
+      await step();
+      await step();
+      expect(engine.snapshot().tracks[0].headRate, closeTo(0.75, 1e-3));
+      expect(engine.snapshot().tracks[1].headRate, 1);
+    },
+    skip: skip,
+  );
 }

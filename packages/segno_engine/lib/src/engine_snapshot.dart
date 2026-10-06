@@ -738,6 +738,7 @@ class TrackSnapshot {
     this.followTempoOverride,
     this.pitchModeOverride,
     this.pitchEffectiveCents = 0,
+    this.spanFrames = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -781,6 +782,7 @@ class TrackSnapshot {
       followTempoOverride = null,
       pitchModeOverride = null,
       pitchEffectiveCents = 0,
+      spanFrames = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -846,6 +848,7 @@ class TrackSnapshot {
         ? null
         : PitchMode.fromCode(native.pitch_override),
     pitchEffectiveCents: native.pitch_effective_cents,
+    spanFrames: native.span_frames,
     imageRevision: native.image_revision,
     peakL: native.peak_l,
     peakR: native.peak_r,
@@ -884,6 +887,11 @@ class TrackSnapshot {
   /// the tempo ratio's shift while that render is pending or with
   /// [PitchMode.followsSpeed]. Speed and Transpose are not included.
   final int pitchEffectiveCents;
+
+  /// The shared-clock length this track's take was laid down against once a
+  /// retime moved the clock (#1179), 0 for the clock in force. A Session
+  /// saves it so a recall reads every take at its own ratio.
+  final int spanFrames;
 
   /// Sequence of the coherent native tuple publication.
   final int fadeRevision;
@@ -1073,6 +1081,7 @@ class TrackSnapshot {
           followTempoOverride == other.followTempoOverride &&
           pitchModeOverride == other.pitchModeOverride &&
           pitchEffectiveCents == other.pitchEffectiveCents &&
+          spanFrames == other.spanFrames &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -1112,6 +1121,7 @@ class TrackSnapshot {
     followTempoOverride,
     pitchModeOverride,
     pitchEffectiveCents,
+    spanFrames,
     Object.hashAll(lanes),
   ]);
 }
@@ -1445,6 +1455,7 @@ class EngineSnapshot {
     this.speed = SpeedFactor.normal,
     this.transposeBypass = false,
     this.recordedTempoBpm = 0,
+    this.recordedLengthFrames = 0,
     this.followTempo = false,
     this.tempoFollow = TempoFollowState.free,
     this.pitchMode = PitchMode.unchanged,
@@ -1529,6 +1540,7 @@ class EngineSnapshot {
       speed = SpeedFactor.normal,
       transposeBypass = false,
       recordedTempoBpm = 0,
+      recordedLengthFrames = 0,
       followTempo = false,
       tempoFollow = TempoFollowState.free,
       pitchMode = PitchMode.unchanged,
@@ -1628,6 +1640,7 @@ class EngineSnapshot {
       speed: SpeedFactor.fromRatio(native.speed_numer, native.speed_denom),
       transposeBypass: native.transpose_bypass != 0,
       recordedTempoBpm: native.recorded_tempo_bpm,
+      recordedLengthFrames: native.recorded_length_frames,
       followTempo: native.follow_tempo != 0,
       tempoFollow: TempoFollowState.fromCode(native.tempo_follow),
       pitchMode: PitchMode.fromCode(native.pitch_follows_speed),
@@ -1720,6 +1733,7 @@ class EngineSnapshot {
     SpeedFactor? speed,
     bool? transposeBypass,
     double? recordedTempoBpm,
+    int? recordedLengthFrames,
     bool? followTempo,
     TempoFollowState? tempoFollow,
     PitchMode? pitchMode,
@@ -1801,6 +1815,7 @@ class EngineSnapshot {
     speed: speed ?? this.speed,
     transposeBypass: transposeBypass ?? this.transposeBypass,
     recordedTempoBpm: recordedTempoBpm ?? this.recordedTempoBpm,
+    recordedLengthFrames: recordedLengthFrames ?? this.recordedLengthFrames,
     followTempo: followTempo ?? this.followTempo,
     tempoFollow: tempoFollow ?? this.tempoFollow,
     pitchMode: pitchMode ?? this.pitchMode,
@@ -2082,6 +2097,11 @@ class EngineSnapshot {
   /// with no material.
   final double recordedTempoBpm;
 
+  /// The master length [recordedTempoBpm] measured (#1179), 0 with none. A
+  /// Session saves the pair so a recall commits the takes at the tempo they
+  /// were laid down at and retimes from there.
+  final int recordedLengthFrames;
+
   /// The Follow tempo default every track inherits (#1179): with it, a
   /// song-tempo change retimes the recorded tracks.
   final bool followTempo;
@@ -2269,6 +2289,7 @@ class EngineSnapshot {
           speed == other.speed &&
           transposeBypass == other.transposeBypass &&
           recordedTempoBpm == other.recordedTempoBpm &&
+          recordedLengthFrames == other.recordedLengthFrames &&
           followTempo == other.followTempo &&
           tempoFollow == other.tempoFollow &&
           pitchMode == other.pitchMode &&
@@ -2352,6 +2373,7 @@ class EngineSnapshot {
     speed,
     transposeBypass,
     recordedTempoBpm,
+    recordedLengthFrames,
     followTempo,
     tempoFollow,
     pitchMode,

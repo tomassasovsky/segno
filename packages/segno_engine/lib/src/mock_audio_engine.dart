@@ -1739,6 +1739,9 @@ class MockAudioEngine implements AudioEngine {
   EngineResult commitSession(int baseFrames, {required int loopBars}) =>
       _requireRunning();
 
+  @override
+  EngineResult importSpan(int channel, int spanFrames) => _requireRunning();
+
   /// The `captureDir` passed to the most recent [perfArm] call, for test
   /// assertions. `null` until the first arm.
   String? lastPerfCaptureDir;

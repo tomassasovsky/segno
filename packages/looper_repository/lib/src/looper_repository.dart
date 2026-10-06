@@ -3925,6 +3925,22 @@ class LooperRepository {
         )) {
       throw StateError('session mix cannot be restored');
     }
+    // Audio & tempo (#1179): the recorded pair is both or neither, at a tempo
+    // the engine takes, beside a session tempo it retimes to; spans and
+    // overrides name real tracks. Refused here, before the rig is cleared.
+    final recordedSet =
+        rig.recordedTempoBpm != 0 || rig.recordedLengthFrames != 0;
+    if ((recordedSet &&
+            (!rig.recordedTempoBpm.isFinite ||
+                rig.recordedTempoBpm < 30 ||
+                rig.recordedTempoBpm > 300 ||
+                rig.recordedLengthFrames <= 0 ||
+                rig.tempoSource == TempoSource.none)) ||
+        rig.tracks.any((t) => t.spanFrames < 0) ||
+        rig.trackFollowTempoOverrides.keys.any((c) => c < 0 || c >= 8) ||
+        rig.trackPitchModeOverrides.keys.any((c) => c < 0 || c >= 8)) {
+      throw StateError('session audio and tempo cannot be restored');
+    }
     final restoredMix = _MixIntent(
       pans: rig.trackPans,
       trackLevels: rig.trackLevels,
@@ -3984,6 +4000,8 @@ class LooperRepository {
     final recordTimingOverrides = Map.of(rig.trackRecordTimingOverrides);
     final overdubDecayOverrides = Map.of(rig.trackOverdubDecayOverrides);
     final oneShotOverrides = Map.of(rig.trackOneShotOverrides);
+    final followOverrides = Map.of(rig.trackFollowTempoOverrides);
+    final pitchOverrides = Map.of(rig.trackPitchModeOverrides);
     final lengthPresetOverrides = Map.of(rig.trackLengthPresetOverrides);
     _requireSessionSetting(
       await settleFxRecipes(
@@ -4098,8 +4116,13 @@ class LooperRepository {
     _tempoBpm = rig.tempoBpm;
     _tempoSource = rig.tempoSource;
     if (_intendRunning) {
+      // A retimed rig's takes commit at the tempo they were laid down at
+      // (#1179); the session tempo retimes them after the commit.
       _requireSessionSetting(
-        _engine.restoreTempo(bpm: rig.tempoBpm, source: rig.tempoSource),
+        _engine.restoreTempo(
+          bpm: rig.retimed ? rig.recordedTempoBpm : rig.tempoBpm,
+          source: rig.tempoSource,
+        ),
       );
     }
     _requireSessionSetting(setSyncTempo(on: rig.syncTempo));
@@ -4131,6 +4154,32 @@ class LooperRepository {
     _requireSessionSetting(setClickOutput(rig.clickMask));
     _requireSessionSetting(setClickVolume(rig.clickVolume));
     _requireSessionSetting(await settleClickVolume());
+    requireCurrent();
+
+    // Audio & tempo (#1179), before the takes so they commit at their rates.
+    // A retimed rig follows on every track until its retime has landed: the
+    // retime needs a follower, and the session's own vector may have none
+    // (a song retimed and then set to keep its recorded speed).
+    _requireSessionSetting(
+      setPitchModeSettings(
+        defaultMode: rig.defaultPitchMode,
+        trackOverrides: pitchOverrides,
+      ),
+    );
+    _requireSessionSetting(await settlePitchMode());
+    requireCurrent();
+    _requireSessionSetting(
+      rig.retimed
+          ? setFollowTempoSettings(
+              defaultFollow: true,
+              trackOverrides: const {},
+            )
+          : setFollowTempoSettings(
+              defaultFollow: rig.defaultFollowTempo,
+              trackOverrides: followOverrides,
+            ),
+    );
+    _requireSessionSetting(await settleFollowTempo());
     requireCurrent();
 
     // Session-level mode + crown (B5c), applied here — before any content is
@@ -4183,6 +4232,22 @@ class LooperRepository {
       attempts: clearPollAttempts,
     );
     requireCurrent();
+    if (rig.retimed) {
+      await _retimeSession(
+        rig,
+        interval: clearPollInterval,
+        attempts: clearPollAttempts,
+      );
+      requireCurrent();
+      _requireSessionSetting(
+        setFollowTempoSettings(
+          defaultFollow: rig.defaultFollowTempo,
+          trackOverrides: followOverrides,
+        ),
+      );
+      _requireSessionSetting(await settleFollowTempo());
+      requireCurrent();
+    }
 
     // Restore per-lane routing / mix through the cached setters so the caches
     // stay truthful (and a restart replays them). Lane count first — so an
@@ -4467,6 +4532,16 @@ class LooperRepository {
             'failed to finalize track ${track.channel}: ${finalized.name}',
           );
         }
+        // A take laid down against another master than the recorded one
+        // (#1179) commits over that span, at its own ratio.
+        if (rig.retimed && track.spanFrames > 0) {
+          final spanned = _engine.importSpan(track.channel, track.spanFrames);
+          if (!spanned.isOk) {
+            throw StateError(
+              'failed to restore track ${track.channel} span: ${spanned.name}',
+            );
+          }
+        }
       }
       // Finalization queues a material reset. Its callback must publish the
       // new Fade generation before an image can target that imported material.
@@ -4518,9 +4593,13 @@ class LooperRepository {
       }
       // An empty session establishes no master: the engine stays free to define
       // a fresh loop length.
-      if (rig.tracks.isNotEmpty && rig.baseLengthFrames > 0) {
+      // A retimed rig commits on its recorded master (#1179).
+      final base = rig.retimed
+          ? rig.recordedLengthFrames
+          : rig.baseLengthFrames;
+      if (rig.tracks.isNotEmpty && base > 0) {
         final committed = _engine.commitSession(
-          rig.baseLengthFrames,
+          base,
           loopBars: rig.loopBars,
         );
         if (!committed.isOk) {
@@ -4533,7 +4612,7 @@ class LooperRepository {
         if (_engine.commandsSettled) {
           final snapshot = _engine.snapshot();
           final committed =
-              snapshot.masterLengthFrames == rig.baseLengthFrames &&
+              snapshot.masterLengthFrames == base &&
               rig.tracks.every((track) {
                 if (track.channel >= snapshot.tracks.length) return false;
                 final actual = snapshot.tracks[track.channel];
@@ -4572,6 +4651,31 @@ class LooperRepository {
       }
       rethrow;
     }
+  }
+
+  /// Moves a retimed rig, committed on its recorded master, to the session
+  /// tempo (#1179): the engine retimes from the recorded pair, so the clock
+  /// lands exactly on the saved master and every take at the ratio it had.
+  /// A retime the engine refuses fails the recall.
+  Future<void> _retimeSession(
+    SessionRig rig, {
+    required Duration interval,
+    required int attempts,
+  }) async {
+    if (rig.tempoBpm != rig.recordedTempoBpm) {
+      _requireSessionSetting(_engine.setTempo(rig.tempoBpm));
+    }
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      if (_engine.commandsSettled) {
+        if (_engine.snapshot().masterLengthFrames != rig.baseLengthFrames) {
+          throw StateError('session retime was refused');
+        }
+        _reproject();
+        return;
+      }
+      await Future<void>.delayed(interval);
+    }
+    throw StateError('session retime did not settle');
   }
 
   static bool _audioCleared(EngineSnapshot snapshot) =>
