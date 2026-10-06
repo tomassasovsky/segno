@@ -188,6 +188,42 @@ jobs:
           packages/segno_engine/tool/check_ffi_symbols.sh \
             build/linux/*/debug/bundle/lib/libsegno_engine.so
 
+  # The #1179 pitch/time CPU proxy: the bench harness on the same native arm64
+  # runner as build-linux-arm64, asserting the arm64 PROXY thresholds (p50 and
+  # throughput only — a shared Neoverse VM without SCHED_FIFO has no meaningful
+  # p99) at half the Pi 5 figures. The Pi 5 thresholds themselves are a hardware
+  # criterion (docs/plan/2026-10-06-feat-pitch-time-core-plan.md Part 1): the
+  # built binary is uploaded as an artifact so the owner can copy it to the
+  # appliance and run it with `--budget-us 667 --assert` there.
+  # upload-artifact does not keep file modes: `chmod +x bench_pitch_time` on
+  # the appliance before running it.
+  native-bench-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install C/C++ build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+      - name: Build + run the pitch/time bench (arm64 proxy thresholds)
+        # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
+        # has no pipefail, so the pipeline would exit with tee's status and a
+        # failed threshold (or a failed build) would leave the job green.
+        shell: bash
+        run: >
+          bash packages/segno_engine/src/test/bench/bench_pitch_time.sh
+          --budget-us 667 --assert --proxy --seconds 20
+          | tee bench-pitch-time-arm64.md
+      - name: Upload the harness and its report for the appliance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-pitch-time-arm64
+          path: |
+            packages/segno_engine/build/bench/bench_pitch_time
+            bench-pitch-time-arm64.md
+          if-no-files-found: error
+
   # The native C engine + MIDI unit tests (the deterministic golden gate). They
   # need no audio device, so they run on Linux with just a C toolchain + ALSA
   # headers (the MIDI test links libasound). run_native_tests.sh builds and runs
@@ -214,6 +250,12 @@ jobs:
           sudo apt-get install -y build-essential libasound2-dev libpulse0
       - name: Build + run native engine/MIDI tests
         run: bash packages/segno_engine/src/test/run_native_tests.sh
+      # The #1179 pitch/time bench (src/test/bench/bench_pitch_time.{c,sh}) is
+      # outside the test gate, so this one-second smoke run is what keeps it
+      # compiling and running; the arm64 proxy thresholds are asserted by
+      # native-bench-arm64 below.
+      - name: Build + smoke the pitch/time bench
+        run: bash packages/segno_engine/src/test/bench/bench_pitch_time.sh --smoke
       - name: Check macOS RNNoise include/forwarder wiring
         run: bash packages/segno_engine/tool/test/run_macos_rnnoise_wiring_tests.sh
       - name: Build + run the pedal-link contract test (firmware C vs Dart fixtures)

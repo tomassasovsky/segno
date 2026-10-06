@@ -51,6 +51,9 @@ Future<void> runSegno(
     'inject all three repositories together or none',
   );
   WidgetsFlutterBinding.ensureInitialized();
+  // The engine's vendored native code (Signalsmith Stretch, RNNoise,
+  // miniaudio, VST3, CLAP) for System > About's open-source notices.
+  registerVendoredLicenses();
 
   final windowController = await WindowController.fromCurrentEngine();
   if (WaveformWindowArgs.isWaveformWindow(windowController.arguments)) {

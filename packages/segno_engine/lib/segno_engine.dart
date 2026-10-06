@@ -100,4 +100,5 @@ export 'src/track_effect.dart'
         kPluginFxCode,
         kTrackEffectMax,
         kTrackEffectParams;
+export 'src/vendored_licenses.dart' show registerVendoredLicenses;
 export 'src/volume_space.dart' show VolumeSpace;

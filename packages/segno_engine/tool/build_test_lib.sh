@@ -17,11 +17,14 @@ CC="${CC:-gcc}"
 STD="-std=gnu11 -O2 -fPIC -I src/core -I src/midi -I src/asio -I src/miniaudio \
   -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
+# The C++ runtime is linked for the one C++ engine TU (src/stretch/
+# le_stretch.cpp, #1179), compiled separately below.
 case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) EXT="dll";   LIBS="-lole32 -lwinmm -lm" ;;
-  Darwin)               EXT="dylib"; LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lm" ;;
-  *)                    EXT="so";    LIBS="-lpthread -lm -ldl" ;;
+  MINGW*|MSYS*|CYGWIN*) EXT="dll";   LIBS="-lole32 -lwinmm -lstdc++ -lm" ;;
+  Darwin)               EXT="dylib"; LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lc++ -lm" ;;
+  *)                    EXT="so";    LIBS="-lpthread -lstdc++ -lm -ldl" ;;
 esac
+CXX="${CXX:-c++}"
 
 OUT_DIR="build/test_lib"
 OUT="$OUT_DIR/segno_engine_test.$EXT"
@@ -32,8 +35,9 @@ mkdir -p "$OUT_DIR"
 # EXCEPT src/midi/le_midi_clock.c (C1, D15), which IS an engine dependency
 # (engine_process.c calls le_midi_clock_advance every block) despite living
 # in midi/ per the plan's file placement; keep in sync with the other two.
+$CXX -std=c++17 -O2 -fPIC -c src/stretch/le_stretch.cpp -o "$OUT_DIR/le_stretch.o" 1>&2
 # shellcheck disable=SC2086
-$CC $STD -shared \
+$CC $STD -shared "$OUT_DIR/le_stretch.o" \
   src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
   src/core/restore_declip.c src/core/restore_halfband.c \

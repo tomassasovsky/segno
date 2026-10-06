@@ -214,6 +214,48 @@ else
   fail "SPM rnnoise_denoise.c should compile; $(cat "$tmp/denoise.err")"
 fi
 
+# The Signalsmith Stretch C shim (#1179) is the portable engine's one C++ TU.
+# CMake compiles src/stretch/le_stretch.cpp directly; the macOS SPM and
+# CocoaPods targets each need a forwarder whose relative #include resolves,
+# and the shim's own include of the vendored header must resolve from src/stretch.
+echo "== macOS stretch shim wiring =="
+if grep -q 'stretch/le_stretch.cpp' "$CMAKE"; then
+  pass "CMake lists stretch/le_stretch.cpp"
+else
+  fail "CMake does not list stretch/le_stretch.cpp"
+fi
+if grep -q 'le_stretch.cpp' "$NATIVE_TESTS"; then
+  pass "run_native_tests.sh compiles the stretch shim"
+else
+  fail "run_native_tests.sh does not compile the stretch shim"
+fi
+for fwd in "$SPM_SRC/le_stretch.cpp" "$CLASSES/le_stretch.cpp"; do
+  if [ -f "$fwd" ]; then
+    if target="$(resolve_include "$fwd")" && [ "$(basename "$target")" = "le_stretch.cpp" ]; then
+      pass "$(basename "$(dirname "$fwd")")/le_stretch.cpp forwards to src/stretch/le_stretch.cpp"
+    else
+      fail "$fwd does not resolve to src/stretch/le_stretch.cpp"
+    fi
+  else
+    fail "forwarder $fwd missing"
+  fi
+done
+if target="$(resolve_include "$PLUGIN/src/stretch/le_stretch.cpp")" && [ -n "$target" ]; then
+  : # the first include is le_stretch.h; check the vendored header separately
+fi
+if [ -f "$PLUGIN/third_party/signalsmith-stretch/signalsmith-stretch.h" ] && \
+   grep -q '"../../third_party/signalsmith-stretch/signalsmith-stretch.h"' "$PLUGIN/src/stretch/le_stretch.cpp"; then
+  pass "le_stretch.cpp reaches the vendored header relatively"
+else
+  fail "le_stretch.cpp must include ../../third_party/signalsmith-stretch/signalsmith-stretch.h"
+fi
+CXX="${CXX:-c++}"
+if $CXX -std=c++17 -c "$SPM_SRC/le_stretch.cpp" -o "$tmp/le_stretch_spm.o" 2>"$tmp/le_stretch_spm.err"; then
+  pass "SPM le_stretch.cpp forwarder compiles with no search path"
+else
+  fail "SPM le_stretch.cpp forwarder should compile; $(cat "$tmp/le_stretch_spm.err")"
+fi
+
 if [ "$fails" -eq 0 ]; then
   echo "ALL PASSED"
   exit 0

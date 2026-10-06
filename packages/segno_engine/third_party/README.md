@@ -82,6 +82,38 @@ replace the folder with a newer SDK release and update the version above.
   suite for the vendor smoke test. The macOS SPM/CocoaPods forwarder TUs land
   with the restore worker (#697 S9), the first macOS consumer.
 
+## `signalsmith-stretch/` — Signalsmith Stretch (pitch-shift and time-stretch)
+
+- **Version:** release tag `1.1.0`, commit `44c8f865af9da8c29cc4a70a2d5a3ec83639c711`
+  (2025-01-29) of
+  [Signalsmith-Audio/signalsmith-stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch),
+  a header-only C++11 library. Kept: `signalsmith-stretch.h`, the bundled
+  `dsp/` subset of signalsmith-dsp it depends on, both licenses and READMEs.
+  Stripped: `web/` (compiled JS and audio) and `cmd/` (the CLI example).
+- **License:** **MIT** ([`signalsmith-stretch/LICENSE.txt`](signalsmith-stretch/LICENSE.txt),
+  [`signalsmith-stretch/dsp/LICENSE.txt`](signalsmith-stretch/dsp/LICENSE.txt)),
+  GPLv3-compatible; it changes nothing about the repository's
+  GPL-3.0-or-later posture.
+- **History:** vendored first under the bench harness only (July 2026 spike
+  D0, `docs/plan/2026-07-22-time-stretch-spike-findings.md`); moved here into
+  the real build by the pitch/time core Part 1 (#1179,
+  `docs/plan/2026-10-06-feat-pitch-time-core-plan.md`), which also replaced
+  that harness with `src/test/bench/bench_pitch_time.c`.
+- **Why vendored:** it is the engine's pitch-preserving processor (Transpose,
+  Audio & tempo follow with unchanged pitch, import Adapt). Header-only, so
+  vendoring keeps every build self-contained with no package step.
+- **Used by:** exactly one translation unit, `src/stretch/le_stretch.cpp`,
+  the C ABI shim (`src/stretch/le_stretch.h`) the C engine, the offline
+  renderer, the bench and the tests call. It includes the header relatively
+  (`../../third_party/signalsmith-stretch/signalsmith-stretch.h`), so no
+  include path is added to CMake, the podspec, `Package.swift` or
+  `run_native_tests.sh`; those list the shim TU (CMake, compiled as C++17) or
+  compile it with `$CXX` and link the C++ runtime. On Linux CMake compiles the
+  shim with `-fvisibility=hidden`, for the RNNoise reason above. Determinism
+  contract worth knowing: construct with a fixed seed; the native tests assert
+  the two preset geometries (cheaper: block 0.1 s / interval 0.04 s; default:
+  0.12 s / 0.03 s) so an upgrade cannot change them silently.
+
 ## `clap/` — CLAP plugin ABI (header-only)
 
 - **Version:** CLAP `1.2.9`, headers only ([`clap/include/`](clap/include/)).
@@ -117,6 +149,19 @@ Do not edit the vendored sources in place — they are upstream drops (plus, for
 `rnnoise/`, the one documented patch above). To upgrade, replace the folder(s)
 with a newer release, re-apply any still-needed documented patches, and update
 the version(s) above.
+
+## License notices in the app
+
+Flutter's license collector only reads Dart packages' `LICENSE` files, so none
+of the code above reaches the app's open source notices on its own. The
+engine package declares each license file as an asset (`pubspec.yaml`) and
+`registerVendoredLicenses` (`lib/src/vendored_licenses.dart`) adds them to
+`LicenseRegistry`; `runSegno` calls it once at startup. Vendoring a new
+library means adding its license file to both lists; the app test
+`test/app/vendored_licenses_test.dart` compares every registered entry with
+the file on disk. The ASIO SDK is not listed: it is compiled only into the
+Windows build, and what its agreement asks of a distribution is a separate
+question (follow-up on #1179).
 
 ## Vendored code that does **not** live here: `src/miniaudio/`
 
