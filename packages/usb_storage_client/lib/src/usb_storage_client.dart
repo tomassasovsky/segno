@@ -27,7 +27,12 @@ abstract interface class UsbStorageClient {
   /// success the status reads [RemovableVolumeRecordStatus.ejected].
   Future<String> requestEject(int generation);
 
-  /// Withdraws an eject request that the helper has not served yet. A request
-  /// already served (its file gone) is left alone; this never throws for it.
-  Future<void> cancelEject(String requestId);
+  /// Withdraws an eject request that the helper has not taken yet, and says
+  /// whether it did.
+  ///
+  /// `false` means the request is no longer there to withdraw: the helper
+  /// has taken it (it deletes a request before it unmounts) and its answer
+  /// will still arrive in [volumes], or it was never filed. A caller must not
+  /// report the eject as withdrawn then. Never throws for it.
+  Future<bool> cancelEject(String requestId);
 }

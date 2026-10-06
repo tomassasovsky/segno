@@ -6,6 +6,7 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
+import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
@@ -39,6 +40,16 @@ const String segnoExternalPedalsRouteName = 'segno/external-pedals';
 
 /// Route name for MIDI controls and Learn.
 const String segnoMidiControlsRouteName = 'segno/midi-controls';
+
+/// Route name for the Library.
+const String segnoLibraryRouteName = 'segno/library';
+
+/// Pushes the Library route onto the root navigator, once.
+Future<void> openLibrary() => _pushOnce(
+  segnoLibraryRouteName,
+  () =>
+      (_) => const LibraryPage(),
+);
 
 /// Route name for the Device settings page.
 const String segnoDeviceSettingsRouteName = 'segno/settings/device';

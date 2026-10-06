@@ -7,6 +7,7 @@ import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
@@ -1635,7 +1636,10 @@ class MockAudioEngine implements AudioEngine {
   ) => _requireRunning();
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
+  TrackHistory exportHistory(int channel) => TrackHistory.none;
+
+  @override
+  EngineResult finalizeHistory(int channel, TrackHistory history) =>
       _requireRunning();
 
   @override
@@ -1679,6 +1683,16 @@ class MockAudioEngine implements AudioEngine {
   @override
   VolumeSpace? volumeSpace(String path) =>
       path.isEmpty ? null : volumeSpaceValue;
+
+  /// Every directory [syncDirectory] was asked to sync, in order.
+  final List<String> syncedDirectories = [];
+
+  @override
+  bool syncDirectory(String path) {
+    if (path.isEmpty) return false;
+    syncedDirectories.add(path);
+    return true;
+  }
 
   /// The `captureDir` passed to the most recent [renderBegin] call, for test
   /// assertions. `null` until the first render.

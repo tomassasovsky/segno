@@ -8,7 +8,6 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The stage's one standing loss condition: the pinned audio interface is
@@ -84,11 +83,11 @@ class ConnectivityBanners extends StatelessWidget {
                   reopen?.sampleRate ?? 0,
                   reopen?.previousSampleRate ?? 0,
                 ),
-          actionLabel: l10n.sessionManage,
+          actionLabel: l10n.stageLibrary,
           actionKey: const Key('connectivity_banner_material_action'),
           onAction: () {
             context.read<AudioSetupCubit>().dismissReopenNotice();
-            unawaited(showSessionsManager(context));
+            unawaited(openLibrary());
           },
         );
       case DeviceConnectivity.none:

@@ -5,13 +5,19 @@ import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show ClickMode, GridDivision, LooperMode, RecordTiming, TempoSource;
+    show
+        ClickMode,
+        GridDivision,
+        LooperMode,
+        RecordTiming,
+        TempoSource,
+        TrackHistory;
 
 /// One lane's restored audio, routing, and mix inside a [SessionRigTrack].
 ///
-/// Carries the lane's ordered audio [layers] (part 1 restores one live buffer;
-/// the undo/redo layers are a later revision) plus its routing/mix. [liveIndex]
-/// (== [undoCount]) selects the currently playing buffer.
+/// Carries the lane's ordered audio [layers] and the track's [history] that
+/// names them, plus its routing/mix. [liveIndex] (== [undoCount]) selects the
+/// currently playing buffer.
 @immutable
 class SessionRigLane {
   /// Creates a [SessionRigLane].
@@ -24,8 +30,7 @@ class SessionRigLane {
     required this.inputChannel,
     this.pan = 0,
     this.balance = 1,
-    this.undoCount = 0,
-    this.redoCount = 0,
+    this.history = TrackHistory.none,
   });
 
   /// The lane's recorded image (slice 3): where its input sat when the take
@@ -39,7 +44,9 @@ class SessionRigLane {
   /// Lane index within the track.
   final int lane;
 
-  /// The lane's mono audio buffers, oldest undo → live → newest redo.
+  /// The lane's mono audio images, oldest undo → live → newest redo: one per
+  /// [history] entry except redo-side Peel markers, plus the live image
+  /// ([TrackHistory.imageCount]).
   final List<Float32List> layers;
 
   /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
@@ -54,11 +61,15 @@ class SessionRigLane {
   /// Hardware input channel this lane records (`-1` = none).
   final int inputChannel;
 
-  /// Number of leading [layers] that are undo snapshots.
-  final int undoCount;
+  /// The track's audio history in image-ordinal order (#1164), shared by
+  /// every lane of the track.
+  final TrackHistory history;
 
-  /// Number of trailing [layers] that are redo snapshots.
-  final int redoCount;
+  /// Number of leading [history] entries (and [layers]) on the undo side.
+  int get undoCount => history.undoCount;
+
+  /// Number of trailing [history] entries on the redo side.
+  int get redoCount => history.redoCount;
 
   /// Index into [layers] of the live (currently playing) buffer.
   int get liveIndex => undoCount;

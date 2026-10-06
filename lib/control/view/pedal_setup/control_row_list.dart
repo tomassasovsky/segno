@@ -98,80 +98,91 @@ class ControlRowTile extends StatelessWidget {
                 height: height,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
-                  child: Row(
-                    children: [
-                      if (art case final asset?) ...[
-                        SizedBox.fromSize(
-                          size: artSize,
+                  child: LayoutBuilder(
+                    builder: (context, box) => Row(
+                      children: [
+                        if (art case final asset?) ...[
+                          SizedBox.fromSize(
+                            size: artSize,
+                            child: ExcludeSemantics(
+                              child: Image.asset(
+                                asset,
+                                key: const Key('control_row_art'),
+                                package: FxCatalogueLoader.package,
+                                fit: BoxFit.contain,
+                                // A picture that fails to load leaves its
+                                // space, so every row's names stay in one
+                                // column.
+                                errorBuilder: (_, _, _) =>
+                                    const SizedBox.shrink(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                        ],
+                        Expanded(
                           child: ExcludeSemantics(
-                            child: Image.asset(
-                              asset,
-                              key: const Key('control_row_art'),
-                              package: FxCatalogueLoader.package,
-                              fit: BoxFit.contain,
-                              // A picture that fails to load leaves its space,
-                              // so the names of every row stay in one column.
-                              errorBuilder: (_, _, _) =>
-                                  const SizedBox.shrink(),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                AppText(
+                                  destination,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: surface.textSecondary,
+                                    fontSize: 20,
+                                    height: 1.15,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                AppText(
+                                  name,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: surface.textPrimary,
+                                    fontSize: 27,
+                                    height: 1.15,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                        const SizedBox(width: 24),
-                      ],
-                      Expanded(
-                        child: ExcludeSemantics(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              AppText(
-                                destination,
-                                maxLines: 1,
-                                style: TextStyle(
-                                  color: surface.textSecondary,
-                                  fontSize: 20,
-                                  height: 1.15,
-                                ),
+                        if (shown != null) ...[
+                          const SizedBox(width: 24),
+                          // The name column is Expanded, so the value sits at
+                          // the right edge at its own width. A long value is
+                          // capped at half the row, not given a Flexible: a
+                          // Flexible beside an Expanded splits the free space
+                          // and leaves a short value mid-card.
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: box.maxWidth / 2,
+                            ),
+                            child: AppText(
+                              shown,
+                              key: valueKey,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: available
+                                    ? surface.textPrimary
+                                    : surface.textTertiary,
+                                fontSize: 27,
+                                height: 1.15,
                               ),
-                              const SizedBox(height: 6),
-                              AppText(
-                                name,
-                                maxLines: 1,
-                                style: TextStyle(
-                                  color: surface.textPrimary,
-                                  fontSize: 27,
-                                  height: 1.15,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (shown != null) ...[
-                        const SizedBox(width: 24),
-                        Flexible(
-                          child: AppText(
-                            shown,
-                            key: valueKey,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: available
-                                  ? surface.textPrimary
-                                  : surface.textTertiary,
-                              fontSize: 27,
-                              height: 1.15,
                             ),
                           ),
-                        ),
+                        ],
+                        if (taken)
+                          Icon(
+                            LucideIcons.check,
+                            size: 24,
+                            color: surface.textSecondary,
+                          ),
                       ],
-                      if (taken)
-                        Icon(
-                          LucideIcons.check,
-                          size: 24,
-                          color: surface.textSecondary,
-                        ),
-                    ],
+                    ),
                   ),
                 ),
               ),

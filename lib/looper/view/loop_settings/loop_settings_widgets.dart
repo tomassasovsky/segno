@@ -458,7 +458,14 @@ class LoopOutlinedButton extends StatelessWidget {
     final foreground = tone == LoopButtonTone.accent
         ? surface.onAccent
         : surface.textPrimary;
-    final text = TextStyle(color: foreground, fontSize: fontSize, height: 1);
+    // The pen draws every accent action's label bold (`Done`, `Open session`,
+    // `Start new loop`, `Use as backing`); the other fills stay regular.
+    final text = TextStyle(
+      color: foreground,
+      fontSize: fontSize,
+      fontWeight: tone == LoopButtonTone.accent ? FontWeight.w700 : null,
+      height: 1,
+    );
     // A button with nothing to do READS as having nothing to do. A control
     // that looks live and is inert is the working-but-silent control the
     // accepted design says to explain rather than present.
@@ -1017,6 +1024,19 @@ class _LoopSliderState extends State<LoopSlider> {
     return KeyEventResult.handled;
   }
 
+  /// A screen reader's increase or decrease: one keyboard step, committed at
+  /// once, since an assistive adjustment has no draft to confirm.
+  void _semanticStep(int direction) {
+    if (!widget.enabled) return;
+    if (_keyboardDraft != null) _cancelEdit();
+    final next = (widget.value + direction * widget.keyboardStep).clamp(
+      0.0,
+      widget.max,
+    );
+    widget.onChanged(next);
+    widget.onChangeEnd?.call(next);
+  }
+
   void _touchSet(double dx) {
     if (!widget.enabled) return;
     if (_keyboardDraft != null) _cancelEdit();
@@ -1030,6 +1050,9 @@ class _LoopSliderState extends State<LoopSlider> {
     _touchPreview = null;
     widget.onChangeEnd?.call(value);
   }
+
+  String _semanticValue(double value) =>
+      widget.semanticValueBuilder?.call(value) ?? '${(value * 100).round()}';
 
   @override
   void dispose() {
@@ -1058,10 +1081,18 @@ class _LoopSliderState extends State<LoopSlider> {
           return Semantics(
             slider: true,
             label: widget.semanticLabel,
-            value:
-                widget.semanticValueBuilder?.call(clamped) ??
-                '${(clamped * 100).round()}',
+            value: _semanticValue(clamped),
+            increasedValue: _semanticValue(
+              (clamped + widget.keyboardStep).clamp(0.0, widget.max),
+            ),
+            decreasedValue: _semanticValue(
+              (clamped - widget.keyboardStep).clamp(0.0, widget.max),
+            ),
             enabled: enabled,
+            onIncrease: enabled && clamped < widget.max
+                ? () => _semanticStep(1)
+                : null,
+            onDecrease: enabled && clamped > 0 ? () => _semanticStep(-1) : null,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapUp: enabled
