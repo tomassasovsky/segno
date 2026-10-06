@@ -33,8 +33,16 @@ class _ImportEngine extends PumpedNativeEngine {
   bool installForward = false;
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) {
-    final result = super.finalizeHistory(channel, history);
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
+    final result = super.finalizeHistory(
+      channel,
+      history,
+      imageLengths: imageLengths,
+    );
     if (result.isOk) finalized = true;
     return result;
   }

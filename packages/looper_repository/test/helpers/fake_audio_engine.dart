@@ -324,6 +324,7 @@ class FakeAudioEngine implements AudioEngine {
       importedLanes.removeWhere((key, _) => key.$1 == channel);
       importedLayers.removeWhere((key, _) => key.$1 == channel);
       finalizedHistory.remove(channel);
+      finalizedLengths.remove(channel);
       final tracks = [..._nextSnapshot.tracks];
       tracks[channel] = const TrackSnapshot.empty();
       _nextSnapshot = _nextSnapshot.copyWith(
@@ -1487,6 +1488,9 @@ class FakeAudioEngine implements AudioEngine {
   /// The history passed to [finalizeHistory], keyed by channel.
   final Map<int, TrackHistory> finalizedHistory = {};
 
+  /// The image lengths passed to [finalizeHistory], keyed by channel.
+  final Map<int, List<int>> finalizedLengths = {};
+
   /// Result returned by [importLayer] once any [importFailCountdown] is spent.
   EngineResult importResult = EngineResult.ok;
 
@@ -1539,9 +1543,14 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) {
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
     calls.add('finalizeHistory');
     finalizedHistory[channel] = history;
+    finalizedLengths[channel] = imageLengths;
     return EngineResult.ok;
   }
 
@@ -1566,7 +1575,10 @@ class FakeAudioEngine implements AudioEngine {
         reversed: installedReverses[entry.key] ?? false,
         volume: 1,
         muted: false,
-        lengthFrames: entry.value.length,
+        // The live image's length: a length edit's images differ (#1168).
+        lengthFrames:
+            importedLayers[(entry.key, 0, finalized.undoCount)]?.length ??
+            entry.value.length,
         undoDepth: finalized.undoCount,
         redoDepth: finalized.redoCount,
         rms: 0,

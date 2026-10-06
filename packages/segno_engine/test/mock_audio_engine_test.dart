@@ -51,9 +51,15 @@ void main() {
         HistoryEntry(HistoryKind.layer),
       ], undoCount: 1);
       expect(engine.exportHistory(0), TrackHistory.none);
-      expect(engine.finalizeHistory(0, history), EngineResult.notRunning);
+      expect(
+        engine.finalizeHistory(0, history, imageLengths: const [8, 8]),
+        EngineResult.notRunning,
+      );
       expect(engine.start(engine.defaultConfig), EngineResult.ok);
-      expect(engine.finalizeHistory(0, history), EngineResult.ok);
+      expect(
+        engine.finalizeHistory(0, history, imageLengths: const [8, 8]),
+        EngineResult.ok,
+      );
       expect(engine.exportHistory(0), TrackHistory.none);
     });
 

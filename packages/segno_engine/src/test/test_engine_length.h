@@ -1164,6 +1164,245 @@ static void test_length_refused_history_motion(void) {
   le_engine_destroy(e);
 }
 
+/* #1168 Part 2: the history a Session saves, lengths and playhead maps
+ * included. Exports every entry and image of track 1 the way the Session
+ * capture does: export_history for the kinds, skipped counts and maps, then
+ * export_layer per ordinal, first as a size query (each image has its own
+ * length), then for the PCM. */
+typedef struct {
+  int32_t kinds[16], skipped[16], starts[16];
+  int32_t lens[16];
+  float images[16][64];
+  int32_t count, undo_count, image_count;
+} len_saved;
+
+static void len_save(le_engine* e, int32_t ch, len_saved* h) {
+  h->count = le_engine_export_history(e, ch, h->kinds, h->skipped, h->starts,
+                                      16, &h->undo_count);
+  CHECK(h->count >= 0 && h->count <= 16);
+  h->image_count = h->undo_count + 1;
+  for (int32_t i = h->undo_count; i < h->count; ++i) {
+    if (h->kinds[i] != LE_HIST_PEEL) h->image_count++;
+  }
+  for (int32_t o = 0; o < h->image_count; ++o) {
+    h->lens[o] = le_engine_export_layer(e, ch, 0, o, NULL, 0);
+    CHECK(h->lens[o] > 0 && h->lens[o] <= 64);
+    CHECK(le_engine_export_layer(e, ch, 0, o, h->images[o], 64) == h->lens[o]);
+  }
+}
+
+/* Stages a saved history on [ch] of a fresh engine (the Session load). */
+static int32_t len_recall(le_engine* e, int32_t ch, const len_saved* h) {
+  for (int32_t o = 0; o < h->image_count; ++o) {
+    CHECK(le_engine_import_layer(e, ch, 0, o, h->images[o], h->lens[o]) ==
+          LE_OK);
+  }
+  return le_engine_finalize_history(e, ch, h->kinds, h->skipped, h->starts,
+                                    h->count, h->undo_count, h->lens,
+                                    h->image_count);
+}
+
+/* A Double, a Last half and an Undo leave LENGTH entries on both stacks with
+ * images of 8 and 16 frames; saved and recalled, the stacks come back with
+ * their lengths and playhead maps, the live image at its own length, and
+ * Redo and Undo reproduce every image exactly — the Last half's Redo keeps
+ * the playhead's phase in the kept half. */
+static void test_length_session_round_trip(void) {
+  printf("test_length_session_round_trip\n");
+  float pcm[8], out[64], want[64];
+  for (int i = 0; i < 8; ++i) pcm[i] = (float)(i + 1);
+  le_engine* live = len_engine();
+  len_take(live, 0, NULL, 8);
+  len_take(live, 1, pcm, 8);
+  CHECK(len_edit(live, 1, LE_LENGTH_DOUBLE) == LE_OK);
+  float doubled[16];
+  CHECK(le_engine_export_track(live, 1, doubled, 16) == 16);
+  CHECK(len_edit(live, 1, LE_LENGTH_LAST_HALF) == LE_OK);
+  CHECK(le_engine_undo(live, 1) == LE_OK);
+  len_settle(live);
+  len_expect(live, 1, 16, 2, 0, 1, 1);
+  static len_saved h;
+  len_save(live, 1, &h);
+  CHECK(h.count == 2 && h.undo_count == 1 && h.image_count == 3);
+  CHECK(h.kinds[0] == LE_HIST_LENGTH && h.kinds[1] == LE_HIST_LENGTH);
+  CHECK(h.lens[0] == 8 && h.lens[1] == 16 && h.lens[2] == 8);
+  CHECK(h.starts[0] == 0 && h.starts[1] == 8);
+  le_engine_destroy(live);
+
+  le_engine* e = len_engine();
+  le_track* t = &e->tracks[1];
+  float silence[8] = {0};
+  CHECK(le_engine_import_track(e, 0, silence, 8) == LE_OK);
+  CHECK(len_recall(e, 1, &h) == LE_OK);
+  CHECK(le_engine_commit_session(e, 8, 0) == LE_OK);
+  len_settle(e);
+  len_expect(e, 1, 16, 2, 0, 1, 1);
+  len_expect_image(e, 1, doubled, 16);
+  CHECK(t->undo_stack[0].kind == LE_HIST_LENGTH && t->undo_stack[0].len == 8 &&
+        t->undo_stack[0].start == 0);
+  CHECK(t->redo_stack[0].kind == LE_HIST_LENGTH && t->redo_stack[0].len == 8 &&
+        t->redo_stack[0].start == 8);
+  /* Redo re-applies the Last half: playing at index 3 of the doubled image,
+   * it continues at index (3 - 8) mod 8 = 3 of the kept half. */
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  len_run(e, NULL, out, 3, 64);
+  CHECK(le_engine_redo(e, 1) == LE_OK);
+  len_settle(e);
+  len_expect(e, 1, 8, 1, 0, 2, 0);
+  len_expect_image(e, 1, pcm, 8);
+  len_run(e, NULL, out, 5, 64);
+  for (int i = 0; i < 5; ++i) want[i] = pcm[3 + i];
+  len_expect_out(out, want, 5);
+  /* Undo twice walks back to the original 8 frames. */
+  CHECK(le_engine_undo(e, 1) == LE_OK);
+  len_settle(e);
+  len_expect_image(e, 1, doubled, 16);
+  CHECK(le_engine_undo(e, 1) == LE_OK);
+  len_settle(e);
+  len_expect(e, 1, 8, 1, 0, 0, 2);
+  len_expect_image(e, 1, pcm, 8);
+  le_engine_destroy(e);
+
+  /* The playhead map survives too: a 7-frame only track, Last half (start 3)
+   * undone, saved and recalled; its Redo at index 1 continues at index
+   * (1 - 3) mod 4 = 2 of the kept half, exactly as the live engine would. */
+  const float odd[7] = {1, 2, 3, 4, 5, 6, 7};
+  live = len_engine();
+  len_take(live, 0, odd, 7);
+  CHECK(len_edit(live, 0, LE_LENGTH_LAST_HALF) == LE_OK);
+  CHECK(le_engine_undo(live, 0) == LE_OK);
+  len_settle(live);
+  static len_saved g;
+  len_save(live, 0, &g);
+  CHECK(g.count == 1 && g.undo_count == 0 && g.starts[0] == 3);
+  CHECK(g.lens[0] == 7 && g.lens[1] == 4);
+  le_engine_destroy(live);
+  e = len_engine();
+  CHECK(len_recall(e, 0, &g) == LE_OK);
+  CHECK(le_engine_commit_session(e, 7, 0) == LE_OK);
+  len_settle(e);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  len_run(e, NULL, out, 1, 64); /* reads index 0; next is 1 */
+  CHECK(out[0] == odd[0]);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  len_settle(e);
+  len_run(e, NULL, out, 4, 64);
+  const float last[4] = {4, 5, 6, 7};
+  for (int i = 0; i < 4; ++i) want[i] = last[(2 + i) % 4];
+  len_expect_out(out, want, 4);
+  le_engine_destroy(e);
+}
+
+/* The lineage decides every image's length: a layer at another length than
+ * the LENGTH entry above it, a map on a kind that has none, an image count
+ * that disagrees with the entries, or an image longer than its staged slot
+ * is refused before anything is published. */
+static void test_length_finalize_lineage(void) {
+  printf("test_length_finalize_lineage\n");
+  le_engine* e = len_engine();
+  le_track* t = &e->tracks[0];
+  float pcm[16] = {0};
+  /* [LAYER, LENGTH] under live, a LAYER above: images 8, 8, 16, 16. */
+  const int32_t lens8[4] = {8, 8, 16, 16};
+  for (int32_t o = 0; o < 4; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 0, o, pcm, lens8[o]) == LE_OK);
+  }
+  int32_t kinds[3] = {LE_HIST_LAYER, LE_HIST_LENGTH, LE_HIST_LAYER};
+  int32_t skipped[3] = {0, 0, 0};
+  int32_t starts[3] = {0, 0, 0};
+  int32_t lens[4] = {8, 8, 16, 16};
+  /* The layer beneath the edit is as long as the edit's image. */
+  lens[0] = 16;
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, starts, 3, 2, lens,
+                                   4) == LE_ERR_INVALID);
+  lens[0] = 8;
+  /* The redo layer is as long as live. */
+  lens[3] = 8;
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, starts, 3, 2, lens,
+                                   4) == LE_ERR_INVALID);
+  lens[3] = 16;
+  /* A map on a layer; the image count; no lengths; NULL maps. */
+  starts[0] = 4;
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, starts, 3, 2, lens,
+                                   4) == LE_ERR_INVALID);
+  starts[0] = 0;
+  starts[1] = -1001; /* beyond the loop cap */
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, starts, 3, 2, lens,
+                                   4) == LE_ERR_INVALID);
+  starts[1] = -8;
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, starts, 3, 2, lens,
+                                   3) == LE_ERR_INVALID);
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, starts, 3, 2, NULL,
+                                   4) == LE_ERR_INVALID);
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, NULL, 3, 2, lens,
+                                   4) == LE_ERR_INVALID);
+  /* An image longer than the slot staged for it is torn. */
+  le_lane_shrink_slot(&t->lanes[0], 3, 8);
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, starts, 3, 2, lens,
+                                   4) == LE_ERR_INVALID);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(t->undo_count == 0 && t->redo_count == 0);
+  CHECK(le_engine_import_layer(e, 0, 0, 3, pcm, 16) == LE_OK);
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, starts, 3, 2, lens,
+                                   4) == LE_OK);
+  CHECK(t->undo_stack[1].kind == LE_HIST_LENGTH && t->undo_stack[1].len == 8 &&
+        t->undo_stack[1].start == -8);
+  CHECK(load_i32(&t->lanes[0].a_len) == 16);
+  le_engine_destroy(e);
+}
+
+/* A saved Sync division recalls as that division and plays phase-locked to
+ * the primary top (the commit used to make every track a whole multiple). */
+static void test_length_division_recall(void) {
+  printf("test_length_division_recall\n");
+  float out[64], want[64];
+  const float pattern[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+  le_engine* e = len_engine();
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  float silence[SB_BASE] = {0};
+  CHECK(le_engine_import_track(e, 0, silence, SB_BASE) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, pattern, 8) == LE_OK);
+  CHECK(le_engine_commit_session(e, SB_BASE, 0) == LE_OK);
+  len_settle(e);
+  len_expect(e, 1, 8, 1, 2, 0, 0);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  len_run(e, NULL, NULL, (SB_BASE - s.master_position_frames) % SB_BASE, 64);
+  len_run(e, NULL, out, 2 * SB_BASE, 64);
+  for (int i = 0; i < 2 * SB_BASE; ++i) want[i] = pattern[i % 8];
+  len_expect_out(out, want, 2 * SB_BASE);
+  le_engine_destroy(e);
+
+  /* PR #1244 review L1: a staged length that is neither a whole multiple of
+   * the base nor half or a quarter of it is refused before anything is
+   * posted; it would recall as a division and the mixer would read past its
+   * slot. A quarter and a whole multiple are accepted. */
+  static const struct { int32_t len; int32_t verdict; } cases[] = {
+      {5, LE_ERR_INVALID},  {24, LE_ERR_INVALID}, {12, LE_ERR_INVALID},
+      {4, LE_OK},           {48, LE_OK},
+  };
+  for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c) {
+    e = len_engine();
+    float stem[48] = {0};
+    CHECK(le_engine_import_track(e, 0, silence, SB_BASE) == LE_OK);
+    CHECK(le_engine_import_track(e, 1, stem, cases[c].len) == LE_OK);
+    CHECK(le_engine_commit_session(e, SB_BASE, 0) == cases[c].verdict);
+    le_snapshot sc;
+    le_engine_get_snapshot(e, &sc);
+    if (cases[c].verdict != LE_OK) {
+      CHECK(sc.master_length_frames == 0);
+      CHECK(sc.tracks[1].state == LE_TRACK_EMPTY);
+    }
+    le_engine_destroy(e);
+  }
+}
+
 static void run_length_tests(void) {
   test_length_worked_example();
   test_length_multiple_segments();
@@ -1182,4 +1421,7 @@ static void run_length_tests(void) {
   test_length_reclock_keeps_tempo();
   test_length_pending_reclock_master();
   test_length_refused_history_motion();
+  test_length_session_round_trip();
+  test_length_finalize_lineage();
+  test_length_division_recall();
 }

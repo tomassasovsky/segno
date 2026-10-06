@@ -18,8 +18,8 @@ enum HistoryKind {
   /// Undo and Redo swap it like a layer; Peel never consumes it.
   processed,
 
-  /// A length edit (#1168): the image to put back at its own length. A
-  /// Session cannot carry one yet; its finalize refuses it.
+  /// A length edit (#1168): the image to put back at its own length, with
+  /// the playhead map ([HistoryEntry.start]) applied when it swaps in.
   length,
 }
 
@@ -27,7 +27,7 @@ enum HistoryKind {
 @immutable
 class HistoryEntry {
   /// Creates a [HistoryEntry].
-  const HistoryEntry(this.kind, {this.skipped = 0});
+  const HistoryEntry(this.kind, {this.skipped = 0, this.start = 0});
 
   /// What the entry represents.
   final HistoryKind kind;
@@ -36,15 +36,25 @@ class HistoryEntry {
   /// layer it consumed; zero for every other kind.
   final int skipped;
 
+  /// For a [HistoryKind.length] entry, the playhead map of the swap it makes:
+  /// when the image swaps in, the playhead moves from frame `i` of the
+  /// outgoing image to frame `(i - start)` modulo the incoming image's
+  /// length, so it keeps its place in the bar. Zero for every other kind.
+  final int start;
+
   @override
   bool operator ==(Object other) =>
-      other is HistoryEntry && other.kind == kind && other.skipped == skipped;
+      other is HistoryEntry &&
+      other.kind == kind &&
+      other.skipped == skipped &&
+      other.start == start;
 
   @override
-  int get hashCode => Object.hash(kind, skipped);
+  int get hashCode => Object.hash(kind, skipped, start);
 
   @override
-  String toString() => 'HistoryEntry(${kind.name}, skipped: $skipped)';
+  String toString() =>
+      'HistoryEntry(${kind.name}, skipped: $skipped, start: $start)';
 }
 
 /// A track's audio history (#1164): its [entries] in image-ordinal order (the
@@ -100,8 +110,9 @@ class TrackHistory {
   ///   oldest entries, and Undo clamps its re-insertion there);
   /// - a Redo-side Peel marker would find no layer to peel when Redo reaches
   ///   it;
-  /// - an entry is a length edit (#1168), whose per-image lengths a Session
-  ///   does not carry yet.
+  /// - a playhead map is set on a kind other than a length edit (#1168).
+  ///
+  /// The images' lengths are checked separately ([lengthMalformation]).
   String? get malformation {
     if (undoCount < 0 || undoCount > entries.length) {
       return 'undo count $undoCount outside ${entries.length} entries';
@@ -119,8 +130,8 @@ class TrackHistory {
       if (entry.kind == HistoryKind.clear && i < undoCount) {
         return 'entry $i is a Clear point on the undo side';
       }
-      if (entry.kind == HistoryKind.length) {
-        return 'entry $i is a length edit, whose lengths a Session lacks';
+      if (entry.kind != HistoryKind.length && entry.start != 0) {
+        return 'entry $i has a playhead map on a ${entry.kind.name} entry';
       }
       if (entry.kind == HistoryKind.peel && i < undoCount) {
         var run = 0;
@@ -154,6 +165,43 @@ class TrackHistory {
       stack
         ..removeAt(target)
         ..add(HistoryKind.peel);
+    }
+    return null;
+  }
+
+  /// Why the engine could not take images of [lengths] (frames, by image
+  /// ordinal) for this history, or null when it can (#1168). Mirrors
+  /// `le_engine_finalize_history`: there are exactly [imageCount] lengths,
+  /// each positive, and the lineage decides every one. An image is as long
+  /// as the nearest length edit at or nearer live on its side names (its own
+  /// image, for a length edit), else as long as the live image (ordinal
+  /// [undoCount]). Only a length edit's image and the live image set a
+  /// length; every other image repeats the one that rules it.
+  String? lengthMalformation(List<int> lengths) {
+    if (lengths.length != imageCount) {
+      return '${lengths.length} image lengths but the history names '
+          '$imageCount';
+    }
+    final live = lengths[undoCount];
+    if (live <= 0) return 'the live image has no length';
+    var ruling = live;
+    for (var i = undoCount - 1; i >= 0; i--) {
+      if (entries[i].kind == HistoryKind.length) ruling = lengths[i];
+      if (ruling <= 0 || lengths[i] != ruling) {
+        return 'image $i is ${lengths[i]} frames, its lineage gives $ruling';
+      }
+    }
+    ruling = live;
+    var ordinal = undoCount + 1;
+    for (var i = undoCount; i < entries.length; i++) {
+      final kind = entries[i].kind;
+      if (kind == HistoryKind.peel) continue; // a marker holds no image
+      if (kind == HistoryKind.length) ruling = lengths[ordinal];
+      if (ruling <= 0 || lengths[ordinal] != ruling) {
+        return 'image $ordinal is ${lengths[ordinal]} frames, its lineage '
+            'gives $ruling';
+      }
+      ordinal++;
     }
     return null;
   }

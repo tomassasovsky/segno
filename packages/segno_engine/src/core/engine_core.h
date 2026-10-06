@@ -143,6 +143,14 @@ static inline void le_seam_fold_head(float* head, const float* continuation,
   }
 }
 
+/* Whether a recalled track of `len` frames fits a Session's `base`: a whole
+ * multiple, or exactly half or a quarter of it (a Sync division, #1168). */
+static inline int le_session_length_fits(int32_t base, int32_t len) {
+  if (base <= 0 || len <= 0) return 0;
+  return len % base == 0 || (int64_t)len * 2 == base ||
+         (int64_t)len * 4 == base;
+}
+
 /* What a length edit or its Undo/Redo (#1168) makes of one track: the new
  * length, its multiple or Sync division, `reclock` (the new master when the
  * rig re-clocks, else 0) and the beat count the re-clocked grid keeps. */

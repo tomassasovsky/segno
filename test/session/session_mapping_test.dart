@@ -237,8 +237,11 @@ void main() {
             defaultOneShot: looper.defaultOneShot,
             trackOverrides: looper.trackOneShotOverrides,
           ),
-        ).loopBars,
-        7,
+        ),
+        isA<SessionSettings>()
+            .having((s) => s.loopBars, 'loopBars', 7)
+            // Bars only, as an engine before #1168 published: their beats.
+            .having((s) => s.loopBeats, 'loopBeats', 28),
       );
     });
 
@@ -870,6 +873,8 @@ void main() {
       expect(rig.recordTiming, RecordTiming.quarter);
       expect(rig.overdubDecay, 40);
       expect(rig.loopBars, 7);
+      expect(rig.loopBeats, 28);
+      expect(rig.gridBeats, 28);
     });
 
     test("a manifest that names no defaults still carries the model's own, "

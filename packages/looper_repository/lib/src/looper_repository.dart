@@ -4384,11 +4384,13 @@ class LooperRepository {
             }
           }
         }
-        // The history is track-wide (shared across lanes) — take lane 0's.
+        // The history is track-wide (shared across lanes) — take lane 0's,
+        // with its images' lengths, which a length edit makes differ (#1168).
         final primary = track.lanes.first;
         final finalized = _engine.finalizeHistory(
           track.channel,
           primary.history,
+          imageLengths: [for (final pcm in primary.layers) pcm.length],
         );
         if (!finalized.isOk) {
           throw StateError(

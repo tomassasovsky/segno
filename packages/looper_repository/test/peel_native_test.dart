@@ -138,7 +138,9 @@ void main() {
       final layers = [
         for (var o = 0; o < images; o++) engine.exportLayer(0, 0, o),
       ];
-      expect(engine.exportLayer(0, 0, images), isEmpty);
+      // Past the images the engine refuses, and the export says so rather
+      // than return an empty layer a save would write (#1168).
+      expect(() => engine.exportLayer(0, 0, images), throwsStateError);
       final original = layers[0];
       final layered = layers[1];
       expect(original.first, .5);

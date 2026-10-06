@@ -1184,10 +1184,24 @@ class NativeAudioEngine implements AudioEngine {
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
     _checkAlive();
-    // Every layer of a lane shares the loop length; get_lane reports it.
-    _bindings.le_engine_get_lane(_engine, channel, lane, _lanePtr);
-    final frames = _lanePtr.ref.length_frames;
-    if (frames <= 0) return Float32List(0);
+    // Each image has its own length (#1168): a zero-capacity call asks it.
+    final frames = _bindings.le_engine_export_layer(
+      _engine,
+      channel,
+      lane,
+      ordinal,
+      nullptr,
+      0,
+    );
+    // A slot shorter than its image is torn: fail the save at capture rather
+    // than write an empty layer the next read would refuse (#1168).
+    if (frames < 0) {
+      throw StateError(
+        'layer $ordinal of track $channel lane $lane is torn: '
+        '${EngineResult.fromCode(frames).name}',
+      );
+    }
+    if (frames == 0) return Float32List(0);
     final buf = calloc<Float>(frames);
     try {
       final n = _bindings.le_engine_export_layer(
@@ -1245,6 +1259,7 @@ class NativeAudioEngine implements AudioEngine {
         channel,
         empty,
         empty,
+        empty,
         0,
         undoCount,
       );
@@ -1252,12 +1267,14 @@ class NativeAudioEngine implements AudioEngine {
       if (count == 0) return TrackHistory(const [], undoCount: undoCount.value);
       final kinds = calloc<Int32>(count);
       final skipped = calloc<Int32>(count);
+      final starts = calloc<Int32>(count);
       try {
         final n = _bindings.le_engine_export_history(
           _engine,
           channel,
           kinds,
           skipped,
+          starts,
           count,
           undoCount,
         );
@@ -1267,14 +1284,19 @@ class NativeAudioEngine implements AudioEngine {
         return TrackHistory(
           [
             for (var i = 0; i < count; i++)
-              HistoryEntry(HistoryKind.values[kinds[i]], skipped: skipped[i]),
+              HistoryEntry(
+                HistoryKind.values[kinds[i]],
+                skipped: skipped[i],
+                start: starts[i],
+              ),
           ],
           undoCount: undoCount.value,
         );
       } finally {
         calloc
           ..free(kinds)
-          ..free(skipped);
+          ..free(skipped)
+          ..free(starts);
       }
     } finally {
       calloc
@@ -1284,17 +1306,28 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) {
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
     _checkAlive();
     final entries = history.entries;
     final count = entries.length;
+    final images = imageLengths.length;
     // One element at least: the allocator refuses a zero-byte request.
     final kinds = calloc<Int32>(count == 0 ? 1 : count);
     final skipped = calloc<Int32>(count == 0 ? 1 : count);
+    final starts = calloc<Int32>(count == 0 ? 1 : count);
+    final lens = calloc<Int32>(images == 0 ? 1 : images);
     try {
       for (var i = 0; i < count; i++) {
         kinds[i] = entries[i].kind.index;
         skipped[i] = entries[i].skipped;
+        starts[i] = entries[i].start;
+      }
+      for (var o = 0; o < images; o++) {
+        lens[o] = imageLengths[o];
       }
       return EngineResult.fromCode(
         _bindings.le_engine_finalize_history(
@@ -1302,14 +1335,19 @@ class NativeAudioEngine implements AudioEngine {
           channel,
           kinds,
           skipped,
+          starts,
           count,
           history.undoCount,
+          lens,
+          images,
         ),
       );
     } finally {
       calloc
         ..free(kinds)
-        ..free(skipped);
+        ..free(skipped)
+        ..free(starts)
+        ..free(lens);
     }
   }
 

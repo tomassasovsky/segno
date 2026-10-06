@@ -1301,8 +1301,9 @@ abstract interface class SessionIo {
   /// argument. Ordinals run oldest→newest: `[0, undoCount)` are the undo
   /// snapshots, `undoCount` is the live buffer, then the redo snapshots; a
   /// redo-side Peel marker holds no image and takes no ordinal
-  /// ([exportHistory], [TrackHistory.imageCount]). Read-only — call when not
-  /// capturing.
+  /// ([exportHistory], [TrackHistory.imageCount]). Each image comes back at
+  /// its own length: a length edit's images differ from the live one
+  /// (#1168). Read-only — call when not capturing.
   Float32List exportLayer(int channel, int lane, int ordinal);
 
   /// Lists track [channel]'s history in image-ordinal order with its raw
@@ -1320,13 +1321,20 @@ abstract interface class SessionIo {
 
   /// Publishes a track reconstructed via [importLayer] with its [history]
   /// ([exportHistory] order): rebuilds the undo/redo stacks with their kinds
-  /// and points playback at the live image (ordinal
-  /// [TrackHistory.undoCount]), every active lane in lockstep.
-  /// [TrackHistory.imageCount] images must already be staged on every active
-  /// lane at one length. Returns [EngineResult.invalid] for a non-empty
-  /// track, a history the engine could not hold ([TrackHistory.malformation]),
-  /// or a torn (missing-image or mismatched-length) reconstruction.
-  EngineResult finalizeHistory(int channel, TrackHistory history);
+  /// and playhead maps and points playback at the live image (ordinal
+  /// [TrackHistory.undoCount]) at its length, every active lane in lockstep.
+  /// [imageLengths] gives each image's length in frames by ordinal (#1168);
+  /// [TrackHistory.imageCount] images must already be staged at those
+  /// lengths on every active lane. Returns [EngineResult.invalid] for a
+  /// non-empty track, a history the engine could not hold
+  /// ([TrackHistory.malformation]), lengths its lineage does not give
+  /// ([TrackHistory.lengthMalformation]), or a torn (missing or short image)
+  /// reconstruction.
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  });
 
   /// Establishes the master loop at [baseFrames] and leaves every imported
   /// track stopped at its whole-loop multiple. Restores exactly [loopBeats]

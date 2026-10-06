@@ -4183,15 +4183,13 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
         const int32_t len = load_i32(&tr->lanes[0].a_len);
         if (len <= 0) continue;
-        int32_t k = len / base;
-        if (k < 1) k = 1;
-        store_i32(&tr->a_multiple, k);
-        /* Session import never encodes a B3 Sync/Band division (out of this
-         * part's manifest scope, deferred to B5c like every other B3 UI/
-         * session surface) — always the ordinary whole-multiple path, and
-         * defensively zeroed so a track that was a division before some
-         * prior clear+reimport cycle never leaks a stale divisor. */
-        store_i32(&tr->a_sync_divisor, 0);
+        /* The control wrapper refused any other length; a raw post that
+         * slipped one through leaves the track unpublished (#1168). */
+        if (!le_session_length_fits(base, len)) continue;
+        /* A saved base/2 or base/4 track is the Sync division it was (#1168,
+         * closing the B5c gap a Divide would otherwise expose); any other
+         * length is the whole multiple it always was. */
+        le_restore_multiple_or_divisor(tr, base, len);
         tr->start_iter = 0;
         /* Parked at the loop head, so a Play in this same drain starts at
          * the lap start of an installed direction (#1162). */
