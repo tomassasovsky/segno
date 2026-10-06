@@ -741,6 +741,22 @@ void main() {
       expect(engine.stopCalls, 0);
     });
 
+    test('a Retry that cannot land an owed setting still lets power-off go '
+        'ahead', () async {
+      await runtime.start();
+      engine
+        ..publishClickCommands = false
+        ..commandsAreSettled = false;
+      expect(
+        (await runtime.tempo.clickVolumeOwner.set(1.5)).status,
+        SettingStatus.recoveryRequired,
+      );
+      await runtime.prepareShutdown(retry: true);
+      expect(runtime.tempo.clickVolumeOwner.ready, isFalse);
+      expect(store.values['tempo.click_volume'], 1.5);
+      expect(engine.stopCalls, 0);
+    });
+
     test('a Retry that cannot land an owed vector still lets power-off go '
         'ahead', () async {
       await runtime.start();

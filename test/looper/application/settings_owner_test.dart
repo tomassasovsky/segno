@@ -898,6 +898,9 @@ void main() {
           r.store.values,
           containsPair(c.keys.first, c.invalid[c.keys.first]),
         );
+        // Storage does not hold the value a start would replay: power-off
+        // waits for Retry.
+        expect(r.run(owner.flush())?.status, SettingStatus.recoveryRequired);
         expect(r.run(owner.recover())?.status, SettingStatus.applied);
         expect(c.read(r.store), c.repaired);
         expect(owner.ready, isTrue);
@@ -915,6 +918,9 @@ void main() {
       expect(r.looper.startEngine(const EngineConfig()), EngineResult.ok);
       r.pump();
       expect(c.audible(r.engine), c.recalledValue);
+      // The Session made the family available, but storage still cannot be
+      // read: power-off waits for Retry.
+      expect(r.run(owner.flush())?.status, SettingStatus.recoveryRequired);
       expect(r.run(owner.recover())?.status, SettingStatus.applied);
       expect(c.read(r.store), c.repaired);
       expect(owner.value, c.recalledValue);

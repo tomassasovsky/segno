@@ -66,9 +66,9 @@ class PowerOffDialog extends StatelessWidget {
                           .read<PowerOffCubit>()
                           .retryPowerOff(snapshot()),
                       onPowerOffAnyway: state.retryFailed
-                          ? () => context
-                                .read<PowerOffCubit>()
-                                .powerOffAnyway(snapshot())
+                          ? () => context.read<PowerOffCubit>().powerOffAnyway(
+                              snapshot(),
+                            )
                           : null,
                     )
                   : refuse
