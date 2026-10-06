@@ -572,21 +572,32 @@ take uses one lane of eight, Pan places it, and no stereo-pair rules apply.
     and Stop; the Dart ring keeps Note, CC and Program only, so `_parse` is
     unchanged.
   - One consumer: `le_midi_ports_drain`, right after the command drain, is
-    the only code that clears `a_gap` and observes `a_lost` edges; it drops
-    stale-generation events and dispatches instrument routing (this plan)
-    and the clock follower (#1236) in ring order, with the loss reported at
-    its exact position.
+    the only code that clears `a_gap` and observes `a_lost` and generation
+    edges. It calls `le_midi_port_dispatch` per port in stream order
+    (PR #1246 review M1, built): REBOUND when the generation moved since the
+    last drain (detach, rebind, or a close followed at once by an attach),
+    then the current binding's events with GAP at its exact position (and
+    REBOUND again at the first event of a binding made during the drain),
+    then LOST, read before the pops but dispatched after them, so the
+    events read before the device went away come first. Stale-generation
+    events are dropped and counted. This plan releases a port's voices on
+    GAP, LOST and REBOUND; the clock follower (#1236) uses the same calls.
+    An OS overrun (ALSA `-ENOSPC`) marks a gap through
+    `le_midi_sink_mark_gap`, inside the bracket.
   - API, direct calls, no commands: `le_engine_attach_midi_input(e, m,
     port)` and `le_engine_detach_midi_input(e, port)` (the former commands
     100 and 101 are not needed: generations make a rebind safe without the
     audio thread's acknowledgement; 100 and 101 return to the spare range).
-- **Device loss (review L7).** The ALSA backend already receives the
-  sequencer's port-exit announcements; Part 2c makes a `PORT_EXIT` or
-  `PORT_UNSUBSCRIBED` for the open source mark the capture lost natively
-  (generation bump, the port's voices released at the next block), and the
-  CoreMIDI backend does the same from its notify callback for a removed
-  source. Held notes from an unplugged keyboard therefore stop within a
-  block, not after the 2 s Dart poll; the poll still drives reconnect.
+- **Device loss (review L7).** Built in the shared sink (#1246): the ALSA
+  reader subscribes to the announce port and marks its port lost on the
+  source's `PORT_EXIT`, `CLIENT_EXIT` or `PORT_UNSUBSCRIBED`; the drain
+  dispatches LOST and this plan releases the port's voices at the next
+  block. Held notes from an unplugged keyboard therefore stop within a
+  block, not after the 2 s Dart poll; the poll still drives reconnect. The
+  CoreMIDI backend does not mark loss: CoreMIDI delivers notify callbacks on
+  the creating thread's run loop, which the Dart thread does not run, and
+  macOS is a development host only, so there the Dart poll's close (LOST
+  plus REBOUND) releases the notes.
 - MIDI note input ignores Remote control enable (`:330`); the native path does
   not read it.
 
@@ -1007,8 +1018,8 @@ PORT_EXIT / CLIENT_EXIT / PORT_UNSUBSCRIBED lost mark. The CoreMIDI
 removed-source notification is not built there: CoreMIDI delivers notify
 callbacks on the creating thread's run loop, which the Dart thread does not
 run, and macOS is a development host only; the 2 s Dart poll covers it.
-This part adds: the dispatch from `le_midi_ports_drain`'s marked points into
-routing, releases at the overflow mark (H3), routes with the coalesced
+This part adds: routing inside `le_midi_port_dispatch`, releases on GAP,
+LOST and REBOUND (H3), routes with the coalesced
 two-slot publish (L8), note-off and CC64-off
 first by origin (M1), origin encoding with the tag bit and the contributor
 table (L3), expression and sustain in the synth TU. API (attach and detach
