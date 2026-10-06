@@ -1443,6 +1443,7 @@ class LooperRepository {
     return TransportState(
       isRunning: _intendRunning,
       loopBars: live?.loopBars ?? 0,
+      loopBeats: live?.loopBeats ?? 0,
       tempoBpm: useLiveTempo ? live.tempoBpm : _tempoBpm,
       tempoSource: useLiveTempo ? live.tempoSource : _tempoSource,
       tsNum: _tsNum,
@@ -2238,6 +2239,7 @@ class LooperRepository {
       syncTempo: s.syncTempo,
       quantizeDiv: s.quantizeDiv,
       loopBars: s.loopBars,
+      loopBeats: s.loopBeats,
       currentBeat: s.currentBeat,
       // Raw mode may change before the callback publishes its command fence.
       // Every repository consumer observes the same receipt-confirmed choice.
@@ -3798,7 +3800,10 @@ class LooperRepository {
     }
     final mix = MixSettingsSnapshot.fromRig(rig);
     if (!mix.isValid) throw StateError('session mix cannot be restored');
-    if (rig.loopBars < 0 || rig.loopBars > 0x7fffffff ~/ 15) {
+    if (rig.loopBars < 0 ||
+        rig.loopBars > 0x7fffffff ~/ 15 ||
+        rig.gridBeats < 0 ||
+        rig.gridBeats > 0x7fffffff ~/ 15) {
       throw StateError('session grid cannot be restored');
     }
     if (!rig.tempoBpm.isFinite ||
@@ -4430,7 +4435,7 @@ class LooperRepository {
       if (rig.tracks.isNotEmpty && rig.baseLengthFrames > 0) {
         final committed = _engine.commitSession(
           rig.baseLengthFrames,
-          loopBars: rig.loopBars,
+          loopBeats: rig.gridBeats,
         );
         if (!committed.isOk) {
           throw StateError('failed to commit the session: ${committed.name}');

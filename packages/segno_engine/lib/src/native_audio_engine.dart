@@ -1314,10 +1314,10 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_commit_session(_engine, baseFrames, loopBars),
+      _bindings.le_engine_commit_session(_engine, baseFrames, loopBeats),
     );
   }
 

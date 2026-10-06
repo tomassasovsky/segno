@@ -575,12 +575,32 @@ Notes (Part 1 build, on the trunk with Reverse and Peel merged):
     tail or capture), and the payload carries the `a_audio_rev` it was read at;
     the callback refuses on a mismatch, so a fold that lands between admission
     and the drain cannot publish an image without its head.
-  - A re-clock keeps the tempo. With a grid, the bar count must come out whole
-    over the new length (within a frame per bar, the odd length's half frame);
-    otherwise the length is refused as `LE_ERR_MODE_MISMATCH`, the notice for an
-    incompatible length. The kept bar count is restored exactly
-    (`le_restore_musical_grid`), never re-derived from the tempo. Half of 1 or
-    3 bars is therefore refused; half of 2 bars and every Double are accepted.
+  - A re-clock keeps the tempo. The kept count is restored exactly
+    (`le_restore_musical_grid`), never re-derived from the tempo.
+  - **Owner decision (2026-10-06), replacing the first review fix:** a sole
+    loop is counted in beats. Divide keeps the tempo, so a 1-bar loop of 4/4
+    halves to 2 beats and a 3-bar loop to 6 beats; only a half that would
+    leave a fraction of a beat (one beat, or one bar of 3/4) is refused as
+    `LE_ERR_MODE_MISMATCH`. The rule is `le_reclock_whole_beats`
+    (`engine_core.h`), within a frame per beat.
+  - The grid's own count is now beats: `a_loop_beats` and
+    `le_snapshot.loop_beats` (trailing) beside the integer `loop_bars`, which
+    reads 0 when the beats are not whole bars. One setter,
+    `le_set_loop_grid`, writes both and `grid_total_beats`. The beat clock,
+    quantize subdivisions (already rational) and the tempo lock read beats.
+    `le_engine_commit_session`'s third argument is now `loop_beats` (a
+    whole-bar session passes bars × ts_num), and the Dart seam is
+    `commitSession(base, loopBeats:)`; `SessionRig.loopBeats` (null when the
+    source carries only bars) and `TransportState.loopBeats` carry it, and
+    `Track.wholeBeats` counts a sub-bar loop. A surviving sub-bar grid that a
+    tempo or signature change regrids counts the nearest whole beats.
+  - Threaded later: Part 2 saves `loopBeats` in the Session; Part 3 shows
+    "N beats" where no whole bar exists. The count-in needs no change (it
+    counts bars of the tempo before a stopped launch, and the launch starts at
+    the loop top). The bar position within a loop restarts at the loop top
+    (`current_beat = beat % ts_num`), so a 6-beat loop of 4/4 shows beats
+    1-4, 1-2. The MIDI clock follower (#1228, not built) must take its bar
+    position from `loop_beats`, never `loop_bars`.
   - A posted re-clock is the effective master (`le_rig_effective_master_len`),
     so other tracks' history decisions measure behind it.
   - The buffers for the new image are allocated before the slot selection may

@@ -1747,7 +1747,12 @@ struct le_engine {
   _Atomic int32_t a_sync_tempo;      /* default 1 */
   _Atomic int32_t a_quantize_div;    /* le_grid_div; default 0 = off */
   _Atomic int32_t a_tempo_source;    /* le_tempo_source; default 0 = none */
-  _Atomic int32_t a_loop_bars;       /* whole bars in the master loop; 0 none */
+  _Atomic int32_t a_loop_bars;       /* whole bars in the master loop; 0 none
+                                      * or not whole bars (see a_loop_beats) */
+  _Atomic int32_t a_loop_beats;      /* whole beats (denominator notes) in the
+                                      * master loop, the grid's own count; 0
+                                      * none (#1168: a Divide of a sole 1- or
+                                      * 3-bar loop keeps 2 or 6 beats) */
   _Atomic int32_t a_current_beat;    /* 0..ts_num-1; loop-driven, or click/
                                       * count-in-driven while those free-run */
 
@@ -1975,7 +1980,7 @@ struct le_engine {
    * (advanced once per process call by the block size — tap timing needs only
    * block granularity because taps arrive via the ring, which drains at block
    * start). grid_total_beats > 0 iff a loop-driven beat grid is live
-   * (loop_bars * ts_num); grid_prev_beat is the last published beat index
+   * (a_loop_beats); grid_prev_beat is the last published beat index
    * (-1 re-arms publication at the next frame). */
   uint64_t frame_clock;
   uint64_t last_tap_frame;

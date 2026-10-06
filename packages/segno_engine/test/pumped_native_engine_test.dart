@@ -510,7 +510,7 @@ void main() {
     final lane1 = Float32List.fromList(List<double>.filled(64, -0.25));
     expect(engine.importTrackLane(0, 0, lane0), EngineResult.ok);
     expect(engine.importTrackLane(0, 1, lane1), EngineResult.ok);
-    expect(engine.commitSession(64, loopBars: 0), EngineResult.ok);
+    expect(engine.commitSession(64, loopBeats: 0), EngineResult.ok);
     engine.pump(frames: 0);
 
     final s = engine.snapshot();
@@ -627,7 +627,7 @@ void main() {
     expect(engine.importLayer(0, 0, 1, l1), EngineResult.ok);
     expect(engine.importLayer(0, 0, 2, l2), EngineResult.ok);
     expect(engine.finalizeHistory(0, history), EngineResult.ok);
-    expect(engine.commitSession(256, loopBars: 0), EngineResult.ok);
+    expect(engine.commitSession(256, loopBeats: 0), EngineResult.ok);
     engine.pump(frames: 0);
 
     s = engine.snapshot();

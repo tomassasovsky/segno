@@ -6278,10 +6278,42 @@ void main() {
         );
         expect(engine.importedTracks[0], pcm);
         expect(engine.committedBaseFrames, 4);
+        expect(engine.committedLoopBeats, 0);
         expect(engine.laneVol[(0, 0)], 0.5);
         expect(engine.laneMute[(0, 0)], isTrue);
       },
     );
+
+    test('commits the grid in beats: whole bars times the signature, or '
+        'the saved beats of a sub-bar loop (#1168)', () async {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      for (final (rig, beats) in [
+        (
+          SessionRig(
+            baseLengthFrames: 4,
+            loopBars: 3,
+            tsNum: 7,
+            tsDen: 8,
+            tracks: [rigTrack(0, pcm)],
+          ),
+          21,
+        ),
+        (
+          SessionRig(
+            baseLengthFrames: 4,
+            loopBeats: 2,
+            tracks: [rigTrack(0, pcm)],
+          ),
+          2,
+        ),
+      ]) {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        await repo.applySession(rig, clearPollInterval: Duration.zero);
+        expect(engine.committedLoopBeats, beats);
+        await repo.dispose();
+      }
+    });
 
     test('fires rigReplaced once on a successful apply — the explicit seam '
         '(the cleared window is transient, so the projection alone cannot '

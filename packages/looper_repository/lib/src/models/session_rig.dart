@@ -180,6 +180,7 @@ class SessionRig {
     this.trackOneShotOverrides = const {},
     this.trackLengthPresetOverrides = const {},
     this.loopBars = 0,
+    this.loopBeats,
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -237,8 +238,17 @@ class SessionRig {
   /// Saved musical tempo; zero means no tempo was established.
   final double tempoBpm;
 
-  /// Exact musical grid span; zero means no established grid.
+  /// Exact musical grid span; zero means no established grid, or one that
+  /// is not whole bars ([loopBeats]).
   final int loopBars;
+
+  /// Exact musical grid span in beats (denominator notes), or null when the
+  /// source carries only [loopBars] (#1168).
+  final int? loopBeats;
+
+  /// The grid the engine restores, in beats: [loopBeats], else [loopBars]
+  /// whole bars of [tsNum] beats.
+  int get gridBeats => loopBeats ?? loopBars * tsNum;
 
   /// Origin of the saved musical tempo.
   final TempoSource tempoSource;
