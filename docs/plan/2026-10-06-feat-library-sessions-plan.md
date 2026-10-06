@@ -447,6 +447,47 @@ a design change; this plan does not edit the pen):
      (E7-9) are not drawn; `DAW project` and `Delete` are added in their
      rows. `Preview` reads `Stop` while it plays and while its file
      decodes, as Listen does.
+     the line's read-only, failed-export, DAW-project and delete texts are
+     ours.
+12. Part 8 as built:
+   - **One staging protocol.** A backup uses the Audio tab's package copy
+     and swap (`AudioExporter`, item 11): every bundle file through the
+     port's `copyFile` under a write lease into the hidden
+     `Segno/Sessions/.segno-export-<id>/`, then the swap puts `<id>/` in
+     place; `Replace` keeps the old backup aside until the commit point; a
+     failure, a cancel or a lost drive puts everything back, and a cut is
+     put back by the next copy into that folder. The staging directory is
+     `.segno-export-<id>` rather than `<id>.part` (rule 4, one protocol for
+     every Library copy); `listBackups` skips hidden directories. `Keep
+     both` writes `<id> (2)/`.
+   - **What a backup holds.** `bundleFiles(id)` lists every file of the
+     bundle (the manifest last, a manifest still being written left out):
+     the manifest, the layers and the mixdown, and also a foreign file a
+     save carried and an older schema's original manifest or folder, so a
+     restore is the same bundle.
+   - **Guards.** A backup holds two `transfer` guards for its whole copy:
+     one on the drive's generation, the backup directory as its item, and
+     one on the bundle it reads, so a save, rename or delete of that
+     session waits for the copy (the `sessionWrite` row refuses a transfer
+     on the same item, item 11). A restore holds `sessionWrite` on the new
+     bundle. A refusal shows the
+     interruption tile with the guard table's reason. When #1177's
+     `StorageRepository` reports its leases as `transfer` operations, the
+     Library's own guard and the lease both name the backup; the table
+     allows transfer beside transfer, so nothing is refused twice.
+   - **Restore** follows Duplicate's rules: a fresh id reserved at the root
+     (Unfiled), every file but the manifest copied, the manifest written
+     last through a flushed temp file and a rename, the copy removed on
+     any failure. A name the catalog carries becomes `<name> (2)`,
+     `(3)`... written as the display name (parentheses included, as the pen
+     draws it). It never reaches the engine.
+   - Pen departures: a finished backup replaces the footer facts with
+     "Backed up to USB."; `Back up to USB` with no drive shows the
+     interruption tile titled `Connect a USB drive`; a full, read-only or
+     failing drive and a guard refusal use the interruption tile with their
+     own line; the backup rows' facts are `<tracks> · <n> FX` (a summary
+     carries no backing count); an empty drive and a failed restore have
+     one line each.
 
 ## 3. Decisions
 

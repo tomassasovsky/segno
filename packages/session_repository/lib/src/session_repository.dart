@@ -925,6 +925,114 @@ class SessionRepository {
     return id;
   }
 
+  /// Every file of the saved bundle [id], relative to its directory, the
+  /// manifest last (#1178 Part 8: what `Back up to USB` copies). That is the
+  /// manifest, every layer and the mixdown, and whatever else the bundle
+  /// keeps (a foreign file a save carried, an older schema's original
+  /// manifest or folder), so a backup restores to the same bundle. A
+  /// manifest still being written (`session.json.tmp`) is left out. Throws
+  /// [StateError] when there is no bundle [id].
+  Future<List<String>> bundleFiles(SessionId id) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) throw StateError('no session with id "$id"');
+    final files =
+        [
+          for (final entity in Directory(path).listSync(recursive: true))
+            if (entity is File) entity.path.substring(path.length + 1),
+        ]..removeWhere(
+          (f) =>
+              f == Session.manifestName || f == '${Session.manifestName}.tmp',
+        );
+    return [...files..sort(), Session.manifestName];
+  }
+
+  /// The backups under [root] (a drive's `Segno/Sessions/`), newest save
+  /// first, each read as leniently as the catalog reads its own: a backup
+  /// whose manifest does not decode is listed [SessionSummary.unreadable].
+  /// The summary's id is the backup's directory name. Directories without a
+  /// manifest and hidden ones (a copy still being assembled) are left out;
+  /// a missing or unreadable [root] lists nothing.
+  List<SessionSummary> listBackups(String root) {
+    final List<FileSystemEntity> entries;
+    try {
+      entries = Directory(root).listSync();
+    } on FileSystemException {
+      return const [];
+    }
+    return [
+      for (final entity in entries)
+        if (entity is Directory &&
+            !_basename(entity.path).startsWith('.') &&
+            _isBundle(entity.path))
+          _summaryOf(entity, folder: null),
+    ]..sort(_newestFirst);
+  }
+
+  /// Copies the backup bundle at [source] into the catalog as a new,
+  /// independent session (#1178 Part 8, pen 34 `Restored session
+  /// selected`) and returns its id. The copy gets a fresh id
+  /// ([newSessionId]'s rule) at the root, Unfiled, and keeps the backup's
+  /// name, or `<name> (2)`, `(3)`... when a session already carries it.
+  /// Nothing reaches the engine; the live rig and every other bundle are
+  /// untouched.
+  ///
+  /// The copy follows Duplicate's rules: the reserved directory fills with
+  /// everything but the manifest, and the manifest, carrying the name, is
+  /// written last through a flushed temp file and a rename. A power cut
+  /// leaves an interrupted save that lists nowhere, never a half session,
+  /// and a failure removes the copy. It holds a `sessionWrite` guard on the
+  /// new bundle while it writes, so it is refused during a shutdown.
+  ///
+  /// Throws [ArgumentError] when [source] is not a bundle and [GuardRefused]
+  /// when the guard table forbids the write.
+  Future<SessionId> restoreFrom(String source) async {
+    if (!_isBundle(source)) {
+      throw ArgumentError.value(source, 'source', 'not a session bundle');
+    }
+    final root = await _rootPath();
+    final name = await _freeRestoredName(
+      _summaryOf(Directory(source), folder: null).name,
+    );
+    final id = _reserveId(root);
+    final target = Directory('$root/$id');
+    OperationGuard? guard;
+    try {
+      guard = _guards.enter(
+        GuardKind.sessionWrite,
+        GuardScope.internal(item: target.path),
+        purpose: name,
+      );
+      _copyDirSync(
+        Directory(source),
+        target,
+        skip: const {Session.manifestName, '${Session.manifestName}.tmp'},
+      );
+      _writeManifestNamed(
+        from: '$source/${Session.manifestName}',
+        to: '${target.path}/${Session.manifestName}',
+        name: name,
+      );
+      debugOnDuplicateWrite?.call('${target.path}/${Session.manifestName}');
+    } on Object {
+      if (target.existsSync()) target.deleteSync(recursive: true);
+      rethrow;
+    } finally {
+      guard?.release();
+    }
+    return id;
+  }
+
+  /// [name], or the first `<name> (n)` from 2 no session carries exactly.
+  Future<String> _freeRestoredName(String name) async {
+    final taken = {for (final s in await listSessions()) s.name};
+    if (!taken.contains(name)) return name;
+    for (var n = 2; ; n++) {
+      final candidate = '$name ($n)';
+      if (!taken.contains(candidate)) return candidate;
+    }
+  }
+
   /// Called with each path a Duplicate has just written, in order, so a
   /// test can see what a power cut at that moment would leave behind.
   @visibleForTesting

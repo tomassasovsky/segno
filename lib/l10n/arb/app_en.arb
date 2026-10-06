@@ -6322,5 +6322,103 @@
                 "type": "String"
             }
         }
+    },
+    "libraryBackUp": "Back up to USB",
+    "@libraryBackUp": {
+        "description": "Backs the selected session up to a USB drive (pen 19/01, section 34)."
+    },
+    "libraryBackingUp": "Backing up {name}…",
+    "@libraryBackingUp": {
+        "description": "Inline progress while a session is backed up (pen 34).",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryBackupPurpose": "Backing up {name}",
+    "@libraryBackupPurpose": {
+        "description": "What the Storage page shows on Eject while a backup runs.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryBackedUp": "Backed up to USB.",
+    "@libraryBackedUp": {
+        "description": "After a backup lands on the drive."
+    },
+    "libraryBackupConflictTitle": "A backup has this name",
+    "@libraryBackupConflictTitle": {
+        "description": "The drive already holds a backup of this session (pen 34)."
+    },
+    "libraryBackupReplace": "Replace",
+    "@libraryBackupReplace": {
+        "description": "Replaces the backup already on the drive."
+    },
+    "libraryBackupInterrupted": "Backup interrupted",
+    "@libraryBackupInterrupted": {
+        "description": "A backup stopped with nothing changed (pen 34)."
+    },
+    "libraryBackupDriveLost": "USB drive disconnected. Nothing was changed.",
+    "@libraryBackupDriveLost": {
+        "description": "The drive went away during a backup (pen 34)."
+    },
+    "libraryBackupFull": "Not enough space on the USB drive. Nothing was changed.",
+    "@libraryBackupFull": {
+        "description": "The drive is too full for the backup."
+    },
+    "libraryBackupReadOnly": "This USB drive is read-only. Nothing was changed.",
+    "@libraryBackupReadOnly": {
+        "description": "The drive refuses writes."
+    },
+    "libraryBackupFailed": "The copy failed. Nothing was changed.",
+    "@libraryBackupFailed": {
+        "description": "Another write error during a backup."
+    },
+    "libraryBackupNoDrive": "Your session stays in Internal.",
+    "@libraryBackupNoDrive": {
+        "description": "Back up with no drive plugged in."
+    },
+    "libraryBackupRetry": "Retry",
+    "@libraryBackupRetry": {
+        "description": "Repeats an interrupted backup with the same choices (pen 34)."
+    },
+    "libraryBackupSession": "Session",
+    "@libraryBackupSession": {
+        "description": "The USB backup list's name column (pen 34)."
+    },
+    "libraryBackupSaved": "Saved",
+    "@libraryBackupSaved": {
+        "description": "The USB backup list's date column (pen 34)."
+    },
+    "libraryBackupMeta": "{tracks} · {fx} FX",
+    "@libraryBackupMeta": {
+        "description": "A backup row's facts.",
+        "placeholders": {
+            "tracks": {
+                "type": "String"
+            },
+            "fx": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryBackupsEmpty": "No sessions are backed up on this drive.",
+    "@libraryBackupsEmpty": {
+        "description": "The USB list with no backups."
+    },
+    "libraryRestore": "Restore to Library",
+    "@libraryRestore": {
+        "description": "Adds the selected backup as a new session (pen 34)."
+    },
+    "libraryRestoreAdds": "Adds a new session to Library.",
+    "@libraryRestoreAdds": {
+        "description": "Beside Restore to Library (pen 34)."
+    },
+    "libraryRestoreFailed": "Could not restore. Nothing was added.",
+    "@libraryRestoreFailed": {
+        "description": "Restore to Library failed."
     }
 }

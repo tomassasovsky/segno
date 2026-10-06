@@ -466,7 +466,8 @@ class _AppState extends State<App> {
           value: widget.removableVolumes,
         ),
         // The one guard table (#1198), for the owners the views build: the
-        // Library's exports enter a transfer guard on what they read.
+        // Library's exports and backups enter transfer guards on what
+        // they read.
         RepositoryProvider<GuardRegistry>.value(value: widget.guards),
         if (_powerKeySource != null)
           RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),

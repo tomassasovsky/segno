@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
@@ -86,8 +87,12 @@ void main() {
       await volumes.controller.close();
     });
 
-    LibraryCubit build() =>
-        LibraryCubit(sessions: sessions, volumes: volumes, pedal: pedal);
+    LibraryCubit build() => LibraryCubit(
+      sessions: sessions,
+      volumes: volumes,
+      pedal: pedal,
+      guards: GuardRegistry(),
+    );
 
     test('starts on Internal, All, no selection, with the port drives', () {
       volumes.current = const [_usb];
@@ -326,6 +331,7 @@ void main() {
         sessions: sessions,
         volumes: volumes,
         pedal: pedal,
+        guards: GuardRegistry(),
         listenPoll: const Duration(milliseconds: 1),
       );
 
