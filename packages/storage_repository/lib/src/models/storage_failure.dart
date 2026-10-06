@@ -3,6 +3,9 @@ import 'package:equatable/equatable.dart';
 /// Why a write to a destination did not happen. Every variant guarantees the
 /// same thing: existing content was left intact, and no partial file is left
 /// under a final name.
+///
+/// Each one says what happened in words a log line or the UI can print, the
+/// same words the Library's `RemovableVolumes` port uses.
 sealed class StorageFailure extends Equatable implements Exception {
   const StorageFailure();
 
@@ -28,19 +31,25 @@ sealed class StorageFailure extends Equatable implements Exception {
 }
 
 /// The destination ran out of space.
-class StorageFull extends StorageFailure {
+final class StorageFull extends StorageFailure {
   /// Creates a [StorageFull].
   const StorageFull();
+
+  @override
+  String toString() => 'the destination is full';
 }
 
 /// The destination refuses writes.
-class StorageReadOnly extends StorageFailure {
+final class StorageReadOnly extends StorageFailure {
   /// Creates a [StorageReadOnly].
   const StorageReadOnly();
+
+  @override
+  String toString() => 'the destination is read-only';
 }
 
 /// The removable volume is gone.
-class StorageVolumeLost extends StorageFailure {
+final class StorageVolumeLost extends StorageFailure {
   /// Creates a [StorageVolumeLost] for [generation].
   const StorageVolumeLost(this.generation);
 
@@ -49,16 +58,22 @@ class StorageVolumeLost extends StorageFailure {
 
   @override
   List<Object?> get props => [generation];
+
+  @override
+  String toString() => 'drive $generation was removed';
 }
 
 /// The destination cannot be written at all.
-class StorageUnsupported extends StorageFailure {
+final class StorageUnsupported extends StorageFailure {
   /// Creates a [StorageUnsupported].
   const StorageUnsupported();
+
+  @override
+  String toString() => 'the destination is not supported';
 }
 
 /// Any other I/O failure.
-class StorageIo extends StorageFailure {
+final class StorageIo extends StorageFailure {
   /// Creates a [StorageIo] with the OS's [reason].
   const StorageIo(this.reason);
 
@@ -67,4 +82,7 @@ class StorageIo extends StorageFailure {
 
   @override
   List<Object?> get props => [reason];
+
+  @override
+  String toString() => 'storage I/O failed: $reason';
 }

@@ -14,7 +14,7 @@ sealed class StorageDestination extends Equatable {
 }
 
 /// Internal storage.
-class InternalDestination extends StorageDestination {
+final class InternalDestination extends StorageDestination {
   /// Creates an [InternalDestination].
   const InternalDestination();
 
@@ -23,7 +23,7 @@ class InternalDestination extends StorageDestination {
 }
 
 /// One removable volume.
-class RemovableDestination extends StorageDestination {
+final class RemovableDestination extends StorageDestination {
   /// Creates a [RemovableDestination] for [generation].
   const RemovableDestination(this.generation);
 

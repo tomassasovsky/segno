@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -127,8 +128,10 @@ void main() {
       final a = repo.acquire(internal, 'recording');
       final b = repo.acquire(usb1, 'export');
 
-      expect(repo.leases, [a, b]);
-      expect(repo.leasesOn(usb1), [b]);
+      expect(repo.leases, [a.lease, b.lease]);
+      expect(repo.leasesOn(usb1), [
+        const WriteLease(target: usb1, purpose: 'export'),
+      ]);
       expect(repo.transferInFlight, isTrue);
       expect(b.target, usb1);
       expect(b.purpose, 'export');
@@ -205,7 +208,7 @@ void main() {
       expect(await export.lost, const StorageFailure.volumeLost(1));
       expect(recording.isHeld, isFalse);
       expect(onInternal.isLost, isFalse);
-      expect(repo.leases, [onInternal]);
+      expect(repo.leases, [onInternal.lease]);
       expect(
         () => repo.acquire(usb1, 'export'),
         throwsA(const StorageFailure.volumeLost(1)),
@@ -216,6 +219,26 @@ void main() {
       expect(
         repo.acquire(const StorageDestination.removable(2), 'export').isHeld,
         isTrue,
+      );
+    });
+
+    test('a volume that turns ejected (by anyone) fails every lease on it, '
+        'not only one that vanishes', () async {
+      repo = h.build(initial: [h.record(1)]);
+      await pumpEventQueue();
+      final export = repo.acquire(usb1, 'export');
+
+      h.client.update(
+        h.record(1, status: RemovableVolumeRecordStatus.ejected),
+      );
+      await pumpEventQueue();
+
+      expect(await export.lost, const StorageFailure.volumeLost(1));
+      expect(export.isHeld, isFalse);
+      expect(repo.transferInFlight, isFalse);
+      expect(
+        () => repo.acquire(usb1, 'export'),
+        throwsA(const StorageFailure.volumeLost(1)),
       );
     });
 
@@ -270,7 +293,7 @@ void main() {
         repo.eject(1),
         throwsA(
           isA<EjectRefused>()
-              .having((e) => e.holders, 'holders', [lease])
+              .having((e) => e.holders, 'holders', [lease.lease])
               .having((e) => '$e', 'toString', 'EjectRefused(recording)'),
         ),
       );
@@ -389,6 +412,91 @@ void main() {
       },
     );
 
+    test('20 s after the helper TOOK the request is not a failure: the '
+        "eject stays in flight and ends with the helper's answer", () {
+      fakeAsync((async) {
+        repo = h.build(initial: [h.record(1)]);
+        async.flushMicrotasks();
+        EjectOutcome? outcome;
+        unawaited(repo.eject(1).then((o) => outcome = o));
+        async.flushMicrotasks();
+        // The helper deletes the request, then syncs and unmounts.
+        h.client.take('req-1');
+
+        async.elapse(const Duration(seconds: 30));
+        expect(outcome, isNull, reason: 'not "timeout": it is ejecting');
+        expect(repo.current.single.status, RemovableVolumeStatus.ejecting);
+        expect(repo.transferInFlight, isTrue);
+        expect(
+          () => repo.acquire(usb1, 'export'),
+          throwsA(const StorageFailure.volumeLost(1)),
+          reason: 'no writer may start on a drive being unmounted',
+        );
+
+        h.client.settleEject('req-1', ok: true);
+        async.flushMicrotasks();
+        expect(outcome, const EjectOutcome.safeToRemove());
+        expect(repo.current.single.status, RemovableVolumeStatus.ejected);
+
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+        disposed = true;
+      });
+    });
+
+    test('a taken request that never gets an answer fails with timeout '
+        'after the longer bound', () {
+      fakeAsync((async) {
+        repo = h.build(initial: [h.record(1)]);
+        async.flushMicrotasks();
+        EjectOutcome? outcome;
+        unawaited(repo.eject(1).then((o) => outcome = o));
+        async.flushMicrotasks();
+        h.client.take('req-1');
+
+        async.elapse(
+          const Duration(seconds: 20) + const Duration(seconds: 119),
+        );
+        expect(outcome, isNull);
+        async.elapse(const Duration(seconds: 1));
+        expect(outcome, const EjectOutcome.failed('timeout'));
+        expect(repo.transferInFlight, isFalse);
+
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+        disposed = true;
+      });
+    });
+
+    test('a cancel after the helper TOOK the request does not claim it was '
+        "cancelled: the eject ends with the helper's answer", () async {
+      repo = h.build(initial: [h.record(1)]);
+      await pumpEventQueue();
+
+      final outcome = repo.eject(1);
+      await pumpEventQueue();
+      h.client.take('req-1');
+      await repo.cancelEject();
+      await pumpEventQueue();
+      expect(repo.current.single.status, RemovableVolumeStatus.ejecting);
+
+      h.client.settleEject('req-1', ok: true);
+      expect(await outcome, const EjectOutcome.safeToRemove());
+    });
+
+    test('a request that cannot be filed fails with error; cancelling it '
+        'meanwhile is harmless', () async {
+      repo = h.build(usb: _UnfileableClient(initial: [h.record(1)]));
+      await pumpEventQueue();
+
+      final outcome = repo.eject(1);
+      await repo.cancelEject();
+
+      expect(await outcome, const EjectOutcome.failed('error'));
+      expect(repo.transferInFlight, isFalse);
+      expect(repo.current.single.status, RemovableVolumeStatus.mounted);
+    });
+
     test('cancel after the helper answered leaves its outcome', () async {
       repo = h.build(initial: [h.record(1)]);
       await pumpEventQueue();
@@ -479,6 +587,36 @@ void main() {
       expect(time, const Duration(hours: 60, minutes: 45, seconds: 50));
     });
 
+    test('a removable volume that cannot take a recording offers no '
+        'recording time, read-only or being ejected', () async {
+      repo = h.build(
+        initial: [
+          h.record(1, status: RemovableVolumeRecordStatus.readOnly),
+          h.record(2),
+        ],
+      );
+      await pumpEventQueue();
+      for (final g in [1, 2]) {
+        h.spaces[h.mountPoint(g)] = const VolumeSpace(
+          totalBytes: 32 * gib,
+          freeBytes: 24 * gib,
+        );
+      }
+
+      expect(await repo.recordingTimeRemaining(usb1, 288000), isNull);
+      // Its capacity is still a fact the Storage page draws.
+      expect((await repo.space(usb1))?.freeBytes, 24 * gib);
+
+      const usb2 = StorageDestination.removable(2);
+      expect(await repo.recordingTimeRemaining(usb2, 288000), isNotNull);
+      final ejecting = repo.eject(2);
+      await pumpEventQueue();
+      expect(await repo.recordingTimeRemaining(usb2, 288000), isNull);
+      h.client.settleEject('req-1', ok: true);
+      await ejecting;
+      expect(await repo.recordingTimeRemaining(usb2, 288000), isNull);
+    });
+
     test('recording time on a removable volume applies no reserve', () async {
       repo = h.build(initial: [h.record(1)]);
       await pumpEventQueue();
@@ -530,4 +668,13 @@ void main() {
       expect(await repo.lowInternalSpace(), isFalse);
     });
   });
+}
+
+/// A client whose eject requests cannot be written (a read-only run dir).
+class _UnfileableClient extends FakeUsbStorageClient {
+  _UnfileableClient({super.initial});
+
+  @override
+  Future<String> requestEject(int generation) async =>
+      throw const FileSystemException('Read-only file system');
 }

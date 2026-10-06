@@ -28,7 +28,7 @@ sealed class EjectOutcome extends Equatable {
 }
 
 /// The volume is unmounted; the drive can be pulled.
-class EjectSafeToRemove extends EjectOutcome {
+final class EjectSafeToRemove extends EjectOutcome {
   /// Creates an [EjectSafeToRemove].
   const EjectSafeToRemove();
 }
@@ -38,7 +38,7 @@ class EjectSafeToRemove extends EjectOutcome {
 /// `error` for any other unmount failure), `timeout` when the helper did not
 /// answer in time (the request is withdrawn), or `removed` when the drive was
 /// pulled first.
-class EjectFailed extends EjectOutcome {
+final class EjectFailed extends EjectOutcome {
   /// Creates an [EjectFailed] with [reason].
   const EjectFailed(this.reason);
 
@@ -50,7 +50,7 @@ class EjectFailed extends EjectOutcome {
 }
 
 /// The caller withdrew the request before the helper served it.
-class EjectCancelled extends EjectOutcome {
+final class EjectCancelled extends EjectOutcome {
   /// Creates an [EjectCancelled].
   const EjectCancelled();
 }

@@ -13,6 +13,9 @@ class Harness {
 
   final Directory root;
   final spaces = <String, VolumeSpace?>{};
+
+  /// Every directory the repository synced, in order.
+  final synced = <String>[];
   late FakeUsbStorageClient client;
 
   String get exports => '${root.path}/exports';
@@ -48,13 +51,18 @@ class Harness {
     CopyBytes? copyBytes,
     Duration volumeLossGrace = const Duration(seconds: 2),
     bool createExports = true,
+    FakeUsbStorageClient? usb,
   }) {
     if (createExports) Directory(exports).createSync(recursive: true);
-    client = FakeUsbStorageClient(initial: initial);
+    client = usb ?? FakeUsbStorageClient(initial: initial);
     return StorageRepository(
       client: client,
       exportsRoot: () async => exports,
       volumeSpace: (path) => spaces[path],
+      syncDirectory: (directory) {
+        synced.add(directory);
+        return true;
+      },
       copyBytes: copyBytes,
       volumeLossGrace: volumeLossGrace,
     );
