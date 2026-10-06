@@ -575,12 +575,32 @@ Notes (Part 1 build, on the trunk with Reverse and Peel merged):
     tail or capture), and the payload carries the `a_audio_rev` it was read at;
     the callback refuses on a mismatch, so a fold that lands between admission
     and the drain cannot publish an image without its head.
-  - A re-clock keeps the tempo. With a grid, the bar count must come out whole
-    over the new length (within a frame per bar, the odd length's half frame);
-    otherwise the length is refused as `LE_ERR_MODE_MISMATCH`, the notice for an
-    incompatible length. The kept bar count is restored exactly
-    (`le_restore_musical_grid`), never re-derived from the tempo. Half of 1 or
-    3 bars is therefore refused; half of 2 bars and every Double are accepted.
+  - A re-clock keeps the tempo. The kept count is restored exactly
+    (`le_restore_musical_grid`), never re-derived from the tempo.
+  - **Owner decision (2026-10-06), replacing the first review fix:** a sole
+    loop is counted in beats. Divide keeps the tempo, so a 1-bar loop of 4/4
+    halves to 2 beats and a 3-bar loop to 6 beats; only a half that would
+    leave a fraction of a beat (one beat, or one bar of 3/4) is refused as
+    `LE_ERR_MODE_MISMATCH`. The rule is `le_reclock_whole_beats`
+    (`engine_core.h`), within a frame per beat.
+  - The grid's own count is now beats: `a_loop_beats` and
+    `le_snapshot.loop_beats` (trailing) beside the integer `loop_bars`, which
+    reads 0 when the beats are not whole bars. One setter,
+    `le_set_loop_grid`, writes both and `grid_total_beats`. The beat clock,
+    quantize subdivisions (already rational) and the tempo lock read beats.
+    `le_engine_commit_session`'s third argument is now `loop_beats` (a
+    whole-bar session passes bars × ts_num), and the Dart seam is
+    `commitSession(base, loopBeats:)`; `SessionRig.loopBeats` (null when the
+    source carries only bars) and `TransportState.loopBeats` carry it, and
+    `Track.wholeBeats` counts a sub-bar loop. A surviving sub-bar grid that a
+    tempo or signature change regrids counts the nearest whole beats.
+  - Threaded later: Part 2 saves `loopBeats` in the Session; Part 3 shows
+    "N beats" where no whole bar exists. The count-in needs no change (it
+    counts bars of the tempo before a stopped launch, and the launch starts at
+    the loop top). The bar position within a loop restarts at the loop top
+    (`current_beat = beat % ts_num`), so a 6-beat loop of 4/4 shows beats
+    1-4, 1-2. The MIDI clock follower (#1228, not built) must take its bar
+    position from `loop_beats`, never `loop_bars`.
   - A posted re-clock is the effective master (`le_rig_effective_master_len`),
     so other tracks' history decisions measure behind it.
   - The buffers for the new image are allocated before the slot selection may
@@ -691,12 +711,25 @@ Part 2 build notes (deviations from the text above):
   the manifest does not hold the lengths, the decoded WAVs do. It runs before
   the bundle is returned, so a refusal still precedes every side effect; lanes
   of one track must also carry the same lengths.
-- Schema: provisionally 13 on this branch (the next number on its base). The
-  number is assigned at landing; the #1196 migration step for it is the
-  identity (`(manifest, context) {}`), since an older manifest holds no length
-  edit and an entry without `start` reads as 0. Add it to
-  `sessionMigrationSteps` with the number assigned, and add the converted
-  fixture the chain test asks for.
+- Schema 14 (assigned; the trunk carries the #1196 chain at 13 after Reverse
+  Part 2). The step `_v13ToV14` adds `loopBeats` (the saved bars times the
+  saved numerator, the grid every older manifest meant) and touches nothing
+  else: an older manifest holds no length edit, and an entry without `start`
+  reads as 0. The `v14_length` fixture is the current-schema bundle; `v13`
+  joins the converted fixtures.
+- Review of PR #1244 (Part 2):
+  - The live length of every saved track must be a whole multiple of the
+    base or exactly base/2 or base/4 (Multi, Sync and Band; Free and Song
+    import is the existing gap). `SessionRepository.read` refuses another
+    length with `SessionCorruptLayers` before anything is applied, and
+    `le_engine_commit_session` refuses it with `LE_ERR_INVALID` before
+    posting; the commit handler skips such a track as a backstop, so the
+    mixer can never read a short slot.
+  - `exportLayer` throws when the size query refuses (a slot shorter than
+    its image), so a save fails at capture instead of writing an empty WAV
+    the next read would refuse.
+  - The Session saves `loopBeats` beside `loopBars` (the owner's beat
+    decision, Part 1), and recall restores the beats.
 - Reopen: `test_reopen_keeps_length_history` proves a retained track keeps both
   stacks byte-identical and a length edit posted but unapplied at the loss
   drops only its track (mask bit set, pin and `length_pending` cleared).

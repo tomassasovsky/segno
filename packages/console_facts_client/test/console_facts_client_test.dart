@@ -34,6 +34,7 @@ void main() {
       expect(await client.facts(), ConsoleFacts.unknown);
       expect(await client.exportDestination(), isEmpty);
       expect(await client.deleteCapturesOlderThan(30), 0);
+      expect(await client.retiredBluetoothPairings(), 0);
     });
   });
 
@@ -248,6 +249,58 @@ void main() {
         expect(await client.exportDestination(), isEmpty);
         expect(await client.deleteCapturesOlderThan(30), 0);
       }, returnsNormally);
+    });
+  });
+
+  group('LocalConsoleFactsClient.retiredBluetoothPairings', () {
+    late Directory temp;
+
+    setUp(() {
+      temp = Directory.systemTemp.createTempSync('retired_bluetooth');
+    });
+    tearDown(() => temp.deleteSync(recursive: true));
+
+    LocalConsoleFactsClient build(String state) => LocalConsoleFactsClient(
+      sessionsRoot: () async => temp.path,
+      capturesRoot: () async => temp.path,
+      diskSpace: (_) async => null,
+      bluetoothState: state,
+    );
+
+    void record(String path) {
+      Directory(path).createSync(recursive: true);
+      File('$path/info').writeAsStringSync('[General]\n');
+    }
+
+    test('counts each device record under each adapter', () async {
+      final state = '${temp.path}/bluetooth';
+      record('$state/AA:BB:CC:DD:EE:FF/11:22:33:44:55:66');
+      record('$state/AA:BB:CC:DD:EE:FF/22:33:44:55:66:77');
+      record('$state/00:11:22:33:44:55/66:77:88:99:AA:BB');
+      // What BlueZ keeps beside the records is not a pairing.
+      Directory('$state/AA:BB:CC:DD:EE:FF/cache').createSync();
+      File('$state/AA:BB:CC:DD:EE:FF/settings').writeAsStringSync('');
+      Directory(
+        '$state/AA:BB:CC:DD:EE:FF/33:44:55:66:77:88',
+      ).createSync(); // no info file
+      expect(await build(state).retiredBluetoothPairings(), 3);
+    });
+
+    test('is 0 for an empty or missing tree', () async {
+      final state = '${temp.path}/bluetooth';
+      expect(await build(state).retiredBluetoothPairings(), 0);
+      Directory(state).createSync();
+      expect(await build(state).retiredBluetoothPairings(), 0);
+    });
+
+    test('ignores a device record outside an adapter directory', () async {
+      final state = '${temp.path}/bluetooth';
+      record('$state/not-an-adapter/11:22:33:44:55:66');
+      expect(await build(state).retiredBluetoothPairings(), 0);
+    });
+
+    test('defaults to the appliance data volume', () {
+      expect(kRetiredBluetoothState, '/data/bluetooth');
     });
   });
 

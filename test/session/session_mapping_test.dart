@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
@@ -117,7 +118,7 @@ void main() {
       final live = looper.state.tracks.first.lanes.single;
       expect(live.volume, 1);
       expect(live.balance, closeTo(0.5, 1e-6));
-      final files = SessionRepository(engine: engine);
+      final files = SessionRepository(guards: GuardRegistry(), engine: engine);
       await files.save(
         directory.path,
         chains: chainsFromLooper(
@@ -236,8 +237,11 @@ void main() {
             defaultOneShot: looper.defaultOneShot,
             trackOverrides: looper.trackOneShotOverrides,
           ),
-        ).loopBars,
-        7,
+        ),
+        isA<SessionSettings>()
+            .having((s) => s.loopBars, 'loopBars', 7)
+            // Bars only, as an engine before #1168 published: their beats.
+            .having((s) => s.loopBeats, 'loopBeats', 28),
       );
     });
 
@@ -306,7 +310,10 @@ void main() {
             trackOverrides: looper.trackOneShotOverrides,
           ),
         );
-        final repository = SessionRepository(engine: engine);
+        final repository = SessionRepository(
+          guards: GuardRegistry(),
+          engine: engine,
+        );
         await repository.save(directory.path, settings: settings);
         final rig = rigFromBundle(await repository.read(directory.path));
         expect(rig.tracks, isEmpty);
@@ -808,6 +815,7 @@ void main() {
           tracks: [
             SessionTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
@@ -865,6 +873,8 @@ void main() {
       expect(rig.recordTiming, RecordTiming.quarter);
       expect(rig.overdubDecay, 40);
       expect(rig.loopBars, 7);
+      expect(rig.loopBeats, 28);
+      expect(rig.gridBeats, 28);
     });
 
     test("a manifest that names no defaults still carries the model's own, "
@@ -944,6 +954,7 @@ void main() {
           tracks: [
             SessionTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
@@ -1005,6 +1016,7 @@ void main() {
             tracks: [
               SessionTrack(
                 fadeAmount: 1,
+                reversed: false,
                 channel: 0,
                 multiple: 1,
                 lengthFrames: 4,
@@ -1051,6 +1063,7 @@ void main() {
         session: sessionWith([
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -1071,6 +1084,35 @@ void main() {
       expect(rig.tracks.single.lanes, hasLength(2));
       expect(rig.tracks.single.lanes[0].livePcm, l0);
       expect(rig.tracks.single.lanes[1].livePcm, l1);
+    });
+
+    test("carries each track's playback direction to the rig", () {
+      final pcm = Float32List.fromList([1, 2, 3, 4]);
+      final bundle = (
+        session: sessionWith([
+          for (final (channel, reversed) in [(0, true), (1, false)])
+            SessionTrack(
+              fadeAmount: 1,
+              reversed: reversed,
+              channel: channel,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track${channel}_lane0_L0.wav')],
+            ),
+        ]),
+        laneStems: {
+          (0, 0): [pcm],
+          (1, 0): [pcm],
+        },
+      );
+      final rig = rigFromBundle(bundle);
+      expect(
+        [for (final t in rig.tracks) (t.channel, t.reversed)],
+        [
+          (0, true),
+          (1, false),
+        ],
+      );
     });
 
     test('maps a multi-lane track with per-lane overdub history', () {
@@ -1103,6 +1145,7 @@ void main() {
         session: sessionWith([
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 1,
@@ -1150,6 +1193,7 @@ void main() {
           tracks: [
             SessionTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
@@ -1157,6 +1201,7 @@ void main() {
             ),
             SessionTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 2,
               multiple: 1,
               lengthFrames: 4,
@@ -1189,6 +1234,7 @@ void main() {
         session: sessionWith([
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -1215,6 +1261,7 @@ void main() {
         session: sessionWith([
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -1222,6 +1269,7 @@ void main() {
           ),
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 1,
             multiple: 1,
             lengthFrames: 4,

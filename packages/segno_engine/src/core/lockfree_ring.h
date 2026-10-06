@@ -143,7 +143,7 @@ typedef struct le_command {
       uint32_t image_id;
     } length_log;
     struct { /* COMMIT_SESSION: exact recorded span and musical bar count. */
-      int32_t base_frames, loop_bars;
+      int32_t base_frames, loop_beats;
     } session;
     struct {
       le_record_timing_settings settings;

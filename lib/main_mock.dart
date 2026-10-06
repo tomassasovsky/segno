@@ -1,4 +1,5 @@
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/run_segno.dart';
 import 'package:segno/session_directory.dart';
@@ -13,17 +14,21 @@ import 'package:session_repository/session_repository.dart';
 /// [runSegno].
 Future<void> main(List<String> args) async {
   final mock = createMockEngine();
+  final guards = GuardRegistry();
   await runSegno(
     args,
     repository: LooperRepository(engine: mock.engine),
     sessionRepository: SessionRepository(
       engine: mock.engine,
       sessionsRoot: defaultSessionsRoot,
+      guards: guards,
     ),
     performanceRepository: PerformanceRepository(
       engine: mock.engine,
       exportsRoot: defaultExportDirectory,
+      guards: guards,
     ),
+    guards: guards,
     startConfig: mock.startConfig,
   );
 }

@@ -2892,7 +2892,7 @@ static int32_t le_length_fit_ctl(le_engine* e, int32_t ch, int32_t len,
   }
   const int32_t rc = le_length_fit_check(
       load_i32(&e->a_looper_mode), le_rig_effective_master_len(e),
-      load_i32(&e->a_loop_bars), others, load_i32(&e->a_primary_track) == ch,
+      load_i32(&e->a_loop_beats), others, load_i32(&e->a_primary_track) == ch,
       len, e->max_loop_frames, fit);
   if (rc != LE_OK || fit->reclock == 0) return rc;
   if (load_i32(&e->a_counting_in)) return LE_ERR_NOT_READY;

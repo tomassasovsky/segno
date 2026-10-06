@@ -51,6 +51,11 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
+  /* -10 .. -17 are assigned to other work (the numbering ledger). */
+  LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
+                              * exist (#1198) */
+  LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
+                              * it must hold (#1198) */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -254,7 +259,7 @@ typedef enum le_command_code {
   LE_CMD_SET_CLICK_OUTPUT = 22,  /* click output routing. trackmask arm:
                                   * channel unused, mask = output bitmask
                                   * (default 0 = no outputs). */
-  LE_CMD_COMMIT_SESSION = 23,    /* session commit: base_frames and loop_bars;
+  LE_CMD_COMMIT_SESSION = 23,    /* session commit: base_frames and loop_beats;
                                   * publish grid with imported tracks stopped */
   LE_CMD_SET_CLICK_VOLUME = 24,  /* arg_f = 0..LE_MAX_GAIN (the click's ONLY
                                   * gain stage — master gain never applies). */
@@ -1240,8 +1245,9 @@ typedef struct le_snapshot {
   int32_t quantize_div; /* le_grid_div granularity (default 0 = off) */
   int32_t tempo_source; /* le_tempo_source (default 0 = none) */
   /* Whole bars in the master loop, or 0 when no grid relationship exists
-   * (sync off, no loop, or the loop predates any grid). The loop's AUDIO
-   * length is never altered by the grid — bars is a derived count. */
+   * (sync off, no loop, or the loop predates any grid) or the grid's beats
+   * do not make whole bars (loop_beats, #1168). The loop's AUDIO length is
+   * never altered by the grid — bars is a derived count. */
   int32_t loop_bars;
   int32_t current_beat; /* 0..ts_num-1 within the bar: loop-driven, or driven
                          * by the count-in / free-running click; 0 idle */
@@ -1361,6 +1367,11 @@ typedef struct le_snapshot {
   uint32_t record_timing_revision;
   int32_t record_timing_result;
   int32_t record_timing_overrides[LE_MAX_TRACKS];
+  /* Trailing (#1168): whole beats (denominator notes) in the master loop, the
+   * grid's own count, or 0 with no grid. loop_bars * ts_num when the loop is
+   * whole bars; a Divide of a sole 1- or 3-bar loop keeps the tempo and
+   * leaves 2 or 6 beats with loop_bars 0. */
+  int32_t loop_beats;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -3046,11 +3057,31 @@ LE_EXPORT int32_t le_digest_bytes(const void* data, uint64_t length,
  * byte `offset`; `length` = UINT64_MAX means through the end of the file.
  * Reads in 64 KiB chunks, so a multi-gigabyte recording costs no memory.
  * Returns LE_OK; LE_ERR_INVALID for a NULL or empty `path` or NULL `out`;
- * LE_ERR_DEVICE when the file cannot be opened, is not a regular file, is
- * shorter than `offset` + `length` (a damaged file never yields a digest of
- * what happens to be left), or a read fails. */
+ * LE_ERR_NOT_FOUND when nothing exists at `path`; LE_ERR_TRUNCATED when the
+ * file is shorter than `offset` + `length` (a damaged file never yields a
+ * digest of what happens to be left); LE_ERR_DEVICE when it cannot be opened
+ * for another reason, is not a regular file, or a read fails. The codes tell
+ * a missing recording from a damaged one without a separate stat that the
+ * file could change under. */
 LE_EXPORT int32_t le_digest_file(const char* path, uint64_t offset,
                                  uint64_t length, uint8_t* out);
+
+/* Incremental SHA-256 over memory the caller feeds in pieces, so a large
+ * buffer in another language's heap is hashed through a small native window
+ * instead of being copied whole. `state` is caller-owned, at least
+ * LE_DIGEST_STATE_BYTES long and 8-byte aligned; begin initialises it,
+ * update adds `length` bytes, end writes the 32-byte digest to `out` (the
+ * state must be begun again before reuse). Each returns LE_OK, or
+ * LE_ERR_INVALID for a NULL state or out, a `state_bytes` below
+ * LE_DIGEST_STATE_BYTES, NULL `data` with a non-zero length, or a length this
+ * platform cannot address. */
+/* Keep this a plain number: ffigen only exports a macro that is a literal,
+ * and the Dart side sizes its state buffer from the generated constant. */
+#define LE_DIGEST_STATE_BYTES 128
+LE_EXPORT int32_t le_digest_begin(void* state, uint64_t state_bytes);
+LE_EXPORT int32_t le_digest_update(void* state, const void* data,
+                                   uint64_t length);
+LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
 
 /* Makes the directory entries of `path` durable: open + fsync on POSIX, which
  * is what makes a rename into that directory survive a power cut (fsync on
@@ -3270,16 +3301,19 @@ LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple
  * (length / base_frames; a base/2 or base/4 track is that Sync division).
- * Restores exactly `loop_bars` musical bars over that
- * span; zero keeps the loop grid-free even when a tempo is known. The caller
- * restores tempo/source/signature before this commit. Does not infer bars
- * from BPM or change audio length. Requires base_frames > 0 and loop_bars in
- * 0..INT32_MAX/15 (the largest supported signature has 15 beats). Posts one
- * command; returns LE_OK or an le_result error.
+ * Restores exactly `loop_beats` musical beats (denominator notes; #1168: a
+ * sub-bar loop a Divide left keeps its beats) over that span; zero keeps the
+ * loop grid-free even when a tempo is known. The caller restores
+ * tempo/source/signature before this commit, so a whole-bar loop passes
+ * bars * ts_num. Does not infer beats from BPM or change audio length.
+ * Requires base_frames > 0 and loop_beats in 0..INT32_MAX/15, and every
+ * staged track a whole multiple of base_frames or exactly base/2 or base/4
+ * (LE_ERR_INVALID otherwise, before anything is posted). Posts one command;
+ * returns LE_OK or an le_result error.
  */
 LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
                                            int32_t base_frames,
-                                           int32_t loop_bars);
+                                           int32_t loop_beats);
 
 /* Fade admission returns a nonzero request id only on LE_OK. Toggle resolves
  * the opposite target on the callback, with a 0.5..30 second full traversal.

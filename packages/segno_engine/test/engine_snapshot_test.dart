@@ -1661,6 +1661,7 @@ void main() {
         'syncTempo',
         'quantizeDiv',
         'loopBars',
+        'loopBeats',
         'currentBeat',
         'clickMode',
         'clickModeRevision',

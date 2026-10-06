@@ -861,6 +861,35 @@ static void fade_hold_drain(void* opaque) {
   while (!atomic_load(&gate->release)) test_sleep_ms(1);
 }
 
+/* Bound for waits on the performance drain thread. The thread runs at the
+ * lowest scheduling priority on purpose (#722), so on a machine saturated with
+ * other work (a parallel build, several suites) it can go several seconds
+ * without a turn, and a handful of seconds was exactly the bound that flaked
+ * (#1184). Each poll sleeps at least 1 ms, so this is at least a minute. A
+ * wait that reaches it means the drain is not progressing at all, which is a
+ * failure, not slowness; the engine state it waits on is otherwise unchanged,
+ * so a larger bound costs nothing when the drain is healthy. */
+#define FADE_DRAIN_WAIT_POLLS 60000
+
+/* Waits for the drain thread to reach the test seam. */
+static int fade_wait_drain_entered(const fade_drain_gate* gate) {
+  for (int i = 0; i < FADE_DRAIN_WAIT_POLLS && !atomic_load(&gate->entered); ++i)
+    test_sleep_ms(1);
+  return atomic_load(&gate->entered);
+}
+
+/* Waits for the drain thread to empty the layer staging ring. Stops at once if
+ * the drain stopped itself, because it will never empty the ring then. */
+static int fade_wait_staging_drained(le_engine* e) {
+  le_layer_staging_ring* ring = &e->perf.layer_staging_ring;
+  for (int i = 0; i < FADE_DRAIN_WAIT_POLLS; ++i) {
+    if (atomic_load(&ring->head) == atomic_load(&ring->tail)) return 1;
+    if (le_perf_drain_self_stopped(e->perf.drain)) break;
+    test_sleep_ms(1);
+  }
+  return atomic_load(&ring->head) == atomic_load(&ring->tail);
+}
+
 static void test_fade_restore_staging_and_manifest_capacity(void) {
   printf("test_fade_restore_staging_and_manifest_capacity\n");
   for (int manifest_full = 0; manifest_full < 2; ++manifest_full) {
@@ -871,8 +900,7 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
     le_perf_drain_set_mid_cycle_hook_for_test(fade_hold_drain, &gate);
     const char* dir = render_test_dir(manifest_full ? "fade-manifest-capacity" : "fade-staging-refusal");
     CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
-    for (int i = 0; i < 5000 && !atomic_load(&gate.entered); ++i) test_sleep_ms(1);
-    CHECK(atomic_load(&gate.entered));
+    CHECK(fade_wait_drain_entered(&gate));
     const unsigned capacity = manifest_full ? LE_LAYER_STAGING_RING_CAPACITY : 2;
     // Consumer is parked before its first staging access: use a small valid
     // ring to prove refusal without exhausting the manifest in this case.
@@ -893,9 +921,7 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
     CHECK(output == .125f); // capture refusal cannot refuse musical Undo
     CHECK(atomic_load(&e->a_perf_layer_overruns) == 1);
     atomic_store(&gate.release, 1);
-    for (int i = 0; i < 5000 && atomic_load(&e->perf.layer_staging_ring.head) !=
-         atomic_load(&e->perf.layer_staging_ring.tail); ++i) test_sleep_ms(1);
-    CHECK(atomic_load(&e->perf.layer_staging_ring.head) == atomic_load(&e->perf.layer_staging_ring.tail));
+    CHECK(fade_wait_staging_drained(e));
     if (manifest_full) {
       // One restoration fills the final manifest entry; the next is dropped and
       // counted. Capture continues; the render below fails that stem instead.
@@ -905,8 +931,7 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
         le_engine_process(e, &output, &input, 1);
         CHECK(output == .125f);
       }
-      for (int i = 0; i < 5000 && atomic_load(&e->perf.layer_staging_ring.head) !=
-           atomic_load(&e->perf.layer_staging_ring.tail); ++i) test_sleep_ms(1);
+      CHECK(fade_wait_staging_drained(e));
       CHECK(!le_perf_drain_self_stopped(e->perf.drain));
       // One more frame after the drop: a self-stopped drain would not keep it.
       le_engine_process(e, &output, &input, 1);
