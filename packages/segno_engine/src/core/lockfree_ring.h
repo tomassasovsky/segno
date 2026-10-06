@@ -121,6 +121,12 @@ typedef struct le_command {
       struct le_prepared_fx* recipes;
     } record_image;
     struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
+    struct { /* LE_PLOG_PEEL (#1164): the slot now live, the slot filed as the
+              * PEEL entry, and the track's dub_generation, so a reader can bind
+              * the fact to the staged layer key {channel, slot, generation}. */
+      int32_t channel, slot, previous;
+      uint32_t generation;
+    } peel_log;
     struct { /* COMMIT_SESSION: exact recorded span and musical bar count. */
       int32_t base_frames, loop_bars;
     } session;

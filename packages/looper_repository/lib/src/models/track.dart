@@ -50,6 +50,7 @@ class Track extends Equatable {
     this.undoDepth = 0,
     this.clearRestore = false,
     this.redoDepth = 0,
+    this.peelDepth = 0,
     this.multiple = 1,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
@@ -126,6 +127,11 @@ class Track extends Equatable {
 
   /// Available redo steps.
   final int redoDepth;
+
+  /// Overdub layers Peel can still remove: the layers above the newest
+  /// history entry that is neither an overdub nor a peel. 0 on an empty or
+  /// cleared track. The original take is never counted: Peel stops at it.
+  final int peelDepth;
 
   /// Whether an overdub undo layer is still being captured or drained (the
   /// punch-tail window). Session capture waits this out before exporting.
@@ -237,6 +243,12 @@ class Track extends Equatable {
   /// Whether an undone overdub layer can be redone.
   bool get canRedo => redoDepth > 0;
 
+  /// Whether Peel would remove a layer right now: one remains above the
+  /// original, and the track is not capturing, draining a layer or waiting
+  /// for a Count-in launch (the engine refuses those, so the LED stays off).
+  bool get canPeel =>
+      peelDepth > 0 && !isCapturing && !layerInFlight && pendingLaunch == null;
+
   /// Normalized play position in `0..1`; `0` while the track has no length or
   /// is still recording its take (the engine publishes the growing write head
   /// as both position and length then, which is no position at all).
@@ -244,10 +256,12 @@ class Track extends Equatable {
       ? (positionFrames / lengthFrames).clamp(0.0, 1.0)
       : 0;
 
-  /// Layers the performer hears: the base take plus every retired overdub
-  /// pass. The base loop is not an engine undo layer (`undoDepth` counts
-  /// retired passes only), but it is a layer, so it counts as the first.
-  int get layers => undoDepth + (hasContent ? 1 : 0);
+  /// Layers the performer hears: the base take plus every overdub pass still
+  /// stacked on it. Derived from [peelDepth], not [undoDepth]: a peel removes
+  /// a layer while leaving a history entry behind, so the undo depth stays
+  /// constant as the audible layer count drops. The base loop is not an
+  /// engine history entry, but it is a layer, so it counts as the first.
+  int get layers => peelDepth + (hasContent ? 1 : 0);
 
   /// Completed take length in whole bars, or `null` without a known whole
   /// musical length. Recording growth never establishes a completed count.
@@ -328,6 +342,7 @@ class Track extends Equatable {
     undoDepth,
     clearRestore,
     redoDepth,
+    peelDepth,
     multiple,
     inputMask,
     outputMask,
@@ -375,6 +390,7 @@ class Track extends Equatable {
     undoDepth,
     clearRestore,
     redoDepth,
+    peelDepth,
     multiple,
     inputMask,
     outputMask,

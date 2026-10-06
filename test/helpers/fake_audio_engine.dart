@@ -85,6 +85,7 @@ class FakeAudioEngine implements AudioEngine {
   int clearCalls = 0;
   int undoCalls = 0;
   int redoCalls = 0;
+  int peelCalls = 0;
 
   /// Last looper parameter values seen.
   double? lastVolume;
@@ -389,6 +390,9 @@ class FakeAudioEngine implements AudioEngine {
   /// Result returned by [redo] until a test changes it.
   EngineResult nextRedoResult = EngineResult.ok;
 
+  /// What the next [peel] returns.
+  EngineResult nextPeelResult = EngineResult.ok;
+
   @override
   EngineResult historyModeGate({required int channels, required bool redo}) {
     historyModeGateCalls.add((channels: channels, redo: redo));
@@ -405,6 +409,12 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult redo({int channel = 0}) {
     redoCalls++;
     return nextRedoResult;
+  }
+
+  @override
+  EngineResult peel({int channel = 0}) {
+    peelCalls++;
+    return nextPeelResult;
   }
 
   /// Per-channel active lane count passed to [setLaneCount].

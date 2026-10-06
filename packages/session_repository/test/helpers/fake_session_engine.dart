@@ -513,6 +513,8 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult redo({int channel = 0}) => EngineResult.ok;
   @override
+  EngineResult peel({int channel = 0}) => EngineResult.ok;
+  @override
   EngineResult setRecordOffset(int frames) => EngineResult.ok;
   @override
   EngineResult setLaneInput({

@@ -1757,6 +1757,7 @@ static void le_reopen_drop_track(le_engine* e, le_track* t) {
   store_i32(&t->a_undo_depth, 0);
   store_i32(&t->a_clear_restore, 0);
   store_i32(&t->a_redo_depth, 0);
+  store_i32(&t->a_peel_depth, 0);
   for (int l = 0; l < LE_MAX_LANES; ++l) {
     store_i32(&t->lanes[l].a_recoverable, 0);
     t->lanes[l].pending_mute = 0;

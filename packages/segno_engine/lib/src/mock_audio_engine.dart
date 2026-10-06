@@ -767,6 +767,13 @@ class MockAudioEngine implements AudioEngine {
   @override
   EngineResult redo({int channel = 0}) => _requireRunning();
 
+  /// The mock keeps no overdub layers, so there is never one to peel.
+  @override
+  EngineResult peel({int channel = 0}) {
+    final running = _requireRunning();
+    return running.isOk ? EngineResult.invalid : running;
+  }
+
   @override
   EngineResult setLaneCount({required int channel, required int count}) {
     final result = _requireRunning();
