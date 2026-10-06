@@ -978,14 +978,18 @@ void main() {
           bank: scenario.bank,
         ),
       );
+      // A new level mapping tops out at unity gain (0 dB), not +6 dB.
+      const target = TrackVolumeTarget(2);
       expect(
         saved.controls.single,
         MidiParameterControl(
-          key: const TrackVolumeTarget(2).canonicalString(),
+          key: target.canonicalString(),
           low: 0,
-          high: 1,
+          high: target.mappingTop,
         ),
       );
+      final top = (saved.controls.single as MidiParameterControl).high;
+      expect(target.toDomain(top), closeTo(1.0, 1e-9));
       final persisted =
           jsonDecode(
                 (await store.getString('midi.configuration'))!,

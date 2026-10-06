@@ -64,6 +64,18 @@ sealed class ControlValueTarget extends Equatable {
     TrackFadeTarget(:final channel) => channel >= 0 && channel < 8,
   };
 
+  /// Where a new mapping's top endpoint sits: unity gain on a level fader,
+  /// whose full travel is +6 dB; full travel on every other target.
+  double get mappingTop => switch (this) {
+    TrackVolumeTarget() || LaneVolumeTarget() => mixerTravelFor(1),
+    _ => 1,
+  };
+
+  /// A stored mapping endpoint as the mapping reads it. On a level fader a
+  /// literal 1.0 is read as [mappingTop], unity: the top every mapping got
+  /// before unity became the default.
+  double decodeEndpoint(double stored) => stored == 1 ? mappingTop : stored;
+
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
   /// not a decodable one.
   ///

@@ -50,12 +50,14 @@ class ExpressionCalibration extends Equatable {
 
 /// One stable value target and its independent heel/toe range.
 class ExpressionMapping extends Equatable {
-  /// Creates a mapping, preserving reverse target ranges.
-  ExpressionMapping({required this.target, this.heel = 0, this.toe = 1}) {
+  /// Creates a mapping, preserving reverse target ranges. [toe] defaults to
+  /// the target's [ControlValueTarget.mappingTop]: unity on a level fader.
+  ExpressionMapping({required this.target, this.heel = 0, double? toe})
+    : toe = toe ?? target.mappingTop {
     if (!target.isStructurallyValid) {
       throw const FormatException('Invalid expression target');
     }
-    if (!_unit(heel) || !_unit(toe)) {
+    if (!_unit(heel) || !_unit(this.toe)) {
       throw const FormatException('Invalid expression range');
     }
   }
@@ -79,8 +81,11 @@ class ExpressionMapping extends Equatable {
     }
     return ExpressionMapping(
       target: target,
-      heel: (heel as num?)?.toDouble() ?? 0,
-      toe: (toe as num?)?.toDouble() ?? 1,
+      heel: target.decodeEndpoint((heel as num?)?.toDouble() ?? 0),
+      toe: switch (toe) {
+        final num toe => target.decodeEndpoint(toe.toDouble()),
+        _ => null,
+      },
     );
   }
 

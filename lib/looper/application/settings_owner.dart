@@ -266,10 +266,14 @@ class SettingsOwner<V extends Object, C> {
 
   /// Drains admitted writes and settles the receipt. The outcome reflects the
   /// current flags only, never an earlier write's result.
+  ///
+  /// A value the receipt still owes does not fail the flush: storage holds
+  /// it and the next start replays it. Only storage that does not hold the
+  /// value to replay does (unreadable, or a rollback that failed).
   Future<SettingOutcome> flush() async {
     await load();
     await _queue(_family.settle);
-    if (!_initialized || _recoveryPending) {
+    if (!_initialized || _unreadable != null || _owedRollback != null) {
       return _report(
         const SettingOutcome(
           SettingStatus.recoveryRequired,
@@ -277,7 +281,10 @@ class SettingsOwner<V extends Object, C> {
         ),
       );
     }
-    return SettingOutcome(SettingStatus.applied, deferred: !_running);
+    return SettingOutcome(
+      SettingStatus.applied,
+      deferred: !_running || _family.recoveryRequired,
+    );
   }
 
   /// Retry: repairs unreadable storage, restores an owed rollback, re-requests

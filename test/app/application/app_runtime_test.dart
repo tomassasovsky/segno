@@ -711,6 +711,51 @@ void main() {
       expect(engine.stopCalls, 1);
     });
 
+    test('an owed Click volume and an owed Mixer vector do not block '
+        'power-off: storage holds both, and the halt fires', () async {
+      await runtime.start();
+      engine
+        ..publishClickCommands = false
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      expect(
+        (await runtime.tempo.clickVolumeOwner.set(1.5)).status,
+        SettingStatus.recoveryRequired,
+      );
+      expect(
+        (await runtime.mix.setTrackPan(.4)).status,
+        MixSettingsStatus.recoveryRequired,
+      );
+      expect(repository.mixRecoveryRequired, isTrue);
+      expect(runtime.tempo.clickVolumeOwner.ready, isFalse);
+      runtime.power.press(const PowerOffSnapshot());
+      for (var i = 0; i < 200 && halts == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(runtime.power.state.phase, PowerOffPhase.goodbye);
+      expect(halts, 1);
+      // The next start replays what storage holds.
+      expect(store.values['tempo.click_volume'], 1.5);
+      final device = repository.state.status.deviceName;
+      expect((await settings.loadMixSettings(device)).trackPans[0], .4);
+      expect(engine.stopCalls, 0);
+    });
+
+    test('a Retry that cannot land an owed vector still lets power-off go '
+        'ahead', () async {
+      await runtime.start();
+      engine
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      expect(
+        (await runtime.mix.setTrackPan(.4)).status,
+        MixSettingsStatus.recoveryRequired,
+      );
+      await runtime.prepareShutdown(retry: true);
+      expect(repository.mixRecoveryRequired, isTrue);
+      expect(engine.stopCalls, 0);
+    });
+
     test('an unreadable Count-in pair keeps audio running and the registry '
         'Retry repairs it for shutdown', () async {
       store.values

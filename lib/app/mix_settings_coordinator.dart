@@ -767,9 +767,14 @@ class MixSettingsCoordinator {
     );
   }
 
-  /// Waits for every currently queued final control value.
-  Future<MixSettingsOutcome> flush() =>
-      _draining ?? Future.value(_recovery ?? _applied);
+  /// Waits for every currently queued final control value. Fails only while
+  /// storage does not hold the value a start replays (a failed rollback): an
+  /// owed vector or a refused edit leaves storage and the next start in
+  /// agreement, as for every settings owner.
+  Future<MixSettingsOutcome> flush() async {
+    if (_draining case final draining?) await draining;
+    return _recovery ?? _applied;
+  }
 
   /// Orders session replacement, boot restore and key synchronization after
   /// pending edits. Controls are refused explicitly until the boundary exits.
