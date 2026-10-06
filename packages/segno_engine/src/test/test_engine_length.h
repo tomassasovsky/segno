@@ -33,6 +33,16 @@ static void len_settle(le_engine* e) {
   le_engine_get_snapshot(e, &s);
 }
 
+/* The fixture engine, grid-free: with loop<->grid sync off a re-clocked
+ * only track keeps no bar count, so these tests measure the image and the
+ * clock alone. test_length_reclock_keeps_tempo covers the grid. */
+static le_engine* len_engine(void) {
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+  drain(e);
+  return e;
+}
+
 /* Admits an edit; on LE_OK lets the callback decide and returns its verdict,
  * otherwise the admission refusal. */
 static int32_t len_edit(le_engine* e, int32_t ch, int32_t edit) {
@@ -99,7 +109,7 @@ static void len_expect_image(le_engine* e, int32_t ch, const float* want,
  * is the only content its First half re-clocks the master. */
 static void test_length_worked_example(void) {
   printf("test_length_worked_example\n");
-  le_engine* e = make_configured_engine();
+  le_engine* e = len_engine();
   le_track* t = &e->tracks[1];
   le_snapshot s;
   float pcm[8], out[64], want[64];
@@ -206,7 +216,7 @@ static void test_length_multiple_segments(void) {
   for (int i = 0; i < 8; ++i) pcm[i] = (float)(i + 1);
   for (int edit = LE_LENGTH_FIRST_HALF; edit <= LE_LENGTH_LAST_HALF; ++edit) {
     for (int skip = 2; skip <= 6; skip += 4) {
-      le_engine* e = make_configured_engine();
+      le_engine* e = len_engine();
       len_take(e, 0, NULL, 4);
       len_take(e, 1, pcm, 8);
       len_expect(e, 1, 8, 2, 0, 0, 0);
@@ -232,7 +242,7 @@ static void test_length_multiple_segments(void) {
     }
   }
   /* Double at index 6 (segment 1): 7, 8, then the 16-frame image runs on. */
-  le_engine* e = make_configured_engine();
+  le_engine* e = len_engine();
   len_take(e, 0, NULL, 4);
   float seq[8] = {1, 2, 3, 4, 5, 6, 7, 8};
   len_take(e, 1, seq, 8);
@@ -261,7 +271,7 @@ static void test_length_segment_and_origin(void) {
   for (int i = 0; i < 16; ++i) pcm[i] = (float)(i + 1);
   for (int next = 5; next <= 13; next += 8) {
     for (int lead = 0; lead < 2; ++lead) {
-      le_engine* e = make_configured_engine();
+      le_engine* e = len_engine();
       len_take(e, 0, NULL, 4);
       len_run(e, NULL, NULL, 4 * lead, 64); /* vary the loop iteration */
       len_take(e, 1, pcm, 16);
@@ -287,7 +297,7 @@ static void test_length_segment_and_origin(void) {
   /* A forward Double from k = 1 after an odd or even number of base loops:
    * the copy follows the current segment, with the origin still zero. */
   for (int lead = 0; lead < 2; ++lead) {
-    le_engine* e = make_configured_engine();
+    le_engine* e = len_engine();
     len_take(e, 0, NULL, 4);
     len_take(e, 1, pcm, 4);
     len_run(e, NULL, NULL, 4 * lead + 2, 64);
@@ -303,7 +313,7 @@ static void test_length_segment_and_origin(void) {
   }
   /* Reversed Double: the next read index is kept, in the first copy. */
   for (int steps = 1; steps <= 7; steps += 2) {
-    le_engine* e = make_configured_engine();
+    le_engine* e = len_engine();
     len_take(e, 0, NULL, 8);
     len_take(e, 1, pcm, 8);
     uint64_t rid = 0;
@@ -331,7 +341,7 @@ static void test_length_sync_division(void) {
   float out[64], want[64];
   const float pattern[8] = {1, 2, 3, 4, 5, 6, 7, 8};
   for (int edit = LE_LENGTH_FIRST_HALF; edit <= LE_LENGTH_LAST_HALF; ++edit) {
-    le_engine* e = make_configured_engine();
+    le_engine* e = len_engine();
     CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
     drain(e);
     sb_make_primary(e, 0.0f);
@@ -381,7 +391,7 @@ static void test_length_sync_division(void) {
  * frame; a playhead in the omitted half keeps its phase; Undo maps back. */
 static void test_length_free_odd_halves(void) {
   printf("test_length_free_odd_halves\n");
-  le_engine* e = make_configured_engine();
+  le_engine* e = len_engine();
   le_track* t = &e->tracks[0];
   float out[64], want[64];
   const float pcm[7] = {1, 2, 3, 4, 5, 6, 7};
@@ -444,6 +454,8 @@ static void test_length_fold_48k(void) {
       if (blocks[b] != 512 && edit == LE_LENGTH_FIRST_HALF) continue;
       le_engine* e = le_engine_create();
       CHECK(le_engine_configure(e, 48000, 1, 1, 2 * LEN_L) == LE_OK);
+      CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+      drain(e);
       CHECK(le_engine_record(e, 0) == LE_OK);
       len_run(e, in, NULL, LEN_L, 512);
       CHECK(le_engine_record(e, 0) == LE_OK);
@@ -499,7 +511,7 @@ static void test_length_capacity_and_arguments(void) {
         LE_ERR_NOT_RUNNING);
   CHECK(id == 0);
   le_engine_destroy(e);
-  e = make_configured_engine();
+  e = len_engine();
   le_track* t = &e->tracks[0];
   CHECK(le_engine_edit_length(NULL, 0, 0, &id) == LE_ERR_INVALID);
   CHECK(le_engine_edit_length(e, 0, 0, NULL) == LE_ERR_INVALID);
@@ -534,7 +546,7 @@ static void test_length_capacity_and_arguments(void) {
  * the track waits. */
 static void test_length_refusals_while_busy(void) {
   printf("test_length_refusals_while_busy\n");
-  le_engine* e = make_configured_engine();
+  le_engine* e = len_engine();
   le_track* t = &e->tracks[0];
   float out[64];
   le_snapshot s;
@@ -653,7 +665,7 @@ static void test_length_callback_refusals(void) {
 
   /* A sibling's capture posted just before the edit: control still counts
    * track 0 as the only content (a re-clock), the callback does not. */
-  e = make_configured_engine();
+  e = len_engine();
   t = &e->tracks[0];
   const float base[4] = {1, 2, 3, 4};
   len_take(e, 0, base, 4);
@@ -678,7 +690,7 @@ static void test_length_callback_refusals(void) {
  * sibling cleared it re-clocks back. */
 static void test_length_history_gate(void) {
   printf("test_length_history_gate\n");
-  le_engine* e = make_configured_engine();
+  le_engine* e = len_engine();
   le_track* t = &e->tracks[0];
   float out[64];
   float pcm[8];
@@ -718,7 +730,7 @@ static void test_length_history_gate(void) {
  * evict a LENGTH entry from the bottom, keeping every slot referenced once. */
 static void test_length_clear_and_eviction(void) {
   printf("test_length_clear_and_eviction\n");
-  le_engine* e = make_configured_engine();
+  le_engine* e = len_engine();
   le_track* t = &e->tracks[0];
   le_snapshot s;
   float pcm[LOOP_N] = {1, 2, 3, 4};
@@ -738,7 +750,7 @@ static void test_length_clear_and_eviction(void) {
   len_expect_image(e, 0, pcm, LOOP_N);
   le_engine_destroy(e);
 
-  e = make_configured_engine();
+  e = len_engine();
   t = &e->tracks[0];
   len_take(e, 0, pcm, LOOP_N);
   CHECK(len_edit(e, 0, LE_LENGTH_DOUBLE) == LE_OK);
@@ -792,7 +804,7 @@ static void test_length_lanes_fade_reverse_stopped(void) {
   le_engine_destroy(e);
 
   /* Fade through an edit. */
-  e = make_configured_engine();
+  e = len_engine();
   float out[64];
   le_snapshot s;
   float pcm[16];
@@ -813,7 +825,7 @@ static void test_length_lanes_fade_reverse_stopped(void) {
 
   /* Reverse: playing backward at index 12 (the omitted second half), First
    * half continues backward from index 4. */
-  e = make_configured_engine();
+  e = len_engine();
   t = &e->tracks[1];
   len_take(e, 0, NULL, 8);
   len_take(e, 1, pcm, 16);
@@ -839,7 +851,7 @@ static void test_length_lanes_fade_reverse_stopped(void) {
   le_engine_destroy(e);
 
   /* STOPPED: silent before and after, the held position mapped. */
-  e = make_configured_engine();
+  e = len_engine();
   len_take(e, 0, NULL, 8);
   len_take(e, 1, pcm, 16);
   len_run(e, NULL, NULL, 13, 64);
@@ -861,7 +873,7 @@ static void test_length_lanes_fade_reverse_stopped(void) {
  * own 326 plus 304/305. */
 static void test_length_perf_fact(void) {
   printf("test_length_perf_fact\n");
-  le_engine* e = make_configured_engine();
+  le_engine* e = len_engine();
   float pcm[8];
   for (int i = 0; i < 8; ++i) pcm[i] = (float)(i + 1);
   len_take(e, 0, NULL, 8);
@@ -915,6 +927,173 @@ static void test_length_perf_fact(void) {
   le_engine_destroy(e);
 }
 
+/* PR #1212 review M1: an edit's image is read from the live slot on the
+ * control thread. Admission refuses while the callback may still write it (a
+ * later take's trailing seam fold), and the payload names the content
+ * revision it read, so a fold that slips in between admission and the
+ * callback's drain refuses the edit there. The interleaving is replayed
+ * deterministically: the command is held off the ring for the one block in
+ * which the fold runs. */
+static void test_length_seam_race(void) {
+  printf("test_length_seam_race\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 4000) == LE_OK);
+  le_track* t = &e->tracks[1];
+  static float pcm[1000], folded[1000], doubled[2000];
+  for (int i = 0; i < 1000; ++i) pcm[i] = (float)(i % 50) / 50.0f;
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  len_run(e, NULL, NULL, 1000, 64);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  len_run(e, NULL, NULL, 1000, 64);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  len_run(e, NULL, NULL, (1000 - s.master_position_frames) % 1000, 64);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  len_run(e, pcm, NULL, 1000, 64);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  while (t->seam_capture > 1) len_run(e, NULL, NULL, 1, 1);
+  CHECK(t->seam_capture == 1);
+  /* The callback's view says the slot is still being written. */
+  uint64_t id = 0;
+  CHECK(le_engine_edit_length(e, 1, LE_LENGTH_DOUBLE, &id) ==
+        LE_ERR_NOT_READY);
+  /* A stale readable view (a write posted but not yet applied): admitted,
+   * then the fold lands before the command is applied. */
+  const int32_t live = load_i32(&t->lanes[0].a_live);
+  peel_history_image h = peel_history_snapshot(t);
+  const int outstanding = t->outstanding_count;
+  atomic_store(&t->a_cache_source_readable, 1);
+  CHECK(le_engine_edit_length(e, 1, LE_LENGTH_DOUBLE, &id) == LE_OK);
+  le_command held;
+  CHECK(le_ring_pop(&e->ring, &held));
+  CHECK(held.code == LE_CMD_SET_LENGTH);
+  const uint32_t before = atomic_load(&t->a_audio_rev);
+  len_run(e, NULL, NULL, 1, 1); /* the fold runs in this block */
+  CHECK(t->seam_capture == 0);
+  CHECK(atomic_load(&t->a_audio_rev) != before);
+  CHECK(le_ring_push(&e->ring, held));
+  len_settle(e);
+  int32_t verdict = 99;
+  CHECK(le_engine_read_request_result(e, id, &verdict) == LE_OK);
+  CHECK(verdict == LE_ERR_NOT_READY);
+  CHECK(load_i32(&t->lanes[0].a_live) == live);
+  CHECK(t->outstanding_count == outstanding);
+  peel_expect_unchanged(t, &h);
+  len_expect(e, 1, 1000, 1, 0, 0, 0);
+  /* Edited now, both copies carry the folded head. */
+  CHECK(le_engine_export_track(e, 1, folded, 1000) == 1000);
+  CHECK(memcmp(folded, pcm, sizeof(pcm)) != 0); /* the fold changed it */
+  CHECK(len_edit(e, 1, LE_LENGTH_DOUBLE) == LE_OK);
+  CHECK(le_engine_export_track(e, 1, doubled, 2000) == 2000);
+  CHECK(memcmp(doubled, folded, sizeof(folded)) == 0);
+  CHECK(memcmp(doubled + 1000, folded, sizeof(folded)) == 0);
+  le_engine_destroy(e);
+}
+
+/* PR #1212 review M2: a re-clocked only track keeps its tempo. With loop<->grid
+ * sync on, the grid's bar count follows the length exactly (2 bars halve to
+ * 1, 1 bar doubles to 2) at the unchanged tempo; a length that would not be a
+ * whole bar count (half of 1 or 3 bars) is refused as incompatible, rather
+ * than changing the beat rate or the tempo silently. */
+static void test_length_reclock_keeps_tempo(void) {
+  printf("test_length_reclock_keeps_tempo\n");
+  const int32_t bar = 96000; /* 4/4 at 120 BPM, 48 kHz */
+  for (int bars = 1; bars <= 3; ++bars) {
+    le_engine* e = le_engine_create();
+    CHECK(le_engine_configure(e, 48000, 1, 1, 6 * bar) == LE_OK);
+    CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+    drain(e);
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    len_run(e, NULL, NULL, bars * bar, 512);
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    len_run(e, NULL, NULL, 1024, 512);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.master_length_frames == bars * bar);
+    CHECK(s.loop_bars == bars);
+    for (int edit = LE_LENGTH_FIRST_HALF; edit <= LE_LENGTH_LAST_HALF;
+         ++edit) {
+      const int32_t verdict = len_edit(e, 0, edit);
+      if (bars % 2 == 0) {
+        CHECK(verdict == LE_OK);
+        le_engine_get_snapshot(e, &s);
+        CHECK(s.master_length_frames == bars * bar / 2);
+        CHECK(s.loop_bars == bars / 2);
+        CHECK(s.tempo_bpm == 120.0f);
+        CHECK(le_engine_undo(e, 0) == LE_OK);
+        len_settle(e);
+        le_engine_get_snapshot(e, &s);
+        CHECK(s.master_length_frames == bars * bar);
+        CHECK(s.loop_bars == bars);
+      } else {
+        CHECK(verdict == LE_ERR_MODE_MISMATCH);
+        le_engine_get_snapshot(e, &s);
+        CHECK(s.master_length_frames == bars * bar);
+        CHECK(s.loop_bars == bars && s.tempo_bpm == 120.0f);
+        CHECK(e->tracks[0].undo_count == 0);
+      }
+    }
+    if (bars <= 2) {
+      CHECK(len_edit(e, 0, LE_LENGTH_DOUBLE) == LE_OK);
+      le_engine_get_snapshot(e, &s);
+      CHECK(s.master_length_frames == 2 * bars * bar);
+      CHECK(s.loop_bars == 2 * bars && s.tempo_bpm == 120.0f);
+    }
+    le_engine_destroy(e);
+  }
+}
+
+/* PR #1212 review L1: while a re-clock is posted, every other track's history
+ * decision measures the master it will set. Multi, tracks A and B of 8 frames,
+ * B cleared: a Double of A re-clocks to 16, and B's restore must be refused
+ * in the window too, or it would land as a half-span in Multi. */
+static void test_length_pending_reclock_master(void) {
+  printf("test_length_pending_reclock_master\n");
+  le_engine* e = len_engine();
+  float pcm[8];
+  for (int i = 0; i < 8; ++i) pcm[i] = (float)(i + 1);
+  len_take(e, 0, pcm, 8);
+  len_take(e, 1, pcm, 8);
+  CHECK(le_engine_clear_undoable(e, 1) == LE_OK);
+  len_settle(e);
+  uint64_t id = 0;
+  CHECK(le_engine_edit_length(e, 0, LE_LENGTH_DOUBLE, &id) == LE_OK);
+  CHECK(le_engine_history_mode_gate(e, 1u << 1, 0) == LE_ERR_MODE_MISMATCH);
+  CHECK(le_engine_undo(e, 1) == LE_ERR_MODE_MISMATCH);
+  len_settle(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 16);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY && s.tracks[1].clear_restore == 1);
+  le_engine_destroy(e);
+}
+
+/* PR #1212 review L2, the accepted race: an Undo of a LENGTH entry returns
+ * LE_OK when it is posted, like Undo to empty and a Clear restore; when the
+ * callback finds the rig changed (here a sibling capture posted just before)
+ * it refuses, and the history is exactly as before — the next Undo meets the
+ * same verdict at admission. */
+static void test_length_refused_history_motion(void) {
+  printf("test_length_refused_history_motion\n");
+  le_engine* e = len_engine();
+  le_track* t = &e->tracks[0];
+  float pcm[8];
+  for (int i = 0; i < 8; ++i) pcm[i] = (float)(i + 1);
+  len_take(e, 0, pcm, 8);
+  CHECK(len_edit(e, 0, LE_LENGTH_DOUBLE) == LE_OK); /* re-clocks to 16 */
+  peel_history_image h = peel_history_snapshot(t);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* posted, not yet applied */
+  CHECK(le_engine_undo(e, 0) == LE_OK);   /* admitted as a re-clock */
+  len_settle(e);
+  CHECK(load_i32(&t->a_length_result) == LE_ERR_MODE_MISMATCH);
+  CHECK(t->length_pending == 0);
+  peel_expect_unchanged(t, &h);
+  len_expect(e, 0, 16, 1, 0, 1, 0);
+  CHECK(le_engine_undo(e, 0) == LE_ERR_MODE_MISMATCH);
+  le_engine_destroy(e);
+}
+
 static void run_length_tests(void) {
   test_length_worked_example();
   test_length_multiple_segments();
@@ -929,4 +1108,8 @@ static void run_length_tests(void) {
   test_length_clear_and_eviction();
   test_length_lanes_fade_reverse_stopped();
   test_length_perf_fact();
+  test_length_seam_race();
+  test_length_reclock_keeps_tempo();
+  test_length_pending_reclock_master();
+  test_length_refused_history_motion();
 }

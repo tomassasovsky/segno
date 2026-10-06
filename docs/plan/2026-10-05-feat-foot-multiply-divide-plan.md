@@ -569,6 +569,35 @@ Notes (Part 1 build, on the trunk with Reverse and Peel merged):
   the drain releases them, while a refused one releases only the edit's pin.
 - `le_engine_finalize_history` and the Session decoder refuse the LENGTH kind
   until Part 2 carries per-image lengths.
+- Review of PR #1212:
+  - The image is read from the live slot only while the callback's end-of-block
+    view says nothing writes it (`a_cache_source_readable`: no seam fold, punch
+    tail or capture), and the payload carries the `a_audio_rev` it was read at;
+    the callback refuses on a mismatch, so a fold that lands between admission
+    and the drain cannot publish an image without its head.
+  - A re-clock keeps the tempo. With a grid, the bar count must come out whole
+    over the new length (within a frame per bar, the odd length's half frame);
+    otherwise the length is refused as `LE_ERR_MODE_MISMATCH`, the notice for an
+    incompatible length. The kept bar count is restored exactly
+    (`le_restore_musical_grid`), never re-derived from the tempo. Half of 1 or
+    3 bars is therefore refused; half of 2 bars and every Double are accepted.
+  - A posted re-clock is the effective master (`le_rig_effective_master_len`),
+    so other tracks' history decisions measure behind it.
+  - The buffers for the new image are allocated before the slot selection may
+    evict, so an out-of-memory refusal changes nothing. No test: the engine
+    has no allocation-failure seam.
+  - Accepted races, for Part 3 to surface: an Undo or Redo of a LENGTH entry
+    returns `LE_OK` when posted (like Undo to empty and Clear restore); if the
+    callback then refuses it (the rig changed in the block between), the history
+    stays exactly as it was and the next tap meets the same verdict at
+    admission. Undo taps queued during a drain stop at a LENGTH entry and the
+    rest are dropped, the existing "empty now" precedent; Part 3 should flash
+    Undo for both rather than stay silent.
+  - Speed (#1201) replaces `playback_offset`/`reversed` with `le_read_head`.
+    Whichever lands second ports `le_length_apply` in this order: the old read
+    index through `le_head_index`; the clock and `start_iter` exactly as now;
+    the origin through `le_head_origin` at the new song position, after the
+    clock moved. That port adds an edit and its Undo at rates 2 and 1/2.
 
 Tests (`src/test/test_engine_length.h`, included like `test_engine_fade.h` at
 `test_engine_core.c:32969`; literal PCM through `le_engine_process`, positional
