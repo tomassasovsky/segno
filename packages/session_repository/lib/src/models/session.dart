@@ -703,6 +703,7 @@ class Session {
     required this.channels,
     required this.baseLengthFrames,
     required this.tracks,
+    this.name,
     this.laneChains = const [],
     this.monitors = const [],
     this.trackChains = const [],
@@ -760,6 +761,7 @@ class Session {
       );
     }
     return Session(
+      name: _readName(json['name']),
       sampleRate: (json['sampleRate'] as num).toInt(),
       channels: (json['channels'] as num).toInt(),
       baseLengthFrames: (json['baseLengthFrames'] as num).toInt(),
@@ -848,6 +850,15 @@ class Session {
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
+
+  /// The session's display name, or `null` for a bundle saved before names
+  /// were metadata (the catalog then shows the bundle directory's name).
+  ///
+  /// Rename rewrites this field and nothing else: the directory is the
+  /// session's identity and the audio files are never touched. Read leniently
+  /// (a blank or non-string value reads as absent) and written only when set,
+  /// so a manifest without it stays byte-for-byte what it was.
+  final String? name;
 
   /// Negotiated device sample rate the session was recorded at.
   final int sampleRate;
@@ -1018,6 +1029,7 @@ class Session {
   /// current [formatVersion].
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
+    if (name != null) 'name': name,
     'sampleRate': sampleRate,
     'channels': channels,
     'baseLengthFrames': baseLengthFrames,
@@ -1088,6 +1100,7 @@ class Session {
       identical(this, other) ||
       other is Session &&
           runtimeType == other.runtimeType &&
+          name == other.name &&
           sampleRate == other.sampleRate &&
           channels == other.channels &&
           baseLengthFrames == other.baseLengthFrames &&
@@ -1148,6 +1161,7 @@ class Session {
   // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
   @override
   int get hashCode => Object.hashAll([
+    name,
     sampleRate,
     channels,
     baseLengthFrames,
@@ -1192,6 +1206,14 @@ class Session {
     inputSetup,
     outputSetup,
   ]);
+}
+
+/// A blank or non-string `name` reads as absent rather than failing the load:
+/// the name is display metadata, never a reason to refuse a bundle.
+String? _readName(Object? raw) {
+  if (raw is! String) return null;
+  final trimmed = raw.trim();
+  return trimmed.isEmpty ? null : trimmed;
 }
 
 T _readEnum<T extends Enum>(Object? raw, List<T> values) {

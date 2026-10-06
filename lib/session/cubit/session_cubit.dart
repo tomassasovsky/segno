@@ -11,9 +11,10 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'session_state.dart';
 
-/// Drives session persistence (save / load / export) and the named-session
-/// catalog (list / save-as / rename / delete), tracking the open session so a
-/// plain [save] writes back without re-prompting (the document model).
+/// Drives session persistence (save / open) and the session catalog (list /
+/// save-as / rename / duplicate / delete), tracking the open session by its
+/// bundle id so a plain [save] writes back without re-prompting (the document
+/// model).
 ///
 /// Composes three repositories at the bloc level (repositories never import
 /// repositories): the session repository does the file I/O + owns the catalog
@@ -26,14 +27,10 @@ class SessionCubit extends Cubit<SessionState> {
   /// Creates a [SessionCubit] backed by [repository], [looper], and
   /// [performance].
   ///
-  /// [exportDirectory] resolves the directory a mixdown / stems are written to;
-  /// the named-session methods go through [repository]'s catalog instead.
-  /// Injecting it keeps the cubit testable.
-  ///
   /// [currentPedalBindings] / [onPedalBindings] are the session's pedal remap
   /// (part 6b) crossing this cubit as an opaque string — read fresh at each
   /// save, handed back on each load. [releaseHeldBindings] restores any held
-  /// momentary and runs BEFORE a load applies its rig (see [loadNamed] for why
+  /// momentary and runs BEFORE a load applies its rig (see [open] for why
   /// the two halves sit on opposite sides of the apply). All three are narrow
   /// injected functions rather than a `ControlCubit` dependency for the usual
   /// reason: a cubit never calls a cubit, and the binding model belongs to the
@@ -48,7 +45,6 @@ class SessionCubit extends Cubit<SessionState> {
     required SettingsRepository settings,
     required MixSettingsPersistence mixPersistence,
     required SessionSettingsCoordinator captureSettings,
-    required Future<String> Function() exportDirectory,
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
     void Function() releaseHeldBindings = _noRelease,
@@ -60,7 +56,6 @@ class SessionCubit extends Cubit<SessionState> {
        _settings = settings,
        _mixPersistence = mixPersistence,
        _captureSettings = captureSettings,
-       _exportDirectory = exportDirectory,
        _currentPedalBindings = currentPedalBindings,
        _onPedalBindings = onPedalBindings,
        _releaseHeldBindings = releaseHeldBindings,
@@ -86,11 +81,11 @@ class SessionCubit extends Cubit<SessionState> {
   final SettingsRepository _settings;
   final MixSettingsPersistence _mixPersistence;
   final SessionSettingsCoordinator _captureSettings;
-  final Future<String> Function() _exportDirectory;
   final String Function() _currentPedalBindings;
   final void Function(String encoded) _onPedalBindings;
   final void Function() _releaseHeldBindings;
   String? _pendingLoadedBindings;
+  SessionId? _pendingLoadedId;
   String? _pendingLoadedName;
   List<SessionSummary>? _pendingLoadedSessions;
   FadeDurations? _pendingLoadedFade;
@@ -98,23 +93,7 @@ class SessionCubit extends Cubit<SessionState> {
   Future<void>? _closingFuture;
   bool _closing = false;
 
-  // ---- exports (a separate action from the session catalog) ----
-
-  /// Exports a mixed-down WAV of the live rig into the export directory.
-  Future<void> exportMixdown() => _run(() async {
-    await _repository.exportMixdown(
-      '${await _exportDirectory()}/${SessionRepository.mixdownName}',
-    );
-    return const _ActionResult(SessionOutcome.mixdownExported);
-  });
-
-  /// Exports each track as a separate stem WAV under a `stems` folder.
-  Future<void> exportStems() => _run(() async {
-    await _repository.exportStems('${await _exportDirectory()}/stems');
-    return const _ActionResult(SessionOutcome.stemsExported);
-  });
-
-  // ---- named-session catalog (the document model) ----
+  // ---- the session catalog (the document model) ----
 
   /// Reloads the saved-session catalog into state (for the picker). A quiet
   /// update — no working/success cycle.
@@ -131,8 +110,10 @@ class SessionCubit extends Cubit<SessionState> {
     emit(state.copyWith(sessions: sessions));
   }
 
-  /// Saves the live rig as a NEW named session and makes it current. Rejects a
-  /// duplicate slug with [SessionError.nameCollision] and writes nothing.
+  /// Saves the live rig as a NEW session under a fresh id, named [name], and
+  /// makes it current. Rejects a name another session carries exactly
+  /// (case-sensitively, as the appliance always has) with
+  /// [SessionError.nameCollision] and writes nothing.
   Future<void> saveAs(String name) {
     final revision = _looper.sessionRevision;
     final generation = _looper.mixGeneration;
@@ -143,14 +124,24 @@ class SessionCubit extends Cubit<SessionState> {
         if ((await _repository.listSessions()).any((s) => s.name == slug)) {
           throw SessionNameCollision(slug: slug);
         }
-        await _saveCurrentRig(
-          await _repository.bundlePath(name),
-          revision,
-          generation,
-          device,
-        );
+        final id = await _repository.newSessionId();
+        try {
+          await _saveCurrentRig(
+            await _repository.bundlePathOf(id),
+            slug,
+            revision,
+            generation,
+            device,
+          );
+        } on Object {
+          // A save refused before it wrote anything leaves the reserved
+          // directory empty; give it back so it never lists as a folder.
+          await _repository.releaseSessionId(id);
+          rethrow;
+        }
         return _ActionResult(
           SessionOutcome.saved,
+          currentId: id,
           currentName: slug,
           sessions: await _repository.listSessions(),
         );
@@ -163,8 +154,9 @@ class SessionCubit extends Cubit<SessionState> {
   /// rather than silently picking a name.
   Future<void> save() {
     if (_closing || isClosed) return Future<void>.value();
+    final id = state.currentSessionId;
     final name = state.currentSessionName;
-    if (name == null) {
+    if (id == null) {
       emit(
         state.copyWith(
           status: SessionStatus.idle,
@@ -179,7 +171,8 @@ class SessionCubit extends Cubit<SessionState> {
     return _run(
       () => _captureSettings.runExclusive(() async {
         await _saveCurrentRig(
-          await _repository.bundlePath(name),
+          await _repository.bundlePathOf(id),
+          name,
           revision,
           generation,
           device,
@@ -197,6 +190,7 @@ class SessionCubit extends Cubit<SessionState> {
 
   Future<void> _saveCurrentRig(
     String directory,
+    String? name,
     int revision,
     int generation,
     String device,
@@ -215,11 +209,12 @@ class SessionCubit extends Cubit<SessionState> {
       chains: captured.chains,
       settings: captured.settings,
       pedalBindings: _currentPedalBindings(),
+      name: name,
       captureStillValid: stillOwned,
     );
   }
 
-  /// Loads named session [name] into the engine through the looper repository
+  /// Opens the session [id] into the engine through the looper repository
   /// (the one apply path), makes it current, and refreshes the catalog.
   ///
   /// Auto-disarms and finalizes an in-progress performance-recording capture
@@ -228,13 +223,13 @@ class SessionCubit extends Cubit<SessionState> {
   /// manual disarm does; `PerformanceRecorderCubit` observes the repository's
   /// status stream, so it reflects this disarm too even though it was never
   /// the one to call it.
-  Future<void> loadNamed(String name) => _run(
+  Future<void> open(SessionId id) => _run(
     () async {
       var applied = false;
       try {
         return await _captureSettings.runExclusive(() async {
           final bundle = await _repository.read(
-            await _repository.bundlePath(name),
+            await _repository.bundlePathOf(id),
           );
           final fade = FadeDurations(
             defaultMs: bundle.session.defaultFadeDurationMs,
@@ -257,7 +252,9 @@ class SessionCubit extends Cubit<SessionState> {
               'performance capture did not stop before session load',
             );
           }
-          final loadedName = _slugOf(name);
+          // The header shows the manifest's name; a bundle saved before names
+          // were metadata shows its directory name, as the catalog does.
+          final loadedName = bundle.session.name ?? id;
           final sessions = await _repository.listSessions();
           final generation = _looper.mixGeneration;
           final device = _looper.state.status.deviceName;
@@ -335,6 +332,7 @@ class SessionCubit extends Cubit<SessionState> {
               rethrow;
             }
             applied = true;
+            _pendingLoadedId = id;
             _pendingLoadedName = loadedName;
             _pendingLoadedBindings = bundle.session.pedalBindings;
             _pendingLoadedSessions = sessions;
@@ -346,6 +344,7 @@ class SessionCubit extends Cubit<SessionState> {
               emit(
                 state.copyWith(
                   status: SessionStatus.working,
+                  currentSessionId: id,
                   currentSessionName: loadedName,
                   bootRecoveryRequired: true,
                 ),
@@ -356,12 +355,14 @@ class SessionCubit extends Cubit<SessionState> {
             _onPedalBindings(bundle.session.pedalBindings);
             _fxPersistence.completeSessionBoot();
             _looper.clearSessionBootStartBlock();
+            _pendingLoadedId = null;
             _pendingLoadedName = null;
             _pendingLoadedBindings = null;
             _pendingLoadedSessions = null;
             _pendingLoadedFade = null;
             return _ActionResult(
               SessionOutcome.loaded,
+              currentId: id,
               currentName: loadedName,
               sessions: sessions,
             );
@@ -386,11 +387,13 @@ class SessionCubit extends Cubit<SessionState> {
   /// Retries the stopped loaded rig's exact retained boot image and bindings.
   Future<void> retryLoadedSession() => _run(
     () => _captureSettings.runExclusive(() async {
+      final id = _pendingLoadedId;
       final name = _pendingLoadedName;
       final bindings = _pendingLoadedBindings;
       final sessions = _pendingLoadedSessions;
       final fade = _pendingLoadedFade;
-      if (name == null ||
+      if (id == null ||
+          name == null ||
           bindings == null ||
           sessions == null ||
           fade == null ||
@@ -403,12 +406,14 @@ class SessionCubit extends Cubit<SessionState> {
         _onPedalBindings(bindings);
         _fxPersistence.completeSessionBoot();
         _looper.clearSessionBootStartBlock();
+        _pendingLoadedId = null;
         _pendingLoadedName = null;
         _pendingLoadedBindings = null;
         _pendingLoadedSessions = null;
         _pendingLoadedFade = null;
         return _ActionResult(
           SessionOutcome.loaded,
+          currentId: id,
           currentName: name,
           sessions: sessions,
         );
@@ -419,44 +424,44 @@ class SessionCubit extends Cubit<SessionState> {
     allowBootRecovery: true,
   );
 
-  /// Renames session [from] to [to]. If [from] is the open session, the current
-  /// pointer follows the rename. A slug collision surfaces as
-  /// [SessionError.nameCollision] (the repository is the authority).
-  Future<void> renameSession(String from, String to) => _run(() async {
-    await _repository.renameSession(from, to);
-    final open = state.currentSessionName;
+  /// Renames session [id] to [name] (metadata only; the bundle and its audio
+  /// stay where they are). If [id] is the open session, the header name
+  /// follows. A name collision surfaces as [SessionError.nameCollision] (the
+  /// repository is the authority).
+  Future<void> renameSession(SessionId id, String name) => _run(() async {
+    await _repository.renameSession(id, name);
     return _ActionResult(
       SessionOutcome.renamed,
-      currentName: open == from ? _slugOf(to) : open,
+      currentName: state.currentSessionId == id ? _slugOf(name) : null,
       sessions: await _repository.listSessions(),
     );
   });
 
-  /// Deletes session [name]. If it is the open session, the current pointer is
+  /// Deletes session [id]. If it is the open session, the current pointer is
   /// cleared — the live rig keeps playing (the engine is never touched here).
-  Future<void> deleteSession(String name) => _run(() async {
-    await _repository.deleteSession(name);
-    final wasOpen = state.currentSessionName == _slugOf(name);
+  Future<void> deleteSession(SessionId id) => _run(() async {
+    await _repository.deleteSession(id);
     return _ActionResult(
       SessionOutcome.deleted,
-      clearCurrent: wasOpen,
+      clearCurrent: state.currentSessionId == id,
       sessions: await _repository.listSessions(),
     );
   });
 
-  /// Duplicates saved session [from] to a NEW named session [to] (a copy on
-  /// disk; the open session is unchanged). A slug collision surfaces as
-  /// [SessionError.nameCollision] (the repository is the authority).
-  Future<void> duplicateSession(String from, String to) => _run(() async {
-    await _repository.duplicateSession(from, to);
+  /// Duplicates the saved session [id] to a NEW session named [name] (a copy
+  /// on disk under a fresh id; the open session is unchanged). A name
+  /// collision surfaces as [SessionError.nameCollision] (the repository is
+  /// the authority).
+  Future<void> duplicateSession(SessionId id, String name) => _run(() async {
+    await _repository.duplicateSession(id, name);
     return _ActionResult(
       SessionOutcome.saved,
       sessions: await _repository.listSessions(),
     );
   });
 
-  /// The slug [name] resolves to, or throws [ArgumentError] when it sanitizes
-  /// to nothing (the same rule the repository's `bundlePath` enforces).
+  /// The display name [name] resolves to, or throws [ArgumentError] when it
+  /// sanitizes to nothing (the same rule the repository enforces).
   String _slugOf(String name) {
     final slug = sessionSlug(name);
     if (slug == null) {
@@ -542,6 +547,7 @@ class SessionCubit extends Cubit<SessionState> {
         state.copyWith(
           status: SessionStatus.success,
           outcome: result.outcome,
+          currentSessionId: result.currentId,
           currentSessionName: result.currentName,
           clearCurrentSession: result.clearCurrent,
           sessions: result.sessions,
@@ -596,6 +602,7 @@ class SessionCubit extends Cubit<SessionState> {
     SessionUnsupportedVersion() => SessionError.unsupportedVersion,
     SessionNameCollision() => SessionError.nameCollision,
     SessionCorruptLayers() => SessionError.corruptLayers,
+    SessionFolderNotEmpty() => SessionError.unknown,
   };
 }
 
@@ -610,12 +617,14 @@ class _SessionBootException implements Exception {
 class _ActionResult {
   const _ActionResult(
     this.outcome, {
+    this.currentId,
     this.currentName,
     this.clearCurrent = false,
     this.sessions,
   });
 
   final SessionOutcome outcome;
+  final SessionId? currentId;
   final String? currentName;
   final bool clearCurrent;
   final List<SessionSummary>? sessions;

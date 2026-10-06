@@ -324,11 +324,11 @@ class _NoticeSessionRepository extends SessionRepository {
   bool refuseRead = false;
 
   @override
-  Future<String> bundlePath(String name) async => name;
+  Future<String> bundlePathOf(String id) async => id;
 
   @override
   Future<List<SessionSummary>> listSessions() async => const [
-    SessionSummary(name: 'Replacement'),
+    SessionSummary(id: 'Replacement', name: 'Replacement'),
   ];
 
   @override
@@ -699,7 +699,6 @@ void main() {
           waveformWindow: windowService,
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
           powerOff: powerOff,
           powerKeySource: powerKeySource,
           waveformWindowOpenDelay: waveformWindowOpenDelay,
@@ -722,7 +721,6 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
           updates: updates,
         ),
       );
@@ -808,7 +806,6 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: SessionRepository(engine: engine),
             performanceRepository: performance,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -944,7 +941,7 @@ void main() {
           if (recovery == 'Session') {
             final context = tester.element(find.byType(TracksView));
             bundles.readRelease.complete();
-            final loading = context.read<SessionCubit>().loadNamed(
+            final loading = context.read<SessionCubit>().open(
               'Replacement',
             );
             await tester.pumpAndSettle();
@@ -1248,7 +1245,7 @@ void main() {
           final context = tester.element(find.byType(TracksView));
           final monitor = context.read<MonitorCubit>();
           final session = context.read<SessionCubit>();
-          final load = session.loadNamed('Replacement');
+          final load = session.open('Replacement');
           expect(
             context.read<FxChainPersistence>().sessionTransitionActive,
             isTrue,
@@ -3441,7 +3438,6 @@ void main() {
         waveformWindow: NoopWaveformWindowService(),
         sessionRepository: sessionRepository,
         performanceRepository: performanceRepository,
-        exportDirectory: () async => '.',
       );
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
@@ -3482,7 +3478,6 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
           pedalRepository: pedal,
         ),
       );
@@ -3519,7 +3514,6 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
         ),
       );
       await tester.pumpAndSettle();
@@ -3700,7 +3694,6 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -3793,7 +3786,6 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -3916,7 +3908,6 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -4056,7 +4047,6 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
             displayCount: () => 1,
           ),
         );
@@ -4293,7 +4283,6 @@ void main() {
             waveformWindow: window,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -4773,7 +4762,6 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
             audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
           ),
         );

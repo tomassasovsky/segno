@@ -108,8 +108,12 @@ void main() {
     link.hello();
     await pumpEventQueue();
     sessions = _Sessions();
-    when(() => sessions.bundlePath(any())).thenAnswer((_) async => '/test');
+    when(() => sessions.bundlePathOf(any())).thenAnswer((_) async => '/test');
     when(sessions.listSessions).thenAnswer((_) async => []);
+    when(sessions.newSessionId).thenAnswer((_) async => 'new');
+    when(
+      () => sessions.releaseSessionId(any()),
+    ).thenAnswer((_) async {});
     exportsDirectory = '.';
     performance = PerformanceRepository(
       engine: engine,
@@ -125,7 +129,6 @@ void main() {
       pedal: pedal,
       performance: performance,
       sessions: sessions,
-      exportDirectory: () async => '.',
       powerOff: () async => halts++,
     );
     addTearDown(() async {
@@ -148,7 +151,7 @@ void main() {
       entered.complete();
       return read.future;
     });
-    final loading = runtime.session.loadNamed('Incoming');
+    final loading = runtime.session.open('Incoming');
     await entered.future;
     return (loading, read);
   }
@@ -226,7 +229,7 @@ void main() {
           ),
         );
         store.refuseFade = true;
-        await runtime.session.loadNamed('Incoming');
+        await runtime.session.open('Incoming');
         expect(runtime.session.state.bootRecoveryRequired, isTrue);
         expect(repository.sessionBootRecoveryRequired, isTrue);
         // This fake's snapshot is scripted independently of stop(). Publish the
@@ -280,6 +283,7 @@ void main() {
             chains: any(named: 'chains'),
             settings: any(named: 'settings'),
             pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
             captureStillValid: any(named: 'captureStillValid'),
           ),
         ).thenAnswer((call) async {
@@ -352,7 +356,7 @@ void main() {
               laneStems: <(int, int), List<Float32List>>{},
             ),
           );
-          await runtime.session.loadNamed('invalid');
+          await runtime.session.open('invalid');
           expect(runtime.session.state.status, SessionStatus.failure);
           expect(repository.sessionRevision, oldRevision);
           expect(engine.perfDisarmCalls, disarms);
@@ -408,7 +412,7 @@ void main() {
         },
       ),
     );
-    final loading = runtime.session.loadNamed('Incoming');
+    final loading = runtime.session.open('Incoming');
     await store.bootWriteEntered.future;
     expect(repository.state.tracks[0].state, TrackState.stopped);
     final before = (
