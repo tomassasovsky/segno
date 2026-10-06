@@ -458,7 +458,14 @@ class LoopOutlinedButton extends StatelessWidget {
     final foreground = tone == LoopButtonTone.accent
         ? surface.onAccent
         : surface.textPrimary;
-    final text = TextStyle(color: foreground, fontSize: fontSize, height: 1);
+    // The pen draws every accent action's label bold (`Done`, `Open session`,
+    // `Start new loop`, `Use as backing`); the other fills stay regular.
+    final text = TextStyle(
+      color: foreground,
+      fontSize: fontSize,
+      fontWeight: tone == LoopButtonTone.accent ? FontWeight.w700 : null,
+      height: 1,
+    );
     // A button with nothing to do READS as having nothing to do. A control
     // that looks live and is inert is the working-but-silent control the
     // accepted design says to explain rather than present.
