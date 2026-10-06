@@ -51,7 +51,8 @@ export 'src/engine_snapshot.dart'
         kMaxChannels,
         kMaxLanes,
         kMaxMonitoredInputs,
-        kMaxOutputBuses;
+        kMaxOutputBuses,
+        kMaxTracks;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
 export 'src/fx_recipe.dart' show FxOwner, FxRecipe, FxRecipeSlot;
 export 'src/history_entry.dart' show HistoryEntry, HistoryKind, TrackHistory;
