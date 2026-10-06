@@ -171,10 +171,11 @@ class BackingAssetStore {
     try {
       return await _decoder.probe(path); // 512 peaks, the decoder's default
     } on EngineException catch (e) {
-      final reason = e.result == EngineResult.invalid && !_playable(name)
-          ? BackingFailureReason.unsupported
-          : BackingFailureReason.fromEngine(e.result);
-      throw BackingFailure(reason, name: name, digest: digest);
+      throw BackingFailure(
+        BackingFailureReason.fromEngine(e.result),
+        name: name,
+        digest: digest,
+      );
     }
   }
 
@@ -247,11 +248,6 @@ class BackingAssetStore {
       peaks: [for (final p in info['peaks']! as List) (p as num).toDouble()],
       problem: File(path).existsSync() ? null : BackingFailureReason.missing,
     );
-  }
-
-  static bool _playable(String name) {
-    final dot = name.lastIndexOf('.');
-    return dot >= 0 && playable.contains(name.substring(dot).toLowerCase());
   }
 
   static String _basename(String path) {

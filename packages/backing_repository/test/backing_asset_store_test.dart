@@ -100,7 +100,7 @@ void main() {
         throwsA(failure(BackingFailureReason.damaged)),
       );
       await expectLater(
-        store.import(writeAudio(temp, 'notes.txt', fail: 'invalid')),
+        store.import(writeAudio(temp, 'notes.txt', fail: 'unsupported')),
         throwsA(failure(BackingFailureReason.unsupported)),
       );
       await expectLater(
