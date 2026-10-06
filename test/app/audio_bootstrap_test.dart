@@ -330,7 +330,7 @@ void main() {
         }
 
         for (final refused in [false, true]) {
-          test('unconfirmed pair blocks both start paths; '
+          test('only a refused pair blocks both start paths; '
               'config=$hasAudioConfig refused=$refused', () async {
             if (hasAudioConfig) {
               await settings.saveAudioConfig(
@@ -349,9 +349,12 @@ void main() {
               settings: settings,
               mixSettings: testMixSettings(repository, settings: settings),
             );
-            expect(result.started, isFalse);
+            // A refused admission still fails the start; an unconfirmed
+            // replay owes the pair and audio keeps running.
+            expect(result.started, !refused);
             expect(engine.startCalls, 1);
-            expect(engine.stopCalls, greaterThan(0));
+            expect(engine.stopCalls, refused ? greaterThan(0) : 0);
+            expect(repository.recordStartRecoveryRequired, !refused);
             expect(store.values['tempo.count_in_bars'], 4);
             expect(store.values['looper.auto_record'], isFalse);
           });
@@ -368,7 +371,8 @@ void main() {
         {'tempo.count_in_bars': 2, 'looper.auto_record': true},
       ]) {
         test(
-          'invalid start pair stays intact before device open: $raw',
+          'invalid start pair stays intact and audio starts with no wait: '
+          '$raw',
           () async {
             store.values.addAll(raw);
             final before = Map<String, Object>.of(store.values);
@@ -377,11 +381,19 @@ void main() {
               settings: settings,
               mixSettings: testMixSettings(repository, settings: settings),
             );
-            expect(result.started, isFalse);
-            expect(result.recoveryConfig, isNull);
-            expect(engine.startCalls, 0);
-            expect(engine.recordStartRequests, isEmpty);
-            expect(store.values, before);
+            // Only Count-in is unavailable; its owner's Retry repairs it.
+            expect(result.started, isTrue);
+            expect(engine.startCalls, 1);
+            expect(engine.stopCalls, 0);
+            expect(
+              engine.recordStartRequests.map(
+                (r) => (r.countInBars, r.soundStart),
+              ),
+              [(0, false)],
+            );
+            for (final key in ['tempo.count_in_bars', 'looper.auto_record']) {
+              expect(store.values[key], before[key]);
+            }
           },
         );
       }

@@ -30,11 +30,11 @@ class TempoCubit extends Cubit<TempoState> {
   }
 
   Future<void> setCountInBars(int bars) async {
-    await _settings.setCountInBars(bars);
+    await _settings.recordStartControl.setCountInBars(bars);
   }
 
   Future<void> setSoundStart({required bool enabled}) async {
-    await _settings.setSoundStart(enabled: enabled);
+    await _settings.recordStartControl.setSoundStart(enabled: enabled);
   }
 
   void tapTempo() {

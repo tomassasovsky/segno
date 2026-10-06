@@ -540,7 +540,7 @@ void main() {
     tempoOwner = TempoSettings(repository: looper, settings: settings);
     final closeTempoOwner = tempoOwner.close;
     addTearDown(() => unawaited(closeTempoOwner()));
-    unawaited(tempoOwner.loadRecordStart());
+    unawaited(tempoOwner.recordStartOwner.load());
     final tempo = TempoCubit(settings: tempoOwner);
     final options = RecordSettings(repository: looper, settings: settings);
     final tracks = TracksCubit(settings: settings);

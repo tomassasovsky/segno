@@ -1,5 +1,8 @@
 import 'package:looper_repository/looper_repository.dart';
 
+/// The owned setting families, in the registry's fixed order.
+enum OwnedSetting { clickVolume, hearClick, recordStart }
+
 /// The session and device generation that own a captured setting write.
 typedef SettingLifetime = ({int sessionRevision, int mixGeneration});
 

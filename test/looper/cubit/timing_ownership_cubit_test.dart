@@ -218,7 +218,7 @@ void main() {
       await tempo.clickModeOwner.set(ClickMode.off);
       // Recording start has its own owner. Editing it must preserve the
       // independent Tempo preference read that is still pending.
-      await tempo.setCountInBars(0);
+      await tempo.recordStartControl.setCountInBars(0);
       delayed.ready.complete();
       await loads;
       await timingEdit;
@@ -305,7 +305,10 @@ void main() {
       addTearDown(tempo.close);
       final loading = tempo.load();
       await Future<void>.delayed(Duration.zero);
-      expect((await tempo.setSoundStart(enabled: false)).isOk, isTrue);
+      expect(
+        (await tempo.recordStartControl.setSoundStart(enabled: false)).isOk,
+        isTrue,
+      );
       delayed.ready.complete();
       await loading;
       await poll();
@@ -351,7 +354,7 @@ void main() {
       addTearDown(tempo.close);
       await Future.wait([record.load(), tempo.load()]);
       await poll();
-      expect(tempo.recordStartSnapshot, isNull);
+      expect(tempo.recordStartControl.recordStartSnapshot, isNull);
       expect(tempo.state.recordStartReady, isFalse);
       expect(store.values['tempo.count_in_bars'], 2);
       expect(store.values['looper.auto_record'], isTrue);
@@ -454,11 +457,14 @@ void main() {
       addTearDown(owner.close);
       await ((TempoSettings cubit) async {
         await cubit.load();
-        expect((await cubit.setSoundStart(enabled: true)).isOk, isTrue);
+        expect(
+          (await cubit.recordStartControl.setSoundStart(enabled: true)).isOk,
+          isTrue,
+        );
         await poll();
         expect(cubit.state.soundStart, isTrue);
         expect(cubit.state.countInBars, 0);
-        expect((await cubit.setCountInBars(2)).isOk, isTrue);
+        expect((await cubit.recordStartControl.setCountInBars(2)).isOk, isTrue);
         await poll();
         expect(cubit.state.soundStart, isFalse);
         expect(cubit.state.countInBars, 2);
@@ -466,7 +472,10 @@ void main() {
           countInBars: 2,
           soundStart: false,
         ));
-        expect((await cubit.setSoundStart(enabled: true)).isOk, isTrue);
+        expect(
+          (await cubit.recordStartControl.setSoundStart(enabled: true)).isOk,
+          isTrue,
+        );
         await poll();
         expect(cubit.state.countInBars, 0);
         expect(await settings.readRecordStartCheckpoint(), (
@@ -491,7 +500,7 @@ void main() {
     await ((TempoSettings cubit) async {
       await cubit.load();
       await cubit.setTempo(120);
-      await cubit.setCountInBars(1);
+      await cubit.recordStartControl.setCountInBars(1);
       await poll();
       expect(cubit.state.bpm, 120);
       expect(cubit.state.countInBars, 1);
@@ -556,8 +565,8 @@ void main() {
       await ((TempoSettings cubit) async {
         await cubit.load();
         final first = await Future.wait([
-          cubit.setSoundStart(enabled: true),
-          cubit.setCountInBars(2),
+          cubit.recordStartControl.setSoundStart(enabled: true),
+          cubit.recordStartControl.setCountInBars(2),
         ]);
         expect(first.every((outcome) => outcome.isOk), isTrue);
         await poll();
@@ -568,8 +577,8 @@ void main() {
           soundStart: false,
         ));
         final second = await Future.wait([
-          cubit.setCountInBars(1),
-          cubit.setSoundStart(enabled: true),
+          cubit.recordStartControl.setCountInBars(1),
+          cubit.recordStartControl.setSoundStart(enabled: true),
         ]);
         expect(second.every((outcome) => outcome.isOk), isTrue);
         await poll();

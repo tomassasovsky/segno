@@ -116,7 +116,7 @@ class _Rig {
       fxPersistence: FxChainPersistence(looper: looper),
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: owner.clickModeControl,
-      recordStartControl: owner,
+      recordStartControl: owner.recordStartControl,
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),

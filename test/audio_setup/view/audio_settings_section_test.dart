@@ -273,7 +273,7 @@ void main() {
     addTearDown(() => unawaited(closeTempoOwner()));
     tempo = TempoCubit(settings: tempoOwner);
     addTearDown(() => unawaited(tempo.close()));
-    if (loadRecordStart) await tempoOwner.loadRecordStart();
+    if (loadRecordStart) await tempoOwner.recordStartOwner.load();
     final quantizeOwner = RecordTimingSettings(
       repository: looper,
       settings: timingSettings,
@@ -518,7 +518,7 @@ void main() {
     await tester.ensureVisible(autoRecord);
     await tester.tap(autoRecord);
     await tester.pumpAndSettle();
-    await tester.runAsync(tempoOwner.flushRecordStart);
+    await tester.runAsync(tempoOwner.recordStartOwner.flush);
     await tester.pump();
     expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
     expect(tempo.state.confirmedRecordStart?.countInBars, 0);

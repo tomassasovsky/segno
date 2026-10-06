@@ -72,7 +72,7 @@ void main() {
     ));
   });
 
-  check('same-value stale receipt reaches autonomous recovery deadline', (
+  check('a same-value stale receipt owes the pair at the deadline, running', (
     clock,
     engine,
     repository,
@@ -88,9 +88,13 @@ void main() {
     );
     clock.elapse(const Duration(milliseconds: 510));
     expect(repository.recordStartRecoveryRequired, isTrue);
-    expect(repository.sessionTransport.isRunning, isFalse);
-    expect(repository.startEngine(const EngineConfig()), EngineResult.notReady);
+    expect(repository.sessionTransport.isRunning, isTrue);
+    expect(engine.calls.where((call) => call == 'stop'), isEmpty);
+    // An owed pair fences new takes but never playback.
+    expect(repository.play(), isNot(EngineResult.notReady));
+    engine.publishRecordStartCommands = true;
     expect(repository.recoverRecordStartSettings(), EngineResult.ok);
+    clock.elapse(const Duration(milliseconds: 20));
     expect(repository.recordStartRecoveryRequired, isFalse);
   });
 
@@ -186,8 +190,7 @@ void main() {
 
   for (final uncertain in [false, true]) {
     check(
-      'failed replacement preserves prior live and Released: '
-      'uncertain=$uncertain',
+      'failed replacement keeps prior live; uncertain=$uncertain',
       (
         clock,
         engine,
@@ -223,17 +226,18 @@ void main() {
         }
         clock.elapse(const Duration(milliseconds: 510));
         expect(repository.recordStartRecoveryRequired, uncertain);
-        if (uncertain) {
-          expect(repository.recoverRecordStartSettings(), EngineResult.ok);
-        }
         expect(repository.recordStartSettings, (
           countInBars: 2,
           soundStart: false,
         ));
-        expect(repository.recordStartRestartIntent, (
-          countInBars: 0,
-          soundStart: false,
-        ));
+        // A refusal keeps the prior Released pair; uncertainty owes the
+        // requested one, which Retry and a restart replay.
+        expect(
+          repository.recordStartRestartIntent,
+          uncertain
+              ? (countInBars: 1, soundStart: false)
+              : (countInBars: 0, soundStart: false),
+        );
       },
     );
   }
