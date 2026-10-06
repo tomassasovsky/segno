@@ -19,18 +19,10 @@ class NetworkSettingsPage extends StatelessWidget {
   /// Optional repository override.
   final WifiRepository? repository;
 
-  WifiRepository _repository(BuildContext context) {
-    if (repository case final repository?) return repository;
-    try {
-      return context.read<WifiRepository>();
-    } on ProviderNotFoundException {
-      return const WifiRepository(client: UnsupportedWifiClient());
-    }
-  }
-
   @override
   Widget build(BuildContext context) => BlocProvider(
-    create: (context) => WifiCubit(repository: _repository(context)),
+    create: (context) =>
+        WifiCubit(repository: repository ?? context.read<WifiRepository>()),
     child: SettingsDestinationPage(
       title: context.l10n.settingsNetworkTitle,
       body: const WifiTrayBody(),
