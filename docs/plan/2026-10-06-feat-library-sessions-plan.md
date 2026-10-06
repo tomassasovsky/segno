@@ -299,6 +299,13 @@ a design change; this plan does not edit the pen):
      accent tokens rather than the pen's `#202735`, `#6d6d6d` and muted
      `#89a2c5` strip fill; the encoder-focus ring the pen draws on `Cancel`
      is not drawn (the Library has no encoder focus yet).
+   - Review fixes (PR #1216): New loop ends a take in progress first and
+     saves it with the outgoing session, as Open does (Part 4's fix), and a
+     played session is not saved again. When the empty rig cannot be
+     written, the failure is its own (`SessionError.newLoopNotSaved`): the
+     Library returns to the stage, which says "New loop N started, but it
+     could not be saved yet. Save it to keep it." The real-engine cubit test
+     covers New loop from a played session and with a take recording.
 
 ## 3. Decisions
 

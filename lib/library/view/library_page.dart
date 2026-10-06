@@ -129,12 +129,15 @@ class _LibraryViewState extends State<LibraryView> {
               current.status == SessionStatus.success,
           listener: _reselect,
         ),
-        // A new loop is played on the stage (19/06), which names it.
+        // A new loop is played on the stage (19/06), which names it; one
+        // that started but could not be saved yet goes there too, where the
+        // stage says so.
         BlocListener<SessionCubit, SessionState>(
           listenWhen: (previous, current) =>
               previous.status != current.status &&
-              current.status == SessionStatus.success &&
-              current.outcome == SessionOutcome.newLoop,
+              ((current.status == SessionStatus.success &&
+                      current.outcome == SessionOutcome.newLoop) ||
+                  current.error == SessionError.newLoopNotSaved),
           listener: (_, _) => _toTracks(),
         ),
       ],
@@ -197,6 +200,9 @@ enum LibraryFailure {
   /// An Open or New loop ended a take that did not finish in time.
   captureInProgress,
 
+  /// A New loop started but could not be saved yet.
+  newLoopNotSaved,
+
   /// Any other catalog action failed.
   actionFailed,
 
@@ -228,6 +234,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
     SessionError.folderNotEmpty => LibraryFailure.folderNotEmpty,
     SessionError.busy => LibraryFailure.busy,
     SessionError.captureInProgress => LibraryFailure.captureInProgress,
+    SessionError.newLoopNotSaved => LibraryFailure.newLoopNotSaved,
     SessionError.nameCollision ||
     SessionError.corruptLayers ||
     SessionError.unknown ||
@@ -260,6 +267,9 @@ class LibraryFailureLine extends StatelessWidget {
       LibraryFailure.deleteCurrentRefused => l10n.libraryDeleteCurrentRefused,
       LibraryFailure.folderNotEmpty => l10n.libraryFolderNotEmpty,
       LibraryFailure.captureInProgress => l10n.libraryTakeStillRunning,
+      LibraryFailure.newLoopNotSaved => l10n.sessionNewLoopNotSaved(
+        context.read<SessionCubit>().state.currentSessionName ?? '',
+      ),
       LibraryFailure.actionFailed => l10n.libraryActionFailed,
       LibraryFailure.busy => l10n.operationBusy(refusedBy?.name ?? 'other'),
     };

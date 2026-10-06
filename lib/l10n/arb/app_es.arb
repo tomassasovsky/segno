@@ -1679,6 +1679,7 @@
     "powerOffSaveFailedBody": "La sesión no se escribió. No se apagó nada — los loops siguen en RAM.",
     "a11yPowerOffMark": "Segno",
     "stageLibrary": "Biblioteca",
+    "sessionNewLoopNotSaved": "{name} empezó, pero todavía no se pudo guardar. Guárdalo para conservarlo.",
     "libraryNewLoopStays": "{name} se queda en tu Biblioteca.",
     "libraryNewLoopStaysUnnamed": "Tu loop actual se queda en tu Biblioteca.",
     "libraryNewLoopKeeps": "Se mantienen tus efectos, el tempo y la configuración de pedales.",

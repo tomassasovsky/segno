@@ -1561,6 +1561,28 @@ void main() {
       expect(find.text('stage'), findsOneWidget);
     });
 
+    testWidgets('a new loop that could not be saved yet is on the stage too, '
+        'which says so', (tester) async {
+      final states = StreamController<SessionState>.broadcast();
+      addTearDown(states.close);
+      await tapNewLoop(tester, states: states.stream);
+      await tester.tap(find.byKey(const Key('new_loop_start')));
+      await tester.pumpAndSettle();
+
+      states.add(
+        SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.newLoopNotSaved,
+          currentSessionId: 's-new',
+          currentSessionName: 'New loop 2',
+          sessions: _catalog,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library_page')), findsNothing);
+    });
+
     testWidgets('an Open stays in the Library', (tester) async {
       final states = StreamController<SessionState>.broadcast();
       addTearDown(states.close);

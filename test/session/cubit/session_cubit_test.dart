@@ -1939,6 +1939,49 @@ void main() {
         expect(cubit.state.sessions, summaries);
       });
 
+      test('a take in progress is ended and saved before the clear', () async {
+        stubNewLoop();
+        LooperState rig(TrackState track1) => LooperState(
+          tracks: [
+            const Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: track1, lengthFrames: 24000),
+            for (var c = 2; c < 8; c++) Track(channel: c),
+          ],
+        );
+        var live = rig(TrackState.recording);
+        when(() => looper.state).thenAnswer((_) => live);
+        when(() => looper.laneCount(any())).thenReturn(1);
+        when(
+          () => looper.stopRecordControl(channel: any(named: 'channel')),
+        ).thenAnswer((_) {
+          live = rig(TrackState.playing);
+          return EngineResult.ok;
+        });
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        clearInteractions(repository);
+        liveFingerprint = 'the take';
+
+        await cubit.newLoop();
+
+        verifyInOrder([
+          () => looper.stopRecordControl(channel: 1),
+          () => repository.save(
+            '/root/A',
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: 'A',
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+          () => looper.applySession(any()),
+        ]);
+      });
+
       test(
         'a changed outgoing session is saved to its identity first',
         () async {
@@ -2073,7 +2116,7 @@ void main() {
 
         verify(() => looper.applySession(any())).called(1);
         expect(cubit.state.status, SessionStatus.failure);
-        expect(cubit.state.error, SessionError.unknown);
+        expect(cubit.state.error, SessionError.newLoopNotSaved);
         expect(cubit.state.currentSessionId, 'new');
         expect(cubit.state.currentSessionName, 'New loop 3');
         verifyNever(() => repository.releaseSessionId(any()));
