@@ -678,6 +678,10 @@ class PerformanceManifest {
   /// null for a capture written before takes had ids.
   String? get takeId => native['take_id'] as String?;
 
+  /// Samples above full scale in the whole take, from the native fields;
+  /// 0 for a capture written before overs were counted.
+  int get overs => (native['overs'] as num?)?.toInt() ?? 0;
+
   /// Every recorded part of every stream, in the order the native drain
   /// listed them; empty for a capture written before ordered parts.
   ///

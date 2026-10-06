@@ -1,7 +1,7 @@
 name: wav_codec
 description: >-
   Minimal WAV codec: the 32-bit IEEE-float files Segno stores its loop stems
-  and mixdowns in, and the ordered 24-bit parts performance recordings are
+  and mixdowns in, and the ordered float parts performance recordings are
   written as. Pure Dart, no Flutter dependency, so non-Flutter tooling (e.g.
   daw_export) can read the files this writes without pulling in the
   framework.
