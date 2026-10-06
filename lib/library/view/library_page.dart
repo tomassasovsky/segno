@@ -185,6 +185,9 @@ enum LibraryFailure {
   /// A folder that still holds sessions was asked to be deleted.
   folderNotEmpty,
 
+  /// An Open or New loop ended a take that did not finish in time.
+  captureInProgress,
+
   /// Any other catalog action failed.
   actionFailed,
 
@@ -201,6 +204,10 @@ LibraryFailure? libraryFailureOf(SessionState state) {
   if (state.status != SessionStatus.failure) return null;
   // A save that failed before an Open (plan D7) is still a failed save.
   if (state.error == SessionError.saveFailed) return LibraryFailure.saveFailed;
+  // The outgoing take, not the target, stopped an Open.
+  if (state.error == SessionError.captureInProgress) {
+    return LibraryFailure.captureInProgress;
+  }
   if (state.failedSessionId != null) return null;
   return switch (state.error) {
     SessionError.bootPersistence => null,
@@ -211,6 +218,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
     SessionError.currentSessionProtected => LibraryFailure.deleteCurrentRefused,
     SessionError.folderNotEmpty => LibraryFailure.folderNotEmpty,
     SessionError.busy => LibraryFailure.busy,
+    SessionError.captureInProgress => LibraryFailure.captureInProgress,
     SessionError.nameCollision ||
     SessionError.corruptLayers ||
     SessionError.unknown ||
@@ -242,6 +250,7 @@ class LibraryFailureLine extends StatelessWidget {
       LibraryFailure.saveFailed => l10n.librarySaveFailed,
       LibraryFailure.deleteCurrentRefused => l10n.libraryDeleteCurrentRefused,
       LibraryFailure.folderNotEmpty => l10n.libraryFolderNotEmpty,
+      LibraryFailure.captureInProgress => l10n.libraryTakeStillRunning,
       LibraryFailure.actionFailed => l10n.libraryActionFailed,
       LibraryFailure.busy => l10n.operationBusy(refusedBy?.name ?? 'other'),
     };

@@ -247,6 +247,21 @@ a design change; this plan does not edit the pen):
    - A failed preservation shows the 19/05 line, not a refusal on the
      target's preview card.
    - Stopping an audition on Open belongs to Part 6, which builds Listen.
+   - Review fixes (PR #1215): the fingerprint keys each track on its audio
+     revision and on whether it is capturing, never on playing or stopped,
+     so a session that was only played is not saved again. An Open first
+     ends every take in progress with the record control's Stop (at its
+     Record timing) and waits until none captures, so the take is saved
+     with the outgoing session as the dialog promises; a take still
+     capturing after 20 s refuses the Open with its own line ("The take has
+     not finished yet. Nothing was changed; try again when it has."), and
+     nothing is saved, opened or cleared. During a settings recovery the
+     capture cannot run, so a rig holding audio cannot be preserved and the
+     Open is refused as a failed save: the safe side.
+   - A real-engine test drives a real `SessionCubit` with the real
+     fingerprint (`test/session/open_preserves_engine_test.dart`): the
+     round trip of the plan's criterion, a played-and-stopped session not
+     saved again, a recording take and an overdub kept.
 
 ## 3. Decisions
 

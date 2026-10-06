@@ -66,6 +66,17 @@ void main() {
       expect(find.text(l10n.librarySaveFailed), findsOneWidget);
     });
 
+    testWidgets('an unfinished take says so', (tester) async {
+      await show(
+        tester,
+        const SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.captureInProgress,
+        ),
+      );
+      expect(find.text(l10n.libraryTakeStillRunning), findsOneWidget);
+    });
+
     testWidgets('the Library catalog outcomes raise no toast behind it', (
       tester,
     ) async {

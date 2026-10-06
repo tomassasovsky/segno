@@ -345,6 +345,11 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult finalizeHistory(int channel, TrackHistory history) =>
       EngineResult.ok;
 
+  /// Puts track [channel] in [state] without touching its audio, as a
+  /// transport press or a punch-in does.
+  void setTrackState(int channel, TrackState state) =>
+      _tracks[channel].state = state;
+
   @override
   EngineResult commitSession(int baseFrames, {required int loopBars}) {
     if (baseFrames <= 0) return EngineResult.invalid;

@@ -51,7 +51,9 @@ class SessionCubit extends Cubit<SessionState> {
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
     void Function() releaseHeldBindings = _noRelease,
-  }) : _repository = repository,
+    Duration captureEndTimeout = const Duration(seconds: 20),
+  }) : _captureEndTimeout = captureEndTimeout,
+       _repository = repository,
        _guards = guards,
        _looper = looper,
        _performance = performance,
@@ -97,6 +99,10 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// What a refusal names a session apply by.
   static const String applyPurpose = 'opening a session';
+
+  /// How long an Open or New loop waits for a take it ended to finish: the
+  /// take ends at its Record timing, which can be the next bar or loop top.
+  final Duration _captureEndTimeout;
   String? _pendingLoadedBindings;
   SessionId? _pendingLoadedId;
   String? _pendingLoadedName;
@@ -347,6 +353,28 @@ class SessionCubit extends Cubit<SessionState> {
     );
   }
 
+  /// Ends every take in progress before an Open or New loop saves the
+  /// outgoing rig, as the record control's Stop would (plan D8: the dialog
+  /// promises the loop stays), and waits until none is capturing, so the
+  /// take is saved with the rest. A take still capturing after
+  /// the capture-end timeout refuses the action with
+  /// [SessionError.captureInProgress] before anything else changes. Runs
+  /// inside `runExclusive`.
+  Future<void> _endCaptures() async {
+    bool capturing() => _looper.state.tracks.any((t) => t.isCapturing);
+    if (!capturing()) return;
+    for (final track in _looper.state.tracks) {
+      if (track.isCapturing) _looper.stopRecordControl(channel: track.channel);
+    }
+    final deadline = DateTime.now().add(_captureEndTimeout);
+    while (capturing()) {
+      if (DateTime.now().isAfter(deadline)) {
+        throw const _SessionRefusal(SessionError.captureInProgress);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 8));
+    }
+  }
+
   /// Records the just-opened rig's fingerprint; when it cannot be taken it
   /// is unknown, and the next Open preserves (the safe side).
   Future<void> _recordOpenedFingerprint() async {
@@ -440,6 +468,7 @@ class SessionCubit extends Cubit<SessionState> {
       OperationGuard? applying;
       try {
         return await _captureSettings.runExclusive(() async {
+          await _endCaptures();
           await _preserveOutgoing();
           final path = await _repository.bundlePathOf(id);
           final (:bundle, :conversion) = await _repository.open(
