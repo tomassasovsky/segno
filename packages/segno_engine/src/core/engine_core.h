@@ -145,6 +145,24 @@ static inline int le_effective_reversed(le_track* t) {
   return atomic_load_explicit(&t->a_reversed, memory_order_acquire) != 0;
 }
 
+/* The control thread's view of whether track [t] plays transposed (#1179
+ * Part 3a): the stored pitch and the global bypass the posted-but-unapplied
+ * TRANSPOSE / BYPASS commands predict, or the published ones once all are
+ * processed. The Record guard refuses a punch-in while it holds. */
+static inline int le_effective_transposed(le_engine* e, le_track* t) {
+  const int32_t st =
+      t->transpose_posted >
+              atomic_load_explicit(&t->a_transpose_applied, memory_order_acquire)
+          ? t->transpose_pending
+          : atomic_load_explicit(&t->a_transpose_st, memory_order_acquire);
+  const int bypass =
+      e->bypass_posted >
+              atomic_load_explicit(&e->a_bypass_applied, memory_order_acquire)
+          ? e->bypass_pending
+          : atomic_load_explicit(&e->a_transpose_bypass, memory_order_acquire);
+  return st != 0 && !bypass;
+}
+
 /* The control thread's view of the global Speed (#1179), as for direction
  * above: whether the factor the posted-but-unapplied SET_SPEED commands
  * predict, or the published one once all are processed, is 1x. The Record

@@ -276,4 +276,42 @@ int32_t le_stretch_render_offline(const float* const* in, int32_t in_frames,
   }
 }
 
+int32_t le_stretch_render_loop(const float* in, int32_t frames,
+                               int32_t sample_rate, float semitones,
+                               float tonality_limit, int32_t cheaper,
+                               uint32_t seed, int32_t fold,
+                               float* out) noexcept {
+  if (in == nullptr || out == nullptr || frames <= 1 || fold < 0) {
+    return LE_STRETCH_ERR_INVALID;
+  }
+  if (sample_rate <= 0 || sample_rate > LE_STRETCH_MAX_SAMPLE_RATE) {
+    return LE_STRETCH_ERR_INVALID;
+  }
+  try {
+    /* What the run-out can carry past the lap at ratio 1: W - in_lat. */
+    std::unique_ptr<le_stretch> probe(
+        create_or_throw(1, sample_rate, cheaper, seed));
+    const int32_t room = probe->st.blockSamples() + probe->st.intervalSamples() -
+                         probe->st.inputLatency();
+    probe.reset();
+    fold = std::min(fold, std::min(room, frames / 2));
+    std::vector<float> tmp((size_t)frames + (size_t)fold);
+    const float* ins[1] = {in};
+    float* outs[1] = {tmp.data()};
+    const int32_t rc = le_stretch_render_offline(
+        ins, frames, 1, sample_rate, 1.0, semitones, tonality_limit, cheaper,
+        seed, 1, outs, frames + fold);
+    if (rc != LE_STRETCH_OK) return rc;
+    std::copy(tmp.begin(), tmp.begin() + frames, out);
+    for (int32_t k = 0; k < fold; ++k) {
+      const double x = (double)k / (double)fold * 1.5707963267948966;
+      out[k] = (float)(tmp[(size_t)k] * std::sin(x) +
+                       tmp[(size_t)frames + (size_t)k] * std::cos(x));
+    }
+    return LE_STRETCH_OK;
+  } catch (...) {
+    return LE_STRETCH_ERR_ALLOC;
+  }
+}
+
 } /* extern "C" */

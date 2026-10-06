@@ -193,6 +193,11 @@ typedef enum le_perf_log_code {
                         * at a material reset for a track not at 1x, and after
                         * every 322/323 a track logs while reading off whole
                         * samples, whose phase is only the integral part. */
+  LE_PLOG_TRANSPOSE = 328, /* transpose_log: what a track SOUNDS (#1179 Part
+                            * 3a, events.log version 9) — at every change of
+                            * its sounding pitch (render engaged, dry
+                            * fallback, bypass) with the exact index, and at
+                            * PERF_ARM for a track sounding transposed. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
@@ -231,6 +236,12 @@ typedef struct le_log_command {
       uint16_t turn_frames;
       uint32_t index_lo, index_hi;
     } speed_log;
+    struct {
+      int32_t channel;
+      int8_t stored, effective;
+      uint16_t turn_frames;
+      uint32_t index_lo, index_hi;
+    } transpose_log;
     struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
     struct { int32_t channel, slot, previous; uint32_t generation; } peel_log;
     struct { int32_t position, master_len, iteration; } perf_arm;
@@ -244,6 +255,8 @@ typedef struct le_log_command {
 static inline int le_log_extract(const le_command* command, le_log_command* out) {
   if (command->code == LE_CMD_RESET_TRANSFORMS || command->code == LE_CMD_FADE ||
       command->code == LE_CMD_REVERSE || command->code == LE_CMD_SET_SPEED ||
+      command->code == LE_CMD_TRANSPOSE ||
+      command->code == LE_CMD_TRANSPOSE_BYPASS ||
       command->code == LE_CMD_SET_MIX ||
       command->code == LE_CMD_RECORD_IMAGE ||
       command->code == LE_CMD_SET_LENGTH_PRESETS) return 0;

@@ -425,6 +425,8 @@ static int le_engine_reset_material(le_engine* engine,
   engine->speed_numer = 1;
   engine->speed_denom = 1;
   store_i32(&engine->a_speed_ratio, le_speed_pack(1, 1));
+  engine->transpose_bypass = 0;
+  store_i32(&engine->a_transpose_bypass, 0);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
     /* Track transport: one lane active by default, empty, one base loop. */
@@ -448,6 +450,8 @@ static int le_engine_reset_material(le_engine* engine,
     tr->head = (le_read_head){0, 0.0, 1.0};
     store_i32(&tr->a_reversed, 0);
     store_i32(&tr->a_head_rate_milli, 1000);
+    tr->transpose_st = 0; /* pitch is material too (#1179) */
+    store_i32(&tr->a_transpose_st, 0);
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_clear_restore, 0);
     store_i32(&tr->a_redo_depth, 0);
@@ -522,6 +526,9 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   engine->speed_posted = 0;
   engine->speed_pending_one = engine->speed_numer == engine->speed_denom;
   atomic_store_explicit(&engine->a_speed_applied, 0, memory_order_relaxed);
+  engine->bypass_posted = 0;
+  engine->bypass_pending = engine->transpose_bypass;
+  atomic_store_explicit(&engine->a_bypass_applied, 0, memory_order_relaxed);
   /* Every Fade admission is bound to the lifetime it read; a new session
    * invalidates them all, so nothing posted against the old device replays. */
   ++engine->fade_lifetime;
@@ -567,6 +574,9 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     tr->turn_frames = 0;
     tr->prev_head = tr->head;
     tr->reverse_posted = 0;
+    tr->transpose_posted = 0;
+    tr->transpose_pending = tr->transpose_st;
+    atomic_store_explicit(&tr->a_transpose_applied, 0, memory_order_relaxed);
     tr->reverse_pending = 0;
     atomic_store_explicit(&tr->a_reverse_applied, 0, memory_order_relaxed);
     tr->once_ended = 0;
@@ -1534,6 +1544,9 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (code == LE_CMD_FADE) return LE_ERR_INVALID;
   if (code == LE_CMD_REVERSE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_SPEED) return LE_ERR_INVALID;
+  if (code == LE_CMD_TRANSPOSE || code == LE_CMD_TRANSPOSE_BYPASS) {
+    return LE_ERR_INVALID;
+  }
   if (code == LE_CMD_SET_CLICK_MODE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_RECORD_START) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_LOOPER_MODE) {

@@ -1715,6 +1715,14 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
       !load_i32(&t->a_pending_launch)) {
     return LE_ERR_TRANSFORMED;
   }
+  /* ...and a punch-in on a transposed track (#1179 Part 3a), the Reverse
+   * rule: the new layer would be heard at true pitch, then transposed. */
+  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) &&
+      le_effective_transposed(engine, t) &&
+      !(engine->armed[channel] && load_i32(&t->a_pending)) &&
+      !load_i32(&t->a_pending_launch)) {
+    return LE_ERR_TRANSFORMED;
+  }
   /* The track's length (k * base) — all lanes share it, so lane 0 is canonical.
    * Kept coherent with the effective state: the undo-to-empty / redo-from-empty
    * paths store it control-side when they post. */
@@ -2844,6 +2852,65 @@ int32_t le_engine_set_speed(le_engine* e, int32_t numer, int32_t denom,
   if (result != LE_OK) return result;
   e->speed_pending_one = numer == denom;
   e->speed_posted++;
+  return LE_OK;
+}
+
+/* Transpose admission (#1179 Part 3a): Reverse's per-track rules, and the
+ * predicted pitch kept for the Record guard (a step clamps like the
+ * callback, whose receipt reports the limit). */
+static int32_t le_transpose_admit(le_engine* e, int32_t channel, int install,
+                                  int32_t semitones, uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  if (channel < 0 || channel >= e->track_count) return LE_ERR_INVALID;
+  if (install ? semitones < -12 || semitones > 12
+              : semitones != 1 && semitones != -1) return LE_ERR_INVALID;
+  le_track* t = &e->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+      (!install && st == LE_TRACK_EMPTY)) return LE_ERR_INVALID;
+  if (load_i32(&t->a_pending) || e->armed[channel] ||
+      load_i32(&t->a_pending_launch)) return LE_ERR_NOT_READY;
+  const int32_t from =
+      t->transpose_posted >
+              atomic_load_explicit(&t->a_transpose_applied, memory_order_acquire)
+          ? t->transpose_pending
+          : load_i32(&t->a_transpose_st);
+  int32_t predicted = install ? semitones : from + semitones;
+  if (predicted < -12 || predicted > 12) predicted = from;
+  le_command cmd = {.code = LE_CMD_TRANSPOSE,
+                    .transpose = {channel, 0, install, semitones}};
+  const int32_t result =
+      le_request_admit(e, &cmd, &cmd.transpose.slot, request);
+  if (result != LE_OK) return result;
+  t->transpose_pending = predicted;
+  t->transpose_posted++;
+  return LE_OK;
+}
+
+int32_t le_engine_transpose_step(le_engine* e, int32_t channel, int32_t delta,
+                                 uint64_t* request) {
+  return le_transpose_admit(e, channel, 0, delta, request);
+}
+
+int32_t le_engine_install_transpose(le_engine* e, int32_t channel,
+                                    int32_t semitones, uint64_t* request) {
+  return le_transpose_admit(e, channel, 1, semitones, request);
+}
+
+int32_t le_engine_set_transpose_bypass(le_engine* e, int32_t on,
+                                       uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  le_command cmd = {.code = LE_CMD_TRANSPOSE_BYPASS,
+                    .transpose = {-1, 0, 1, on != 0}};
+  const int32_t result =
+      le_request_admit(e, &cmd, &cmd.transpose.slot, request);
+  if (result != LE_OK) return result;
+  e->bypass_pending = on != 0;
+  e->bypass_posted++;
   return LE_OK;
 }
 

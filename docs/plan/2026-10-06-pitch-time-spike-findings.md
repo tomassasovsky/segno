@@ -239,6 +239,21 @@ chmod +x bench_pitch_time
 When both this and the proxy table exist, the proxy/Pi ratio is recorded here
 and becomes the scaling note for later runs.
 
+What the owner measures on the appliance before Part 3a (Transpose) merges
+(plan E11; none of it can run here):
+
+1. `./bench_pitch_time --budget-us 667 --assert` with the app running: the
+   `render` rows must stay >= 20x real time per mono lane under load with
+   `presetCheaper` (a 30 s lap in <= 1.5 s), and the mixer rows at 1/2x, 4x
+   and 8x within 50 % of the period at p99.
+2. Eight single-lane 30 s tracks, each transposed (+7 st) while playing:
+   `le_engine_get_callback_telemetry` read before and after the eight renders
+   land shows `late_periods` unchanged (the worker runs at nice +10 on Linux
+   and must not disturb the callback).
+3. A listening check at +12 and -12 st on a sustained and a percussive take,
+   with the 8 kHz tonality limit (as shipped) and without it, and at the
+   loop point (the 20 ms fold), recorded here with the verdict.
+
 ## Reading the dev-machine numbers
 
 - `baseline`: today's engine spends 3.5 % of the period at p50 (4.6 % p99) with
