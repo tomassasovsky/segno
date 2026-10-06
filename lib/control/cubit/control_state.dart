@@ -22,6 +22,7 @@ class ControlState extends Equatable {
     this.footMixerFailure = 0,
     this.footFade = const FootFadeSelection(),
     this.footFadeFailure = 0,
+    this.footReverseFailure = 0,
     this.footPeelFailure = 0,
     this.footPeelRefusal = FootPeelRefusal.failed,
     this.cursor = 0,
@@ -116,6 +117,9 @@ class ControlState extends Equatable {
 
   /// Each refused Fade gesture notifies the current flow once.
   final int footFadeFailure;
+
+  /// Each refused Reverse gesture notifies the current flow once.
+  final int footReverseFailure;
 
   /// Each refused Peel press notifies the current flow once; the notice
   /// reads [footPeelRefusal].
@@ -237,6 +241,7 @@ class ControlState extends Equatable {
     int? footMixerFailure,
     FootFadeSelection? footFade,
     int? footFadeFailure,
+    int? footReverseFailure,
     int? footPeelFailure,
     FootPeelRefusal? footPeelRefusal,
     int? cursor,
@@ -271,6 +276,7 @@ class ControlState extends Equatable {
     footMixerFailure: footMixerFailure ?? this.footMixerFailure,
     footFade: footFade ?? this.footFade,
     footFadeFailure: footFadeFailure ?? this.footFadeFailure,
+    footReverseFailure: footReverseFailure ?? this.footReverseFailure,
     footPeelFailure: footPeelFailure ?? this.footPeelFailure,
     footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
     cursor: cursor ?? this.cursor,
@@ -307,6 +313,7 @@ class ControlState extends Equatable {
     footMixerFailure,
     footFade,
     footFadeFailure,
+    footReverseFailure,
     footPeelFailure,
     footPeelRefusal,
     cursor,

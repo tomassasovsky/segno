@@ -46,7 +46,7 @@ The native sources under `src/` are grouped by concern:
 | Path | Role |
 | --- | --- |
 | `src/core/segno_engine_api.h` | The C ABI consumed by ffigen (POD + opaque handle). |
-| `src/core/` | The portable engine, split into per-concern TUs: `engine.c` (control-thread core + shared helpers), `engine_process.c` (the audio-thread TU — `le_engine_process`, transport, `apply_command`), `engine_fx.c` (effects DSP), `engine_commands.c` (control-thread setters), `engine_devices.c`, `engine_snapshot.c`, `engine_session.c`, `engine_convert.c`, `engine_miniaudio.c` (the miniaudio backend), plus the `lockfree_ring` / `loop_clock` primitives and the private/internal headers. |
+| `src/core/` | The portable engine, split into per-concern TUs: `engine.c` (control-thread core + shared helpers), `engine_process.c` (the audio-thread TU — `le_engine_process`, transport, `apply_command`), `engine_fx.c` (effects DSP), `engine_commands.c` (control-thread setters), `engine_devices.c`, `engine_snapshot.c`, `engine_session.c`, `engine_convert.c`, `engine_digest.c` (SHA-256, file digests and directory sync; engine-free), `engine_miniaudio.c` (the miniaudio backend), plus the `lockfree_ring` / `loop_clock` primitives and the private/internal headers. |
 | `src/platform/` | Per-OS device seams (`engine_apple.c` / `engine_linux.c` / `engine_windows.c`). |
 | `src/midi/` | Native MIDI seam: `midi.c` (portable core) + per-OS backends. |
 | `src/asio/` | Windows ASIO backend (`win_asio_device` / `win_asio_labels`). |

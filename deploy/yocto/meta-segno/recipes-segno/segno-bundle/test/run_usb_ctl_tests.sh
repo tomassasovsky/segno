@@ -32,6 +32,7 @@ setup() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/usb-ctl-test.XXXXXX")
     mkdir -p "$work/bin" "$work/run" "$work/media" "$work/sys" "$work/dev" "$work/props"
     : > "$work/calls"
+    : > "$work/fd9"
     printf '100.00 400.00\n' > "$work/uptime"
     # What dd moves the clock to (see the dd stub).
     printf '101.00 400.00\n' > "$work/uptime_after"
@@ -55,6 +56,7 @@ STUB
 
     cat > "$work/bin/udevadm" <<STUB
 #!/bin/sh
+[ -e /dev/fd/9 ] && echo "udevadm" >> "$work/fd9"
 # udevadm info --query=property --name=/dev/<kname>: the properties file for
 # that kernel name, verbatim.
 dev=\$(printf '%s\n' "\$*" | sed -n 's/.*--name=[^ ]*\/\([^ ]*\).*/\1/p')
@@ -64,6 +66,7 @@ STUB
 
     cat > "$work/bin/mount" <<STUB
 #!/bin/sh
+[ -e /dev/fd/9 ] && echo "mount" >> "$work/fd9"
 echo "mount \$*" >> "$work/calls"
 rc=\$("$work/bin/next" "$work/mount_rc")
 if [ "\$rc" != 0 ]; then cat "$work/mount_err" >&2; fi
@@ -73,6 +76,7 @@ STUB
 
     cat > "$work/bin/umount" <<STUB
 #!/bin/sh
+[ -e /dev/fd/9 ] && echo "umount" >> "$work/fd9"
 echo "umount \$*" >> "$work/calls"
 rc=\$("$work/bin/next" "$work/umount_rc")
 if [ "\$rc" != 0 ]; then cat "$work/umount_err" >&2; fi
@@ -82,7 +86,8 @@ STUB
 
     cat > "$work/bin/sync" <<STUB
 #!/bin/sh
-echo "sync" >> "$work/calls"
+[ -e /dev/fd/9 ] && echo "sync" >> "$work/fd9"
+echo "sync \$*" >> "$work/calls"
 STUB
     chmod +x "$work/bin/sync"
 
@@ -91,6 +96,7 @@ STUB
     # unless a test says otherwise).
     cat > "$work/bin/dd" <<STUB
 #!/bin/sh
+[ -e /dev/fd/9 ] && echo "dd" >> "$work/fd9"
 echo "dd \$*" >> "$work/calls"
 cp "$work/run/volumes/"[0-9]*.json "$work/first.json" 2>/dev/null
 cp "$work/uptime_after" "$work/uptime"
@@ -110,9 +116,21 @@ STUB
     if ! command -v flock >/dev/null 2>&1; then
         cat > "$work/bin/flock" <<'STUB'
 #!/usr/bin/env perl
+# flock [-w SECONDS] FD, as util-linux's: -w gives up with exit 1.
 use Fcntl qw(:flock);
-open(my $fh, '>&=', $ARGV[-1]) or die "flock: fd $ARGV[-1]: $!";
-flock($fh, LOCK_EX) or die "flock: $!";
+my @a = @ARGV;
+my $wait;
+if ($a[0] eq '-w') { shift @a; $wait = shift @a; }
+open(my $fh, '>&=', $a[-1]) or die "flock: fd $a[-1]: $!";
+if (defined $wait) {
+    my $end = time + $wait;
+    until (flock($fh, LOCK_EX | LOCK_NB)) {
+        exit 1 if time >= $end;
+        select(undef, undef, undef, 0.05);
+    }
+} else {
+    flock($fh, LOCK_EX) or die "flock: $!";
+}
 STUB
         chmod +x "$work/bin/flock"
     fi
@@ -137,6 +155,7 @@ run_ctl() {
     SEGNO_USB_DEV_DIR="$work/dev" \
     SEGNO_USB_UPTIME_FILE="$work/uptime" \
     SEGNO_USB_PROBE_BYTES="${PROBE_OVERRIDE:-16777216}" \
+    SEGNO_USB_LOCK_WAIT="${LOCK_WAIT_OVERRIDE:-60}" \
         "$SHELL_UNDER_TEST" "$SCRIPT" "$@" 2>"$work/stderr"
 }
 
@@ -287,7 +306,7 @@ run_ctl attach sda1
 : > "$work/calls"
 run_ctl detach sda1; rc=$?
 check "exits 0" 0 "$rc"
-check "sync, then one non-lazy umount" "sync
+check "a sync of this volume only, then one non-lazy umount" "sync -f $work/media/1-SEGNO_USB
 umount $work/media/1-SEGNO_USB" "$(calls)"
 check "the mount point is removed" no "$(has "$work/media/1-SEGNO_USB")"
 check "the JSON is deleted" no "$(has "$work/run/volumes/1.json")"
@@ -301,7 +320,7 @@ run_ctl attach sda1
 printf '32\n0\n' > "$work/umount_rc"
 run_ctl detach sda1; rc=$?
 check "exits 0" 0 "$rc"
-check "a lazy umount follows the failed one" "sync
+check "a lazy umount follows the failed one" "sync -f $work/media/1-SEGNO_USB
 umount $work/media/1-SEGNO_USB
 umount -l $work/media/1-SEGNO_USB" "$(calls)"
 check "the JSON is deleted" no "$(has "$work/run/volumes/1.json")"
@@ -331,7 +350,7 @@ run_ctl attach sda1
 printf '{"generation":1,"request":"7f3a"}' > "$work/run/requests/7f3a.json"
 run_ctl serve-requests; rc=$?
 check "exits 0" 0 "$rc"
-check "sync, then a NON-lazy umount" "sync
+check "a sync of this volume only, then a NON-lazy umount" "sync -f $work/media/1-SEGNO_USB
 umount $work/media/1-SEGNO_USB" "$(calls)"
 check "the JSON reads ejected with the outcome" \
     '{"generation":1,"kname":"sda1","fingerprint":"SanDisk_Ultra_4C530001-1A2B-3C4D","label":"SEGNO USB","fsType":"vfat","mountPoint":"'"$work"'/media/1-SEGNO_USB","sizeBytes":32010928128,"status":"ejected","readOnly":false,"writeBytesPerSecond":16777216,"failureReason":null,"eject":{"request":"7f3a","ok":true,"reason":null}}' \
@@ -475,6 +494,40 @@ run_ctl serve-requests
 check "a request id outside [A-Za-z0-9._-] is dropped unserved" '"request":"e1"' \
     "$(volume 1 | sed -n 's/.*\("request":"[^"]*"\).*/\1/p')"
 check "and deleted" no "$(has "$work/run/requests/bad.json")"
+teardown
+
+echo "the lock: no child inherits it, and a stuck holder blocks for a bounded time"
+setup
+vfat_props
+run_ctl attach sda1
+printf '{"generation":1,"request":"f9"}' > "$work/run/requests/f9.json"
+run_ctl serve-requests
+run_ctl detach sda1
+check "mount, umount, dd, sync and udevadm all ran without fd 9" "" "$(cat "$work/fd9")"
+check "and they did run" yes "$(grep -q '^umount' "$work/calls" && grep -q '^dd' "$work/calls" && echo yes || echo no)"
+teardown
+
+setup
+vfat_props
+mkdir -p "$work/run"
+# Another drive's stuck sync, holding the lock for 3 s.
+perl -e 'use Fcntl qw(:flock); open(my $f, ">", $ARGV[0]) or die; flock($f, LOCK_EX) or die; sleep $ARGV[1];' "$work/run/.lock" 3 &
+holder=$!
+sleep 0.5
+start=$(date +%s)
+LOCK_WAIT_OVERRIDE=1 run_ctl attach sda1; rc=$?
+check "attach gives up after its wait, exit 1" 1 "$rc"
+check "and says why" yes "$(grep -q 'held the lock' "$work/stderr" && echo yes || echo no)"
+check "and wrote nothing" "" "$(ls -A "$work/run/volumes" 2>/dev/null)"
+mkdir -p "$work/run/requests"
+printf '{"generation":1,"request":"w1"}' > "$work/run/requests/w1.json"
+LOCK_WAIT_OVERRIDE=1 run_ctl serve-requests; rc=$?
+check "serve-requests gives up the same way, leaving the request queued" "1 yes" "$rc $(has "$work/run/requests/w1.json")"
+LOCK_WAIT_OVERRIDE=1 run_ctl detach sda1; rc=$?
+end=$(date +%s)
+check "detach, the cleanup path, waits the holder out instead" 0 "$rc"
+check "which took the holder's time, not the wait's" yes "$([ $((end - start)) -ge 2 ] && echo yes || echo no)"
+wait "$holder"
 teardown
 
 echo "probe: failures are null, never errors"

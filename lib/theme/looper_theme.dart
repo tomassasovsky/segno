@@ -127,6 +127,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
         InteractionMode.custom ||
         InteractionMode.mixer ||
         InteractionMode.fade ||
+        InteractionMode.reverse ||
         InteractionMode.peel => muteMeterColors,
         InteractionMode.record => recordMeterColors,
       }[state] ??

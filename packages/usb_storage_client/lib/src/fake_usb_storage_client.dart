@@ -27,6 +27,7 @@ class FakeUsbStorageClient implements UsbStorageClient {
   final _volumes = <int, RemovableVolumeRecord>{};
   final _controller = StreamController<List<RemovableVolumeRecord>>.broadcast();
   final _pending = <String, int>{};
+  final _taken = <String, int>{};
   var _nextRequest = 0;
 
   /// Eject requests filed and not yet settled or cancelled, by request id,
@@ -56,12 +57,20 @@ class FakeUsbStorageClient implements UsbStorageClient {
     _emit();
   }
 
+  /// The helper took the eject request [requestId] off the queue and is
+  /// working on it (syncing, unmounting): it can no longer be withdrawn, and
+  /// its answer comes later through [settleEject].
+  void take(String requestId) {
+    final generation = _pending.remove(requestId);
+    if (generation != null) _taken[requestId] = generation;
+  }
+
   /// The helper served the eject request [requestId]: on success the record
   /// reads ejected with the outcome; on failure it keeps its status and
   /// carries the outcome's [reason]. A request for a generation that is gone
   /// is dropped silently, as the helper does.
   void settleEject(String requestId, {required bool ok, String? reason}) {
-    final generation = _pending.remove(requestId);
+    final generation = _pending.remove(requestId) ?? _taken.remove(requestId);
     if (generation == null) return;
     final record = _volumes[generation];
     if (record == null) return;
@@ -90,9 +99,8 @@ class FakeUsbStorageClient implements UsbStorageClient {
   }
 
   @override
-  Future<void> cancelEject(String requestId) async {
-    _pending.remove(requestId);
-  }
+  Future<bool> cancelEject(String requestId) async =>
+      _pending.remove(requestId) != null;
 
   List<RemovableVolumeRecord> _snapshot() {
     final list = _volumes.values.toList()
