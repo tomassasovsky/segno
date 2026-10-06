@@ -1684,6 +1684,11 @@ void main() {
         'perfCaptureMask',
         'perfOutputEnabledMask',
         'tracks',
+        // #1197: slot patches, voices and peaks change with playing, like the
+        // meters; MIDI input carries only binding edges and losses, never the
+        // per-message totals (a MIDI clock would tick those 48 times a second).
+        'instruments',
+        'midiInput',
       };
 
       final actual = _declaredFinalFields(
