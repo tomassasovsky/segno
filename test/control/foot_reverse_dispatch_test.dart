@@ -152,6 +152,7 @@ class _Rig {
       ),
       controller: controller,
       midiDevices: midi,
+      takeLocked: () => powerOffUp,
     );
     link.hello();
   }
@@ -170,6 +171,9 @@ class _Rig {
   late final PerformanceRepository performance;
   late final FadeSettings fade;
   late final ControlCubit control;
+
+  /// The power-off route is up: takes and performance actions are locked.
+  bool powerOffUp = false;
 
   final _contacts = <PedalButton, Object>{};
   void press(PedalButton button) {
@@ -267,6 +271,28 @@ void main() {
       await rig.close();
     }
   });
+
+  test(
+    'a Reverse toggle is refused while the power-off dialog is up',
+    () async {
+      final rig = await enter();
+      try {
+        rig.powerOffUp = true;
+        await tap(rig, PedalButton.track1);
+        rig.control.trackPressed(1);
+        await rig.control.toggleFootReverseTrack(0);
+        rig.control.activateFootReversePedal(PedalButton.track2);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.engine.toggles, isEmpty);
+        expect(rig.control.state.footReverseFailure, 0);
+        rig.powerOffUp = false;
+        await tap(rig, PedalButton.track1);
+        expect(rig.engine.toggles, [0]);
+      } finally {
+        await rig.close();
+      }
+    },
+  );
 
   test('Undo and Clear are inert', () async {
     final rig = await enter();
