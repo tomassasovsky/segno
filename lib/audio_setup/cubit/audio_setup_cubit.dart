@@ -526,9 +526,24 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     unawaited(_syncLatencyPersistence(looper.status));
   }
 
+  /// Ends the standing material notice ([DeviceConnectivity.restoredCleared])
+  /// once the user has acted on it — opened the Sessions manager from its
+  /// action — the way a deliberate re-apply ends every connectivity condition.
+  void dismissReopenNotice() {
+    if (state.deviceConnectivity != DeviceConnectivity.restoredCleared) return;
+    emit(state.copyWith(deviceConnectivity: DeviceConnectivity.none));
+  }
+
   /// Diffs `devicePresent` against the previous tick and raises a transient
   /// lost/restored banner trigger for a pinned device. The system default is
   /// not flagged (it is never auto-restarted, so a banner would be noise).
+  ///
+  /// A return carries the reconnect's verdict on the loops
+  /// ([EngineStatus.reopen], #1140): one notice per return — the plain
+  /// restored snack when everything survived, a transient toast naming the
+  /// dropped tracks on a partial retention, the standing cleared banner with
+  /// the Sessions action when the device came back at another rate. Never
+  /// two notices for one cause (#860).
   void _detectConnectivity(EngineStatus status) {
     // A selected ASIO driver counts as "pinned" too, so losing it raises the
     // banner the same way a lost miniaudio device does.
@@ -546,11 +561,20 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     emit(
       state.copyWith(
         deviceConnectivity: present
-            ? DeviceConnectivity.restored
+            ? _restoredConnectivity(status.reopen)
             : DeviceConnectivity.lost,
         connectivityDeviceName: _lastPresentDeviceName,
       ),
     );
+  }
+
+  static DeviceConnectivity _restoredConnectivity(EngineReopened? reopen) {
+    if (reopen == null || reopen.retainedAll) {
+      return DeviceConnectivity.restored;
+    }
+    return reopen.keepsMaterial
+        ? DeviceConnectivity.restoredPartial
+        : DeviceConnectivity.restoredCleared;
   }
 
   /// Loads a saved per-device record offset the first time a device connects,

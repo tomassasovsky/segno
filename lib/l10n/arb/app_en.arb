@@ -94,6 +94,34 @@
     "@deviceLostBannerAction": {
         "description": "Inline action on the device-lost banner — opens the tray's Audio domain on the Device tab."
     },
+    "deviceRestoredClearedBanner": "Device came back at {sampleRate} Hz instead of {previousRate} Hz — the loops were cleared. Reload the session to get them back.",
+    "@deviceRestoredClearedBanner": {
+        "description": "Standing stage banner after a reconnect at another sample rate cleared every recorded loop (#1140). Its action opens the Sessions manager.",
+        "placeholders": {
+            "sampleRate": {
+                "type": "int"
+            },
+            "previousRate": {
+                "type": "int"
+            }
+        }
+    },
+    "deviceRestoredClearedCapBanner": "Device came back with a different loop length limit — the loops were cleared. Reload the session to get them back.",
+    "@deviceRestoredClearedCapBanner": {
+        "description": "Standing stage banner after a reconnect whose loop cap no longer fit the recorded buffers cleared every loop (#1140)."
+    },
+    "deviceRestoredPartialToastBody": "{count, plural, =1{Track {tracks} was cleared — an edit on it was still pending when the device went away} other{Tracks {tracks} were cleared — edits on them were still pending when the device went away}}",
+    "@deviceRestoredPartialToastBody": {
+        "description": "Body of the transient reconnect toast when the engine kept the loops except the listed tracks (#1140). `tracks` is a comma-separated list of 1-based track numbers.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            },
+            "tracks": {
+                "type": "String"
+            }
+        }
+    },
     "midiLostToastTitle": "MIDI controller disconnected",
     "@midiLostToastTitle": {
         "description": "Title of the transient toast shown when the pinned MIDI controller is lost (pen: STAGE / midi-lost-toast)."

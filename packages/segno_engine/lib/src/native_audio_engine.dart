@@ -228,11 +228,18 @@ class NativeAudioEngine implements AudioEngine {
   @override
   List<AudioDevice> enumerateDevices() {
     _checkAlive();
+    final simulated = simulatedDevices;
+    if (simulated != null) return List.unmodifiable(simulated);
     return [
       ..._enumerate(isInput: false),
       ..._enumerate(isInput: true),
     ];
   }
+
+  /// When set, what [enumerateDevices] reports instead of the host's devices.
+  /// Only [PumpedNativeEngine] honours it: a device-free harness drives a
+  /// pinned-device reconnect by unplugging and re-plugging this list.
+  List<AudioDevice>? simulatedDevices;
 
   /// Reads one direction's devices via the matching native enumeration call.
   /// Capacity is fixed; any devices beyond [_maxDevices] are not reported.
@@ -2395,7 +2402,9 @@ class PumpedNativeEngine extends NativeAudioEngine {
   @override
   EngineResult start(EngineConfig config) {
     _checkAlive();
-    _sampleRate = config.sampleRate > 0 ? config.sampleRate : 48000;
+    _sampleRate =
+        simulatedSampleRate ??
+        (config.sampleRate > 0 ? config.sampleRate : 48000);
     _inputChannels = config.inputChannels > 0 ? config.inputChannels : 1;
     _outputChannels = config.outputChannels > 0 ? config.outputChannels : 1;
     return EngineResult.fromCode(
@@ -2415,6 +2424,11 @@ class PumpedNativeEngine extends NativeAudioEngine {
 
   bool _deviceLost = false;
 
+  /// When set, the sample rate the simulated device negotiates on [start]
+  /// and [reopen] regardless of the requested one — the way a real interface
+  /// that switched its clock while unplugged comes back at another rate.
+  int? simulatedSampleRate;
+
   /// Rehearses a device loss: the next [snapshot] reports the device absent
   /// (as the backend's device-lost notification would) until [reopen]
   /// succeeds. The engine itself keeps running the pump — there is no device
@@ -2433,7 +2447,9 @@ class PumpedNativeEngine extends NativeAudioEngine {
   @override
   ReopenResult reopen(EngineConfig config) {
     _checkAlive();
-    final sampleRate = config.sampleRate > 0 ? config.sampleRate : 48000;
+    final sampleRate =
+        simulatedSampleRate ??
+        (config.sampleRate > 0 ? config.sampleRate : 48000);
     final inputs = config.inputChannels > 0 ? config.inputChannels : 1;
     final outputs = config.outputChannels > 0 ? config.outputChannels : 1;
     final outcomePtr = calloc<Int32>();
