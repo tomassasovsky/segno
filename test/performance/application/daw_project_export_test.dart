@@ -84,4 +84,21 @@ void main() {
       throwsA(isA<FileSystemException>()),
     );
   });
+
+  test('a write cut short leaves the previous project whole', () async {
+    writeManifest(withTrack: true);
+    File('${dir.path}/stems/wet/track0.wav')
+      ..createSync(recursive: true)
+      ..writeAsBytesSync([0]);
+    File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
+    // The temp file's place is taken: the write fails before the rename.
+    Directory('${dir.path}/project.als.tmp').createSync();
+
+    await expectLater(
+      writeDawProject(dir.path),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
+  });
 }

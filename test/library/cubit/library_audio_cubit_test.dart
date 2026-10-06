@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -25,6 +26,7 @@ void main() {
   late PerformanceRepository performance;
   late SessionRepository sessions;
   late List<String> dawWrites;
+  late GuardRegistry guards;
 
   setUpAll(() {
     registerFallbackValue(
@@ -44,6 +46,8 @@ void main() {
     Directory('${temp.path}/usb').createSync();
     drive = FakeDrive('${temp.path}/usb');
     performance = _MockPerformance();
+    guards = GuardRegistry();
+    when(() => performance.rendering).thenReturn(false);
     sessions = _MockSessions();
     dawWrites = [];
     when(() => performance.listCaptures()).thenAnswer((_) async => []);
@@ -68,6 +72,7 @@ void main() {
     performance: performance,
     sessions: sessions,
     volumes: drive,
+    guards: guards,
     previewPoll: const Duration(milliseconds: 1),
     dawProject:
         dawProject ??
@@ -213,10 +218,16 @@ void main() {
   group('Preview', () {
     test("plays a recording's first part, polls it, and stops", () async {
       final capture = take('perf-a');
-      when(() => performance.startAudition(any())).thenAnswer(
+      when(
+        () => performance.startAudition(
+          any(),
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).thenAnswer(
         (_) async => const AuditionStart(
           result: EngineResult.ok,
           frames: 4800,
+          rate: 48000,
           sourceRate: 48000,
         ),
       );
@@ -230,7 +241,12 @@ void main() {
 
       expect(cubit.state.preview?.key, capture.path);
       expect(cubit.state.preview?.position, 960);
-      verify(() => performance.startAudition(capture)).called(1);
+      verify(
+        () => performance.startAudition(
+          capture,
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).called(1);
 
       await cubit.preview();
       expect(cubit.state.preview, isNull);
@@ -238,10 +254,16 @@ void main() {
     });
 
     test('ends when the engine ends it', () async {
-      when(() => sessions.startAudition('s-a')).thenAnswer(
+      when(
+        () => sessions.startAudition(
+          's-a',
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).thenAnswer(
         (_) async => const AuditionStart(
           result: EngineResult.ok,
           frames: 4800,
+          rate: 48000,
           sourceRate: 48000,
         ),
       );
@@ -255,7 +277,12 @@ void main() {
     });
 
     test('a refusal is kept with its reason', () async {
-      when(() => performance.startAudition(any())).thenAnswer(
+      when(
+        () => performance.startAudition(
+          any(),
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).thenAnswer(
         (_) async => const AuditionStart(result: EngineResult.alreadyRunning),
       );
       final cubit = await withRecording(take('perf-a'));
@@ -267,10 +294,16 @@ void main() {
     });
 
     test('a new selection and the close stop it', () async {
-      when(() => performance.startAudition(any())).thenAnswer(
+      when(
+        () => performance.startAudition(
+          any(),
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).thenAnswer(
         (_) async => const AuditionStart(
           result: EngineResult.ok,
           frames: 4800,
+          rate: 48000,
           sourceRate: 48000,
         ),
       );
@@ -302,7 +335,8 @@ void main() {
       );
 
       expect(drive.leases, ['Exporting Evening loop']);
-      expect(drive.copies.single.policy, ConflictPolicy.ask);
+      // Staged copies overwrite only the export's own staging.
+      expect(drive.copies.single.policy, ConflictPolicy.replace);
       expect(drive.files, ['Segno/Performances/Evening loop.wav']);
       expect(
         cubit.state.export,
@@ -376,7 +410,10 @@ void main() {
         'Segno/Performances/Evening loop (2).wav',
         'Segno/Performances/Evening loop.wav',
       ]);
-      expect(drive.copies.single.policy, ConflictPolicy.keepBoth);
+      expect(
+        drive.copies.single.relativePath,
+        endsWith('Evening loop (2).wav'),
+      );
     });
 
     test('Replace writes over it; Cancel leaves it', () async {
@@ -603,5 +640,162 @@ void main() {
         expect(cubit.state.recordings, hasLength(1));
       });
     }
+  });
+
+  group('review fixes (#1265)', () {
+    test('an export holds the take, so its Delete waits and says for what, '
+        'even in a Library opened later', () async {
+      final capture = take('Evening loop', parts: 2);
+      final cubit = await withRecording(capture);
+      final hold = Completer<void>();
+      drive.hold = hold;
+
+      final exporting = cubit.export(
+        LibraryAudioExportKind.recording,
+        purpose: 'Exporting Evening loop',
+      );
+      await pumpEventQueue();
+      expect(
+        guards
+            .blockers(
+              GuardKind.sessionWrite,
+              GuardScope.internal(item: capture.path),
+            )
+            .single
+            .purpose,
+        'Exporting Evening loop',
+      );
+
+      // The page closed and opened again: a fresh cubit sees the hold.
+      final later = await withRecording(capture);
+      expect(later.state.deleteBlockedBy, 'Exporting Evening loop');
+
+      hold.complete();
+      await exporting;
+      expect(guards.active, isEmpty);
+      expect(cubit.state.deleteBlockedBy, isNull);
+      await later.select(later.state.items.single);
+      expect(later.state.deleteBlockedBy, isNull);
+    });
+
+    test('the DAW package and the DAW project wait for a running render; '
+        'the recording itself may go', () async {
+      when(() => performance.rendering).thenReturn(true);
+      final cubit = await withRecording(take('Evening loop'));
+
+      await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+      expect(cubit.state.error, LibraryAudioError.stillRendering);
+      expect(drive.copies, isEmpty);
+
+      await cubit.writeProject();
+      expect(cubit.state.error, LibraryAudioError.stillRendering);
+      expect(dawWrites, isEmpty);
+
+      await cubit.export(LibraryAudioExportKind.recording, purpose: 'p');
+      expect(drive.files, ['Segno/Performances/Evening loop.wav']);
+    });
+
+    test('a session export that fails while building its files leaves no '
+        'scratch behind', () async {
+      String? scratch;
+      when(() => sessions.exportStems('s-a', any())).thenAnswer((call) async {
+        scratch = call.positionalArguments[1] as String;
+        File('$scratch/track0_lane0_L0.wav').writeAsBytesSync([1]);
+        throw const FileSystemException('disk full');
+      });
+      final cubit = await withSession('s-a', 'Gig');
+
+      await cubit.export(LibraryAudioExportKind.stems, purpose: 'p');
+
+      expect(cubit.state.error, LibraryAudioError.exportFailed);
+      expect(Directory(scratch!).existsSync(), isFalse);
+    });
+
+    test('Replace of a two-part take over an earlier three-part export '
+        'leaves no part of the earlier one', () async {
+      for (var i = 1; i <= 3; i++) {
+        File('${drive.mount}/Segno/Performances/Evening loop · Part 00$i.wav')
+          ..createSync(recursive: true)
+          ..writeAsBytesSync([9]);
+      }
+      final cubit = await withRecording(take('Evening loop', parts: 2));
+
+      await cubit.export(LibraryAudioExportKind.recording, purpose: 'p');
+      await cubit.resolveConflict(ConflictPolicy.replace);
+
+      expect(drive.files, [
+        'Segno/Performances/Evening loop · Part 001.wav',
+        'Segno/Performances/Evening loop · Part 002.wav',
+      ]);
+    });
+
+    test('Preview reads Stop while it decodes, a second press withdraws the '
+        'start, and its clock counts at the engine rate', () async {
+      final landed = Completer<AuditionStart>();
+      bool Function()? wanted;
+      when(
+        () => performance.startAudition(
+          any(),
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).thenAnswer((call) {
+        wanted = call.namedArguments[#stillWanted] as bool Function()?;
+        return landed.future;
+      });
+      final cubit = await withRecording(take('Evening loop'));
+
+      final previewing = cubit.preview();
+      expect(cubit.state.preview?.starting, isTrue);
+      await cubit.preview();
+      expect(cubit.state.preview, isNull);
+      expect(wanted!(), isFalse);
+      verifyNever(() => sessions.stopAudition());
+      landed.complete(
+        const AuditionStart(result: EngineResult.invalid, cancelled: true),
+      );
+      await previewing;
+      expect(cubit.state.previewRefusal, isNull);
+
+      when(
+        () => performance.startAudition(
+          any(),
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).thenAnswer(
+        (_) async => const AuditionStart(
+          result: EngineResult.ok,
+          frames: 4800,
+          rate: 48000,
+          sourceRate: 44100,
+        ),
+      );
+      await cubit.preview();
+      expect(cubit.state.preview?.sampleRate, 48000);
+    });
+
+    test(
+      'a start never seen playing is withdrawn when the cubit gives up',
+      () async {
+        when(
+          () => performance.startAudition(
+            any(),
+            stillWanted: any(named: 'stillWanted'),
+          ),
+        ).thenAnswer(
+          (_) async => const AuditionStart(
+            result: EngineResult.ok,
+            frames: 4800,
+            rate: 48000,
+          ),
+        );
+        final cubit = await withRecording(take('Evening loop'));
+
+        await cubit.preview();
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+
+        expect(cubit.state.preview, isNull);
+        verify(() => sessions.stopAudition()).called(1);
+      },
+    );
   });
 }

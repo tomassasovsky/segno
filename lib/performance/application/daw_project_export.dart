@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:daw_export/daw_export.dart';
@@ -20,11 +21,25 @@ import 'package:daw_export/daw_export.dart';
 Future<List<DawTrack>> writeDawProject(String dir) async {
   final project = DawManifestReader.read(dir);
   if (project != null) {
-    await File('$dir/project.als').writeAsBytes(buildAls(project));
+    await _replace('$dir/project.als', buildAls(project));
   }
   final chains = FxChainsWriter.render(dir);
   if (chains != null) {
-    await File('$dir/fx-chains.txt').writeAsString(chains);
+    await _replace('$dir/fx-chains.txt', utf8.encode(chains));
   }
   return project?.tracks ?? const [];
+}
+
+/// Writes [bytes] to [path] through a flushed temp file and a rename, so a
+/// write cut short (a full disk) leaves the previous file or none, never a
+/// truncated one that would read as a finished project.
+Future<void> _replace(String path, List<int> bytes) async {
+  final temp = File('$path.tmp');
+  try {
+    await temp.writeAsBytes(bytes, flush: true);
+    await temp.rename(path);
+  } on Object {
+    if (temp.existsSync()) temp.deleteSync();
+    rethrow;
+  }
 }

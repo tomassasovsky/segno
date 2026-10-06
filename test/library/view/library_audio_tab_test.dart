@@ -8,12 +8,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -115,6 +117,7 @@ void main() {
       () => sessions.auditionState(),
     ).thenReturn(const AuditionState(frames: 480000, position: 96000));
     performance = _MockPerformance();
+    when(() => performance.rendering).thenReturn(false);
     when(
       () => performance.listCaptures(),
     ).thenAnswer((_) async => [single, recovered]);
@@ -138,6 +141,7 @@ void main() {
     WidgetTester tester, {
     RemovableVolumes? volumes,
     Stream<LooperState> looperStates = const Stream.empty(),
+    GuardRegistry? guards,
   }) async {
     final looper = _MockLooperBloc();
     whenListen(looper, looperStates, initialState: const LooperState());
@@ -152,6 +156,9 @@ void main() {
           RepositoryProvider<SessionRepository>.value(value: sessions),
           RepositoryProvider<PerformanceRepository>.value(value: performance),
           RepositoryProvider<PedalRepository>.value(value: pedal),
+          RepositoryProvider<GuardRegistry>.value(
+            value: guards ?? GuardRegistry(),
+          ),
           RepositoryProvider<RemovableVolumes>.value(value: volumes ?? drive),
         ],
         child: MultiBlocProvider(
@@ -260,10 +267,16 @@ void main() {
   testWidgets('Preview plays the selection and shows how far it has played', (
     tester,
   ) async {
-    when(() => performance.startAudition(any())).thenAnswer(
+    when(
+      () => performance.startAudition(
+        any(),
+        stillWanted: any(named: 'stillWanted'),
+      ),
+    ).thenAnswer(
       (_) async => const AuditionStart(
         result: EngineResult.ok,
         frames: 480000,
+        rate: 48000,
         sourceRate: 48000,
       ),
     );
@@ -276,7 +289,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
 
-    verify(() => performance.startAudition(single)).called(1);
+    verify(
+      () => performance.startAudition(
+        single,
+        stillWanted: any(named: 'stillWanted'),
+      ),
+    ).called(1);
     expect(find.text(l10n.libraryListenStop), findsOneWidget);
     expect(find.text('0:02 / 0:10'), findsOneWidget);
 
@@ -469,10 +487,16 @@ void main() {
   });
 
   testWidgets('a track that starts recording ends Preview', (tester) async {
-    when(() => performance.startAudition(any())).thenAnswer(
+    when(
+      () => performance.startAudition(
+        any(),
+        stillWanted: any(named: 'stillWanted'),
+      ),
+    ).thenAnswer(
       (_) async => const AuditionStart(
         result: EngineResult.ok,
         frames: 480000,
+        rate: 48000,
         sourceRate: 48000,
       ),
     );
@@ -499,10 +523,16 @@ void main() {
   });
 
   testWidgets('going back to Sessions ends Preview', (tester) async {
-    when(() => performance.startAudition(any())).thenAnswer(
+    when(
+      () => performance.startAudition(
+        any(),
+        stillWanted: any(named: 'stillWanted'),
+      ),
+    ).thenAnswer(
       (_) async => const AuditionStart(
         result: EngineResult.ok,
         frames: 480000,
+        rate: 48000,
         sourceRate: 48000,
       ),
     );
@@ -517,5 +547,29 @@ void main() {
     await tester.pumpAndSettle();
 
     verify(() => sessions.stopAudition()).called(1);
+  });
+
+  testWidgets('while an export holds the take, Delete is off and the card '
+      'says what it waits for', (tester) async {
+    final guards = GuardRegistry();
+    final held = guards.enter(
+      GuardKind.transfer,
+      GuardScope.internal(item: single.path),
+      purpose: 'Exporting Evening loop',
+    );
+    addTearDown(held.release);
+    await openAudio(tester, guards: guards);
+    await openPerformances(tester);
+    await tester.tap(row(single.path));
+    await tester.pumpAndSettle();
+
+    final delete = tester.widget<LoopOutlinedButton>(
+      find.byKey(const Key('library_audio_delete')),
+    );
+    expect(delete.onTap, isNull);
+    expect(
+      inCard(find.text(l10n.libraryAudioDeleteWaits('Exporting Evening loop'))),
+      findsOneWidget,
+    );
   });
 }

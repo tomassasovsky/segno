@@ -564,7 +564,7 @@ class LibraryAudioPreviewControl extends StatelessWidget {
           label: playing ? l10n.libraryListenStop : l10n.libraryAudioPreview,
           onTap: () => unawaited(context.read<LibraryAudioCubit>().preview()),
         ),
-        if (playing) ...[
+        if (playing && !preview.starting) ...[
           const SizedBox(width: 20),
           AppText(
             l10n.libraryListenProgress(
@@ -607,6 +607,8 @@ class LibraryAudioLine extends StatelessWidget {
       LibraryAudioError.dawProjectFailed => l10n.libraryAudioDawProjectFailed,
       LibraryAudioError.deleteBusy => l10n.libraryAudioDeleteBusy,
       LibraryAudioError.deleteFailed => l10n.libraryAudioDeleteFailed,
+      LibraryAudioError.stillRendering => l10n.libraryAudioStillRendering,
+      LibraryAudioError.exportBusy => l10n.libraryAudioExportBusy,
       null => switch (state.previewRefusal) {
         LibraryListenRefusal.unplayable => l10n.libraryListenFailed,
         LibraryListenRefusal.noDevice => l10n.libraryListenNoDevice,
@@ -621,6 +623,8 @@ class LibraryAudioLine extends StatelessWidget {
         ? l10n.libraryListenTruncated
         : state.dawProjectWritten
         ? l10n.libraryAudioDawProjectWritten
+        : state.deleteBlockedBy != null
+        ? l10n.libraryAudioDeleteWaits(state.deleteBlockedBy!)
         : null;
     final text = failure ?? note;
     if (text == null) return const SizedBox.shrink();
@@ -675,14 +679,19 @@ class LibraryAudioActions extends StatelessWidget {
     final l10n = context.l10n;
     final cubit = context.read<LibraryAudioCubit>();
     final purpose = l10n.libraryAudioPurpose(item.name);
-    Widget button(String key, String label, VoidCallback onTap) =>
-        LoopOutlinedButton(
-          key: Key(key),
-          width: 299,
-          fontSize: 23,
-          label: label,
-          onTap: onTap,
-        );
+    final deleteHeld = context.select<LibraryAudioCubit, bool>(
+      (c) => c.state.deleteBlockedBy != null,
+    );
+    Widget button(String key, String label, VoidCallback? onTap) => Opacity(
+      opacity: onTap == null ? context.surface.disabledOpacity : 1,
+      child: LoopOutlinedButton(
+        key: Key(key),
+        width: 299,
+        fontSize: 23,
+        label: label,
+        onTap: onTap,
+      ),
+    );
     final rows = switch (item) {
       LibraryRecording() => [
         [
@@ -701,7 +710,8 @@ class LibraryAudioActions extends StatelessWidget {
           button(
             'library_audio_delete',
             l10n.libraryAudioDelete,
-            () => unawaited(_delete(context)),
+            // An export of this take holds it; the line names the export.
+            deleteHeld ? null : () => unawaited(_delete(context)),
           ),
         ],
       ],

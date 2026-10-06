@@ -27,6 +27,13 @@ typedef DawProjectWriter = Future<Object?> Function(String dir);
 /// touched: the conflict is held until the player picks `Keep both` or
 /// `Replace` ([resolveConflict]) or cancels.
 ///
+/// A recording's export holds a `transfer` guard on the take for the whole
+/// copy, so its Delete (a `sessionWrite` on the same item) is refused until
+/// the copy ends, even from a Library opened later; the card shows the
+/// export's purpose on Delete while it runs (`deleteBlockedBy`).
+/// The DAW project and the DAW package wait for the take's render: its stems
+/// are written in place while it runs.
+///
 /// `Preview` uses the engine's one audition voice, as the Sessions tab's
 /// Listen does; the page stops the one when it shows the other, and this
 /// cubit stops its own on a new selection, a folder change and its close.
@@ -36,11 +43,13 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
     required PerformanceRepository performance,
     required SessionRepository sessions,
     required RemovableVolumes volumes,
+    required GuardRegistry guards,
     DawProjectWriter dawProject = writeDawProject,
     Duration previewPoll = const Duration(milliseconds: 100),
   }) : _performance = performance,
        _sessions = sessions,
        _volumes = volumes,
+       _guards = guards,
        _exporter = AudioExporter(volumes),
        _dawProject = dawProject,
        _previewPoll = previewPoll,
@@ -49,6 +58,7 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
   final PerformanceRepository _performance;
   final SessionRepository _sessions;
   final RemovableVolumes _volumes;
+  final GuardRegistry _guards;
   final AudioExporter _exporter;
   final DawProjectWriter _dawProject;
   final Duration _previewPoll;
@@ -141,6 +151,8 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
         clearRefusal: true,
         clearError: true,
         dawProjectWritten: false,
+        deleteBlockedBy: _deleteBlocker(item),
+        clearDeleteBlockedBy: _deleteBlocker(item) == null,
       ),
     );
     List<double>? peaks;
@@ -160,8 +172,21 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
     emit(state.copyWith(peaks: peaks));
   }
 
+  /// The purpose of the operation that would refuse [item]'s Delete now (an
+  /// export of it, from this Library or one opened before), or null.
+  String? _deleteBlocker(LibraryAudioItem item) {
+    if (item is! LibraryRecording) return null;
+    final blockers = _guards.blockers(
+      GuardKind.sessionWrite,
+      GuardScope.internal(item: item.capture.path),
+    );
+    return blockers.isEmpty ? null : blockers.first.purpose;
+  }
+
   /// Plays the selected item through the audition voice, or stops it when
-  /// it plays. A refusal is kept in [LibraryAudioState.previewRefusal].
+  /// it plays or is still starting. A refusal is kept in
+  /// [LibraryAudioState.previewRefusal]. A start withdrawn or superseded
+  /// while its file decoded never reaches the voice (`stillWanted`).
   Future<void> preview() async {
     final item = state.selected;
     if (item == null) return;
@@ -170,26 +195,44 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
       return;
     }
     final request = ++_previewRequest;
-    emit(state.copyWith(clearRefusal: true));
+    bool wanted() => !isClosed && request == _previewRequest;
+    emit(
+      state.copyWith(
+        clearRefusal: true,
+        preview: LibraryAudioPreview(
+          key: item.key,
+          frames: 0,
+          sampleRate: 0,
+          starting: true,
+        ),
+      ),
+    );
     AuditionStart started;
     try {
       started = switch (item) {
         LibraryRecording(:final capture) => await _performance.startAudition(
           capture,
+          stillWanted: wanted,
         ),
         LibraryMixdown(:final session) => await _sessions.startAudition(
           session.id,
+          stillWanted: wanted,
         ),
       };
     } on Object {
       started = const AuditionStart(result: EngineResult.invalid);
     }
-    if (isClosed || request != _previewRequest) {
+    if (!wanted()) {
       if (started.result == EngineResult.ok) _sessions.stopAudition();
       return;
     }
     if (started.result != EngineResult.ok) {
-      emit(state.copyWith(previewRefusal: _refusalOf(started.result)));
+      emit(
+        state.copyWith(
+          clearPreview: true,
+          previewRefusal: _refusalOf(started.result),
+        ),
+      );
       return;
     }
     _previewSeenPlaying = false;
@@ -199,7 +242,7 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
         preview: LibraryAudioPreview(
           key: item.key,
           frames: started.frames,
-          sampleRate: started.sourceRate,
+          sampleRate: started.rate,
           truncated: started.truncated,
         ),
       ),
@@ -226,6 +269,8 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
     }
     // Ended, or the engine ended it; a start gets a few polls to land.
     if (!_previewSeenPlaying && ++_previewPollsBeforePlaying < 5) return;
+    // Never seen playing: withdraw it, so it cannot sound later unseen.
+    if (!_previewSeenPlaying) _sessions.stopAudition();
     _endPreview();
   }
 
@@ -233,8 +278,9 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
   /// it lands.
   void stopPreview() {
     _previewRequest++;
-    if (state.preview == null) return;
-    _sessions.stopAudition();
+    final preview = state.preview;
+    if (preview == null) return;
+    if (!preview.starting) _sessions.stopAudition();
     _endPreview();
   }
 
@@ -319,6 +365,16 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
     }
     stopPreview();
     final folder = _folderOf(pending.item);
+    if (_needsRender(pending.kind) && _performance.rendering) {
+      _pending = null;
+      emit(
+        state.copyWith(
+          error: LibraryAudioError.stillRendering,
+          clearExport: true,
+        ),
+      );
+      return;
+    }
     _cancelRequested = false;
     emit(
       state.copyWith(
@@ -327,10 +383,20 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
         dawProjectWritten: false,
       ),
     );
-    Directory? scratch;
+    final scratch = pending.item is LibraryMixdown
+        ? Directory.systemTemp.createTempSync('segno_export')
+        : null;
+    OperationGuard? reading;
     try {
-      final AudioExportPlan plan;
-      (plan, scratch) = await _planFor(pending.item, pending.kind);
+      // Held for the whole copy: the take's Delete waits for it.
+      if (pending.item case LibraryRecording(:final capture)) {
+        reading = _guards.enter(
+          GuardKind.transfer,
+          GuardScope.internal(item: capture.path),
+          purpose: pending.purpose,
+        );
+      }
+      final plan = await _planFor(pending.item, pending.kind, scratch);
       final at = await _exporter.run(
         plan,
         generation: drive.generation,
@@ -381,28 +447,45 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
             error: switch (e) {
               StorageFull() => LibraryAudioError.notEnoughSpace,
               StorageReadOnly() => LibraryAudioError.readOnly,
+              GuardRefused() => LibraryAudioError.exportBusy,
               _ => LibraryAudioError.exportFailed,
             },
           ),
         );
       }
     } finally {
+      reading?.release();
       if (scratch != null && scratch.existsSync()) {
         scratch.deleteSync(recursive: true);
       }
+      final selected = isClosed ? null : state.selected;
+      if (selected != null) {
+        final blocker = _deleteBlocker(selected);
+        emit(
+          state.copyWith(
+            deleteBlockedBy: blocker,
+            clearDeleteBlockedBy: blocker == null,
+          ),
+        );
+      }
     }
   }
+
+  /// Whether [kind] reads the take's rendered stems or writes its project.
+  static bool _needsRender(LibraryAudioExportKind kind) =>
+      kind == LibraryAudioExportKind.dawPackage;
 
   static LibraryAudioFolder _folderOf(LibraryAudioItem item) => switch (item) {
     LibraryRecording() => LibraryAudioFolder.performances,
     LibraryMixdown() => LibraryAudioFolder.sessions,
   };
 
-  /// The files [kind] of [item] writes, and the scratch directory a session
-  /// export stages them in (deleted after the export).
-  Future<(AudioExportPlan, Directory?)> _planFor(
+  /// The files [kind] of [item] writes. A session export stages them in
+  /// [scratch], which the caller creates and always deletes.
+  Future<AudioExportPlan> _planFor(
     LibraryAudioItem item,
     LibraryAudioExportKind kind,
+    Directory? scratch,
   ) async {
     switch (item) {
       case LibraryRecording(:final capture):
@@ -410,67 +493,60 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
         if (kind == LibraryAudioExportKind.dawPackage) {
           final als = File('${capture.path}/project.als');
           if (!als.existsSync()) await _dawProject(capture.path);
-          return (
-            AudioExportPlan(
-              name: name,
-              folder: AudioExportFolders.performances,
-              package: true,
-              files: [
-                for (final f in _performance.dawPackageFiles(capture))
-                  AudioExportFile('${capture.path}/$f', f),
-              ],
-            ),
-            null,
+          return AudioExportPlan(
+            name: name,
+            folder: AudioExportFolders.performances,
+            package: true,
+            files: [
+              for (final f in _performance.dawPackageFiles(capture))
+                AudioExportFile('${capture.path}/$f', f),
+            ],
           );
         }
         final parts = capture.masterParts;
-        return (
-          AudioExportPlan(
-            name: name,
-            folder: AudioExportFolders.performances,
-            files: [
-              for (final p in parts)
-                AudioExportFile(
-                  '${capture.path}/${p.file}',
-                  parts.length == 1
-                      ? '{name}.wav'
-                      : '{name} · Part ${p.index.toString().padLeft(3, '0')}'
-                            '.wav',
-                ),
-            ],
+        return AudioExportPlan(
+          name: name,
+          folder: AudioExportFolders.performances,
+          files: [
+            for (final p in parts)
+              AudioExportFile(
+                '${capture.path}/${p.file}',
+                parts.length == 1
+                    ? '{name}.wav'
+                    : '{name} · Part ${p.index.toString().padLeft(3, '0')}'
+                          '.wav',
+              ),
+          ],
+          // Replace takes away every file of an earlier export of this
+          // name, so no part of another take stays beside the new ones.
+          earlier: RegExp(
+            '^${RegExp.escape(name)}( · Part \\d{3})?\\.wav\$',
           ),
-          null,
         );
       case LibraryMixdown(:final session):
         final name = driveSafeName(session.name);
-        final scratch = Directory.systemTemp.createTempSync('segno_export');
+        final dir = scratch!;
         if (kind == LibraryAudioExportKind.stems) {
-          await _sessions.exportStems(session.id, scratch.path);
+          await _sessions.exportStems(session.id, dir.path);
           final stems = [
-            for (final e in scratch.listSync())
+            for (final e in dir.listSync())
               if (e is File) _lastSegment(e.path),
           ]..sort();
-          return (
-            AudioExportPlan(
-              name: '$name stems',
-              folder: AudioExportFolders.sessions,
-              package: true,
-              files: [
-                for (final f in stems) AudioExportFile('${scratch.path}/$f', f),
-              ],
-            ),
-            scratch,
+          return AudioExportPlan(
+            name: '$name stems',
+            folder: AudioExportFolders.sessions,
+            package: true,
+            files: [
+              for (final f in stems) AudioExportFile('${dir.path}/$f', f),
+            ],
           );
         }
-        final mixdown = '${scratch.path}/mixdown.wav';
+        final mixdown = '${dir.path}/mixdown.wav';
         await _sessions.exportMixdown(session.id, mixdown);
-        return (
-          AudioExportPlan(
-            name: name,
-            folder: AudioExportFolders.sessions,
-            files: [AudioExportFile(mixdown, '{name}.wav')],
-          ),
-          scratch,
+        return AudioExportPlan(
+          name: name,
+          folder: AudioExportFolders.sessions,
+          files: [AudioExportFile(mixdown, '{name}.wav')],
         );
     }
   }
@@ -483,6 +559,15 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
   Future<void> writeProject() async {
     final item = state.selected;
     if (item is! LibraryRecording) return;
+    if (_performance.rendering) {
+      emit(
+        state.copyWith(
+          error: LibraryAudioError.stillRendering,
+          dawProjectWritten: false,
+        ),
+      );
+      return;
+    }
     emit(state.copyWith(clearError: true, dawProjectWritten: false));
     try {
       await _dawProject(item.capture.path);
