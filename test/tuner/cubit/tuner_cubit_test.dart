@@ -4,15 +4,23 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
+import 'package:settings_repository/settings_repository.dart';
+
+import '../../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 void main() {
   late _MockLooperRepository repository;
   late StreamController<LooperState> states;
+  late TunerSettings settings;
 
   setUp(() {
+    settings = TunerSettings(
+      settings: SettingsRepository(store: FakeKeyValueStore()),
+    );
     repository = _MockLooperRepository();
     states = StreamController<LooperState>.broadcast();
     when(() => repository.looperState).thenAnswer((_) => states.stream);
@@ -25,9 +33,12 @@ void main() {
     ).thenReturn(EngineResult.ok);
   });
 
-  tearDown(() => states.close());
+  tearDown(() async {
+    await states.close();
+    await settings.close();
+  });
 
-  TunerCubit build() => TunerCubit(repository: repository);
+  TunerCubit build() => TunerCubit(repository: repository, settings: settings);
 
   LooperState reading(double hz, {double confidence = 1, int input = 0}) =>
       LooperState(
@@ -138,60 +149,63 @@ void main() {
       expect(cubit.state.hasReading, isFalse);
     });
 
-    test(
-      're-pushes the arm when the engine says it is not listening '
-      '(the command ring can drop one, and nothing else would notice)',
-      () async {
-        final cubit = build()..arm();
-        addTearDown(cubit.close);
-        verify(() => repository.setTunerInput(input: 0)).called(1);
+    test('a reading from another input clears the held one at once and '
+        'pushes nothing back (#1229: a re-push would unmute the input the '
+        'foot Tuner muted)', () async {
+      final cubit = build()..arm();
+      addTearDown(cubit.close);
+      verify(() => repository.setTunerInput(input: 0)).called(1);
 
-        // The arm never landed: the engine reports itself disarmed on a rig
-        // that plainly has inputs.
-        states.add(
-          const LooperState(status: EngineStatus(inputChannels: 2)),
-        );
-        await Future<void>.delayed(Duration.zero);
-        verify(() => repository.setTunerInput(input: 0)).called(1);
+      states.add(reading(110));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.pitch!.note, 'A');
 
-        // Once it takes, the watchdog goes quiet rather than pushing per frame.
-        states.add(
-          const LooperState(
-            status: EngineStatus(inputChannels: 2),
-            tuner: TunerReading(hz: 110, confidence: 1, input: 0),
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
-        expect(cubit.state.pitch!.note, 'A');
-        verifyNever(() => repository.setTunerInput(input: any(named: 'input')));
-      },
-    );
+      final emitted = <TunerState>[];
+      final subscription = cubit.stream.listen(emitted.add);
+      addTearDown(subscription.cancel);
+      // The engine reports itself on another input (or disarmed): not "no
+      // signal" on this one.
+      states.add(
+        const LooperState(
+          status: EngineStatus(inputChannels: 2),
+          tuner: TunerReading(hz: 220, confidence: 1, input: 1),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(emitted, hasLength(1));
+      expect(emitted.single.hasReading, isFalse);
+      expect(emitted.single.isStale, isFalse);
+      states.add(const LooperState(status: EngineStatus(inputChannels: 2)));
+      await Future<void>.delayed(Duration.zero);
+      verifyNever(() => repository.setTunerInput(input: any(named: 'input')));
+    });
 
-    test(
-      're-pushes a dropped input SWITCH too, where the engine is still armed '
-      'on the input before it and so never reads as disarmed',
-      () async {
-        final cubit = build()..arm();
-        addTearDown(cubit.close);
+    test('a reading is named against the stored A4 reference', () async {
+      await settings.setReference(432);
+      final cubit = build()..arm();
+      addTearDown(cubit.close);
 
-        cubit.selectInput(1);
-        verify(() => repository.setTunerInput(input: 1)).called(1);
+      states.add(reading(432));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.referenceHz, 432);
+      expect(cubit.state.pitch!.note, 'A');
+      expect(cubit.state.pitch!.isInTune, isTrue);
 
-        // The switch never landed: the engine is armed, just on the input the
-        // player moved off. Readings for it are rightly refused — and refusing
-        // them forever is what this re-push exists to prevent.
-        states.add(
-          const LooperState(
-            status: EngineStatus(inputChannels: 2),
-            tuner: TunerReading(hz: 110, confidence: 1),
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
+      // A reference change renames the note on screen at once.
+      await settings.setReference(440);
+      expect(cubit.state.referenceHz, 440);
+      expect(cubit.state.pitch!.isInTune, isFalse);
+      expect(cubit.state.pitch!.cents, lessThan(-30));
+    });
 
-        expect(cubit.state.hasReading, isFalse);
-        verify(() => repository.setTunerInput(input: 1)).called(1);
-      },
-    );
+    test('the selected input is stored as an appliance preference', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      cubit.selectInput(1);
+      await Future<void>.delayed(Duration.zero);
+      expect(settings.live.input, 1);
+      expect(cubit.state.input, 1);
+    });
 
     test('never tunes a loopback capture, which carries our own output '
         'back — it folds onto the first channel that is real', () async {

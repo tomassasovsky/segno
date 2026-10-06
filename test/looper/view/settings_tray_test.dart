@@ -35,6 +35,7 @@ import 'package:segno/looper/view/tray/brightness_capsule.dart';
 import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:toastification/toastification.dart';
@@ -125,7 +126,10 @@ void main() {
     displayBrightness = DisplayBrightnessCubit(settings: settings);
     wifiClient = _ToggleWifiClient();
     looper = LooperRepository(engine: FakeAudioEngine());
-    tunerCubit = TunerCubit(repository: looper);
+    tunerCubit = TunerCubit(
+      repository: looper,
+      settings: TunerSettings(settings: settings),
+    );
     inputsCubit = InputsCubit(settings: settings, repository: looper);
     // Control is where the tray lands now that Effects is a route, and
     // `closeTray` returns there — so the SHELL's tests mount that face's
