@@ -23,6 +23,8 @@ export 'src/audio_engine.dart'
         LooperTransport,
         MasterBusControl,
         MonitorControl,
+        ReopenOutcome,
+        ReopenResult,
         SessionIo,
         TempoControl;
 export 'src/engine_config.dart' show AudioBackend, EngineConfig;

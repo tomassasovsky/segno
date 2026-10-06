@@ -4,6 +4,7 @@ library;
 
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/audio_config.dart';
+import 'package:looper_repository/src/models/engine_reopened.dart';
 
 /// Device + engine health, projected from the engine snapshot.
 class EngineStatus extends Equatable {
@@ -25,6 +26,7 @@ class EngineStatus extends Equatable {
     this.recordOffsetFrames = 0,
     this.fxAddedLatencyFrames = 0,
     this.activeBackend = AudioBackend.miniaudio,
+    this.reopen,
   });
 
   /// Active device name, or empty when stopped.
@@ -127,6 +129,13 @@ class EngineStatus extends Equatable {
   /// [AudioBackend.asio]; on macOS/Linux it is [AudioBackend.miniaudio].
   final AudioBackend activeBackend;
 
+  /// What the most recent device reopen did with the recorded loops, or
+  /// `null` when the current session began with a deliberate start. Set by
+  /// the reconnect supervisor's reopen and cleared by the next start, so the
+  /// connectivity notice raised when the device reads present again can tell
+  /// a retained rig from a cleared one (#1140).
+  final EngineReopened? reopen;
+
   /// Whether a latency measurement has completed.
   bool get hasMeasuredLatency => latencyState == LatencyState.done;
 
@@ -148,5 +157,6 @@ class EngineStatus extends Equatable {
     recordOffsetFrames,
     fxAddedLatencyFrames,
     activeBackend,
+    reopen,
   ];
 }
