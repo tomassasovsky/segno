@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -34,8 +35,8 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno_engine/segno_engine.dart'
     as le
@@ -324,38 +325,54 @@ class _NoticeSessionRepository extends SessionRepository {
   bool refuseRead = false;
 
   @override
-  Future<String> bundlePath(String name) async => name;
+  Future<String> bundlePathOf(String id) async => id;
 
   @override
   Future<List<SessionSummary>> listSessions() async => const [
-    SessionSummary(name: 'Replacement'),
+    SessionSummary(id: 'Replacement', name: 'Replacement'),
   ];
 
   @override
-  Future<SessionBundle> read(String directory) async {
+  Future<List<String>> listFolders() async => const [];
+
+  @override
+  Future<SessionPreview> readPreview(String id) async => SessionPreview(
+    summary: SessionSummary(id: id, name: id),
+    tracks: const [],
+    fxCount: 0,
+    sampleRate: 48000,
+  );
+
+  @override
+  Future<OpenedSession> open(
+    String directory, {
+    FutureOr<SessionSettings> Function()? liveSettings,
+  }) async {
     if (!readEntered.isCompleted) readEntered.complete();
     await readRelease.future;
     if (refuseRead) throw StateError('session read unavailable');
-    return (
-      session: const Session(
-        sampleRate: 48000,
-        channels: 2,
-        baseLengthFrames: 0,
-        tracks: [],
-        monitors: [
-          SessionMonitor(
-            input: 0,
-            mode: 'on',
-            outputMask: 16,
-            volume: .65,
-            muted: true,
-            encoded: '',
-          ),
-        ],
-      ),
-      laneStems: <(int, int), List<Float32List>>{},
-    );
+    return (bundle: _bundle, conversion: null);
   }
+
+  static final SessionBundle _bundle = (
+    session: const Session(
+      sampleRate: 48000,
+      channels: 2,
+      baseLengthFrames: 0,
+      tracks: [],
+      monitors: [
+        SessionMonitor(
+          input: 0,
+          mode: 'on',
+          outputMask: 16,
+          volume: .65,
+          muted: true,
+          encoded: '',
+        ),
+      ],
+    ),
+    laneStems: <(int, int), List<Float32List>>{},
+  );
 }
 
 class _ClickModeStore extends FakeKeyValueStore {
@@ -392,6 +409,12 @@ class _ClickModeStore extends FakeKeyValueStore {
     }
     await super.remove(key);
   }
+}
+
+/// Refuses every punch-in as the engine refuses one on a reversed track.
+class _ReversedEngine extends FakeAudioEngine {
+  @override
+  EngineResult record({int channel = 0}) => EngineResult.reversed;
 }
 
 class _RefusingClickModeEngine extends FakeAudioEngine {
@@ -688,9 +711,11 @@ void main() {
       PowerKeySource? powerKeySource,
       Duration waveformWindowOpenDelay = Duration.zero,
       bool settle = true,
+      ConsoleFactsClient consoleFacts = const UnsupportedConsoleFactsClient(),
     }) async {
       await tester.pumpWidget(
         App(
+          consoleFacts: consoleFacts,
           mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
@@ -699,7 +724,6 @@ void main() {
           waveformWindow: windowService,
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
           powerOff: powerOff,
           powerKeySource: powerKeySource,
           waveformWindowOpenDelay: waveformWindowOpenDelay,
@@ -722,7 +746,6 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
           updates: updates,
         ),
       );
@@ -808,7 +831,6 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: SessionRepository(engine: engine),
             performanceRepository: performance,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -944,7 +966,7 @@ void main() {
           if (recovery == 'Session') {
             final context = tester.element(find.byType(TracksView));
             bundles.readRelease.complete();
-            final loading = context.read<SessionCubit>().loadNamed(
+            final loading = context.read<SessionCubit>().open(
               'Replacement',
             );
             await tester.pumpAndSettle();
@@ -1248,7 +1270,7 @@ void main() {
           final context = tester.element(find.byType(TracksView));
           final monitor = context.read<MonitorCubit>();
           final session = context.read<SessionCubit>();
-          final load = session.loadNamed('Replacement');
+          final load = session.open('Replacement');
           expect(
             context.read<FxChainPersistence>().sessionTransitionActive,
             isTrue,
@@ -1311,10 +1333,12 @@ void main() {
         ..refuseBootWrite = true;
       await tester.tap(find.byKey(const Key('stage_library')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
       // Catalog refresh is unrelated work; it must not suppress Monitor Retry.
       expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
-      await tester.tap(find.text('Replacement'));
+      await tester.tap(find.byKey(const Key('library_row_Replacement')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('library_open_session')));
       await tester.pumpAndSettle();
       expect(session.state.bootRecoveryRequired, isTrue);
       expect(session.state.error, SessionError.bootPersistence);
@@ -1344,7 +1368,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(session.state.bootRecoveryRequired, isTrue);
       expect(monitor.state.inputs, isEmpty);
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
       expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
       expect(find.text('Retry').hitTestable(), findsOneWidget);
       store.refuseBootWrite = false;
@@ -1687,6 +1711,43 @@ void main() {
         },
       );
     }
+
+    testWidgets('a Record press on a reversed track says overdub is '
+        'unavailable', (tester) async {
+      engine = _ReversedEngine();
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        tracks: [
+          const le.TrackSnapshot(
+            state: le.TrackState.overdubbing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 48000,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+            reversed: true,
+          ),
+          for (var channel = 1; channel < 8; channel++)
+            const le.TrackSnapshot.empty(),
+        ],
+      );
+      repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      );
+      addTearDown(repository.dispose);
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(repository.record(), EngineResult.reversed);
+      await tester.pumpAndSettle();
+      expect(debugAppToastActive(AppToastId.recordRefused), isTrue);
+      expect(
+        find.text('Overdub is unavailable while the track is reversed'),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
 
     for (final blockedKey in ['tempo.count_in_bars', 'looper.auto_record']) {
       testWidgets('power off waits for complete start pair: $blockedKey', (
@@ -3356,7 +3417,7 @@ void main() {
     );
 
     testWidgets(
-      'Update on the toast opens Settings on the Updates tab',
+      'Update on the toast opens the Updates page',
       (
         tester,
       ) async {
@@ -3366,16 +3427,11 @@ void main() {
         );
         await tester.tap(find.byKey(const Key('app_update_banner_update')));
         await tester.pumpAndSettle();
-        expect(find.byType(SettingsPage), findsOneWidget);
-        expect(find.byType(UpdatesSettingsSection), findsOneWidget);
-        expect(
-          find.byKey(const Key('settings_tab_updates')),
-          findsOneWidget,
-        );
+        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
         expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        // Pop so the navigator re-entrancy guard (`_settingsOpen`) clears for
-        // later tests in this file that also open Settings.
-        await tester.tap(find.byKey(const Key('settings_close_button')));
+        // Pop so the navigator's open-route guard clears for later tests in
+        // this file that also open Settings.
+        await tester.tap(find.byKey(const Key('loop_settings_back')));
         await tester.pumpAndSettle();
       },
       // Toast, not a widget. These notifications moved to toastification,
@@ -3395,18 +3451,16 @@ void main() {
           tester,
           UpdateRepository(backend: backend),
         );
-        // NOT awaited: openSegnoSettings awaits navigator.push, which resolves
-        // only when the route is POPPED. Awaiting it here deadlocks the test on
-        // its own first statement — settings is not closed until the end — and
-        // it does not fail fast: it spins until the harness gives up minutes
-        // later, poisoning the rest of the file.
-        unawaited(openSegnoSettings(section: SettingsSection.updates));
+        // NOT awaited: openUpdateSettings awaits navigator.push, which
+        // resolves only when the route is POPPED. Awaiting it here deadlocks
+        // the test on its own first statement.
+        unawaited(openUpdateSettings());
         await tester.pumpAndSettle();
         backend.complete();
         await tester.pumpAndSettle();
-        expect(find.byType(UpdatesSettingsSection), findsOneWidget);
+        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
         expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        await tester.tap(find.byKey(const Key('settings_close_button')));
+        await tester.tap(find.byKey(const Key('loop_settings_back')));
         await tester.pumpAndSettle();
       },
       // Toast, not a widget. These notifications moved to toastification,
@@ -3441,7 +3495,6 @@ void main() {
         waveformWindow: NoopWaveformWindowService(),
         sessionRepository: sessionRepository,
         performanceRepository: performanceRepository,
-        exportDirectory: () async => '.',
       );
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
@@ -3458,51 +3511,53 @@ void main() {
       expect(identical(first, second), isTrue);
     });
 
-    testWidgets('provides pedal events to the Sessions manager', (
-      tester,
-    ) async {
-      final sessionsRoot = Directory.systemTemp.createTempSync(
-        'segno-app-sessions-',
-      );
-      addTearDown(() => sessionsRoot.delete(recursive: true));
-      sessionRepository = SessionRepository(
-        engine: FakeAudioEngine(),
-        sessionsRoot: () async => sessionsRoot.path,
-      );
-      final link = FakePedalLink();
-      final pedal = PedalRepository(link);
-      link.hello();
-      await tester.pumpWidget(
-        App(
-          mixSettings: testMixSettings(repository, settings: settings),
-          repository: repository,
-          controllerRepository: controllerRepository,
-          midiDeviceRepository: midiDeviceRepository,
-          settings: settings,
-          waveformWindow: NoopWaveformWindowService(),
-          sessionRepository: sessionRepository,
-          performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
-          pedalRepository: pedal,
-        ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+    testWidgets(
+      'the stage Library mark opens the Library, and a footswitch returns',
+      (
+        tester,
+      ) async {
+        final sessionsRoot = Directory.systemTemp.createTempSync(
+          'segno-app-sessions-',
+        );
+        addTearDown(() => sessionsRoot.delete(recursive: true));
+        sessionRepository = SessionRepository(
+          engine: FakeAudioEngine(),
+          sessionsRoot: () async => sessionsRoot.path,
+        );
+        final link = FakePedalLink();
+        final pedal = PedalRepository(link);
+        link.hello();
+        await tester.pumpWidget(
+          App(
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: NoopWaveformWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            pedalRepository: pedal,
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
 
-      await tester.tap(find.byKey(const Key('stage_library')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('stage_library')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.byKey(const Key('library_page')), findsOneWidget);
 
-      link.press(PedalButton.clear, down: true);
-      await tester.pump();
-      link.press(PedalButton.clear, down: false);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sessions_manager')), findsNothing);
-      expect(find.byType(LooperPage), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(pedal.helloTimeout);
-    });
+        link.press(PedalButton.clear, down: true);
+        await tester.pump();
+        link.press(PedalButton.clear, down: false);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('library_page')), findsNothing);
+        expect(find.byType(LooperPage), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      },
+    );
 
     testWidgets('always lands on the looper — no first-run gate', (
       tester,
@@ -3519,7 +3574,6 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
         ),
       );
       await tester.pumpAndSettle();
@@ -3609,8 +3663,8 @@ void main() {
       expect(windowService.isOpen, isFalse);
     });
 
-    testWidgets('right-click opens settings; disabling the waveform window '
-        'closes it', (tester) async {
+    testWidgets('right-click opens Settings; disabling the waveform window '
+        'on Displays closes it', (tester) async {
       final windowService = _RecordingWindowService();
       await pumpApp(tester, windowService);
       expect(windowService.isOpen, isTrue);
@@ -3620,37 +3674,100 @@ void main() {
         buttons: kSecondaryButton,
       );
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.byType(SettingsHomePage), findsOneWidget);
 
-      // Disable the secondary waveform window; it closes (Tracks is the
-      // only mode now, so the window follows this enable toggle alone).
-      await tester.tap(
-        find.byKey(const Key('settings_waveformWindow_switch')),
-      );
+      // Disable the secondary waveform window from Displays; it closes
+      // (Tracks is the only mode now, so the window follows this toggle).
+      await tester.tap(find.byKey(const Key('settings_tile_displays')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('system_waveform_switch')));
       await tester.pumpAndSettle();
 
       expect(windowService.isOpen, isFalse);
 
-      // Close the settings page so the global open-guard resets for the next
-      // test (the toggle no longer navigates away on its own).
-      await tester.tap(find.byKey(const Key('settings_close_button')));
+      // Back to the stage, so the open-route guard resets for the next test.
+      await tester.tap(find.byKey(const Key('loop_settings_stage')));
       await tester.pumpAndSettle();
 
       // The layout never swaps — Tracks is the only mode.
       expect(find.byType(TracksView), findsOneWidget);
     });
 
-    testWidgets('the S key opens the settings page', (tester) async {
+    testWidgets('an install that started in Mute starts in Record and is '
+        'told once', (tester) async {
+      final store = FakeKeyValueStore();
+      await store.setString('looper.default_mode', 'mute');
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      final control = tester
+          .element(find.byType(TracksView))
+          .read<ControlCubit>();
+      expect(control.state.mode, InteractionMode.record);
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isTrue);
+
+      // The next start has nothing to say.
+      dismissAppToast(AppToastId.bootModeRetired);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+    });
+
+    testWidgets('an install that started in Record is not told anything', (
+      tester,
+    ) async {
+      final store = FakeKeyValueStore();
+      await store.setString('looper.default_mode', 'record');
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+    });
+
+    testWidgets('an install with paired Bluetooth devices is told once', (
+      tester,
+    ) async {
+      final facts = FakeConsoleFactsClient(
+        latency: Duration.zero,
+        bluetoothPairings: 2,
+      );
+      await pumpApp(tester, NoopWaveformWindowService(), consoleFacts: facts);
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isTrue);
+      expect(await settings.loadBluetoothRetiredNoticeShown(), isTrue);
+
+      // The next start has nothing to say, though the pairings are still
+      // there for a fallback to the previous system.
+      dismissAppToast(AppToastId.bluetoothRetired);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService(), consoleFacts: facts);
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isFalse);
+    });
+
+    testWidgets('an install with no Bluetooth pairings is told nothing', (
+      tester,
+    ) async {
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        consoleFacts: FakeConsoleFactsClient(latency: Duration.zero),
+      );
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isFalse);
+      expect(await settings.loadBluetoothRetiredNoticeShown(), isFalse);
+    });
+
+    testWidgets('the S key opens Settings', (tester) async {
       await pumpApp(tester, NoopWaveformWindowService());
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.byType(SettingsHomePage), findsOneWidget);
 
-      // Close it so the global open-guard resets for the next test.
-      await tester.tap(find.byKey(const Key('settings_close_button')));
+      // Close it so the open-route guard resets for the next test.
+      await tester.tap(find.byKey(const Key('loop_settings_back')));
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsNothing);
+      expect(find.byType(SettingsHomePage), findsNothing);
     });
 
     // The successor to the device-lost BANNER tests the toast rewrite
@@ -3700,7 +3817,6 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -3793,7 +3909,6 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -3916,7 +4031,6 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -4056,7 +4170,6 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
             displayCount: () => 1,
           ),
         );
@@ -4293,7 +4406,6 @@ void main() {
             waveformWindow: window,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -4773,7 +4885,6 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
             audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
           ),
         );
@@ -4791,6 +4902,48 @@ void main() {
       // the persistent-surface work — see #453.
       skip: true,
     );
+
+    testWidgets('the audio-recovery toast opens the Device page', (
+      tester,
+    ) async {
+      // The pinned interface is absent, so recovery waits and the toast
+      // stands. Its action is the way to the interface chooser.
+      await tester.pumpWidget(
+        App(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
+          audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
+        ),
+      );
+      // pump, not pumpAndSettle: the recovery cubit holds a periodic poll.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(debugAppToastActive(AppToastId.audioRecovery), isTrue);
+      // Let the toast animate in before tapping its action.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key(AppToastId.audioRecovery)),
+          matching: find.byType(TextButton),
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byType(DeviceSettingsPage), findsOneWidget);
+
+      // Unmount so the recovery poll stops with the test.
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
 
     testWidgets(
       'macOS PlatformMenuBar survives MaterialApp theme rebuild and '

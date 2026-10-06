@@ -15,6 +15,8 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/window/window_chrome.dart';
+import 'package:session_repository/session_repository.dart'
+    show SessionConversionChange;
 
 /// The commands for `TracksView`: the keyboard map plus the dispatch+announce
 /// helpers that the toolbar buttons and track tiles share, so the pointer and
@@ -120,6 +122,8 @@ class TracksCommands {
       InteractionMode.custom => l10n.a11yModeCustom,
       InteractionMode.mixer => l10n.actionModeMixer,
       InteractionMode.fade => l10n.actionModeFade,
+      InteractionMode.reverse => l10n.actionModeReverse,
+      InteractionMode.peel => l10n.actionModePeel,
     });
   }
 
@@ -213,8 +217,8 @@ class TracksCommands {
         redo(selected);
         return KeyEventResult.handled;
       }
-      // Cmd/Ctrl+S writes back to the open session (falls back to Save-As via
-      // the view's session listener when nothing is open).
+      // Cmd/Ctrl+S writes back to the open session, or saves a rig that has
+      // none as the next New loop (plan D4).
       if (key == LogicalKeyboardKey.keyS) {
         unawaited(context.read<SessionCubit>().save());
         return KeyEventResult.handled;
@@ -222,7 +226,10 @@ class TracksCommands {
       return KeyEventResult.ignored; // let OS / menu shortcuts through
     }
 
-    if (mode == InteractionMode.mixer || mode == InteractionMode.fade) {
+    if (mode == InteractionMode.mixer ||
+        mode == InteractionMode.fade ||
+        mode == InteractionMode.reverse ||
+        mode == InteractionMode.peel) {
       if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
         overlay.setMode(InteractionMode.record);
         return KeyEventResult.handled;
@@ -313,6 +320,8 @@ class TracksCommands {
             bloc.add(LooperTrackChainToggled(channel));
           case InteractionMode.mixer:
           case InteractionMode.fade:
+          case InteractionMode.reverse:
+          case InteractionMode.peel:
             break;
           case InteractionMode.custom:
             // Selection only: what a control does in Custom controls is
@@ -363,22 +372,10 @@ class TracksCommands {
   }
 }
 
-/// Reacts to a settled [SessionCubit] transition: a quick Save with no open
-/// session asks the cubit to request Save-As, which surfaces here as
-/// [SessionOutcome.saveAsRequested] — open the name dialog. Every other
-/// settled outcome flows to [showSessionOutcome]'s SnackBar. Wired as the
-/// `TracksView`'s session [BlocListener].
-void onSessionState(BuildContext context, SessionState state) {
-  if (state.outcome == SessionOutcome.saveAsRequested) {
-    unawaited(promptSaveAs(context));
-    return;
-  }
-  showSessionOutcome(context, state);
-}
-
 /// Shows a transient SnackBar surfacing the last session action's outcome —
-/// a localized success line, or a localized, human-readable error for the
-/// known refusals (sample-rate mismatch, newer manifest version), falling
+/// a localized success line (saying so when a load converted an older
+/// session), or a localized, human-readable error for the known refusals
+/// (sample-rate mismatch, newer or unconvertible manifest version), falling
 /// back to the raw message otherwise. The content is a live region so it is
 /// announced to assistive tech as it appears (WCAG 4.1.3). Wired as the
 /// `TracksView`'s session [BlocListener].
@@ -387,23 +384,37 @@ void showSessionOutcome(BuildContext context, SessionState state) {
   final message = switch (state.status) {
     SessionStatus.success => switch (state.outcome) {
       SessionOutcome.saved => l10n.sessionSaved,
-      SessionOutcome.loaded => l10n.sessionLoaded,
-      SessionOutcome.mixdownExported => l10n.mixdownExported,
-      SessionOutcome.stemsExported => l10n.stemsExported,
-      // The named-session outcomes surface through the Sessions manager UI (a
-      // later part), which gives them their own messaging; no legacy SnackBar.
+      // A quick Save with no open session names the session itself (plan
+      // D4); the toast says which name it took.
+      SessionOutcome.savedAs => l10n.sessionSavedAs(
+        state.currentSessionName ?? '',
+      ),
+      SessionOutcome.loaded => switch (state.conversion) {
+        null => l10n.sessionLoaded,
+        final notice => sessionConversionMessage(l10n, notice),
+      },
+      // The catalog outcomes happen in the Library, which shows its own
+      // result; no SnackBar behind it.
       SessionOutcome.renamed ||
       SessionOutcome.deleted ||
-      SessionOutcome.saveAsRequested ||
+      SessionOutcome.duplicated ||
+      SessionOutcome.moved ||
+      SessionOutcome.folderCreated ||
+      SessionOutcome.folderRenamed ||
+      SessionOutcome.folderDeleted ||
       null => null,
     },
     SessionStatus.failure => switch (state.error) {
       SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
       SessionError.unsupportedVersion => l10n.sessionErrorUnsupportedVersion,
-      // App recovery notices remain actionable above the Sessions dialog.
+      SessionError.unconvertible => l10n.sessionErrorUnconvertible,
+      // App recovery notices remain actionable above the Library.
       SessionError.bootPersistence => null,
-      // nameCollision gets a dedicated inline message in the manager UI; here
-      // (legacy path) it falls back to the generic error. corruptLayers is a
+      SessionError.saveFailed => l10n.librarySaveFailed,
+      SessionError.currentSessionProtected => l10n.libraryDeleteCurrentRefused,
+      SessionError.folderNotEmpty => l10n.libraryFolderNotEmpty,
+      // nameCollision is answered inside the Library's name sheet; here it
+      // falls back to the generic error. corruptLayers is a
       // rare corrupt/foreign-bundle refusal — the generic message (carrying the
       // exception's own description) is sufficient.
       SessionError.nameCollision ||
@@ -486,3 +497,22 @@ void _showPerformanceDiscarded(BuildContext context) {
       ),
     );
 }
+
+/// The notice for a session converted from an older version: whether the
+/// original was kept beside the converted session, then one sentence for
+/// each audible change the conversion made.
+String sessionConversionMessage(
+  AppLocalizations l10n,
+  SessionConversionNotice notice,
+) => [
+  if (notice.written)
+    l10n.sessionLoadedConverted
+  else
+    l10n.sessionLoadedConvertedUnsaved,
+  if (notice.changes.contains(SessionConversionChange.masterEffectsMoved))
+    l10n.sessionConvertedMasterMoved,
+  if (notice.changes.contains(SessionConversionChange.monitorLevelLowered))
+    l10n.sessionConvertedMonitorLowered,
+  if (notice.changes.contains(SessionConversionChange.tempoFromLoop))
+    l10n.sessionConvertedTempoFromLoop,
+].join(' ');

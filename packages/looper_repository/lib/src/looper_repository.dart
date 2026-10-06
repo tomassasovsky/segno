@@ -335,6 +335,7 @@ class LooperRepository {
   bool _retryingRecord = false;
   bool _retrySuperseded = false;
   final _recordRefusals = StreamController<int>.broadcast();
+  final _overdubRefusals = StreamController<int>.broadcast();
 
   /// The desired global master output gain (`0..1`), re-applied to the engine
   /// on every successful (re)start so it survives device changes and
@@ -2930,7 +2931,18 @@ class LooperRepository {
   /// from ring-deferred engine state), so there is no drain-timing race. The
   /// copy is by value, so editing the input chain afterwards never alters the
   /// take (D3).
+  ///
+  /// A punch-in the engine refuses because the track plays reversed
+  /// ([EngineResult.reversed]) is also reported on [overdubRefusals].
   EngineResult record({int channel = 0}) {
+    final result = _record(channel);
+    if (result == EngineResult.reversed && !_overdubRefusals.isClosed) {
+      _overdubRefusals.add(channel);
+    }
+    return result;
+  }
+
+  EngineResult _record(int channel) {
     if (_sessionAudioReserved) {
       return EngineResult.notReady;
     }
@@ -4350,13 +4362,11 @@ class LooperRepository {
             }
           }
         }
-        // undo/redo depths are track-wide (shared across lanes) — take lane
-        // 0's.
+        // The history is track-wide (shared across lanes) — take lane 0's.
         final primary = track.lanes.first;
-        final finalized = _engine.finalizeLayers(
+        final finalized = _engine.finalizeHistory(
           track.channel,
-          primary.undoCount,
-          primary.redoCount,
+          primary.history,
         );
         if (!finalized.isOk) {
           throw StateError(
@@ -7398,6 +7408,10 @@ class LooperRepository {
   /// press is lost and the player should press again. Low stakes, so a toast.
   Stream<int> get recordRefusals => _recordRefusals.stream;
 
+  /// Record presses on a reversed track (the channel): overdub is
+  /// unavailable while a track plays reversed, from any surface.
+  Stream<int> get overdubRefusals => _overdubRefusals.stream;
+
   /// Whether a Record press on [channel] the engine refused is still waiting
   /// for its one retry — the press counts as accepted until it resolves.
   bool recordRetryPending(int channel) => _recordRetry?.channel == channel;
@@ -7930,6 +7944,7 @@ class LooperRepository {
     await _recordStart.dispose();
     await _recordingInputRequired.close();
     await _recordRefusals.close();
+    await _overdubRefusals.close();
     await _mixSettingsFailures.close();
     await _mix.dispose();
     await _controller.close();

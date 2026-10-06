@@ -5,12 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
+import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
+import 'package:segno/settings/settings.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -130,6 +134,45 @@ void main() {
 
   Finder overview(int channel) =>
       find.byKey(Key('foot_fade_overview_$channel'));
+
+  testWidgets('Settings opens the Settings page over the stage', (
+    tester,
+  ) async {
+    resetSegnoNavigatorForTest();
+    given(const ControlState(mode: InteractionMode.fade));
+    await durations(tester);
+    tester.view.physicalSize = const Size(1920, 1080);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      RepositoryProvider<FadeSettings>.value(
+        value: settings,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<ControlCubit>.value(value: control),
+            BlocProvider<LooperBloc>.value(value: looper),
+            BlocProvider<TracksCubit>.value(value: tracks),
+          ],
+          child: MaterialApp(
+            navigatorKey: segnoNavigatorKey,
+            theme: AppTheme.neon,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: const Scaffold(body: FootFadeView()),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byType(FootFadeView),
+        matching: find.text('Settings'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsHomePage), findsOneWidget);
+  });
 
   testWidgets('Default readout and all-eight overview reflect real owners', (
     tester,

@@ -346,6 +346,7 @@ class TrackColumn extends StatelessWidget {
               bars: bars,
               layers: layers,
               fxMarker: fxMarker,
+              reversed: track.hasContent && track.reversed,
             ),
           ),
           const SizedBox(height: gap),
@@ -370,7 +371,9 @@ class TrackColumn extends StatelessWidget {
                       : l10n.a11yTrackTileFxOff(fxCellLabel, stateWord),
                 InteractionMode.custom ||
                 InteractionMode.mixer ||
-                InteractionMode.fade => l10n.a11yTrackTileCustom(
+                InteractionMode.fade ||
+                InteractionMode.reverse ||
+                InteractionMode.peel => l10n.a11yTrackTileCustom(
                   name,
                   stateWord,
                 ),
@@ -395,6 +398,8 @@ class TrackColumn extends StatelessWidget {
                     bloc.add(LooperTrackChainToggled(track.channel));
                   case InteractionMode.mixer:
                   case InteractionMode.fade:
+                  case InteractionMode.reverse:
+                  case InteractionMode.peel:
                   case InteractionMode.custom:
                     // Selection only. What a control does in Custom controls
                     // is assigned per FOOTSWITCH, and a tile is not one —
@@ -517,6 +522,7 @@ class _TrackInfo extends StatelessWidget {
     required this.bars,
     required this.layers,
     required this.fxMarker,
+    required this.reversed,
   });
 
   final int channel;
@@ -525,6 +531,7 @@ class _TrackInfo extends StatelessWidget {
   final int? bars;
   final int layers;
   final _FxMarker fxMarker;
+  final bool reversed;
 
   @override
   Widget build(BuildContext context) {
@@ -581,6 +588,7 @@ class _TrackInfo extends StatelessWidget {
           bars: bars,
           layers: layers,
           fxMarker: fxMarker,
+          reversed: reversed,
         ),
       ],
     );
@@ -588,21 +596,24 @@ class _TrackInfo extends StatelessWidget {
 }
 
 /// The meta row under the name: the channel number, the bar and layer counts
-/// with their small units, and the FX marker at the trailing edge — bright
-/// when the chain is engaged, dim when bypassed, invisible (but holding its
-/// width) when no effect is assigned.
+/// with their small units, then the Reverse and FX markers at the trailing
+/// edge. FX is bright when the chain is engaged, dim when bypassed, and always
+/// holds its place. REV takes a slot only while the track plays reversed, so
+/// a forward row is the pen row and a reversed row makes room for the marker.
 class _TrackMeta extends StatelessWidget {
   const _TrackMeta({
     required this.channel,
     required this.bars,
     required this.layers,
     required this.fxMarker,
+    required this.reversed,
   });
 
   final int channel;
   final int? bars;
   final int layers;
   final _FxMarker fxMarker;
+  final bool reversed;
 
   @override
   Widget build(BuildContext context) {
@@ -624,12 +635,15 @@ class _TrackMeta extends StatelessWidget {
     final barsFigure = barsCount == null
         ? l10n.stageNoBarsFigure
         : l10n.stageBarsFigure(barsCount);
+    final meta = l10n.a11yStageTrackMeta(
+      channel + 1,
+      barsFigure,
+      l10n.stageLayersFigure(layers),
+    );
     return Semantics(
-      label: l10n.a11yStageTrackMeta(
-        channel + 1,
-        barsFigure,
-        l10n.stageLayersFigure(layers),
-      ),
+      // The row's markers are excluded below; the reversed state is read out
+      // with the meta line instead.
+      label: reversed ? '$meta, ${l10n.a11yStageReversed}' : meta,
       child: ExcludeSemantics(
         // Spread across the column at the pen's size; scaled down as one
         // piece in a narrower column (a desktop window) rather than
@@ -638,6 +652,10 @@ class _TrackMeta extends StatelessWidget {
           child: Row(
             key: Key('tracks_meta_$channel'),
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            // A floor under the pen's even spread: when long counts or units
+            // fill the row, its parts still never touch (the row then scales
+            // down as one piece). With room to spare the layout is unchanged.
+            spacing: _ReverseMarker.gap,
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
@@ -665,31 +683,45 @@ class _TrackMeta extends StatelessWidget {
                 figureStyle: figure,
                 unitStyle: unit,
               ),
-              Semantics(
-                label: switch (fxMarker) {
-                  _FxMarker.active => l10n.a11yStageFxActive,
-                  _FxMarker.bypassed => l10n.a11yStageFxBypassed,
-                  _FxMarker.absent => null,
-                },
-                child: Opacity(
-                  // Absent keeps its width so the row never reflows when a
-                  // chain appears.
-                  opacity: fxMarker == _FxMarker.absent ? 0 : 1,
-                  child: AppText(
-                    l10n.stageFxMarker,
-                    key: Key('tracks_fx_$channel'),
-                    style: TextStyle(
-                      fontFamily: SurfaceTheme.displayFont,
-                      color: fxMarker == _FxMarker.active
-                          ? surface.textPrimary
-                          : surface.textMuted,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
-                      height: 1,
+              // REV takes a real slot before FX while the track plays
+              // reversed, so it can never paint over a long Spanish unit or
+              // a two-digit count; a forward row is the pen's row exactly.
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  if (reversed) ...[
+                    _ReverseMarker(channel: channel),
+                    const SizedBox(width: _ReverseMarker.gap),
+                  ],
+                  Semantics(
+                    label: switch (fxMarker) {
+                      _FxMarker.active => l10n.a11yStageFxActive,
+                      _FxMarker.bypassed => l10n.a11yStageFxBypassed,
+                      _FxMarker.absent => null,
+                    },
+                    child: Opacity(
+                      // Absent keeps its width so the row never reflows when a
+                      // chain appears.
+                      opacity: fxMarker == _FxMarker.absent ? 0 : 1,
+                      child: AppText(
+                        l10n.stageFxMarker,
+                        key: Key('tracks_fx_$channel'),
+                        style: TextStyle(
+                          fontFamily: SurfaceTheme.displayFont,
+                          color: fxMarker == _FxMarker.active
+                              ? surface.textPrimary
+                              : surface.textMuted,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1,
+                          height: 1,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ],
           ),
@@ -697,6 +729,31 @@ class _TrackMeta extends StatelessWidget {
       ),
     );
   }
+}
+
+/// "REV" while the track plays reversed. It reads the repository's
+/// published direction, so it stays after the Reverse surface is left.
+class _ReverseMarker extends StatelessWidget {
+  const _ReverseMarker({required this.channel});
+
+  final int channel;
+
+  /// The gap kept between REV and the FX marker after it.
+  static const gap = 12.0;
+
+  @override
+  Widget build(BuildContext context) => AppText(
+    context.l10n.stageReverseMarker,
+    key: Key('tracks_reverse_$channel'),
+    style: TextStyle(
+      fontFamily: SurfaceTheme.displayFont,
+      color: context.surface.textPrimary,
+      fontSize: 19,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1,
+      height: 1,
+    ),
+  );
 }
 
 /// Lays [child] out at least as wide as the available width, then scales it

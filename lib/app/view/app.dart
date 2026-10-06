@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
@@ -27,6 +26,7 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/looper.dart';
@@ -66,7 +66,6 @@ class App extends StatefulWidget {
     required this.waveformWindow,
     required this.sessionRepository,
     required this.performanceRepository,
-    required this.exportDirectory,
     this.pedalRepository,
     this.displayCount,
     this.waveformWindowOpenDelay = Duration.zero,
@@ -76,11 +75,9 @@ class App extends StatefulWidget {
       backend: UnsupportedPlatformBackend(),
     ),
     this.wifi = const WifiRepository(client: UnsupportedWifiClient()),
-    this.bluetooth = const BluetoothRepository(
-      client: UnsupportedBluetoothClient(),
-    ),
     this.brightness = const UnsupportedBrightnessClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
+    this.removableVolumes = const InternalOnlyVolumes(),
     this.powerKeySource,
     this.powerOff,
     super.key,
@@ -94,9 +91,6 @@ class App extends StatefulWidget {
   /// Appliance WiFi repository (Control Center). Defaults unsupported.
   final WifiRepository wifi;
 
-  /// Appliance Bluetooth repository (Control Center). Defaults unsupported.
-  final BluetoothRepository bluetooth;
-
   /// Appliance brightness client (Control Center slider). Defaults unsupported.
   final BrightnessClient brightness;
 
@@ -104,6 +98,11 @@ class App extends StatefulWidget {
   /// where it can export to. Defaults to the client that answers "unknown",
   /// which is what every non-appliance build gets.
   final ConsoleFactsClient consoleFacts;
+
+  /// The removable drives the Library browses and copies to. Defaults to
+  /// [InternalOnlyVolumes] (no drive, every removable write refused) until
+  /// the storage service (#1177) stands behind the port.
+  final RemovableVolumes removableVolumes;
 
   /// Injected power-button source. Null (the default) starts an evdev
   /// listener on Linux when `segno-update-ctl` exists, and nothing elsewhere.
@@ -162,9 +161,6 @@ class App extends StatefulWidget {
   /// The shared performance-recording repository, sharing the engine.
   final PerformanceRepository performanceRepository;
 
-  /// Resolves the directory a mixdown / stems export is written to.
-  final Future<String> Function() exportDirectory;
-
   @override
   State<App> createState() => _AppState();
 }
@@ -183,6 +179,7 @@ class _AppState extends State<App> {
   final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   StreamSubscription<int>? _recordRefusedSubscription;
+  StreamSubscription<int>? _overdubRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
 
@@ -199,7 +196,6 @@ class _AppState extends State<App> {
       pedal: _pedal,
       performance: widget.performanceRepository,
       sessions: widget.sessionRepository,
-      exportDirectory: widget.exportDirectory,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
     );
     _powerNoticeSubscription = _runtime.power.stream.listen(
@@ -221,7 +217,12 @@ class _AppState extends State<App> {
         .recordingInputRequired
         .listen(_showRecordingInputRequired);
     _recordRefusedSubscription = widget.repository.recordRefusals.listen(
-      _showRecordRefused,
+      (channel) =>
+          _showRecordRefused(channel, (l10n) => l10n.recordRefusedTitle),
+    );
+    _overdubRefusedSubscription = widget.repository.overdubRefusals.listen(
+      (channel) =>
+          _showRecordRefused(channel, (l10n) => l10n.footReverseOverdubRefused),
     );
     _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
     _recordView = RecordOptionsCubit(settings: _runtime.record);
@@ -246,6 +247,7 @@ class _AppState extends State<App> {
     }
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_recordRefusedSubscription?.cancel());
+    unawaited(_overdubRefusedSubscription?.cancel());
     _controlNotices.dispose();
     unawaited(
       _closeControlOwners().catchError((Object error, StackTrace stack) {
@@ -366,16 +368,20 @@ class _AppState extends State<App> {
     );
   }
 
-  /// A fresh-capture Record press the engine refused twice (#1146): the press
-  /// is lost, so say so. Low stakes — a toast, like the input notice above.
-  void _showRecordRefused(int channel) {
+  /// A Record press the engine refused: a fresh capture refused twice
+  /// (#1146), or an overdub on a reversed track. The press is lost, so say
+  /// why. Low stakes — a toast, like the input notice above.
+  void _showRecordRefused(
+    int channel,
+    String Function(AppLocalizations l10n) title,
+  ) {
     if (!mounted || _runtime.power.state.isUiUp) return;
     showAppToast(
       id: AppToastId.recordRefused,
       type: ToastificationType.warning,
       autoCloseDuration: const Duration(seconds: 5),
       title: Builder(
-        builder: (context) => Text(context.l10n.recordRefusedTitle),
+        builder: (context) => Text(title(context.l10n)),
       ),
       description: Builder(
         builder: (context) => Text(
@@ -446,9 +452,11 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: _pedal),
         RepositoryProvider.value(value: widget.updates),
         RepositoryProvider.value(value: widget.wifi),
-        RepositoryProvider.value(value: widget.bluetooth),
         RepositoryProvider.value(value: widget.brightness),
         RepositoryProvider.value(value: widget.consoleFacts),
+        RepositoryProvider<RemovableVolumes>.value(
+          value: widget.removableVolumes,
+        ),
         if (_powerKeySource != null)
           RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),
       ],
@@ -776,7 +784,26 @@ class _AppViewState extends State<_AppView> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_bootstrapWindow());
+      if (mounted) unawaited(_noticeRetiredBluetooth());
     });
+  }
+
+  /// Tells an install that had paired Bluetooth devices, once, that they will
+  /// not reconnect: Bluetooth is retired and the image no longer runs BlueZ.
+  /// The pairings themselves stay on the data volume, so a fallback to the
+  /// previous system still has them.
+  Future<void> _noticeRetiredBluetooth() async {
+    final settings = context.read<SettingsRepository>();
+    final facts = context.read<ConsoleFactsClient>();
+    if (await settings.loadBluetoothRetiredNoticeShown()) return;
+    final count = await facts.retiredBluetoothPairings();
+    if (count == 0 || !mounted) return;
+    showAppToast(
+      id: AppToastId.bluetoothRetired,
+      title: AppText(_l10n.bluetoothRetiredNotice(count)),
+      icon: const Icon(Icons.bluetooth_disabled),
+    );
+    await settings.saveBluetoothRetiredNoticeShown();
   }
 
   void _reconcileRestoreNotices() {
@@ -1002,16 +1029,16 @@ class _AppViewState extends State<_AppView> {
       icon: const Icon(Icons.usb_off_outlined),
       actions: [
         TextButton(
-          onPressed: () => unawaited(openSegnoSettings()),
+          onPressed: () => unawaited(openDeviceSettings()),
           child: AppText(l10n.settingsMenuItem),
         ),
       ],
     );
   }
 
-  /// Startup notice that a newer build is available. Skipped when Settings →
-  /// Updates is already open. "Not now" dismisses that version; "Update…"
-  /// opens the Updates section.
+  /// Startup notice that a newer build is available. Skipped when Updates is
+  /// already open. "Not now" dismisses that version; "Update…" opens the
+  /// Updates settings page.
   void _showUpdateBanner(BuildContext context, UpdateState state) {
     final manifest = state.available;
     if (!state.shouldNotify || manifest == null) {
@@ -1041,7 +1068,7 @@ class _AppViewState extends State<_AppView> {
           key: const Key(AppToastId.updateAction),
           onPressed: () {
             dismissAppToast(AppToastId.update);
-            unawaited(openSegnoSettings(section: SettingsSection.updates));
+            unawaited(openUpdateSettings());
           },
           child: AppText(l10n.updateBannerUpdateAction),
         ),
@@ -1057,6 +1084,17 @@ class _AppViewState extends State<_AppView> {
       type: ToastificationType.error,
       title: AppText(l10n.waveformWindowFailedBanner),
       icon: const Icon(Icons.desktop_access_disabled_outlined),
+    );
+  }
+
+  /// The console now always starts in Record; said once to an install whose
+  /// retired boot default was Mute. Low stakes, nothing to act on: a toast.
+  void _showBootModeRetiredNotice() {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.bootModeRetired,
+      title: AppText(l10n.bootModeRetiredNotice),
+      icon: const Icon(Icons.info_outline),
     );
   }
 
@@ -1179,6 +1217,12 @@ class _AppViewState extends State<_AppView> {
         ),
         BlocListener<ControlCubit, ControlState>(
           listener: (_, _) => _updateDisplayContext(),
+        ),
+        BlocListener<ControlCubit, ControlState>(
+          listenWhen: (previous, current) =>
+              previous.retiredBootMode == null &&
+              current.retiredBootMode != null,
+          listener: (_, _) => _showBootModeRetiredNotice(),
         ),
         BlocListener<TracksCubit, TracksState>(
           listener: (_, _) => _updateDisplayContext(),

@@ -33,8 +33,8 @@ class _ImportEngine extends PumpedNativeEngine {
   bool installForward = false;
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
-    final result = super.finalizeLayers(channel, undoCount, redoCount);
+  EngineResult finalizeHistory(int channel, TrackHistory history) {
+    final result = super.finalizeHistory(channel, history);
     if (result.isOk) finalized = true;
     return result;
   }

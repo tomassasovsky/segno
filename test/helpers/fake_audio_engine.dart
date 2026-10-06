@@ -1431,8 +1431,11 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
-    _importedDepths[channel] = (undoCount, redoCount);
+  TrackHistory exportHistory(int channel) => TrackHistory.none;
+
+  @override
+  EngineResult finalizeHistory(int channel, TrackHistory history) {
+    _importedDepths[channel] = (history.undoCount, history.redoCount);
     return EngineResult.ok;
   }
 
@@ -1526,11 +1529,19 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  int? volumeFreeBytes(String path) => freeBytes;
+  bool syncDirectory(String path) => path.isNotEmpty;
 
-  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
-  /// answer.
+  @override
+  VolumeSpace? volumeSpace(String path) => freeBytes == null
+      ? null
+      : VolumeSpace(totalBytes: totalBytes, freeBytes: freeBytes!);
+
+  /// What [volumeSpace] reports as free; `null` models a platform that
+  /// cannot answer.
   int? freeBytes = 1 << 40;
+
+  /// What [volumeSpace] reports as the volume's size.
+  int totalBytes = 2 << 40;
 
   /// Result returned by [renderBegin].
   EngineResult renderBeginResult = EngineResult.ok;
@@ -1862,11 +1873,13 @@ class _LengthTrack extends TrackSnapshot {
          peak: source.peak,
          clearRestore: source.clearRestore,
          redoDepth: source.redoDepth,
+         peelDepth: source.peelDepth,
          multiple: source.multiple,
          inputMask: source.inputMask,
          outputMask: source.outputMask,
          layerInFlight: source.layerInFlight,
          pending: source.pending,
+         pendingLaunch: source.pendingLaunch,
          lengthPresetBars: bars ?? source.lengthPresetBars,
          oneShot: oneShot ?? source.oneShot,
          settledTakeId: source.settledTakeId,

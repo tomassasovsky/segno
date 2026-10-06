@@ -1,8 +1,8 @@
 # Foot Peel: remove the latest overdub layer as a recoverable history entry
 
-<!-- cspell:ignore plog evt lanei hist acks -->
+<!-- cspell:ignore plog evt lanei hist acks slotless Inténtalo nuevo -->
 
-Status: plan for owner review (merging this plan approves its direction); implementation not started.
+Status: Parts 1 and 2 built and merged into the trunk; Part 3 built (PR #1233), awaiting review and the appliance hardware evidence.
 Tracking: #1164 (parent #1026, M4 operations), `autonomy:merge-gate`.
 Source baseline: `origin/claude/fade-duration-targets-1148` (PR #1156),
 `c9b420d41cd7312f66ea5f15b0e4ed096d4a87f4`. Precedents: Foot Fade
@@ -322,6 +322,54 @@ Base take `1.0`, three passes adding `0.5` (fixture of `test_per_pass_undo_layer
     schema number (12, or 13 if the Reverse Session part lands first; current-schema
     decode only, AGENTS.md), captured at `session_repository.dart:652-695` and
     replayed at `looper_repository.dart:4360-4411`.
+  - Note (Part 2 build): a Clear restore point sits on the redo side after Clear
+    then Undo. It is persisted as kind `clear` with an image of its own, and its
+    Redo re-clears from the live state, which needs none of the CLEAR payload.
+    A cleared track is EMPTY and never captured, so `finalize_history` refuses
+    a CLEAR on the undo side. The in-memory `SessionRigLane` derives `redoCount`
+    from its history instead of storing it twice.
+  - Note (Part 2 review, PR #1194). Each finding and what was done:
+    - Finding 1 (capture split by the gated depth). `le_engine_export_history`
+      now returns the raw `undo_count` through an out parameter, and the Dart
+      seam returns one `TrackHistory` value (entries plus that split). Capture
+      splits by it, so the published `undo_depth`, which reads 0 while a Clear
+      restore is in flight, never meets the raw stacks. The silent
+      `continue` on a disagreement is gone because the disagreement can no
+      longer happen.
+    - Finding 3 (strictness). Both validators (`le_engine_finalize_history`
+      and `TrackHistory.malformation`, which decode runs) now also refuse:
+      a CLEAR that is not the last entry; a `skipped` of `LE_POOL_SLOTS` or
+      more; an undo-side PEEL whose `skipped` exceeds the PEEL run directly
+      beneath it; and a redo marker that finds no LAYER when the redo walk
+      reaches it.
+    - Deviation from the review's wording. The run bound has an exception
+      for a run that reaches the bottom of the stack. Pool eviction removes
+      the oldest entries and Undo clamps its re-insertion there, so the live
+      engine can hold that shape. Refusing it would stop a real save from
+      opening (rule 1).
+    - The marker's own `skipped` is not checked against the walk, for two
+      reasons. Redo recomputes it (`le_peel_target`). After an eviction
+      clamp the two legitimately differ.
+    - Finding 5 (`SessionLane` shape). `SessionLane.history` is a required
+      `TrackHistory`, and `undoCount`/`redoCount` derive from it. The JSON
+      keeps both fields, and decode cross-checks the stored `redoCount`.
+      `SessionRigLane` carries the same value.
+    - Finding 4 (docs). `docs/design/session-bundle-format.md` now describes
+      v12 and the current-only rule, keeps the presence-keyed table as
+      history, and lists v8-v12. The `SessionCorruptLayers` comment is
+      current.
+    - Not done here, pre-existing (rule 5, follow-up). A lane whose image
+      export comes back short is still skipped without a notice
+      (`session_repository.dart`, the `layerPcm.length != total` check).
+      The native torn check accepts a stale allocated slot; Dart's decode
+      and `applySession` make that unreachable today, and a staged-slot
+      bitmask would close it if another caller appears.
+    - Not done here, owner decision. Appliance sessions are v7 or older. The
+      v7-to-current migration chain is #1196. A v11 bundle becomes v12 by
+      giving each lane `history` = `undoCount + redoCount` entries of
+      `{kind: layer, skipped: 0}` and keeping `undoCount`, `redoCount` and
+      `layers` unchanged. That is exactly how v11 recall filed them, and v11
+      capture dropped any track holding a redo marker.
 - Reopen (#1158): the stacks are material (its table keeps `undo_count`,
   `redo_count`, `a_undo_depth`, `a_redo_depth` for retained tracks). Peel has no
   pending shape: it completes on the control thread and the only cross-thread
@@ -498,6 +546,98 @@ NON-GOALS:
 - Queued peels, hold gestures, new owners, native changes beyond label plumbing.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
+
+#### Part 3 as built
+
+Status: built on branch `claude/peel-1164-p3` (PR #1233), merged with the
+trunk that carries Part 2 and Reverse Part 3. It follows the Reverse surface
+(#1162 Part 3, PR #1209) and avoids the findings of that PR's review.
+
+- **Mode and vocabulary.**
+  - `InteractionMode.peel` is not a boot default; the mode chip and
+    `toggleMode` return to Tracks.
+  - `ModeAction` token `peel`.
+  - `TrackOperation.peel`, with `allowsAllTracks` false, like Clear.
+  - Labels in English and Spanish.
+- **Model and actions.**
+  - `lib/control/model/foot_peel.dart` holds the role table: every role
+    fires on contact, and Undo and Clear are `none`.
+  - A `FootPeelTrack` keeps `hasContent`, `layers` (`Track.layers`) and
+    `busy` (capturing, layer in flight, or Count-in launch) apart.
+    `available` is `Track.canPeel`.
+  - A busy recorded track therefore reads its real layer count, dimmed,
+    never "Empty" (Reverse review, Medium 2).
+  - The stateless `FootPeelActions.peel` returns null when a layer was
+    removed, or a `FootPeelRefusal`: `empty`, `originalOnly`, `busy` or
+    `failed`. The surface and every assigned Peel share it.
+- **Notice policy, shared by Fade, Reverse and Peel (rules 3 and 4).**
+  - On the surface, an EMPTY track's pedal is dimmed and silent, as on Fade
+    and Reverse: there is nothing there to act on, and the dimmed pedal and
+    "Empty" word already say so.
+  - On the surface, a press on a RECORDED track that removes nothing (busy,
+    original only, or an engine refusal) raises
+    `ControlState.footPeelFailure`/`footPeelRefusal`, and Tracks shows one
+    toast with the reason: a warning, or an error for `failed`. Reverse does
+    the same for a busy recorded track.
+  - An ASSIGNED Peel (Custom, CTRL, MIDI) that removes nothing always shows
+    its toast, in any mode, the empty-track case included. The stomp came
+    from a control away from the track, so silence would read as a dead
+    pedal.
+  - A separate commit gives assigned Fade and Reverse the same rule: when an
+    assigned toggle reaches no track (every target refused or empty), their
+    failure notice now shows in any mode, so no assigned refusal is silent.
+  - §3 said an unavailable track is refused "without a notice". The policy
+    above keeps that only for the empty track on the surface.
+  - Peel completes on the control thread, so the report always belongs to
+    the press that caused it. It needs none of Reverse's visit or session
+    checks for a late result.
+- **Surface pedals.**
+  - A recorded track's pedal takes a press even when it cannot peel now, so
+    the refusal can say why; an empty track's pedal is disabled.
+  - The selection bar and the physical LED light only while `canPeel`.
+- **Gating.**
+  - `_peelEditable` checks `_takeLocked()`, input retirement and the
+    Session transition. It covers contacts, `peelFootPeelTrack` and
+    semantic activation; Exit bypasses it.
+  - Assigned paths keep their existing `_takeLocked()` gates (Custom,
+    External/CTRL, MIDI).
+- **`trackPressed` is inert in Peel mode**, as in Mixer and Fade (Reverse
+  review, Low 3).
+- **LED.**
+  - Blue while `canPeel`, so "none remain", the drain window, capture and
+    a pending launch are visible by foot.
+  - The physical mask treats slot-less Fade, Reverse and Peel pedals alike
+    through `_slotless`.
+  - The wire mode is `PedalMode.custom`.
+- **No Tracks status marker.** The layer badge already reports
+  `Track.layers`, which Part 1 makes drop on a peel, so nothing new paints
+  in the meta row (Reverse review, Medium 1).
+- **Overview wording.**
+  - The overview heading is "Layers", and counts include the original, as
+    the badge does.
+  - One layer reads "Original only".
+  - The Spanish keeps "Peel" in English, like "Fade". Its retry wording is
+    the file's ("Inténtalo de nuevo"), the same as every sibling notice.
+- **Test helper fix.** The root `FakeAudioEngine` snapshot wrapper now
+  forwards `peelDepth` and `pendingLaunch`, which it had dropped since
+  Part 1.
+- **Pen.** `segno-ui.pen` has no Peel performance screen. It lists the mode
+  in the external function picker ("Peel", "Remove an overdub layer") and
+  uses "Hold · Peel" as a Custom assignment example.
+  - The surface follows the Fade and Reverse layout.
+  - Pen write-back list (outstanding, not done in code work; the pen is
+    edited only by its owner):
+    - add a Peel performance frame beside 13 (Reverse) with the overview
+      heading "Layers" and the "N layers", "Original only" and "Empty"
+      words;
+    - draw the empty track's pedal dimmed;
+    - add the three recorded-track refusal notices and the assigned-Peel
+      notice, with a `c/` note recording the notice policy above.
+- **Merge with Reverse Part 3.** Both edited the same mode switches; the
+  merge keeps both arms, and the identical Reverse and Peel cases in
+  `setMode` and `recPlay` are one grouped case each.
+- **Outstanding:** the appliance hardware evidence (the last success
+  criterion).
 
 ## 5. Decisions taken under the standing rules
 
