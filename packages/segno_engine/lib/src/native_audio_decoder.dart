@@ -152,10 +152,35 @@ _Probed _probeHere(String path, int buckets) {
 
 /// A native decode's buffer. `NativeAudioEngine` hands [buffer] to the
 /// engine; everything else goes through [DecodedAudio].
+///
+/// A native finalizer frees the buffer if the payload is dropped while still
+/// owned (an exception between a decode and its hand-over, an engine already
+/// disposed): the explicit protocol stays primary, the finalizer only bounds
+/// the damage of a missed path (review of P3, L2). It is detached when the
+/// engine takes the buffer and when [free] runs.
 @internal
-class NativeDecodedAudioPayload implements DecodedAudioPayload {
+class NativeDecodedAudioPayload implements DecodedAudioPayload, Finalizable {
   /// Wraps [buffer], read and freed through [_bindings].
-  NativeDecodedAudioPayload(this._bindings, this.buffer);
+  NativeDecodedAudioPayload(this._bindings, this.buffer) {
+    if (buffer != nullptr) {
+      _finalizer.attach(this, buffer.cast(), detach: this);
+      _attached = true;
+    }
+  }
+
+  /// One finalizer for the process: `le_backing_buffer_free` from the
+  /// engine library.
+  static final NativeFinalizer _finalizer = NativeFinalizer(
+    openSegnoEngineLibrary().lookup<NativeFinalizerFunction>(
+      'le_backing_buffer_free',
+    ),
+  );
+
+  bool _attached = false;
+
+  /// Whether the finalizer still guards the buffer.
+  @visibleForTesting
+  bool get finalizerAttached => _attached;
 
   final SegnoEngineBindings _bindings;
 
@@ -180,5 +205,15 @@ class NativeDecodedAudioPayload implements DecodedAudioPayload {
   }
 
   @override
-  void free() => _bindings.le_backing_buffer_free(buffer);
+  void free() {
+    detach();
+    _bindings.le_backing_buffer_free(buffer);
+  }
+
+  @override
+  void detach() {
+    if (!_attached) return;
+    _attached = false;
+    _finalizer.detach(this);
+  }
 }

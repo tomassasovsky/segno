@@ -163,4 +163,7 @@ class _MockPayload implements DecodedAudioPayload {
     _freed = true;
     _decoder.freed++;
   }
+
+  @override
+  void detach() {}
 }

@@ -178,6 +178,46 @@ void main() {
       audio.dispose();
     });
 
+    test('a configured but stopped engine still takes backing calls, as '
+        'the native one does (review of P3, L1)', () async {
+      final audio = await decode('a');
+      engine.stop();
+      expect(engine.backingLoad(audio, item: 3, play: false), EngineResult.ok);
+      expect(engine.backingTransport(BackingTransportOp.play), EngineResult.ok);
+      expect(engine.backingSeek(10), EngineResult.ok);
+      expect(engine.backingStageNext(null, item: -1), EngineResult.ok);
+      expect(engine.backingState().item, 3);
+      expect(engine.backingClear(), EngineResult.ok);
+    });
+
+    test('a retained reopen keeps the loaded and staged files, stopped at '
+        '0, and bumps the epoch; a rate change frees them', () async {
+      final a = await decode('a');
+      final b = await decode('b');
+      engine
+        ..backingLoad(a, item: 1, play: true)
+        ..backingStageNext(b, item: 2)
+        ..advanceBacking(50)
+        ..stop();
+      final epoch = engine.backingState().epoch;
+      final kept = engine.reopen(_config);
+      expect(kept.outcome, ReopenOutcome.retained);
+      var s = engine.backingState();
+      expect(s.epoch, epoch + 1);
+      expect((s.item, s.nextItem, s.owned), (1, 2, 2));
+      expect((s.transport, s.position), (BackingTransport.stopped, 0));
+      expect(decoder.freed, 0);
+      engine.stop();
+      final cleared = engine.reopen(
+        const EngineConfig(sampleRate: 44100, outputChannels: 2),
+      );
+      expect(cleared.outcome, ReopenOutcome.clearedRate);
+      s = engine.backingState();
+      expect(s.epoch, epoch + 2);
+      expect((s.item, s.owned), (-1, 0));
+      expect(decoder.freed, 2);
+    });
+
     test('load transfers, plays and stops at the end', () async {
       final audio = await decode('a');
       expect(engine.backingLoad(audio, item: 7, play: true), EngineResult.ok);

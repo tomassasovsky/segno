@@ -227,7 +227,9 @@ class MockAudioEngine implements AudioEngine {
   String get deviceName => _running ? deviceLabel : '';
 
   @override
-  EngineResult start(EngineConfig config) {
+  EngineResult start(EngineConfig config) => _start(config);
+
+  EngineResult _start(EngineConfig config, {bool keepBacking = false}) {
     if (_running) return EngineResult.alreadyRunning;
     _activeConfig = config;
     _running = true;
@@ -251,8 +253,15 @@ class MockAudioEngine implements AudioEngine {
     // mirrors engine.c:371-372 (has_tap/last_tap_frame reset on configure).
     _lastTapAt = null;
     // A fresh start is a configure: the backing buffers were decoded at the
-    // old rate and go; the settings stay; the owner sees a new epoch.
-    _backingRelease();
+    // old rate and go; the settings stay; the owner sees a new epoch. A
+    // retained reopen keeps both buffers, stopped at 0, like the native
+    // engine's le_engine_reset_runtime.
+    if (keepBacking) {
+      _backingTransport = BackingTransport.stopped;
+      _backingPosition = 0;
+    } else {
+      _backingRelease();
+    }
     _backingEpoch++;
     return EngineResult.ok;
   }
@@ -296,7 +305,11 @@ class MockAudioEngine implements AudioEngine {
     final outcome = requested == previous
         ? ReopenOutcome.retained
         : ReopenOutcome.clearedRate;
-    return (result: start(config), outcome: outcome, droppedTracks: 0);
+    return (
+      result: _start(config, keepBacking: outcome == ReopenOutcome.retained),
+      outcome: outcome,
+      droppedTracks: 0,
+    );
   }
 
   @override
@@ -1773,13 +1786,24 @@ class MockAudioEngine implements AudioEngine {
   int get _backingOwnedBytes =>
       (_backingCur?.bytes ?? 0) + (_backingNext?.bytes ?? 0);
 
+  /// The native engine accepts backing calls whenever it is configured, a
+  /// stopped device included; the mock is configured from its first start.
+  EngineResult _requireConfigured() => _running || _lastSampleRate != null
+      ? EngineResult.ok
+      : EngineResult.notRunning;
+
+  /// The rate the engine is configured at, running or not.
+  int get _configuredRate =>
+      _activeConfig?.sampleRate ?? _lastSampleRate ?? 48000;
+
   EngineResult _backingAdmit(DecodedAudio audio) {
-    final running = _requireRunning();
-    if (!running.isOk) return running;
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
     if (!audio.isOwned ||
+        audio.frames <= 0 ||
         identical(audio, _backingCur) ||
         identical(audio, _backingNext) ||
-        audio.sampleRate != (_activeConfig?.sampleRate ?? 48000)) {
+        audio.sampleRate != _configuredRate) {
       return EngineResult.invalid;
     }
     if (_backingOwnedBytes + audio.bytes > _backingBudgetBytes) {
@@ -1827,8 +1851,8 @@ class MockAudioEngine implements AudioEngine {
       if (!admit.isOk) return admit;
       audio.markTransferred();
     } else {
-      final running = _requireRunning();
-      if (!running.isOk) return running;
+      final configured = _requireConfigured();
+      if (!configured.isOk) return configured;
     }
     _backingFree(_backingNext);
     _backingNext = audio;
@@ -1838,16 +1862,16 @@ class MockAudioEngine implements AudioEngine {
 
   @override
   EngineResult backingClear() {
-    final running = _requireRunning();
-    if (!running.isOk) return running;
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
     _backingRelease();
     return EngineResult.ok;
   }
 
   @override
   EngineResult backingTransport(BackingTransportOp op) {
-    final running = _requireRunning();
-    if (!running.isOk) return running;
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
     if (_backingCur == null) return EngineResult.ok;
     switch (op) {
       case BackingTransportOp.play:
@@ -1865,8 +1889,8 @@ class MockAudioEngine implements AudioEngine {
 
   @override
   EngineResult backingSeek(int frame) {
-    final running = _requireRunning();
-    if (!running.isOk) return running;
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
     final cur = _backingCur;
     if (cur == null) return EngineResult.ok;
     _backingPosition = frame.clamp(0, cur.frames - 1);
