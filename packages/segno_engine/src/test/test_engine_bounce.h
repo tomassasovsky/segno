@@ -474,6 +474,14 @@ static void test_bounce_topology_grows_playing_destination(void) {
     CHECK(l[f] == render[2 * f]);
     CHECK(r[f] == render[2 * f + 1]);
   }
+  /* Its recovery, which carries no topology of its own here, waits for a
+   * lane-count change the callback has not published yet. */
+  const le_mix_settings two_on_zero = bb_lanes(0, 2);
+  CHECK(le_engine_set_mix(e, &two_on_zero) == LE_OK);
+  le_bounce_recover_request u = {1, 0, NULL, NULL, 0, NULL};
+  CHECK(le_engine_bounce_recover(e, &u, &receipt) == LE_ERR_NOT_READY);
+  drain(e);
+  CHECK(bb_recover(e, 1, 0, NULL, 0, NULL) == LE_OK);
   le_engine_destroy(e);
 }
 
@@ -498,15 +506,9 @@ static void test_bounce_names_its_image(void) {
   const le_mix_settings two = bb_lanes(0, 2);
   le_bounce_request b = {id, 0, 1, &two, NULL, 0, NULL};
   uint64_t receipt = 0;
-  const int32_t brc = le_engine_bounce(e, &b, &receipt);
-  printf("  brc %d out %d cr %d cp %d q %d armed %d pend %d launch %d lif %d st %d/%d grow %d ready %d\n", brc,
-         e->tracks[0].outstanding_count, e->tracks[0].clear_restore_pending,
-         e->tracks[0].cancel_pending, e->tracks[0].queued_undo, e->armed[0],
-         atomic_load(&e->tracks[0].a_pending), atomic_load(&e->tracks[0].a_pending_launch),
-         atomic_load(&e->tracks[0].a_layer_in_flight), (int)e->tracks[0].state_cmds_posted,
-         (int)atomic_load(&e->tracks[0].a_state_acks), (int)(e->lane_growth_command > atomic_load(&e->a_commands_published)),
-         le_cache_source_ready(e, 0));
-  CHECK(brc == LE_OK);
+  /* The overdubbed track holds spare shadows; they do not refuse it. */
+  CHECK(e->tracks[0].outstanding_count > 0);
+  CHECK(le_engine_bounce(e, &b, &receipt) == LE_OK);
   const int32_t slot = e->tracks[0].bounce_pin[0] - 1;
   CHECK(slot >= 0);
   const uint32_t staged =
@@ -531,6 +533,17 @@ static void test_bounce_names_its_image(void) {
     }
   }
   CHECK(named == 1);
+  /* The install dropped the old-length shadows and the control side took
+   * their slots back; an overdub on the bounce gets fresh ones and files
+   * one layer. */
+  CHECK(e->tracks[0].outstanding_count == 0);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  const int depth = e->tracks[0].undo_count;
+  float more[HR_LEN];
+  for (int i = 0; i < HR_LEN; ++i) more[i] = 0.125f;
+  history_overdub_pass(e, more);
+  CHECK(e->tracks[0].undo_count == depth + 1);
   le_engine_destroy(e);
 }
 

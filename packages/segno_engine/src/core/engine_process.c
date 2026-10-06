@@ -2840,9 +2840,12 @@ static int32_t le_bounce_install(le_engine* e, le_bounce_bundle* b,
      * clocks, mutes, and the master when the rig is now empty), then its own
      * live slot again. */
     handle_clear(e, ch, 0, frame);
+    le_dub_drop_armed(t); /* control reclaims them when it files the result */
     if (g->slot >= 0) le_track_publish_live(t, g->slot);
     return LE_OK;
   }
+  /* The armed overdub shadows are sized for the old length: dropped here,
+   * reclaimed by the control side when it files the result. */
   le_dub_drop_armed(t);
   le_transform_reset(e, t, frame); /* provenance first: the image is named
                                     * by the staged id at its first mix */
