@@ -1,5 +1,6 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
+import 'package:segno/control/binding/control_value_target.dart';
 
 /// The MIDI mapping editor's unsaved edit.
 ///
@@ -20,7 +21,7 @@ class MidiMappingDraft extends Equatable {
     id: id,
     source: source,
     behavior: behavior,
-    controls: List.unmodifiable(controls),
+    controls: List.unmodifiable(controls.map(_settled)),
   );
 
   const MidiMappingDraft._({
@@ -256,6 +257,20 @@ class MidiMappingDraft extends Equatable {
     behavior: behavior ?? this.behavior,
     controls: List.unmodifiable(controls ?? this.controls),
   );
+
+  /// A parameter control's endpoints as its target reads them: a level
+  /// fader's literal 1.0 is unity at authoring, as it is at load.
+  static MidiControl _settled(MidiControl control) =>
+      switch ((control, ControlValueTarget.tryParse(control.key))) {
+        (final MidiParameterControl parameter, final target?)
+            when target.decodeEndpoint(parameter.low) != parameter.low ||
+                target.decodeEndpoint(parameter.high) != parameter.high =>
+          parameter.copyWith(
+            low: target.decodeEndpoint(parameter.low),
+            high: target.decodeEndpoint(parameter.high),
+          ),
+        _ => control,
+      };
 
   @override
   List<Object?> get props => [device, id, source, behavior, controls];
