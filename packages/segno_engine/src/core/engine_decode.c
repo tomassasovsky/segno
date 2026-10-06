@@ -892,10 +892,14 @@ int32_t le_backing_decode_file(const char* path, int32_t sample_rate,
     const int64_t reached = (end - margin) * sample_rate / s.rate;
     if (first + count > reached) count = reached - first;
   }
-  if (count <= 0) {
+  /* A bounded read can start where no output frame of the whole file's
+   * grid begins (the last source frame of a reduction): that is an empty
+   * read, not a damaged file (review of #1223, L5). */
+  if (count < 0 || (count == 0 && whole)) {
     rc = LE_ERR_INVALID;
     goto done;
   }
+  if (count < 0) count = 0;
   if (count > INT32_MAX) {
     rc = LE_ERR_TOO_LONG;
     goto done;
@@ -903,13 +907,13 @@ int32_t le_backing_decode_file(const char* path, int32_t sample_rate,
   if (info != NULL && !whole && first + count < grid) info->truncated = 1;
   b = (le_backing_buffer*)calloc(1, sizeof(*b));
   if (b != NULL) {
-    b->pcm = (float*)malloc((size_t)count * 2u * sizeof(float));
+    b->pcm = (float*)malloc((size_t)(count > 0 ? count : 1) * 2u * sizeof(float));
   }
   if (b == NULL || b->pcm == NULL) {
     rc = LE_ERR_CAPACITY;
     goto done;
   }
-  for (int side = 0; side < 2 && rc == LE_OK; ++side) {
+  for (int side = 0; side < 2 && rc == LE_OK && count > 0; ++side) {
     const int c = ch == 2 ? side : 0;
     const float* in = k > 0 ? plane[c] : src + c;
     const int32_t stride = k > 0 ? 1 : ch;

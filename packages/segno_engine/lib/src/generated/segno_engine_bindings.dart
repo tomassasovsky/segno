@@ -2875,6 +2875,9 @@ class SegnoEngineBindings {
   /// first output frame at or after [start_frame] (source frames) and keeps at
   /// most [max_frames] output frames, setting info->truncated when the file goes
   /// on; its samples are exactly the whole-file decode's at the same positions.
+  /// A bounded read that starts past the last output frame (the last source
+  /// frame of a reduction) returns LE_OK with an empty (0-frame) buffer, which
+  /// the voice refuses to load.
   ///
   /// Refuses with LE_ERR_CAPACITY when the decode's peak (the source, the
   /// planes a halving works on, and the output) would leave less than
@@ -3005,8 +3008,8 @@ class SegnoEngineBindings {
   /// Replaces the loaded buffer at the next block: the old one fades out if it
   /// was sounding; the new one starts at frame 0, playing when [play] is 1,
   /// else Stopped. [item] is the caller's token, reported back in the state.
-  /// LE_ERR_INVALID: NULL, a buffer the engine already owns, a rate other than
-  /// the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
+  /// LE_ERR_INVALID: NULL, an empty buffer, a buffer the engine already owns, a
+  /// rate other than the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
   /// configured. Past LE_BACKING_MAX_BUFFERS or LE_BACKING_BUDGET_BYTES:
   /// LE_ERR_NOT_READY while a buffer is in transit, else LE_ERR_CAPACITY (see
   /// Buffers above).
@@ -5431,9 +5434,12 @@ class SegnoEngineBindings {
   /// byte `offset`; `length` = UINT64_MAX means through the end of the file.
   /// Reads in 64 KiB chunks, so a multi-gigabyte recording costs no memory.
   /// Returns LE_OK; LE_ERR_INVALID for a NULL or empty `path` or NULL `out`;
-  /// LE_ERR_DEVICE when the file cannot be opened, is not a regular file, is
-  /// shorter than `offset` + `length` (a damaged file never yields a digest of
-  /// what happens to be left), or a read fails.
+  /// LE_ERR_NOT_FOUND when nothing exists at `path`; LE_ERR_TRUNCATED when the
+  /// file is shorter than `offset` + `length` (a damaged file never yields a
+  /// digest of what happens to be left); LE_ERR_DEVICE when it cannot be opened
+  /// for another reason, is not a regular file, or a read fails. The codes tell
+  /// a missing recording from a damaged one without a separate stat that the
+  /// file could change under.
   int le_digest_file(
     ffi.Pointer<ffi.Char> path,
     int offset,
@@ -5462,6 +5468,73 @@ class SegnoEngineBindings {
   late final _le_digest_file = _le_digest_filePtr
       .asFunction<
         int Function(ffi.Pointer<ffi.Char>, int, int, ffi.Pointer<ffi.Uint8>)
+      >();
+
+  int le_digest_begin(
+    ffi.Pointer<ffi.Void> state,
+    int state_bytes,
+  ) {
+    return _le_digest_begin(
+      state,
+      state_bytes,
+    );
+  }
+
+  late final _le_digest_beginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Uint64)
+        >
+      >('le_digest_begin');
+  late final _le_digest_begin = _le_digest_beginPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int)>();
+
+  int le_digest_update(
+    ffi.Pointer<ffi.Void> state,
+    ffi.Pointer<ffi.Void> data,
+    int length,
+  ) {
+    return _le_digest_update(
+      state,
+      data,
+      length,
+    );
+  }
+
+  late final _le_digest_updatePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Void>,
+            ffi.Uint64,
+          )
+        >
+      >('le_digest_update');
+  late final _le_digest_update = _le_digest_updatePtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Void>, int)
+      >();
+
+  int le_digest_end(
+    ffi.Pointer<ffi.Void> state,
+    ffi.Pointer<ffi.Uint8> out,
+  ) {
+    return _le_digest_end(
+      state,
+      out,
+    );
+  }
+
+  late final _le_digest_endPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Uint8>)
+        >
+      >('le_digest_end');
+  late final _le_digest_end = _le_digest_endPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Uint8>)
       >();
 
   /// Makes the directory entries of `path` durable: open + fsync on POSIX, which
@@ -6578,7 +6651,15 @@ enum le_result {
   LE_ERR_REVERSED(-9),
 
   /// a backing file over LE_BACKING_MAX_SECONDS (#1200)
-  LE_ERR_TOO_LONG(-12);
+  LE_ERR_TOO_LONG(-12),
+
+  /// the file (or a directory on its path) does not
+  /// exist (#1198)
+  LE_ERR_NOT_FOUND(-18),
+
+  /// the file exists but is shorter than the range
+  /// it must hold (#1198)
+  LE_ERR_TRUNCATED(-19);
 
   final int value;
   const le_result(this.value);
@@ -6595,6 +6676,8 @@ enum le_result {
     -8 => LE_ERR_NOT_READY,
     -9 => LE_ERR_REVERSED,
     -12 => LE_ERR_TOO_LONG,
+    -18 => LE_ERR_NOT_FOUND,
+    -19 => LE_ERR_TRUNCATED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -8635,3 +8718,5 @@ const int LE_BACKING_MAX_SECONDS = 900;
 const int LE_MEM_RESERVE_BYTES = 536870912;
 
 const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;
+
+const int LE_DIGEST_STATE_BYTES = 128;
