@@ -465,17 +465,18 @@ void main() {
       expect(await repo.space(const StorageDestination.removable(9)), isNull);
     });
 
-    test('recording time on Internal keeps the 1 GiB reserve back', () async {
+    test('recording time on Internal keeps the 1 GB reserve back: the '
+        "pen's 64.0 GB free at 48 kHz 24-bit stereo is 60 hr 45 min", () async {
       repo = h.build();
       h.spaces[h.exports] = const VolumeSpace(
-        totalBytes: 128 * gib,
-        freeBytes: 64 * gib,
+        totalBytes: 128000000000,
+        freeBytes: 64000000000,
       );
 
-      expect(
-        await repo.recordingTimeRemaining(internal, 288000),
-        const Duration(seconds: (64 * gib - 1 * gib) ~/ 288000),
-      );
+      final time = await repo.recordingTimeRemaining(internal, 288000);
+
+      expect(time, const Duration(seconds: 63000000000 ~/ 288000));
+      expect(time, const Duration(hours: 60, minutes: 45, seconds: 50));
     });
 
     test('recording time on a removable volume applies no reserve', () async {
@@ -499,7 +500,7 @@ void main() {
 
       h.spaces[h.exports] = const VolumeSpace(
         totalBytes: 128 * gib,
-        freeBytes: gib ~/ 2,
+        freeBytes: StorageRepository.internalReserveBytes ~/ 2,
       );
       expect(
         await repo.recordingTimeRemaining(internal, 288000),
@@ -518,13 +519,13 @@ void main() {
 
       h.spaces[h.exports] = const VolumeSpace(
         totalBytes: 128 * gib,
-        freeBytes: gib - 1,
+        freeBytes: StorageRepository.internalReserveBytes - 1,
       );
       expect(await repo.lowInternalSpace(), isTrue);
 
       h.spaces[h.exports] = const VolumeSpace(
         totalBytes: 128 * gib,
-        freeBytes: gib,
+        freeBytes: StorageRepository.internalReserveBytes,
       );
       expect(await repo.lowInternalSpace(), isFalse);
     });

@@ -51,9 +51,12 @@ class StorageRepository {
   }
 
   /// Space kept free on Internal so the system, the session store and Undo
-  /// audio never run out behind a recording (accepted behaviour §6.7; the
-  /// Storage page's "Internal storage · 1.0 GB reserved").
-  static const int internalReserveBytes = 1 << 30;
+  /// audio never run out behind a recording: accepted behaviour §6.7's "1 GB
+  /// reserve", and the Storage page's "Internal storage · 1.0 GB reserved".
+  /// Decimal, like every figure the page prints: a 1 GiB reserve would read
+  /// "1.1 GB reserved", and the pen's 64.0 GB free would not come to its
+  /// 60 hr 45 min at 48 kHz 24-bit stereo.
+  static const int internalReserveBytes = 1000000000;
 
   /// How long an eject request may go unanswered before it is withdrawn and
   /// reported as `EjectOutcome.failed('timeout')`.
