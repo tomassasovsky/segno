@@ -6416,7 +6416,10 @@ static void le_clock_sync_apply(le_engine* e, const le_command* cmd) {
 }
 
 /* Writes the follower's tempo as the session tempo while it is free to change
- * (no content locks it, D6). Once per beat, and at every acquisition. */
+ * (no content locks it, D6). Once per beat, from a beat after an acquisition
+ * or re-fit (le_clock_follow_tempo_ready): the seed itself is never written,
+ * so a rig never runs a beat at a tempo the next beat corrects (PR #1259
+ * review M1). */
 static void le_clock_write_tempo(le_engine* e) {
   const le_clock_follow* f = &e->clock_follow;
   if (f->state != LE_CLOCK_FOLLOW_SYNCED || le_tempo_locked(e)) return;
@@ -6429,24 +6432,25 @@ static void le_clock_write_tempo(le_engine* e) {
   e->clock_tempo_pulses = f->pulses;
 }
 
-/* How old a queued pulse may be and still be fed to the follower: its loss
- * floor. While the device is stopped nothing drains the rings, so the first
- * block after a start can hold old pulses (PR #1246 review note). */
+/* How old a queued clock message may be and still be fed to the follower:
+ * its loss floor. While the device is stopped nothing drains the rings, so
+ * the first block after a start can hold old pulses, and old Start, Continue
+ * and Stop bytes, which must not set the transport state now either (PR #1246
+ * review note; PR #1259 review L4). */
 #define LE_CLOCK_BACKLOG_NS 250000000ull
 
 /* Feeds one current event of the source port to the follower. */
 static uint32_t le_clock_dispatch(le_engine* e, const le_midi_port_event* ev,
                                   uint64_t now_ns) {
+  const int old =
+      now_ns > LE_CLOCK_BACKLOG_NS && ev->t_ns < now_ns - LE_CLOCK_BACKLOG_NS;
   switch (ev->status) {
     case 0xF8u:
-      if (now_ns > LE_CLOCK_BACKLOG_NS && ev->t_ns < now_ns - LE_CLOCK_BACKLOG_NS) {
-        return 0u;
-      }
-      return le_clock_follow_pulse(&e->clock_follow, ev->t_ns);
+      return old ? 0u : le_clock_follow_pulse(&e->clock_follow, ev->t_ns);
     case 0xFAu:
     case 0xFBu:
     case 0xFCu:
-      le_clock_follow_transport(&e->clock_follow, ev->status);
+      if (!old) le_clock_follow_transport(&e->clock_follow, ev->status);
       return 0u;
     default:
       return 0u;
@@ -6462,7 +6466,10 @@ static void le_clock_step(le_engine* e, uint32_t events, uint64_t now_ns) {
   if (events & LE_CLOCK_EVENT_LOST) {
     atomic_fetch_add_explicit(&e->a_clock_losses, 1u, memory_order_relaxed);
   }
-  if ((events & (LE_CLOCK_EVENT_SYNCED | LE_CLOCK_EVENT_REACQUIRED)) ||
+  if (events & (LE_CLOCK_EVENT_SYNCED | LE_CLOCK_EVENT_REACQUIRED)) {
+    e->clock_tempo_pulses = f->pulses; /* the first write is a beat on */
+  }
+  if (le_clock_follow_tempo_ready(f) &&
       f->pulses - e->clock_tempo_pulses >= (uint64_t)LE_CLOCK_FOLLOW_PPQN) {
     le_clock_write_tempo(e);
   }
@@ -6500,11 +6507,11 @@ static void le_midi_port_dispatch(le_engine* e, int port, int kind,
       break;
     case LE_MIDI_DISPATCH_REBOUND:
       n->rebinds++;
-      /* Another capture (or none) now feeds the source port: start over. */
-      if (source) {
-        le_clock_follow_reset(&e->clock_follow, load_i32(&e->a_ts_den));
-        e->clock_tempo_pulses = 0;
-      }
+      /* The binding that fed the source port ended: a Synced follower has
+       * lost its clock (counted, LOST, tempo and readout kept), a Lost one
+       * stays Lost, and no acquisition line spans the two bindings (PR #1259
+       * review M2). */
+      if (source) n->clock |= le_clock_follow_lost(&e->clock_follow);
       break;
     default: break;
   }
@@ -6533,22 +6540,39 @@ static void le_midi_port_dispatch(le_engine* e, int port, int kind,
  *      generation.
  *   3. LOST after the events: the lost flag is read (acquire) before the
  *      pops, and the producer marks it after pushing everything it read
- *      before the device went away, so those events come first.
+ *      before the device went away, so those events come first. When the
+ *      binding changes in the same drain, that loss belongs to the binding
+ *      that ended and is dispatched just before its REBOUND, never after the
+ *      new binding's events.
  * Instruments release a port's voices on GAP, LOST and REBOUND (review H3);
- * the clock follower counts pulses across a GAP and goes Lost on LOST.
+ * the clock follower counts pulses across a GAP and goes Lost on LOST and
+ * on REBOUND.
  * Bounded: at most LE_MIDI_PORT_RING_CAP events per port per block, no
  * allocation, no lock. */
+/* Dispatches a port's loss before the binding change that follows it, once
+ * per drain: the lost flag read at the start of the drain belongs to the
+ * binding that ended (PR #1246 review DL1). */
+static void le_midi_port_lost_before_rebind(le_engine* e, int p,
+                                            int32_t is_lost, int* lost_done,
+                                            le_midi_drain_counts* n) {
+  if (is_lost && !e->midi_port_lost_seen[p] && !*lost_done) {
+    le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_LOST, NULL, n);
+    *lost_done = 1;
+  }
+}
+
 static void le_midi_ports_drain(le_engine* e) {
   le_midi_drain_counts n = {0u, 0u, 0u, 0u, 0u, 0u, 0u};
   if (e->clock_source >= 0) n.now_ns = le_clock_now(e);
   for (int p = 0; p < LE_MAX_MIDI_PORTS; ++p) {
     le_midi_port* port = &e->midi_ports[p];
-    const int is_source = p == e->clock_source;
     const int32_t is_lost =
         atomic_load_explicit(&port->a_lost, memory_order_acquire);
     uint32_t gen = atomic_load_explicit(&port->a_gen, memory_order_acquire);
+    int lost_done = 0;
     if (gen != e->midi_port_gen_seen[p]) {
       e->midi_port_gen_seen[p] = gen;
+      le_midi_port_lost_before_rebind(e, p, is_lost, &lost_done, &n);
       le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_REBOUND, NULL, &n);
     }
     /* Read before popping: every event queued below the gap index precedes
@@ -6562,7 +6586,6 @@ static void le_midi_ports_drain(le_engine* e) {
       if (gap != 0 && !gap_reported && index + 1u >= gap) {
         le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_GAP, NULL, &n);
         gap_reported = 1;
-        if (is_source) le_clock_follow_gap(&e->clock_follow);
       }
       if (ev.gen != gen) {
         /* A binding made while this drain runs pushes a newer generation
@@ -6575,6 +6598,7 @@ static void le_midi_ports_drain(le_engine* e) {
         }
         gen = now_gen;
         e->midi_port_gen_seen[p] = gen;
+        le_midi_port_lost_before_rebind(e, p, is_lost, &lost_done, &n);
         le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_REBOUND, NULL, &n);
       }
       le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_EVENT, &ev, &n);
@@ -6586,7 +6610,7 @@ static void le_midi_ports_drain(le_engine* e) {
       }
       le_midi_port_clear_gap(port, gap);
     }
-    if (is_lost && !e->midi_port_lost_seen[p]) {
+    if (is_lost && !e->midi_port_lost_seen[p] && !lost_done) {
       le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_LOST, NULL, &n);
     }
     e->midi_port_lost_seen[p] = is_lost;

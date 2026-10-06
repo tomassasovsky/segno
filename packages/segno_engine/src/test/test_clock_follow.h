@@ -188,6 +188,29 @@ static void test_clock_follow_readout_follows_glides(void) {
   CHECK(lag >= 0.0 && lag < 2.0);
 }
 
+/* A pulse dropped while the period is re-fitted after a step is counted
+ * too. */
+static void test_clock_follow_drop_during_refit_counted(void) {
+  printf("test_clock_follow_drop_during_refit_counted\n");
+  le_clock_follow f;
+  le_clock_follow_reset(&f, 4);
+  double tt = 0.0;
+  uint64_t sent = 0u;
+  int dropped = 0;
+  for (int k = 1; k <= 1200; ++k) {
+    tt += 60.0 / ((k <= 600 ? 120.0 : 100.0) * LE_CLOCK_FOLLOW_PPQN);
+    sent++;
+    if (f.refit && !dropped && k > 610) {
+      dropped = 1;
+      continue;
+    }
+    le_clock_follow_pulse(&f, (uint64_t)llround((tt + 1.0) * 1e9));
+  }
+  CHECK(dropped == 1 && f.reacquisitions == 1u);
+  CHECK(f.pulses == sent);
+  CHECK(fabs(le_clock_follow_quarter_bpm(&f) - 100.0) < 0.05);
+}
+
 /* A dropped pulse is counted, not mistaken for a slow pulse. */
 static void test_clock_follow_dropped_pulse_counted(void) {
   printf("test_clock_follow_dropped_pulse_counted\n");
@@ -196,6 +219,49 @@ static void test_clock_follow_dropped_pulse_counted(void) {
   CHECK(r.reacquisitions == 0 && r.max_err < 0.06);
   r = cf_simulate(cf_j_usb, 120.0, 120.0, 999.0, 600);
   CHECK(r.counted == r.sent);
+}
+
+/* During acquisition, a line of at least a beat counts a pulse it finds
+ * whole periods late as dropped; a stray early pulse is counted and the
+ * line still settles on the clock. */
+static void test_clock_follow_acquisition_drop_and_restart(void) {
+  printf("test_clock_follow_acquisition_drop_and_restart\n");
+  le_clock_follow f;
+  le_clock_follow_reset(&f, 4);
+  /* 120 BPM with +-1.5 ms alternating jitter: Synced takes about 35 pulses,
+   * so pulse 30 falls inside acquisition. */
+  const double p = 60e9 / (120.0 * LE_CLOCK_FOLLOW_PPQN);
+  uint32_t ev = 0u;
+  int k = 0;
+  for (k = 0; k < 200 && !(ev & LE_CLOCK_EVENT_SYNCED); ++k) {
+    if (k == 30) continue; /* dropped, unmarked */
+    const double j = (k & 1) ? 1500000.0 : -1500000.0;
+    ev |= le_clock_follow_pulse(&f, (uint64_t)llround(1e9 + k * p + j));
+  }
+  CHECK(k > 31 && (ev & LE_CLOCK_EVENT_SYNCED));
+  CHECK(f.pulses == (uint64_t)k);
+  CHECK(fabs(le_clock_follow_quarter_bpm(&f) - 120.0) < 0.2);
+  /* A stray pulse 0.6 periods early after pulse 29 of a fresh acquisition:
+   * counted, and acquisition still ends on 120. */
+  le_clock_follow_reset(&f, 4);
+  ev = 0u;
+  for (k = 0; k < 30; ++k) {
+    const double j = (k & 1) ? 1500000.0 : -1500000.0;
+    ev |= le_clock_follow_pulse(&f, (uint64_t)llround(1e9 + k * p + j));
+  }
+  CHECK(!(ev & LE_CLOCK_EVENT_SYNCED));
+  CHECK(le_clock_follow_pulse(&f, (uint64_t)llround(1e9 + 29.4 * p)) == 0u);
+  int synced_at = -1;
+  for (k = 30; k < 300 && synced_at < 0; ++k) {
+    const double j = (k & 1) ? 1500000.0 : -1500000.0;
+    if (le_clock_follow_pulse(&f, (uint64_t)llround(1e9 + k * p + j)) &
+        LE_CLOCK_EVENT_SYNCED) {
+      synced_at = k;
+    }
+  }
+  CHECK(synced_at >= 30 + LE_CLOCK_FOLLOW_PPQN - 1);
+  CHECK(fabs(le_clock_follow_quarter_bpm(&f) - 120.0) < 0.2);
+  CHECK(f.pulses == (uint64_t)synced_at + 2u);
 }
 
 /* Feeds `n` pulses of a steady quarter-note clock from `t0`. */
@@ -211,25 +277,33 @@ static uint64_t cf_feed(le_clock_follow* f, double quarter_bpm, uint64_t t0,
   return t;
 }
 
+/* One beat of intervals (25 pulses) is the least acquisition takes. */
+#define CF_ACQ_PULSES (LE_CLOCK_FOLLOW_PPQN + 1)
+
 static void test_clock_follow_acquisition_and_units(void) {
   printf("test_clock_follow_acquisition_and_units\n");
   le_clock_follow f;
   le_clock_follow_reset(&f, 4);
   CHECK(f.state == LE_CLOCK_FOLLOW_WAITING);
   uint32_t ev = 0u;
-  /* Six intervals need seven pulses. */
-  cf_feed(&f, 120.0, 1000000000ull, 6, &ev);
+  /* A beat of intervals needs 25 pulses: six (the old minimum) are not
+   * enough to tell a clean clock from one on audio-block edges. */
+  cf_feed(&f, 120.0, 1000000000ull, CF_ACQ_PULSES - 1, &ev);
   CHECK(f.state == LE_CLOCK_FOLLOW_WAITING && ev == 0u);
-  CHECK(le_clock_follow_pulse(&f, 1000000000ull + 125000000ull) ==
+  CHECK(le_clock_follow_pulse(&f, 1000000000ull + 500000000ull) ==
         LE_CLOCK_EVENT_SYNCED);
   CHECK(f.state == LE_CLOCK_FOLLOW_SYNCED);
   CHECK(fabs(le_clock_follow_engine_bpm(&f) - 120.0) < 0.001);
   CHECK(f.display_bpm == 120.0f);
-  CHECK(f.pulses == 7u);
+  CHECK(f.pulses == (uint64_t)CF_ACQ_PULSES);
+  /* The tempo is written a beat after Synced, not at it. */
+  CHECK(!le_clock_follow_tempo_ready(&f));
+  cf_feed(&f, 120.0, 1000000000ull + 520833333ull, LE_CLOCK_FOLLOW_PPQN, NULL);
+  CHECK(le_clock_follow_tempo_ready(&f));
 
   /* 6/8: the same quarter-note clock is 240 in Segno's eighth-note unit. */
   le_clock_follow_reset(&f, 8);
-  cf_feed(&f, 120.0, 0u, 7, NULL);
+  cf_feed(&f, 120.0, 0u, CF_ACQ_PULSES, NULL);
   CHECK(f.state == LE_CLOCK_FOLLOW_SYNCED);
   CHECK(fabs(le_clock_follow_engine_bpm(&f) - 240.0) < 0.001);
   CHECK(fabs(le_clock_follow_quarter_bpm(&f) - 120.0) < 0.001);
@@ -246,22 +320,22 @@ static void test_clock_follow_acquisition_and_units(void) {
   CHECK(f.out_of_range == 1);
   /* The same clock in 4/4 is 160: in range. */
   le_clock_follow_reset(&f, 4);
-  cf_feed(&f, 160.0, 0u, 7, NULL);
+  cf_feed(&f, 160.0, 0u, CF_ACQ_PULSES, NULL);
   CHECK(f.state == LE_CLOCK_FOLLOW_SYNCED && f.out_of_range == 0);
 }
 
 /* An interval outside the window (90 ms at 120 BPM, beyond 30 BPM's 85 ms)
- * restarts acquisition: six fresh valid intervals are needed. */
+ * restarts acquisition: a fresh beat of valid intervals is needed. */
 static void test_clock_follow_invalid_interval_resets_acquisition(void) {
   printf("test_clock_follow_invalid_interval_resets_acquisition\n");
   le_clock_follow f;
   le_clock_follow_reset(&f, 4);
-  const uint64_t last = cf_feed(&f, 120.0, 0u, 5, NULL); /* 4 intervals */
+  const uint64_t last = cf_feed(&f, 120.0, 0u, 20, NULL); /* 19 intervals */
   const uint64_t after = last + 90000000ull;
   CHECK(le_clock_follow_pulse(&f, after) == 0u);
-  cf_feed(&f, 120.0, after + 20833333ull, 5, NULL); /* 5 more intervals */
+  cf_feed(&f, 120.0, after + 20833333ull, 23, NULL); /* 23 more intervals */
   CHECK(f.state == LE_CLOCK_FOLLOW_WAITING);
-  CHECK(le_clock_follow_pulse(&f, after + 6u * 20833333ull) ==
+  CHECK(le_clock_follow_pulse(&f, after + 24u * 20833333ull) ==
         LE_CLOCK_EVENT_SYNCED);
 }
 
@@ -278,21 +352,184 @@ static void test_clock_follow_loss_and_stop(void) {
   CHECK(f.display_bpm == 120.0f); /* the last tempo is kept */
   /* Pulses return: re-acquired. */
   uint32_t ev = 0u;
-  const uint64_t again = cf_feed(&f, 120.0, last + 1000000000ull, 7, &ev);
+  const uint64_t again =
+      cf_feed(&f, 120.0, last + 1000000000ull, CF_ACQ_PULSES, &ev);
   CHECK((ev & LE_CLOCK_EVENT_SYNCED) && f.state == LE_CLOCK_FOLLOW_SYNCED);
   /* Silence after a Stop is Waiting, not loss. */
   le_clock_follow_transport(&f, 0xFC);
   CHECK(le_clock_follow_check(&f, again + 300000000ull) ==
         LE_CLOCK_EVENT_WAITING);
   CHECK(f.state == LE_CLOCK_FOLLOW_WAITING);
-  /* A Start clears it; the device going away while Synced is Lost at once. */
+  /* The device going away while Waiting is no loss: nothing was synced. */
+  CHECK(le_clock_follow_lost(&f) == 0u);
+  CHECK(f.state == LE_CLOCK_FOLLOW_WAITING);
+  /* A Start clears it; the device going away while Synced is Lost at once,
+   * and a second close (or a rebind) leaves it Lost with the tempo kept
+   * (PR #1259 review M2: a loss is never turned into Waiting). */
   le_clock_follow_transport(&f, 0xFA);
-  cf_feed(&f, 120.0, again + 1000000000ull, 7, NULL);
+  cf_feed(&f, 120.0, again + 1000000000ull, CF_ACQ_PULSES, NULL);
   CHECK(f.state == LE_CLOCK_FOLLOW_SYNCED);
   CHECK(le_clock_follow_lost(&f) == LE_CLOCK_EVENT_LOST);
   CHECK(f.state == LE_CLOCK_FOLLOW_LOST);
   CHECK(le_clock_follow_lost(&f) == 0u);
-  CHECK(f.state == LE_CLOCK_FOLLOW_WAITING);
+  CHECK(f.state == LE_CLOCK_FOLLOW_LOST);
+  CHECK(f.display_bpm == 120.0f);
+}
+
+/* Review L1: the loss deadline is decided at the deadline. A pulse that
+ * arrives 251 ms after the last one in the same block as the check (so the
+ * check never saw the silence) still reports the loss, and that pulse starts
+ * acquisition again. */
+static void test_clock_follow_deadline_regardless_of_blocks(void) {
+  printf("test_clock_follow_deadline_regardless_of_blocks\n");
+  le_clock_follow f;
+  le_clock_follow_reset(&f, 4);
+  const uint64_t last = cf_feed(&f, 120.0, 0u, 48, NULL);
+  const uint64_t pulses = f.pulses;
+  CHECK(f.state == LE_CLOCK_FOLLOW_SYNCED);
+  const uint32_t ev = le_clock_follow_pulse(&f, last + 251000000ull);
+  CHECK(ev == LE_CLOCK_EVENT_LOST);
+  CHECK(f.state == LE_CLOCK_FOLLOW_LOST && f.pulses == pulses + 1u);
+  CHECK(f.display_bpm == 120.0f);
+  /* 249 ms is a slow pulse, not a loss. */
+  le_clock_follow_reset(&f, 4);
+  const uint64_t last2 = cf_feed(&f, 120.0, 0u, 48, NULL);
+  CHECK(le_clock_follow_pulse(&f, last2 + 249000000ull) == 0u);
+  CHECK(f.state == LE_CLOCK_FOLLOW_SYNCED);
+  /* After a Stop the same silence is Waiting. */
+  le_clock_follow_reset(&f, 4);
+  const uint64_t last3 = cf_feed(&f, 120.0, 0u, 48, NULL);
+  le_clock_follow_transport(&f, 0xFC);
+  CHECK(le_clock_follow_pulse(&f, last3 + 251000000ull) ==
+        LE_CLOCK_EVENT_WAITING);
+}
+
+/* Review L2: two pulses with one timestamp (one packet, one read) are two
+ * pulses, in acquisition and in tracking. */
+static void test_clock_follow_equal_timestamps(void) {
+  printf("test_clock_follow_equal_timestamps\n");
+  le_clock_follow f;
+  le_clock_follow_reset(&f, 4);
+  const double p = 60e9 / (120.0 * LE_CLOCK_FOLLOW_PPQN);
+  /* During acquisition: pulse 10 is stamped with pulse 11's time. (A pulse
+   * a whole period off makes the fit run its full four beats.) */
+  for (int i = 0; i < 120; ++i) {
+    le_clock_follow_pulse(&f, (uint64_t)llround((i == 10 ? 11 : i) * p));
+  }
+  CHECK(f.pulses == 120u && f.state == LE_CLOCK_FOLLOW_SYNCED);
+  CHECK(fabs(le_clock_follow_quarter_bpm(&f) - 120.0) < 0.1);
+  /* While tracking: pulse 100 is stamped with pulse 101's time. */
+  for (int i = 120; i < 300; ++i) {
+    le_clock_follow_pulse(&f, (uint64_t)llround((i == 200 ? 201 : i) * p));
+  }
+  CHECK(f.pulses == 300u && f.reacquisitions == 0u);
+  CHECK(fabs(le_clock_follow_quarter_bpm(&f) - 120.0) < 0.05);
+  /* An older time is out of order: ignored. */
+  le_clock_follow_pulse(&f, (uint64_t)llround(250 * p));
+  CHECK(f.pulses == 300u);
+}
+
+/* Block-edge sources (PR #1259 review M1, its p2acq / p2drop probes as the
+ * oracle): pulses stamped on 512-frame / 44.1 kHz edges are one or two
+ * blocks apart, never the period. The seed at Synced is within 0.2 BPM from
+ * every start phase (the median-of-six seed was up to 41 BPM off), and an
+ * unmarked dropped pulse is counted at every position. */
+static uint64_t cf_block_stamp(double t_s) {
+  const double b = 512.0 / 44100.0;
+  return (uint64_t)llround(ceil(t_s / b) * b * 1e9) + 1000000000ull;
+}
+
+static void test_clock_follow_block_edge_seed(void) {
+  printf("test_clock_follow_block_edge_seed\n");
+  const double bpms[] = {90.0, 100.0, 120.0, 124.9, 174.0};
+  for (int b = 0; b < 5; ++b) {
+    const double p = 60.0 / (bpms[b] * LE_CLOCK_FOLLOW_PPQN);
+    double worst = 0.0;
+    int never = 0;
+    for (int ph = 0; ph < 200; ++ph) {
+      le_clock_follow f;
+      le_clock_follow_reset(&f, 4);
+      double tt = ph * 0.000057;
+      double seed = -1.0;
+      for (int k = 1; k <= 400 && seed < 0.0; ++k) {
+        tt += p;
+        if (le_clock_follow_pulse(&f, cf_block_stamp(tt)) &
+            LE_CLOCK_EVENT_SYNCED) {
+          seed = le_clock_follow_quarter_bpm(&f);
+          /* Acquisition counts every pulse once: no jitter read as drops. */
+          if (f.pulses != (uint64_t)k) never++;
+        }
+      }
+      if (seed < 0.0) never++;
+      if (fabs(seed - bpms[b]) > worst) worst = fabs(seed - bpms[b]);
+    }
+    CHECK(never == 0 && worst < 0.2);
+    if (never != 0 || worst >= 0.2) {
+      printf("  at %.1f BPM: worst seed error %.3f, miscounted or never "
+             "synced %d\n",
+             bpms[b], worst, never);
+    }
+  }
+}
+
+static void test_clock_follow_block_edge_drop_counted(void) {
+  printf("test_clock_follow_block_edge_drop_counted\n");
+  const double bpms[] = {90.0, 120.0, 174.0};
+  for (int b = 0; b < 3; ++b) {
+    const double p = 60.0 / (bpms[b] * LE_CLOCK_FOLLOW_PPQN);
+    int wrong = 0;
+    double worst = 0.0;
+    for (int drop = 500; drop < 700; ++drop) {
+      le_clock_follow f;
+      le_clock_follow_reset(&f, 4);
+      double tt = 0.0;
+      for (int k = 1; k <= 1200; ++k) {
+        tt += p;
+        if (k == drop) continue;
+        le_clock_follow_pulse(&f, cf_block_stamp(tt));
+        if (k > drop && k < drop + 20 * LE_CLOCK_FOLLOW_PPQN) {
+          const double e = fabs(le_clock_follow_quarter_bpm(&f) - bpms[b]);
+          if (e > worst) worst = e;
+        }
+      }
+      if (f.pulses != 1200u || f.reacquisitions != 0u) wrong++;
+    }
+    CHECK(wrong == 0 && worst < 0.6);
+    if (wrong != 0 || worst >= 0.6) {
+      printf("  at %.0f BPM: %d drop positions miscounted, worst %.3f BPM\n",
+             bpms[b], wrong, worst);
+    }
+  }
+}
+
+/* Tempo steps keep the pulse count on every source model, including the
+ * block-edge steps the review found one count short. */
+static void test_clock_follow_steps_keep_count(void) {
+  printf("test_clock_follow_steps_keep_count\n");
+  const double pairs[][2] = {{120.0, 100.0}, {100.0, 120.0}, {174.0, 140.0},
+                             {90.0, 93.0}, {120.0, 126.0}};
+  for (int s = 0; s < 5; ++s) {
+    int wrong = 0;
+    for (int ph = 0; ph < 50; ++ph) {
+      le_clock_follow f;
+      le_clock_follow_reset(&f, 4);
+      double tt = ph * 0.00037;
+      for (int k = 1; k <= 3000; ++k) {
+        const double bpm = k <= 1500 ? pairs[s][0] : pairs[s][1];
+        tt += 60.0 / (bpm * LE_CLOCK_FOLLOW_PPQN);
+        le_clock_follow_pulse(&f, cf_block_stamp(tt));
+      }
+      if (f.pulses != 3000u ||
+          fabs(le_clock_follow_quarter_bpm(&f) - pairs[s][1]) > 0.1) {
+        wrong++;
+      }
+    }
+    CHECK(wrong == 0);
+    if (wrong != 0) {
+      printf("  %.0f -> %.0f: %d of 50 phases wrong\n", pairs[s][0],
+             pairs[s][1], wrong);
+    }
+  }
 }
 
 /* A known loss (the port's gap mark) counts the pulses it hid even before
@@ -302,20 +539,20 @@ static void test_clock_follow_gap_counts_hidden_pulses(void) {
   le_clock_follow f;
   le_clock_follow_reset(&f, 4);
   const double p = 60e9 / (120.0 * LE_CLOCK_FOLLOW_PPQN);
-  cf_feed(&f, 120.0, 0u, 10, NULL);
-  CHECK(f.state == LE_CLOCK_FOLLOW_SYNCED && f.pulses == 10u);
+  cf_feed(&f, 120.0, 0u, 30, NULL);
+  CHECK(f.state == LE_CLOCK_FOLLOW_SYNCED && f.pulses == 30u);
   le_clock_follow_gap(&f);
-  /* Pulses 10, 11 and 12 were lost; pulse 13 arrives. */
-  CHECK(le_clock_follow_pulse(&f, (uint64_t)llround(13 * p)) == 0u);
-  CHECK(f.pulses == 14u);
+  /* Pulses 30, 31 and 32 were lost; pulse 33 arrives. */
+  CHECK(le_clock_follow_pulse(&f, (uint64_t)llround(33 * p)) == 0u);
+  CHECK(f.pulses == 34u);
   CHECK(f.state == LE_CLOCK_FOLLOW_SYNCED);
   /* A gap during acquisition restarts it instead. */
   le_clock_follow_reset(&f, 4);
-  cf_feed(&f, 120.0, 0u, 4, NULL);
+  cf_feed(&f, 120.0, 0u, 20, NULL);
   le_clock_follow_gap(&f);
-  cf_feed(&f, 120.0, (uint64_t)llround(6 * p), 6, NULL);
+  cf_feed(&f, 120.0, (uint64_t)llround(22 * p), 24, NULL);
   CHECK(f.state == LE_CLOCK_FOLLOW_WAITING);
-  CHECK(le_clock_follow_pulse(&f, (uint64_t)llround(12 * p)) ==
+  CHECK(le_clock_follow_pulse(&f, (uint64_t)llround(46 * p)) ==
         LE_CLOCK_EVENT_SYNCED);
   (void)cf_j_none;
 }
@@ -327,8 +564,15 @@ static void run_clock_follow_tests(void) {
   test_clock_follow_integer_divisions();
   test_clock_follow_readout_follows_glides();
   test_clock_follow_dropped_pulse_counted();
+  test_clock_follow_drop_during_refit_counted();
   test_clock_follow_acquisition_and_units();
+  test_clock_follow_acquisition_drop_and_restart();
   test_clock_follow_invalid_interval_resets_acquisition();
   test_clock_follow_loss_and_stop();
   test_clock_follow_gap_counts_hidden_pulses();
+  test_clock_follow_deadline_regardless_of_blocks();
+  test_clock_follow_equal_timestamps();
+  test_clock_follow_block_edge_seed();
+  test_clock_follow_block_edge_drop_counted();
+  test_clock_follow_steps_keep_count();
 }

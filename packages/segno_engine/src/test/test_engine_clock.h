@@ -53,6 +53,8 @@ static void test_clock_sync_follows_external_tempo(void) {
   CHECK(le_engine_set_clock_sync(e, 3, 2, 0) == LE_ERR_INVALID);
   CHECK(le_engine_set_clock_sync(e, 3, 0, 2) == LE_ERR_INVALID);
   CHECK(le_engine_set_clock_sync(NULL, 3, 0, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  mi_block(e);
   CHECK(le_engine_set_clock_sync(e, 3, 1, LE_CLOCK_LOSS_STOP_LOOPS) == LE_OK);
   /* The tempo setters refuse at once, before the callback applied it. */
   CHECK(le_engine_set_tempo(e, 90.0f) == LE_ERR_EXTERNAL_CLOCK);
@@ -64,13 +66,21 @@ static void test_clock_sync_follows_external_tempo(void) {
   CHECK(s.clock_receipt == 1u && s.clock_result == LE_OK);
   CHECK(s.clock_bpm == 0.0f);
 
-  /* Six intervals (seven pulses) to Synced. */
-  ec_pulses(e, &c, 120.0, 6);
+  /* A beat of intervals (25 pulses) to Synced. */
+  ec_pulses(e, &c, 120.0, 24);
   CHECK(mi_snapshot(e).clock_state == LE_CLOCK_STATE_WAITING);
   ec_pulses(e, &c, 120.0, 1);
   s = mi_snapshot(e);
   CHECK(s.clock_state == LE_CLOCK_STATE_SYNCED);
-  CHECK(s.clock_bpm == 120.0f && s.clock_pulses == 7u);
+  CHECK(s.clock_bpm == 120.0f && s.clock_pulses == 25u);
+  /* The seed is not written: the session tempo changes a beat later (PR
+   * #1259 review M1). */
+  CHECK(fabsf(s.tempo_bpm - 90.0f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+  ec_pulses(e, &c, 120.0, 23);
+  CHECK(fabsf(mi_snapshot(e).tempo_bpm - 90.0f) < 0.01f);
+  ec_pulses(e, &c, 120.0, 1);
+  s = mi_snapshot(e);
   CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
   CHECK(s.tempo_source == LE_TEMPO_SOURCE_EXTERNAL);
 
@@ -80,9 +90,21 @@ static void test_clock_sync_follows_external_tempo(void) {
   CHECK(le_engine_restore_tempo(e, 90.0f, LE_TEMPO_SOURCE_MANUAL) ==
         LE_ERR_EXTERNAL_CLOCK);
   CHECK(le_push(e, LE_CMD_SET_TEMPO, 0, 90.0f) == LE_OK);
-  CHECK(le_push(e, LE_CMD_TAP_TEMPO, 0, 0.0f) == LE_OK);
+  CHECK(le_push(e, LE_CMD_RESTORE_TEMPO, LE_TEMPO_SOURCE_MANUAL, 90.0f) ==
+        LE_OK);
   mi_block(e);
   CHECK(fabsf(mi_snapshot(e).tempo_bpm - 120.0f) < 0.01f);
+  /* Two raw taps half a second apart (the fake MIDI clock stands still, so
+   * the follower stays Synced) would tap 120 -> 60 without the guard. */
+  CHECK(le_push(e, LE_CMD_TAP_TEMPO, 0, 0.0f) == LE_OK);
+  mi_block(e);
+  tg_advance(e, (int)(e->sample_rate / 2) - 32);
+  CHECK(le_push(e, LE_CMD_TAP_TEMPO, 0, 0.0f) == LE_OK);
+  mi_block(e);
+  s = mi_snapshot(e);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_EXTERNAL);
+  CHECK(s.clock_state == LE_CLOCK_STATE_SYNCED);
 
   /* The master speeds up; the session tempo follows within a few beats. */
   ec_pulses(e, &c, 126.0, 24 * 6);
@@ -129,7 +151,7 @@ static void test_clock_sync_loss_and_stop(void) {
   le_engine* e = ec_engine(&c, 0);
   CHECK(le_engine_set_clock_sync(e, 0, 0, 0) == LE_OK);
   mi_block(e);
-  ec_pulses(e, &c, 120.0, 48);
+  ec_pulses(e, &c, 120.0, 49); /* Synced at 25, the tempo written at 49 */
   CHECK(mi_snapshot(e).clock_state == LE_CLOCK_STATE_SYNCED);
   ec_silence(e, 249);
   CHECK(mi_snapshot(e).clock_state == LE_CLOCK_STATE_SYNCED);
@@ -140,7 +162,7 @@ static void test_clock_sync_loss_and_stop(void) {
   CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
   CHECK(s.tempo_source == LE_TEMPO_SOURCE_EXTERNAL);
 
-  ec_pulses(e, &c, 120.0, 7);
+  ec_pulses(e, &c, 120.0, 25);
   CHECK(mi_snapshot(e).clock_state == LE_CLOCK_STATE_SYNCED);
   CHECK(le_midi_sink_push(&c.sink, 0xFC, 0, 0, ec_now_ns) == 1);
   ec_silence(e, 300);
@@ -148,7 +170,7 @@ static void test_clock_sync_loss_and_stop(void) {
   CHECK(s.clock_state == LE_CLOCK_STATE_WAITING && s.clock_losses == 1u);
 
   CHECK(le_midi_sink_push(&c.sink, 0xFA, 0, 0, ec_now_ns) == 1);
-  ec_pulses(e, &c, 120.0, 7);
+  ec_pulses(e, &c, 120.0, 25);
   CHECK(mi_snapshot(e).clock_state == LE_CLOCK_STATE_SYNCED);
   CHECK(le_midi_sink_mark_lost(&c.sink) == 1);
   mi_block(e);
@@ -166,7 +188,7 @@ static void test_clock_sync_denominator_unit(void) {
   CHECK(le_engine_set_time_signature(e, 6, 8) == LE_OK);
   CHECK(le_engine_set_clock_sync(e, 1, 0, 0) == LE_OK);
   mi_block(e);
-  ec_pulses(e, &c, 120.0, 7);
+  ec_pulses(e, &c, 120.0, 49);
   le_snapshot s = mi_snapshot(e);
   CHECK(s.clock_state == LE_CLOCK_STATE_SYNCED);
   CHECK(fabsf(s.tempo_bpm - 240.0f) < 0.02f && s.clock_bpm == 240.0f);
@@ -204,18 +226,56 @@ static void test_clock_sync_locked_while_recording(void) {
   CHECK(s.clock_receipt == 7u && s.clock_result == LE_ERR_SYNC_LOCKED);
   CHECK(s.clock_state == LE_CLOCK_STATE_INTERNAL && s.clock_source_port == -1);
   le_engine_destroy(e);
+
+  /* A quantized arm (armed on the control side) or a start the callback has
+   * queued (a_pending) is a take about to begin: also locked (review L3). */
+  e = ec_engine(&c, 4);
+  e->armed[1] = 1;
+  CHECK(le_engine_set_clock_sync(e, 4, 0, 0) == LE_ERR_SYNC_LOCKED);
+  e->armed[1] = 0;
+  store_i32(&e->tracks[2].a_pending, 1);
+  CHECK(le_engine_set_clock_sync(e, 4, 0, 0) == LE_ERR_SYNC_LOCKED);
+  store_i32(&e->tracks[2].a_pending, 0);
+  CHECK(le_engine_set_clock_sync(e, 4, 0, 0) == LE_OK);
+  le_engine_destroy(e);
 }
 
-/* Another capture on the source port starts the follower over; messages lost
- * to a full ring are counted as pulses, not skipped. */
+/* A rig with content locks the tempo (D6): the clock is followed and shown,
+ * but never written over a recorded loop (review L3; retiming is Part 3b). */
+static void test_clock_sync_never_retimes_content(void) {
+  printf("test_clock_sync_never_retimes_content\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_engine_set_now_fn_for_test(e, ec_now, NULL);
+  ec_now_ns = 10000000000ull;
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 4000);
+  tg_advance(e, 64);
+  CHECK(mi_snapshot(e).tracks[0].state == LE_TRACK_PLAYING);
+  mi_fake_capture c;
+  memset(&c, 0, sizeof(c));
+  CHECK(le_engine_attach_midi_input(e, mi_capture(&c), 2) == LE_OK);
+  CHECK(le_engine_set_clock_sync(e, 2, 0, 0) == LE_OK);
+  mi_block(e);
+  ec_pulses(e, &c, 126.0, 24 * 6);
+  le_snapshot s = mi_snapshot(e);
+  CHECK(s.clock_state == LE_CLOCK_STATE_SYNCED && s.clock_bpm == 126.0f);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+  le_engine_destroy(e);
+}
+
+/* Messages lost to a full ring are counted as pulses, not skipped. The end
+ * of the source port's binding while Synced is a loss: counted, LOST, the
+ * tempo and readout kept; a Lost source stays Lost (PR #1259 review M2). */
 static void test_clock_sync_rebind_and_gap(void) {
   printf("test_clock_sync_rebind_and_gap\n");
   mi_fake_capture c, other;
   le_engine* e = ec_engine(&c, 5);
   CHECK(le_engine_set_clock_sync(e, 5, 0, 0) == LE_OK);
   mi_block(e);
-  ec_pulses(e, &c, 120.0, 7);
-  CHECK(mi_snapshot(e).clock_pulses == 7u);
+  ec_pulses(e, &c, 120.0, 49);
+  CHECK(mi_snapshot(e).clock_pulses == 49u);
   /* A burst of 254 controller messages fills the ring; one pulse still fits
    * and the next three are lost (a gap). */
   const double p = 60e9 / (120.0 * 24.0);
@@ -235,13 +295,33 @@ static void test_clock_sync_rebind_and_gap(void) {
   le_snapshot s = mi_snapshot(e);
   CHECK(s.midi_in_overflows == 1u);
   CHECK(s.clock_state == LE_CLOCK_STATE_SYNCED);
-  CHECK(s.clock_pulses == 7u + 5u);
+  CHECK(s.clock_pulses == 49u + 5u);
 
   memset(&other, 0, sizeof(other));
   CHECK(le_engine_attach_midi_input(e, mi_capture(&other), 5) == LE_OK);
   mi_block(e);
   s = mi_snapshot(e);
-  CHECK(s.clock_state == LE_CLOCK_STATE_WAITING && s.clock_pulses == 0u);
+  CHECK(s.clock_state == LE_CLOCK_STATE_LOST && s.clock_losses == 1u);
+  CHECK(s.clock_bpm == 120.0f && s.clock_pulses == 54u);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  /* The device leaves, then its capture is closed (unbound with the lost
+   * mark) before the next block: one loss, and the state stays LOST. */
+  for (int i = 1; i <= 49; ++i) {
+    ec_now_ns += (uint64_t)llround(p);
+    le_midi_sink_push(&other.sink, 0xF8, 0, 0, ec_now_ns);
+    mi_block(e);
+  }
+  CHECK(mi_snapshot(e).clock_state == LE_CLOCK_STATE_SYNCED);
+  CHECK(le_midi_sink_mark_lost(&other.sink) == 1);
+  mi_block(e);
+  s = mi_snapshot(e);
+  CHECK(s.clock_state == LE_CLOCK_STATE_LOST && s.clock_losses == 2u);
+  le_midi_sink_unbind(&other.sink, 1);
+  mi_block(e);
+  s = mi_snapshot(e);
+  CHECK(s.clock_state == LE_CLOCK_STATE_LOST && s.clock_losses == 2u);
+  CHECK(s.clock_bpm == 120.0f);
   le_engine_destroy(e);
 }
 
@@ -265,6 +345,16 @@ static void test_clock_sync_drops_backlog(void) {
   le_snapshot s = mi_snapshot(e);
   CHECK(s.clock_state == LE_CLOCK_STATE_WAITING && s.clock_pulses == 0u);
   CHECK(s.midi_in_events >= 20u);
+
+  /* An old Stop in the backlog does not set the transport state now: a
+   * later silence is a loss, not Waiting (review L4). */
+  le_midi_sink_push(&c.sink, 0xFC, 0, 0, ec_now_ns - 1000000000ull);
+  mi_block(e);
+  ec_pulses(e, &c, 120.0, 30);
+  CHECK(mi_snapshot(e).clock_state == LE_CLOCK_STATE_SYNCED);
+  ec_silence(e, 300);
+  s = mi_snapshot(e);
+  CHECK(s.clock_state == LE_CLOCK_STATE_LOST && s.clock_losses == 1u);
   le_engine_destroy(e);
 }
 
@@ -288,6 +378,7 @@ static void run_engine_clock_tests(void) {
   test_clock_sync_loss_and_stop();
   test_clock_sync_denominator_unit();
   test_clock_sync_locked_while_recording();
+  test_clock_sync_never_retimes_content();
   test_clock_sync_rebind_and_gap();
   test_clock_sync_drops_backlog();
   test_clock_send_closed_under_external_source();
