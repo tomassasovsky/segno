@@ -46,6 +46,15 @@ jobs:
       run_bloc_lint: false
       min_coverage: 100
 
+  # usb_storage_client (#1177) is pure Dart too: it reads the appliance's USB
+  # volume records and files eject requests, with no Flutter dependency.
+  usb-storage-client:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    with:
+      working_directory: packages/usb_storage_client
+      run_bloc_lint: false
+      min_coverage: 100
+
   # Per-package test + coverage gates for the five domain packages (FX v3
   # part 3a [VGV-critical]): the root `build` job only runs the root app's own
   # test/ dir, so until these jobs existed the packages' suites never ran in
