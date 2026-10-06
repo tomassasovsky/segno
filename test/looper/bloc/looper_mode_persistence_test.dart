@@ -50,8 +50,6 @@ void main() {
     record = RecordSettings(repository: repository, settings: settings);
     await record.load();
     bloc = LooperBloc(
-      recordLengthControl: record,
-      recordTimingControl: FakeRecordTimingControl(),
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -101,7 +99,7 @@ void main() {
       engine
         ..commandsAreSettled = false
         ..publishModeCommands = false;
-      bloc.add(const LooperModeChanged(LooperMode.free));
+      unawaited(record.setLooperMode(LooperMode.free));
       await pumpEventQueue();
       expect(repository.settledLooperMode, isNull);
       // Storage stages the candidate before enqueue. Save and shutdown wait
@@ -115,12 +113,12 @@ void main() {
         ..nextSnapshot = _stopped(LooperMode.free)
         ..commandsAreSettled = true;
       await poll();
-      await record.flushRecordLength();
+      await record.owner.flush();
       expect(await settings.loadLooperMode(), LooperMode.free.code);
       expect(record.durableRecordLengthSnapshot.mode, LooperMode.free);
 
       engine.commandsAreSettled = false;
-      bloc.add(const LooperModeChanged(LooperMode.band));
+      unawaited(record.setLooperMode(LooperMode.band));
       await pumpEventQueue();
       expect(repository.settledLooperMode, isNull);
       expect(record.durableRecordLengthSnapshot.mode, LooperMode.free);
@@ -129,7 +127,7 @@ void main() {
       // The callback consumed the request but kept the already-confirmed mode.
       engine.commandsAreSettled = true;
       await poll();
-      await record.flushRecordLength();
+      await record.owner.flush();
       expect(repository.settledLooperMode, LooperMode.free);
       expect(repository.sessionTransport.isRunning, isTrue);
       expect(bloc.state.transport.looperMode, LooperMode.free);
@@ -142,10 +140,11 @@ void main() {
   );
 
   test(
-    'rejected startup stops without replacing the saved offline choice',
+    'an unconfirmed startup mode is owed without a stop, keeps the saved '
+    'choice, and Retry lands it',
     () async {
       engine.nextSnapshot = const le.EngineSnapshot.initial();
-      bloc.add(const LooperModeChanged(LooperMode.band));
+      unawaited(record.setLooperMode(LooperMode.band));
       await pumpEventQueue();
       expect(await settings.loadLooperMode(), LooperMode.band.code);
       engine
@@ -163,21 +162,15 @@ void main() {
       expect(await repository.settleLengthSettings(), EngineResult.invalid);
       expect(await failure, EngineResult.invalid);
       await poll();
-      expect(repository.sessionTransport.isRunning, isFalse);
-      expect(repository.settledLooperMode, LooperMode.band);
+      // The replay owes the mode; audio keeps running.
+      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.lengthRecoveryRequired, isTrue);
+      expect(repository.lengthRestartIntent.mode, LooperMode.band);
       expect(await settings.loadLooperMode(), LooperMode.band.code);
 
-      // A refused length receipt leaves a recoverable obligation and blocks
-      // restart until the stopped repository explicitly adopts it.
-      expect(repository.lengthRecoveryRequired, isTrue);
-      expect(
-        repository.startEngine(const EngineConfig()),
-        EngineResult.notReady,
-      );
-      expect((await record.recoverRecordLength()).isOk, isTrue);
       engine.publishModeCommands = true;
-      expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
-      expect(await repository.settleLengthSettings(), EngineResult.ok);
+      expect((await record.owner.recover()).isOk, isTrue);
+      expect(repository.lengthRecoveryRequired, isFalse);
       await poll();
       expect(repository.sessionTransport.isRunning, isTrue);
       expect(engine.lastLooperMode, LooperMode.band);

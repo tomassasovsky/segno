@@ -89,7 +89,7 @@ void main() {
       await pending;
       expect(cubit.state, same(closedState));
       expect(owner.state.defaultTiming, RecordTiming.quarter);
-      expect((await owner.flushRecordTiming()).isOk, isTrue);
+      expect((await owner.owner.flush()).isOk, isTrue);
       expect(store.values['tempo.quantize_div'], 3);
     },
   );

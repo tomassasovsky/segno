@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -111,11 +112,13 @@ void main() {
       await owner.load();
       expect(owner.recordTimingSnapshot, isNull);
       expect(repository.defaultRecordTiming, RecordTiming.immediately);
+      // Retry replaces the unreadable tuple; the old value is logged.
+      expect((await owner.owner.recover()).status, SettingStatus.applied);
+      expect(store.values.containsKey('track_record_timing.7'), isFalse);
       expect(
-        (await owner.recoverRecordTiming()).status,
-        RecordTimingStatus.recoveryRequired,
+        owner.recordTimingSnapshot?.defaultTiming,
+        RecordTiming.immediately,
       );
-      expect(store.values['track_record_timing.7'], 7);
     },
   );
   test('gate off and on keeps remembered musical division', () async {
@@ -202,8 +205,8 @@ void main() {
       expect(store.values, isEmpty);
       expect(owner.state.defaultTiming, RecordTiming.immediately);
       expect(owner.state.trackOverrides, isEmpty);
-      expect((await owner.recoverRecordTiming()).isOk, isTrue);
-      expect((await owner.flushRecordTiming()).isOk, isTrue);
+      expect((await owner.owner.recover()).isOk, isTrue);
+      expect((await owner.owner.flush()).isOk, isTrue);
     });
   }
   test(
@@ -224,8 +227,8 @@ void main() {
     await owner.load();
     expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
     await repository.settleRecordTimingSettings();
-    final failures = <RecordTimingOutcome>[];
-    final subscription = owner.recordTimingFailures.listen(failures.add);
+    final failures = <SettingOutcome>[];
+    final subscription = owner.owner.failures.listen(failures.add);
     engine.refuse = true;
     final result = await owner.setTiming(RecordTiming.quarter);
     expect(result.status, RecordTimingStatus.rejected);
@@ -233,14 +236,11 @@ void main() {
     expect(owner.state.defaultTiming, RecordTiming.immediately);
     expect(owner.state.recordTimingReady, isTrue);
     expect(repository.recordTimingRecoveryRequired, isFalse);
-    expect(
-      (await owner.flushRecordTiming()).status,
-      RecordTimingStatus.applied,
-    );
+    expect((await owner.owner.flush()).status, SettingStatus.applied);
     await Future<void>.delayed(Duration.zero);
     expect(
       failures.map((outcome) => outcome.status),
-      contains(RecordTimingStatus.rejected),
+      contains(SettingStatus.rejected),
     );
     await subscription.cancel();
   });
@@ -248,8 +248,8 @@ void main() {
     store.values['track_record_timing.7'] = 7;
     await owner.load();
     expect(
-      (await owner.flushRecordTiming()).status,
-      RecordTimingStatus.recoveryRequired,
+      (await owner.owner.flush()).status,
+      SettingStatus.recoveryRequired,
     );
     expect(owner.recordTimingSnapshot, isNull);
     expect(store.values['track_record_timing.7'], 7);
@@ -260,8 +260,8 @@ void main() {
     await repository.settleRecordTimingSettings();
     engine.commandsAreSettled = false;
     expect(repository.setRecordTiming(RecordTiming.quarter), EngineResult.ok);
-    final outcome = await owner.flushRecordTiming();
-    expect(outcome.status, RecordTimingStatus.recoveryRequired);
+    final outcome = await owner.owner.flush();
+    expect(outcome.status, SettingStatus.recoveryRequired);
     expect(repository.recordTimingRecoveryRequired, isTrue);
     expect(owner.recordTimingSnapshot, isNull);
   });

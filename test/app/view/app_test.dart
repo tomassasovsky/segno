@@ -474,15 +474,32 @@ class _LengthStore extends FakeKeyValueStore {
     return super.getInt(key);
   }
 
+  bool refuseCompensation = true;
+
+  static bool _isLength(String key) =>
+      key == 'looper.default_length_bars' ||
+      key.startsWith('tempo.length_preset.');
+
   @override
   Future<void> setInt(String key, int value) async {
-    if (key == 'looper.default_length_bars' ||
-        key.startsWith('tempo.length_preset.')) {
+    if (_isLength(key)) {
       writeEntered = true;
       await pendingWrite?.future;
-      if (refuseWrite) throw StateError('Record length preference unavailable');
+      await super.setInt(key, value);
+      if (refuseWrite) {
+        throw StateError('Record length write failed after mutation');
+      }
+      return;
     }
     await super.setInt(key, value);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if (_isLength(key) && refuseWrite && refuseCompensation) {
+      throw StateError('Record length compensation unavailable');
+    }
+    await super.remove(key);
   }
 }
 
@@ -1459,14 +1476,22 @@ void main() {
           expect(find.text('Retry'), findsOneWidget);
           await tester.tap(find.text('Retry'));
           await tester.pumpAndSettle();
-          expect(length.state.options.recordLengthReady, !malformed);
-          expect(store.values, before);
+          expect(length.state.options.recordLengthReady, isTrue);
+          expect(find.text('Record length needs recovery'), findsNothing);
           if (malformed) {
-            // Retry does not turn invalid saved data into a guessed default.
-            expect(find.text('Record length needs recovery'), findsOneWidget);
-            expect(find.text('Retry'), findsOneWidget);
+            // Retry removes only the unreadable key, then restores the rest.
+            expect(
+              store.values.containsKey('tempo.length_preset.7'),
+              isFalse,
+            );
+            before.remove('tempo.length_preset.7');
+            for (final entry in before.entries) {
+              expect(store.values[entry.key], entry.value);
+            }
+            expect(length.state.options.defaultLengthBars, 4);
             expect(repository.trackLengthPresetOverrides, isEmpty);
           } else {
+            expect(store.values, before);
             expect(find.text('Record length needs recovery'), findsNothing);
             expect(length.state.options.defaultLengthBars, 4);
             expect(length.state.options.trackLengthPresetOverrides, {7: 0});
@@ -1498,12 +1523,17 @@ void main() {
           expect(find.text('Record timing needs recovery'), findsOneWidget);
           await tester.tap(find.text('Retry'));
           await tester.pumpAndSettle();
-          expect(timing.state.recordTimingReady, !malformed);
-          expect(store.values, before);
+          expect(timing.state.recordTimingReady, isTrue);
+          expect(find.text('Record timing needs recovery'), findsNothing);
           if (malformed) {
-            expect(find.text('Record timing needs recovery'), findsOneWidget);
+            // The timing keys are one tuple: Retry replaces all of them.
+            for (final key in before.keys) {
+              expect(store.values.containsKey(key), isFalse);
+            }
+            expect(timing.state.defaultTiming, RecordTiming.immediately);
             expect(repository.trackRecordTimingOverrides, isEmpty);
           } else {
+            expect(store.values, before);
             expect(find.text('Record timing needs recovery'), findsNothing);
             expect(timing.state.defaultTiming, RecordTiming.quarter);
             expect(timing.state.trackOverrides, {7: RecordTiming.immediately});
@@ -1914,6 +1944,12 @@ void main() {
           final playback = tester
               .element(find.byType(TracksView))
               .read<PlaybackSettings>();
+          final record = tester
+              .element(find.byType(TracksView))
+              .read<RecordSettings>();
+          final timing = tester
+              .element(find.byType(TracksView))
+              .read<RecordTimingSettings>();
           final (toast, owner) = switch (key) {
             OwnedSetting.clickVolume => (
               AppToastId.clickSettings,
@@ -1930,6 +1966,14 @@ void main() {
             OwnedSetting.oneShot => (
               AppToastId.oneShotSettings,
               playback.oneShotOwner,
+            ),
+            OwnedSetting.recordLength => (
+              AppToastId.recordLengthSettings,
+              record.owner,
+            ),
+            OwnedSetting.recordTiming => (
+              AppToastId.recordTimingSettings,
+              timing.owner,
             ),
             OwnedSetting.decay => throw StateError('Decay has no receipt'),
           };
@@ -1950,6 +1994,8 @@ void main() {
               channel: 2,
               oneShot: true,
             ),
+            OwnedSetting.recordLength => record.setDefaultLengthBars(4),
+            OwnedSetting.recordTiming => timing.setTiming(RecordTiming.quarter),
             OwnedSetting.decay => throw StateError('Decay has no receipt'),
           });
           await tester.pump(const Duration(milliseconds: 600));
@@ -2135,9 +2181,9 @@ void main() {
         if (channel == null) {
           unawaited(timing.setTiming(RecordTiming.half));
         } else {
-          context.read<LooperBloc>().add(
-            LooperTrackRecordTimingChanged(
-              channel,
+          unawaited(
+            timing.setTrackTiming(
+              channel: channel,
               timing: RecordTiming.eighth,
             ),
           );
@@ -2605,10 +2651,7 @@ void main() {
         if (channel == null) {
           unawaited(length.setDefaultLengthBars(4));
         } else {
-          // Ordinary per-track editing uses the production Bloc -> owner path.
-          context.read<LooperBloc>().add(
-            LooperTrackLengthPresetChanged(channel, 4),
-          );
+          unawaited(length.setTrackRecordLength(channel: channel, bars: 4));
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
@@ -2664,6 +2707,13 @@ void main() {
           await tester.pumpAndSettle();
           await tester.pump(const Duration(seconds: 6));
           expect(halted, retry);
+          if (!retry) {
+            // The owed rollback keeps Record length unavailable until Retry.
+            expect(find.text('Record length needs recovery'), findsOneWidget);
+            await tester.tap(find.text('Retry'));
+            await tester.pumpAndSettle();
+            expect(find.text('Record length needs recovery'), findsNothing);
+          }
           expect(
             store.values.containsKey('looper.default_length_bars'),
             isFalse,
@@ -2677,6 +2727,33 @@ void main() {
         },
       );
     }
+
+    testWidgets('compensated Record length refusal permits normal shutdown', (
+      tester,
+    ) async {
+      final store = _LengthStore()..refuseCompensation = false;
+      settings = SettingsRepository(store: store);
+      var halted = false;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => halted = true,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final length = context.read<RecordOptionsCubit>();
+      final power = context.read<PowerOffCubit>();
+      store.refuseWrite = true;
+      unawaited(length.setDefaultLengthBars(4));
+      await tester.pumpAndSettle();
+      // The write was refused and its rollback landed: nothing is owed.
+      expect(length.state.options.defaultLengthBars, 0);
+      expect(store.values.containsKey('looper.default_length_bars'), isFalse);
+      power.press(const PowerOffSnapshot());
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerOffPhase.goodbye);
+      await tester.pump(const Duration(seconds: 6));
+      expect(halted, isTrue);
+    });
 
     testWidgets('compensated timing refusal does not block power off', (
       tester,

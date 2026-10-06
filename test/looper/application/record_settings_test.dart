@@ -43,6 +43,7 @@ void main() {
         defaultBars: any(named: 'defaultBars'),
         overrides: any(named: 'overrides'),
         mode: any(named: 'mode'),
+        released: any(named: 'released'),
       ),
     ).thenAnswer((call) {
       confirmedLength = call.namedArguments[#defaultBars] as int;
@@ -84,7 +85,7 @@ void main() {
       );
       final streamsDone = Future.wait([
         owner.stream.drain<void>(),
-        owner.recordLengthFailures.drain<void>(),
+        owner.owner.failures.drain<void>(),
         owner.ordinaryRecordLengthChanges.drain<void>(),
       ]);
       final loading = owner.load();
@@ -178,7 +179,14 @@ void main() {
         );
         await ((_) async {
           expect(await settings.loadDefaultLengthPreset(), 64);
-          verify(() => repository.setDefaultLengthPreset(64)).called(1);
+          verify(
+            () => repository.setLengthSettings(
+              defaultBars: 64,
+              overrides: any(named: 'overrides'),
+              mode: any(named: 'mode'),
+              released: any(named: 'released'),
+            ),
+          ).called(1);
         })(owner);
       },
     );
@@ -195,7 +203,8 @@ void main() {
       await ((RecordSettings cubit) => cubit.setDefaultLengthBars(8))(owner);
       await Future<void>.delayed(Duration.zero);
       await owner.close();
-      expect(states, (() => <RecordOptions>[])());
+      // A refused restore never publishes a ready length.
+      expect(states.where((state) => state.recordLengthReady), isEmpty);
       await ((_) async =>
           expect(await settings.loadDefaultLengthPreset(), 0))(owner);
     });
@@ -204,11 +213,16 @@ void main() {
       'an accepted length still persists after a rejected tap and RecDub edit',
       () async {
         final pending = Completer<EngineResult>();
-        when(() => repository.setDefaultLengthPreset(any())).thenAnswer((
-          call,
-        ) {
-          final bars = call.positionalArguments.single as int;
-          return bars == 8 ? EngineResult.ok : EngineResult.notReady;
+        when(
+          () => repository.setLengthSettings(
+            defaultBars: any(named: 'defaultBars'),
+            overrides: any(named: 'overrides'),
+            mode: any(named: 'mode'),
+            released: any(named: 'released'),
+          ),
+        ).thenAnswer((call) {
+          final bars = call.namedArguments[#defaultBars] as int;
+          return bars == 12 ? EngineResult.notReady : EngineResult.ok;
         });
         when(
           () => repository.settleLengthSettings(),
@@ -225,6 +239,9 @@ void main() {
           () => repository.settleLengthSettings(),
         ).thenAnswer((_) => pending.future);
         final accepted = cubit.setDefaultLengthBars(8);
+        // In flight before the next tap, so the tap queues instead of
+        // replacing it.
+        await Future<void>.delayed(Duration.zero);
         final rejected = cubit.setDefaultLengthBars(12);
         await Future<void>.delayed(Duration.zero);
         await cubit.setRecDub(value: true);

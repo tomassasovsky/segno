@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_options.dart';
@@ -36,6 +37,12 @@ class RecordOptionsCubit extends Cubit<RecordOptionsViewState> {
   Future<void> setDefaultMultiple(int multiple) =>
       _settings.setDefaultMultiple(multiple);
   Future<void> setDefaultLengthBars(int bars) => _setLength(null, bars);
+
+  /// Switches the looper mode through the Record length owner.
+  Future<void> setLooperMode(LooperMode mode) async {
+    await _settings.setLooperMode(mode);
+  }
+
   Future<void> setTrackRecordLength({
     required int channel,
     required int? bars,
