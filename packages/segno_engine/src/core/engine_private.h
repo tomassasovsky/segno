@@ -1335,6 +1335,9 @@ typedef struct le_perf_capture {
   uint32_t input_mask;
 
   int armed;
+  /* The capture frame the audio thread is processing, for the first-drop
+   * record (#1198). Audio-thread-local, set once per frame while armed. */
+  uint64_t tap_frame;
 
   /* The sample-accurate event log (part 3): every audibility-affecting
    * command the audio thread applies, plus a handful of transport facts
@@ -1783,6 +1786,16 @@ struct le_engine {
   _Atomic uint32_t a_perf_layer_overruns;
   /* Ring seconds the most recent arm granted (#1198), for the snapshot. */
   _Atomic int32_t a_perf_ring_seconds;
+  /* Take accounting (#1198), all reset by le_perf_arm. The stop reason is an
+   * le_perf_stop_reason, moved from NONE once, by whichever stop happens
+   * first (the drain's own, or disarm/reconfigure). Bytes written and overs
+   * are the drain's running totals. The first dropped frame is written only
+   * by the audio thread (a ring that could not take a frame), before the
+   * RELEASE add of a_perf_frames that publishes the block. */
+  _Atomic int32_t a_perf_stop_reason;
+  _Atomic uint64_t a_perf_bytes_written;
+  _Atomic uint64_t a_perf_overs;
+  _Atomic uint64_t a_perf_first_drop_frame;
   le_perf_capture perf;
 
   /* Tracks. */

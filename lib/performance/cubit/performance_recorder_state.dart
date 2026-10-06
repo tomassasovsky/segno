@@ -3,14 +3,21 @@ part of 'performance_recorder_cubit.dart';
 /// Why a capture stopped before disarm (D-FAIL): reported inside
 /// [PerformanceRecordStoppedEarly].
 enum PerformanceStopReason {
-  /// A write to the export volume could not be completed mid-capture — the
-  /// preventive free-space floor, or `perf_drain.c`'s own self-stop, which
-  /// fires on a full disk, a quota, a read-only remount or an I/O error.
+  /// A write to the export volume failed mid-capture — a full disk, a quota,
+  /// a read-only remount or an I/O error.
   ///
   /// Named for the common case, but the message must not assert it: three of
-  /// the four self-stop causes leave the volume with space on it, and telling
-  /// the operator to free some sends them after the wrong thing.
+  /// the four causes leave the volume with space on it, and telling the
+  /// operator to free some sends them after the wrong thing.
   diskFull,
+
+  /// The export volume reached its reserve: every stream ends at the last
+  /// whole frame it could hold above it (#1198).
+  reserveReached,
+
+  /// The storage fell behind and a capture ring overflowed: the take ends at
+  /// the first frame that could not be kept, with no gap filled (#1198).
+  slowStorage,
 
   /// The audio device changed mid-capture, forcing a reconfigure that can't
   /// keep the capture taps running.

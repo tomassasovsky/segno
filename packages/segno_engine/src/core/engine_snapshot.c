@@ -394,6 +394,49 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       engine->perf.drain ? le_perf_drain_self_stopped(engine->perf.drain) : 0;
   out->perf_ring_seconds = atomic_load_explicit(&engine->a_perf_ring_seconds,
                                                 memory_order_relaxed);
+  out->perf_stop_reason = atomic_load_explicit(&engine->a_perf_stop_reason,
+                                               memory_order_relaxed);
+  out->perf_bytes_written = atomic_load_explicit(
+      &engine->a_perf_bytes_written, memory_order_relaxed);
+  out->perf_first_drop_frame = atomic_load_explicit(
+      &engine->a_perf_first_drop_frame, memory_order_relaxed);
+  out->perf_overs =
+      atomic_load_explicit(&engine->a_perf_overs, memory_order_relaxed);
+  {
+    int32_t streams = 0;
+    uint32_t frame_bytes = 0;
+    if (atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
+      streams = 1;
+      frame_bytes = (uint32_t)engine->perf.master_channels * 4u;
+      for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+        if (engine->perf.input_mask & (1u << c)) {
+          streams++;
+          frame_bytes += 8u;
+        }
+      }
+    } else {
+      int32_t out_ch[2];
+      const int found = le_perf_first_enabled_pair(engine, out_ch);
+      if (found > 0) {
+        streams = 1;
+        frame_bytes = (uint32_t)found * 4u;
+        /* The inputs le_perf_arm would capture: monitored, and present on
+         * the device. */
+        const int32_t in_ch = load_i32(&engine->a_in_channels);
+        const int32_t limit = in_ch > 0 && in_ch < LE_MAX_MONITORED_INPUTS
+                                  ? in_ch
+                                  : LE_MAX_MONITORED_INPUTS;
+        for (int32_t c = 0; c < limit; ++c) {
+          if (load_i32(&engine->monitors[c].a_enabled)) {
+            streams++;
+            frame_bytes += 8u;
+          }
+        }
+      }
+    }
+    out->perf_capture_streams = streams;
+    out->perf_capture_frame_bytes = frame_bytes;
+  }
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(engine, t, t < engine->track_count,

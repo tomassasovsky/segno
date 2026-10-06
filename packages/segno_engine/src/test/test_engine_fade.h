@@ -874,8 +874,10 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
     for (int i = 0; i < 5000 && !atomic_load(&gate.entered); ++i) test_sleep_ms(1);
     CHECK(atomic_load(&gate.entered));
     const unsigned capacity = manifest_full ? LE_LAYER_STAGING_RING_CAPACITY : 2;
-    // Consumer is parked before its first staging access: use a small valid
-    // ring to prove refusal without exhausting the manifest in this case.
+    // The consumer is parked mid-cycle, past that cycle's staging pass (the
+    // drain writes events and layers before the audio, #1198), so it next
+    // reads the ring after release: use a small valid ring to prove refusal
+    // without exhausting the manifest in this case.
     CHECK(le_layer_staging_ring_init(&e->perf.layer_staging_ring,
         e->perf.layer_staging_ring.buffer, capacity) == 1);
     // Fill the real staging owner with valid tiny images while its consumer is
@@ -893,7 +895,7 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
     CHECK(output == .125f); // capture refusal cannot refuse musical Undo
     CHECK(atomic_load(&e->a_perf_layer_overruns) == 1);
     atomic_store(&gate.release, 1);
-    for (int i = 0; i < 5000 && atomic_load(&e->perf.layer_staging_ring.head) !=
+    for (int i = 0; i < 15000 && atomic_load(&e->perf.layer_staging_ring.head) !=
          atomic_load(&e->perf.layer_staging_ring.tail); ++i) test_sleep_ms(1);
     CHECK(atomic_load(&e->perf.layer_staging_ring.head) == atomic_load(&e->perf.layer_staging_ring.tail));
     if (manifest_full) {
@@ -905,7 +907,7 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
         le_engine_process(e, &output, &input, 1);
         CHECK(output == .125f);
       }
-      for (int i = 0; i < 5000 && atomic_load(&e->perf.layer_staging_ring.head) !=
+      for (int i = 0; i < 15000 && atomic_load(&e->perf.layer_staging_ring.head) !=
            atomic_load(&e->perf.layer_staging_ring.tail); ++i) test_sleep_ms(1);
       CHECK(!le_perf_drain_self_stopped(e->perf.drain));
       // One more frame after the drop: a self-stopped drain would not keep it.

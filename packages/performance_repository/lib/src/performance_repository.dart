@@ -40,8 +40,10 @@ class PerformanceRepository {
     DateTime Function() now = DateTime.now,
     Duration bootRecoveryPollInterval = const Duration(milliseconds: 200),
     Duration bootRecoveryRenderTimeout = defaultBootRecoveryRenderTimeout,
+    int? reserveBytes,
   }) : _engine = engine,
        _exportsRoot = exportsRoot,
+       _reserveBytes = reserveBytes,
        _now = now,
        _bootRecoveryPollInterval = bootRecoveryPollInterval,
        _bootRecoveryRenderTimeout = bootRecoveryRenderTimeout;
@@ -51,6 +53,36 @@ class PerformanceRepository {
   final DateTime Function() _now;
   final Duration _bootRecoveryPollInterval;
   final Duration _bootRecoveryRenderTimeout;
+
+  /// Bytes every take leaves free on the exports volume (#1198): the engine
+  /// stops a take at the last whole frame above it. Null means no budget, so
+  /// a take stops only when a write fails. The app passes Internal's storage
+  /// reserve.
+  final int? _reserveBytes;
+
+  /// The shortest take [minimumFreeBytesToArm] must leave room for.
+  static const Duration minimumTake = Duration(seconds: 10);
+
+  /// Free bytes the exports volume needs before a take may start: the
+  /// reserve, the engine's allowance, and [minimumTake] of every stream the
+  /// arm would capture (the master and each monitored input, as the engine
+  /// reports them) at the current sample rate, with one part header each.
+  /// Arming below this would start a take the reserve stops at once. When
+  /// the engine reports nothing to capture, a stereo master is assumed.
+  int get minimumFreeBytesToArm {
+    final snapshot = _engine.snapshot();
+    final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 48000;
+    final streams = snapshot.perfCaptureStreams > 0
+        ? snapshot.perfCaptureStreams
+        : 1;
+    final frameBytes = snapshot.perfCaptureFrameBytes > 0
+        ? snapshot.perfCaptureFrameBytes
+        : 2 * 4;
+    return (_reserveBytes ?? 0) +
+        PerfTarget.allowanceBytes +
+        streams * PerfTarget.partHeaderBytes +
+        rate * minimumTake.inSeconds * frameBytes;
+  }
 
   /// The `exports/` root new bundles are created under.
   ///
@@ -215,7 +247,13 @@ class PerformanceRepository {
   /// Poll-on-demand, the same convention [renderProgress] uses, so a UI
   /// driving an elapsed-time readout ticks this itself rather than this
   /// repository owning a second internal timer.
-  ({Duration elapsed, bool overrun, bool selfStopped}) get captureProgress {
+  ({
+    Duration elapsed,
+    bool overrun,
+    bool selfStopped,
+    PerfStopReason stopReason,
+  })
+  get captureProgress {
     final snapshot = _engine.snapshot();
     final sampleRate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 48000;
     return (
@@ -232,6 +270,9 @@ class PerformanceRepository {
       // progress the UI already polls rather than on a second channel, so the
       // app learns about it at tick rate instead of not at all (#652).
       selfStopped: snapshot.perfStopped,
+      // Why it stopped (#1198): a failed write, the reserve, or the storage
+      // falling behind. Set before the engine publishes the stop.
+      stopReason: snapshot.perfStopReason,
     );
   }
 
@@ -352,7 +393,9 @@ class PerformanceRepository {
     final takeId = Uint8List.fromList([
       for (var i = 0; i < PerfTarget.takeIdBytes; i++) random.nextInt(256),
     ]);
-    final result = _engine.perfArm(PerfTarget(captureDir: dir, takeId: takeId));
+    final result = _engine.perfArm(
+      PerfTarget(captureDir: dir, takeId: takeId, reserveBytes: _reserveBytes),
+    );
     if (!result.isOk) {
       final created = Directory(dir);
       if (created.existsSync()) created.deleteSync(recursive: true);
