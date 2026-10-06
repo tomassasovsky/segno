@@ -1370,10 +1370,19 @@ typedef struct le_snapshot {
    * events.log and layer files. */
   uint64_t perf_bytes_written;
   /* The first capture frame a ring could not take, or UINT64_MAX. A take
-   * that drops a frame ends there (LE_PERF_STOP_SLOW_STORAGE). */
+   * that drops a frame ends there (LE_PERF_STOP_SLOW_STORAGE). Neither this
+   * nor perf_overruns moves once the take has stopped: a full ring after a
+   * stop is not part of the take. */
   uint64_t perf_first_drop_frame;
   /* Samples above full scale (|x| > 1.0) across every stream so far. */
   uint64_t perf_overs;
+  /* The streams the armed take captures (or the next arm would: the first
+   * enabled output pair plus every monitored input the device has), and the
+   * bytes one frame of all of them takes, so the app can tell whether a
+   * volume holds a minimum take of every stream before it arms. 0 when
+   * nothing could be captured. */
+  int32_t perf_capture_streams;
+  uint32_t perf_capture_frame_bytes;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================

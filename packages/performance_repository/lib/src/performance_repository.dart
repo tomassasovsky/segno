@@ -64,16 +64,24 @@ class PerformanceRepository {
   static const Duration minimumTake = Duration(seconds: 10);
 
   /// Free bytes the exports volume needs before a take may start: the
-  /// reserve, the engine's allowance and [minimumTake] of a stereo master at
-  /// the current sample rate, with its part header. Arming below this would
-  /// start a take the reserve stops at once.
+  /// reserve, the engine's allowance, and [minimumTake] of every stream the
+  /// arm would capture (the master and each monitored input, as the engine
+  /// reports them) at the current sample rate, with one part header each.
+  /// Arming below this would start a take the reserve stops at once. When
+  /// the engine reports nothing to capture, a stereo master is assumed.
   int get minimumFreeBytesToArm {
-    final rate = _engine.snapshot().sampleRate;
-    const stereoFrameBytes = 2 * 4;
+    final snapshot = _engine.snapshot();
+    final rate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 48000;
+    final streams = snapshot.perfCaptureStreams > 0
+        ? snapshot.perfCaptureStreams
+        : 1;
+    final frameBytes = snapshot.perfCaptureFrameBytes > 0
+        ? snapshot.perfCaptureFrameBytes
+        : 2 * 4;
     return (_reserveBytes ?? 0) +
         PerfTarget.allowanceBytes +
-        PerfTarget.partHeaderBytes +
-        (rate > 0 ? rate : 48000) * minimumTake.inSeconds * stereoFrameBytes;
+        streams * PerfTarget.partHeaderBytes +
+        rate * minimumTake.inSeconds * frameBytes;
   }
 
   /// The `exports/` root new bundles are created under.

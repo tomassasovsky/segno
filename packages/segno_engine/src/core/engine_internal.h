@@ -390,6 +390,11 @@ void le_perf_drain_set_mid_cycle_hook_for_test(void (*fn)(void*), void* ctx);
 #define LE_PD_VOLUME_FREE_UNREADABLE (-2)
 void le_perf_drain_set_volume_free_for_test(int64_t bytes);
 
+/* Re-reads the volume's free bytes every `cycles` drain cycles instead of
+ * LE_PD_FREE_SAMPLE_CYCLES (20, about 5 s); 0 restores that. Process-global;
+ * reset it before the next test runs. Not part of the FFI surface. */
+void le_perf_drain_set_free_sample_cycles_for_test(int cycles);
+
 /* ---- perf-render test seams (perf_render.c; part 8) ---- */
 
 /* Forces the offline render worker's dry-stem write (only) to fail for a

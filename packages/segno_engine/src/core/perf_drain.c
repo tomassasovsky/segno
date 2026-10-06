@@ -666,6 +666,15 @@ void le_perf_drain_set_mid_cycle_hook_for_test(void (*fn)(void*), void* ctx) {
  * thread before arming. */
 static _Atomic int64_t g_pd_volume_free = -1;
 
+/* Test-only: see le_perf_drain_set_free_sample_cycles_for_test. 0 is the
+ * production LE_PD_FREE_SAMPLE_CYCLES. */
+static _Atomic int g_pd_free_sample_cycles = 0;
+
+void le_perf_drain_set_free_sample_cycles_for_test(int cycles) {
+  atomic_store_explicit(&g_pd_free_sample_cycles, cycles < 0 ? 0 : cycles,
+                        memory_order_relaxed);
+}
+
 void le_perf_drain_set_volume_free_for_test(int64_t bytes) {
   atomic_store_explicit(&g_pd_volume_free, bytes, memory_order_relaxed);
 }
@@ -751,6 +760,7 @@ struct le_perf_drain {
   uint64_t bytes_at_sample;
   uint64_t bytes_written;
   int cycles_since_sample;
+  int layer_over_budget; /* a staged layer did not fit: stop at the reserve */
 
   char capture_dir[LE_PD_PATH_MAX];
   char sidecar_dir[LE_PD_PATH_MAX]; /* where performance.json lives */
@@ -1013,6 +1023,18 @@ static int le_pd_write_staged_layer(le_perf_drain* d,
   if (d->layer_count >= LE_PD_MAX_LAYERS) {
     for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
     d->layers_dropped++;
+    return 1;
+  }
+  /* A layer the reserve budget cannot pay for is not written: the take stops
+   * at the reserve now (le_pd_drain_cycle) rather than run the volume out
+   * and end as a failed write (#1198). Counted like any unpersisted layer. */
+  if (d->has_budget &&
+      (uint64_t)entry->frame_count * (uint64_t)entry->lane_count *
+              sizeof(float) >
+          le_pd_budget(d)) {
+    for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
+    d->layers_dropped++;
+    d->layer_over_budget = 1;
     return 1;
   }
 
@@ -1739,13 +1761,25 @@ static uint64_t le_pd_frames_within(le_perf_drain* d, uint64_t budget) {
   return lo;
 }
 
-/* Whether every stream holds exactly `frame` frames. */
-static int le_pd_all_streams_at(le_perf_drain* d, uint64_t frame) {
+/* Whether every stream holds at least `frame` frames. With pops capped at
+ * `elapsed` they all hold exactly the same count; ">=" keeps a stream that
+ * somehow stood past the stop frame from holding the take open forever. */
+static int le_pd_all_streams_reached(le_perf_drain* d, uint64_t frame) {
   for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS; ++k) {
     const le_pd_file* pf = le_pd_stream(d, k);
-    if (pf != NULL && pf->written != frame) return 0;
+    if (pf != NULL && pf->written < frame) return 0;
   }
   return 1;
+}
+
+/* The fewest frames any stream holds. */
+static uint64_t le_pd_lowest_written(le_perf_drain* d) {
+  uint64_t lowest = UINT64_MAX;
+  for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS; ++k) {
+    const le_pd_file* pf = le_pd_stream(d, k);
+    if (pf != NULL && pf->written < lowest) lowest = pf->written;
+  }
+  return lowest == UINT64_MAX ? 0 : lowest;
 }
 
 /* Publishes the take's overs so far: every sealed part, and each open one. */
@@ -1822,7 +1856,10 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
   const uint64_t first_drop = atomic_load_explicit(
       &e->a_perf_first_drop_frame, memory_order_relaxed);
 
-  if (!final && ++d->cycles_since_sample >= LE_PD_FREE_SAMPLE_CYCLES) {
+  const int sample_every =
+      atomic_load_explicit(&g_pd_free_sample_cycles, memory_order_relaxed);
+  if (!final && ++d->cycles_since_sample >=
+                    (sample_every > 0 ? sample_every : LE_PD_FREE_SAMPLE_CYCLES)) {
     le_pd_sample_free(d);
   }
 
@@ -1866,15 +1903,29 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
       cap_reason = LE_PERF_STOP_RESERVE_REACHED;
     }
   }
+  if (d->layer_over_budget) {
+    const uint64_t here = le_pd_lowest_written(d);
+    if (here < cap) {
+      cap = here;
+      cap_reason = LE_PERF_STOP_RESERVE_REACHED;
+    }
+  }
 
+  /* Never past `elapsed` this cycle either (#1198 review): a frame at or
+   * below it belongs to a counted block, whose drop the load above has seen;
+   * a frame past it may sit in one ring while another ring is dropping it
+   * right now. Left in the ring, it is read next cycle against a drop record
+   * that is then complete, so every stream ends each cycle at the same frame
+   * and a stop is always exact. */
+  const uint64_t pop_to = elapsed < cap ? elapsed : cap;
   if (ok && !le_pd_drain_ring(d, &d->master_file, &e->perf.master_ring,
-                              scratch, LE_PD_SCRATCH_SAMPLES, cap)) {
+                              scratch, LE_PD_SCRATCH_SAMPLES, pop_to)) {
     ok = 0;
   }
   for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (!(e->perf.input_mask & (1u << c))) continue;
     if (!le_pd_drain_ring(d, &d->monitor_file[c], &e->perf.monitor_ring[c],
-                          scratch, LE_PD_SCRATCH_SAMPLES, cap)) {
+                          scratch, LE_PD_SCRATCH_SAMPLES, pop_to)) {
       ok = 0;
     }
   }
@@ -1908,7 +1959,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
    * the rings have shown so far (a drop or a budget end in a block not yet
    * counted) waits for the next cycle. */
   if (ok && d->stop_reason == LE_PERF_STOP_NONE &&
-      cap_reason != LE_PERF_STOP_NONE && le_pd_all_streams_at(d, cap)) {
+      cap_reason != LE_PERF_STOP_NONE && le_pd_all_streams_reached(d, cap)) {
     d->stop_reason = cap_reason;
     d->stop_frame = cap;
   }

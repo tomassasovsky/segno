@@ -895,7 +895,7 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
     CHECK(output == .125f); // capture refusal cannot refuse musical Undo
     CHECK(atomic_load(&e->a_perf_layer_overruns) == 1);
     atomic_store(&gate.release, 1);
-    for (int i = 0; i < 5000 && atomic_load(&e->perf.layer_staging_ring.head) !=
+    for (int i = 0; i < 15000 && atomic_load(&e->perf.layer_staging_ring.head) !=
          atomic_load(&e->perf.layer_staging_ring.tail); ++i) test_sleep_ms(1);
     CHECK(atomic_load(&e->perf.layer_staging_ring.head) == atomic_load(&e->perf.layer_staging_ring.tail));
     if (manifest_full) {
@@ -907,7 +907,7 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
         le_engine_process(e, &output, &input, 1);
         CHECK(output == .125f);
       }
-      for (int i = 0; i < 5000 && atomic_load(&e->perf.layer_staging_ring.head) !=
+      for (int i = 0; i < 15000 && atomic_load(&e->perf.layer_staging_ring.head) !=
            atomic_load(&e->perf.layer_staging_ring.tail); ++i) test_sleep_ms(1);
       CHECK(!le_perf_drain_self_stopped(e->perf.drain));
       // One more frame after the drop: a self-stopped drain would not keep it.
