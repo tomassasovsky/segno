@@ -86,6 +86,11 @@ add_library(segno_engine SHARED
   # keep the two lists in sync.
   core/restore_declip.c      # de-clip: flat-run detect + spline/Burg-AR repair
   core/restore_halfband.c    # 2:1 half-band resample (RNNoise's 48 k leg)
+  # Instrument synthesis (#1197) — pure TUs like the restore DSP: the voice
+  # pool and the patch table (whose catalogue reads are exported). Listed
+  # explicitly in run_native_tests.sh and tool/build_test_lib.sh too.
+  core/synth_voice.c         # instrument voice pool (synth_voice.h)
+  core/synth_patch.c         # the 19 patches + le_synth_patch_info & co.
   # The miniaudio device backend (le_device_backend.h), compiled unconditionally
   # — the only device backend this build ships; another backend slots in behind
   # le_select_backend.
