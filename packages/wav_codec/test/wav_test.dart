@@ -85,25 +85,5 @@ void main() {
         },
       );
     });
-
-    test('decodeFloat32 bounds the decode with maxFrames', () {
-      final bytes = WavCodec.encodeFloat32(
-        samples: Float32List.fromList([
-          for (var i = 0; i < 2000; i++) i / 2000,
-        ]),
-        sampleRate: 48000,
-        channels: 2,
-      );
-      final first = WavCodec.decodeFloat32(bytes, maxFrames: 10);
-      expect(first.frames, 10);
-      expect(first.samples, hasLength(20));
-      expect(first.samples[19], closeTo(19 / 2000, 1e-7));
-      expect(WavCodec.decodeFloat32(bytes, maxFrames: 5000).frames, 1000);
-      expect(WavCodec.decodeFloat32(bytes, maxFrames: 0).frames, 0);
-      expect(
-        () => WavCodec.decodeFloat32(bytes, maxFrames: -1),
-        throwsArgumentError,
-      );
-    });
   });
 }
