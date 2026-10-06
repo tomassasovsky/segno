@@ -89,6 +89,10 @@ typedef struct le_command {
       uint32_t sequence;
       int32_t cancel_count_in; /* admission was an owned countdown cancellation */
     } clock;
+    struct { /* SET_CLOCK_SYNC (#1228): one complete sync vector. */
+      int32_t port, follow_transport, loss_policy;
+      uint32_t sequence;
+    } clock_sync;
     struct { /* SET_LENGTH_PRESETS / SET_LOOPER_MODE. count == 0 means a
               * mode-only command; bars are copied, never caller-owned pointers. */
       int32_t mode;
