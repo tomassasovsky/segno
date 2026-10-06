@@ -71,8 +71,9 @@ void main() {
         name: 'Probe',
       );
       probe.deleteSync(recursive: true);
-      // A new bundle has no swap; a write-back adds one step before it.
-      final steps = writes.length + 1;
+      // A new bundle has no swap; a write-back adds two steps, before the
+      // swap and between its two renames.
+      final steps = writes.length + 2;
       expect(steps, greaterThan(3));
 
       for (var failAt = 0; failAt < steps; failAt++) {
@@ -96,6 +97,45 @@ void main() {
       }
     },
   );
+
+  test('a failed second rename puts the previous save back at once', () async {
+    final before = await savedOldThenEdited();
+    SessionRepository.debugOnSaveWrite = (path) {
+      // Called with the stage just before it is renamed into place.
+      if (path.endsWith('.saving')) {
+        expect(Directory(bundle()).existsSync(), isFalse);
+        expect(Directory('${bundle()}.old').existsSync(), isTrue);
+        throw const FileSystemException('rename refused');
+      }
+    };
+
+    await expectLater(
+      repo().save(bundle(), settings: const SessionSettings(), name: 'New'),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    // Back before any catalog read runs recovery.
+    expect(rootEntries(), ['s-a']);
+    expect(snapshotOf(bundle()), before);
+  });
+
+  test('catalog reads on every turn of a write-back never break it', () async {
+    for (var round = 0; round < 20; round++) {
+      engine.seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      await repo().save(bundle(), settings: const SessionSettings(), name: 'A');
+      engine.seedTrack(0, Float32List.fromList([2, 2, 2, 2, 2, 2, 2, 2]));
+      var done = false;
+      final save = repo()
+          .save(bundle(), settings: const SessionSettings(), name: 'B')
+          .whenComplete(() => done = true);
+      while (!done) {
+        await repo().listSessions();
+        await Future<void>.delayed(Duration.zero);
+      }
+      await expectLater(save, completes, reason: 'round $round');
+      expect((await repo().read(bundle())).session.name, 'B');
+    }
+  });
 
   test('a write-back that lands replaces the bundle whole', () async {
     await savedOldThenEdited();
