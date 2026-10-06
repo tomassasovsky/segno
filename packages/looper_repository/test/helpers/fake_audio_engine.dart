@@ -1569,6 +1569,17 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult importTrack(int channel, Float32List pcm) =>
       importTrackLane(channel, 0, pcm);
 
+  /// Spans [importSpan] gave, by channel (#1179 Part 4b); the commit puts
+  /// them on the tracks' snapshots.
+  final Map<int, int> importedSpans = {};
+
+  @override
+  EngineResult importSpan(int channel, int spanFrames) {
+    calls.add('importSpan');
+    importedSpans[channel] = spanFrames;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       importLayer(channel, lane, 0, pcm);
@@ -1637,6 +1648,7 @@ class FakeAudioEngine implements AudioEngine {
         redoDepth: finalized.redoCount,
         rms: 0,
         peak: 0,
+        spanFrames: importedSpans[entry.key] ?? 0,
       );
     }
     _nextSnapshot = _nextSnapshot.copyWith(
@@ -2075,6 +2087,7 @@ class _LengthSnapshot extends EngineSnapshot {
         speed: source.speed,
         transposeBypass: source.transposeBypass,
         recordedTempoBpm: source.recordedTempoBpm,
+        recordedLengthFrames: source.recordedLengthFrames,
         followTempo: source.followTempo,
         tempoFollow: source.tempoFollow,
         pitchMode: source.pitchMode,
@@ -2114,6 +2127,7 @@ class _LengthTrack extends TrackSnapshot {
         followTempoOverride: source.followTempoOverride,
         pitchModeOverride: source.pitchModeOverride,
         pitchEffectiveCents: source.pitchEffectiveCents,
+        spanFrames: source.spanFrames,
         volume: engine.trackLevels[channel] ?? source.volume,
         muted: source.muted,
         lengthFrames: source.lengthFrames,

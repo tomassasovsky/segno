@@ -35,7 +35,7 @@ enum LoopSettingsPageId {
   /// Loop/Once and overdub decay.
   playback,
 
-  /// Tempo following and pitch, as a readout.
+  /// Follow tempo and Pitch.
   audioTempo,
 }
 
@@ -85,6 +85,11 @@ class LoopSettingsHub extends StatelessWidget {
         .state
         .confirmedRecordStart;
     final bpm = values.bpm > 0 ? values.bpm : tempo.bpm;
+    // The defaults the page edits; before the owners are ready, the ones
+    // they restore (Follow on, Pitch unchanged).
+    final follows = playback.followTempo?.defaultValue ?? true;
+    final pitchFollows =
+        playback.pitchMode?.defaultValue == PitchMode.followsSpeed;
     final signature = timeSignatureLabel(values.tsNum, values.tsDen);
     final order = options.recDub
         ? l10n.loopSummaryRecordOverdubPlay
@@ -136,7 +141,12 @@ class LoopSettingsHub extends StatelessWidget {
       (
         LoopSettingsPageId.audioTempo,
         l10n.loopHubAudioTempo,
-        l10n.loopSummaryAudioTempo,
+        l10n.loopSummaryPair(
+          follows ? l10n.loopSummaryFollowOn : l10n.loopSummaryFollowOff,
+          follows && pitchFollows
+              ? l10n.loopSummaryPitchFollows
+              : l10n.loopSummaryPitchSame,
+        ),
       ),
     ];
     return Positioned(

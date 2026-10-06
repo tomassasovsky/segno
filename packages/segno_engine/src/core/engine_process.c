@@ -4662,7 +4662,12 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
         const int32_t len = load_i32(&tr->lanes[0].a_len);
         if (len <= 0) continue;
-        int32_t k = len / base;
+        /* A take a Session saved with a span (#1179 Part 4b) laps over that
+         * span on the recorded clock and keeps it for the next retime. */
+        const int32_t span = load_i32(&tr->a_import_span);
+        store_i32(&tr->a_import_span, 0);
+        le_span_set(tr, span > 0 && span != base ? span : 0);
+        int32_t k = len / (tr->span_clock > 0 ? tr->span_clock : base);
         if (k < 1) k = 1;
         store_i32(&tr->a_multiple, k);
         /* Session import never encodes a B3 Sync/Band division (out of this
@@ -4675,6 +4680,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         /* Parked at the loop head, so a Play in this same drain starts at
          * the lap start of an installed direction (#1162). */
         le_reset_track_playback(tr);
+        le_head_follow(e, tr, frame, 0); /* its span's rate (#1179 4b) */
         store_i32(&tr->a_state, LE_TRACK_STOPPED);
       }
       /* A session that saved no crown still gets one: its lowest recorded

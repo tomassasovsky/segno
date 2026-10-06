@@ -5618,9 +5618,41 @@ class SegnoEngineBindings {
         )
       >();
 
+  /// Sets the span an imported take was laid down against (#1179 Part 4b):
+  /// the shared-clock length it played over at its own speed, as a Session
+  /// saved it from le_track_snapshot.span_frames. Track `channel` must be EMPTY
+  /// with lane 0 imported (LE_ERR_INVALID otherwise, and for a span outside
+  /// 1..max_loop_frames); 0 clears it. le_engine_commit_session then parks the
+  /// track at length / span laps and keeps the span, so a take recorded after a
+  /// retime reads at its own ratio on the recorded clock and follows the next
+  /// retime like the takes around it. Call after the take's lanes are imported
+  /// (a lane-0 le_engine_import_track_lane, or le_engine_import_layer of lane 0
+  /// ordinal 0, starts a new take and clears it) and before the commit.
+  /// Control thread.
+  int le_engine_import_span(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int span_frames,
+  ) {
+    return _le_engine_import_span(
+      engine,
+      channel,
+      span_frames,
+    );
+  }
+
+  late final _le_engine_import_spanPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_import_span');
+  late final _le_engine_import_span = _le_engine_import_spanPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Establishes the master loop at `base_frames` and parks every imported track
   /// (EMPTY with a loaded length) STOPPED at its whole-loop multiple
-  /// (length / base_frames). Restores exactly `loop_bars` musical bars over that
+  /// (length / base_frames, or length / its imported span). Restores exactly `loop_bars` musical bars over that
   /// span; zero keeps the loop grid-free even when a tempo is known. The caller
   /// restores tempo/source/signature before this commit. Does not infer bars
   /// from BPM or change audio length. Requires base_frames > 0 and loop_bars in
@@ -7583,6 +7615,12 @@ final class le_track_snapshot extends ffi.Struct {
 
   @ffi.Int32()
   external int pitch_effective_cents;
+
+  /// Trailing (#1179 Part 4b): the shared-clock length this track's take was
+  /// laid down against once a retime moved the clock (0: the clock in force).
+  /// A Session saves it so a recall reads every take at its own ratio.
+  @ffi.Int32()
+  external int span_frames;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -8160,6 +8198,12 @@ final class le_snapshot extends ffi.Struct {
   /// (0 Unchanged, the default; 1 Follows speed).
   @ffi.Int32()
   external int pitch_follows_speed;
+
+  /// Trailing (#1179 Part 4b): the master length recorded_tempo_bpm
+  /// measured (0 with none). A Session saves the pair, so a recall commits
+  /// the takes at the tempo they were laid down at and retimes from there.
+  @ffi.Int32()
+  external int recorded_length_frames;
 }
 
 /// The plugin format a descriptor was discovered in.

@@ -1411,6 +1411,11 @@ typedef struct le_track {
    * speed * span_clock / clock length. */
   int32_t span_clock;
   _Atomic int32_t a_span_clock;
+  /* The span a Session import gave this EMPTY track (#1179 Part 4b),
+   * control-written by le_engine_import_span after the lane-0 import (which
+   * clears it), adopted and cleared by the commit. Kept apart from
+   * a_span_clock because the import's queued transform reset clears that. */
+  _Atomic int32_t a_import_span;
   /* Pitch across a retime (#1179 Part 4a-ii): this track's override of the
    * default (-1 inherit, 0 Unchanged: a stretch render keeps the pitch,
    * 1 Follows speed: the varispeed head moves it), callback-owned and

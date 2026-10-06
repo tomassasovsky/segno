@@ -9,6 +9,7 @@ import 'package:segno_engine/segno_engine.dart'
         ClickMode,
         GridDivision,
         LooperMode,
+        PitchMode,
         RecordTiming,
         TempoSource,
         TrackHistory;
@@ -87,6 +88,7 @@ class SessionRigTrack {
     required this.fadeAmount,
     required this.lanes,
     required this.reversed,
+    this.spanFrames = 0,
   });
 
   /// Track channel index.
@@ -97,6 +99,11 @@ class SessionRigTrack {
 
   /// Saved playback direction, installed before Session commit (#1162).
   final bool reversed;
+
+  /// The master length the take was laid down against when that is not the
+  /// rig's recorded one (#1179); 0 on the recorded master. Imported with the
+  /// take, so it reads at its own ratio.
+  final int spanFrames;
 
   /// The track's lanes, each with its own audio, routing, and mix. Lane 0 is
   /// first — it is the primary import that resets the track's undo state.
@@ -203,7 +210,39 @@ class SessionRig {
     this.trackLevels = const {},
     this.trackPans = const {},
     this.outputSetup = const OutputSetup(),
+    this.recordedTempoBpm = 0,
+    this.recordedLengthFrames = 0,
+    this.defaultFollowTempo = true,
+    this.trackFollowTempoOverrides = const {},
+    this.defaultPitchMode = PitchMode.unchanged,
+    this.trackPitchModeOverrides = const {},
   });
+
+  /// The tempo the takes were laid down at and the master length it
+  /// measured (#1179); 0/0 when the takes are at [tempoBpm] on
+  /// [baseLengthFrames]. A recall commits at this pair and retimes to
+  /// [tempoBpm].
+  final double recordedTempoBpm;
+
+  /// See [recordedTempoBpm].
+  final int recordedLengthFrames;
+
+  /// The Follow tempo default every track inherits (#1179).
+  final bool defaultFollowTempo;
+
+  /// Explicit Follow tempo choices; missing tracks inherit.
+  final Map<int, bool> trackFollowTempoOverrides;
+
+  /// The Pitch default every following track inherits (#1179).
+  final PitchMode defaultPitchMode;
+
+  /// Explicit Pitch choices; missing tracks inherit.
+  final Map<int, PitchMode> trackPitchModeOverrides;
+
+  /// Whether the takes sit on a retimed master: the recall commits them at
+  /// the recorded pair and retimes to [tempoBpm].
+  bool get retimed =>
+      tracks.isNotEmpty && recordedLengthFrames > 0 && recordedTempoBpm > 0;
 
   /// Whole-track gain intent, including tracks without recorded audio.
   final Map<int, double> trackLevels;

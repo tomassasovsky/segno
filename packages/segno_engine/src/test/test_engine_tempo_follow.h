@@ -585,7 +585,92 @@ static void test_follow_retime_no_click_no_drift(void) {
   le_engine_destroy(e);
 }
 
+/* Part 4b: a Session recall of a retimed rig with takes at two tempi. The
+ * snapshot carries the recorded pair and each take's span; a fresh engine
+ * restores the recorded tempo, imports the takes with their spans, commits
+ * at the recorded length and retimes: every take reads at the ratio it had,
+ * the clock exactly the saved one. */
+static void test_follow_session_recall_spans(void) {
+  printf("test_follow_session_recall_spans\n");
+  le_engine* e = tf_fixture(1, 1, 4 * TF_LEN);
+  tf_process(e, NULL, 128, 0.0f);
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, NULL, 64, 0.0f);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  tf_process(e, NULL, 4000, 0.25f);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  tf_process(e, NULL, 1024, 0.0f);
+  le_snapshot s = tf_snap(e);
+  CHECK(s.recorded_tempo_bpm == 120.0f && s.recorded_length_frames == TF_LEN);
+  CHECK(s.master_length_frames == TF_LEN90);
+  CHECK(s.tracks[0].span_frames == TF_LEN && s.tracks[1].span_frames == 0);
+  CHECK(s.tracks[1].length_frames == TF_LEN90);
+  static float take0[TF_LEN], take1[TF_LEN90];
+  CHECK(le_engine_export_track(e, 0, take0, TF_LEN) == TF_LEN);
+  CHECK(le_engine_export_track(e, 1, take1, TF_LEN90) == TF_LEN90);
+  le_engine_destroy(e);
+  /* What a Session saves for track 1: span 0 means the clock in force. */
+  const int32_t span1 = s.tracks[1].span_frames > 0 ? s.tracks[1].span_frames
+                                                     : s.master_length_frames;
+  e = le_engine_create();
+  CHECK(le_engine_configure(e, TF_SR, 1, 1, 4 * TF_LEN) == LE_OK);
+  CHECK(le_engine_import_span(e, 0, TF_LEN) == LE_ERR_INVALID); /* no take */
+  CHECK(le_engine_restore_tempo(e, 120.0f, LE_TEMPO_SOURCE_MANUAL) == LE_OK);
+  /* The recall installs Follow before the takes (Part 4b's order). */
+  const uint64_t id = tf_follow(e, -1, 1);
+  drain(e);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_import_track(e, 0, take0, TF_LEN) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, take1, TF_LEN90) == LE_OK);
+  CHECK(le_engine_import_span(e, 1, 4 * TF_LEN + 1) == LE_ERR_INVALID);
+  CHECK(le_engine_import_span(e, 1, span1) == LE_OK);
+  CHECK(le_engine_commit_session(e, TF_LEN, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_import_span(e, 1, span1) == LE_ERR_INVALID); /* committed */
+  s = tf_snap(e);
+  CHECK(s.master_length_frames == TF_LEN && s.recorded_tempo_bpm == 120.0f);
+  CHECK(s.tracks[1].span_frames == TF_LEN90 && s.tracks[1].multiple == 1);
+  CHECK(s.tracks[1].head_rate_milli == 1333); /* parked at its span's rate */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  s = tf_snap(e);
+  CHECK(s.tracks[0].head_rate_milli == 1000);
+  CHECK(s.tracks[1].head_rate_milli == 1333); /* its take over the bar */
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, NULL, 64, 0.0f);
+  s = tf_snap(e);
+  CHECK(s.master_length_frames == TF_LEN90 && s.recorded_tempo_bpm == 120.0f);
+  CHECK(s.tracks[0].head_rate_milli == 749 && s.tracks[1].head_rate_milli == 1000);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* on its span: overdub allowed */
+  le_engine_destroy(e);
+  /* A span belongs to the take it was given for: a fresh lane-0 import
+   * (a retried load) starts without one. */
+  e = le_engine_create();
+  CHECK(le_engine_configure(e, TF_SR, 1, 1, 4 * TF_LEN) == LE_OK);
+  CHECK(le_engine_restore_tempo(e, 120.0f, LE_TEMPO_SOURCE_MANUAL) == LE_OK);
+  CHECK(le_engine_import_track(e, 0, take0, TF_LEN) == LE_OK);
+  CHECK(le_engine_import_span(e, 0, TF_LEN90) == LE_OK);
+  CHECK(le_engine_import_track(e, 0, take0, TF_LEN) == LE_OK);
+  /* Two laps laid down at 180 BPM (5333 each) on the 8000 recorded clock:
+   * the laps come from the span, 10666 / 5333 = 2, not from the clock. */
+  CHECK(le_engine_import_track(e, 1, take1, 2 * 5333) == LE_OK);
+  CHECK(le_engine_import_span(e, 1, 5333) == LE_OK);
+  /* The layered import's first image starts a new take the same way. */
+  CHECK(le_engine_import_track(e, 2, take0, TF_LEN) == LE_OK);
+  CHECK(le_engine_import_span(e, 2, TF_LEN90) == LE_OK);
+  CHECK(le_engine_import_layer(e, 2, 0, 0, take0, TF_LEN) == LE_OK);
+  CHECK(le_engine_commit_session(e, TF_LEN, 1) == LE_OK);
+  drain(e);
+  s = tf_snap(e);
+  CHECK(s.tracks[0].span_frames == 0 && s.tracks[0].head_rate_milli == 1000);
+  CHECK(s.tracks[1].multiple == 2 && s.tracks[1].span_frames == 5333);
+  CHECK(s.tracks[2].span_frames == 0);
+  le_engine_destroy(e);
+}
+
 static void run_tempo_follow_tests(void) {
+  test_follow_session_recall_spans();
   test_follow_clear_last_take_undo();
   test_follow_snap_to_recorded();
   test_follow_length_on_the_bar();

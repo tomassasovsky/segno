@@ -391,11 +391,13 @@ void main() {
       final base = EngineSnapshot.fromNative(snap.ref, const []);
       snap.ref
         ..recorded_tempo_bpm = 120
+        ..recorded_length_frames = 16000
         ..follow_tempo = 1
         ..tempo_follow = 1
         ..pitch_follows_speed = 1;
       final set = EngineSnapshot.fromNative(snap.ref, const []);
       expect(set.recordedTempoBpm, 120);
+      expect(set.recordedLengthFrames, 16000);
       expect(set.followTempo, isTrue);
       expect(set.tempoFollow, TempoFollowState.retimes);
       expect(set.pitchMode, PitchMode.followsSpeed);
@@ -404,6 +406,10 @@ void main() {
       expect(
         base.copyWith(pitchMode: PitchMode.followsSpeed).pitchMode,
         PitchMode.followsSpeed,
+      );
+      expect(
+        base.copyWith(recordedLengthFrames: 8000),
+        isNot(base),
       );
       for (final (code, state) in [
         (0, TempoFollowState.free),
@@ -426,8 +432,10 @@ void main() {
       track.ref
         ..follow_override = 0
         ..pitch_override = 1
-        ..pitch_effective_cents = -498;
+        ..pitch_effective_cents = -498
+        ..span_frames = 21333;
       final own = TrackSnapshot.fromNative(track.ref);
+      expect(own.spanFrames, 21333);
       expect(own.followTempoOverride, isFalse);
       expect(own.pitchModeOverride, PitchMode.followsSpeed);
       expect(own.pitchEffectiveCents, -498);
@@ -1809,6 +1817,7 @@ void main() {
         // Audio & tempo follow (#1179): settings, a latched tempo and a state
         // that moves with content, not per callback.
         'recordedTempoBpm',
+        'recordedLengthFrames',
         'followTempo',
         'tempoFollow',
         'pitchMode',

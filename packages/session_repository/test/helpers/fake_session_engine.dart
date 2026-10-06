@@ -34,6 +34,9 @@ class _FakeTrack {
   List<HistoryEntry> history = const [];
   bool solo = false;
   bool reversed = false;
+
+  /// The span a retime left on the take (#1179); 0 is the clock in force.
+  int spanFrames = 0;
   final List<_FakeLane> lanes = [_FakeLane()];
 
   int get liveIndex => undoCount;
@@ -91,6 +94,10 @@ class FakeSessionEngine implements AudioEngine {
   // rather than trusting it by inspection. Defaults mirror
   // `EngineSnapshot`'s own tempo-free defaults.
   double tempoBpm = 0;
+
+  /// The recorded pair a retime keeps (#1179); 0/0 with none.
+  double recordedTempoBpm = 0;
+  int recordedLengthFrames = 0;
   TempoSource tempoSource = TempoSource.none;
   int tsNum = 4;
   int tsDen = 4;
@@ -219,6 +226,8 @@ class FakeSessionEngine implements AudioEngine {
     masterLengthFrames: masterLength,
     mixRevision: mixRevision,
     tempoBpm: tempoBpm,
+    recordedTempoBpm: recordedTempoBpm,
+    recordedLengthFrames: recordedLengthFrames,
     tempoSource: tempoSource,
     tsNum: tsNum,
     tsDen: tsDen,
@@ -249,6 +258,7 @@ class FakeSessionEngine implements AudioEngine {
           layerInFlight: i == 0 && _consumeInFlightPoll(),
           solo: t.solo,
           reversed: t.reversed,
+          spanFrames: t.spanFrames,
           lanes: [
             for (final lane in t.lanes)
               LaneSnapshot(
@@ -295,6 +305,12 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult importTrack(int channel, Float32List pcm) =>
       importTrackLane(channel, 0, pcm);
+
+  @override
+  EngineResult importSpan(int channel, int spanFrames) => EngineResult.ok;
+
+  /// Leaves [span] on track [channel]'s take, as a retime does (#1179).
+  void seedSpan(int channel, int span) => _tracks[channel].spanFrames = span;
 
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) {

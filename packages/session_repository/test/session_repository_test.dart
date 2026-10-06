@@ -711,6 +711,63 @@ void main() {
     expect([for (final t in bundle.session.tracks) t.reversed], [true, false]);
   });
 
+  group('Audio & tempo capture (#1179)', () {
+    test("a retimed rig saves its recorded pair and every take's span: "
+        "the engine's span, the clock in force for a take laid down "
+        'after the retime, 0 on the recorded master', () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        ..seedTrack(1, Float32List.fromList([2, 2, 2, 2, 2, 2]))
+        ..seedTrack(2, Float32List.fromList([3, 3, 3, 3, 3, 3, 3, 3]))
+        ..tempoBpm = 80
+        ..tempoSource = TempoSource.manual
+        ..recordedTempoBpm = 120
+        ..recordedLengthFrames = 4
+        // The master is 6 at 80 BPM; track 0 was laid down at 120 (span 4),
+        // track 1 at 80 (span 0: the clock in force), track 2 at 96 (span 5).
+        ..masterLength = 6
+        ..seedSpan(0, 4)
+        ..seedSpan(2, 5);
+      final dir = '${tempDir.path}/s';
+      await repoFor(source).save(
+        dir,
+        settings: const SessionSettings(
+          tempoBpm: 80,
+          tempoSource: TempoSource.manual,
+          defaultFollowTempo: false,
+          trackFollowTempoOverrides: {0: true},
+          defaultPitchMode: PitchMode.followsSpeed,
+          trackPitchModeOverrides: {1: PitchMode.unchanged},
+        ),
+      );
+      final session = (await repoFor(FakeSessionEngine()).read(dir)).session;
+      expect(session.baseLengthFrames, 6);
+      expect(session.recordedTempoBpm, 120);
+      expect(session.recordedLengthFrames, 4);
+      expect(session.tracks.map((t) => t.spanFrames), [0, 6, 5]);
+      expect(session.defaultFollowTempo, isFalse);
+      expect(session.trackFollowTempoOverrides, {0: true});
+      expect(session.defaultPitchMode, PitchMode.followsSpeed);
+      expect(session.trackPitchModeOverrides, {1: PitchMode.unchanged});
+    });
+
+    test('a rig on its recorded master saves no pair and no spans', () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        ..tempoBpm = 120
+        ..tempoSource = TempoSource.manual
+        ..recordedTempoBpm = 120
+        ..recordedLengthFrames = 4;
+      final dir = '${tempDir.path}/s';
+      await repoFor(source).save(dir, settings: const SessionSettings());
+      final session = (await repoFor(FakeSessionEngine()).read(dir)).session;
+      expect(session.recordedTempoBpm, 0);
+      expect(session.recordedLengthFrames, 0);
+      expect(session.tracks.single.spanFrames, 0);
+      expect(session.defaultFollowTempo, isTrue);
+    });
+  });
+
   test('save then read round-trips a multi-lane track per lane', () async {
     final source = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
