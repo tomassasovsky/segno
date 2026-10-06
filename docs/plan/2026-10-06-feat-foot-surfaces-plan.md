@@ -256,8 +256,11 @@ whose hold is armed and not yet settled) and `holdThreshold: Duration` (the
 loaded `_longPress`). It publishes only the fact, never an instant (review
 L2): the Pi has no RTC and NTP steps the wall clock after boot, so the widget
 times the bar from its own ticker. `_armGesture` gains a `PedalButton? cue`
-argument; when non-null the button is added and the state emitted; it is
-removed when the hold fires, the release lands, or the gesture is cancelled
+argument; when non-null, and only in a mode whose surface draws pedals
+(Mixer, Fade, Reverse, FX, Custom, and later Tuner and Peel), the button is
+added and the state emitted. Tracks and Mute draw no pedals (O1), and every
+stomp there would otherwise rebuild the whole Tracks screen for a cue it never
+shows (P1 review M1). It is removed, in any mode, when the hold fires, the release lands, or the gesture is cancelled
 (`_HoldGesture` reports each through one `onSettled` callback added to
 `press`). `onSettled` never emits after `close()` (`isClosed` guard): `close`
 cancels every gesture. Every `_armGesture` call site that arms a pedal passes
@@ -270,7 +273,9 @@ always lays out the 3 px bar slot under the face (opacity 0 when idle). When
 `holdPending` turns true it runs an `AnimationController` of `holdThreshold`
 from 0 (the ticker is monotonic, and no per-frame cubit emits are needed);
 when it turns false the bar hides. While pending the hint text brightens
-(`#d2e3ff`, a new `SurfaceTheme` token beside the hint colour). Every face
+(`#d2e3ff`); the bar's track is `#303b4b` and its fill `#a8c7fa` (pen
+`IBL3g`), three new `SurfaceTheme` tokens (`holdTrack`, `holdProgress`,
+`holdPendingText`). Every face
 passes `state.pendingHolds.contains(button)`; Mixer and Fade get the cue at
 once (Reverse arms no holds, so it never shows one). The bar slot moves every
 face's layout by 3 px, so the Mixer, Fade and Reverse goldens are regenerated
@@ -340,16 +345,34 @@ projection can take):
   them (`noDGu`, opacity 0.3). This removes the unbound-Stop panic and its
   restore hold (decision D3, owner decision O3).
 - **Track FX off / Track FX on (O3).** `ControlCommand.trackFxOff`
-  (`command:track-fx-off`) and `trackFxOn` (`command:track-fx-on`), listed in
-  `ControlActionGroup.fx` and run through `_sweepTrackChains`
-  (`control_cubit.dart:1916-1923`), the panic's own code: off turns every
-  track chain that has effects off, on turns every track chain on. Assignable
-  on Custom, External and MIDI like any command; an unaccepted sweep is a
-  refused assignment and gets the §3 notice. The PR's release note says:
+  (`command:track-fx-off`) and `trackFxOn` (`command:track-fx-on`), the first
+  members of `ControlActionGroup.fx` (`control_action.dart:63-65`), with
+  labels `Track FX off` / `Track FX on` (`control_action_labels.dart`, l10n en
+  and es) and `_runCommand` cases that call `_sweepTrackChains`
+  (`control_cubit.dart:1916-1923`), which stays: it is the panic's own code
+  and the commands need it. Off turns every track chain that has effects off;
+  on turns every track chain on, the empties included, and does not restore
+  an earlier pattern, which its label says. The public `panicTrackChains` and
+  `restoreAllTrackChains` go, and so does the FX arm of `ControlCubit.stop()`
+  (`:1741-1742`, which called the panic). Assignable on Custom, External and
+  MIDI like any command; their LED follows the generic command rule (lit on
+  contact). A refused sweep gets Part 3's assigned-action notice when that
+  lands. The PR's release note says:
   "FX mode: Stop no longer switches every track's effects off, and holding it
   no longer switches them back on. Assign Track FX off and Track FX on to any
   pedal, CTRL switch or MIDI control instead (Pedals > Custom controls,
   External pedals or MIDI controls)."
+- **One-time notice (O3, rule 3, like D11).** The first time FX mode is
+  entered after the update, an info toast says: "Stop no longer switches
+  every track's effects off in FX mode. Assign Track FX off or Track FX on to
+  a pedal instead." A settings flag `fx.stop_change_notice_shown` is written
+  when it is first shown, so it shows once per install, whatever the outcome
+  of the write (a failed write may show it once more, never on every entry).
+- **MODE is Exit (decision D13).** Pen 10/03 draws MODE as `Exit`, lit, and
+  accepted §4 requires a foot Exit. On the trunk a MODE press in FX ran the
+  configured MODE pair (Mute on press, Custom on hold). In FX it now exits on
+  contact to the mode FX was entered from (`_fxReturn`, `:1101`), with no hold,
+  as Custom's MODE already does (`:2362-2373`).
 - Bank: `Bank A/B`, `Switch bank`, as the pen draws it. Its hold keeps
   Record performance (`_armBank` `:2861-2867`), which the pen's slice-4c note
   documents (`po4RZ`: "Bank Hold retains performance-recording access");
@@ -364,11 +387,15 @@ projection can take):
 
 **Cubit.** `footFxPressed/Released/Cancelled` and `activateFootFxPedal` admit
 on-screen contacts into `_handleEvent` the way `footFadePressed` does
-(`:2089-2108`). FX dispatch stays in `_onPress` (`:2374-2437`) minus the
-unbound-Stop panic and the bound-Stop restore hold (`_armStop`,
-`_armStopRestore`, `_sweepTrackChains` `:1916-1923` when nothing else uses
-it). The Rec/Play, Undo and Clear mask rule (`control_projection.dart`) lights
-them only when bound.
+(`:2089-2108`); a cancelled on-screen contact restores a held momentary, so
+a contact that leaves can never strand a target on (B1). FX dispatch stays in
+`_onPress` (`:2374-2437`) minus the unbound-Stop panic and the bound-Stop
+restore hold (`_armStop` and `_armStopRestore` are deleted; `_sweepTrackChains`
+stays for the commands). In FX mode the Rec/Play, Stop, Undo and Clear mask
+rule (`control_projection.dart`) lights each only for what its binding
+drives, read from the same per-switch values the face reads
+(`ControlState.fxSwitches`, published by the cubit beside the frame push, so
+the face and the LEDs cannot disagree).
 
 **Refusals** (§3). A stomp on a stale binding: toast `footFxUnavailable`
 ("This pedal's effect is no longer available. Reassign it in Pedal
@@ -391,8 +418,15 @@ toasts; a bound Rec/Play and a bound Stop show their binding and run it from
 an on-screen tap; unbound Stop is dimmed and its press changes no chain; bank
 B shows B bindings. Widget: momentary LED and highlighted detail only while
 the contact is held; toggle stays lit after release; Exit returns to Record.
-Goldens `foot_fx.png` (`noDGu`) and `foot_fx_held.png` (`ri60q`), `es`
-geometry probe. Removal:
+Commands: `command:track-fx-off` and `command:track-fx-on` round-trip and are
+the FX group's whole listing; assigned on Custom, off leaves a chain-less
+track alone, on cures a stale bypass on one, and a second off writes nothing;
+an assigned `Track FX on` from a CTRL switch supersedes an older MIDI hold;
+unbound Stop does nothing on tap or hold; `stop()` in FX does nothing. The
+one-time notice shows on the first FX entry and not on the second, and not
+after a restart once the flag is set. Goldens `foot_fx_default.png` (`noDGu`),
+`foot_fx_held.png` (`ri60q`) and `foot_fx_spanish.png`, `es` geometry probe.
+Removal:
 `! grep -rn "fxTarget\|_FxChainDressing\|_stageFxTargetLabel" lib test`.
 
 ```success-criteria
@@ -402,6 +436,9 @@ SUCCESS CRITERIA:
 - Bound Rec/Play, Stop, Undo and Clear show and run their bindings on screen and by foot; unbound ones are dimmed and inert. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
 - Toggle and Hold lines follow BindingBehavior; the momentary LED and highlight last exactly as long as the contact. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
 - A stale binding stays enabled and its press shows one toast on screen and by foot. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
+- Track FX off and Track FX on are assignable FX-group commands that sweep the track chains as the panic and its hold did; the FX Stop and stop() no longer do. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
+- The one-time notice shows on the first FX entry only. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
+- MODE exits FX on contact to the mode FX was entered from. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
 - The Tracks-column FX re-dress is gone. | verify: ! grep -rnE "fxTarget|_FxChainDressing|_stageFxTargetLabel" lib test
 - Goldens match noDGu and ri60q on the author's machine. | verify: /Users/Tomas/development/flutter/bin/flutter test test/screenshots
 - Analyzer and Bloc lint are clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
@@ -445,8 +482,9 @@ face.
 
 **Refusals** (§3 rule 3; review H1 and L9). Every refused assigned action gets
 one notice, from any mode. PR #1233 (PeelP3) is fixing assigned Fade, Reverse
-and Peel refusals to report from any mode through their own reporters inside
-`_runTrackOperation`, with listeners no longer gated on the mode; this part
+and Peel refusals to report from any mode through their own reporters, in
+`_runAction`'s `TrackOperationAction` arm when no channel accepted (PeelP3
+`456654207`), with listeners no longer gated on the mode; this part
 depends on #1233 and reuses that path rather than adding a second one. For
 every other action it adds one `assignedActionFailure` counter carrying the
 action's label, bumped in two places: where `_runAction` (`:2560`) returns a
@@ -596,8 +634,12 @@ Control (review L5): the tray face, or Settings Part 5's tuner handle
 (Settings plan `:541`, "arms TunerCubit"), still arms through the cubit, never
 a widget calling the repository. A reading whose input differs from the armed
 one is cleared at once (review L6; fixes `:148-151`): it belongs to another
-input, it is not "no signal". Silence keeps the 1.2 s dimmed hold, then
-clears (decision D5).
+input, it is not "no signal". The cubit no longer re-pushes
+`setTunerInput` on a mismatch (trunk `tuner_cubit.dart:148-151`): with D12
+every `setTunerInput` also clears the tuner mute, so a re-push by a second
+arm owner would unmute the input mid-tune and move the tuner (P4 review L1).
+Part 5 removes it before Part 6 arms from Control. Silence keeps the 1.2 s
+dimmed hold, then clears (decision D5).
 
 **Foot model** `lib/control/model/foot_tuner.dart`, from
 `tuner-performance-study.js`:
@@ -622,7 +664,8 @@ clears (decision D5).
 
 **Tests.** Settings round trip, clamping and failed-write restore; reading at
 A4 = 432 names 432 Hz as A in tune; a mismatch clears the reading in the
-same emit; projection with
+same emit, and `TunerCubit` never calls `setTunerInput` on a snapshot
+mismatch; projection with
 2, 4, 6 and 18 inputs (`Inputs 17–18`, two `—` pedals), a loopback-excluded
 input, a pair (muting input 4 mutes 3 and 4), an empty device; actions order
 `setTunerInput` before `setTunerMute`.
@@ -689,8 +732,15 @@ puts `FX` / `Hold · Tuner` on Track 2 in the Custom map, which the pen draws on
 `uEukr` (Pedal 2 `FX`, `Hold · Tuner`). This part makes `Hold · Tuner` on
 Custom Track 2 bank A part of the default setup: a fresh install gets it, and
 an existing install gets it only where that Hold is empty (a stored setup with
-anything there keeps it, rule 1). The seeding is written to `pedal.setup`
-once and announced once with a toast (rule 3): "Tuner is on Custom: hold MODE,
+anything there keeps it, rule 1). Seeding is one-shot (plan review DM2): a
+settings flag `pedal.tuner_default_seeded` is written at the first attempt,
+whatever its outcome, so a player who later removes `Hold · Tuner`, or clears
+the custom assignments, never gets it back. It is skipped, and the flag left
+unset for a later boot, while the stored setup is malformed or uncertain
+(`ControlState.pedalSetupUnavailable` or `pedalSetupPersistenceUncertain`):
+seeding must not replace bytes the user has not chosen to overwrite. The
+seeding is written through the normal confirmed `setPedalSetup` path and
+announced once with a toast (rule 3): "Tuner is on Custom: hold MODE,
 then hold pedal 2." The rest of the study's default map is not seeded: most
 of its actions (Transpose, Speed, Multiply) do not exist yet.
 
@@ -734,7 +784,7 @@ SUCCESS CRITERIA:
 - The five 23/x screens render from real state; goldens match on the author's machine. | verify: /Users/Tomas/development/flutter/bin/flutter test test/tuner test/screenshots
 - No TrayPanel class remains under lib/tuner or test/tuner, and the tray's Tuner entry enters the mode. | verify: ! grep -rn "TrayPanel" lib/tuner test/tuner && /Users/Tomas/development/flutter/bin/flutter test test/looper/view
 - Analyzer, Bloc lint and coverage. | verify: /Users/Tomas/development/flutter/bin/flutter test --coverage && dart analyze --fatal-infos && bloc lint lib test packages
-- A default setup, and a stored setup with an empty Custom Track 2 Hold, carry Hold · Tuner there; a stored setup with that Hold assigned keeps it; the one-time notice shows once. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
+- A default setup, and a stored setup with an empty Custom Track 2 Hold, carry Hold · Tuner there; a stored setup with that Hold assigned keeps it; the one-time notice shows once; removing Hold · Tuner and rebooting does not bring it back; a malformed or uncertain setup is not written and the flag stays unset. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
 - The trunk port of PR #912 is in the trunk before this part merges. | verify: git merge-base --is-ancestor origin/claude/tuner-latency-909-trunk HEAD
 - HARDWARE: default pedal setup, guitar on input 1: hold MODE (Custom), then hold pedal 2 (Tuner); the string reads, the monitor is silent while a track records it; MODE (Exit) restores monitoring. | verify: manual on device
 - HARDWARE: with the tuner up and four tracks playing on the Pi 5, callback p99 stays under budget. | verify: manual on device
@@ -893,8 +943,9 @@ Owner decisions (2026-10-06, answering the planner's questions):
 - **O3 (answering Q3).** The FX-mode Stop panic and its restore hold are
   dropped, as pen 10/03 shows. Two assignable commands, `Track FX off` and
   `Track FX on`, join the FX action group so a player can put the sweep on any
-  switch through Custom, External or MIDI. The release note names the change
-  (Part 2).
+  switch through Custom, External or MIDI. The release note names the change,
+  and a one-time in-app notice on the first FX entry after the update says
+  it on stage too (rule 3, as D11 does; plan review DM1). Part 2.
 
 Decisions taken under the standing rules:
 
@@ -929,7 +980,13 @@ Decisions taken under the standing rules:
   notifies its refusal, on screen and by foot alike.
 - **D11 (rule 1, review M3).** The default pedal setup carries `Hold · Tuner`
   on Custom Track 2 bank A, from the design's default map; existing installs
-  get it only where that Hold is empty, with a one-time notice (Part 6).
+  get it only where that Hold is empty, with a one-time notice, once per
+  install (a `pedal.tuner_default_seeded` flag), and never over a malformed
+  or uncertain setup (Part 6, plan review DM2).
+- **D13 (pen authority, Part 2 build).** In FX mode MODE is the face's Exit,
+  on contact, back to the mode FX was entered from, as pen 10/03 draws it and
+  accepted §4 requires; it no longer runs the configured MODE pair there.
+  Custom already behaves this way.
 - **D12 (Part 4 build).** Every `LE_CMD_SET_TUNER_INPUT` clears the mask, not
   only a disarm, so a moved tuner never keeps silencing its previous input;
   configure and reopen clear it beside the tuner disarm they already do.
@@ -1020,7 +1077,12 @@ human merge gate stays.
 | L9 `UnavailableAction` early return | notice at `:2473` and the External and MIDI returns |
 | L10 citations | §1.6 re-anchored to LibP5, trunk and `57a5324b8` |
 | L11 recorder failed-save state | repository's held status carries `saveFailed` |
-| Notes | #692 history quoted in Part 2; pen 04 multi-rack as a non-goal; `FxNames` resolver; goldens regenerated in Part 1; `Not monitored` dropped |
+| Notes | #692 history quoted in Part 2; pen 04 multi-rack as a non-goal; `FxNames` resolver; no golden moves in Part 1 (the bar fits the existing gap, §10); `Not monitored` dropped |
+| Delta DM1 (O3 not in the plan) | O3 recorded; Part 2 lists the commands, the `stop()` change, the one-time notice, tests and criteria; `_sweepTrackChains` kept |
+| Delta DM2 (seeding) | D11 and Part 6: one-shot flag, skipped on malformed or uncertain setups, tests |
+| Delta DL1, DL2 | §9 notes row corrected; Part 3 cites `_runAction`'s `TrackOperationAction` arm |
+| P1 review M1, L1, L2 | Part 1 publishes only in pedal-drawing modes; `holdTrack` `#303b4b`; closing guard documented as defence (§10) |
+| P4 review L1 | Part 5 drops the mismatch re-push and tests it |
 
 ## 10. Build record
 
@@ -1041,7 +1103,12 @@ human merge gate stays.
   no progress semantics and does not collide with the Mixer face's level bar.
 - Teardown order: `close` first retires input, which cancels the gestures
   while the cubit is still open, so the cue clears with one ordinary emit;
-  the `_closing`/`isClosed` guard covers any settle after that.
+  the `_closing`/`isClosed` guard is defence only (no current path reaches it
+  after close), and the code says so (P1 review L2).
+- **P1 review fixes (`ffa51848c`).** The cue is published only in Mixer, Fade,
+  Reverse, FX and Custom; a Record- or Mute-mode stomp emits no state for it
+  (test pins Undo and Bank in both modes). The bar's track is the new
+  `holdTrack` token, `#303b4b` (`#4a586c` in high contrast).
 
 ### Part 4 (branch `claude/foot-surfaces-1229-p4`, on `claude/tuner-latency-909-trunk`)
 
