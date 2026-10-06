@@ -2864,6 +2864,131 @@ class SegnoEngineBindings {
         )
       >();
 
+  /// Decodes [path] into a new stereo buffer at [sample_rate] (mono plays as
+  /// dual mono), converting the rate with the band-limited offline converter
+  /// after exact half-band halving for reductions below one half.
+  ///
+  /// Whole file (start_frame 0, max_frames 0): refused past
+  /// LE_BACKING_MAX_SECONDS (LE_ERR_TOO_LONG, before reading when the length is
+  /// stated), and refused as damaged when it decodes to a length other than the
+  /// one it states. Bounded read (a preview, a recording part): starts at the
+  /// first output frame at or after [start_frame] (source frames) and keeps at
+  /// most [max_frames] output frames, setting info->truncated when the file goes
+  /// on; its samples are exactly the whole-file decode's at the same positions.
+  /// A bounded read that starts past the last output frame (the last source
+  /// frame of a reduction) returns LE_OK with an empty (0-frame) buffer, which
+  /// the voice refuses to load.
+  ///
+  /// Refuses with LE_ERR_CAPACITY when the decode's peak (the source, the
+  /// planes a halving works on, and the output) would leave less than
+  /// LE_MEM_RESERVE_BYTES available, or an allocation fails. LE_ERR_UNSUPPORTED
+  /// and LE_ERR_INVALID as above; LE_ERR_INVALID also for bad arguments and a
+  /// missing or unreadable file. [info] (may be NULL) is filled as far as the
+  /// file was read.
+  int le_backing_decode_file(
+    ffi.Pointer<ffi.Char> path,
+    int sample_rate,
+    int start_frame,
+    int max_frames,
+    ffi.Pointer<ffi.Pointer<le_backing_buffer>> out,
+    ffi.Pointer<le_backing_decode_info> info,
+  ) {
+    return _le_backing_decode_file(
+      path,
+      sample_rate,
+      start_frame,
+      max_frames,
+      out,
+      info,
+    );
+  }
+
+  late final _le_backing_decode_filePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Int32,
+            ffi.Int64,
+            ffi.Int32,
+            ffi.Pointer<ffi.Pointer<le_backing_buffer>>,
+            ffi.Pointer<le_backing_decode_info>,
+          )
+        >
+      >('le_backing_decode_file');
+  late final _le_backing_decode_file = _le_backing_decode_filePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Char>,
+          int,
+          int,
+          int,
+          ffi.Pointer<ffi.Pointer<le_backing_buffer>>,
+          ffi.Pointer<le_backing_decode_info>,
+        )
+      >();
+
+  /// Decodes all of [path] in small chunks, retaining no PCM, to prove it plays
+  /// and to measure it: fills [info] and [buckets] per-bucket absolute peaks
+  /// (max of both sides; buckets may be 0). The same refusals as a whole-file
+  /// decode, minus the memory one; a file it accepts decodes at every engine
+  /// rate. What an import runs before it keeps a file.
+  int le_backing_probe_file(
+    ffi.Pointer<ffi.Char> path,
+    ffi.Pointer<le_backing_decode_info> info,
+    ffi.Pointer<ffi.Float> peaks,
+    int buckets,
+  ) {
+    return _le_backing_probe_file(
+      path,
+      info,
+      peaks,
+      buckets,
+    );
+  }
+
+  late final _le_backing_probe_filePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<le_backing_decode_info>,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_backing_probe_file');
+  late final _le_backing_probe_file = _le_backing_probe_filePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<le_backing_decode_info>,
+          ffi.Pointer<ffi.Float>,
+          int,
+        )
+      >();
+
+  /// The buffer's interleaved stereo float32 samples (frames x 2), for a
+  /// consumer that copies them (the Library preview).
+  ffi.Pointer<ffi.Float> le_backing_buffer_pcm(
+    ffi.Pointer<le_backing_buffer> buffer,
+  ) {
+    return _le_backing_buffer_pcm(
+      buffer,
+    );
+  }
+
+  late final _le_backing_buffer_pcmPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Float> Function(ffi.Pointer<le_backing_buffer>)
+        >
+      >('le_backing_buffer_pcm');
+  late final _le_backing_buffer_pcm = _le_backing_buffer_pcmPtr
+      .asFunction<
+        ffi.Pointer<ffi.Float> Function(ffi.Pointer<le_backing_buffer>)
+      >();
+
   /// Frees a buffer the caller still owns. NULL is a no-op.
   void le_backing_buffer_free(
     ffi.Pointer<le_backing_buffer> buffer,
@@ -2883,8 +3008,8 @@ class SegnoEngineBindings {
   /// Replaces the loaded buffer at the next block: the old one fades out if it
   /// was sounding; the new one starts at frame 0, playing when [play] is 1,
   /// else Stopped. [item] is the caller's token, reported back in the state.
-  /// LE_ERR_INVALID: NULL, a buffer the engine already owns, a rate other than
-  /// the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
+  /// LE_ERR_INVALID: NULL, an empty buffer, a buffer the engine already owns, a
+  /// rate other than the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
   /// configured. Past LE_BACKING_MAX_BUFFERS or LE_BACKING_BUDGET_BYTES:
   /// LE_ERR_NOT_READY while a buffer is in transit, else LE_ERR_CAPACITY (see
   /// Buffers above).
@@ -6504,7 +6629,9 @@ enum le_result {
 
   /// a plugin's bus topology is not a stereo (or
   /// mono-adaptable) effect — instrument / multi-bus /
-  /// sidechain / wrong channel count (D-BUS)
+  /// sidechain / wrong channel count (D-BUS); an
+  /// audio file outside the decoder's whitelist
+  /// (#1200)
   LE_ERR_UNSUPPORTED(-5),
 
   /// a requested allocation would exceed engine
@@ -6522,6 +6649,9 @@ enum le_result {
   /// a punch-in on a reversed track (#1162): overdub
   /// is unavailable while Reverse is on
   LE_ERR_REVERSED(-9),
+
+  /// a backing file over LE_BACKING_MAX_SECONDS (#1200)
+  LE_ERR_TOO_LONG(-12),
 
   /// the file (or a directory on its path) does not
   /// exist (#1198)
@@ -6545,6 +6675,7 @@ enum le_result {
     -7 => LE_ERR_MODE_MISMATCH,
     -8 => LE_ERR_NOT_READY,
     -9 => LE_ERR_REVERSED,
+    -12 => LE_ERR_TOO_LONG,
     -18 => LE_ERR_NOT_FOUND,
     -19 => LE_ERR_TRUNCATED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
@@ -8338,6 +8469,24 @@ enum le_reopen_outcome {
 
 final class le_backing_buffer extends ffi.Opaque {}
 
+final class le_backing_decode_info extends ffi.Struct {
+  /// the file's own rate
+  @ffi.Int32()
+  external int source_rate;
+
+  /// 1 or 2
+  @ffi.Int32()
+  external int source_channels;
+
+  /// frames decoded, at the source rate
+  @ffi.Int64()
+  external int source_frames;
+
+  /// a bounded read stopped before the end
+  @ffi.Int32()
+  external int truncated;
+}
+
 final class le_backing_state extends ffi.Struct {
   /// bumps at configure and at every reopen
   @ffi.Uint32()
@@ -8563,6 +8712,10 @@ const int LE_BACKING_MAX_BUFFERS = 4;
 const int LE_BACKING_BUDGET_BYTES = 1610612736;
 
 const int LE_BACKING_RAMP_MS = 5;
+
+const int LE_BACKING_MAX_SECONDS = 900;
+
+const int LE_MEM_RESERVE_BYTES = 536870912;
 
 const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;
 

@@ -42,7 +42,9 @@ typedef enum le_result {
   LE_ERR_DEVICE = -4,        /* miniaudio failed to init/start the device */
   LE_ERR_UNSUPPORTED = -5,   /* a plugin's bus topology is not a stereo (or
                               * mono-adaptable) effect — instrument / multi-bus /
-                              * sidechain / wrong channel count (D-BUS) */
+                              * sidechain / wrong channel count (D-BUS); an
+                              * audio file outside the decoder's whitelist
+                              * (#1200) */
   LE_ERR_CAPACITY = -6,      /* a requested allocation would exceed engine
                               * capacity (A6, D17): N bars of the current
                               * signature at the slowest possible tempo (30
@@ -51,7 +53,9 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
-  /* -10 .. -17 are assigned to other work (the numbering ledger). */
+  /* -10 and -11 belong to pitch/time (#1179); -12 and -13 to the backing
+   * player (#1200); the rest up to -17 to other work (the numbering ledger). */
+  LE_ERR_TOO_LONG = -12, /* a backing file over LE_BACKING_MAX_SECONDS (#1200) */
   LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
                               * exist (#1198) */
   LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
@@ -2333,6 +2337,77 @@ LE_EXPORT int32_t le_backing_buffer_rate(const le_backing_buffer* buffer);
  * whole buffer into [out]; returns the count written, or LE_ERR_INVALID. */
 LE_EXPORT int32_t le_backing_buffer_peaks(const le_backing_buffer* buffer,
                                           float* out, int32_t buckets);
+/* ---- the audio-file decoder (#1200; the app's one decoder of audio
+ * samples: the backing player, the Library preview and recording recovery
+ * all read files here) --
+ * Accepted, by our own header check before any decoder sees the file: WAV
+ * (RIFF) with 16/24/32-bit PCM or 32-bit float, plain or EXTENSIBLE, and
+ * MPEG Layer III. Sources must be mono or stereo, 8-192 kHz, at a rate the
+ * converter reaches from every engine rate (44.1, 48, 88.2 and 96 kHz).
+ * Everything else is LE_ERR_UNSUPPORTED: 8-bit or 64-bit WAV, ADPCM, mu-law,
+ * A-law, RIFX, RF64, BW64, Wave64, AIFF, FLAC (compiled out until #1235),
+ * Ogg, MPEG Layer I/II, more channels or another rate. A file that claims an
+ * accepted format but is inconsistent (a chunk past the end of the file, a
+ * short `fact` chunk, a block align that does not match, a length other than
+ * the one stated, a float sample that is non-finite or more than 60 dB over
+ * full scale) is LE_ERR_INVALID. No input can make these loop: reads and
+ * seeks stay inside the file and stop after a bounded amount of work. Any
+ * thread but the audio thread; no engine handle;
+ * nothing here touches engine state. */
+
+/* The longest whole file accepted, in seconds of source audio. */
+#define LE_BACKING_MAX_SECONDS 900
+/* What a decode must leave free (MemAvailable on Linux) for loops, capture
+ * and the system: the appliance memory budget's floor (#1200 plan, M1). */
+#define LE_MEM_RESERVE_BYTES (512ll * 1024 * 1024)
+
+typedef struct le_backing_decode_info {
+  int32_t source_rate;     /* the file's own rate */
+  int32_t source_channels; /* 1 or 2 */
+  int64_t source_frames;   /* frames decoded, at the source rate */
+  int32_t truncated;       /* a bounded read stopped before the end */
+} le_backing_decode_info;
+
+/* Decodes [path] into a new stereo buffer at [sample_rate] (mono plays as
+ * dual mono), converting the rate with the band-limited offline converter
+ * after exact half-band halving for reductions below one half.
+ *
+ * Whole file (start_frame 0, max_frames 0): refused past
+ * LE_BACKING_MAX_SECONDS (LE_ERR_TOO_LONG, before reading when the length is
+ * stated), and refused as damaged when it decodes to a length other than the
+ * one it states. Bounded read (a preview, a recording part): starts at the
+ * first output frame at or after [start_frame] (source frames) and keeps at
+ * most [max_frames] output frames, setting info->truncated when the file goes
+ * on; its samples are exactly the whole-file decode's at the same positions.
+ * A bounded read that starts past the last output frame (the last source
+ * frame of a reduction) returns LE_OK with an empty (0-frame) buffer, which
+ * the voice refuses to load.
+ *
+ * Refuses with LE_ERR_CAPACITY when the decode's peak (the source, the
+ * planes a halving works on, and the output) would leave less than
+ * LE_MEM_RESERVE_BYTES available, or an allocation fails. LE_ERR_UNSUPPORTED
+ * and LE_ERR_INVALID as above; LE_ERR_INVALID also for bad arguments and a
+ * missing or unreadable file. [info] (may be NULL) is filled as far as the
+ * file was read. */
+LE_EXPORT int32_t le_backing_decode_file(const char* path, int32_t sample_rate,
+                                         int64_t start_frame,
+                                         int32_t max_frames,
+                                         le_backing_buffer** out,
+                                         le_backing_decode_info* info);
+
+/* Decodes all of [path] in small chunks, retaining no PCM, to prove it plays
+ * and to measure it: fills [info] and [buckets] per-bucket absolute peaks
+ * (max of both sides; buckets may be 0). The same refusals as a whole-file
+ * decode, minus the memory one; a file it accepts decodes at every engine
+ * rate. What an import runs before it keeps a file. */
+LE_EXPORT int32_t le_backing_probe_file(const char* path,
+                                        le_backing_decode_info* info,
+                                        float* peaks, int32_t buckets);
+
+/* The buffer's interleaved stereo float32 samples (frames x 2), for a
+ * consumer that copies them (the Library preview). */
+LE_EXPORT const float* le_backing_buffer_pcm(const le_backing_buffer* buffer);
+
 /* Frees a buffer the caller still owns. NULL is a no-op. */
 LE_EXPORT void le_backing_buffer_free(le_backing_buffer* buffer);
 
@@ -2365,8 +2440,8 @@ typedef enum le_backing_end_event {
 /* Replaces the loaded buffer at the next block: the old one fades out if it
  * was sounding; the new one starts at frame 0, playing when [play] is 1,
  * else Stopped. [item] is the caller's token, reported back in the state.
- * LE_ERR_INVALID: NULL, a buffer the engine already owns, a rate other than
- * the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
+ * LE_ERR_INVALID: NULL, an empty buffer, a buffer the engine already owns, a
+ * rate other than the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
  * configured. Past LE_BACKING_MAX_BUFFERS or LE_BACKING_BUDGET_BYTES:
  * LE_ERR_NOT_READY while a buffer is in transit, else LE_ERR_CAPACITY (see
  * Buffers above). */
