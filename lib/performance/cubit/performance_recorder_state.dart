@@ -85,6 +85,7 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
     this.lowDiskBlocked = false,
     this.recovering = false,
     this.refusedBy,
+    this.refusal = 0,
   });
 
   /// An arm was refused because the export volume is already below the
@@ -110,8 +111,14 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// the control was pressed (accepted behaviour 6.12).
   final GuardKind? refusedBy;
 
+  /// Which refusal this is: the cubit counts every refused arm, for
+  /// [lowDiskBlocked] and [refusedBy] alike. Without it a second refused
+  /// press would emit a state equal to the first, the cubit would drop it,
+  /// and the operator would see no answer to the second press.
+  final int refusal;
+
   @override
-  List<Object?> get props => [lowDiskBlocked, recovering, refusedBy];
+  List<Object?> get props => [lowDiskBlocked, recovering, refusedBy, refusal];
 }
 
 /// Armed: the engine's capture taps are running. [elapsed] and [overrun]

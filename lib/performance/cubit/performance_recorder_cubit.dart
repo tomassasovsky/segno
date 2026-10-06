@@ -175,6 +175,9 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   PerformanceStopReason? _stopReason;
   bool _loaded = false;
 
+  /// Refused arms so far; see [PerformanceRecorderIdle.refusal].
+  int _refusals = 0;
+
   /// Silently salvages any capture a crash left unfinalized (D-SALVAGE,
   /// #679): [PerformanceRepository.runBootRecovery] finalizes + renders each
   /// one in the background into the repository's `recovered/` area (pruned
@@ -308,7 +311,9 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       case PerformanceRecorderIdle():
       case PerformanceRecorderCompleted():
         if (await _volumeTooFullToArm()) {
-          _emit(const PerformanceRecorderIdle(lowDiskBlocked: true));
+          _emit(
+            PerformanceRecorderIdle(lowDiskBlocked: true, refusal: ++_refusals),
+          );
           return;
         }
         await _performance.arm(chains: _currentChains());
@@ -328,7 +333,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       case PerformanceRecorderIdle(recovering: false):
       case PerformanceRecorderCompleted():
         _emit(
-          PerformanceRecorderIdle(refusedBy: refusal.blockers.first.kind),
+          PerformanceRecorderIdle(
+            refusedBy: refusal.blockers.first.kind,
+            refusal: ++_refusals,
+          ),
         );
       case PerformanceRecorderIdle():
       case PerformanceRecorderArmed():

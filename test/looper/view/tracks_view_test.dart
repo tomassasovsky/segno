@@ -2720,6 +2720,50 @@ void main() {
       },
     );
 
+    testWidgets('every refused arm shows its own toast (#1198, #640)', (
+      tester,
+    ) async {
+      final controller = StreamController<PerformanceRecorderState>();
+      addTearDown(controller.close);
+      whenListen(
+        performanceRecorder,
+        controller.stream,
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      const refused = Key('tracks_perfArmRefused_snackbar');
+      const lowDisk = Key('tracks_perfLowDiskBlocked_snackbar');
+
+      controller.add(
+        const PerformanceRecorderIdle(
+          refusedBy: GuardKind.sessionApply,
+          refusal: 1,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(refused), findsOneWidget);
+      // Let the first toast time out, so the next one is a new toast.
+      await tester.pumpAndSettle(const Duration(seconds: 10));
+      expect(find.byKey(refused), findsNothing);
+
+      controller.add(
+        const PerformanceRecorderIdle(
+          refusedBy: GuardKind.sessionApply,
+          refusal: 2,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(refused), findsOneWidget);
+      await tester.pumpAndSettle(const Duration(seconds: 10));
+
+      controller.add(
+        const PerformanceRecorderIdle(lowDiskBlocked: true, refusal: 3),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(lowDisk), findsOneWidget);
+    });
+
     testWidgets(
       'renaming (re-emitting Completed with a different path) does not '
       'reopen the completion sheet once dismissed',
