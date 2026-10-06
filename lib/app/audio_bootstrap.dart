@@ -34,6 +34,7 @@ Future<AutoStartResult> tryAutoStartEngine({
   required SettingsRepository settings,
   required MixSettingsCoordinator mixSettings,
 }) => mixSettings.runExclusive(() async {
+  await _seedFreshInstallHearClick(settings);
   // Stage the stored owned settings before audio opens. Absent defaults never
   // materialize stored keys. An unreadable value makes only its family
   // unavailable: audio starts with the repository's default, and the owner's
@@ -74,6 +75,22 @@ Future<AutoStartResult> tryAutoStartEngine({
     );
   }
 });
+
+/// A fresh install (no saved audio configuration and no Hear click key)
+/// stores Hear click Off before the families stage. An existing install
+/// with no key keeps the absent default it already plays with.
+Future<void> _seedFreshInstallHearClick(SettingsRepository settings) async {
+  try {
+    if (await settings.loadAudioConfig() != null) return;
+    if (await settings.readClickModeCheckpoint() != null) return;
+    await settings.restoreClickModeCheckpoint(ClickMode.off.code);
+  } on Object catch (error) {
+    // The Hear click owner's load and Retry report an unreadable key.
+    AppLog.error(
+      'audio auto-start: fresh-install Hear click not stored: $error',
+    );
+  }
+}
 
 Future<void> _stageOrLog<V extends Object, C>(
   SettingsFamily<V, C> family,

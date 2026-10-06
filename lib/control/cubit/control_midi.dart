@@ -55,7 +55,7 @@ extension MidiControlEditing on ControlCubit {
             !json.containsKey('mappings')) {
           throw const FormatException('Invalid MIDI configuration');
         }
-        mappings = MidiMappingSet.fromJson(json['mappings']);
+        mappings = _decodeEndpoints(MidiMappingSet.fromJson(json['mappings']));
         enabled = json['enabled'] as bool;
       }
       if (_closing || isClosed) return;
@@ -81,6 +81,28 @@ extension MidiControlEditing on ControlCubit {
     }
   }
 
+  /// Reads each stored parameter endpoint through its target, so a level
+  /// fader's literal 1.0 top is unity.
+  static MidiMappingSet _decodeEndpoints(MidiMappingSet stored) =>
+      MidiMappingSet(
+        mappings: [
+          for (final mapping in stored.mappings)
+            mapping.copyWith(
+              controls: [
+                for (final control in mapping.controls)
+                  switch ((control, ControlValueTarget.tryParse(control.key))) {
+                    (final MidiParameterControl parameter, final target?) =>
+                      parameter.copyWith(
+                        low: target.decodeEndpoint(parameter.low),
+                        high: target.decodeEndpoint(parameter.high),
+                      ),
+                    _ => control,
+                  },
+              ],
+            ),
+        ],
+      );
+
   Future<MidiSaveResult> _serializeMidi(
     Future<MidiSaveResult> Function() operation,
   ) {
@@ -94,11 +116,13 @@ extension MidiControlEditing on ControlCubit {
   }
 
   Future<MidiSaveResult> _saveMidiConfiguration(
-    MidiMappingSet mappings,
+    MidiMappingSet authored,
     bool enabled, {
     String? mappingId,
     bool resume = false,
   }) async {
+    // What is saved, played and shown is what a reload reads.
+    final mappings = _decodeEndpoints(authored);
     try {
       await _settings.saveMidiConfiguration(
         jsonEncode({
@@ -584,7 +608,7 @@ extension MidiControlEditing on ControlCubit {
               final ending =
                   op is MidiParameterEnd ||
                   (op is MidiParameterWrite && op.cleanup);
-              if (!ending && _takeLocked()) continue;
+              if (!ending && _inputLocked()) continue;
               final target = ending
                   ? _midiTargets[row]
                   : ControlValueTarget.tryParse(op.key) ??

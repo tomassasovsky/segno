@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:controller_repository/controller_repository.dart';
@@ -164,6 +165,7 @@ class _Rig {
       midiDevices: midi,
       midiClock: () => clock.elapsed,
       controller: controller,
+      takeLocked: () => powerOffUp,
       fadeSettings: ownedFade,
       ownedValues: OwnedValuePort(
         looper: looper,
@@ -194,6 +196,9 @@ class _Rig {
   late final PerformanceRepository performance;
   late final ControlCubit cubit;
   late final FxChainPersistence fx;
+
+  /// The power-off route is up: takes are locked.
+  bool powerOffUp = false;
 
   void bindMidi({
     int id = 21,
@@ -554,6 +559,11 @@ void main() {
         target is MonitorVolumeTarget;
     final low = gain || target is OutputLevelTarget ? 0.0 : -1.0;
     final high = gain && target is! MonitorVolumeTarget ? 2.0 : 1.0;
+    // A MIDI mapping on a level fader tops at unity (decision 46); an
+    // External switch value keeps its authored +6 dB.
+    final midiHigh = target is TrackVolumeTarget || target is LaneVolumeTarget
+        ? 1.0
+        : high;
     check(
       'MIDI and External ${target.canonicalString()} '
       'share full range and durable low',
@@ -594,7 +604,7 @@ void main() {
           ..midiValue(127);
         expect(
           physical(looper.mixSettingsSnapshot, target),
-          closeTo(high, 1e-6),
+          closeTo(midiHigh, 1e-6),
         );
         expect(physical(r.mix.durableSnapshot, target), closeTo(low, 1e-6));
         r.midiValue(0);
@@ -2146,6 +2156,155 @@ void main() {
         ..sample(51, kind: PedalCtrlKind.expression)
         ..settle();
       expect(drive(), closeTo(51 / 255, .0001));
+    },
+  );
+
+  check(
+    'with the power-off dialog open, an expression sweep and a MIDI value '
+    'land while Record is refused',
+    ExternalJackSetup(
+      type: ExternalJackType.expression,
+      expression: ExternalExpressionSetup(
+        calibration: ExpressionCalibration(heel: 0, toe: 255),
+        mappings: [ExpressionMapping(target: _param)],
+      ),
+    ),
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..bindMidi(
+          id: 22,
+          target: const MasterGainTarget().canonicalString(),
+          low: .2,
+          high: .6,
+        )
+        ..sample(0, kind: PedalCtrlKind.expression)
+        ..settle()
+        ..powerOffUp = true
+        ..sample(102, kind: PedalCtrlKind.expression)
+        ..settle();
+      expect(drive(), closeTo(102 / 255, .0001));
+      r.midiValue(127, id: 22);
+      expect(looper.masterGain, closeTo(.6, 1e-9));
+      // Perf-arm's refusal is pinned in control_cubit_test.
+      r.cubit.recPlay();
+      r.settle();
+      expect(
+        looper.state.tracks.any((track) => track.isCapturing || track.pending),
+        isFalse,
+      );
+    },
+  );
+
+  check(
+    'a stored MIDI level mapping with a literal 1.0 top lands unity gain',
+    ExternalJackSetup.empty,
+    (r) {
+      r.midiValue(127, id: 30);
+      expect(
+        looper.mixSettingsSnapshot.trackLevels[0] ?? 1,
+        closeTo(1.0, 1e-6),
+      );
+      r.midiValue(0, id: 30);
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(0, 1e-6));
+      r.midiValue(127, id: 30);
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(1.0, 1e-6));
+    },
+    initialMidiRaw: jsonEncode({
+      'version': 1,
+      'enabled': true,
+      'mappings': [
+        MidiMapping(
+          id: 'stored',
+          source: MidiSource(
+            device: 'test-midi',
+            kind: ControllerSourceKind.midiCc,
+            number: 30,
+          ),
+          behavior: MidiBehavior.continuous,
+          controls: [
+            MidiParameterControl(
+              key: const TrackVolumeTarget(0).canonicalString(),
+              low: 0,
+              high: 1,
+            ),
+          ],
+        ).toJson(),
+      ],
+    }),
+  );
+
+  check(
+    'a literal 1.0 top authored on Track volume plays, shows and stores '
+    'unity',
+    ExternalJackSetup.empty,
+    (r) {
+      const volume = TrackVolumeTarget(0);
+      r
+        ..bindMidi(
+          controls: [
+            MidiParameterControl(
+              key: volume.canonicalString(),
+              low: 0,
+              high: 1,
+            ),
+          ],
+          behavior: MidiBehavior.continuous,
+        )
+        ..midiValue(127);
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(1.0, 1e-6));
+      final control =
+          r.cubit.state.midiMappings.mappings.single.controls.single
+              as MidiParameterControl;
+      expect(control.high, volume.mappingTop);
+      final stored = MidiMappingSet.fromJson(
+        (jsonDecode(r.store.values['midi.configuration']! as String)
+            as Map<String, dynamic>)['mappings'],
+      );
+      expect(
+        (stored.mappings.single.controls.single as MidiParameterControl).high,
+        volume.mappingTop,
+      );
+    },
+  );
+
+  check(
+    'with the power-off dialog open, a held External value survives looper '
+    'state, and the encoder still moves master gain until the flush',
+    button(
+      [],
+      parameters: [
+        ExternalParameter(
+          target: _param,
+          active: .8,
+          inactive: .2,
+          condition: ExternalValueCondition.heldReleased,
+        ),
+      ],
+    ),
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..sample(255)
+        ..settle();
+      expect(drive(), closeTo(.8, .0001));
+      r.powerOffUp = true;
+      // A looper state change while the dialog is up.
+      unawaited(r.mix.setTrackPan(.3));
+      r.settle();
+      expect(looper.mixSettingsSnapshot.trackPans[0], closeTo(.3, 1e-6));
+      expect(drive(), closeTo(.8, .0001), reason: 'the hold is kept');
+      final before = looper.masterGain;
+      r.cubit.encoderTurned(-8);
+      expect(looper.masterGain, lessThan(before));
+      final turned = looper.masterGain;
+      unawaited(r.cubit.flushMidiConfiguration(retireControls: true));
+      r
+        ..settle()
+        ..cubit.encoderTurned(-8);
+      expect(looper.masterGain, turned, reason: 'the flush suspends input');
     },
   );
 }

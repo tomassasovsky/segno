@@ -2046,7 +2046,7 @@ void main() {
         expect(locked.state.cursor, 0);
       });
 
-      test('takeLocked suppresses togglePerformanceRecord', () {
+      test('takeLocked suppresses togglePerformanceRecord', () async {
         final ownedFade = testFadeSettings();
         final locked = ControlCubit(
           fxPersistence: FxChainPersistence(looper: looper),
@@ -2071,6 +2071,7 @@ void main() {
         );
         addTearDown(locked.close);
         locked.togglePerformanceRecord();
+        await pumpEventQueue();
         expect(performance.armedDirectory, isNull);
       });
 
