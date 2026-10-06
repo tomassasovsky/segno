@@ -85,6 +85,15 @@ inline T le_cxx_atomic_exchange(T* slot, V value) {
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
 #include "le_midi_port.h"      /* le_midi_port (the native MIDI input sink, #1228) */
+
+/* What le_midi_ports_drain hands its consumers, in ring order (#1228). */
+typedef enum le_midi_dispatch_kind {
+  LE_MIDI_DISPATCH_EVENT = 0,   /* one message of the current binding */
+  LE_MIDI_DISPATCH_GAP = 1,     /* messages were lost here (a full ring) */
+  LE_MIDI_DISPATCH_LOST = 2,    /* the bound device went away */
+  LE_MIDI_DISPATCH_REBOUND = 3, /* the binding ended or changed: everything
+                                 * earlier from this port is over */
+} le_midi_dispatch_kind;
 #include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
 #include "engine_direction.h"
 #include "engine_fade.h"
@@ -1924,10 +1933,14 @@ struct le_engine {
    * drained by the audio thread at block start (le_midi_ports_drain). The
    * bindings live in the ports themselves (a_owner), never in Dart. */
   le_midi_port midi_ports[LE_MAX_MIDI_PORTS];
-  /* Audio-thread only: each port's lost flag as of the last drain, so a lost
-   * port is counted once per edge. */
+  /* Audio-thread only: each port's lost flag and generation as of the last
+   * drain, so a loss and a binding change are each dispatched once per edge
+   * (a close followed at once by an attach moves the generation even though
+   * the lost flag is already clear again). */
   int32_t midi_port_lost_seen[LE_MAX_MIDI_PORTS];
+  uint32_t midi_port_gen_seen[LE_MAX_MIDI_PORTS];
   /* Published totals (le_snapshot.midi_in_*). */
+  _Atomic uint32_t a_midi_in_rebinds;
   _Atomic uint32_t a_midi_in_events;
   _Atomic uint32_t a_midi_in_stale;
   _Atomic uint32_t a_midi_in_overflows;

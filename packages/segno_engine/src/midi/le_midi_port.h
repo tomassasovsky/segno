@@ -28,8 +28,8 @@
  * on arm64 as on x86, so when unbind returns no producer is inside the bracket
  * and none can enter it with the old port. The slot may then be rebound,
  * reused or freed. Leave is a release decrement, so everything written inside
- * the bracket happens-before unbind's return. The ring push and the lost mark
- * below are the bracketed writes today; the MIDI clock relay and DIN Thru
+ * the bracket happens-before unbind's return. The ring push, the gap mark and
+ * the lost mark below are the bracketed writes today; the MIDI clock relay and DIN Thru
  * rings (#1228 Parts 6 and 7) are written inside the same bracket, never
  * outside it.
  *
@@ -125,6 +125,16 @@ typedef struct le_midi_sink {
 #include <sched.h> /* sched_yield */
 #endif
 
+_Static_assert(sizeof(le_midi_port_event) == 16,
+               "the shared sink's ring entry is 16 bytes (#1228, #1197 D4)");
+
+/* A test may define this before including the header to park a producer
+ * inside the quiescence bracket (test_midi_sink_races.c), so a missing wait
+ * in unbind is caught every time rather than by a lucky interleaving. */
+#ifndef LE_MIDI_SINK_TEST_PARK
+#define LE_MIDI_SINK_TEST_PARK(sink) ((void)(sink))
+#endif
+
 /* ---- producer (the capture's OS MIDI thread) ---------------------------- */
 
 /* Opens the quiescence bracket and returns the bound port, or NULL. Every
@@ -146,6 +156,7 @@ static inline int le_midi_sink_push(le_midi_sink* s, uint8_t status,
   int pushed = 0;
   le_midi_port* p = le_midi_sink_enter(s);
   if (p != NULL) {
+    LE_MIDI_SINK_TEST_PARK(s);
     const size_t tail = atomic_load_explicit(&p->tail, memory_order_relaxed);
     const size_t head = atomic_load_explicit(&p->head, memory_order_acquire);
     if (tail - head >= LE_MIDI_PORT_RING_CAP - 1u) {
@@ -164,6 +175,21 @@ static inline int le_midi_sink_push(le_midi_sink* s, uint8_t status,
   }
   le_midi_sink_leave(s);
   return pushed;
+}
+
+/* Marks a gap at the current position: messages were lost before they
+ * reached the sink (an OS overrun, e.g. ALSA's -ENOSPC). The same mark a
+ * full ring makes. Returns 1 when a port was bound. */
+static inline int le_midi_sink_mark_gap(le_midi_sink* s) {
+  int marked = 0;
+  le_midi_port* p = le_midi_sink_enter(s);
+  if (p != NULL) {
+    const size_t tail = atomic_load_explicit(&p->tail, memory_order_relaxed);
+    atomic_store_explicit(&p->a_gap, tail + 1u, memory_order_release);
+    marked = 1;
+  }
+  le_midi_sink_leave(s);
+  return marked;
 }
 
 /* Marks the bound port lost (the device went away under an open capture).

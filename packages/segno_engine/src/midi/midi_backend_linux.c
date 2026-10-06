@@ -150,7 +150,16 @@ static void* le_alsa_midi_thread(void* arg) {
     if (pfds[seq_fds].revents & POLLIN) break; /* shutdown self-pipe */
 
     snd_seq_event_t* ev = NULL;
-    while (snd_seq_event_input(st->seq, &ev) >= 0 && ev != NULL) {
+    for (;;) {
+      const int rc = snd_seq_event_input(st->seq, &ev);
+      if (rc == -ENOSPC) {
+        /* The client's kernel input pool overflowed and dropped events
+         * before this read (alsa-lib clears it and reading resumes). Mark
+         * the gap so nothing is lost silently (instruments review H3). */
+        le_midi_input_gap(st->owner);
+        continue;
+      }
+      if (rc < 0 || ev == NULL) break;
       const uint64_t t_ns = le_alsa_now_ns();
       uint8_t status = 0, d1 = 0, d2 = 0;
       int have = 0;

@@ -133,9 +133,151 @@ static void test_midi_in_destroy_detaches(void) {
   CHECK(le_midi_sink_mark_lost(&b.sink) == 0);
 }
 
+/* ---- dispatch order (review of PR #1246, M1/L1/L2) ----
+ * le_test_midi_dispatch_hook records what the drain hands its consumers, as
+ * "E<status>" for an event, "G" for a gap, "L" for lost and "R" for a
+ * binding change, per port. */
+static char mi_log[2048];
+static size_t mi_log_len;
+static mi_fake_capture* mi_rebind_to;   /* bind this in the hook, once */
+static le_engine* mi_rebind_engine;
+static int mi_rebind_port;
+
+static void mi_dispatch_log(le_engine* e, int port, int kind,
+                            const le_midi_port_event* ev) {
+  (void)e;
+  char item[16];
+  switch (kind) {
+    case LE_MIDI_DISPATCH_EVENT:
+      snprintf(item, sizeof(item), "%dE%02X", port, ev->status);
+      break;
+    case LE_MIDI_DISPATCH_GAP: snprintf(item, sizeof(item), "%dG", port); break;
+    case LE_MIDI_DISPATCH_LOST: snprintf(item, sizeof(item), "%dL", port); break;
+    default: snprintf(item, sizeof(item), "%dR", port); break;
+  }
+  if (mi_log_len + strlen(item) + 2 < sizeof(mi_log)) {
+    mi_log_len += (size_t)snprintf(mi_log + mi_log_len,
+                                   sizeof(mi_log) - mi_log_len, "%s%s",
+                                   mi_log_len ? " " : "", item);
+  }
+  if (kind == LE_MIDI_DISPATCH_EVENT && mi_rebind_to != NULL) {
+    /* A capture binds to this port while the drain is running and pushes. */
+    mi_fake_capture* c = mi_rebind_to;
+    mi_rebind_to = NULL;
+    le_engine_attach_midi_input(mi_rebind_engine, mi_capture(c), mi_rebind_port);
+    le_midi_sink_push(&c->sink, 0x80, 60, 0, 99);
+  }
+}
+
+static void mi_log_reset(void) {
+  mi_log_len = 0;
+  mi_log[0] = '\0';
+}
+
+/* A loss is dispatched after the events read before it; a detach and a
+ * close followed at once by an attach each give one binding edge. */
+static void test_midi_in_dispatch_order(void) {
+  printf("test_midi_in_dispatch_order\n");
+  le_engine* e = make_configured_engine();
+  le_test_midi_dispatch_hook = mi_dispatch_log;
+  mi_fake_capture c;
+  memset(&c, 0, sizeof(c));
+  CHECK(le_engine_attach_midi_input(e, mi_capture(&c), 1) == LE_OK);
+  mi_log_reset();
+  mi_block(e);
+  CHECK(strcmp(mi_log, "1R") == 0); /* the attach */
+
+  /* A Note On, then the device goes away, before one block. */
+  le_midi_sink_push(&c.sink, 0x90, 60, 100, 1);
+  le_midi_sink_mark_lost(&c.sink);
+  mi_log_reset();
+  mi_block(e);
+  CHECK(strcmp(mi_log, "1E90 1L") == 0);
+
+  /* Close (unbind with the lost mark) and attach again inside one block:
+   * the lost flag is clear again, but the binding edge is still seen. */
+  CHECK(le_engine_attach_midi_input(e, mi_capture(&c), 1) == LE_OK);
+  mi_block(e);
+  le_midi_sink_push(&c.sink, 0x90, 61, 100, 2); /* queued, then closed */
+  le_midi_sink_unbind(&c.sink, 1);
+  CHECK(le_engine_attach_midi_input(e, mi_capture(&c), 1) == LE_OK);
+  le_midi_sink_push(&c.sink, 0x90, 62, 100, 3);
+  mi_log_reset();
+  mi_block(e);
+  CHECK(strcmp(mi_log, "1R 1E90") == 0); /* the old Note On is stale */
+  CHECK(mi_snapshot(e).midi_in_stale == 1u);
+
+  /* A detach is an edge too. */
+  CHECK(le_engine_detach_midi_input(e, 1) == LE_OK);
+  mi_log_reset();
+  mi_block(e);
+  CHECK(strcmp(mi_log, "1R") == 0);
+  mi_log_reset();
+  mi_block(e);
+  CHECK(mi_log_len == 0u); /* once */
+
+  le_test_midi_dispatch_hook = NULL;
+  le_engine_destroy(e);
+}
+
+/* A gap is dispatched at its position: after the events queued before the
+ * loss and before the ones that followed it. */
+static void test_midi_in_gap_position(void) {
+  printf("test_midi_in_gap_position\n");
+  le_engine* e = make_configured_engine();
+  le_test_midi_dispatch_hook = mi_dispatch_log;
+  mi_fake_capture c;
+  memset(&c, 0, sizeof(c));
+  CHECK(le_engine_attach_midi_input(e, mi_capture(&c), 0) == LE_OK);
+  mi_block(e);
+  le_midi_sink_push(&c.sink, 0xF8, 0, 0, 1);
+  le_midi_sink_push(&c.sink, 0xF8, 0, 0, 2);
+  le_midi_sink_mark_gap(&c.sink); /* an OS overrun here */
+  le_midi_sink_push(&c.sink, 0xFA, 0, 0, 3);
+  le_midi_sink_push(&c.sink, 0xFC, 0, 0, 4);
+  mi_log_reset();
+  mi_block(e);
+  CHECK(strcmp(mi_log, "0EF8 0EF8 0G 0EFA 0EFC") == 0);
+  /* A gap with nothing queued after it comes last. */
+  le_midi_sink_push(&c.sink, 0xF8, 0, 0, 5);
+  le_midi_sink_mark_gap(&c.sink);
+  mi_log_reset();
+  mi_block(e);
+  CHECK(strcmp(mi_log, "0EF8 0G") == 0);
+  CHECK(mi_snapshot(e).midi_in_overflows == 2u);
+  le_test_midi_dispatch_hook = NULL;
+  le_engine_destroy(e);
+}
+
+/* A binding made while the drain runs is a rebind at the first event of the
+ * new generation, not a stale drop (L1). */
+static void test_midi_in_bind_during_drain(void) {
+  printf("test_midi_in_bind_during_drain\n");
+  le_engine* e = make_configured_engine();
+  le_test_midi_dispatch_hook = mi_dispatch_log;
+  mi_fake_capture a, b;
+  memset(&a, 0, sizeof(a));
+  memset(&b, 0, sizeof(b));
+  CHECK(le_engine_attach_midi_input(e, mi_capture(&a), 2) == LE_OK);
+  mi_block(e);
+  le_midi_sink_push(&a.sink, 0x90, 60, 100, 1);
+  mi_rebind_to = &b;
+  mi_rebind_engine = e;
+  mi_rebind_port = 2;
+  mi_log_reset();
+  mi_block(e);
+  CHECK(strcmp(mi_log, "2E90 2R 2E80") == 0);
+  CHECK(mi_snapshot(e).midi_in_stale == 0u);
+  le_test_midi_dispatch_hook = NULL;
+  le_engine_destroy(e);
+}
+
 static void run_midi_in_tests(void) {
   test_midi_in_attach_drains_counts_and_masks();
   test_midi_in_reattach_drops_stale();
   test_midi_in_overflow_and_lost_are_counted();
   test_midi_in_destroy_detaches();
+  test_midi_in_dispatch_order();
+  test_midi_in_gap_position();
+  test_midi_in_bind_during_drain();
 }

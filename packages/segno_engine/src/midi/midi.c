@@ -183,6 +183,71 @@ void le_midi_input(le_midi* m, uint8_t status, uint8_t data1, uint8_t data2,
   le_midi_ring_push(m, status, data1, data2, t_ns / 1000u);
 }
 
+/* The data-byte count of a status byte below 0xF8 (SysEx is the caller's). */
+static int le_midi_data_len(uint8_t status) {
+  if (status < 0xF0u) {
+    const uint8_t hi = (uint8_t)(status & 0xF0u);
+    return (hi == 0xC0u || hi == 0xD0u) ? 1 : 2;
+  }
+  switch (status) {
+    case 0xF1u: case 0xF3u: return 1; /* MTC quarter frame, Song Select */
+    case 0xF2u: return 2;             /* Song Position Pointer */
+    default: return 0;                /* tune request, undefined, EOX */
+  }
+}
+
+void le_midi_split(le_midi* m, const uint8_t* data, size_t len, uint64_t t_ns) {
+  if (m == NULL || data == NULL) return;
+  size_t i = 0;
+  while (i < len) {
+    const uint8_t status = data[i];
+    if (status >= 0xF8u) { /* real-time: one byte, anywhere */
+      le_midi_input(m, status, 0, 0, t_ns);
+      i++;
+      continue;
+    }
+    if (status < 0x80u) {
+      i++; /* stray data byte (CoreMIDI does not use running status): skip */
+      continue;
+    }
+    i++;
+    if (status == 0xF0u) { /* SysEx: skipped, but not the real-time inside */
+      while (i < len) {
+        const uint8_t b = data[i];
+        if (b >= 0xF8u) {
+          le_midi_input(m, b, 0, 0, t_ns);
+        } else if (b == 0xF7u) {
+          i++;
+          break;
+        } else if (b >= 0x80u) {
+          break; /* a new status ends the SysEx */
+        }
+        i++;
+      }
+      continue;
+    }
+    const int need = le_midi_data_len(status);
+    uint8_t d[2] = {0, 0};
+    int got = 0;
+    while (got < need && i < len) {
+      const uint8_t b = data[i];
+      if (b >= 0xF8u) {
+        le_midi_input(m, b, 0, 0, t_ns);
+        i++;
+        continue;
+      }
+      if (b >= 0x80u) break; /* cut short by a new status */
+      d[got++] = b;
+      i++;
+    }
+    if (got == need) le_midi_input(m, status, d[0], d[1], t_ns);
+  }
+}
+
+void le_midi_input_gap(le_midi* m) {
+  if (m != NULL) le_midi_sink_mark_gap(&m->sink);
+}
+
 void le_midi_input_lost(le_midi* m) {
   if (m != NULL) le_midi_sink_mark_lost(&m->sink);
 }
