@@ -521,8 +521,8 @@ static int le_pr_collect_channels(const le_pr_manifest* m,
     }
   }
   for (int i = 0; i < log_count && n < cap; ++i) {
-    if (log[i].cmd.code != LE_PLOG_CLEAR_RESTORE &&
-        log[i].cmd.code != LE_PLOG_RESTORE_TRANSPORT) continue;
+    if (log[i].cmd.code != LE_PLOG_SOURCE_APPLIED &&
+        log[i].cmd.code != LE_PLOG_SOURCE_TRANSPORT) continue;
     const int32_t channel = log[i].cmd.restore_log.channel;
     if (channel < 0 || channel >= LE_MAX_TRACKS) continue;
     int seen = 0;
@@ -902,14 +902,19 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       disarm_lane != NULL
           ? (int32_t)le_json_number(le_json_get(disarm_lane, "takeId"), 0)
           : 0;
+  /* Callback-applied source images (322/323, #1143): every 322 switches the
+   * channel to the staged image it names (a channel may carry several per
+   * capture — Clear Undo, layer Undo/Redo, Redo-from-empty), and each 322's
+   * segment owns its own image, so a later 322 or a failure frees only the
+   * image it loaded itself. */
   uint32_t restore_id = 0;
-  float* restore_image = NULL; /* owned by the initial source segment */
+  float* restore_image = NULL; /* owned by its initial source segment */
   int32_t restore_len = 0;
   for (int i = 0; i < log_count; ++i) {
     const le_pr_log_entry* e = &log[i];
-    if ((e->cmd.code == LE_PLOG_CLEAR_RESTORE || e->cmd.code == LE_PLOG_RESTORE_TRANSPORT) &&
+    if ((e->cmd.code == LE_PLOG_SOURCE_APPLIED || e->cmd.code == LE_PLOG_SOURCE_TRANSPORT) &&
         e->cmd.restore_log.channel == channel) {
-      const int initial = e->cmd.code == LE_PLOG_CLEAR_RESTORE;
+      const int initial = e->cmd.code == LE_PLOG_SOURCE_APPLIED;
       const uint32_t id = e->cmd.restore_log.image_id;
       const int32_t state = e->cmd.restore_log.state, phase = e->cmd.restore_log.phase;
       if (initial) {
@@ -1053,7 +1058,11 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         break;
       }
       if (!listed && m->layers_dropped) build.load_failed = 1;
-    } else if (e->cmd.code == LE_CMD_CLEAR && e->cmd.arg_i == channel) {
+    } else if ((e->cmd.code == LE_CMD_CLEAR || e->cmd.code == LE_CMD_UNDO_TO_EMPTY) &&
+               e->cmd.arg_i == channel) {
+      /* Both empty the track at their logged frame: exact silence from here
+       * (39 is raw-logged from events.log version 6, #1143). Any image source
+       * ends with it; the next content supplies its own 322 or RECORD_END. */
       restore_id = 0;
       le_pr_append_segment(&build, e->frame, 0, NULL, 0);
     }

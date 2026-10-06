@@ -641,6 +641,16 @@ static void test_fade_restore_capture_lifetime(void) {
       CHECK(le_engine_import_track(e, 0, pcm, 128) == LE_OK);
       CHECK(le_engine_commit_session(e, 128, 0) == LE_OK); drain(e);
     }
+    {
+      // One zero-input overdub pass (#1143): a same-content layer beneath the
+      // take, so the layer Undo below runs the image path in this namespace.
+      float z[128] = {0}, o[128];
+      CHECK(le_engine_record(e, 0) == LE_OK); le_engine_process(e, o, z, 128);
+      CHECK(le_engine_record(e, 0) == LE_OK); le_engine_process(e, o, z, 128);
+      le_engine_drain_events(e); drain(e);
+      CHECK(e->tracks[0].undo_count == 1);
+      if (capture) { CHECK(le_engine_stop_track(e, 0) == LE_OK); drain(e); }
+    }
     uint64_t id = fade_install_at(e, .25f, .25f, 0); drain(e); fade_result(e, id, LE_OK);
     CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
     const char* dir = render_test_dir(capture ? "fade-rearm" : "fade-pending-arm");
@@ -654,8 +664,10 @@ static void test_fade_restore_capture_lifetime(void) {
     le_engine_process(e, live + 8, in, 128);
     CHECK(le_engine_stop_track(e, 0) == LE_OK);
     le_engine_process(e, live + 136, in, 1);
+    CHECK(le_engine_undo(e, 0) == LE_OK); // layer Undo under STOPPED: image 2
     CHECK(le_engine_play(e, 0) == LE_OK);
     le_engine_process(e, live + 137, in, 128);
+    CHECK(e->tracks[0].redo_count == 2);
     CHECK(le_engine_clear(e, 0) == LE_OK); drain(e);
     CHECK(le_perf_disarm(e) == LE_OK);
     fade_finalize_manifest(dir, "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[]}");
@@ -665,8 +677,14 @@ static void test_fade_restore_capture_lifetime(void) {
     CHECK(live[0] == (capture ? 0 : .125f));
     if (capture) {
       for (int i = 0; i < 128; ++i) CHECK(live[8 + i] == (float)(i + 1) / 1024);
-      // Restored identity never accepts a missing, short or overlong file.
+      // Both images belong to this capture's namespace, ids 1 and 2 again.
       char path[700], backup[700];
+      snprintf(path, sizeof(path), "%s/restore-0-2.pcm", dir);
+      unsigned char probe[4];
+      CHECK(read_binary_file_for_test(path, probe, sizeof(probe)) == sizeof(probe));
+      snprintf(path, sizeof(path), "%s/restore-0-3.pcm", dir);
+      CHECK(read_binary_file_for_test(path, probe, sizeof(probe)) == 0);
+      // Restored identity never accepts a missing, short or overlong file.
       snprintf(path, sizeof(path), "%s/restore-0-1.pcm", dir);
       snprintf(backup, sizeof(backup), "%s/restore-backup.pcm", dir);
       unsigned char bytes[512];
@@ -688,7 +706,7 @@ static void test_fade_restore_capture_lifetime(void) {
       file = fopen(path, "ab"); CHECK(file != NULL);
       if (file) {
         for (int i = 0; i < 4096; ++i)
-          test_write_log_entry(file, 1, (le_command){.code = LE_PLOG_RESTORE_TRANSPORT,
+          test_write_log_entry(file, 1, (le_command){.code = LE_PLOG_SOURCE_TRANSPORT,
               .restore_log = {0, 1, LE_TRACK_STOPPED, 0}});
         CHECK(fclose(file) == 0);
       }
@@ -712,18 +730,25 @@ static void test_fade_restore_history_replacement(void) {
     CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
     const char* dir = render_test_dir(redo ? "fade-restore-redo" : "fade-restore-undo");
     CHECK(le_perf_arm(e, dir) == LE_OK);
+    float live[8] = {0}, replay[8];
+    int n = 0;
     CHECK(le_engine_undo(e, 0) == LE_OK);
-    le_engine_process(e, out, in, 1);
+    le_engine_process(e, live + n++, in, 1);
     CHECK(le_engine_undo(e, 0) == LE_OK); // same-span layer, still PLAYING
-    le_engine_process(e, out, in, 1);
-    if (redo) { CHECK(le_engine_redo(e, 0) == LE_OK); le_engine_process(e, out, in, 1); }
+    le_engine_process(e, live + n++, in, 1);
+    if (redo) { CHECK(le_engine_redo(e, 0) == LE_OK); le_engine_process(e, live + n++, in, 1); }
     CHECK(le_engine_stop_track(e, 0) == LE_OK); drain(e);
-    CHECK(le_engine_play(e, 0) == LE_OK); le_engine_process(e, out, in, 1);
+    CHECK(le_engine_play(e, 0) == LE_OK); le_engine_process(e, live + n++, in, 1);
     CHECK(atomic_load(&e->a_perf_layer_overruns) == 0);
     CHECK(le_engine_clear(e, 0) == LE_OK); drain(e);
     CHECK(le_perf_disarm(e) == LE_OK);
     fade_finalize_manifest(dir, "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[]}");
-    fade_render_status(e, dir, 0); // truthful unsupported history, not stale PCM success
+    // Every same-span swap is a staged image with a callback fact (#1143):
+    // the stem is sample-exact, not a truthful failure any more.
+    fade_render_status(e, dir, 1);
+    CHECK(test_read_wet_stem(dir, 0, replay, 8) == n);
+    CHECK(live[0] == .75f && live[1] == .5f); // restored dub, then its base
+    for (int i = 0; i < n; ++i) CHECK(fabsf(replay[i] - live[i]) < 1e-6f);
     le_engine_destroy(e);
   }
 }
@@ -807,15 +832,21 @@ static void test_fade_restore_source_end_edges(void) {
     CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
     const char* dir = render_test_dir(racing_swap ? "fade-selected-slot-race" : "fade-undo-empty");
     CHECK(le_perf_arm(e, dir) == LE_OK);
+    float live[2], replay[2];
     CHECK(le_engine_undo(e, 0) == LE_OK);
-    le_engine_process(e, output, input, 1);
+    le_engine_process(e, live, input, 1);
     CHECK(le_engine_undo(e, 0) == LE_OK);
     if (racing_swap) le_test_fade_hook = fade_redo_selected_source;
-    le_engine_process(e, output, input, 1);
-    CHECK(output[0] == (racing_swap ? .5f : 0));
+    le_engine_process(e, live + 1, input, 1);
+    CHECK(live[1] == (racing_swap ? .5f : 0));
     CHECK(le_perf_disarm(e) == LE_OK);
     fade_finalize_manifest(dir, "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[]}");
-    fade_render_status(e, dir, 0);
+    // #1143: the mid-frame Redo is applied by the NEXT frame's mixer, so the
+    // fact names the slot this frame actually mixed (the staged Undo target);
+    // Undo-to-empty is exact silence from its raw 39. Both stems are exact.
+    fade_render_status(e, dir, 1);
+    CHECK(test_read_wet_stem(dir, 0, replay, 2) == 2);
+    for (int i = 0; i < 2; ++i) CHECK(fabsf(replay[i] - live[i]) < 1e-6f);
     le_engine_destroy(e);
   }
 }

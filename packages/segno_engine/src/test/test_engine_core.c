@@ -9152,13 +9152,14 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * on-disk format, not just the in-memory ring. ---- */
 #define LE_TEST_EVENTS_HEADER_BYTES 12
 #define LE_TEST_EVENTS_ENTRY_BYTES 28
-/* The version perf_drain.c writes today. 5 = applied Clear restore facts;
- * 4 = the PERF_ARMED/TRANSPORT_HELD
+/* The version perf_drain.c writes today. 6 = every callback-applied history
+ * image logs 322 and LE_CMD_UNDO_TO_EMPTY is raw-logged (#1143); 5 = applied
+ * Clear restore facts; 4 = the PERF_ARMED/TRANSPORT_HELD
  * facts + RECORD_END's take-id payload (#262/#819); 3 = unpaired RECORD_ABORT
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 5
+#define LE_TEST_EVENTS_VERSION 6
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -11811,8 +11812,10 @@ static void test_perf_layer_persists_through_redo_invalidation(void) {
   /* The undone layer and the fresh punch-in's completed pass both persisted,
    * in retire order — both retiring layers hold 1.0 (the pre-pass base):
    * the undo restored the track to exactly the same content the fresh
-   * punch-in then dubbed over again. */
-  CHECK(count_layer_entries_for_test(json) == 2);
+   * punch-in then dubbed over again. The undo itself staged its target as a
+   * kind-1 source image between them (#1143), so the manifest lists three. */
+  CHECK(count_layer_entries_for_test(json) == 3);
+  CHECK(strstr(json, "restore-0-1.pcm") != NULL);
 
   char filename[64];
   CHECK(nth_layer_filename_for_test(json, 0, filename, sizeof(filename)));
@@ -11827,7 +11830,7 @@ static void test_perf_layer_persists_through_redo_invalidation(void) {
     for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
   }
 
-  CHECK(nth_layer_filename_for_test(json, 1, filename, sizeof(filename)));
+  CHECK(nth_layer_filename_for_test(json, 2, filename, sizeof(filename)));
   snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), filename);
   f = fopen(path, "rb");
   CHECK(f != NULL);
@@ -33536,6 +33539,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 
 #include "test_engine_fade.h"
 #include "test_engine_reopen.h"
+#include "test_engine_history_replay.h"
 
 int main(void) {
   test_reopen_same_rate_retains_material();
@@ -33577,6 +33581,8 @@ int main(void) {
   test_fade_restore_staging_and_manifest_capacity();
   test_fade_grouped_muted_restore_stems();
   test_fade_restore_overdub_source_end();
+  run_history_replay_tests();
+  if (getenv("SEGNO_HISTORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_record_start_owned_cancel_survives_queued_pair();
   test_record_start_capture_and_no_source_refusal();
   test_record_start_selected_source_triggers();

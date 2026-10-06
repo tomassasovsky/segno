@@ -592,7 +592,8 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     tr->outstanding_count = 0;
     tr->queued_undo = 0;
     tr->dub_punch_out_posted = 0;
-    tr->perf_restore_active = 0;
+    tr->perf_source_slot = -1;
+    tr->perf_source_id = 0;
     tr->clear_restore_pending = 0;
     tr->clear_restore_generation = 0;
     atomic_store_explicit(&tr->a_clear_revision, 0, memory_order_relaxed);
