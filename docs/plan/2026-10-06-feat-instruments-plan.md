@@ -860,9 +860,9 @@ unfinished destination: nothing reaches the UI before Part 6. Production-line
 estimates exclude tests, bench tooling, generated bindings, assets and docs.
 Engine numbers come from the central ledger (main session, 2026-10-06):
 instruments own commands 96-111, perf-log facts 336-339 and result codes -14
-and -15. Part 2a takes commands 96-97 (98-99 spare), Part 2c takes 100-103
-(`LE_CMD_ATTACH_MIDI_PORT`, `LE_CMD_DETACH_MIDI_PORT`, two spare); 104-111
-stay reserved. `LE_ERR_NO_INSTRUMENT = -14` is returned only by the
+and -15. Part 2a takes commands 96-97 (98-99 spare); Part 2c takes none
+(attach and detach are the shared sink's direct calls, D4), so 98-111 stay
+reserved. `LE_ERR_NO_INSTRUMENT = -14` is returned only by the
 single-command event API on an empty slot (H4); `LE_ERR_UNKNOWN_PATCH = -15`
 refuses a patch index the build does not define. Facts 336-339 are reserved
 for instrument note provenance in performance stems, which no part here
@@ -1003,7 +1003,7 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
-### Part 2c. Native MIDI note routing, sustain and expression (about 600 production lines)
+### Part 2c. Native MIDI note routing, sustain and expression (built: branch `claude/instruments-1197-p2c`; about 600 production lines)
 
 §2.3 and D4's MIDI rules, **built on the shared native MIDI input sink from
 the MIDI clock plan (#1236, `claude/midi-clock-1228-p1`)**: that branch adds
@@ -1058,6 +1058,52 @@ without the change:
   `LE_ERR_NOT_READY`; a publish while stopped flips at once; under ASAN a
   publish racing the callback for 10⁵ blocks never reads a half-written
   table.
+
+As built (differences from the text above):
+- **Dispatch.** Routing runs inside the sink's `le_midi_port_dispatch`:
+  EVENT routes the message; GAP, LOST and REBOUND all call one "port gone"
+  step. `le_instruments_midi_begin` at the top of the drain switches in the
+  published route table and acknowledges it. The part keeps no generation
+  state of its own; REBOUND carries it.
+- **Port gone, precisely.** The port's sustain contributors are removed;
+  its held notes are let go as by a Note Off (so a note still sustained by
+  another contributor, for example a pedal posted from the control thread,
+  rings on); sustained voices that nothing sustains any more release; the
+  bend, modulation and pressure that port set are reset to zero. A first
+  draft released every voice from the port, sustained or not; the
+  "gone ends sustain and expression" test pins the corrected rule.
+- **Control-thread sustain.** `le_engine_instrument_sustain(e, slot, origin,
+  on)` adds or removes a contributor through the ordered rings (on through
+  the note ring, off through the release lane), for tokens, touch keys and
+  the pedals Part 3b resolves. Its origin carries the control tag, so a
+  port going away never removes it.
+- **Remap index.** Each route table carries, per port, kind and number, the
+  channels any remap covers (a 16-bit mask), built on the control thread
+  with the table. A message no remap can match skips all 256 remap
+  comparisons; the held-switch check (a remapped CC already held does not
+  strike again) runs only for remapped controllers. Without the index the
+  routing load below added about 170 µs per 128-frame period on the
+  development Mac (joint p50 from 16 % to 41 % of the period); with it,
+  about 40-50 µs (to about 22 %).
+- **Bench.** The joint scenario carries the routing load before every
+  period: 255 events on each of the 8 ports (a full ring; 256 cannot be
+  queued) and 256 control note-offs, against 8 instruments with 32 remaps
+  each. The port events are Note Ons above every range, Note Offs and CC 7,
+  so each scans the remaps and the voice pool without changing the voice
+  load, and the run fails if the 32 voices or the overflow count move.
+- **Tests.** The gap position is pinned with `le_midi_sink_mark_gap`
+  between two notes (the one before the gap released, the one after it
+  sounding); the overflow case above checks that X is released and nothing
+  is left sounding after the release time, rather than the exact-zero
+  sample. The routing race is the second scenario of
+  `src/test/test_instrument_races.c` (built before the races-only exit, so
+  the TSAN job runs it): a MIDI thread pushing note pairs, the audio thread
+  in `le_engine_process`, the control thread republishing tables 40 000
+  times (2 000 under TSAN) with a rebind every 500 attempts; no MIDI voice
+  may stay held. The sink's own race test is unchanged. A publish racing
+  the callback is checked by TSAN on the table handover (release on the
+  flip, acquire at the switch, and the reverse on the acknowledgement)
+  rather than by an ASAN content check.
 
 ```success-criteria
 GOAL: MIDI from any attached capture reaches instrument voices on the audio thread without Dart, with splits, layers, ranges, chord remaps, sustain from independent contributors, bend, modulation and pressure; releases are never lost to overflow, edits or detach, and a capture can never write into a detached or destroyed engine.
