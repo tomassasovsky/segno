@@ -1279,10 +1279,6 @@
     "@trayWifiLabel": {
         "description": "Label for the settings tray's WiFi shortcut button (stub — no real functionality yet)."
     },
-    "trayBluetoothLabel": "Bluetooth",
-    "@trayBluetoothLabel": {
-        "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
-    },
     "trayBrightnessPercent": "{percent}%",
     "@trayBrightnessPercent": {
         "description": "The readout above the brightness capsule in its popover.",
@@ -1650,10 +1646,6 @@
     "@wifiJoinAction": {
         "description": "Confirm button on the WiFi password dialog."
     },
-    "bluetoothUnsupportedBody": "Bluetooth is only available on the Segno console appliance.",
-    "@bluetoothUnsupportedBody": {
-        "description": "Shown on the Bluetooth page when segno-bt-ctl is not present."
-    },
     "bluetoothIntro": "Make this console discoverable so a phone or sidecar can find it. Pairing comes later.",
     "@bluetoothIntro": {
         "description": "Intro copy on the Bluetooth page (discovery/broadcast only)."
@@ -1666,37 +1658,9 @@
     "@bluetoothPoweredLabel": {
         "description": "Bluetooth powered table label."
     },
-    "bluetoothDiscoverableTitle": "Discoverable",
-    "@bluetoothDiscoverableTitle": {
-        "description": "Toggle title for classic Bluetooth discoverable."
-    },
-    "bluetoothDiscoverableSubtitle": "Other devices can see this console",
-    "@bluetoothDiscoverableSubtitle": {
-        "description": "Toggle subtitle for classic Bluetooth discoverable."
-    },
-    "bluetoothAdvertiseTitle": "Broadcast",
-    "@bluetoothAdvertiseTitle": {
-        "description": "Toggle title for BLE advertising."
-    },
-    "bluetoothAdvertiseSubtitle": "Advertise as Segno over Bluetooth LE",
-    "@bluetoothAdvertiseSubtitle": {
-        "description": "Toggle subtitle for BLE advertising."
-    },
-    "bluetoothScanTitle": "Scan for devices",
-    "@bluetoothScanTitle": {
-        "description": "Bluetooth scan action title."
-    },
     "bluetoothScanSubtitle": "Find nearby Bluetooth devices",
     "@bluetoothScanSubtitle": {
         "description": "Bluetooth scan action subtitle when idle."
-    },
-    "bluetoothScanningSubtitle": "Scanning…",
-    "@bluetoothScanningSubtitle": {
-        "description": "Bluetooth scan action subtitle while scanning."
-    },
-    "bluetoothEmptyDevices": "No devices found yet. Tap scan to search.",
-    "@bluetoothEmptyDevices": {
-        "description": "Empty state when a Bluetooth scan returns nothing."
     },
     "trayNetworkLabel": "Network",
     "@trayNetworkLabel": {
@@ -1713,10 +1677,6 @@
     "networkStateOpen": "open",
     "@networkStateOpen": {
         "description": "State word for a WiFi network that needs no passphrase."
-    },
-    "networkStatePaired": "paired",
-    "@networkStatePaired": {
-        "description": "State word for a Bluetooth device this console holds a pairing for."
     },
     "consoleKeepIt": "Keep it",
     "@consoleKeepIt": {
@@ -1809,98 +1769,6 @@
     "wifiForgetConfirmAction": "Forget network",
     "@wifiForgetConfirmAction": {
         "description": "Destructive action on the forget-network confirmation."
-    },
-    "bluetoothNotInRange": "not in range",
-    "@bluetoothNotInRange": {
-        "description": "Row subtitle for a paired device the last discovery did not see."
-    },
-    "bluetoothDiscoverableState": "discoverable",
-    "@bluetoothDiscoverableState": {
-        "description": "Row subtitle for a device the scan can see but bluez reports no kind for."
-    },
-    "bluetoothKindHeadphones": "headphones",
-    "@bluetoothKindHeadphones": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindSpeaker": "speaker",
-    "@bluetoothKindSpeaker": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindPhone": "phone",
-    "@bluetoothKindPhone": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindComputer": "computer",
-    "@bluetoothKindComputer": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindKeyboard": "keyboard",
-    "@bluetoothKindKeyboard": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindMouse": "mouse",
-    "@bluetoothKindMouse": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindGamepad": "controller",
-    "@bluetoothKindGamepad": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothConnectAction": "Connect",
-    "@bluetoothConnectAction": {
-        "description": "Action inside an opened Bluetooth row: links an already-paired device."
-    },
-    "bluetoothDisconnectAction": "Disconnect",
-    "@bluetoothDisconnectAction": {
-        "description": "Action inside an opened Bluetooth row: drops the link but keeps the pairing."
-    },
-    "bluetoothForgetAction": "Forget",
-    "@bluetoothForgetAction": {
-        "description": "Destructive action inside an opened Bluetooth row."
-    },
-    "bluetoothPairingShort": "pairing with {name}",
-    "@bluetoothPairingShort": {
-        "description": "Live-state line beside the Bluetooth face's title while a pairing is in flight.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothPairFailedShort": "could not pair with {name}",
-    "@bluetoothPairFailedShort": {
-        "description": "Live-state line beside the Bluetooth face's title after a pairing failed.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothPairingBanner": "Pairing with {name}… confirm on the device.",
-    "@bluetoothPairingBanner": {
-        "description": "In-flight banner while a pairing waits on a human at the far device.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothForgetTitleNamed": "Forget “{name}”?",
-    "@bluetoothForgetTitleNamed": {
-        "description": "Title of the forget-device confirmation.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothForgetBody": "The pairing is removed from this console. The device has to be put back in pairing mode to reconnect.",
-    "@bluetoothForgetBody": {
-        "description": "Body of the forget-device confirmation — says what is actually destroyed."
-    },
-    "bluetoothForgetConfirmAction": "Forget device",
-    "@bluetoothForgetConfirmAction": {
-        "description": "Destructive action on the forget-device confirmation."
     },
     "trayControlLabel": "Control",
     "@trayControlLabel": {
@@ -6083,5 +5951,14 @@
     "bootModeRetiredNotice": "Segno now always starts in Record mode. Press Mode to switch to Mute.",
     "@bootModeRetiredNotice": {
         "description": "Shown once to an install that used to start in Mute mode, after the start-up mode setting was removed."
+    },
+    "bluetoothRetiredNotice": "{count, plural, =1{Bluetooth is no longer supported. The device paired with this console will not reconnect.} other{Bluetooth is no longer supported. The {count} devices paired with this console will not reconnect.}}",
+    "@bluetoothRetiredNotice": {
+        "description": "Shown once to an install that had paired Bluetooth devices, after Bluetooth was removed.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
     }
 }

@@ -14,7 +14,7 @@
 #      Creating it here (ordered Before=weston.service) means the helper never
 #      has to create anything as an unprivileged user.
 #
-# Same shape as segno-nm-persist / segno-bt-persist / segno-ssh-persist.
+# Same shape as segno-nm-persist / segno-ssh-persist.
 #
 # See https://github.com/tomassasovsky/segno/issues/659
 set -eu

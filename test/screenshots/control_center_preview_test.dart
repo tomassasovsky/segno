@@ -5,7 +5,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -33,7 +32,6 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
-import 'package:segno/network/network_tab.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/system/system_tab.dart';
@@ -225,100 +223,6 @@ class _PreviewWifiClient implements WifiClient {
 }
 
 /// Home-tray preview: powered on without discoverable/advertise.
-class _PreviewBluetoothHomeClient implements BluetoothClient {
-  @override
-  bool get isSupported => true;
-
-  @override
-  Future<BluetoothStatus> status() async => const BluetoothStatus(
-    supported: true,
-    powered: true,
-    discoverable: false,
-    advertising: false,
-    alias: 'Segno',
-  );
-
-  @override
-  Future<List<BluetoothDevice>> scan() async => const [];
-
-  @override
-  Future<void> setPowered({required bool enabled}) async {}
-
-  @override
-  Future<void> setDiscoverable({required bool enabled}) async {}
-
-  @override
-  Future<void> setAdvertising({required bool enabled}) async {}
-
-  @override
-  Future<void> pair(String address) async {}
-
-  @override
-  Future<void> connect(String address) async {}
-
-  @override
-  Future<void> disconnect(String address) async {}
-
-  @override
-  Future<void> forget(String address) async {}
-}
-
-class _PreviewBluetoothClient implements BluetoothClient {
-  @override
-  bool get isSupported => true;
-
-  @override
-  Future<BluetoothStatus> status() async => const BluetoothStatus(
-    supported: true,
-    powered: true,
-    discoverable: true,
-    advertising: true,
-    alias: 'Segno',
-  );
-
-  /// Drawn to `NETWORK / bluetooth`: a connected device, a paired one out of
-  /// range, and a fresh one.
-  @override
-  Future<List<BluetoothDevice>> scan() async => const [
-    BluetoothDevice(
-      name: 'WH-1000XM4',
-      address: 'AA:AA:AA:AA:AA:AA',
-      paired: true,
-      connected: true,
-      kind: BluetoothDeviceKind.headphones,
-    ),
-    BluetoothDevice(
-      name: 'Page turner',
-      address: 'BB:BB:BB:BB:BB:BB',
-      paired: true,
-      inRange: false,
-      kind: BluetoothDeviceKind.keyboard,
-    ),
-    BluetoothDevice(name: 'AirTurn BT-200', address: 'CC:CC:CC:CC:CC:CC'),
-  ];
-
-  @override
-  Future<void> setPowered({required bool enabled}) async {}
-
-  @override
-  Future<void> setDiscoverable({required bool enabled}) async {}
-
-  @override
-  Future<void> setAdvertising({required bool enabled}) async {}
-
-  @override
-  Future<void> pair(String address) async {}
-
-  @override
-  Future<void> connect(String address) async {}
-
-  @override
-  Future<void> disconnect(String address) async {}
-
-  @override
-  Future<void> forget(String address) async {}
-}
-
 void main() {
   late TempoSettings tempoOwner;
   setUpAll(() {
@@ -658,7 +562,6 @@ void main() {
     WidgetTester tester, {
     required SettingsTrayCubit cubit,
     WifiRepository? wifi,
-    BluetoothRepository? bluetooth,
     ({
       WaveformWindowCubit waveform,
       HighContrastCubit contrast,
@@ -697,13 +600,6 @@ void main() {
               value:
                   wifi ?? const WifiRepository(client: UnsupportedWifiClient()),
             ),
-            RepositoryProvider.value(
-              value:
-                  bluetooth ??
-                  const BluetoothRepository(
-                    client: UnsupportedBluetoothClient(),
-                  ),
-            ),
             RepositoryProvider<LooperRepository>.value(value: rig.looper),
           ],
           child: MultiBlocProvider(
@@ -735,10 +631,7 @@ void main() {
               body: Stack(
                 children: [
                   const ColoredBox(color: Color(0xFF1A1520)),
-                  SettingsTray(
-                    wifiRepository: wifi,
-                    bluetoothRepository: bluetooth,
-                  ),
+                  SettingsTray(wifiRepository: wifi),
                 ],
               ),
             ),
@@ -757,7 +650,6 @@ void main() {
       tester,
       cubit: cubit,
       wifi: WifiRepository(client: _PreviewWifiHomeClient()),
-      bluetooth: BluetoothRepository(client: _PreviewBluetoothHomeClient()),
     );
     await tester.pumpAndSettle();
     await expectLater(
@@ -770,8 +662,7 @@ void main() {
     await size(tester);
     final cubit = SettingsTrayCubit()
       ..open()
-      ..showDestination(SettingsTrayDestination.network)
-      ..showNetworkTab(NetworkTab.wifi);
+      ..showDestination(SettingsTrayDestination.network);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -790,8 +681,7 @@ void main() {
     await size(tester);
     final cubit = SettingsTrayCubit()
       ..open()
-      ..showDestination(SettingsTrayDestination.network)
-      ..showNetworkTab(NetworkTab.wifi);
+      ..showDestination(SettingsTrayDestination.network);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -812,8 +702,7 @@ void main() {
     await size(tester);
     final cubit = SettingsTrayCubit()
       ..open()
-      ..showDestination(SettingsTrayDestination.network)
-      ..showNetworkTab(NetworkTab.wifi);
+      ..showDestination(SettingsTrayDestination.network);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -834,8 +723,7 @@ void main() {
     await size(tester);
     final cubit = SettingsTrayCubit()
       ..open()
-      ..showDestination(SettingsTrayDestination.network)
-      ..showNetworkTab(NetworkTab.wifi);
+      ..showDestination(SettingsTrayDestination.network);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -860,8 +748,7 @@ void main() {
     await size(tester);
     final cubit = SettingsTrayCubit()
       ..open()
-      ..showDestination(SettingsTrayDestination.network)
-      ..showNetworkTab(NetworkTab.wifi);
+      ..showDestination(SettingsTrayDestination.network);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -877,50 +764,6 @@ void main() {
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/control_center_network_wifi_join.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('network domain, bluetooth tab', (tester) async {
-    await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.network)
-      ..showNetworkTab(NetworkTab.bluetooth);
-    addTearDown(cubit.close);
-
-    await pumpTray(
-      tester,
-      cubit: cubit,
-      bluetooth: BluetoothRepository(client: _PreviewBluetoothClient()),
-    );
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_network_bluetooth.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('network domain, bluetooth row open', (tester) async {
-    await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.network)
-      ..showNetworkTab(NetworkTab.bluetooth);
-    addTearDown(cubit.close);
-
-    await pumpTray(
-      tester,
-      cubit: cubit,
-      bluetooth: BluetoothRepository(client: _PreviewBluetoothClient()),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const Key('bluetooth_device_AA:AA:AA:AA:AA:AA')),
-    );
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_network_bt_expanded.png'),
     );
   }, skip: !hasFonts);
 
