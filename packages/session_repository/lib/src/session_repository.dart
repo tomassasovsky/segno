@@ -7,6 +7,7 @@ import 'package:meta/meta.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/src/models/session.dart';
+import 'package:session_repository/src/models/session_mixdown.dart';
 import 'package:session_repository/src/models/session_preview.dart';
 import 'package:session_repository/src/models/session_summary.dart';
 import 'package:session_repository/src/session_exception.dart';
@@ -731,6 +732,67 @@ class SessionRepository {
     final layer = '$path/${track.liveLayerFile}';
     if (!File(layer).existsSync()) return null;
     return _engine.filePeaks(layer, buckets: buckets);
+  }
+
+  /// The saved bundle [id]'s mixdown, read from its WAV header, or null when
+  /// the bundle has none (an empty session) or its header does not read
+  /// (#1178 Part 7: the Audio tab lists sessions with a mixdown).
+  Future<SessionMixdown?> mixdownOf(SessionId id) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) return null;
+    return _readMixdownHeader(File('$path/$mixdownName'));
+  }
+
+  /// [buckets] absolute peaks over the saved bundle [id]'s mixdown, streamed
+  /// off the UI isolate through the engine's one decoder, or null when there
+  /// is none or it does not read.
+  Future<Float32List?> readMixdownPeaks(
+    SessionId id, {
+    int buckets = 256,
+  }) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) return null;
+    final mixdown = '$path/$mixdownName';
+    if (!File(mixdown).existsSync()) return null;
+    return _engine.filePeaks(mixdown, buckets: buckets);
+  }
+
+  /// The canonical 44-byte header [WavCodec] writes: `RIFF`/`WAVE`, `fmt `
+  /// with the channels, rate and bit depth, then `data` and its size.
+  static SessionMixdown? _readMixdownHeader(File file) {
+    final Uint8List head;
+    final int length;
+    try {
+      if (!file.existsSync()) return null;
+      length = file.lengthSync();
+      final raf = file.openSync();
+      try {
+        head = raf.readSync(44);
+      } finally {
+        raf.closeSync();
+      }
+    } on FileSystemException {
+      return null;
+    }
+    if (head.length < 44) return null;
+    String tag(int at) => String.fromCharCodes(head.sublist(at, at + 4));
+    if (tag(0) != 'RIFF' || tag(8) != 'WAVE' || tag(36) != 'data') {
+      return null;
+    }
+    final view = ByteData.sublistView(head);
+    final channels = view.getUint16(22, Endian.little);
+    final sampleRate = view.getUint32(24, Endian.little);
+    final bits = view.getUint16(34, Endian.little);
+    final dataBytes = view.getUint32(40, Endian.little);
+    final frameBytes = channels * bits ~/ 8;
+    if (frameBytes <= 0 || sampleRate <= 0) return null;
+    return SessionMixdown(
+      frames: dataBytes ~/ frameBytes,
+      sampleRate: sampleRate,
+      bytes: length,
+    );
   }
 
   /// Whole bars at the saved tempo and signature, or 0 without a tempo.

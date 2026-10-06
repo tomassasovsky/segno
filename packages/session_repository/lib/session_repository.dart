@@ -7,6 +7,7 @@ library;
 export 'package:segno_engine/segno_engine.dart'
     show AuditionStart, AuditionState, EngineResult, kAuditionMaxSeconds;
 export 'src/models/session.dart';
+export 'src/models/session_mixdown.dart';
 export 'src/models/session_preview.dart';
 export 'src/models/session_summary.dart';
 export 'src/session_exception.dart';

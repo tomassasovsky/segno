@@ -1203,14 +1203,6 @@
     "@perfExportReasonUnrepresented": {
         "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Segno version doesn't recognize as exportable."
     },
-    "perfExportReExport": "Re-export",
-    "@perfExportReExport": {
-        "description": "Button label: regenerate .als/fx-chains.txt from this already-finalized capture without re-recording."
-    },
-    "perfExportReExportFailed": "Couldn't regenerate the export.",
-    "@perfExportReExportFailed": {
-        "description": "Error message shown when re-export fails."
-    },
     "timeSignatureNoteValueLabel": "Note value",
     "clickModeOffLabel": "Off",
     "clickModeRecLabel": "Recording",
@@ -6109,6 +6101,208 @@
         "placeholders": {
             "count": {
                 "type": "int"
+            }
+        }
+    },
+    "libraryAudio": "Audio",
+    "@libraryAudio": {
+        "description": "The Library's Audio crumb tab."
+    },
+    "libraryAudioTitle": "Audio library",
+    "@libraryAudioTitle": {
+        "description": "Title of Library > Audio (pen 18/01)."
+    },
+    "libraryUsbDrive": "USB drive",
+    "@libraryUsbDrive": {
+        "description": "Library > Audio's USB location (pen 18/01)."
+    },
+    "librarySearchAudio": "Search audio",
+    "@librarySearchAudio": {
+        "description": "Library > Audio's search box and its keyboard sheet."
+    },
+    "libraryAudioPerformances": "Performances",
+    "@libraryAudioPerformances": {
+        "description": "The folder of finished recordings in Library > Audio."
+    },
+    "libraryAudioFolderCount": "{count, plural, =0{Empty} =1{1 file} other{{count} files}}",
+    "@libraryAudioFolderCount": {
+        "description": "A folder row's count in Library > Audio.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryAudioEmpty": "Nothing here yet.",
+    "@libraryAudioEmpty": {
+        "description": "An empty folder in Library > Audio."
+    },
+    "libraryAudioNoMatches": "No audio matches.",
+    "@libraryAudioNoMatches": {
+        "description": "A search with no match in Library > Audio."
+    },
+    "libraryAudioNoSelection": "Choose a file to preview it.",
+    "@libraryAudioNoSelection": {
+        "description": "The Audio preview card with nothing selected."
+    },
+    "libraryAudioParentFolder": "Parent folder",
+    "@libraryAudioParentFolder": {
+        "description": "Accessible name of the browser's back-up-one-folder button."
+    },
+    "libraryAudioWav": "WAV",
+    "@libraryAudioWav": {
+        "description": "The preview card's file kind."
+    },
+    "libraryAudioParts": "WAV · {count} parts",
+    "@libraryAudioParts": {
+        "description": "The file kind of a recording written as several consecutive parts.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryAudioRecovered": "Recovered",
+    "@libraryAudioRecovered": {
+        "description": "Marks a recording that was recovered after a crash or power loss."
+    },
+    "libraryAudioPreview": "Preview",
+    "@libraryAudioPreview": {
+        "description": "Library > Audio's preview button (pen 18/01)."
+    },
+    "libraryAudioExportUsb": "Export to USB",
+    "@libraryAudioExportUsb": {
+        "description": "Action on an audio file in Library > Audio."
+    },
+    "libraryAudioDawProject": "DAW project",
+    "@libraryAudioDawProject": {
+        "description": "Writes a recording's Ableton project and effect chains into it."
+    },
+    "libraryAudioDawProjectWritten": "The DAW project is saved in this recording.",
+    "@libraryAudioDawProjectWritten": {
+        "description": "After DAW project succeeds."
+    },
+    "libraryAudioExportStems": "Export stems",
+    "@libraryAudioExportStems": {
+        "description": "Exports a session's stems to USB."
+    },
+    "libraryAudioDelete": "Delete",
+    "@libraryAudioDelete": {
+        "description": "Deletes a recording from the console's storage."
+    },
+    "libraryAudioDeleteTitle": "Delete “{name}”?",
+    "@libraryAudioDeleteTitle": {
+        "description": "Confirms a recording's Delete.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryAudioDeleteBody": "The recording is removed from this console. Copies on USB drives are not touched.",
+    "@libraryAudioDeleteBody": {
+        "description": "Body of a recording's Delete confirmation."
+    },
+    "libraryAudioChooserTitle": "Export to USB",
+    "@libraryAudioChooserTitle": {
+        "description": "Title of a recording's export choice."
+    },
+    "libraryAudioChooseRecording": "Recording only (WAV)",
+    "@libraryAudioChooseRecording": {
+        "description": "Exports the recording alone."
+    },
+    "libraryAudioChooseDaw": "DAW package (WAV, stems, Ableton project)",
+    "@libraryAudioChooseDaw": {
+        "description": "Exports the recording with its stems and Ableton project."
+    },
+    "libraryAudioExporting": "Exporting audio",
+    "@libraryAudioExporting": {
+        "description": "Title while an export runs (pen 20/08)."
+    },
+    "libraryAudioExportRoute": "Internal → USB drive / {folder}",
+    "@libraryAudioExportRoute": {
+        "description": "Where a running export goes (pen 20/08).",
+        "placeholders": {
+            "folder": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryAudioExportPlace": "USB drive / {folder}",
+    "@libraryAudioExportPlace": {
+        "description": "Where a finished export is (pen 20/12).",
+        "placeholders": {
+            "folder": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryAudioExported": "Exported to USB",
+    "@libraryAudioExported": {
+        "description": "Title once an export is done (pen 20/12)."
+    },
+    "libraryAudioRecordingKept": "Your internal recording is kept.",
+    "@libraryAudioRecordingKept": {
+        "description": "After a recording is exported (pen 20/12)."
+    },
+    "libraryAudioSessionKept": "Your internal session is kept.",
+    "@libraryAudioSessionKept": {
+        "description": "After a session's audio is exported."
+    },
+    "libraryAudioDone": "Done",
+    "@libraryAudioDone": {
+        "description": "Closes the finished export (pen 20/12)."
+    },
+    "libraryAudioConflictTitle": "Already on USB",
+    "@libraryAudioConflictTitle": {
+        "description": "The export name is taken on the drive (pen 20/09)."
+    },
+    "libraryAudioKeepBoth": "Keep both",
+    "@libraryAudioKeepBoth": {
+        "description": "Exports beside the existing file under a new name."
+    },
+    "libraryAudioReplace": "Replace file",
+    "@libraryAudioReplace": {
+        "description": "Exports over the existing file."
+    },
+    "libraryAudioConnectBody": "Your recording stays in Internal.",
+    "@libraryAudioConnectBody": {
+        "description": "Export with no drive (pen 20/10)."
+    },
+    "libraryAudioTryAgain": "Try again",
+    "@libraryAudioTryAgain": {
+        "description": "Retries an export once a drive is connected."
+    },
+    "libraryAudioNotEnoughSpace": "Not enough space. Free up storage and try again.",
+    "@libraryAudioNotEnoughSpace": {
+        "description": "The drive is too full for the export (pen 20/11)."
+    },
+    "libraryAudioReadOnly": "This USB drive is read-only. Nothing was written.",
+    "@libraryAudioReadOnly": {
+        "description": "The drive refuses writes."
+    },
+    "libraryAudioExportFailed": "Could not export. Nothing was left on the drive.",
+    "@libraryAudioExportFailed": {
+        "description": "An export failed and was removed from the drive."
+    },
+    "libraryAudioDawProjectFailed": "Could not write the DAW project.",
+    "@libraryAudioDawProjectFailed": {
+        "description": "DAW project failed."
+    },
+    "libraryAudioDeleteBusy": "Not while a performance is recording or rendering.",
+    "@libraryAudioDeleteBusy": {
+        "description": "A recording's Delete was refused."
+    },
+    "libraryAudioDeleteFailed": "Could not delete the recording.",
+    "@libraryAudioDeleteFailed": {
+        "description": "A recording's Delete failed."
+    },
+    "libraryAudioPurpose": "Exporting {name}",
+    "@libraryAudioPurpose": {
+        "description": "What the Storage page shows on Eject while an export runs.",
+        "placeholders": {
+            "name": {
+                "type": "String"
             }
         }
     }

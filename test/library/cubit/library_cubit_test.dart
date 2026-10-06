@@ -438,6 +438,26 @@ void main() {
         verify(sessions.stopAudition).called(1);
       });
 
+      test('showing the Audio section stops it; showing the same section '
+          'again changes nothing', () async {
+        reports = [const AuditionState(frames: 480000, bus: 0)];
+        final cubit = fast();
+        addTearDown(cubit.close);
+        await cubit.select('s-a');
+        await cubit.listen();
+
+        cubit.showSection(LibrarySection.sessions);
+        expect(cubit.state.listen, isNotNull);
+
+        cubit.showSection(LibrarySection.audio);
+        expect(cubit.state.section, LibrarySection.audio);
+        expect(cubit.state.listen, isNull);
+        verify(sessions.stopAudition).called(1);
+
+        cubit.clearSelection();
+        expect(cubit.state.section, LibrarySection.audio);
+      });
+
       test('leaving the Library stops it', () async {
         reports = [const AuditionState(frames: 480000, bus: 0)];
         final cubit = fast();

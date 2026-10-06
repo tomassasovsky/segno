@@ -186,16 +186,12 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
 /// signal (< 2s captured with zero logged events) — a `BlocListener` reacts
 /// to it to show a notice, matching the plan's "no ephemeral state" rule:
 /// this is a ordinary field on an ordinary transition, not a one-shot state
-/// of its own. [reExportFailed] follows the same "ordinary field" rule
-/// (part 11) — it clears on the very next transition rather than needing an
-/// explicit dismiss.
+/// of its own.
 class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderCompleted] with a delivered [result].
   const PerformanceRecorderCompleted(
     this.result, {
     this.tracks = const [],
-    this.isReExporting = false,
-    this.reExportFailed = false,
     this.duration,
     this.hadGlitch = false,
   }) : discarded = false;
@@ -206,8 +202,6 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
     : result = null,
       discarded = true,
       tracks = const [],
-      isReExporting = false,
-      reExportFailed = false,
       duration = null,
       hadGlitch = false;
 
@@ -227,17 +221,6 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// couldn't be read.
   final List<DawTrack> tracks;
 
-  /// Whether [PerformanceRecorderCubit.reExport] is currently running —
-  /// lets the completion sheet disable the re-export button / show a
-  /// spinner instead of allowing overlapping re-export calls.
-  final bool isReExporting;
-
-  /// Whether the most recent [PerformanceRecorderCubit.reExport] call threw
-  /// (a bad manifest fixture, or a file-I/O failure writing `.als`/
-  /// `fx-chains.txt`) — [tracks] is left at its pre-attempt value in that
-  /// case, never partially updated.
-  final bool reExportFailed;
-
   /// How long the capture ran, wall clock, or null when unknown (a recovered
   /// boot capture has no armed-at to measure from). The completion dialog's
   /// subtitle prints it beside the track count, as the pen draws it.
@@ -254,8 +237,6 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
     result,
     discarded,
     tracks,
-    isReExporting,
-    reExportFailed,
     duration,
     hadGlitch,
   ];

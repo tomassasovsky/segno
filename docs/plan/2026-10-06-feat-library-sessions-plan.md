@@ -372,6 +372,47 @@ a design change; this plan does not edit the pen):
      all-muted mix) shows no `Listen` (`SessionPreview.hasMixdown`). The
      button carries a leading play glyph (`Stop` a square), standing for
      the pen's 28-point icon, whose path the pen MCP does not expose.
+11. Part 7 as built:
+   - **Recovered takes are listed and kept** (owner decision): the
+     `Performances` folder lists the takes boot recovery moved under
+     `recovered/`, marked `Recovered` in the row and the card, beside the
+     others. Removing the 30-day prune is #1198 Part 2's change; this part
+     lists what is there and adds the only delete, the recording's `Delete`
+     (confirmed; refused while a take is being recorded, finalized or
+     rendered, and through the guard table during a shutdown).
+   - **Parts.** The listing reads a take's audio from the sidecar's `parts`
+     list in stream and index order, and a take written before that format
+     as its single `master.wav` and `live-input-<n>.wav`. Until #1198
+     Part 5 (`TakePart`, `PerformanceManifest.parts`) is on the trunk,
+     `CapturePart` in `performance_repository` reads the same JSON with the
+     same checks; it is replaced by `TakePart` when that lands. `Preview`
+     plays the first main-output part; the waveform spans every main-output
+     part in proportion to its length. `Recording only (WAV)` writes one
+     `<name>.wav`, or a multi-part take as consecutive
+     `<name> · Part 001.wav`, `Part 002.wav`... files.
+   - **The DAW package** is the parts, the rendered `stems/dry` and
+     `stems/wet` files the Live Set points at, `project.als` and
+     `fx-chains.txt`, copied keeping their paths so the Live Set opens on
+     the drive. `DAW project` and the package write the project through
+     `writeDawProject` (`lib/performance/application/daw_project_export.dart`),
+     which the capture pipeline also calls.
+   - **All or nothing on the drive.** Loose files are removed if a later one
+     fails; a package or a stems set is copied into a hidden `.segno-export`
+     directory and renamed into place once complete. `Keep both` picks one
+     free `<name> (n)` for every file of the export. `Replace` on a package
+     moves the old directory aside until the new one is in place.
+   - **The delete guard.** A recording's delete enters `sessionWrite` on
+     the bundle's path: the guard table has no kind for a recording
+     delete, and `sessionWrite` refuses during a shutdown and over the same
+     item, which is what a delete needs. A `recordingWrite` kind is the
+     owner's call if one is wanted.
+   - Pen departures: the top of the browser lists the two folders
+     (`Performances`, `Sessions`) with a file count; the path row reads
+     `Internal` there. The search filters the open folder. The USB location
+     shows 18/06's notice or an empty list (browsing a drive's audio is not
+     this part). 20/12 has no `Show on USB` (deviation 3). The chooser and
+     the line's read-only, failed-export, DAW-project and delete texts are
+     ours.
 
 ## 3. Decisions
 
@@ -1085,11 +1126,12 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && (cd p
 ### Part 7: Library > Audio with Performances and Sessions groups, Export to USB and the re-homed DAW export (about 560 lines)
 
 Files: `packages/performance_repository/lib/src/performance_repository.dart`
-(`listCaptures()` -> `CaptureSummary(path, slug, name, startedAt, durationFrames,
-sampleRate, hasDawProject)` from `performance.json`, skipping unfinalized and
-`recovered/` bundles; `dawPackageFiles(path)` listing the take's parts in
-the order its `parts` list gives them, `project.als` and `fx-chains.txt`
-that exist), new
+(`listCaptures()` -> `CaptureSummary(path, name, startedAt, durationFrames,
+sampleRate, recovered, hasDawProject, parts)` from `performance.json`,
+skipping unfinalized bundles and listing the `recovered/` ones marked
+recovered (item 11); `dawPackageFiles(capture)` listing the take's parts in
+the order its `parts` list gives them, its rendered stems, `project.als` and
+`fx-chains.txt` that exist; `deleteCapture`, `startAudition`, `readPeaks`), new
 `lib/performance/application/daw_project_export.dart` (the writer moved from
 `performance_recorder_cubit.dart:637-656`, called by `_finishRender`
 `:528-560` and by the Library), `performance_recorder_cubit.dart` and
@@ -1144,7 +1186,7 @@ leaves the drive-side directory absent).
 ```success-criteria
 GOAL: Finished recordings and saved sessions' mixdowns are browsable in Library > Audio and exportable to USB as a WAV, a stems set or a DAW package through #1177's copy protocol, without ever altering the internal copy; the DAW project export lives there and nowhere else.
 SUCCESS CRITERIA:
-- The Performances group lists finalized captures with name and duration and excludes unfinalized and recovered bundles; the Sessions group lists every catalog session that has a mixdown. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/library
+- The Performances group lists finalized captures with name and duration, recovered ones marked, and excludes unfinalized bundles; a recording can be deleted after a confirmation; the Sessions group lists every catalog session that has a mixdown. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/library
 - Export with a fake port: single WAV, DAW package, mixdown and stems each issue one `copyFile` per file with the chosen policy; `ask` surfaces the conflict before any copy; `full`, `volumeLost`, `readOnly` and `io` midway leave the drive without the partial package and the internal bundle byte-identical. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library && (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
 - `DAW project` writes `project.als` and `fx-chains.txt` into the bundle; the completion sheet has no re-export control; `reExport` no longer exists. | verify: /Users/Tomas/development/flutter/bin/flutter test test/performance test/library && ! grep -rn "reExport" lib
 - The performance repository's 99% floor and the root 90% floor hold. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test --coverage) && /Users/Tomas/development/flutter/bin/flutter test --coverage
