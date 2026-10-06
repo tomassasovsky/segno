@@ -16,6 +16,7 @@ import 'package:segno/control/invariants.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/model/foot_length.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/control/model/foot_reverse.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -108,6 +109,10 @@ PedalTrackLed projectTrackLed(
       return (track != null && track.hasContent && track.reversed)
           ? PedalTrackLed.blue
           : PedalTrackLed.off;
+    case InteractionMode.peel:
+      // Lit while a press would remove a layer, so "none remain" and a busy
+      // track are visible by foot.
+      return (track?.canPeel ?? false) ? PedalTrackLed.blue : PedalTrackLed.off;
     case InteractionMode.length:
       // Red on the selected recorded track, the one every edit acts on (the
       // Record-mode cursor convention); an empty track is never selected.
@@ -217,6 +222,7 @@ PedalStateFrame projectFrame(
       InteractionMode.mixer ||
       InteractionMode.fade ||
       InteractionMode.reverse ||
+      InteractionMode.peel ||
       InteractionMode.length => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
@@ -248,12 +254,13 @@ PedalStateFrame projectFrame(
   return frame;
 }
 
-/// Whether [button] is a slot-less pedal on a Fade, Reverse or Multiply /
-/// Divide surface.
+/// Whether [button] is a slot-less pedal on a hold-less performance surface
+/// (Fade, Reverse, Peel, Multiply / Divide).
 bool _slotless(InteractionMode mode, PedalButton button) => switch (mode) {
   InteractionMode.fade => FootFadeProjection.pedalRoles[button]!.slot == null,
   InteractionMode.reverse =>
     FootReverseProjection.pedalRoles[button]!.slot == null,
+  InteractionMode.peel => FootPeelProjection.pedalRoles[button]!.slot == null,
   InteractionMode.length =>
     FootLengthProjection.pedalRoles[button]!.slot == null,
   _ => false,

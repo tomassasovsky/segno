@@ -306,6 +306,7 @@ void main() {
           SessionRigTrack(
             channel: 0,
             fadeAmount: amount,
+            reversed: false,
             lanes: [
               SessionRigLane(
                 lane: 0,
@@ -6212,8 +6213,10 @@ void main() {
       bool muted = false,
       int outputMask = 0x3,
       int inputChannel = 0,
+      bool reversed = false,
     }) => SessionRigTrack(
       fadeAmount: 1,
+      reversed: reversed,
       channel: channel,
       lanes: [
         SessionRigLane(
@@ -6248,6 +6251,43 @@ void main() {
       expect(engine.laneMute[(0, 0)], isFalse);
     });
 
+    test('a reversed track recalls reversed, and only after its install '
+        'is confirmed', () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [rigTrack(0, pcm, reversed: true), rigTrack(1, pcm)],
+        ),
+        clearPollInterval: Duration.zero,
+      );
+      expect(engine.installedReverses, {0: true});
+      expect(repo.state.tracks[0].reversed, isTrue);
+      expect(repo.state.tracks[1].reversed, isFalse);
+
+      engine.installReverseResult = EngineResult.notReady;
+      await expectLater(
+        repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [rigTrack(0, pcm, reversed: true)],
+          ),
+          clearPollInterval: Duration.zero,
+        ),
+        throwsStateError,
+      );
+      // Only the first load committed: the refused install stopped the second.
+      expect(
+        engine.calls.where((call) => call == 'commitSession'),
+        hasLength(1),
+      );
+      expect(repo.state.tracks[0].state, TrackState.empty);
+      expect(repo.state.tracks[0].reversed, isFalse);
+    });
+
     test(
       'clears every track, imports stems, commits, and applies mix',
       () async {
@@ -6278,10 +6318,42 @@ void main() {
         );
         expect(engine.importedTracks[0], pcm);
         expect(engine.committedBaseFrames, 4);
+        expect(engine.committedLoopBeats, 0);
         expect(engine.laneVol[(0, 0)], 0.5);
         expect(engine.laneMute[(0, 0)], isTrue);
       },
     );
+
+    test('commits the grid in beats: whole bars times the signature, or '
+        'the saved beats of a sub-bar loop (#1168)', () async {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      for (final (rig, beats) in [
+        (
+          SessionRig(
+            baseLengthFrames: 4,
+            loopBars: 3,
+            tsNum: 7,
+            tsDen: 8,
+            tracks: [rigTrack(0, pcm)],
+          ),
+          21,
+        ),
+        (
+          SessionRig(
+            baseLengthFrames: 4,
+            loopBeats: 2,
+            tracks: [rigTrack(0, pcm)],
+          ),
+          2,
+        ),
+      ]) {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        await repo.applySession(rig, clearPollInterval: Duration.zero);
+        expect(engine.committedLoopBeats, beats);
+        await repo.dispose();
+      }
+    });
 
     test('fires rigReplaced once on a successful apply — the explicit seam '
         '(the cleared window is transient, so the projection alone cannot '
@@ -7167,6 +7239,7 @@ void main() {
             tracks: [
               SessionRigTrack(
                 fadeAmount: 1,
+                reversed: false,
                 channel: 0,
                 lanes: [
                   SessionRigLane(
@@ -7230,6 +7303,7 @@ void main() {
             tracks: [
               SessionRigTrack(
                 fadeAmount: 1,
+                reversed: false,
                 channel: 0,
                 lanes: [
                   SessionRigLane(
@@ -7276,6 +7350,7 @@ void main() {
             tracks: [
               SessionRigTrack(
                 fadeAmount: 1,
+                reversed: false,
                 channel: 0,
                 lanes: [
                   SessionRigLane(

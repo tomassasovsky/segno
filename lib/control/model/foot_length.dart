@@ -72,6 +72,7 @@ class FootLengthTrack extends Equatable {
     required this.multiple,
     required this.syncDivisor,
     this.bars,
+    this.beats,
   });
 
   /// Absolute zero-based channel.
@@ -97,6 +98,10 @@ class FootLengthTrack extends Equatable {
   /// The length in whole bars, or null without a known whole bar count.
   final int? bars;
 
+  /// The length in whole beats when it is not whole bars (a Divide of a sole
+  /// 1- or 3-bar loop leaves 2 or 6 beats), else null.
+  final int? beats;
+
   /// Whether a length edit would be posted now.
   bool get available => hasContent && !busy;
 
@@ -117,6 +122,7 @@ class FootLengthTrack extends Equatable {
     multiple,
     syncDivisor,
     bars,
+    beats,
   ];
 }
 
@@ -190,6 +196,10 @@ FootLengthTrack readFootLengthTrack(LooperState looper, int channel) {
       syncDivisor: 0,
     );
   }
+  final bars = track.wholeBars(
+    transport: looper.transport,
+    sampleRate: looper.status.sampleRate,
+  );
   return FootLengthTrack(
     channel: channel,
     hasContent: track.hasContent,
@@ -201,10 +211,13 @@ FootLengthTrack readFootLengthTrack(LooperState looper, int channel) {
     lengthFrames: track.lengthFrames,
     multiple: track.multiple,
     syncDivisor: track.syncDivisor,
-    bars: track.wholeBars(
-      transport: looper.transport,
-      sampleRate: looper.status.sampleRate,
-    ),
+    bars: bars,
+    beats: bars == null
+        ? track.wholeBeats(
+            transport: looper.transport,
+            sampleRate: looper.status.sampleRate,
+          )
+        : null,
   );
 }
 

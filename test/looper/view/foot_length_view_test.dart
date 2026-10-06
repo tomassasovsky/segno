@@ -45,6 +45,7 @@ const _rig = LooperState(
     ),
     Track(channel: 3),
     Track(channel: 4, state: TrackState.stopped, lengthFrames: 36000),
+    Track(channel: 5, state: TrackState.stopped, lengthFrames: 37000),
   ],
 );
 
@@ -124,7 +125,9 @@ void main() {
       (1, '4 bars · ×2'),
       (2, '1 bar · 1/2'),
       (3, 'Empty'),
-      (4, '0.8 s'),
+      // One and a half bars of 4/4: 6 whole beats (#1168).
+      (4, '6 beats'),
+      (5, '0.8 s'),
       (7, 'Empty'),
     ]) {
       expect(

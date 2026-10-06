@@ -510,7 +510,7 @@ void main() {
     final lane1 = Float32List.fromList(List<double>.filled(64, -0.25));
     expect(engine.importTrackLane(0, 0, lane0), EngineResult.ok);
     expect(engine.importTrackLane(0, 1, lane1), EngineResult.ok);
-    expect(engine.commitSession(64, loopBars: 0), EngineResult.ok);
+    expect(engine.commitSession(64, loopBeats: 0), EngineResult.ok);
     engine.pump(frames: 0);
 
     final s = engine.snapshot();
@@ -607,6 +607,9 @@ void main() {
     final l0 = engine.exportLayer(0, 0, 0);
     final l1 = engine.exportLayer(0, 0, 1);
     final l2 = engine.exportLayer(0, 0, 2);
+    // A refused size query (here an ordinal past the images; in a save, a
+    // slot shorter than its image) throws instead of exporting nothing.
+    expect(() => engine.exportLayer(0, 0, 3), throwsStateError);
     expect(l0, everyElement(closeTo(0.5, 1e-6)));
     expect(l1, everyElement(closeTo(0.75, 1e-6)));
     expect(l2, everyElement(closeTo(1.0, 1e-6)));
@@ -634,7 +637,7 @@ void main() {
       ),
       EngineResult.ok,
     );
-    expect(engine.commitSession(256, loopBars: 0), EngineResult.ok);
+    expect(engine.commitSession(256, loopBeats: 0), EngineResult.ok);
     engine.pump(frames: 0);
 
     s = engine.snapshot();

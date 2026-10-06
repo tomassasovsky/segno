@@ -49,6 +49,10 @@ enum InteractionMode {
   /// its track around at the current position.
   reverse,
 
+  /// Foot-controlled Peel: each track pedal removes its track's newest
+  /// overdub layer, recoverable through Undo.
+  peel,
+
   /// Foot-controlled Multiply / Divide (#1168): the track pedals select a
   /// track, and Rec/Play doubles it while Undo and Clear keep its first or
   /// last half.
@@ -57,33 +61,4 @@ enum InteractionMode {
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes the current stored identity.
   String get token => name;
-
-  /// The modes the system may BOOT into. [fx] and [custom] are excluded on
-  /// purpose: booting into FX mode with no chains configured, or into custom
-  /// with nothing assigned, is a dead surface — so both are reachable only
-  /// by an explicit mode cycle (R12).
-  static const List<InteractionMode> bootDefaults = [record, mute];
-
-  /// Parses a persisted [token] back to a mode, defaulting to [record].
-  ///
-  /// This parses EVERY mode, [fx] included; the boot-default path uses
-  /// [bootDefaultFromToken], which is the one that enforces R12.
-  static InteractionMode fromToken(String? token) {
-    return InteractionMode.values.firstWhere(
-      (m) => m.name == token,
-      orElse: () => InteractionMode.record,
-    );
-  }
-
-  /// Parses a persisted BOOT-DEFAULT [token]: [fromToken] with anything
-  /// outside [bootDefaults] coerced to [record].
-  ///
-  /// Defensive by design — no build ever writes `'fx'` or `'custom'` under
-  /// the default-mode key (the settings picker offers neither), so a stored
-  /// one means a hand-edited or corrupted pref, and booting a dead surface is
-  /// the one outcome R12 forbids.
-  static InteractionMode bootDefaultFromToken(String? token) {
-    final mode = fromToken(token);
-    return bootDefaults.contains(mode) ? mode : InteractionMode.record;
-  }
 }

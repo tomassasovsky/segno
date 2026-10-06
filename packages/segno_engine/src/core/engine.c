@@ -487,6 +487,7 @@ static int le_engine_reset_material(le_engine* engine,
    * (tempo, signature, sync, granularity) persist, see le_engine_create. */
   engine->grid_total_beats = 0;
   store_i32(&engine->a_loop_bars, 0);
+  store_i32(&engine->a_loop_beats, 0);
   return 1;
 }
 
