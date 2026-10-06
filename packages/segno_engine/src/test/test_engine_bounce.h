@@ -378,6 +378,187 @@ static void test_bounce_abandoned_by_configure(void) {
   le_engine_destroy(e);
 }
 
+/* A loop-close restoration committed on the control thread while a Bounce
+ * into the same track waits for the callback never takes the slot holding
+ * the incoming image: the Bounce pins its slots until it is collected. The
+ * restoration files first, so Undo of the Bounce returns to it. */
+static void test_bounce_pins_slots_in_flight(void) {
+  printf("test_bounce_pins_slots_in_flight\n");
+  le_engine* e = bb_fit_fixture();
+  const uint32_t job = bb_render(e, 0x3); /* A[f % 16] + C[f % 32], 32 frames */
+  const le_mix_settings two = bb_lanes(1, 2);
+  le_bounce_request q = {job, 1, 1, &two, NULL, 0, NULL};
+  uint64_t receipt = 0;
+  CHECK(le_engine_bounce(e, &q, &receipt) == LE_OK);
+  float fixed[32];
+  for (int i = 0; i < 32; ++i) fixed[i] = -1.0f - (float)i;
+  float* restored[LE_MAX_LANES] = {fixed};
+  const uint32_t rev = atomic_load(&e->tracks[1].a_audio_rev);
+  CHECK(le_restore_commit_layer(e, 1, 0x1u, rev, 32, restored) == LE_OK);
+  drain(e);
+  le_engine_drain_events(e);
+  int32_t result = LE_ERR_INVALID;
+  CHECK(le_engine_read_request_result(e, receipt, &result) == LE_OK);
+  CHECK(result == LE_OK);
+  const float* l = bb_live(e, 1, 0);
+  const float* r = bb_live(e, 1, 1);
+  for (int f = 0; f < 32; ++f) {
+    CHECK(l[f] == rr_a(f) + bb_c(f));
+    CHECK(r[f] == rr_a(f) + bb_c(f));
+  }
+  le_track_snapshot s;
+  le_engine_get_track(e, 1, &s);
+  CHECK(s.undo_depth == 2);
+  le_mix_settings one = bb_lanes(1, 1);
+  CHECK(bb_recover(e, 1, 0, NULL, 0, &one) == LE_OK);
+  l = bb_live(e, 1, 0);
+  for (int f = 0; f < 32; ++f) CHECK(l[f] == fixed[f]);
+  le_engine_destroy(e);
+}
+
+/* A layer filed on top of a Bounce is undone first, by plain Undo; the
+ * Bounce's own recovery is refused until the Bounce is on top again. */
+static void test_bounce_layer_on_top_undoes_first(void) {
+  printf("test_bounce_layer_on_top_undoes_first\n");
+  le_engine* e = rr_fixture();
+  const uint32_t job = bb_render(e, 0x3);
+  const le_mix_settings two = bb_lanes(2, 2);
+  CHECK(bb_bounce(e, job, 2, &two) == LE_OK);
+  float fixed[48];
+  for (int i = 0; i < 48; ++i) fixed[i] = -1.0f - (float)i;
+  float* restored[LE_MAX_LANES] = {fixed};
+  const uint32_t rev = atomic_load(&e->tracks[2].a_audio_rev);
+  CHECK(le_restore_commit_layer(e, 2, 0x1u, rev, 48, restored) == LE_OK);
+  le_track_snapshot s;
+  le_engine_get_track(e, 2, &s);
+  CHECK(s.undo_depth == 2);
+  CHECK(bb_recover(e, 2, 0, NULL, 0, NULL) == LE_ERR_INVALID);
+  CHECK(le_engine_undo(e, 2) == LE_OK);
+  drain(e);
+  le_engine_drain_events(e);
+  const float* l = bb_live(e, 2, 0);
+  for (int f = 0; f < 48; ++f) CHECK(l[f] == rr_a(f) + rr_b(f));
+  CHECK(le_engine_undo(e, 2) == LE_ERR_INVALID); /* the Bounce is on top */
+  CHECK(bb_recover(e, 2, 0, NULL, 0, NULL) == LE_OK);
+  le_engine_get_track(e, 2, &s);
+  CHECK(s.state == LE_TRACK_EMPTY && s.undo_depth == 0);
+  le_engine_destroy(e);
+}
+
+/* The topology rides the structural path: a pending lane-count change on the
+ * rig refuses the Bounce until it is published, and a one-lane PLAYING
+ * destination grows to two lanes in the drain that installs the image. */
+static void test_bounce_topology_grows_playing_destination(void) {
+  printf("test_bounce_topology_grows_playing_destination\n");
+  le_engine* e = bb_fit_fixture();
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  rr_pump(e, NULL, 21, 5);
+  const uint32_t job = bb_render(e, 0x3);
+  float render[2 * 32]; /* frozen mid-loop: the image the bounce installs */
+  CHECK(le_engine_render_copy(e, job, render, 32) == 32);
+  const le_mix_settings three = bb_lanes(0, 3);
+  CHECK(le_engine_set_mix(e, &three) == LE_OK); /* not yet applied */
+  const le_mix_settings two = bb_lanes(1, 2);
+  le_bounce_request q = {job, 1, 1, &two, NULL, 0, NULL};
+  uint64_t receipt = 0;
+  CHECK(le_engine_bounce(e, &q, &receipt) == LE_ERR_NOT_READY);
+  drain(e);
+  CHECK(e->tracks[1].lane_count == 1);
+  CHECK(bb_bounce(e, job, 1, &two) == LE_OK);
+  le_track_snapshot s;
+  le_engine_get_track(e, 1, &s);
+  CHECK(s.lane_count == 2 && s.length_frames == 32);
+  const float* l = bb_live(e, 1, 0);
+  const float* r = bb_live(e, 1, 1);
+  for (int f = 0; f < 32; ++f) {
+    CHECK(l[f] == render[2 * f]);
+    CHECK(r[f] == render[2 * f + 1]);
+  }
+  le_engine_destroy(e);
+}
+
+/* During an armed performance capture the installed image is staged first
+ * (#1143): the callback's 322 names it at the frame it starts mixing, and
+ * the stem never loses provenance (no 323/0). */
+static void test_bounce_names_its_image(void) {
+  printf("test_bounce_names_its_image\n");
+  le_engine* e = history_fixture();
+  const char* dir = render_test_dir("bounce-provenance");
+  (void)history_arm_image(e, dir);
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+  static float live[4096];
+  int at = history_process(e, live, 0, 37, 16);
+  le_render_request q = rr_request(0x1, LE_RENDER_CUT);
+  uint32_t id = 0;
+  CHECK(le_engine_render_begin(e, &q, &id) == LE_OK);
+  at = history_process(e, live, at, 16, 16); /* the freeze lands */
+  int32_t result = LE_OK;
+  CHECK(rr_wait(e, id, &result) == LE_RENDER_DONE);
+  const le_mix_settings two = bb_lanes(0, 2);
+  le_bounce_request b = {id, 0, 1, &two, NULL, 0, NULL};
+  uint64_t receipt = 0;
+  const int32_t brc = le_engine_bounce(e, &b, &receipt);
+  printf("  brc %d out %d cr %d cp %d q %d armed %d pend %d launch %d lif %d st %d/%d grow %d ready %d\n", brc,
+         e->tracks[0].outstanding_count, e->tracks[0].clear_restore_pending,
+         e->tracks[0].cancel_pending, e->tracks[0].queued_undo, e->armed[0],
+         atomic_load(&e->tracks[0].a_pending), atomic_load(&e->tracks[0].a_pending_launch),
+         atomic_load(&e->tracks[0].a_layer_in_flight), (int)e->tracks[0].state_cmds_posted,
+         (int)atomic_load(&e->tracks[0].a_state_acks), (int)(e->lane_growth_command > atomic_load(&e->a_commands_published)),
+         le_cache_source_ready(e, 0));
+  CHECK(brc == LE_OK);
+  const int32_t slot = e->tracks[0].bounce_pin[0] - 1;
+  CHECK(slot >= 0);
+  const uint32_t staged =
+      slot >= 0 ? atomic_load(&e->perf.slot_image[0][slot]) : 0;
+  CHECK(staged != 0);
+  const int swap = at;
+  at = history_process(e, live, at, 64, 16);
+  le_engine_drain_events(e);
+  CHECK(le_engine_read_request_result(e, receipt, &result) == LE_OK);
+  CHECK(result == LE_OK);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_log_entry facts[16];
+  const int n = history_source_facts(dir, 0, facts, 16);
+  int named = 0;
+  for (int i = 0; i < n; ++i) {
+    if (facts[i].frame < (uint64_t)swap) continue;
+    CHECK(facts[i].cmd.restore_log.image_id != 0); /* never 323/0 */
+    if (facts[i].cmd.code == LE_PLOG_SOURCE_APPLIED &&
+        facts[i].cmd.restore_log.image_id == staged) {
+      CHECK(facts[i].frame == (uint64_t)swap);
+      ++named;
+    }
+  }
+  CHECK(named == 1);
+  le_engine_destroy(e);
+}
+
+/* A Bounce the callback never applied before the device was lost is an
+ * unapplied state command: reopen drops its destination with the mask, and
+ * retains every other track (the reopen rule, #1140). */
+static void test_bounce_unapplied_at_reopen_drops_track(void) {
+  printf("test_bounce_unapplied_at_reopen_drops_track\n");
+  le_engine* e = rr_fixture();
+  const uint32_t job = bb_render(e, 0x3);
+  const le_mix_settings two = bb_lanes(1, 2);
+  le_bounce_request q = {job, 1, 1, &two, NULL, 0, NULL};
+  uint64_t receipt = 0;
+  CHECK(le_engine_bounce(e, &q, &receipt) == LE_OK);
+  int32_t outcome = -99, mask = -99;
+  CHECK(le_engine_reopen_configured(e, RR_SR, 1, 2, 0, &outcome, &mask) ==
+        LE_OK);
+  CHECK(outcome == LE_REOPEN_RETAINED_PARTIAL && mask == (1 << 1));
+  CHECK(e->tracks[1].bounce_inflight == NULL);
+  CHECK(e->tracks[1].bounce_pin[0] == 0 && e->tracks[1].bounce_pin[1] == 0);
+  le_track_snapshot s;
+  le_engine_get_track(e, 1, &s);
+  CHECK(s.state == LE_TRACK_EMPTY && s.undo_depth == 0);
+  le_engine_get_track(e, 0, &s);
+  CHECK(s.state == LE_TRACK_STOPPED && s.length_frames == 16);
+  le_engine_destroy(e);
+}
+
 static void run_bounce_tests(void) {
   test_bounce_into_empty_destination();
   test_bounce_replaces_and_restores();
@@ -386,4 +567,9 @@ static void run_bounce_tests(void) {
   test_bounce_refusals_and_history();
   test_bounce_export_cut();
   test_bounce_abandoned_by_configure();
+  test_bounce_pins_slots_in_flight();
+  test_bounce_layer_on_top_undoes_first();
+  test_bounce_topology_grows_playing_destination();
+  test_bounce_names_its_image();
+  test_bounce_unapplied_at_reopen_drops_track();
 }
