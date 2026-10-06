@@ -393,6 +393,13 @@ List<Color> _colors(SurfaceTheme s) => [
   s.menuArtLine,
   s.menuPowerLine,
   s.encoderFocus,
+  s.frameBackground,
+  s.frameRule,
+  s.frameControlLine,
+  s.frameControlFill,
+  s.frameText,
+  s.frameCrumb,
+  s.frameIcon,
   s.knobFaceTop,
   s.knobFaceBottom,
 ];

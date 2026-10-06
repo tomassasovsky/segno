@@ -377,7 +377,8 @@ enum LoopButtonTone {
   /// Transparent with the strong border (the pen's plain action button).
   outlined,
 
-  /// The raised card fill with the strong border (the top bar's Stage).
+  /// The raised card fill with the strong border (a secondary action on a
+  /// page, such as a disabled Done).
   raised,
 
   /// The card fill with the subtle border (the time signature chip).
@@ -385,6 +386,14 @@ enum LoopButtonTone {
 
   /// The accent fill and text (a dialog's confirming action).
   accent,
+
+  /// The settings frame's Back: no fill, the frame's control line, and the
+  /// frame's icon colour.
+  frame,
+
+  /// The settings frame's Stage: the frame's control fill and line, its
+  /// label in the frame's text colour and typeface.
+  frameRaised,
 }
 
 /// The pen's 64-high action button in its four fills: a label with an
@@ -459,21 +468,31 @@ class LoopOutlinedButton extends StatelessWidget {
       LoopButtonTone.raised => surface.cardHigh,
       LoopButtonTone.card => surface.card,
       LoopButtonTone.accent => surface.accent,
+      LoopButtonTone.frame => Colors.transparent,
+      LoopButtonTone.frameRaised => surface.frameControlFill,
     };
     final border =
         borderColor ??
         switch (tone) {
           LoopButtonTone.card => surface.borderSubtle,
           LoopButtonTone.accent => surface.accent,
+          LoopButtonTone.frame ||
+          LoopButtonTone.frameRaised => surface.frameControlLine,
           _ => surface.borderStrong,
         };
-    final foreground = tone == LoopButtonTone.accent
-        ? surface.onAccent
-        : surface.textPrimary;
+    final foreground = switch (tone) {
+      LoopButtonTone.accent => surface.onAccent,
+      LoopButtonTone.frame => surface.frameIcon,
+      LoopButtonTone.frameRaised => surface.frameText,
+      _ => surface.textPrimary,
+    };
     // The pen draws every accent action's label bold (`Done`, `Open session`,
     // `Start new loop`, `Use as backing`); the other fills stay regular.
     final text = TextStyle(
       color: foreground,
+      fontFamily: tone == LoopButtonTone.frameRaised
+          ? SurfaceTheme.frameFont
+          : null,
       fontSize: fontSize,
       fontWeight: tone == LoopButtonTone.accent ? FontWeight.w700 : null,
       height: 1,
