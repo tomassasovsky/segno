@@ -3286,6 +3286,27 @@ int32_t le_engine_toggle_section(le_engine* engine, int32_t channel) {
   return rc;
 }
 
+/* ---- the native MIDI input sink (#1228 Part 1; segno_engine_api.h) ----
+ * The capture handle begins with its le_midi_sink (pinned by a static
+ * assertion in midi.c), so the engine binds it without linking midi.c. */
+
+int32_t le_engine_attach_midi_input(le_engine* engine, le_midi* m,
+                                    int32_t port) {
+  if (engine == NULL || m == NULL || port < 0 || port >= LE_MAX_MIDI_PORTS) {
+    return LE_ERR_INVALID;
+  }
+  le_midi_sink_bind((le_midi_sink*)(void*)m, &engine->midi_ports[port]);
+  return LE_OK;
+}
+
+int32_t le_engine_detach_midi_input(le_engine* engine, int32_t port) {
+  if (engine == NULL || port < 0 || port >= LE_MAX_MIDI_PORTS) {
+    return LE_ERR_INVALID;
+  }
+  le_midi_port_unbind(&engine->midi_ports[port]);
+  return LE_OK;
+}
+
 /* ---- MIDI clock (Phase C/E, D15; see segno_engine_api.h's MIDI-clock
  * section) ---- */
 

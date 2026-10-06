@@ -5,14 +5,21 @@
  * enumerate() opens a transient sequencer client and walks every other client's
  * readable MIDI ports. open() creates our own writable port, subscribes it to
  * the chosen source, and runs a dedicated read thread that poll()s the sequencer
- * descriptors (plus a shutdown self-pipe) and converts each Note/CC event to raw
- * bytes through le_midi_ring_push + le_midi_drain.
+ * descriptors (plus a shutdown self-pipe) and converts each event to raw bytes
+ * through le_midi_input + le_midi_drain: notes, CC, program, pitch bend and
+ * channel pressure, and (#1228) Timing Clock, Start, Continue, Stop and Song
+ * Position, stamped with CLOCK_MONOTONIC at read. The thread asks for
+ * SCHED_FIFO 70, below the audio callback's 80 (platform/engine_linux.c), so
+ * a busy UI cannot delay a clock timestamp; a refusal is reported through
+ * le_midi_priority_state, never silently.
  *
  * Device identity: ALSA client:port numbers are not stable across replug, so the
  * id is the source client name (matched by name on open); the label is the port
- * name. Hotplug is handled at the Dart layer by re-enumerating and diffing (the
- * same approach the audio device picker uses), so this backend subscribes to no
- * announce events.
+ * name. Reconnect is driven at the Dart layer by re-enumerating and diffing (the
+ * same approach the audio device picker uses). The port also subscribes to the
+ * system announce port, only so the source's PORT_EXIT / CLIENT_EXIT (or the
+ * subscription's removal) marks the bound engine port lost within a block
+ * instead of after the next Dart poll.
  *
  * The whole file is wrapped in `#if defined(__linux__)`; off Linux it compiles
  * to a near-empty object, mirroring engine_linux.c.
@@ -23,6 +30,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <pthread.h>
+#include <sched.h> /* SCHED_FIFO */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,12 +52,19 @@ typedef struct le_alsa_midi_state {
   int thread_started;
   volatile int running;
   le_midi* owner;
+  int src_client; /* the subscribed source, for its exit announcements */
+  int src_port;
 } le_alsa_midi_state;
 
-static uint64_t le_alsa_now_us(void) {
+/* The capture thread's priority: under the audio callback (SCHED_FIFO 80). */
+#define LE_ALSA_MIDI_RT_PRIORITY 70
+
+/* CLOCK_MONOTONIC in ns: the base of the engine's le_now_ns, so the audio
+ * thread can place a timestamp on its own timeline. */
+static uint64_t le_alsa_now_ns(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)ts.tv_nsec / 1000ull;
+  return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
 
 static int32_t le_alsa_midi_enumerate(le_midi_info* out, int32_t max,
@@ -136,6 +151,7 @@ static void* le_alsa_midi_thread(void* arg) {
 
     snd_seq_event_t* ev = NULL;
     while (snd_seq_event_input(st->seq, &ev) >= 0 && ev != NULL) {
+      const uint64_t t_ns = le_alsa_now_ns();
       uint8_t status = 0, d1 = 0, d2 = 0;
       int have = 0;
       switch (ev->type) {
@@ -162,11 +178,66 @@ static void* le_alsa_midi_thread(void* arg) {
           d1 = (uint8_t)(ev->data.control.value & 0x7F);
           have = 1;
           break;
+        case SND_SEQ_EVENT_CHANPRESS:
+          status = (uint8_t)(0xD0u | (ev->data.control.channel & 0x0Fu));
+          d1 = (uint8_t)(ev->data.control.value & 0x7F);
+          have = 1;
+          break;
+        case SND_SEQ_EVENT_PITCHBEND: {
+          /* ALSA centres the bend on 0 (-8192..8191); MIDI on 8192. */
+          const int v = ev->data.control.value + 8192;
+          status = (uint8_t)(0xE0u | (ev->data.control.channel & 0x0Fu));
+          d1 = (uint8_t)(v & 0x7F);
+          d2 = (uint8_t)((v >> 7) & 0x7F);
+          have = 1;
+          break;
+        }
+        case SND_SEQ_EVENT_SONGPOS: {
+          const int v = ev->data.control.value;
+          status = 0xF2u;
+          d1 = (uint8_t)(v & 0x7F);
+          d2 = (uint8_t)((v >> 7) & 0x7F);
+          have = 1;
+          break;
+        }
+        case SND_SEQ_EVENT_CLOCK:
+          status = 0xF8u;
+          have = 1;
+          break;
+        case SND_SEQ_EVENT_START:
+          status = 0xFAu;
+          have = 1;
+          break;
+        case SND_SEQ_EVENT_CONTINUE:
+          status = 0xFBu;
+          have = 1;
+          break;
+        case SND_SEQ_EVENT_STOP:
+          status = 0xFCu;
+          have = 1;
+          break;
+        case SND_SEQ_EVENT_PORT_EXIT:
+          if (ev->data.addr.client == st->src_client &&
+              ev->data.addr.port == st->src_port) {
+            le_midi_input_lost(st->owner);
+          }
+          break;
+        case SND_SEQ_EVENT_CLIENT_EXIT:
+          if (ev->data.addr.client == st->src_client) {
+            le_midi_input_lost(st->owner);
+          }
+          break;
+        case SND_SEQ_EVENT_PORT_UNSUBSCRIBED:
+          if (ev->data.connect.sender.client == st->src_client &&
+              ev->data.connect.sender.port == st->src_port) {
+            le_midi_input_lost(st->owner);
+          }
+          break;
         default:
           break;
       }
       if (have) {
-        le_midi_ring_push(st->owner, status, d1, d2, le_alsa_now_us());
+        le_midi_input(st->owner, status, d1, d2, t_ns);
         le_midi_drain(st->owner);
       }
     }
@@ -237,6 +308,12 @@ static int32_t le_alsa_midi_open(le_midi* m, const char* id) {
     le_alsa_midi_close(m);
     return LE_ERR_DEVICE;
   }
+  st->src_client = src_client;
+  st->src_port = src_port;
+  /* Exit announcements only (see the file header). Best effort: without it
+   * a vanished source is still noticed by the Dart poll. */
+  (void)snd_seq_connect_from(st->seq, st->my_port, SND_SEQ_CLIENT_SYSTEM,
+                             SND_SEQ_PORT_SYSTEM_ANNOUNCE);
 
   if (pipe(st->stop_pipe) != 0) {
     le_alsa_midi_close(m);
@@ -249,6 +326,11 @@ static int32_t le_alsa_midi_open(le_midi* m, const char* id) {
     return LE_ERR_DEVICE;
   }
   st->thread_started = 1;
+  struct sched_param sp;
+  memset(&sp, 0, sizeof(sp));
+  sp.sched_priority = LE_ALSA_MIDI_RT_PRIORITY;
+  le_midi_set_priority_state(
+      m, pthread_setschedparam(st->thread, SCHED_FIFO, &sp) == 0 ? 1 : -1);
   return LE_OK;
 }
 
