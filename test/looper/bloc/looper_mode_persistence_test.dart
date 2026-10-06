@@ -50,8 +50,6 @@ void main() {
     record = RecordSettings(repository: repository, settings: settings);
     await record.load();
     bloc = LooperBloc(
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
       recordLengthControl: record,
       recordTimingControl: FakeRecordTimingControl(),
       fxPersistence: FxChainPersistence(looper: repository),

@@ -60,8 +60,11 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
         context.read<PlaybackOptionsCubit>().setDefaultOneShot(value: once!),
       );
     } else {
-      context.read<LooperBloc>().add(
-        LooperOneShotToggled(scope, oneShot: once),
+      unawaited(
+        context.read<PlaybackOptionsCubit>().setTrackOneShot(
+          channel: scope,
+          oneShot: once,
+        ),
       );
     }
   }
@@ -74,8 +77,11 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
         context.read<PlaybackOptionsCubit>().setOverdubDecay(percent ?? 0),
       );
     } else {
-      context.read<LooperBloc>().add(
-        LooperTrackOverdubDecayChanged(scope, percent: percent),
+      unawaited(
+        context.read<PlaybackOptionsCubit>().setTrackOverdubDecay(
+          channel: scope,
+          percent: percent,
+        ),
       );
     }
   }

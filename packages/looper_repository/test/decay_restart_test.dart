@@ -49,11 +49,9 @@ void main() {
         repository.startEngine(const EngineConfig()),
         EngineResult.notReady,
       );
-      expect(repository.decayReplayResult, EngineResult.notReady);
       expect(repository.state.status.isConnected, isFalse);
       engine.refuseDecay = false;
       expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
-      expect(repository.decayReplayResult, EngineResult.ok);
       expect(engine.lastOverdubFeedback, .6);
     });
     test('ordinary Use default removes only its durable override', () {

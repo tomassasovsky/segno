@@ -659,7 +659,11 @@ void main() {
             .single;
         expect((afterCancel.heel, afterCancel.toe), (1, 1));
         verifyNever(
-          () => looper.setDefaultOneShot(oneShot: any(named: 'oneShot')),
+          () => looper.setOneShotSnapshot(
+            defaultOneShot: any(named: 'defaultOneShot'),
+            trackOverrides: any(named: 'trackOverrides'),
+            released: any(named: 'released'),
+          ),
         );
       },
     );

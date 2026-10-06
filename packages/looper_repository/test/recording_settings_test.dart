@@ -5,6 +5,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' as engine;
 
 import 'helpers/fake_audio_engine.dart';
+import 'helpers/one_shot_edits.dart';
 
 engine.EngineSnapshot emptyTracks([int count = 8]) => engine.EngineSnapshot(
   isRunning: true,

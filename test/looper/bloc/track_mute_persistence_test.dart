@@ -184,8 +184,6 @@ void main() {
         settings: settings,
         mixSettings: mix,
         fxPersistence: fx,
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
         recordLengthControl: FakeRecordLengthControl(),
         recordTimingControl: FakeRecordTimingControl(),
       );
@@ -550,8 +548,6 @@ void main() {
           settings: settings,
           mixSettings: mix,
           fxPersistence: fx,
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: FakeRecordLengthControl(),
           recordTimingControl: FakeRecordTimingControl(),
         );

@@ -43,8 +43,8 @@ class AppRuntime {
     fxPersistence = FxChainPersistence(looper: repository);
     mixPersistence = SettingsMixPersistence(settings);
     tempo = TempoSettings(repository: repository, settings: settings);
-    owners = SettingsOwners(tempo.owners);
     playback = PlaybackSettings(repository: repository, settings: settings);
+    owners = SettingsOwners([...tempo.owners, ...playback.owners]);
     record = RecordSettings(repository: repository, settings: settings);
     timing = RecordTimingSettings(repository: repository, settings: settings);
     fade = FadeSettings(
@@ -62,8 +62,6 @@ class AppRuntime {
       settings: settings,
       mixSettings: mix,
       fxPersistence: fxPersistence,
-      decayControl: playback,
-      oneShotControl: playback,
       recordLengthControl: record,
       recordTimingControl: timing,
       takeLocked: () => takeLocked,
@@ -73,8 +71,8 @@ class AppRuntime {
       settings: settings,
       mixSettings: mix,
       fxPersistence: fxPersistence,
-      decayControl: playback,
-      oneShotControl: playback,
+      decayControl: playback.decayControl,
+      oneShotControl: playback.oneShotControl,
       recordLengthControl: record,
       recordTimingControl: timing,
       clickVolumeControl: tempo.clickVolumeControl,
@@ -189,14 +187,6 @@ class AppRuntime {
       if (await owners.recover() case final failure?) {
         throw StateError('${failure.key.name} still needs recovery');
       }
-      final decay = await playback.recoverDecay();
-      if (!decay.isOk) {
-        throw StateError('Decay settings still need recovery');
-      }
-      final once = await playback.recoverOneShot();
-      if (!once.isOk) {
-        throw StateError('Playback settings still need recovery');
-      }
       final length = await record.recoverRecordLength();
       if (!length.isOk) {
         throw StateError('Record length still needs recovery');
@@ -218,14 +208,6 @@ class AppRuntime {
     if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);
     if (await owners.flush() case final failure?) {
       throw StateError('${failure.key.name} was not confirmed');
-    }
-    final decay = await playback.flushDecay();
-    if (!decay.isOk) {
-      throw StateError('Decay settings were not confirmed');
-    }
-    final once = await playback.flushOneShot();
-    if (!once.isOk) {
-      throw StateError('Playback settings were not confirmed');
     }
     final length = await record.flushRecordLength();
     if (!length.isOk) {

@@ -110,7 +110,6 @@ void main() {
     recordStartSettled = true;
     when(() => repository.sessionRevision).thenAnswer((_) => sessionRevision);
     when(() => repository.mixGeneration).thenReturn(0);
-    when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
     when(
       () => repository.defaultOverdubDecay,
     ).thenAnswer((_) => confirmedDecay);
@@ -130,6 +129,9 @@ void main() {
     when(() => repository.oneShotSettingsSettled).thenReturn(true);
     when(() => repository.oneShotRecoveryRequired).thenReturn(false);
     when(
+      () => repository.oneShotFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(
       () => repository.settleOneShot(),
     ).thenAnswer((_) async => EngineResult.ok);
     when(() => repository.oneShotRestartIntent).thenAnswer(
@@ -139,37 +141,16 @@ void main() {
       ),
     );
     when(
-      () => repository.setOneShotRestartIntent(
-        defaultOneShot: any(named: 'defaultOneShot'),
-        trackOverrides: any(named: 'trackOverrides'),
-      ),
-    ).thenAnswer((_) {});
-    when(
       () => repository.setOneShotSnapshot(
         defaultOneShot: any(named: 'defaultOneShot'),
         trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
       ),
     ).thenAnswer((call) {
       confirmedOneShot = call.namedArguments[#defaultOneShot] as bool;
       confirmedTrackOneShot = Map.of(
         call.namedArguments[#trackOverrides] as Map<int, bool>,
       );
-      return EngineResult.ok;
-    });
-    when(
-      () => repository.setOneShot(
-        channel: any(named: 'channel'),
-        oneShot: any(named: 'oneShot'),
-        releasedOneShot: any(named: 'releasedOneShot'),
-      ),
-    ).thenAnswer((call) {
-      final channel = call.namedArguments[#channel] as int;
-      final value = call.namedArguments[#oneShot] as bool?;
-      if (value == null) {
-        confirmedTrackOneShot.remove(channel);
-      } else {
-        confirmedTrackOneShot[channel] = value;
-      }
       return EngineResult.ok;
     });
 
@@ -452,16 +433,6 @@ void main() {
             () => repository.setOverdubDecay(any()),
           ).thenAnswer((call) {
             confirmedDecay = call.positionalArguments.single as int;
-            return EngineResult.ok;
-          }),
-      () =>
-          when(
-            () => repository.setDefaultOneShot(
-              oneShot: any(named: 'oneShot'),
-              releasedOneShot: any(named: 'releasedOneShot'),
-            ),
-          ).thenAnswer((call) {
-            confirmedOneShot = call.namedArguments[#oneShot] as bool;
             return EngineResult.ok;
           }),
     ]) {
@@ -1841,9 +1812,11 @@ void main() {
       expect(find.text(l10nOf(tester).loopOriginCustom), findsNWidgets(2));
       await tester.tap(find.byKey(const Key('loop_decay_use_default')));
       await tester.pumpAndSettle();
+      // The page writes the track through the Decay owner, not a Bloc event.
       verify(
-        () => bloc.add(const LooperTrackOverdubDecayChanged(1, percent: null)),
+        () => repository.setTrackOverdubDecay(channel: 1, percent: null),
       ).called(1);
+      expect(store.values.containsKey('track_overdub_decay.1'), isFalse);
     });
 
     testWidgets('decay draft cancels on Back and double tap resets', (
@@ -1900,7 +1873,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(playback.state.overdubDecay, 0);
       verifyNever(
-        () => bloc.add(any(that: isA<LooperTrackOverdubDecayChanged>())),
+        () => repository.setTrackOverdubDecay(
+          channel: any(named: 'channel'),
+          percent: any(named: 'percent'),
+        ),
       );
     });
 
@@ -1940,9 +1916,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_playback_loop')));
       await tester.pumpAndSettle();
-      verify(
-        () => bloc.add(const LooperOneShotToggled(2, oneShot: false)),
-      ).called(1);
+      // The page writes the track through the Loop/Once owner.
+      expect(playback.state.trackOneShotOverrides, {2: false});
+      expect(store.values['track_one_shot.2'], isFalse);
     });
 
     testWidgets('the decay slider writes a percent', (tester) async {

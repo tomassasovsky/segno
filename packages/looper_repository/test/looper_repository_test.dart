@@ -45,6 +45,7 @@ import 'package:segno_engine/segno_engine.dart'
         PluginParamInfo;
 
 import 'helpers/fake_audio_engine.dart';
+import 'helpers/one_shot_edits.dart';
 
 final EngineSnapshot _playingSnapshot = _playingAt(24000);
 
@@ -2298,7 +2299,7 @@ void main() {
       // repository's own map is the only thing that knows it — and a surface
       // that draws the override has to be told when it changes, including on
       // the session load that writes them with no user gesture at all.
-      engine.nextSnapshot = const EngineSnapshot(
+      engine.nextSnapshot = EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
         bufferFrames: 128,
@@ -2309,16 +2310,18 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
+        // All eight fixed slots, as the engine publishes them.
         tracks: [
-          TrackSnapshot(
-            state: TrackState.empty,
-            volume: 1,
-            muted: false,
-            lengthFrames: 0,
-            undoDepth: 0,
-            rms: 0,
-            peak: 0,
-          ),
+          for (var i = 0; i < 8; i++)
+            const TrackSnapshot(
+              state: TrackState.empty,
+              volume: 1,
+              muted: false,
+              lengthFrames: 0,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+            ),
         ],
       );
       final repo = buildRepo()..startEngine(const EngineConfig());

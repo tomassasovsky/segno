@@ -383,6 +383,8 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/dart analyze --fatal-
 
 #### Part 2b: address parameter and Playback
 
+Status: built (branch `claude/settings-owner-1159-p2b`).
+
 ```success-criteria
 GOAL: SettingsOwner carries an address; Decay (no receipt) and Loop/Once run on the shared owner; PlaybackSettings and _PendingOneShot are gone.
 SUCCESS CRITERIA:
@@ -470,6 +472,70 @@ Decisions taken under the owner rules (2026-10-05):
 Deviations: the Play fence (listed under 2d) landed here, because Count-in's
 owed state would otherwise block playback until Retry. Production change:
 +546 / -868.
+
+#### Part 2b as built
+
+- `SettingsOwner` carries an address. A family lists its `addresses` (unit
+  families list one, `null`) and reads, writes, encodes and repairs one
+  stored scalar per address. `durableAfter` folds a write at one address
+  into the durable value, so a held track does not change another track's
+  Released value. Revisions, coalescing and the stale-release rule are per
+  address: a waiting write is replaced only by a write to the same address
+  with the same edit tag, and an ordinary write fences controller writes to
+  its own address only. `ordinaryChanges` carries the address.
+- Decay: `DecayFamily` has no receipt (`settle` is immediate, it is never
+  owed). A request sends only the scalars that changed; if one is refused,
+  the scalars already sent are sent back, so nothing is left partly audible.
+- Loop/Once: `LooperRepository` keeps a `SettingsReceipt` for the vector,
+  replacing `_PendingOneShot`, `setOneShotRestartIntent`, `_acceptOneShot`
+  and the `oneShotRecoveryRequired` start gate. `setOneShotSnapshot` (with an
+  optional Released vector) replaces `setOneShot` and `setDefaultOneShot`.
+  A Session reset adopts its vector through the new `SettingsReceipt.adopt`.
+- `PlaybackSettings` keeps only the two owners, their temporary
+  `DecayOwnerControl` and `OneShotOwnerControl` adapters and the
+  `PlaybackOptions` projection; its transaction code (about 800 lines) is
+  gone. `AppRuntime` registers both owners after Tempo's, and
+  `prepareShutdown` and Session exclusion go through the registry only.
+- `LooperBloc` no longer forwards Decay or Loop/Once: the Loop settings page
+  writes through `PlaybackOptionsCubit` to the owners, and the owners' flush
+  covers in-flight writes at shutdown. `LooperTrackOverdubDecayChanged` and
+  `LooperOneShotToggled` are gone.
+- Bootstrap stages Decay and Loop/Once through the same `stageStored` path as
+  Hear click and Count-in; both of their separate bootstrap stages are gone.
+  Each family is staged through its own typed call, because a list typed
+  `SettingsFamily<Object, Object?>` builds checkpoint maps the family
+  rejects at run time.
+
+Decisions taken under the owner rules (2026-10-05):
+
+16. Saved Decay and Loop/Once values are still applied before audio opens, as
+    before: the families join the bootstrap staging loop rather than loading
+    after start. Rule 1.
+17. An unreadable or invalid saved Decay or Loop/Once value no longer keeps
+    audio stopped. Audio opens with the values the repository already holds,
+    the family reports unavailable, and Retry repairs the stored key. This is
+    the 2b criterion for Decay; Loop/Once follows the same staging path as
+    Hear click and Count-in. Rules 2 and 4.
+18. Every Loop/Once request sends the whole eight-track vector in two
+    grouped commands and is accepted only when all eight bits match. If the
+    second command is refused after the first was admitted, the vector is
+    owed (Retry or the next start lands it) instead of stopping audio. An
+    unconfirmed startup replay likewise owes the vector and leaves audio
+    running; an engine that refuses to admit it still fails the start.
+    Rule 2.
+19. A Session recalled while a family's startup read is still pending makes
+    that family available at once, as `PlaybackSettings` did; the read that
+    returns later restores nothing. This now holds for every owner. Rule 1.
+20. A refused Decay or Loop/Once write whose storage rollback succeeded no
+    longer blocks power-off: nothing is owed, so the flush is clean, as it
+    already was for Click volume, Hear click and Count-in. A rollback that
+    fails still owes the checkpoint and blocks power-off until Retry. Rule 4.
+21. `decayReplayResult` is removed: a refused Decay replay already fails
+    `startEngine`, which is the only place it was read. Rule 4.
+
+Deviations: `PlaybackSettings` is kept as a thin holder (owners, adapters,
+projection) rather than deleted, mirroring `TempoSettings` after 2a; its
+transaction code is what 2b removes. Production change: +883 / -1,432.
 
 
 ### Part 3: Control dispatch collapse

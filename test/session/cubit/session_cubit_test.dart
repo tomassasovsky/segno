@@ -109,25 +109,39 @@ class _TempoOwner extends Fake implements TempoSettings {
   final recordStartOwner = _RecordStartOwner();
 }
 
-class _PlaybackOwner extends Fake implements PlaybackSettings {
-  _PlaybackOwner(this.looper);
+class _DecayOwner extends Fake implements SettingsOwner<DecaySnapshot, int?> {
+  _DecayOwner(this.looper);
   final LooperRepository looper;
 
   @override
-  Future<T> runPlaybackExclusive<T>(Future<T> Function() operation) =>
-      operation();
-
-  @override
-  DecaySnapshot get durableDecaySnapshot => DecaySnapshot(
+  DecaySnapshot get durable => DecaySnapshot(
     defaultPercent: looper.defaultOverdubDecay,
     trackOverrides: looper.trackOverdubDecayOverrides,
   );
+}
+
+class _OneShotOwner extends Fake
+    implements SettingsOwner<OneShotSnapshot, bool?> {
+  _OneShotOwner(this.looper);
+  final LooperRepository looper;
 
   @override
-  OneShotSnapshot get durableOneShotSnapshot => OneShotSnapshot(
+  OneShotSnapshot get durable => OneShotSnapshot(
     defaultOneShot: looper.defaultOneShot,
     trackOverrides: looper.trackOneShotOverrides,
   );
+}
+
+class _PlaybackOwner extends Fake implements PlaybackSettings {
+  _PlaybackOwner(LooperRepository looper)
+    : decayOwner = _DecayOwner(looper),
+      oneShotOwner = _OneShotOwner(looper);
+
+  @override
+  final SettingsOwner<DecaySnapshot, int?> decayOwner;
+
+  @override
+  final SettingsOwner<OneShotSnapshot, bool?> oneShotOwner;
 }
 
 class _RecordOwner extends Fake implements RecordSettings {

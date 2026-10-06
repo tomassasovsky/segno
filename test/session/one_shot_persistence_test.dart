@@ -159,11 +159,11 @@ void main() {
             (const OneShotAddress.track(0), false, true),
           ]) {
             expect(
-              (await playback.setControllerOneShot(
+              (await playback.oneShotControl.setControllerOneShot(
                 pair.$1,
                 oneShot: pair.$2,
-                lifetime: playback.oneShotLifetime,
-                revision: playback.oneShotRevision(pair.$1),
+                lifetime: playback.oneShotControl.oneShotLifetime,
+                revision: playback.oneShotControl.oneShotRevision(pair.$1),
                 releasedOneShot: pair.$3,
               )).isOk,
               isTrue,
@@ -190,7 +190,10 @@ void main() {
         'Save waits for a blocked ordinary choice before taking its snapshot',
         () async {
           store.blocked = Completer<void>();
-          final write = playback.setTrackOneShot(channel: 7, oneShot: false);
+          final write = playback.oneShotControl.setTrackOneShot(
+            channel: 7,
+            oneShot: false,
+          );
           while (!store.entered) {
             await Future<void>.delayed(Duration.zero);
           }
