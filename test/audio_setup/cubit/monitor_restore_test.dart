@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/monitor_mute.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -24,6 +25,24 @@ class _RestoreEngine extends FakeAudioEngine {
 
 class _RestoreStore extends FakeKeyValueStore {
   bool refuseRead = false;
+  bool refuseMuteWrite = false;
+  Completer<void>? muteWriteGate;
+  final muteWriteEntered = Completer<void>();
+  Completer<void>? fxReadGate;
+  final fxReadEntered = Completer<void>();
+
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    if (key == 'monitor_mute.0') {
+      if (muteWriteGate != null) {
+        if (!muteWriteEntered.isCompleted) muteWriteEntered.complete();
+        await muteWriteGate!.future;
+      }
+      if (refuseMuteWrite) throw StateError('mute storage unavailable');
+    }
+    await super.setBool(key, value: value);
+  }
+
   Completer<void>? readGate;
   final readEntered = Completer<void>();
   Completer<void>? writeGate;
@@ -40,6 +59,10 @@ class _RestoreStore extends FakeKeyValueStore {
 
   @override
   Future<String?> getString(String key) async {
+    if (key == 'monitor_fx.0' && fxReadGate != null) {
+      if (!fxReadEntered.isCompleted) fxReadEntered.complete();
+      await fxReadGate!.future;
+    }
     if (key == 'monitor_input_mode.0' && readGate != null) {
       if (!readEntered.isCompleted) readEntered.complete();
       await readGate!.future;
@@ -119,6 +142,10 @@ void main() {
   });
 
   tearDown(() async {
+    store.refuseMuteWrite = false;
+    for (final gate in [store.muteWriteGate, store.fxReadGate]) {
+      if (gate != null && !gate.isCompleted) gate.complete();
+    }
     await fx.close();
     await mix.close();
     await repository.dispose();
@@ -130,6 +157,207 @@ void main() {
     mixSettings: mix,
     fxPersistence: fx,
   );
+
+  test(
+    'Retry after a failed restore still saves minted legacy slot ids',
+    () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      await settings.saveMonitorMute(0, muted: true);
+      await settings.saveMonitorEffects(
+        0,
+        encodeFxChain(
+          FxChainEnvelope(
+            entries: [BuiltInEffect(type: TrackEffectType.drive)], // no id
+          ),
+        ),
+      );
+      engine.refuseMute = true;
+      await cubit.load();
+      expect(cubit.state.restoreFailed, isTrue);
+      engine.refuseMute = false;
+      await cubit.load();
+      expect(cubit.state.restoreFailed, isFalse);
+      final minted = cubit.state.forInput(0).effects.single.slotId;
+      expect(minted, isNotNull);
+      await fx.flush();
+      final stored = decodeFxChain(await settings.loadMonitorEffects(0));
+      expect(stored.entries.single.slotId, minted);
+    },
+  );
+
+  group('Retry orders ordinary mute admission', () {
+    late String encoded;
+
+    Future<void> failInitialRestore(MonitorCubit cubit) async {
+      encoded = encodeFxChain(
+        FxChainEnvelope(
+          entries: [
+            BuiltInEffect(
+              type: TrackEffectType.drive,
+              slotId: 'retry-mute-monitor',
+              params: const [.7, .4, .5, 0],
+            ),
+          ],
+          chainEnabled: false,
+        ),
+      );
+      await settings.saveMonitorMute(0, muted: false);
+      await settings.saveMonitorEffects(0, encoded);
+      store.refuseRead = true;
+      await cubit.load();
+      expect(cubit.state.restoreFailed, isTrue);
+      expect(cubit.state.inputs, isEmpty);
+      store.refuseRead = false;
+    }
+
+    Future<void> mute() => applyMonitorMute(
+      repository: repository,
+      settings: settings,
+      persistence: fx,
+      mixSettings: mix,
+      input: 0,
+      muted: true,
+    );
+
+    Future<void> expectRestored(
+      MonitorCubit cubit, {
+      required bool muted,
+    }) async {
+      expect(cubit.state.restoreFailed, isFalse);
+      expect(repository.monitorMuted(0), muted);
+      expect(engine.monitorMute[0], muted);
+      expect(await settings.loadMonitorMute(0), muted);
+      expect(repository.monitorMode(0), MonitorMode.on);
+      expect(repository.monitorOutput(0), 8);
+      expect(repository.monitorVolume(0), .35);
+      expect(repository.monitorEffects(0).single.slotId, 'retry-mute-monitor');
+      expect(repository.monitorChainEnabled(0), isFalse);
+      expect(await settings.loadMonitorInputMode(0), 'on');
+      expect(await settings.loadMonitorOutput(0), 8);
+      expect(await settings.loadMonitorEffects(0), encoded);
+    }
+
+    for (final receipt in [false, true]) {
+      blocTest<MonitorCubit, MonitorState>(
+        'waits for accepted mute before reading saved image; receipt=$receipt',
+        build: build,
+        act: (cubit) async {
+          await failInitialRestore(cubit);
+          final ticket = receipt ? fx.beginPending() : null;
+          if (!receipt) store.muteWriteGate = Completer<void>();
+          final saved = mute();
+          if (!receipt) await store.muteWriteEntered.future;
+          expect(repository.monitorMuted(0), isTrue);
+          var completed = false;
+          final restoring = cubit.load().then((_) => completed = true);
+          try {
+            await Future<void>.delayed(Duration.zero);
+            expect(completed, isFalse);
+            expect(repository.monitorMuted(0), isTrue);
+          } finally {
+            if (ticket != null) fx.finishPending(ticket);
+            store.muteWriteGate?.complete();
+            await saved;
+            await restoring;
+          }
+          await fx.flush();
+          await expectRestored(cubit, muted: true);
+        },
+        errors: () => [isA<StateError>()],
+      );
+    }
+
+    for (final shared in [false, true]) {
+      blocTest<MonitorCubit, MonitorState>(
+        'refuses new mute during Retry reads, then accepts after; '
+        'shared=$shared',
+        build: build,
+        act: (cubit) async {
+          await failInitialRestore(cubit);
+          store.fxReadGate = Completer<void>();
+          final restoring = cubit.load();
+          await store.fxReadEntered.future;
+          try {
+            final requests = engine.muteRequests;
+            await expectLater(
+              shared ? mute() : cubit.setMute(0, muted: true),
+              throwsStateError,
+            );
+            expect(engine.muteRequests, requests);
+            expect(repository.monitorMuted(0), isFalse);
+            expect(await settings.loadMonitorMute(0), isFalse);
+          } finally {
+            store.fxReadGate!.complete();
+            await restoring;
+          }
+          await expectRestored(cubit, muted: false);
+          await mute();
+          await fx.flush();
+          await expectRestored(cubit, muted: true);
+        },
+        errors: () => [
+          isA<StateError>(),
+          if (!shared) isA<StateError>(),
+        ],
+      );
+    }
+
+    blocTest<MonitorCubit, MonitorState>(
+      'failed earlier save keeps Retry failed until it can preserve '
+      'accepted mute',
+      build: build,
+      act: (cubit) async {
+        await failInitialRestore(cubit);
+        store.refuseMuteWrite = true;
+        await expectLater(mute(), throwsStateError);
+        final requests = engine.muteRequests;
+        await cubit.load();
+        expect(cubit.state.restoreFailed, isTrue);
+        expect(engine.muteRequests, requests);
+        expect(repository.monitorMuted(0), isTrue);
+        expect(await settings.loadMonitorMute(0), isFalse);
+        store.refuseMuteWrite = false;
+        await cubit.load();
+        await expectRestored(cubit, muted: true);
+      },
+      errors: () => [isA<StateError>(), isA<StateError>()],
+    );
+
+    for (final retirement in ['close', 'projection', 'reservation']) {
+      blocTest<MonitorCubit, MonitorState>(
+        '$retirement while draining earlier mute prevents stale restore',
+        build: build,
+        act: (cubit) async {
+          await failInitialRestore(cubit);
+          store.muteWriteGate = Completer<void>();
+          final saved = mute();
+          await store.muteWriteEntered.future;
+          final restoring = cubit.load();
+          await Future<void>.delayed(Duration.zero);
+          if (retirement == 'close') {
+            await cubit.close();
+          } else if (retirement == 'projection') {
+            repository.setMonitorOutput(input: 0, mask: 16);
+            cubit.projectFromRepository();
+          } else {
+            fx.reserveSessionLoad();
+          }
+          final requests = engine.muteRequests;
+          store.muteWriteGate!.complete();
+          await saved;
+          await restoring;
+          expect(engine.muteRequests, requests);
+          expect(repository.monitorMuted(0), isTrue);
+          if (retirement == 'projection') {
+            expect(cubit.state.forInput(0).outputMask, 16);
+          }
+          if (retirement == 'reservation') fx.cancelSessionLoad();
+        },
+        errors: () => [isA<StateError>()],
+      );
+    }
+  });
 
   for (final (muted, initiallyMuted) in [
     (true, false),

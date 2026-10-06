@@ -707,13 +707,218 @@ void main() {
     LooperState present({
       required bool devicePresent,
       String name = 'Scarlett',
+      EngineReopened? reopen,
     }) => LooperState(
       status: EngineStatus(
         deviceName: name,
         isConnected: true,
         devicePresent: devicePresent,
+        reopen: reopen,
       ),
     );
+
+    const partial = EngineReopened(
+      outcome: ReopenOutcome.retainedPartial,
+      droppedTracks: 1 << 2,
+      previousSampleRate: 48000,
+      sampleRate: 48000,
+    );
+    const cleared = EngineReopened(
+      outcome: ReopenOutcome.clearedRate,
+      droppedTracks: 0,
+      previousSampleRate: 48000,
+      sampleRate: 44100,
+    );
+
+    test(
+      'a return that kept every loop is the plain restored event, even with '
+      'a retained verdict on the status (#1140)',
+      () async {
+        when(() => repository.lastEngineConfig).thenReturn(
+          const EngineConfig(playbackDeviceId: 'out-1'),
+        );
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        stateController.add(present(devicePresent: true));
+        await Future<void>.delayed(Duration.zero);
+        stateController.add(present(devicePresent: false, name: ''));
+        await Future<void>.delayed(Duration.zero);
+        stateController.add(
+          present(
+            devicePresent: true,
+            reopen: const EngineReopened(
+              outcome: ReopenOutcome.retained,
+              droppedTracks: 0,
+              previousSampleRate: 48000,
+              sampleRate: 48000,
+            ),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(cubit.state.deviceConnectivity, DeviceConnectivity.restored);
+      },
+    );
+
+    test(
+      'a return that dropped some tracks is the partial variant — one notice, '
+      'not restored plus another (#1140)',
+      () async {
+        when(() => repository.lastEngineConfig).thenReturn(
+          const EngineConfig(playbackDeviceId: 'out-1'),
+        );
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        final seen = <DeviceConnectivity>[];
+        final sub = cubit.stream.listen(
+          (state) => seen.add(state.deviceConnectivity),
+        );
+        addTearDown(sub.cancel);
+        stateController.add(present(devicePresent: true));
+        await Future<void>.delayed(Duration.zero);
+        stateController.add(present(devicePresent: false, name: ''));
+        await Future<void>.delayed(Duration.zero);
+        stateController.add(present(devicePresent: true, reopen: partial));
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          cubit.state.deviceConnectivity,
+          DeviceConnectivity.restoredPartial,
+        );
+        expect(cubit.state.engineStatus.reopen, partial);
+        expect(seen, isNot(contains(DeviceConnectivity.restored)));
+      },
+    );
+
+    test(
+      'a return at another rate is the standing cleared notice, until the '
+      'user acts on it (#1140)',
+      () async {
+        when(() => repository.lastEngineConfig).thenReturn(
+          const EngineConfig(playbackDeviceId: 'out-1'),
+        );
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        stateController.add(present(devicePresent: true));
+        await Future<void>.delayed(Duration.zero);
+        stateController.add(present(devicePresent: false, name: ''));
+        await Future<void>.delayed(Duration.zero);
+        stateController.add(present(devicePresent: true, reopen: cleared));
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          cubit.state.deviceConnectivity,
+          DeviceConnectivity.restoredCleared,
+        );
+        // Further present ticks are not transitions: the notice stands.
+        stateController.add(present(devicePresent: true, reopen: cleared));
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          cubit.state.deviceConnectivity,
+          DeviceConnectivity.restoredCleared,
+        );
+        cubit.dismissReopenNotice();
+        expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+      },
+    );
+
+    test(
+      'a later return without a verdict is the plain restored event, even '
+      'after an earlier partial reconnect (#1167)',
+      () async {
+        when(() => repository.lastEngineConfig).thenReturn(
+          const EngineConfig(playbackDeviceId: 'out-1'),
+        );
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        stateController.add(present(devicePresent: true));
+        await Future<void>.delayed(Duration.zero);
+        stateController.add(present(devicePresent: false, name: ''));
+        await Future<void>.delayed(Duration.zero);
+        stateController.add(present(devicePresent: true, reopen: partial));
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          cubit.state.deviceConnectivity,
+          DeviceConnectivity.restoredPartial,
+        );
+        // The repository forgets the verdict at the next loss; the return the
+        // backend handled on its own must not re-raise it.
+        stateController.add(present(devicePresent: false, name: ''));
+        await Future<void>.delayed(Duration.zero);
+        expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+        stateController.add(present(devicePresent: true));
+        await Future<void>.delayed(Duration.zero);
+        expect(cubit.state.deviceConnectivity, DeviceConnectivity.restored);
+      },
+    );
+
+    test(
+      'a re-apply that opens the rig after a rolled-back reopen raises the '
+      'carried verdict instead of nothing (#1167)',
+      () async {
+        when(() => repository.lastEngineConfig).thenReturn(
+          const EngineConfig(playbackDeviceId: 'out-1'),
+        );
+        when(() => repository.state).thenReturn(
+          const LooperState(
+            status: EngineStatus(
+              deviceName: 'Scarlett',
+              isConnected: true,
+              devicePresent: true,
+              sampleRate: 44100,
+              bufferFrames: 128,
+              reopen: cleared,
+            ),
+          ),
+        );
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        // A different rate than the hydrated one, so this is a real re-apply.
+        cubit.setSampleRate(96000);
+        verify(() => repository.startEngine(any())).called(1);
+        expect(cubit.state.status, AudioSetupStatus.running);
+        expect(
+          cubit.state.deviceConnectivity,
+          DeviceConnectivity.restoredCleared,
+        );
+        expect(cubit.state.connectivityDeviceName, 'Scarlett');
+      },
+    );
+
+    test('an ordinary re-apply raises no notice', () async {
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1'),
+      );
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            isConnected: true,
+            devicePresent: true,
+            sampleRate: 44100,
+            bufferFrames: 128,
+          ),
+        ),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      cubit.setSampleRate(96000);
+      verify(() => repository.startEngine(any())).called(1);
+      expect(cubit.state.status, AudioSetupStatus.running);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+    });
+
+    test('dismissing the notice touches nothing else', () async {
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1'),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+      cubit.dismissReopenNotice();
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+    });
 
     test('raises lost then restored for a pinned device', () async {
       when(() => repository.lastEngineConfig).thenReturn(

@@ -254,8 +254,42 @@ class MockAudioEngine implements AudioEngine {
   EngineResult stop() {
     if (!_running) return EngineResult.notRunning;
     _running = false;
+    _lastSampleRate = _activeConfig?.sampleRate ?? 48000;
     _activeConfig = null;
     return EngineResult.ok;
+  }
+
+  /// The sample rate of the most recent session, for [reopen]'s retention
+  /// test; `null` until the first [start].
+  int? _lastSampleRate;
+
+  /// Mirrors the native retention rule on the mock's (contentless) tracks:
+  /// the same sample rate retains, another clears, nothing is ever dropped
+  /// (the mock posts no state commands), and the lifecycle preconditions
+  /// match [start]/[stop]. Tracks, lanes and settings the real engine resets
+  /// are reset exactly as [start] does.
+  @override
+  ReopenResult reopen(EngineConfig config) {
+    if (_running) {
+      return (
+        result: EngineResult.alreadyRunning,
+        outcome: ReopenOutcome.retained,
+        droppedTracks: 0,
+      );
+    }
+    final previous = _lastSampleRate;
+    if (previous == null) {
+      return (
+        result: EngineResult.notRunning,
+        outcome: ReopenOutcome.retained,
+        droppedTracks: 0,
+      );
+    }
+    final requested = config.sampleRate > 0 ? config.sampleRate : 48000;
+    final outcome = requested == previous
+        ? ReopenOutcome.retained
+        : ReopenOutcome.clearedRate;
+    return (result: start(config), outcome: outcome, droppedTracks: 0);
   }
 
   @override

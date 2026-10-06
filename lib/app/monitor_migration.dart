@@ -170,7 +170,12 @@ Future<void> _foldInputToSingleChain(
       }
     }
   }
-  final volume = await settings.loadMonitorLaneVolume(input, 0) ?? 1.0;
+  // Legacy lane gain could exceed unity; live input is now 0–1 (read as
+  // unity, matching the mix reader), so the fold cannot fail startup.
+  final volume = (await settings.loadMonitorLaneVolume(input, 0) ?? 1.0).clamp(
+    0.0,
+    1.0,
+  );
   final muted = await settings.loadMonitorLaneMute(input, 0) ?? false;
 
   await settings.saveMonitorOutput(input, unionMask == 0 ? 0x3 : unionMask);

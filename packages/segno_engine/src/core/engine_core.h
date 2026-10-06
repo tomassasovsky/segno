@@ -115,8 +115,44 @@ static inline int32_t le_effective_state(le_track* t) {
  * the swap. Control thread only (a_live's sole writer). */
 static inline void le_track_publish_live(le_track* t, int32_t slot) {
   const int32_t lanes = le_lanes_active(t);
-  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, slot);
+  /* Lane 0 is published LAST, with release: a callback that observes the new
+   * slot there (the acquire load of lane 0's a_live in mix_tracks_frame, the
+   * capture's application boundary, #1143) also observes the perf.slot_image
+   * entry the caller stored for it AND the lanes 1..n stores above, so no lane
+   * can still mix the old slot in the frame lane 0's fact names. A lane k may
+   * still mix the new slot up to one frame BEFORE that fact (its own relaxed
+   * load runs after lane 0's in the same frame); the fact is exact for lane 0,
+   * which is all today's lane-0 renderer consumes. */
+  for (int32_t l = lanes - 1; l >= 0; --l) {
+    atomic_store_explicit(&t->lanes[l].a_live, slot, memory_order_release);
+  }
   le_audio_rev_bump(t); /* [R1] a_live now names other audio */
+}
+
+/* Publishes [slot] live with its staged image identity (#1143): `id` is the
+ * perf.slot_image entry the callback will log when it first mixes the slot —
+ * a nonzero staged id from le_stage_source_image, or 0 for a slot whose PCM
+ * has no immutable copy in this capture (loop-close restoration, session
+ * import), which the callback logs as 323/0 so the stem fails truthfully.
+ * Every control-side a_live publisher goes through here, so a stale entry
+ * can never be read for a slot that was published without one. */
+static inline void le_publish_live_image(le_engine* e, le_track* t, int32_t slot,
+                                         uint32_t id) {
+  atomic_store_explicit(&e->perf.slot_image[t - e->tracks][slot], id,
+                        memory_order_relaxed);
+  le_track_publish_live(t, slot);
+}
+
+/* Drops every staged image identity of [channel] (#1143). Called by every
+ * control path that writes PCM into a pool slot outside the overdub write
+ * path (session import, the fresh-capture zero/regrow): the slot's content
+ * no longer matches the image an earlier admission staged for it, and the
+ * callback must not log that image when the slot next becomes live. */
+static inline void le_forget_slot_images(le_engine* e, int32_t channel) {
+  for (int32_t s = 0; s < LE_POOL_SLOTS; ++s) {
+    atomic_store_explicit(&e->perf.slot_image[channel][s], 0u,
+                          memory_order_relaxed);
+  }
 }
 
 /* Whether `ch` is a usable track index. Defined in engine.c. */
@@ -172,6 +208,8 @@ int le_record_timing_valid(const le_record_timing_settings* settings);
 /* Fade: 1 odd publication, 2 snapshot copy, 3 Clear mailbox copy,
  * 4 Restore posted before control live-slot publication, 5 selected PCM. */
 extern void (*le_test_fade_hook)(le_engine*, int);
+/* 1: Stop intent read the cohort, before its command is posted. */
+extern void (*le_test_stop_record_hook)(le_engine*, int);
 extern void (*le_test_record_timing_hook)(le_engine*, int);
 /* 1: Click mode/result applied, before command publication. */
 extern void (*le_test_click_mode_hook)(le_engine*, int);
@@ -185,6 +223,32 @@ extern void (*le_test_record_start_hook)(le_engine*, int);
  * engine_commands.c. (The per-input monitor's single-chain reset lives in
  * engine.c as le_monitor_input_reset.) */
 void le_lane_reset(le_lane* ln, int32_t input_channel);
+
+/* The settings half of le_lane_reset: routing, live mix, mute, effects and
+ * cache bookkeeping back to defaults, material (buffers, a_live/a_len/
+ * a_recoverable, source image) untouched. Defined in engine.c. */
+void le_lane_reset_settings(le_lane* ln, int32_t input_channel);
+
+/* Retained reopen (#1140), control-side half — defined in engine_commands.c.
+ * With the device closed and the workers joined, files every completed
+ * overdub pass the audio thread handed off (events still in the ring, a
+ * parked retire, a frozen complete shadow — oldest first) as committed undo
+ * layers, completes an applied Clear's restore point, and drops the posted
+ * shadows and queued undo taps. Tracks in `drop_mask` (bit t = track t) are
+ * about to be dropped whole and are skipped. Runs BEFORE
+ * le_engine_reopen_settle. */
+void le_engine_reopen_file_retired(le_engine* engine, uint32_t drop_mask);
+
+/* Retained reopen (#1140), audio-side half — defined in engine_process.c.
+ * Reverts a partial overdub pass to its pre-pass image, drops a take still
+ * capturing (first recording, seam crossfade or trailing fold) and every
+ * track in `drop_mask` (a state command the audio thread never applied),
+ * parks every other content track STOPPED at the loop head, freezes the Fade
+ * envelopes and republishes the per-track atomics. A drop that empties the
+ * whole rig resets the master, as a clear does. Runs after
+ * le_engine_reopen_file_retired and before le_engine_reset_runtime
+ * re-initialises the rings. */
+void le_engine_reopen_settle(le_engine* engine, uint32_t drop_mask);
 
 /* Ensures lane [ln]'s pool slot [slot] holds a buffer of >= [frames] frames
  * (control thread only; the caller guarantees the audio thread is not reading

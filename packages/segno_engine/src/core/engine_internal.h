@@ -99,7 +99,13 @@ void le_engine_configure_callback_budget(le_engine* engine,
  * driver reconfigured out from under us recovers via stop -> start rather than
  * going silent. Relaxed atomic; safe off the driver's message thread. Not part
  * of the FFI surface. */
-void le_engine_mark_device_lost(le_engine* engine);
+#ifdef LE_NATIVE_TESTS
+/* Native-test seam: when non-NULL, le_select_backend returns this backend
+ * instead of miniaudio, so le_engine_start / le_engine_reopen can be driven
+ * through a fake device (open/start failures, negotiated rates) with no
+ * hardware. Never compiled into the shipped engine. */
+extern const le_device_backend* le_test_backend_override;
+#endif
 
 /* Allocates the track buffers and sets engine parameters WITHOUT opening a
  * device. Used by le_engine_start and by tests. `input_channels` /

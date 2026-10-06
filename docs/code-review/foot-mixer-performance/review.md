@@ -63,10 +63,15 @@ Root independently reviewed the five production paths and four test files for
 bugs, architecture, simplicity and test quality. Real composed App tests reproduce
 the failed-restore mismatch; normal restore is a passing control. Focused Exit and
 Settings activation, Ctrl/Cmd routing and plain transport isolation are verified.
-The final full suite passes. The bounded Claude re-review of this correction and
-CI on its published head remain required. Prerequisites #1128 and #1129 now have
-clean reviews and passing CI; older stack reviews remain in progress. No merge
-readiness claim is made here.
+The final full suite passes. Claude's correction review confirmed those repairs
+and found one minor keyboard issue: Enter and Space escaped when the Tracks view
+itself had focus. The handler now consumes those keys in that case and preserves
+activation of focused controls. The extended regression failed with both escaped
+keys before the repair; all five Foot Mixer cases pass afterward. Strict analysis,
+formatting and Bloc lint pass for both changed Dart files. Current-head CI and the
+final bounded review remain required. Prerequisites #1128 and #1129 have clean
+reviews and passing CI; older stack reviews remain in progress. No merge readiness
+claim is made here.
 
 The combined regression confirms that a newly saved mute value survives Retry:
 failed restore, accepted mute changes, then recovery restores the saved mode,

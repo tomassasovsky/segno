@@ -1603,6 +1603,50 @@ LE_EXPORT int32_t le_engine_start(le_engine* engine, const le_config* config);
 /* Stops and closes the device. Returns LE_OK or an le_result error. */
 LE_EXPORT int32_t le_engine_stop(le_engine* engine);
 
+/* What le_engine_reopen did with the recorded material (#1140). */
+typedef enum le_reopen_outcome {
+  LE_REOPEN_RETAINED = 0,     /* loops, history, Fade kept; tracks STOPPED */
+  LE_REOPEN_CLEARED_RATE = 1, /* the device negotiated another sample rate */
+  LE_REOPEN_CLEARED_CAP = 2,  /* max_loop_frames differs from the buffers */
+  LE_REOPEN_RETAINED_PARTIAL = 3, /* retained, except the tracks named in the
+                                   * dropped mask: a Clear/Undo/Redo/cancel or
+                                   * Session commit on them was still
+                                   * unapplied at the loss */
+} le_reopen_outcome;
+
+/* Reopens the audio device after a loss WITHOUT discarding the recorded loops
+ * (#1140). Requires a stopped (le_engine_stop) engine that was started
+ * before: LE_ERR_ALREADY_RUNNING while running, LE_ERR_NOT_RUNNING when never
+ * configured (a cold engine goes through le_engine_start). Opens the device
+ * like le_engine_start, then — at the same negotiated sample rate and loop
+ * cap — keeps every lane's PCM, the undo/redo history, loop multiples, take
+ * ids and the crown, and brings each content track back STOPPED at the loop
+ * head with its Fade frozen (the ramp resumes toward its target at the
+ * original full-travel rate on the next Play). A take still capturing at the
+ * loss is dropped: a first recording leaves its track EMPTY, an in-progress
+ * overdub pass is reverted sample-exactly (committed layers stay), a take
+ * still in its seam crossfade or trailing fold goes with it. Recording never
+ * resumes. A track whose Clear/Undo/Redo/cancel or Session commit the audio
+ * thread never applied is dropped the same way — EMPTY, its history gone —
+ * and named in *dropped_track_mask (bit t = track t, NULL to not ask), with
+ * *outcome LE_REOPEN_RETAINED_PARTIAL; every other track is retained. A
+ * drop that empties the rig resets the master as a clear does. Only another
+ * sample rate or loop cap clears the whole engine, exactly as le_engine_start
+ * does, with *outcome LE_REOPEN_CLEARED_RATE / _CAP and a zero mask. A
+ * running performance capture ends with DEVICE_CHANGED either way. Every
+ * setting the host replays after a start (routing, mix, FX, monitors,
+ * conditioning, output gates) is reset here too; routes to inputs or outputs
+ * the new device lacks stay silent.
+ *
+ * Returns LE_OK or an le_result error. A failed open changes nothing (the
+ * material is still held, still stopped, *outcome and the mask untouched), so
+ * the caller may retry. A failed start returns LE_ERR_DEVICE with the material
+ * already settled per *outcome — still retained and stopped on
+ * LE_REOPEN_RETAINED / _PARTIAL. */
+LE_EXPORT int32_t le_engine_reopen(le_engine* engine, const le_config* config,
+                                   int32_t* outcome,
+                                   int32_t* dropped_track_mask);
+
 /* ---- device-free test pump ----
  *
  * The two calls a test harness needs to drive the engine deterministically
@@ -1618,6 +1662,25 @@ LE_EXPORT int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                                       int32_t input_channels,
                                       int32_t output_channels,
                                       int32_t max_loop_frames);
+
+/* le_engine_reopen without the device: the retention decision, the material
+ * settle and the runtime reset, on an engine le_engine_configure (or a
+ * previous start) already configured. `max_loop_frames <= 0` selects the
+ * default, as in le_engine_configure. Same preconditions, results, *outcome
+ * values and dropped-track mask as le_engine_reopen. */
+LE_EXPORT int32_t le_engine_reopen_configured(le_engine* engine,
+                                              int32_t sample_rate,
+                                              int32_t input_channels,
+                                              int32_t output_channels,
+                                              int32_t max_loop_frames,
+                                              int32_t* outcome,
+                                              int32_t* dropped_track_mask);
+
+/* Flips the published device-present flag to 0 while the engine keeps
+ * running — what the backend's device-lost notification does — so a host
+ * driving the device-free pump can rehearse its reconnect path (a stop,
+ * then le_engine_reopen_configured) without a device to unplug. */
+LE_EXPORT void le_engine_mark_device_lost(le_engine* engine);
 
 /* Processes one block exactly like the device callback: drains the command
  * ring, records/mixes `frames` frames from `input` (interleaved f32, may be
@@ -2945,7 +3008,11 @@ LE_EXPORT int32_t le_perf_render_begin(le_engine* engine,
  * progressively as each track's stem completes, not only once `*done`).
  * Safe to call whether or not a render is active — with none active,
  * `*done` reads 1, `*progress_pct` reads 100, `*track_count` reads 0. Any
- * output pointer may be NULL to skip that field. Returns LE_OK, or
+ * output pointer may be NULL to skip that field. Returns LE_OK while
+ * rendering, with none active, or after a finished render; after a render
+ * that could not read a complete, valid manifest it returns that terminal
+ * failure (LE_ERR_INVALID for unusable data, LE_ERR_DEVICE when the worker
+ * could not allocate) with `*done` 1 and no invented track results. Returns
  * LE_ERR_INVALID for a null engine. */
 LE_EXPORT int32_t le_perf_render_poll(le_engine* engine, int32_t* done,
                                      int32_t* progress_pct,
