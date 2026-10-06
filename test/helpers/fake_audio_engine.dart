@@ -1413,6 +1413,12 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       EngineResult.ok;
 
+  /// Per-track content revisions; a test bumps one to stand for a write.
+  final Map<int, int> audioRevs = {};
+
+  @override
+  int trackAudioRev(int channel) => audioRevs[channel] ?? 0;
+
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) => ordinal == 0
       ? laneExports[(channel, lane)] ?? Float32List(0)

@@ -250,6 +250,9 @@ void main() {
           percent: 0,
         );
         await session.saveAs('Inherited and custom');
+        // Opening the current session does nothing (plan Part 4), so
+        // recall goes through another current session.
+        await session.saveAs('Elsewhere');
         await playback.decayControl.setOverdubDecay(
           const DecayAddress.defaults(),
           50,

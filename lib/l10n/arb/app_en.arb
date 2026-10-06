@@ -2668,6 +2668,23 @@
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."
     },
+    "libraryOpenInterruptTitle": "Stop playback and open {name}?",
+    "@libraryOpenInterruptTitle": {
+        "description": "Asked before Open while a track plays or records (plan D8).",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryOpenInterruptBody": "Your current loop stays in your Library.",
+    "@libraryOpenInterruptBody": {
+        "description": "Under the Open confirmation: the outgoing loop is kept."
+    },
+    "libraryOpenConfirm": "Open",
+    "@libraryOpenConfirm": {
+        "description": "Confirms an Open that stops playback."
+    },
     "libraryManageSaveOpen": "Save {name}",
     "@libraryManageSaveOpen": {
         "description": "Manage row on another session: saves the open session (or the current loop) named here.",

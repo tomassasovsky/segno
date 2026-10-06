@@ -1498,6 +1498,9 @@ class FakeAudioEngine implements AudioEngine {
       importLayer(channel, lane, 0, pcm);
 
   @override
+  int trackAudioRev(int channel) => 0;
+
+  @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
     calls.add('exportLayer');
     return Float32List(0);
