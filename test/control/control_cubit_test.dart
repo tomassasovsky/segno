@@ -241,6 +241,7 @@ void main() {
       when(() => looper.clearAll(any())).thenReturn(EngineResult.ok);
       when(() => looper.undoClearAll()).thenReturn(EngineResult.ok);
       when(() => looper.cancelCountIn()).thenReturn(EngineResult.ok);
+      when(() => looper.recordRetryPending(any())).thenReturn(false);
       for (final stub in [
         () => looper.record(channel: any(named: 'channel')),
         () => looper.undo(channel: any(named: 'channel')),
@@ -1919,6 +1920,39 @@ void main() {
         cubit.recPlay();
         verify(() => looper.record()).called(1);
       });
+
+      test('a foot Record press survives a single refusal', () async {
+        // #1146: the engine refuses a fresh capture for one callback block
+        // after an emptying; the repository owes the press one retry, so the
+        // contact stays accepted (lit) while it resolves.
+        when(
+          () => looper.record(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.notReady);
+        when(() => looper.recordRetryPending(0)).thenReturn(true);
+
+        transport.press(PedalButton.recPlay, down: true);
+        await pumpEventQueue();
+        verify(() => looper.record(channel: any(named: 'channel'))).called(1);
+        expect(transport.lastFrame?.isLit(PedalButton.recPlay), isTrue);
+        transport.press(PedalButton.recPlay, down: false);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.recPlay), isFalse);
+      });
+
+      test(
+        'a refused Record press with no retry owed keeps its contact dark',
+        () async {
+          when(
+            () => looper.record(channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.notReady);
+
+          transport.press(PedalButton.recPlay, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.recPlay), isFalse);
+          transport.press(PedalButton.recPlay, down: false);
+          await pumpEventQueue();
+        },
+      );
 
       test('unmutes and overdubs a muted, still-running track', () {
         setEngine(
