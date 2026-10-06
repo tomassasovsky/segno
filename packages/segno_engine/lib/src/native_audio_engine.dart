@@ -1165,6 +1165,12 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  int trackAudioRev(int channel) {
+    _checkAlive();
+    return _bindings.le_engine_track_audio_rev(_engine, channel);
+  }
+
+  @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
     _checkAlive();
     // Every layer of a lane shares the loop length; get_lane reports it.

@@ -112,6 +112,15 @@ void main() {
     when(() => sessions.bundlePathOf(any())).thenAnswer((_) async => '/test');
     when(sessions.listSessions).thenAnswer((_) async => []);
     when(sessions.newSessionId).thenAnswer((_) async => 'new');
+    registerFallbackValue(const SessionChains());
+    registerFallbackValue(const SessionSettings());
+    when(
+      () => sessions.fingerprint(
+        settings: any(named: 'settings'),
+        chains: any(named: 'chains'),
+        pedalBindings: any(named: 'pedalBindings'),
+      ),
+    ).thenReturn('fp');
     when(
       () => sessions.releaseSessionId(any()),
     ).thenAnswer((_) async {});
@@ -145,6 +154,57 @@ void main() {
       await controllers.dispose();
       await repository.dispose();
     });
+  });
+
+  test('start takes the session baseline, so a fresh rig edited later is '
+      'kept on Open', () async {
+    await runtime.start();
+    // The rig changes after boot: an effect, say.
+    when(
+      () => sessions.fingerprint(
+        settings: any(named: 'settings'),
+        chains: any(named: 'chains'),
+        pedalBindings: any(named: 'pedalBindings'),
+      ),
+    ).thenReturn('edited');
+    when(
+      () => sessions.nextAutomaticName(any()),
+    ).thenAnswer((_) async => 'New loop 1');
+    when(() => sessions.releaseSessionId(any())).thenAnswer((_) async {});
+    when(
+      () => sessions.save(
+        any(),
+        chains: any(named: 'chains'),
+        settings: any(named: 'settings'),
+        pedalBindings: any(named: 'pedalBindings'),
+        name: any(named: 'name'),
+        captureStillValid: any(named: 'captureStillValid'),
+      ),
+    ).thenAnswer(
+      (_) async => const Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+      ),
+    );
+    // The target refuses, so only the preservation is under test.
+    when(() => sessions.read(any())).thenThrow(
+      const SessionUnsupportedVersion(version: 99, supported: 11),
+    );
+
+    await runtime.session.open('Incoming');
+
+    verify(
+      () => sessions.save(
+        any(),
+        chains: any(named: 'chains'),
+        settings: any(named: 'settings'),
+        pedalBindings: any(named: 'pedalBindings'),
+        name: 'New loop 1',
+        captureStillValid: any(named: 'captureStillValid'),
+      ),
+    ).called(1);
   });
 
   Future<(Future<void>, Completer<SessionBundle>)> holdSessionRead() async {

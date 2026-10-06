@@ -219,6 +219,50 @@ a design change; this plan does not edit the pen):
      nothing is left to prompt for; naming is Rename in Manage. The
      power-off flow's own Save-as prompt is outside this plan and stays.
 
+7. Part 4 as built:
+   - `Open session` while a track plays, records or overdubs asks with the
+     console's confirm dialog: "Stop playback and open <name>?", "Your
+     current loop stays in your Library.", `Cancel` / `Open`. The pen draws
+     no such dialog; the body line is ours.
+   - Opening the session that is already open does nothing. The Library
+     never offers it (its footer reads `Return to tracks`), and reloading it
+     would discard its unsaved edits.
+   - The D7 fingerprint is `SessionRepository.fingerprint`: the manifest a
+     save would write, from the same capture, with each lane's layers
+     replaced by `AudioEngine.trackAudioRev` (a new `SessionIo` read over
+     `le_engine_track_audio_rev`; the snapshot is unchanged). A save records
+     the fingerprint taken just before its own capture, so an edit landing
+     in between costs one more save later, never a skipped one.
+   - The reference is recorded after every save and open, and as a boot
+     baseline once the app's settings have loaded
+     (`SessionCubit.recordBaseline`, from `AppRuntime.start`). When the two
+     cannot be compared (no baseline, or a capture that cannot run while a
+     setting awaits recovery), the outgoing rig is saved only when it holds
+     recorded audio: the part nothing else brings back is kept, an untouched
+     rig is not saved, and an Open that resolves a recovery notice still
+     works.
+   - An unnamed rig preserved as `New loop N` becomes current at once, so a
+     target refused after the save leaves the saved rig open under its new
+     name.
+   - A failed preservation shows the 19/05 line, not a refusal on the
+     target's preview card.
+   - Stopping an audition on Open belongs to Part 6, which builds Listen.
+   - Review fixes (PR #1215): the fingerprint keys each track on its audio
+     revision and on whether it is capturing, never on playing or stopped,
+     so a session that was only played is not saved again. An Open first
+     ends every take in progress with the record control's Stop (at its
+     Record timing) and waits until none captures, so the take is saved
+     with the outgoing session as the dialog promises; a take still
+     capturing after 20 s refuses the Open with its own line ("The take has
+     not finished yet. Nothing was changed; try again when it has."), and
+     nothing is saved, opened or cleared. During a settings recovery the
+     capture cannot run, so a rig holding audio cannot be preserved and the
+     Open is refused as a failed save: the safe side.
+   - A real-engine test drives a real `SessionCubit` with the real
+     fingerprint (`test/session/open_preserves_engine_test.dart`): the
+     round trip of the plan's criterion, a played-and-stopped session not
+     saved again, a recording take and an overdub kept.
+
 ## 3. Decisions
 
 Owner decisions are repeated inline above. The rest are taken under the

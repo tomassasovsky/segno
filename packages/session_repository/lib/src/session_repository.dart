@@ -1405,6 +1405,77 @@ class SessionRepository {
     }
   }
 
+  /// A fingerprint of everything [save] would write for the live rig, with
+  /// no audio exported and no file touched (plan D7).
+  ///
+  /// It is the manifest [save] would build from [settings], [chains] and
+  /// [pedalBindings], except that each lane's layer list is replaced by its
+  /// track's content revision ([AudioEngine.trackAudioRev]), which changes
+  /// on every write to that track's audio. Two equal fingerprints mean a
+  /// save would write the same session; any edit to audio, effects, the
+  /// mix, routing, settings or the pedal remap changes it. Only ever
+  /// compared with another fingerprint from this method, never with a
+  /// manifest.
+  String fingerprint({
+    required SessionSettings settings,
+    SessionChains chains = const SessionChains(),
+    String pedalBindings = '',
+  }) {
+    final snapshot = _engine.snapshot();
+    final tracks = <SessionTrack>[];
+    for (var i = 0; i < snapshot.tracks.length; i++) {
+      final track = snapshot.tracks[i];
+      if (track.state == TrackState.empty) continue;
+      // A take in progress is content the next save may hold, so a
+      // capturing track reads as changed. Playing and stopped are transport,
+      // which a save does not write: a rig that was only played is
+      // unchanged.
+      final capturing =
+          track.state == TrackState.recording ||
+          track.state == TrackState.overdubbing;
+      final content =
+          'rev${_engine.trackAudioRev(i)}${capturing ? ':capturing' : ''}';
+      final history = _engine.exportHistory(i);
+      tracks.add(
+        SessionTrack(
+          channel: i,
+          multiple: track.multiple,
+          lengthFrames: track.lengthFrames,
+          fadeAmount: track.fade.amount,
+          reversed: track.reversed,
+          lanes: [
+            for (var l = 0; l < track.lanes.length; l++)
+              SessionLane(
+                lane: l,
+                volume:
+                    settings.laneMix[(i, l)]?.level ?? track.lanes[l].volume,
+                muted: track.lanes[l].muted,
+                outputMask: track.lanes[l].outputMask,
+                inputChannel: track.lanes[l].inputChannel,
+                layers: [SessionLayer(file: content)],
+                pan: settings.laneMix[(i, l)]?.imagePan ?? 0,
+                balance: settings.laneMix[(i, l)]?.balance ?? 1,
+                history: history,
+              ),
+          ],
+        ),
+      );
+    }
+    final session = _sessionFrom(
+      _Capture(
+        snapshot: snapshot,
+        laneStems: const {},
+        tracks: tracks,
+        trackLevels: const {},
+      ),
+      chains,
+      SessionSettings._detached(settings),
+      pedalBindings,
+      null,
+    );
+    return jsonEncode(session.toJson());
+  }
+
   /// The pattern of a bundle's per-layer WAV filenames
   /// (`track{c}_lane{l}_L{n}.wav`).
   static final RegExp _layerFilePattern = RegExp(

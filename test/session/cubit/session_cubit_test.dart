@@ -195,6 +195,10 @@ class _TimingOwner extends Fake implements RecordTimingSettings {
 
 void main() {
   late SessionRepository repository;
+
+  /// What the mocked repository's fingerprint of the live rig reads; a test
+  /// changes it to stand for an edit.
+  var liveFingerprint = 'fp';
   late LooperRepository looper;
   late PerformanceRepository performance;
   late MixSettingsCoordinator mixSettings;
@@ -225,9 +229,17 @@ void main() {
   );
 
   setUp(() async {
+    liveFingerprint = 'fp';
     repository = _MockSessionRepository();
     when(repository.newSessionId).thenAnswer((_) async => 'new');
     when(repository.listFolders).thenAnswer((_) async => const []);
+    when(
+      () => repository.fingerprint(
+        settings: any(named: 'settings'),
+        chains: any(named: 'chains'),
+        pedalBindings: any(named: 'pedalBindings'),
+      ),
+    ).thenAnswer((_) => liveFingerprint);
     when(
       () => repository.releaseSessionId(any()),
     ).thenAnswer((_) async {});
@@ -1433,6 +1445,375 @@ void main() {
         verify: (_) =>
             verifyNever(() => repository.commitConversion(any(), any())),
       );
+    });
+
+    group('Open preserves the outgoing rig (D7)', () {
+      void stubOpen() {
+        stubCatalog();
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) => (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          ),
+        );
+        when(() => looper.applySession(any())).thenAnswer((_) async {});
+        when(
+          () => repository.nextAutomaticName(any()),
+        ).thenAnswer((_) async => 'New loop 3');
+      }
+
+      VerificationResult verifySavedTo(String path, {String? name}) => verify(
+        () => repository.save(
+          path,
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+          pedalBindings: any(named: 'pedalBindings'),
+          name: name ?? any(named: 'name'),
+          captureStillValid: any(named: 'captureStillValid'),
+        ),
+      );
+
+      void verifyNoSave() => verifyNever(
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+          pedalBindings: any(named: 'pedalBindings'),
+          name: any(named: 'name'),
+          captureStillValid: any(named: 'captureStillValid'),
+        ),
+      );
+
+      test('a changed named rig is saved to its identity before the target '
+          'is read and applied', () async {
+        stubOpen();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        clearInteractions(repository);
+        liveFingerprint = 'edited';
+
+        await cubit.open('B');
+
+        verifyInOrder([
+          () => repository.save(
+            '/root/A',
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: 'A',
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+          () => repository.open(
+            '/root/B',
+            liveSettings: any(named: 'liveSettings'),
+          ),
+          () => looper.applySession(any()),
+        ]);
+        expect(cubit.state.currentSessionId, 'B');
+      });
+
+      test('an unchanged named rig is not saved again', () async {
+        stubOpen();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        clearInteractions(repository);
+
+        await cubit.open('B');
+
+        verifyNoSave();
+        verify(
+          () => repository.open(
+            '/root/B',
+            liveSettings: any(named: 'liveSettings'),
+          ),
+        ).called(1);
+      });
+
+      test(
+        'an unnamed rig with any edit is saved as the next New loop',
+        () async {
+          stubOpen();
+          final cubit = build();
+          addTearDown(cubit.close);
+          await cubit.recordBaseline();
+          liveFingerprint = 'an effect was added';
+
+          await cubit.open('B');
+
+          verify(
+            () =>
+                repository.nextAutomaticName(SessionCubit.automaticNamePrefix),
+          ).called(1);
+          verifySavedTo('/root/new', name: 'New loop 3').called(1);
+          expect(cubit.state.currentSessionId, 'B');
+        },
+      );
+
+      test('a fresh untouched rig writes nothing', () async {
+        stubOpen();
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.recordBaseline();
+
+        await cubit.open('B');
+
+        verifyNoSave();
+        verifyNever(() => repository.nextAutomaticName(any()));
+      });
+
+      test('the opened session becomes the reference: opening another while '
+          'it is unchanged saves nothing', () async {
+        stubOpen();
+        // Applying A makes the live rig A's, which differs from the baseline.
+        when(() => looper.applySession(any())).thenAnswer((_) async {
+          liveFingerprint = 'A as opened';
+        });
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.recordBaseline();
+        await cubit.open('A');
+        clearInteractions(repository);
+
+        await cubit.open('B');
+
+        verifyNoSave();
+      });
+
+      test(
+        'a failed preservation applies nothing and says the save failed',
+        () async {
+          stubOpen();
+          final cubit = build();
+          addTearDown(cubit.close);
+          cubit.emit(
+            const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+          );
+          await cubit.save();
+          liveFingerprint = 'edited';
+          when(
+            () => repository.save(
+              any(),
+              chains: any(named: 'chains'),
+              settings: any(named: 'settings'),
+              pedalBindings: any(named: 'pedalBindings'),
+              name: any(named: 'name'),
+              captureStillValid: any(named: 'captureStillValid'),
+            ),
+          ).thenThrow(const FileSystemException('disk full'));
+
+          await cubit.open('B');
+
+          expect(cubit.state.status, SessionStatus.failure);
+          expect(cubit.state.error, SessionError.saveFailed);
+          expect(cubit.state.currentSessionId, 'A');
+          verifyNever(
+            () => repository.open(
+              any(),
+              liveSettings: any(named: 'liveSettings'),
+            ),
+          );
+          verifyNever(() => looper.applySession(any()));
+        },
+      );
+
+      test('a target refused after preservation keeps the saved outgoing '
+          'rig current under its new name', () async {
+        stubOpen();
+        when(
+          () => repository.open(
+            '/root/B',
+            liveSettings: any(named: 'liveSettings'),
+          ),
+        ).thenThrow(
+          const SessionSampleRateMismatch(
+            sessionRate: 44100,
+            deviceRate: 48000,
+          ),
+        );
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.recordBaseline();
+        liveFingerprint = 'edited';
+
+        await cubit.open('B');
+
+        expect(cubit.state.status, SessionStatus.failure);
+        expect(cubit.state.error, SessionError.sampleRateMismatch);
+        expect(cubit.state.currentSessionId, 'new');
+        expect(cubit.state.currentSessionName, 'New loop 3');
+        verifySavedTo('/root/new', name: 'New loop 3').called(1);
+        verifyNever(() => looper.applySession(any()));
+      });
+
+      test('with no baseline a rig without audio is not saved', () async {
+        stubOpen();
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        await cubit.open('B');
+
+        verifyNoSave();
+      });
+
+      test('with no baseline a rig holding audio is saved', () async {
+        stubOpen();
+        when(() => looper.state).thenReturn(
+          LooperState(
+            tracks: [
+              const Track(state: TrackState.stopped, lengthFrames: 48000),
+              for (var c = 1; c < 8; c++) Track(channel: c),
+            ],
+          ),
+        );
+        when(() => looper.laneCount(any())).thenReturn(1);
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        await cubit.open('B');
+
+        verifySavedTo('/root/new', name: 'New loop 3').called(1);
+      });
+
+      test('opening the current session does nothing', () async {
+        stubOpen();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        final before = cubit.state;
+
+        await cubit.open('A');
+
+        expect(cubit.state, before);
+        verifyNever(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        );
+        verifyNoSave();
+      });
+
+      test('the baseline is taken once', () async {
+        stubOpen();
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.recordBaseline();
+        liveFingerprint = 'edited';
+        await cubit.recordBaseline();
+
+        await cubit.open('B');
+
+        verifySavedTo('/root/new').called(1);
+      });
+
+      group('a take in progress (D8)', () {
+        LooperState rig(TrackState track1) => LooperState(
+          tracks: [
+            const Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: track1, lengthFrames: 24000),
+            for (var c = 2; c < 8; c++) Track(channel: c),
+          ],
+        );
+
+        for (final capture in [TrackState.recording, TrackState.overdubbing]) {
+          test('a ${capture.name} take is ended, then saved with the rig, '
+              'before the target is read', () async {
+            stubOpen();
+            var live = rig(capture);
+            when(() => looper.state).thenAnswer((_) => live);
+            when(() => looper.laneCount(any())).thenReturn(1);
+            when(
+              () => looper.stopRecordControl(channel: any(named: 'channel')),
+            ).thenAnswer((_) {
+              live = rig(TrackState.playing);
+              return EngineResult.ok;
+            });
+            final cubit = build();
+            addTearDown(cubit.close);
+            cubit.emit(
+              const SessionState(
+                currentSessionId: 'A',
+                currentSessionName: 'A',
+              ),
+            );
+            await cubit.save();
+            clearInteractions(repository);
+            liveFingerprint = 'the take';
+
+            await cubit.open('B');
+
+            verifyInOrder([
+              () => looper.stopRecordControl(channel: 1),
+              () => repository.save(
+                '/root/A',
+                chains: any(named: 'chains'),
+                settings: any(named: 'settings'),
+                pedalBindings: any(named: 'pedalBindings'),
+                name: 'A',
+                captureStillValid: any(named: 'captureStillValid'),
+              ),
+              () => repository.open(
+                '/root/B',
+                liveSettings: any(named: 'liveSettings'),
+              ),
+            ]);
+            verifyNever(() => looper.stopRecordControl(channel: 0));
+            expect(cubit.state.currentSessionId, 'B');
+          });
+        }
+
+        test('a take that does not end in time refuses the Open and changes '
+            'nothing', () async {
+          stubOpen();
+          when(() => looper.state).thenReturn(rig(TrackState.recording));
+          when(
+            () => looper.stopRecordControl(channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.ok);
+          final cubit = SessionCubit(
+            captureSettings: captureSettings,
+            fxPersistence: fxPersistence,
+            settings: settings,
+            repository: repository,
+            looper: looper,
+            performance: performance,
+            mixSettings: mixSettings,
+            mixPersistence: mixPersistence,
+            guards: GuardRegistry(),
+            captureEndTimeout: const Duration(milliseconds: 20),
+          );
+          addTearDown(cubit.close);
+          cubit.emit(
+            const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+          );
+
+          await cubit.open('B');
+
+          expect(cubit.state.status, SessionStatus.failure);
+          expect(cubit.state.error, SessionError.captureInProgress);
+          expect(cubit.state.currentSessionId, 'A');
+          verifyNoSave();
+          verifyNever(
+            () => repository.open(
+              any(),
+              liveSettings: any(named: 'liveSettings'),
+            ),
+          );
+          verifyNever(() => looper.applySession(any()));
+        });
+      });
     });
 
     blocTest<SessionCubit, SessionState>(

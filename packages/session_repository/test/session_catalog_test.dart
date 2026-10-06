@@ -966,6 +966,31 @@ void main() {
       );
     });
 
+    test('renames a schema-7 bundle in place and it still previews', () async {
+      final dir = '${root.path}/s-old';
+      Directory(dir).createSync();
+      for (final file in Directory(
+        'test/fixtures/sessions/v7_master_full',
+      ).listSync()) {
+        (file as File).copySync('$dir/${file.uri.pathSegments.last}');
+      }
+
+      await repo().renameSession('s-old', 'Old gig');
+
+      final listed = (await repo().listSessions()).single;
+      expect((listed.id, listed.name), ('s-old', 'Old gig'));
+      final json =
+          jsonDecode(File('$dir/${Session.manifestName}').readAsStringSync())
+              as Map<String, dynamic>;
+      // Only the name changed: the manifest stays schema 7, converted on the
+      // next read as before.
+      expect(json['version'], 7);
+      expect(json['name'], 'Old gig');
+      final preview = await repo().readPreview('s-old');
+      expect(preview.summary.name, 'Old gig');
+      expect(preview.tracks.map((t) => t.channel), [0, 1, 2]);
+    });
+
     test('throws the typed refusal for a newer schema and StateError for a '
         'missing id', () async {
       makeBundle('s-future', version: 999);

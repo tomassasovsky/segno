@@ -258,6 +258,9 @@ void main() {
             isTrue,
           );
           await session.saveAs('Two bars');
+          // Opening the current session does nothing (plan Part 4), so
+          // recall goes through another current session.
+          await session.saveAs('Elsewhere');
           expect(session.state.status, SessionStatus.success);
           expect(
             (await tempo.recordStartControl.setSoundStart(enabled: true)).isOk,
@@ -343,6 +346,9 @@ void main() {
             (_) => engine.pump(frames: 0),
           );
           await session.saveAs('Owed pair');
+          // Opening the current session does nothing (plan Part 4), so
+          // recall goes through another current session.
+          await session.saveAs('Elsewhere');
           expect(session.state.status, SessionStatus.success);
           final bundle = await sessions.read(
             await sessions.bundlePathOf(await idOf('Owed pair')),
@@ -379,6 +385,9 @@ void main() {
           () async {
             await session.saveAs('Bad');
             expect(session.state.status, SessionStatus.success);
+            // Opening the current session does nothing (plan Part 4), so
+            // the refusal is reached from another current session.
+            await session.saveAs('Elsewhere');
             final manifest = File(
               '${await sessions.bundlePathOf(await idOf('Bad'))}/${Session.manifestName}',
             );
