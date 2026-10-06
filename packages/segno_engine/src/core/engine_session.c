@@ -122,6 +122,8 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
   }
   const size_t span = (size_t)frames;
   const size_t cap = (size_t)engine->max_loop_frames;
+  /* #1143: the live slot's PCM changes under a possibly staged identity. */
+  le_forget_slot_images(engine, channel);
   memcpy(ln->pool[live], pcm, span * sizeof(float));
   if (span < cap) {
     memset(ln->pool[live] + span, 0, (cap - span) * sizeof(float));
@@ -222,6 +224,7 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
       ((frames + LE_LAYER_QUANTUM - 1) / LE_LAYER_QUANTUM) * LE_LAYER_QUANTUM;
   if (want > engine->max_loop_frames) want = engine->max_loop_frames;
   if (!le_lane_ensure_slot(ln, ordinal, want)) return LE_ERR_INVALID;
+  le_forget_slot_images(engine, channel); /* #1143: slot content redefined */
   memcpy(ln->pool[ordinal], pcm, (size_t)frames * sizeof(float));
   if (frames < want) {
     memset(ln->pool[ordinal] + frames, 0,
@@ -285,8 +288,11 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
   /* [R1] session load (layered): the reconstructed stack's live slot is
    * published here — the layers imported while EMPTY (le_engine_import_layer)
    * become playable content at this swap, so this is the one bump for the
-   * whole layered reconstruction (structural via le_track_publish_live). */
-  le_track_publish_live(t, undo_count);
+   * whole layered reconstruction (structural via le_track_publish_live).
+   * Image 0 (#1143): imported PCM has no staged copy in a running capture, so
+   * a stem that reaches it fails truthfully (323/0) rather than guessing. */
+  le_forget_slot_images(engine, channel);
+  le_publish_live_image(engine, t, undo_count, 0);
   store_i32(&t->a_undo_depth, undo_count);
   store_i32(&t->a_redo_depth, redo_count);
   (void)le_push(engine, LE_CMD_RESET_FADE, channel, 0);
