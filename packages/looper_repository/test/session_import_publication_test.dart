@@ -90,9 +90,9 @@ class _ImportEngine extends PumpedNativeEngine {
   }
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     if (dropCommit) return EngineResult.ok;
-    final result = super.commitSession(baseFrames, loopBars: loopBars);
+    final result = super.commitSession(baseFrames, loopBeats: loopBeats);
     if (result.isOk) committed = true;
     return result;
   }

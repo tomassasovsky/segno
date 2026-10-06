@@ -1329,8 +1329,11 @@ abstract interface class SessionIo {
   EngineResult finalizeHistory(int channel, TrackHistory history);
 
   /// Establishes the master loop at [baseFrames] and leaves every imported
-  /// track stopped at its whole-loop multiple. Launch with [AudioEngine.play].
-  EngineResult commitSession(int baseFrames, {required int loopBars});
+  /// track stopped at its whole-loop multiple. Restores exactly [loopBeats]
+  /// beats (denominator notes) over the loop, `0` for a grid-free loop; a
+  /// whole-bar loop passes its bars times the signature's numerator (#1168).
+  /// Launch with [AudioEngine.play].
+  EngineResult commitSession(int baseFrames, {required int loopBeats});
 }
 
 /// Discovery of installed VST3 / CLAP plugins (umbrella D-SCAN).

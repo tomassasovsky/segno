@@ -1532,10 +1532,14 @@ class FakeAudioEngine implements AudioEngine {
   /// Base frames passed to the last [commitSession].
   int? committedBaseFrames;
 
+  /// Grid beats passed to the last [commitSession].
+  int? committedLoopBeats;
+
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     calls.add('commitSession');
     committedBaseFrames = baseFrames;
+    committedLoopBeats = loopBeats;
     final tracks = [..._nextSnapshot.tracks];
     for (final entry in importedTracks.entries) {
       final finalized = finalizedHistory[entry.key];
@@ -1972,6 +1976,7 @@ class _LengthSnapshot extends EngineSnapshot {
         syncTempo: source.syncTempo,
         quantizeDiv: engine.lastQuantizeDiv ?? source.quantizeDiv,
         loopBars: source.loopBars,
+        loopBeats: source.loopBeats,
         currentBeat: source.currentBeat,
         clickMode: source.clickMode,
         clickModeRevision: source.clickModeRevision,

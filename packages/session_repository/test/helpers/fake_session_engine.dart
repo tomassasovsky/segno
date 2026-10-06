@@ -327,7 +327,7 @@ class FakeSessionEngine implements AudioEngine {
       EngineResult.ok;
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     if (baseFrames <= 0) return EngineResult.invalid;
     masterLength = baseFrames;
     for (final track in _tracks) {

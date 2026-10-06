@@ -420,9 +420,9 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
 }
 
 int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames,
-                                  int32_t loop_bars) {
+                                  int32_t loop_beats) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (base_frames <= 0 || loop_bars < 0 || loop_bars > INT32_MAX / 15) {
+  if (base_frames <= 0 || loop_beats < 0 || loop_beats > INT32_MAX / 15) {
     return LE_ERR_INVALID;
   }
   /* Free/Song mode (B2b, adversarial-review BUG 2 fix; broadened to SONG by
@@ -451,5 +451,5 @@ int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames,
   return le_push_cmd(engine,
                      (le_command){.code = LE_CMD_COMMIT_SESSION,
                                   .session = {.base_frames = base_frames,
-                                              .loop_bars = loop_bars}});
+                                              .loop_beats = loop_beats}});
 }

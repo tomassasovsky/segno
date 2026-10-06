@@ -1284,6 +1284,7 @@ class EngineSnapshot {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    this.loopBeats = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
     this.clickModeRevision = 0,
@@ -1362,6 +1363,7 @@ class EngineSnapshot {
       syncTempo = true,
       quantizeDiv = GridDivision.off,
       loopBars = 0,
+      loopBeats = 0,
       currentBeat = 0,
       clickMode = ClickMode.off,
       clickModeRevision = 0,
@@ -1455,6 +1457,7 @@ class EngineSnapshot {
       syncTempo: native.sync_tempo != 0,
       quantizeDiv: GridDivision.fromCode(native.quantize_div),
       loopBars: native.loop_bars,
+      loopBeats: native.loop_beats,
       currentBeat: native.current_beat,
       clickMode: ClickMode.fromCode(native.click_mode),
       clickModeRevision: native.click_mode_revision,
@@ -1541,6 +1544,7 @@ class EngineSnapshot {
     bool? syncTempo,
     GridDivision? quantizeDiv,
     int? loopBars,
+    int? loopBeats,
     int? currentBeat,
     ClickMode? clickMode,
     int? clickModeRevision,
@@ -1616,6 +1620,7 @@ class EngineSnapshot {
     syncTempo: syncTempo ?? this.syncTempo,
     quantizeDiv: quantizeDiv ?? this.quantizeDiv,
     loopBars: loopBars ?? this.loopBars,
+    loopBeats: loopBeats ?? this.loopBeats,
     currentBeat: currentBeat ?? this.currentBeat,
     clickMode: clickMode ?? this.clickMode,
     clickModeRevision: clickModeRevision ?? this.clickModeRevision,
@@ -1830,9 +1835,16 @@ class EngineSnapshot {
   final GridDivision quantizeDiv;
 
   /// Whole bars in the master loop, or `0` when no grid relationship exists
-  /// (sync off, no loop, or the loop predates any grid). The loop's audio
-  /// length is never altered by the grid — this is a derived count.
+  /// (sync off, no loop, or the loop predates any grid) or the grid's beats
+  /// do not make whole bars ([loopBeats]). The loop's audio length is never
+  /// altered by the grid — this is a derived count.
   final int loopBars;
+
+  /// Whole beats (denominator notes) in the master loop, the grid's own
+  /// count, or `0` with no grid (#1168). [loopBars] × [tsNum] for a
+  /// whole-bar loop; a Divide of a sole 1- or 3-bar loop keeps the tempo and
+  /// leaves 2 or 6 beats with [loopBars] `0`.
+  final int loopBeats;
 
   /// Beat index (`0..tsNum-1`) within the bar: loop-driven, or driven by the
   /// count-in / free-running click; `0` when idle.
@@ -2056,6 +2068,7 @@ class EngineSnapshot {
           syncTempo == other.syncTempo &&
           quantizeDiv == other.quantizeDiv &&
           loopBars == other.loopBars &&
+          loopBeats == other.loopBeats &&
           currentBeat == other.currentBeat &&
           clickMode == other.clickMode &&
           clickModeRevision == other.clickModeRevision &&
@@ -2133,6 +2146,7 @@ class EngineSnapshot {
     syncTempo,
     quantizeDiv,
     loopBars,
+    loopBeats,
     currentBeat,
     clickMode,
     clickModeRevision,

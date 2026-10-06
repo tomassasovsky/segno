@@ -218,7 +218,7 @@ class FakePerformanceEngine implements AudioEngine {
       EngineResult.ok;
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) =>
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) =>
       EngineResult.ok;
 
   @override

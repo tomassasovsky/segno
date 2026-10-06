@@ -5622,21 +5622,22 @@ class SegnoEngineBindings {
 
   /// Establishes the master loop at `base_frames` and parks every imported track
   /// (EMPTY with a loaded length) STOPPED at its whole-loop multiple
-  /// (length / base_frames). Restores exactly `loop_bars` musical bars over that
-  /// span; zero keeps the loop grid-free even when a tempo is known. The caller
-  /// restores tempo/source/signature before this commit. Does not infer bars
-  /// from BPM or change audio length. Requires base_frames > 0 and loop_bars in
-  /// 0..INT32_MAX/15 (the largest supported signature has 15 beats). Posts one
-  /// command; returns LE_OK or an le_result error.
+  /// (length / base_frames). Restores exactly `loop_beats` musical beats
+  /// (denominator notes; #1168: a sub-bar loop a Divide left keeps its beats)
+  /// over that span; zero keeps the loop grid-free even when a tempo is known.
+  /// The caller restores tempo/source/signature before this commit, so a
+  /// whole-bar loop passes bars * ts_num. Does not infer beats from BPM or
+  /// change audio length. Requires base_frames > 0 and loop_beats in
+  /// 0..INT32_MAX/15. Posts one command; returns LE_OK or an le_result error.
   int le_engine_commit_session(
     ffi.Pointer<le_engine> engine,
     int base_frames,
-    int loop_bars,
+    int loop_beats,
   ) {
     return _le_engine_commit_session(
       engine,
       base_frames,
-      loop_bars,
+      loop_beats,
     );
   }
 
@@ -6398,7 +6399,7 @@ enum le_command_code {
   /// (default 0 = no outputs).
   LE_CMD_SET_CLICK_OUTPUT(22),
 
-  /// session commit: base_frames and loop_bars;
+  /// session commit: base_frames and loop_beats;
   /// publish grid with imported tracks stopped
   LE_CMD_COMMIT_SESSION(23),
 
@@ -7652,8 +7653,9 @@ final class le_snapshot extends ffi.Struct {
   external int tempo_source;
 
   /// Whole bars in the master loop, or 0 when no grid relationship exists
-  /// (sync off, no loop, or the loop predates any grid). The loop's AUDIO
-  /// length is never altered by the grid — bars is a derived count.
+  /// (sync off, no loop, or the loop predates any grid) or the grid's beats
+  /// do not make whole bars (loop_beats, #1168). The loop's AUDIO length is
+  /// never altered by the grid — bars is a derived count.
   @ffi.Int32()
   external int loop_bars;
 
@@ -7854,6 +7856,13 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Array.multi([8])
   external ffi.Array<ffi.Int32> record_timing_overrides;
+
+  /// Trailing (#1168): whole beats (denominator notes) in the master loop, the
+  /// grid's own count, or 0 with no grid. loop_bars * ts_num when the loop is
+  /// whole bars; a Divide of a sole 1- or 3-bar loop keeps the tempo and
+  /// leaves 2 or 6 beats with loop_bars 0.
+  @ffi.Int32()
+  external int loop_beats;
 }
 
 /// The plugin format a descriptor was discovered in.

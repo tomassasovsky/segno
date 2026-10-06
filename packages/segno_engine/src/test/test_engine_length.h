@@ -991,14 +991,16 @@ static void test_length_seam_race(void) {
   le_engine_destroy(e);
 }
 
-/* PR #1212 review M2: a re-clocked only track keeps its tempo. With loop<->grid
- * sync on, the grid's bar count follows the length exactly (2 bars halve to
- * 1, 1 bar doubles to 2) at the unchanged tempo; a length that would not be a
- * whole bar count (half of 1 or 3 bars) is refused as incompatible, rather
- * than changing the beat rate or the tempo silently. */
+/* PR #1212 review M2, owner decision 2026-10-06: a re-clocked only track
+ * keeps its tempo, and the grid counts the loop in beats. With loop<->grid
+ * sync on, a half keeps half the beats (1 bar of 4/4 halves to 2 beats, 3
+ * bars to 6, with no whole bar count) and a Double twice the beats, all at
+ * the unchanged tempo; only a half that would leave a fraction of a beat (one
+ * beat, or one bar of 3/4) is refused as incompatible. Undo restores the
+ * bar count. */
 static void test_length_reclock_keeps_tempo(void) {
   printf("test_length_reclock_keeps_tempo\n");
-  const int32_t bar = 96000; /* 4/4 at 120 BPM, 48 kHz */
+  const int32_t bar = 96000; /* 4/4 at 120 BPM, 48 kHz: 24000 a beat */
   for (int bars = 1; bars <= 3; ++bars) {
     le_engine* e = le_engine_create();
     CHECK(le_engine_configure(e, 48000, 1, 1, 6 * bar) == LE_OK);
@@ -1011,37 +1013,105 @@ static void test_length_reclock_keeps_tempo(void) {
     le_snapshot s;
     le_engine_get_snapshot(e, &s);
     CHECK(s.master_length_frames == bars * bar);
-    CHECK(s.loop_bars == bars);
+    CHECK(s.loop_bars == bars && s.loop_beats == 4 * bars);
     for (int edit = LE_LENGTH_FIRST_HALF; edit <= LE_LENGTH_LAST_HALF;
          ++edit) {
-      const int32_t verdict = len_edit(e, 0, edit);
-      if (bars % 2 == 0) {
-        CHECK(verdict == LE_OK);
-        le_engine_get_snapshot(e, &s);
-        CHECK(s.master_length_frames == bars * bar / 2);
-        CHECK(s.loop_bars == bars / 2);
-        CHECK(s.tempo_bpm == 120.0f);
-        CHECK(le_engine_undo(e, 0) == LE_OK);
-        len_settle(e);
-        le_engine_get_snapshot(e, &s);
-        CHECK(s.master_length_frames == bars * bar);
-        CHECK(s.loop_bars == bars);
-      } else {
-        CHECK(verdict == LE_ERR_MODE_MISMATCH);
-        le_engine_get_snapshot(e, &s);
-        CHECK(s.master_length_frames == bars * bar);
-        CHECK(s.loop_bars == bars && s.tempo_bpm == 120.0f);
-        CHECK(e->tracks[0].undo_count == 0);
-      }
+      CHECK(len_edit(e, 0, edit) == LE_OK);
+      le_engine_get_snapshot(e, &s);
+      CHECK(s.master_length_frames == bars * bar / 2);
+      CHECK(s.loop_beats == 2 * bars);
+      CHECK(s.loop_bars == (bars % 2 == 0 ? bars / 2 : 0));
+      CHECK(s.tempo_bpm == 120.0f);
+      CHECK(le_engine_undo(e, 0) == LE_OK);
+      len_settle(e);
+      le_engine_get_snapshot(e, &s);
+      CHECK(s.master_length_frames == bars * bar);
+      CHECK(s.loop_bars == bars && s.loop_beats == 4 * bars);
     }
     if (bars <= 2) {
       CHECK(len_edit(e, 0, LE_LENGTH_DOUBLE) == LE_OK);
       le_engine_get_snapshot(e, &s);
       CHECK(s.master_length_frames == 2 * bars * bar);
-      CHECK(s.loop_bars == 2 * bars && s.tempo_bpm == 120.0f);
+      CHECK(s.loop_bars == 2 * bars && s.loop_beats == 8 * bars);
+      CHECK(s.tempo_bpm == 120.0f);
     }
     le_engine_destroy(e);
   }
+
+  /* One bar halves to 2 beats, then to 1; a further half would leave half a
+   * beat and is refused. The sub-bar loop still publishes its beats. */
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 6 * bar) == LE_OK);
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  len_run(e, NULL, NULL, bar, 512);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  len_run(e, NULL, NULL, 1024, 512);
+  CHECK(len_edit(e, 0, LE_LENGTH_FIRST_HALF) == LE_OK);
+  CHECK(len_edit(e, 0, LE_LENGTH_FIRST_HALF) == LE_OK);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == bar / 4);
+  CHECK(s.loop_beats == 1 && s.loop_bars == 0 && s.tempo_bpm == 120.0f);
+  CHECK(len_edit(e, 0, LE_LENGTH_LAST_HALF) == LE_ERR_MODE_MISMATCH);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == bar / 4 && s.loop_beats == 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  len_settle(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_beats == 2 && s.loop_bars == 0);
+  /* Beat 1 of the 2-beat loop is published half way through it. */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  len_run(e, NULL, NULL, (bar / 2 - s.master_position_frames) % (bar / 2),
+          512);
+  len_run(e, NULL, NULL, bar / 4 + 10, 512);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 1);
+  le_engine_destroy(e);
+
+  /* One bar of 3/4 is three beats: its half would be a beat and a half. */
+  e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 6 * bar) == LE_OK);
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  CHECK(le_engine_set_time_signature(e, 3, 4) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  len_run(e, NULL, NULL, 3 * bar / 4, 512);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  len_run(e, NULL, NULL, 1024, 512);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 1 && s.loop_beats == 3);
+  CHECK(len_edit(e, 0, LE_LENGTH_FIRST_HALF) == LE_ERR_MODE_MISMATCH);
+  CHECK(len_edit(e, 0, LE_LENGTH_DOUBLE) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 2 && s.loop_beats == 6);
+  le_engine_destroy(e);
+
+  /* A Session commit restores a sub-bar grid exactly. */
+  e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 6 * bar) == LE_OK);
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  drain(e);
+  static float half[48000];
+  CHECK(le_engine_import_track(e, 0, half, bar / 2) == LE_OK);
+  CHECK(le_engine_commit_session(e, bar / 2, 2) == LE_OK);
+  len_settle(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == bar / 2);
+  CHECK(s.loop_beats == 2 && s.loop_bars == 0 && s.tempo_bpm == 120.0f);
+  /* Undo to empty keeps the master; a tempo change then regrids it to the
+   * nearest whole beats, never to a bar it does not hold: at 60 BPM the
+   * 48000-frame loop is one beat. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  len_settle(e);
+  CHECK(le_engine_set_tempo(e, 60.0f) == LE_OK);
+  len_settle(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == bar / 2 && s.tempo_bpm == 60.0f);
+  CHECK(s.loop_beats == 1 && s.loop_bars == 0);
+  le_engine_destroy(e);
 }
 
 /* PR #1212 review L1: while a re-clock is posted, every other track's history

@@ -1449,7 +1449,7 @@ class FakeAudioEngine implements AudioEngine {
   final _importedLengths = <(int, int), int>{};
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     final tracks = [...nextSnapshot.tracks];
     for (final entry in _importedDepths.entries) {
       final length = _importedLengths[(entry.key, entry.value.$1)];
@@ -1814,6 +1814,7 @@ class _LengthSnapshot extends EngineSnapshot {
          syncTempo: source.syncTempo,
          quantizeDiv: engine.lastQuantizeDiv ?? source.quantizeDiv,
          loopBars: source.loopBars,
+         loopBeats: source.loopBeats,
          currentBeat: source.currentBeat,
          clickMode: source.clickMode,
          clickModeRevision: source.clickModeRevision,

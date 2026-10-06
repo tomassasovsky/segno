@@ -5259,7 +5259,7 @@ static void test_session_import_restores_musical_grid_without_resizing(void) {
   float pcm[3500] = {0};
   pcm[2345] = 0.5f;
   CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 3500) == LE_OK);
-  CHECK(le_engine_commit_session(e, 3500, 1) == LE_OK);
+  CHECK(le_engine_commit_session(e, 3500, 7) == LE_OK); /* one 7/8 bar */
   CHECK(le_engine_play(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_snapshot snapshot;
@@ -5267,6 +5267,7 @@ static void test_session_import_restores_musical_grid_without_resizing(void) {
   CHECK(snapshot.tempo_source == LE_TEMPO_SOURCE_TAPPED);
   CHECK(snapshot.ts_num == 7 && snapshot.ts_den == 8);
   CHECK(snapshot.loop_bars == 1); /* BPM counts denominator-note beats */
+  CHECK(snapshot.loop_beats == 7);
   CHECK(snapshot.master_length_frames == 3500);
   CHECK(snapshot.tracks[0].length_frames == 3500);
   float exported[3500];
@@ -5309,7 +5310,8 @@ static void test_session_import_preserves_actual_bar_count(void) {
     tg_advance(e, 1);
     CHECK(le_engine_restore_tempo(e, saved.tempo_bpm, saved.tempo_source) == LE_OK);
     CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 100) == LE_OK);
-    CHECK(le_engine_commit_session(e, 100, saved.loop_bars) == LE_OK);
+    CHECK(saved.loop_beats == saved.loop_bars * saved.ts_num);
+    CHECK(le_engine_commit_session(e, 100, saved.loop_beats) == LE_OK);
     CHECK(le_engine_play(e, 0) == LE_OK);
     tg_advance(e, 1);
     le_snapshot restored;
@@ -5317,6 +5319,7 @@ static void test_session_import_preserves_actual_bar_count(void) {
     CHECK(restored.tempo_bpm == saved.tempo_bpm);
     CHECK(restored.tempo_source == saved.tempo_source);
     CHECK(restored.loop_bars == saved.loop_bars);
+    CHECK(restored.loop_beats == saved.loop_beats);
     CHECK(restored.master_length_frames == 100);
     float exported[100];
     CHECK(le_engine_export_track_lane(e, 0, 0, exported, 100) == 100);
@@ -6220,7 +6223,7 @@ static void test_commit_session_rebuilds_stale_grid(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.loop_bars == 2);
 
-  CHECK(le_engine_commit_session(e, 6000, 3) == LE_OK);
+  CHECK(le_engine_commit_session(e, 6000, 12) == LE_OK); /* 3 bars of 4 */
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.master_length_frames == 6000);

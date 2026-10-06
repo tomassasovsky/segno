@@ -259,7 +259,7 @@ typedef enum le_command_code {
   LE_CMD_SET_CLICK_OUTPUT = 22,  /* click output routing. trackmask arm:
                                   * channel unused, mask = output bitmask
                                   * (default 0 = no outputs). */
-  LE_CMD_COMMIT_SESSION = 23,    /* session commit: base_frames and loop_bars;
+  LE_CMD_COMMIT_SESSION = 23,    /* session commit: base_frames and loop_beats;
                                   * publish grid with imported tracks stopped */
   LE_CMD_SET_CLICK_VOLUME = 24,  /* arg_f = 0..LE_MAX_GAIN (the click's ONLY
                                   * gain stage — master gain never applies). */
@@ -1245,8 +1245,9 @@ typedef struct le_snapshot {
   int32_t quantize_div; /* le_grid_div granularity (default 0 = off) */
   int32_t tempo_source; /* le_tempo_source (default 0 = none) */
   /* Whole bars in the master loop, or 0 when no grid relationship exists
-   * (sync off, no loop, or the loop predates any grid). The loop's AUDIO
-   * length is never altered by the grid — bars is a derived count. */
+   * (sync off, no loop, or the loop predates any grid) or the grid's beats
+   * do not make whole bars (loop_beats, #1168). The loop's AUDIO length is
+   * never altered by the grid — bars is a derived count. */
   int32_t loop_bars;
   int32_t current_beat; /* 0..ts_num-1 within the bar: loop-driven, or driven
                          * by the count-in / free-running click; 0 idle */
@@ -1366,6 +1367,11 @@ typedef struct le_snapshot {
   uint32_t record_timing_revision;
   int32_t record_timing_result;
   int32_t record_timing_overrides[LE_MAX_TRACKS];
+  /* Trailing (#1168): whole beats (denominator notes) in the master loop, the
+   * grid's own count, or 0 with no grid. loop_bars * ts_num when the loop is
+   * whole bars; a Divide of a sole 1- or 3-bar loop keeps the tempo and
+   * leaves 2 or 6 beats with loop_bars 0. */
+  int32_t loop_beats;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -3284,16 +3290,17 @@ LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
 
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple
- * (length / base_frames). Restores exactly `loop_bars` musical bars over that
- * span; zero keeps the loop grid-free even when a tempo is known. The caller
- * restores tempo/source/signature before this commit. Does not infer bars
- * from BPM or change audio length. Requires base_frames > 0 and loop_bars in
- * 0..INT32_MAX/15 (the largest supported signature has 15 beats). Posts one
- * command; returns LE_OK or an le_result error.
+ * (length / base_frames). Restores exactly `loop_beats` musical beats
+ * (denominator notes; #1168: a sub-bar loop a Divide left keeps its beats)
+ * over that span; zero keeps the loop grid-free even when a tempo is known.
+ * The caller restores tempo/source/signature before this commit, so a
+ * whole-bar loop passes bars * ts_num. Does not infer beats from BPM or
+ * change audio length. Requires base_frames > 0 and loop_beats in
+ * 0..INT32_MAX/15. Posts one command; returns LE_OK or an le_result error.
  */
 LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
                                            int32_t base_frames,
-                                           int32_t loop_bars);
+                                           int32_t loop_beats);
 
 /* Fade admission returns a nonzero request id only on LE_OK. Toggle resolves
  * the opposite target on the callback, with a 0.5..30 second full traversal.
