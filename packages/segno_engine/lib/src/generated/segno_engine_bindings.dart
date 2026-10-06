@@ -3247,6 +3247,89 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_backing_state>)
       >();
 
+  /// Starts [buffer] from frame 0 into output pair [bus] at the next block,
+  /// replacing a preview already playing (no fade). LE_ERR_INVALID: NULL, a
+  /// buffer the engine already owns, a rate other than the engine's, more than
+  /// LE_AUDITION_MAX_SECONDS of frames, a bus outside 0..LE_MAX_OUTPUT_BUSES-1,
+  /// or the command ring full. LE_ERR_NOT_RUNNING: not configured.
+  /// LE_ERR_ALREADY_RUNNING: a performance capture is armed. LE_ERR_NOT_READY:
+  /// LE_AUDITION_MAX_BUFFERS already owned. On every refusal the caller still
+  /// owns the buffer.
+  int le_engine_audition_start(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_backing_buffer> buffer,
+    int bus,
+  ) {
+    return _le_engine_audition_start(
+      engine,
+      buffer,
+      bus,
+    );
+  }
+
+  late final _le_engine_audition_startPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_backing_buffer>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_audition_start');
+  late final _le_engine_audition_start = _le_engine_audition_startPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_backing_buffer>,
+          int,
+        )
+      >();
+
+  /// Silences the preview at the next block (no fade). A no-op when none
+  /// plays.
+  int le_engine_audition_stop(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_engine_audition_stop(
+      engine,
+    );
+  }
+
+  late final _le_engine_audition_stopPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_engine_audition_stop',
+      );
+  late final _le_engine_audition_stop = _le_engine_audition_stopPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
+  /// Reads the published state (as of the last processed block) and frees every
+  /// buffer the audio thread has handed back. Control thread. LE_ERR_INVALID on
+  /// NULL arguments.
+  int le_engine_audition_state(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_audition_state> out,
+  ) {
+    return _le_engine_audition_state(
+      engine,
+      out,
+    );
+  }
+
+  late final _le_engine_audition_statePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_audition_state>,
+          )
+        >
+      >('le_engine_audition_state');
+  late final _le_engine_audition_state = _le_engine_audition_statePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_audition_state>)
+      >();
+
   /// Enqueues a coherent Count-in/Sound-start pair. Bars must be 0, 1, 2 or 4;
   /// sound_start must be 0/1 and cannot be enabled with positive bars. Actual
   /// capture refuses, including capture begun earlier in the same callback.
@@ -7135,7 +7218,11 @@ enum le_command_code {
   LE_CMD_BACKING_TRANSPORT(91),
 
   /// arg_i = frame of the loaded buffer
-  LE_CMD_BACKING_SEEK(92);
+  LE_CMD_BACKING_SEEK(92),
+
+  /// buffer + output pair
+  LE_CMD_AUDITION_START(136),
+  LE_CMD_AUDITION_STOP(137);
 
   final int value;
   const le_command_code(this.value);
@@ -7228,6 +7315,8 @@ enum le_command_code {
     90 => LE_CMD_BACKING_CLEAR,
     91 => LE_CMD_BACKING_TRANSPORT,
     92 => LE_CMD_BACKING_SEEK,
+    136 => LE_CMD_AUDITION_START,
+    137 => LE_CMD_AUDITION_STOP,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -8545,6 +8634,28 @@ final class le_backing_state extends ffi.Struct {
   external int owned_bytes;
 }
 
+final class le_audition_state extends ffi.Struct {
+  /// bumps at configure and at every reopen
+  @ffi.Uint32()
+  external int epoch;
+
+  /// the playing preview's length, 0 when none plays
+  @ffi.Int32()
+  external int frames;
+
+  /// frames played of it
+  @ffi.Int32()
+  external int position;
+
+  /// its output pair, -1 when none plays
+  @ffi.Int32()
+  external int bus;
+
+  /// buffers the engine owns after this collect
+  @ffi.Int32()
+  external int owned;
+}
+
 /// Per-lane cache telemetry states (le_lane_cache_info.state).
 enum le_cache_state {
   /// no valid entry; playing live
@@ -8716,6 +8827,10 @@ const int LE_BACKING_RAMP_MS = 5;
 const int LE_BACKING_MAX_SECONDS = 900;
 
 const int LE_MEM_RESERVE_BYTES = 536870912;
+
+const int LE_AUDITION_MAX_SECONDS = 120;
+
+const int LE_AUDITION_MAX_BUFFERS = 2;
 
 const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;
 

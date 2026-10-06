@@ -33,6 +33,8 @@ structs:
     - 'le_plugin_desc'
     - 'le_plugin_param_info'
     - 'le_lane_cache_info'
+    - 'le_audition_state'
+    - 'le_backing_decode_info'
 enums:
   include:
     - 'le_result'

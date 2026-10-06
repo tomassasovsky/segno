@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:segno_engine/src/audio_device.dart';
+import 'package:segno_engine/src/audition.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
@@ -1527,6 +1528,29 @@ abstract interface class EnginePerformanceCapture {
   EngineResult renderCancel();
 }
 
+/// The Library's audition voice (#1178): one preview, isolated from the rig.
+///
+/// It plays an audio file once into one output pair, summed after the output
+/// buses and before the master bus, so no destination's chain, level or mute
+/// touches it, no performance capture, stem or loop take contains it, and
+/// only the master gain and the limiter shape it. The file is decoded by the
+/// engine's one decoder (WAV, FLAC, MP3, converted to the engine's rate), at
+/// most [kAuditionMaxSeconds] of it, off the calling isolate.
+abstract interface class EngineAudition {
+  /// Decodes the audio file at [path] off the calling isolate and starts it
+  /// into output pair [bus] at the next block, replacing a preview already
+  /// playing. Retries once, a block later, when the voice is still handing
+  /// back the preview before last ([EngineResult.notReady]).
+  Future<AuditionStart> auditionStartFile(String path, {int bus = 0});
+
+  /// Silences the preview at the next block; a no-op when none plays.
+  EngineResult auditionStop();
+
+  /// The voice as of the last processed block. Also the point where the
+  /// engine frees the previews the audio thread has finished with.
+  AuditionState auditionState();
+}
+
 /// The data-layer boundary over the native audio engine, composed from the
 /// role interfaces above (interface-segregation: a consumer can depend on the
 /// slice it needs — [SessionIo], [EngineMetering], … — instead of the whole
@@ -1537,6 +1561,7 @@ abstract interface class EnginePerformanceCapture {
 /// the native engine over FFI.
 abstract interface class AudioEngine
     implements
+        EngineAudition,
         EngineLifecycle,
         EngineMetering,
         LooperTransport,

@@ -51,6 +51,17 @@ class _FakeTrack {
 class FakeSessionEngine implements AudioEngine {
   FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
 
+  // The audition voice (#1178): inert here.
+  @override
+  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async =>
+      const AuditionStart(result: EngineResult.ok);
+
+  @override
+  EngineResult auditionStop() => EngineResult.ok;
+
+  @override
+  AuditionState auditionState() => const AuditionState();
+
   @override
   OutputFxSnapshot outputFxSnapshot({required int bus}) =>
       const OutputFxSnapshot();

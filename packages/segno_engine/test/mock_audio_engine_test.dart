@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 
@@ -1278,5 +1280,30 @@ void main() {
     test('exportTrackLane returns an empty list (mock models no PCM)', () {
       expect(engine.exportTrackLane(0, 0), isEmpty);
     });
+
+    test(
+      'the audition plays an existing file as one second until stopped',
+      () async {
+        expect(
+          (await engine.auditionStartFile('/absent.wav')).result,
+          EngineResult.notRunning,
+        );
+        engine.start(engine.defaultConfig);
+        expect(
+          (await engine.auditionStartFile('/absent.wav')).result,
+          EngineResult.invalid,
+        );
+        final dir = Directory.systemTemp.createTempSync('mock_audition');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final file = File('${dir.path}/a.wav')..writeAsBytesSync([0]);
+        final started = await engine.auditionStartFile(file.path, bus: 1);
+        expect(started.result, EngineResult.ok);
+        expect(started.frames, 48000);
+        expect(engine.auditionState().playing, isTrue);
+        expect(engine.auditionState().bus, 1);
+        expect(engine.auditionStop(), EngineResult.ok);
+        expect(engine.auditionState().playing, isFalse);
+      },
+    );
   });
 }
