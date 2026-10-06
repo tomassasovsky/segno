@@ -11,7 +11,7 @@ const Map<GuardKind, String> _d8 = {
   GuardKind.sessionApply: 'a r r a a r r r',
   GuardKind.sessionWrite: 'a a i a a a a r',
   GuardKind.transfer: 'v a a a v a a r',
-  GuardKind.eject: 'v a a v r a a r',
+  GuardKind.eject: 'v a a v v a a r',
   GuardKind.deviceChange: 'r r a a a r r r',
   GuardKind.calibration: 'r r a a a r r r',
   GuardKind.restart: 'r r r r r r a r',
@@ -131,6 +131,18 @@ void main() {
       expect(registry.active, isEmpty);
       take.release();
       registry.enter(GuardKind.deviceChange, internal, purpose: 'x').release();
+    });
+
+    test('an eject on one drive does not hold an eject on another; on the '
+        'same drive it does (#1177)', () {
+      final registry = GuardRegistry();
+      final first = registry.enter(GuardKind.eject, usb1, purpose: 'eject');
+      registry.enter(GuardKind.eject, usb2, purpose: 'eject').release();
+      expect(
+        () => registry.enter(GuardKind.eject, usb1, purpose: 'eject'),
+        throwsA(isA<GuardRefused>()),
+      );
+      first.release();
     });
 
     test('two guards of the same kind are two operations', () {
