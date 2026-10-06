@@ -1407,6 +1407,37 @@ void main() {
     );
   });
 
+  group('tuner preferences (#1229)', () {
+    test('the A4 reference defaults to 440 Hz, round-trips and clamps to '
+        '420-460', () async {
+      expect(await repository.loadTunerReferenceHz(), 440);
+      await repository.saveTunerReferenceHz(432);
+      expect(await repository.loadTunerReferenceHz(), 432);
+      await repository.saveTunerReferenceHz(500);
+      expect(await repository.loadTunerReferenceHz(), 460);
+      await repository.saveTunerReferenceHz(300);
+      expect(await repository.loadTunerReferenceHz(), 420);
+    });
+
+    test('a stored reference outside the range reads clamped', () async {
+      await store.setInt('tuner.reference_hz', 1000);
+      expect(await repository.loadTunerReferenceHz(), 460);
+    });
+
+    test(
+      'the input defaults to the first available (-1) and round-trips',
+      () async {
+        expect(await repository.loadTunerInput(), -1);
+        await repository.saveTunerInput(3);
+        expect(await repository.loadTunerInput(), 3);
+        await repository.saveTunerInput(-7);
+        expect(await repository.loadTunerInput(), -1);
+        await store.setInt('tuner.input', -4);
+        expect(await repository.loadTunerInput(), -1);
+      },
+    );
+  });
+
   group('pedal timing', () {
     test('long-press defaults to 800 ms and round-trips', () async {
       expect(await repository.loadPedalLongPressMs(), 800);

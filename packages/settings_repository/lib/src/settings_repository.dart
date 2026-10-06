@@ -601,6 +601,43 @@ class SettingsRepository {
   Future<void> savePedalLongPressMs(int ms) =>
       _store.setInt(_pedalLongPressMsKey, ms);
 
+  static const String _tunerReferenceHzKey = 'tuner.reference_hz';
+  static const String _tunerInputKey = 'tuner.input';
+
+  /// The lowest A4 reference the tuner accepts, in Hz.
+  static const int tunerReferenceMinHz = 420;
+
+  /// The highest A4 reference the tuner accepts, in Hz.
+  static const int tunerReferenceMaxHz = 460;
+
+  /// The A4 reference the tuner starts from and resets to, in Hz.
+  static const int tunerReferenceDefaultHz = 440;
+
+  /// Loads the tuner's A4 reference in Hz: an appliance preference, not
+  /// Session state (#1229). Defaults to 440, and a stored value outside
+  /// 420–460 reads clamped into it.
+  Future<int> loadTunerReferenceHz() async =>
+      (await _store.getInt(_tunerReferenceHzKey) ?? tunerReferenceDefaultHz)
+          .clamp(tunerReferenceMinHz, tunerReferenceMaxHz);
+
+  /// Saves the tuner's A4 reference, clamped to 420–460 Hz.
+  Future<void> saveTunerReferenceHz(int hz) => _store.setInt(
+    _tunerReferenceHzKey,
+    hz.clamp(tunerReferenceMinHz, tunerReferenceMaxHz),
+  );
+
+  /// Loads the hardware input the tuner listens to, or `-1` for "the first
+  /// one available" (the default). An appliance preference, not Session
+  /// state; a negative stored value reads as `-1`.
+  Future<int> loadTunerInput() async {
+    final input = await _store.getInt(_tunerInputKey) ?? -1;
+    return input < 0 ? -1 : input;
+  }
+
+  /// Saves the tuner's input; any negative value stores `-1`.
+  Future<void> saveTunerInput(int input) =>
+      _store.setInt(_tunerInputKey, input < 0 ? -1 : input);
+
   static const String _pedalSetupKey = 'pedal.setup';
 
   /// Loads the persisted built-in footswitch setup blob, or `null` if unset.

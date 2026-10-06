@@ -5,6 +5,7 @@ class TunerState extends Equatable {
   /// Creates a [TunerState].
   const TunerState({
     this.input = 0,
+    this.referenceHz = 440,
     this.isOpen = false,
     this.hz = 0,
     this.pitch,
@@ -14,6 +15,9 @@ class TunerState extends Equatable {
   /// The hardware input being listened to. Defaults to the first socket, which
   /// is where a single-instrument rig is plugged in.
   final int input;
+
+  /// The A4 reference the reading is named against, in Hz.
+  final int referenceHz;
 
   /// Whether the face is on screen and the engine is armed. Detection is gated
   /// on this, so it is a cost switch as much as a UI one.
@@ -36,6 +40,7 @@ class TunerState extends Equatable {
   /// `null` cannot distinguish "leave it" from "clear it" in a copyWith.
   TunerState copyWith({
     int? input,
+    int? referenceHz,
     bool? isOpen,
     double? hz,
     TunedPitch? pitch,
@@ -43,6 +48,7 @@ class TunerState extends Equatable {
     bool clearPitch = false,
   }) => TunerState(
     input: input ?? this.input,
+    referenceHz: referenceHz ?? this.referenceHz,
     isOpen: isOpen ?? this.isOpen,
     hz: hz ?? this.hz,
     pitch: clearPitch ? null : (pitch ?? this.pitch),
@@ -52,6 +58,7 @@ class TunerState extends Equatable {
   @override
   List<Object?> get props => [
     input,
+    referenceHz,
     isOpen,
     hz,
     pitch?.note,
