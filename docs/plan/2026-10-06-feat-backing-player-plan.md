@@ -790,7 +790,7 @@ NON-GOALS:
 VERIFICATION COMMAND: (cd packages/backing_repository && /Users/Tomas/development/flutter/bin/flutter test --coverage) && dart analyze --fatal-infos packages/backing_repository
 ```
 
-### Part 5: the application owner, mix families and the session (about 640 lines)
+### Part 5: the application owner, mix families and the session (built: `claude/backing-1200-p5`, about 900 lines)
 
 Files: new `lib/backing/application/backing_player.dart` (prepared order of
 `(id, name)`, one selection, Play/Pause/Play-selected semantics, Move up/down,
@@ -1312,6 +1312,63 @@ against a freshly built test library. No native change.
   replay, the reload after a configure, the notice, the re-decode after a
   rate change, dedupe, the copy-digest check, cleanup on failure, the digest
   check in `resolve`, and the store sync.
+
+### Part 5 (`claude/backing-1200-p5`, stacked on Part 4)
+
+About 900 production lines (the families and the Session block are larger
+than estimated). Departures from the Part 5 text:
+
+- **A migrated session keeps the live backing (rule 1, rule 3).** The 12
+  to 13 step fills `backing` and `clickPan` from the player's live setup at
+  open, the way schema 8 kept the former global preferences, not with an
+  empty list and mask 0: a session written before the backing existed says
+  nothing about it, and opening it on a build without one changed nothing.
+  Without a live player (a bare decode) they are empty and centred. Noted
+  in the conversion notes.
+- **The loaded item is `{digest, name}`, not a bare digest,** so a loaded
+  file that is no longer prepared can still be named when it is missing.
+- **The step is keyed 12 in `sessionMigrationSteps` and the schema is 13 on
+  this branch;** Reverse Part 2 also wants 13, so whichever lands second
+  renumbers the key, the step and `Session.formatVersion` (the
+  `v13_backing_p5` fixture is regenerated from its generator).
+- **`BackingMixFamily` is one record with a field per address**
+  (`BackingMixField`), like Fade, so a level controller is never
+  superseded by a pan edit; `ClickPanFamily` is a scalar like click
+  volume. Neither has a native receipt: the repository's setters are
+  direct stores it replays after an engine restart (it now replays the
+  click pan too).
+- **The Session seam is a `SessionBackingPort`** passed to the settings
+  coordinator (optional, like the pedal-binding callbacks, so the other
+  coordinator tests need no backing); Open installs it after Fade inside
+  the Session exclusion, and boot Retry installs it again.
+- **New Loop is not built yet** (Library Part 5); `SessionBackingPort.stop`
+  is its stop, for that part to call.
+- **The copier is the app's own internal copier** (`.part`, flush, rename,
+  part deleted on failure) because `InternalOnlyVolumes` refuses Internal;
+  it is swapped for the storage service's `copyFile` when that stands
+  behind the port.
+
+Tests: `test/backing/application/backing_player_test.dart` (15),
+`test/backing/cubit/backing_cubit_test.dart` (2),
+`test/looper/application/backing_settings_test.dart` (10, including the
+`BackingMix` record), a session cubit test that Open stops the backing and
+installs the session setup stopped at 0, the Session block's strict
+round trip, defaults and refusals, the 12 to 13 step against the v12
+fixture, a v13 fixture that opens with no conversion, the settings
+checkpoints, the internal copier. Mutations reverted one at a time (18),
+each caught: duplicates on Add, the selection on Remove, the Pause toggle,
+releasing the staged Next before a Play selected decode, staging outside
+End = Next, the selection always following, the missing-item report, the
+Use as backing confirmation, the stop on recall, the mix and click pan not
+applied, the durable value taken whole, a centre click pan written over
+absence, the install on Open, the capture on Save, the migration
+defaulting, a lenient Session block and repeated digests.
+
+Verified on the pushed head: `dart analyze --fatal-infos lib test
+packages` clean; `bloc lint lib test packages` 0 issues; formatting
+unchanged; the app suite (3529), `session_repository` (241),
+`settings_repository` (203) and `backing_repository` (38) pass against a
+freshly built test library.
 
 ### Verification (Parts 1 and 2, on their pushed heads)
 
