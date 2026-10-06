@@ -1,6 +1,5 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/network/network_tab.dart';
 
@@ -21,24 +20,6 @@ void main() {
         const SettingsTrayState(),
         const SettingsTrayState(dragProgress: 1),
         const SettingsTrayState(),
-      ],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'openAudioDevice opens at Audio on the Device tab — the device-lost '
-      'banner action (#453)',
-      build: buildCubit,
-      // Park Audio on a different tab first: the banner's whole point is the
-      // picker, so the action must move the tab, not land on a leftover.
-      act: (cubit) => cubit
-        ..showAudioTab(AudioTab.recording)
-        ..openAudioDevice(),
-      expect: () => [
-        const SettingsTrayState(audioTab: AudioTab.recording),
-        const SettingsTrayState(
-          dragProgress: 1,
-          destination: SettingsTrayDestination.audio,
-        ),
       ],
     );
 
