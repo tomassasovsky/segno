@@ -143,8 +143,8 @@ a design change; this plan does not edit the pen):
    `Performances`) but not this one.
 5. Part 2 as built (until the later parts add what is missing):
    - The topbar draws only the `Sessions` tab, and the preview card has no
-     `Manage`, `Listen` or `Back up to USB`; the list has no `New folder`
-     and the search box keeps its 556 width beside the empty slot.
+     `Listen` or `Back up to USB` (`Manage` and `New folder` arrive in
+     Part 3).
    - The search box opens the keyboard sheet (19/04's idiom) titled
      `Search sessions`, since the console has no keys.
    - The empty catalog, a search with no match, nothing selected, a session
@@ -166,9 +166,38 @@ a design change; this plan does not edit the pen):
      one pixel past its own 1792 layout.
    - Saved dates read `7 Sep` (the English locale data), not the pen's `7 Sept`.
    - Preview lanes draw the clip without a waveform (D11, until Part 6b).
-   - The quick Save with no open session keeps its name prompt
-     (`promptSaveAs`) until Part 3's automatic names, rather than opening the
-     Library, which has no Save as yet.
+6. Part 3 as built:
+   - `Manage` opens the options sheet (deviation 1) for the selected
+     session: `Save`, `Save as…`, `Duplicate`, `Rename`, `Move to folder…`,
+     `Delete`, with `Delete` dimmed on the open session. `Manage` is also
+     drawn for a session whose preview cannot be read, so it can still be
+     renamed, moved or deleted.
+   - Save as, Duplicate and Rename use 19/04's keyboard sheet titled
+     `Session name`, with a subtitle naming the action (`Save as new
+     session`, `Duplicate as…`, `Rename session`); New folder uses it titled
+     `Folder name`. A name that is invalid or taken, or that the cubit
+     refuses, is answered inside the sheet, which stays open. The sheet is
+     the app's shared console keyboard (`Cancel` at the top right, `Save`
+     at the bottom right), not 19/04's own `Cancel` / `Done` row.
+   - `Move to folder` is a second options sheet: `Unfiled`, each folder and
+     `New folder…`, with where the session already is dimmed. The pen draws
+     none of it.
+   - Delete asks first with the console's confirm dialog (`Delete "name"?`);
+     the pen draws no confirmation.
+   - The 19/05 line is drawn in the failure token (`rec`), not the pen's
+     `#efbea0`. Besides the pen's save failure it reports a refused delete
+     ("The open session cannot be deleted.") and any other failed catalog
+     action ("That did not work. Try again."); an Open's refusal stays on
+     its preview card.
+   - The automatic name is `New loop N` in every language: a name is the
+     session's data, not interface copy.
+   - A folder cannot be deleted yet: D2's "deleted from Manage" has no row,
+     because Manage acts on a session.
+   - Decision (rule 4, D4): the quick Save's name prompt is removed rather
+     than repointed to the Library. A Save with no open session now saves
+     as `New loop N` and the toast says so ("Saved as New loop 2"), so
+     nothing is left to prompt for; naming is Rename in Manage. The
+     power-off flow's own Save-as prompt is outside this plan and stays.
 
 ## 3. Decisions
 

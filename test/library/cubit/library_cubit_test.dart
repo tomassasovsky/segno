@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,7 +69,6 @@ void main() {
       pedal = _MockPedalRepository();
       when(() => pedal.events).thenAnswer((_) => events.stream);
       sessions = _MockSessionRepository();
-      when(sessions.listFolders).thenAnswer((_) async => ['Gigs']);
       when(
         () => sessions.readPreview(any()),
       ).thenAnswer(
@@ -100,11 +98,10 @@ void main() {
     });
 
     blocTest<LibraryCubit, LibraryState>(
-      'start reads the folders and selects the current session',
+      'select reads the preview of that session',
       build: build,
-      act: (cubit) => cubit.start(selected: 's-a'),
+      act: (cubit) => cubit.select('s-a'),
       expect: () => [
-        isA<LibraryState>().having((s) => s.folders, 'folders', ['Gigs']),
         isA<LibraryState>()
             .having((s) => s.selectedId, 'selected', 's-a')
             .having((s) => s.preview, 'preview', isNull),
@@ -116,35 +113,42 @@ void main() {
       ],
     );
 
-    blocTest<LibraryCubit, LibraryState>(
-      'start without a current session selects nothing',
-      build: build,
-      act: (cubit) => cubit.start(),
-      expect: () => [
-        isA<LibraryState>()
-            .having((s) => s.folders, 'folders', ['Gigs'])
-            .having((s) => s.selectedId, 'selected', isNull),
-      ],
-      verify: (_) => verifyNever(() => sessions.readPreview(any())),
+    test(
+      'clearSelection drops the selection and keeps the browsing state',
+      () async {
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.select('s-a');
+        cubit
+          ..search('eve')
+          ..setLocation(LibraryLocation.usb)
+          ..clearSelection();
+
+        expect(cubit.state.selectedId, isNull);
+        expect(cubit.state.preview, isNull);
+        expect(cubit.state.query, 'eve');
+        expect(cubit.state.location, LibraryLocation.usb);
+      },
     );
 
-    blocTest<LibraryCubit, LibraryState>(
-      'an unreadable folder list keeps the default chips and still selects',
-      setUp: () => when(
-        sessions.listFolders,
-      ).thenThrow(const FileSystemException('denied')),
-      build: build,
-      act: (cubit) => cubit.start(selected: 's-a'),
-      expect: () => [
-        isA<LibraryState>()
-            .having((s) => s.folders, 'folders', isEmpty)
-            .having((s) => s.selectedId, 'selected', 's-a'),
-        isA<LibraryState>().having(
-          (s) => s.preview?.summary.id,
-          'preview',
-          's-a',
-        ),
-      ],
+    test(
+      'a read in flight when the selection is cleared never lands',
+      () async {
+        final slow = Completer<SessionPreview>();
+        when(
+          () => sessions.readPreview('s-slow'),
+        ).thenAnswer((_) => slow.future);
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        final read = cubit.select('s-slow');
+        cubit.clearSelection();
+        slow.complete(_preview('s-slow'));
+        await read;
+
+        expect(cubit.state.selectedId, isNull);
+        expect(cubit.state.preview, isNull);
+      },
     );
 
     blocTest<LibraryCubit, LibraryState>(
