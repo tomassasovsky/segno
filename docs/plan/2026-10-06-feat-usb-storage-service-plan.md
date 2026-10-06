@@ -75,6 +75,10 @@ each one is a `fork()` of a 1.7 GB process, which holds `mmap_lock` for
 milliseconds and stalls the real-time audio thread; every audible dropout on
 the Pi 5 bench landed within 3 ms of a fork (#806; the record is in
 `segno_engine_api.h:2960-2978` and
+`lib/performance/cubit/performance_recorder_cubit.dart:42-50`). Engine
+sources cited by bare name in this document live under
+`packages/segno_engine/src/core/` (`perf_drain.c`, `segno_engine_api.h`,
+`engine_snapshot.c`, `engine_private.h`). (The same record is also in
 `lib/performance/cubit/performance_recorder_cubit.dart:42-50`). The `df`
 poll was moved into the engine as `le_perf_volume_free_bytes` (statvfs,
 `perf_drain.c:126-150`, Dart `native_audio_engine.dart:2266`). The remaining
@@ -167,7 +171,12 @@ dependency chain is E9-5 → E7-7, E7-11 → E7-12, E7-13, E5-5, E9-7, E7-14.
   goes into the JSON for the "of 32 GB" readout before the first statvfs.
 - **Write throughput** is probed once per attach by the helper (16 MiB temp
   file, `fsync`, deleted; skipped on read-only mounts) and recorded as
-  `writeBytesPerSecond`. Consumers compare it with their frozen format's byte
+  `writeBytesPerSecond`. The volume JSON is written **before** the probe with
+  `writeBytesPerSecond: null` and rewritten (tmp + `mv`) after it, so a slow
+  stick still appears within the attach budget and the rate arrives as a
+  second event. Elapsed time comes from `/proc/uptime` (centiseconds; path
+  overridable by `SEGNO_USB_UPTIME_FILE`), because busybox `date` has no
+  `%N` and coreutils is not in the image. Consumers compare it with their frozen format's byte
   rate (the recorder's verdict and the in-flight stop policy stay in E7-11/12;
   this plan only measures and exposes). Zoom's LiveTrak and most field
   recorders run the same kind of card test.
@@ -185,8 +194,10 @@ dependency chain is E9-5 → E7-7, E7-11 → E7-12, E7-13, E5-5, E9-7, E7-14.
 | ro mount failure | nothing mounted | `mountFailed`, `reason` = mount's stderr first line |
 | anything else (`hfsplus`, `apfs`, `btrfs`, …) | no mount | `unsupported` |
 
-Mount point: `/run/media/segno/<generation>-<label or kernel name>`; removed
-on detach. `flush` on vfat makes the FAT metadata reach the device shortly
+Mount point: `/run/media/segno/<generation>-<label>` with the label reduced
+to `[A-Za-z0-9._-]`, other bytes replaced by `_`; an empty label falls back to
+the kernel name (`SEGNO USB` on `sda1` as generation 1 mounts at
+`/run/media/segno/1-SEGNO_USB`). Removed on detach. `flush` on vfat makes the FAT metadata reach the device shortly
 after each write, which is what gives a yanked FAT stick a consistent
 directory. `utf8=1` is required because the kernel's FAT default charset is
 `ascii` and the Spanish UI will produce accented file names; verified on
@@ -249,7 +260,8 @@ backup) can stop at a complete frame and keep what it has.
   connected. Try again.", and `Low internal space` ("Internal storage is
   nearly full.", `No recording space`) when free < reserve. `Browse` and
   `Open library` dispatch the existing library command (`stage_library` in
-  `lib/looper/view/tracks_commands.dart`); #1178 replaces its target.
+  `lib/looper/view/stage_top_bar.dart:52`, `showSessionsManager`); #1178
+  replaces its target.
 - **Destination picker** (pen 48 `cH9UX` "Save to · Internal | USB drive",
   pen 20 `m5XyVv` "Connect a USB drive / Your recording stays in Internal. /
   Cancel · Try again"): one shared widget, `StorageDestinationPicker`, that
@@ -266,7 +278,14 @@ backup) can stop at a complete frame and keep what it has.
 `ConsoleFactsClient.exportDestination` and `exportEverything`, their three
 implementations, `ConsoleFactsState.exportDestination`,
 `ConsoleFactsCubit.exportEverything`, the `system_storage_export` row and the
-`storageExportTitle`/`storageNoUsb` strings. They never did anything on any
+`storageExportTitle`/`storageNoUsb` strings (in both `app_en.arb` and
+`app_es.arb`). The files touched beyond the three implementations:
+`lib/system/cubit/console_facts_state.dart` (`exportDestination` field and
+`copyWith`), `packages/console_facts_client/lib/src/fake_console_facts_client.dart`
+(`exportVolumeMounted`), `packages/console_facts_client/lib/src/unsupported_console_facts_client.dart`,
+`packages/console_facts_client/test/console_facts_client_test.dart`,
+`test/system/cubit/console_facts_cubit_test.dart` (8 references) and
+`test/system/view/system_faces_test.dart:648-703`. They never did anything on any
 real client, the accepted design has no "export everything" action (appliance
 backup, pen 44, is E7-15 on this service), and AGENTS.md says remove obsolete
 paths rather than keep them. No install changes behaviour: the row was never
@@ -326,13 +345,20 @@ Files, all under `deploy/yocto/meta-segno/recipes-segno/segno-bundle/`:
   `ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="partition|disk",
   ENV{ID_FS_USAGE}=="filesystem", KERNEL!="nvme*|mmcblk*", TAG+="systemd",
   ENV{SYSTEMD_WANTS}+="segno-usb-mount@%k.service"`. A second rule with
-  `ENV{ID_FS_USAGE}!="filesystem"` and `ENV{ID_PART_TABLE_TYPE}==""` (a blank
-  stick) also wants the unit so the app can say "not formatted".
+  `ENV{DEVTYPE}=="disk"`, `ENV{ID_FS_USAGE}!="filesystem"` and
+  `ENV{ID_PART_TABLE_TYPE}==""` (a blank stick, whole device only) also wants
+  the unit so the app can say "not formatted".
 - `files/segno-usb-mount@.service`: `BindsTo=dev-%i.device`,
   `After=dev-%i.device`, `Type=oneshot`, `RemainAfterExit=yes`,
   `ExecStart=/usr/bin/segno-usb-ctl attach %I`,
   `ExecStop=/usr/bin/segno-usb-ctl detach %I`. Not in `SYSTEMD_SERVICE` (a
-  template is started by udev, never enabled).
+  template is started by udev, never enabled). `detach` exits 0 when nothing
+  is mounted any more (an ejected volume being unplugged), so the unit never
+  enters the failed state.
+- `files/segno.service` gains a comment stating that the app must see the
+  root mount namespace (no `PrivateMounts`, `ProtectSystem`, `PrivateTmp` or
+  `MountFlags`), because the USB volumes are mounted by `segno-usb-mount@`
+  under `/run/media/segno` and read by the app at those paths.
 - `files/segno-usb-eject.path` (`DirectoryNotEmpty=/run/segno/usb/requests`)
   and `files/segno-usb-eject.service` (`ExecStart=/usr/bin/segno-usb-ctl
   serve-requests`); both enabled.
@@ -340,12 +366,19 @@ Files, all under `deploy/yocto/meta-segno/recipes-segno/segno-bundle/`:
   <kname>`, `detach <kname>`, `serve-requests`, `status` (prints the volume
   array), `probe <mountpoint>`. Every path and tool is overridable by
   environment (`SEGNO_USB_RUN_DIR`, `SEGNO_USB_MEDIA_DIR`, `SEGNO_USB_SYSFS`,
-  `SEGNO_USB_PROBE_BYTES`) the way `segno-update-ctl` does
-  (`segno-update-ctl:43-56`), so the tests never touch `/run` or `/sys`.
-  Volume JSON schema (one object per file, keys in this order so the test
-  oracle is literal): `generation`, `kname`, `fingerprint`, `label`,
-  `fsType`, `mountPoint`, `sizeBytes`, `status`, `readOnly`,
-  `writeBytesPerSecond`, `failureReason`, `eject`.
+  `SEGNO_USB_PROBE_BYTES`, `SEGNO_USB_UPTIME_FILE`) the way `segno-update-ctl`
+  does (`segno-update-ctl:43-56`), so the tests never touch `/run`, `/sys` or
+  `/proc`. Temporary files are dotfiles beside their target
+  (`volumes/.<gen>.json.tmp`, `requests/.<uuid>.json.tmp`) renamed into
+  place; `serve-requests` ignores dotfiles. Volume JSON schema (one object per
+  file, keys in this order so the test oracle is literal): `generation`,
+  `kname`, `fingerprint`, `label`, `fsType`, `mountPoint`, `sizeBytes`,
+  `status`, `readOnly`, `writeBytesPerSecond`, `failureReason`, `eject`.
+- `.github/cspell.json`: add to `words`: exfat, ntfs, ntfs3, vfat, udev,
+  blkid, statvfs, kname, fmask, dmask, superfloppy, udisks, hfsplus, apfs,
+  btrfs, LUKS, inotify, EROFS, exfatprogs, fsync, umount (plus the pen ids
+  and errno names this document uses; the `spell-check` job runs on every
+  `.md`).
 - `files/segno-runtime.conf` gains `d /run/segno/usb 0755 root root -`,
   `d /run/segno/usb/volumes`, `d /run/segno/usb/requests`, `d /run/media/segno`.
 - `segno-bundle.bb`: `SRC_URI`, `FILES`, `do_install`, `SYSTEMD_SERVICE` (the
@@ -363,9 +396,11 @@ Files, all under `deploy/yocto/meta-segno/recipes-segno/segno-bundle/`:
 ```success-criteria
 GOAL: A USB filesystem plugged into the appliance is mounted by the OS with the right options, described in one JSON file the app can watch, ejected safely on request, and cleaned up on removal, with no process ever started from the app.
 SUCCESS CRITERIA:
-- attach of a vfat partition (stubbed udevadm/mount/blkid, fake sysfs size 62521344 sectors) writes volumes/1.json with exactly {"generation":1,"kname":"sda1","fingerprint":"SanDisk_Ultra_4C530001-1A2B-3C4D","label":"SEGNO USB","fsType":"vfat","mountPoint":"/run/media/segno/1-SEGNO USB","sizeBytes":32010928128,"status":"mounted","readOnly":false,"writeBytesPerSecond":16777216,"failureReason":null,"eject":null} and the mount transcript line is `mount -t vfat -o rw,noatime,flush,utf8=1,uid=0,gid=0,fmask=0022,dmask=0022 /dev/sda1 /run/media/segno/1-SEGNO USB`. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
+- attach of a vfat partition (stubbed udevadm/mount/blkid, fake sysfs size 62521344 sectors, a fake uptime file supplying two readings 1.00 s apart) writes volumes/1.json twice: first, before the probe, exactly {"generation":1,"kname":"sda1","fingerprint":"SanDisk_Ultra_4C530001-1A2B-3C4D","label":"SEGNO USB","fsType":"vfat","mountPoint":"/run/media/segno/1-SEGNO_USB","sizeBytes":32010928128,"status":"mounted","readOnly":false,"writeBytesPerSecond":null,"failureReason":null,"eject":null}; then the same object with "writeBytesPerSecond":16777216; the mount transcript line is `mount -t vfat -o rw,noatime,flush,utf8=1,uid=0,gid=0,fmask=0022,dmask=0022 /dev/sda1 /run/media/segno/1-SEGNO_USB`; a label `Gigs/2026 ñ` mounts at `/run/media/segno/2-Gigs_2026__` and an empty label at `/run/media/segno/3-sdb1`; no file other than `<gen>.json` and `.<gen>.json.tmp` is ever created under volumes/. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
 - exfat and ntfs use their rows' option strings; an rw mount failure retries once with ro and records status readOnly; a second failure records mountFailed with mount's first stderr line; hfsplus and ID_FS_USAGE=crypto record unsupported with the type and never call mount; a blank disk records fsType "none". | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
-- A second attach gets generation 2 even for the same fingerprint; detach of a mounted volume runs sync, umount, then umount -l only when the first umount fails, removes the mount point and deletes the JSON. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
+- A second attach gets generation 2 even for the same fingerprint; detach of a mounted volume runs sync, umount, then umount -l only when the first umount fails, removes the mount point and deletes the JSON; detach of a volume already `ejected` (both umounts fail "not mounted") still removes the mount point, deletes the JSON and exits 0. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
+- serve-requests ignores dotfiles under requests/ (a `.x.json.tmp` is neither served nor deleted). | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
+- No unit under `files/segno-usb-*` and not `files/segno.service` contains `PrivateMounts`, `ProtectSystem`, `PrivateTmp` or `MountFlags` (the test greps them), and `segno.service` carries the comment saying why. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
 - serve-requests with a request naming generation 1 runs sync then umount (not -l); on success the JSON reads status "ejected" and "eject":{"request":"<id>","ok":true,"reason":null}; on EBUSY it stays "mounted" with "eject":{...,"ok":false,"reason":"busy"}; a request for an unknown generation is deleted and ignored; every request file is gone afterwards. | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
 - The probe is skipped on readOnly (writeBytesPerSecond null), writes SEGNO_USB_PROBE_BYTES bytes to `<mountPoint>/.segno-probe`, fsyncs, deletes the file, and tolerates a write failure (null, not an error). | verify: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
 - The suite passes under dash as well as bash (the image's /bin/sh is busybox ash). | verify: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
@@ -373,7 +408,7 @@ SUCCESS CRITERIA:
 - HARDWARE: on the Pi 5, a FAT32 stick, an exFAT stick, an NTFS stick and a Mac-formatted stick each produce the expected JSON within 3 s of insertion; a file named `canción.wav` written on a laptop lists with its accent intact on vfat; yanking a mounted stick removes the JSON and leaves no stale entry in /proc/mounts; `systemctl --failed` stays empty across ten plug/unplug cycles. | verify: manual on device, with `journalctl -u 'segno-usb-*'` and `cat /run/segno/usb/volumes/*.json`
 NON-GOALS:
 - Formatting drives, fsck, exfatprogs, udisks, polkit, any app-side change.
-VERIFICATION COMMAND: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh && TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
+VERIFICATION COMMAND: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh && TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh && npx cspell --config .github/cspell.json docs/plan/*.md
 ```
 
 ### Part 2: native volume space (about 90 production lines, engine + bindings; depends on nothing)
@@ -391,9 +426,10 @@ LE_EXPORT int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
 ```
 
 The native test `test_perf_volume_free_bytes` (`test_engine_core.c:9279-9296`)
-becomes `test_volume_space` with the same argument checks plus the literal
-oracle that `total >= free` and that `free` equals a direct `statvfs(".")`
-`f_bavail * f_frsize` taken in the test. Dart: `AudioEngine.volumeFreeBytes`
+becomes `test_volume_space` with the same argument checks plus the oracle
+that `total` equals the test's own `statvfs(".")` `f_blocks * f_frsize`
+exactly, `free` is within 64 MiB of its `f_bavail * f_frsize` (a CI disk is
+written between the two calls), and `total >= free`. Dart: `AudioEngine.volumeFreeBytes`
 (`audio_engine.dart:1436`) becomes `VolumeSpace? volumeSpace(String path)`;
 `native_audio_engine.dart:2266`, `mock_audio_engine.dart:1645`,
 `PerformanceRepository.freeSpaceBytes` (`performance_repository.dart:193`,
@@ -412,14 +448,14 @@ own two-field value type and the root adapts). Regenerate bindings and
 ```success-criteria
 GOAL: Total and free capacity of any path are one statvfs call away on every platform, and no storage code forks the app.
 SUCCESS CRITERIA:
-- le_volume_space rejects NULL/empty path and NULL outputs with LE_ERR_INVALID, a missing path with LE_ERR_DEVICE, and on "." returns total >= free with free equal to the test's own statvfs f_bavail*f_frsize. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- le_volume_space rejects NULL/empty path and NULL outputs with LE_ERR_INVALID, a missing path with LE_ERR_DEVICE, and on "." returns total equal to the test's own statvfs f_blocks*f_frsize exactly, free within 64 MiB of its f_bavail*f_frsize, and total >= free. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Sanitizer and telemetry-off builds pass. | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh
 - `grep -rn "Process.run('df'" packages lib` returns nothing; `parseDfKP` and `_dfDiskSpace` are gone; console_facts_client tests cover the injected reader returning null (unknown) and a value. | verify: (cd packages/console_facts_client && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/performance test/system
 - Bindings regenerated, formatted, and every exported symbol resolves in the built library. | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated && git diff --stat --exit-code lib/src/generated) ; bash packages/segno_engine/tool/check_ffi_symbols.sh <built libsegno_engine>
 - Analyzer, Bloc lint and formatting clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 NON-GOALS:
 - Any UI; any change to the recorder's thresholds.
-VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages && npx cspell --config .github/cspell.json docs/plan/*.md
 ```
 
 ### Part 3: `packages/usb_storage_client` (about 330 production lines; depends on Part 1's file contract, not on its merge)
@@ -440,8 +476,10 @@ abstract interface class UsbStorageClient {
 `LinuxUsbStorageClient(runDir: '/run/segno/usb')` lists `volumes/` once,
 parses each JSON (malformed or half-written files are skipped and logged,
 never thrown), then `Directory.watch` on `volumes/` re-reads the touched file
-on create/modify/move and drops it on delete; a `FileSystemEvent` burst is
-coalesced per event-loop turn so one attach produces one list. Requests are
+on create/modify/move and drops it on delete; names not matching
+`^[0-9]+\.json$` (the helper's `.<gen>.json.tmp` dotfiles) are ignored, and a
+`FileSystemEvent` burst is coalesced per event-loop turn so one attach
+produces one list. Requests are
 written as `<uuid>.json.tmp` then renamed into `requests/`.
 `FakeUsbStorageClient` (under `SEGNO_FAKE_RADIOS`, the existing desktop
 define, `create_console_facts_client.dart:15`) exposes `attach(...)`,
@@ -456,14 +494,14 @@ mirrors `createWifiClient()` (`system_wifi_client.dart:95-103`). Root
 ```success-criteria
 GOAL: The app sees the OS's view of removable volumes as a replayed stream with no polling and no subprocess, and can file and withdraw an eject request.
 SUCCESS CRITERIA:
-- With a temp run dir seeded with 1.json and 2.json the first event lists both parsed records; writing 3.json.tmp then renaming emits one list of three; deleting 2.json emits a list without it; a file containing `{` is skipped and the stream stays alive. | verify: (cd packages/usb_storage_client && /Users/Tomas/development/flutter/bin/flutter test)
+- With a temp run dir seeded with 1.json and 2.json the first event lists both parsed records; writing .3.json.tmp then renaming to 3.json emits one list of three; a `.3.json.tmp` create on its own emits nothing; deleting 2.json emits a list without it; a file containing `{` is skipped and the stream stays alive. | verify: (cd packages/usb_storage_client && /Users/Tomas/development/flutter/bin/flutter test)
 - requestEject(1) leaves exactly one file in requests/ whose contents are {"generation":1,"request":"<returned id>"} and no .tmp; cancelEject deletes it; cancel of an already-served (missing) request is a no-op. | verify: (cd packages/usb_storage_client && /Users/Tomas/development/flutter/bin/flutter test)
 - isSupported is false when the run dir is missing and the stream then completes with one empty list; the fake client replays attach/detach/settleEject deterministically. | verify: (cd packages/usb_storage_client && /Users/Tomas/development/flutter/bin/flutter test)
 - No `Process.` import anywhere in the package; 100% coverage. | verify: grep -rn 'Process\.' packages/usb_storage_client/lib ; (cd packages/usb_storage_client && /Users/Tomas/development/flutter/bin/flutter test --coverage)
 - Analyzer, formatting clean. | verify: dart analyze --fatal-infos packages/usb_storage_client
 NON-GOALS:
 - Capacity, leases, eject policy, any widget.
-VERIFICATION COMMAND: (cd packages/usb_storage_client && /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos
+VERIFICATION COMMAND: (cd packages/usb_storage_client && /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos && npx cspell --config .github/cspell.json docs/plan/*.md
 ```
 
 ### Part 4: `packages/storage_repository` (about 520 production lines; depends on Parts 2 and 3)
@@ -511,18 +549,22 @@ SUCCESS CRITERIA:
 - No Process import; coverage 100%; analyzer and formatting clean. | verify: grep -rn 'Process\.' packages/storage_repository/lib ; (cd packages/storage_repository && /Users/Tomas/development/flutter/bin/flutter test --coverage) && dart analyze --fatal-infos packages/storage_repository
 NON-GOALS:
 - Widgets, l10n, recorder wiring, directory listing or browsing (the Library plan owns reading a volume's contents).
-VERIFICATION COMMAND: (cd packages/storage_repository && /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos
+VERIFICATION COMMAND: (cd packages/storage_repository && /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos && npx cspell --config .github/cspell.json docs/plan/*.md
 ```
 
-### Part 5: Storage page, destination picker, guards (about 680 production lines, `lib/`; depends on Part 4)
+### Part 5: Storage page and guards (about 450 production lines, `lib/`; depends on Part 4)
 
 - `lib/storage/cubit/storage_cubit.dart` + state: volumes, Internal and
   per-volume `VolumeSpace`, `ejectPhase`, `lowInternalSpace`, the current
   recording format's byte rate (from `AudioSetup`/output settings, read-only)
   for the remaining-time line. Methods return `void`/`Future<void>` (Bloc
   lint). Provided app-wide in `lib/app/view/app.dart` beside
-  `ConsoleFactsCubit` (`app.dart:593-603`), non-lazy, because the picker and
-  the power gate read it outside the Storage page.
+  `ConsoleFactsCubit` (`app.dart:593-603`), non-lazy, because the power gate
+  (and, from Part 6, the picker) read it outside the Storage page. statvfs
+  cadence: the cubit reads `space()` on page open, on every volume-list
+  event, and on a 5 s timer only while the Storage page is mounted
+  (`startWatching`/`stopWatching` from the page's `initState`/`dispose`); there
+  is no app-wide timer.
 - `lib/storage/view/storage_page.dart` replaces the body of
   `StorageSystemTab` (keep the file and key `system_storage_tab` so the tray
   host and `system_faces_test.dart:616` keep working until E3-4/E3-5): the
@@ -531,13 +573,6 @@ VERIFICATION COMMAND: (cd packages/storage_repository && /Users/Tomas/developmen
   `storage_browse`, `storage_open_library`, `storage_low_space_banner`. The
   internal breakdown rows and the delete-captures action stay (they are
   accepted appliance housekeeping and unchanged).
-- `lib/storage/view/storage_destination_picker.dart`: `StorageDestinationPicker
-  ({value, onChanged, requiredBytesPerSecond?})` drawing the pen `Save to`
-  pill pair (Internal | each volume label), subtitles for read-only,
-  unsupported and "too slow" (when `writeBytesPerSecond` is known and under
-  the requirement), and `ConnectUsbSheet` (pen `m5XyVv`) with Cancel and Try
-  again (Try again re-reads nothing; it waits for the next volume event with
-  the sheet open, so a plug while the sheet is up dismisses it).
 - `powerOffSnapshotOf` gains `transferInFlight` from `StorageCubit.state`
   (`power_off_gate.dart:47-69`, host `power_off_host.dart:67-73`);
   `powerOffGate` returns `refuse` for it, with the existing refuse copy.
@@ -552,22 +587,30 @@ VERIFICATION COMMAND: (cd packages/storage_repository && /Users/Tomas/developmen
   (`run_segno.dart:149-157`), `RepositoryProvider` in `app.dart:446-471`.
 
 ```success-criteria
-GOAL: The Storage page shows real Internal and USB capacity and the accepted eject states, the three consumers share one destination picker, and shutdown and eject refuse while a transfer is in flight.
+GOAL: The Storage page shows real Internal and USB capacity and the accepted eject states, and shutdown and eject refuse while a transfer is in flight.
 SUCCESS CRITERIA:
 - With the fake client: no volume → "Not connected" and "Connect a drive to import or export audio."; a mounted 32 GB volume labelled SEGNO USB with 24.2 GB free → "24.2 GB free", "of 32 GB", Browse and Eject enabled; tapping Eject → "Ejecting…" with Cancel; settling ejected → "Safe to remove" and "Your internal audio stays available."; settling ok:false → "Could not eject. The drive is still connected. Try again." with Eject enabled again. | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage test/system/view/system_faces_test.dart
 - Internal 128 GB total, 64 GB free, 48 kHz 24-bit stereo → "60 hr 45 min recording remaining · estimated" and the reserve note; free 0.2 GB → the Low internal space banner, "No recording space"; unknown space → "Remaining time unavailable" and no banner. | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage
 - While a lease is held the Eject button is disabled with the purpose as subtitle and the cubit's eject() does nothing; powerOffGate(snapshot with transferInFlight: true) == refuse. | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage test/appliance
-- The picker lists Internal and each mounted volume by label; a readOnly volume is disabled with the read-only reason, an unsupported one with its filesystem; with requiredBytesPerSecond 576000 and writeBytesPerSecond 400000 the row is disabled with the too-slow reason; choosing USB with no volume opens ConnectUsbSheet, Cancel closes it, a fake attach while open closes it and selects the new volume. | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage/view/storage_destination_picker_test.dart
-- `exportDestination`, `exportEverything`, `storageExportTitle` and `storageNoUsb` no longer exist anywhere. | verify: ! grep -rn -E 'exportDestination|exportEverything|storageExportTitle|storageNoUsb' lib test packages
-- Root coverage floor holds; analyzer, Bloc lint and formatting clean; the Spanish file is unchanged or only extended. | verify: /Users/Tomas/development/flutter/bin/flutter test --coverage && dart analyze --fatal-infos && bloc lint lib test packages
+- With the Storage page mounted the cubit reads space on open, on each volume event and every 5 s; unmounting the page stops the timer (no further reads in a fake-async window). | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage
+- `exportDestination`, `exportEverything`, `storageExportTitle`, `storageNoUsb` and `exportVolumeMounted` no longer exist anywhere. | verify: ! grep -rn -E 'exportDestination|exportEverything|storageExportTitle|storageNoUsb|exportVolumeMounted' lib test packages
+- Root coverage floor holds; analyzer, Bloc lint and formatting clean; the Spanish file only loses the two removed keys or gains new ones. | verify: /Users/Tomas/development/flutter/bin/flutter test --coverage && dart analyze --fatal-infos && bloc lint lib test packages && git diff origin/claude/segno-integration -- lib/l10n/arb/app_es.arb | grep '^-' | grep -v -E '^---|storageExportTitle|storageNoUsb' | wc -l | grep -qx 0
 - HARDWARE: on the appliance with loops playing, plug, browse to Storage, eject, see Safe to remove, pull the stick; repeat with a stick that is being written to by an export from the desktop build of Part 6 or a copy started over ssh (`cp` into the mount point) and confirm Eject is refused, then succeeds after the copy ends; no audible dropout on any eject (compare `perfOverruns` in the journal before and after). | verify: manual on device
 NON-GOALS:
-- Library browsing of a volume, export, backup and the recorder's destination (Part 6), the ten-tile Settings home (E3-4).
-VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
+- Library browsing of a volume, export, backup, the destination picker and the recorder's destination (Part 6), the ten-tile Settings home (E3-4).
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages && npx cspell --config .github/cspell.json docs/plan/*.md
 ```
 
-### Part 6: Recorder "Save to" and the removable stop reason (about 300 production lines; depends on Part 5)
+### Part 6: Destination picker, recorder "Save to" and the removable stop reason (about 530 production lines; depends on Part 5)
 
+- `lib/storage/view/storage_destination_picker.dart`: `StorageDestinationPicker
+  ({value, onChanged, requiredBytesPerSecond?})` drawing the pen `Save to`
+  pill pair (Internal | each volume label), subtitles for read-only,
+  unsupported and "too slow" (when `writeBytesPerSecond` is known and under
+  the requirement), and `ConnectUsbSheet` (pen `m5XyVv`) with Cancel and Try
+  again (Try again re-reads nothing; it waits for the next volume event with
+  the sheet open, so a plug while the sheet is up dismisses it). The recorder
+  is its first consumer; Library (#1178) and backup (E7-14) reuse it.
 - `PerformanceRepository.arm({chains, String? root})`
   (`performance_repository.dart:284-310`): `root` overrides the constructor's
   `exportsRoot` for this take only; `armedDirectory` stays the truth.
@@ -594,16 +637,17 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
   requirement for that plan).
 
 ```success-criteria
-GOAL: The recorder can be pointed at a mounted USB volume before Start, reports remaining time from that volume, and ends a take truthfully when the volume disappears while loops keep playing.
+GOAL: One shared destination picker exists with the recorder as its first consumer; the recorder can be pointed at a mounted USB volume before Start, reports remaining time from that volume, and ends a take truthfully when the volume disappears while loops keep playing.
 SUCCESS CRITERIA:
+- The picker lists Internal and each mounted volume by label; a readOnly volume is disabled with the read-only reason, an unsupported one with its filesystem; with requiredBytesPerSecond 576000 and writeBytesPerSecond 400000 the row is disabled with the too-slow reason; choosing USB with no volume opens ConnectUsbSheet, Cancel closes it, a fake attach while open closes it and selects the new volume. | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage/view/storage_destination_picker_test.dart
 - arm(root: '/tmp/x') creates the bundle under /tmp/x and armedDirectory starts with it; arm() without root uses exportsRoot as before. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
 - With the fake client and a mounted volume, chooseDestination(removable(1)) then toggleArm arms under that volume's mountPoint with a lease of purpose recording; detaching generation 1 while armed emits Finalizing then Completed with PerformanceRecordStoppedEarly(reason: volumeLost) and no second stop; the lease is gone; the next arm defaults to Internal. | verify: /Users/Tomas/development/flutter/bin/flutter test test/performance
 - remaining time shows "60:45:49 remaining" for 64 GiB free Internal at 288000 B/s after the 1 GiB reserve, and "Remaining time unavailable" when the reader returns null; the Save to row is disabled while armed. | verify: /Users/Tomas/development/flutter/bin/flutter test test/performance/view
 - Analyzer, Bloc lint, formatting and the root coverage floor hold. | verify: /Users/Tomas/development/flutter/bin/flutter test --coverage && dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: record directly to an exFAT stick for two minutes with loops playing, Stop, confirm the finalized WAV plays on a laptop; record again and yank the stick at 0:30, confirm the loops did not stop, the interruption screen names the drive, and the laptop sees master.pcm of about 0:30 at the frozen rate; `perfOverruns` stays 0 on a stick whose probe reads above 4 MB/s. | verify: manual on device
+- HARDWARE: record directly to an exFAT stick for two minutes with loops playing, Stop, confirm the finalized WAV plays on a laptop; record again and yank the stick at 0:30, confirm the loops did not stop, the interruption screen names the drive, and the laptop sees master.pcm of about 0:30 at the frozen rate; `perfOverruns` and `perfZeroFilledFrames` both stay 0 on a stick whose probe reads above 4 MB/s (see §8 point 4 for what a non-zero reading changes). | verify: manual on device
 NON-GOALS:
 - Ordered 2 GB parts, same-drive/exact-part recovery, the 1 GiB arm threshold change, sidecar mirroring (E7-11/E7-12).
-VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages && npx cspell --config .github/cspell.json docs/plan/*.md
 ```
 
 ## 6. Order and dependencies
@@ -637,3 +681,10 @@ cost on a slow stick, and that no eject or attach is audible while loops play.
    always read-only.
 3. One Storage card per mounted volume: taken. Alternative is the first volume
    only with a count.
+4. vfat `flush` is kept for yank-safety. It makes every FAT write
+   near-synchronous, and the capture ring is 2 s (`LE_PERF_CAPTURE_SECONDS`,
+   `engine_private.h:162`): a device stall longer than that zero-fills the
+   take (#710). If Part 6's hardware check shows `perfZeroFilledFrames > 0`
+   on a stick whose probe reads above 4 MB/s, Part 6 drops `flush` from the
+   vfat row in Part 1's helper (a one-line change, logged in that part's
+   record).
