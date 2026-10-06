@@ -6,8 +6,10 @@ import 'dart:typed_data';
 import 'package:meta/meta.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/src/models/session.dart';
+import 'package:session_repository/src/models/session_preview.dart';
 import 'package:session_repository/src/models/session_summary.dart';
 import 'package:session_repository/src/session_exception.dart';
+import 'package:session_repository/src/session_id.dart';
 import 'package:session_repository/src/session_migration.dart';
 import 'package:session_repository/src/session_name.dart';
 import 'package:wav_codec/wav_codec.dart';
@@ -270,22 +272,24 @@ class SessionSettings {
   final SessionOutputSetup outputSetup;
 }
 
-/// Saves Segno sessions, reads them back, and exports audio.
+/// Saves Segno sessions, reads them back, keeps their catalog, and exports a
+/// saved bundle's mixdown and stems.
 ///
 /// A session is a `.segno` bundle directory: a [Session.manifestName] manifest,
-/// one 32-bit-float stem WAV per track, and a `mixdown.wav`. This repository
-/// only does file I/O plus the engine READS a save/export needs (snapshot +
-/// loop PCM); applying a loaded session to the engine is the looper
-/// repository's job (the single owner of looper state) — see [read].
+/// one 32-bit-float WAV per layer, and a `mixdown.wav`. This repository only
+/// does file I/O plus the engine READS a save needs (snapshot + loop PCM);
+/// applying a loaded session to the engine is the looper repository's job
+/// (the single owner of looper state) — see [read].
 class SessionRepository {
   /// Creates a [SessionRepository] capturing from [engine].
   ///
-  /// [sessionsRoot] resolves the `sessions/` root directory the named-session
-  /// catalog ([listSessions] / [bundlePath] / [renameSession] /
-  /// [deleteSession]) operates under; it is optional so the existing
-  /// single-bundle flow (which addresses bundles by path) needs no root. The
-  /// catalog methods throw [StateError] when it is absent. Injecting a resolver
-  /// keeps the catalog testable (point it at a temp dir).
+  /// [sessionsRoot] resolves the `sessions/` root directory the catalog
+  /// ([listSessions] / [bundlePathOf] / [renameSession] / [deleteSession] and
+  /// the rest) operates under; it is optional so the path-addressed
+  /// save/read flow needs no root. The catalog methods throw [StateError]
+  /// when it is absent. Injecting a resolver keeps the catalog testable
+  /// (point it at a temp dir). [now] stamps new bundle ids ([newSessionId]);
+  /// injectable for deterministic tests.
   ///
   /// [clearPollInterval]/[clearPollAttempts] bound how long a save/export waits
   /// for queued commands and in-flight overdub layers to settle before
@@ -294,72 +298,308 @@ class SessionRepository {
   SessionRepository({
     required AudioEngine engine,
     Future<String> Function()? sessionsRoot,
+    DateTime Function() now = DateTime.now,
     Duration clearPollInterval = const Duration(milliseconds: 8),
     int clearPollAttempts = 64,
   }) : _engine = engine,
        _sessionsRoot = sessionsRoot,
+       _now = now,
        _clearPollInterval = clearPollInterval,
        _clearPollAttempts = clearPollAttempts;
 
   final AudioEngine _engine;
   final Future<String> Function()? _sessionsRoot;
+  final DateTime Function() _now;
   final Duration _clearPollInterval;
   final int _clearPollAttempts;
 
   /// The mixdown filename within a session bundle.
   static const String mixdownName = 'mixdown.wav';
 
-  // ---- named-session catalog ----
+  // ---- the session catalog ----
   //
-  // A name-keyed view over the `sessions/<slug>/` bundles. These do NOT touch
-  // the path-addressed read/save/export below — the bloc layer resolves a name
-  // to a path via [bundlePath] and feeds that into those. The sessions root is
-  // a sibling of the legacy single `segno_session/` bundle, so the old bundle
-  // is never enumerated here.
+  // `sessions/[<folder>/]<id>/` bundles. A bundle's directory name is its
+  // identity ([SessionId]); its display name is manifest metadata. A directory
+  // without a manifest is a folder (one level only), unless it holds layer
+  // WAVs or a mixdown, in which case it is an interrupted save and belongs to
+  // nobody here. The filesystem is the only index. These methods never touch
+  // the path-addressed read/save below — the bloc layer resolves an id to a
+  // path via [bundlePathOf] and feeds that into those.
 
   Future<String> _rootPath() async {
     final resolver = _sessionsRoot;
     if (resolver == null) {
       throw StateError('SessionRepository has no sessionsRoot configured');
     }
-    return resolver();
+    final root = await resolver();
+    _recoverInterruptedSwaps(Directory(root), inFlight: _staging);
+    return root;
   }
 
-  /// Resolves [name]'s bundle directory under the sessions root, folding it to
-  /// a folder-safe slug (see [sessionSlug]). Throws [ArgumentError] for a name
-  /// that sanitizes to nothing.
-  Future<String> bundlePath(String name) async {
+  static bool _isBundle(String path) =>
+      File('$path/${Session.manifestName}').existsSync();
+
+  /// A manifest-less directory holding what a save writes is a save that
+  /// never reached its manifest, not a folder: it is listed nowhere and left
+  /// alone.
+  static bool _isInterruptedSave(Directory dir) {
+    for (final entity in dir.listSync()) {
+      if (entity is! File) continue;
+      final name = _basename(entity.path);
+      if (name == mixdownName || _layerFilePattern.hasMatch(name)) return true;
+    }
+    return false;
+  }
+
+  static bool _isFolder(Directory dir) =>
+      !_isTransient(_basename(dir.path)) &&
+      !_isBundle(dir.path) &&
+      !_isInterruptedSave(dir) &&
+      !_isReservation(dir);
+
+  /// An empty directory named like a minted id is a reservation
+  /// ([newSessionId]): a save in flight, or one a crash or a failed copy left
+  /// behind. It is no folder, so it never shows as a chip.
+  static bool _isReservation(Directory dir) =>
+      isMintedSessionId(_basename(dir.path)) && dir.listSync().isEmpty;
+
+  static String _requireId(SessionId id) {
+    if (!isValidSessionId(id)) {
+      throw ArgumentError.value(id, 'id', 'not a valid session id');
+    }
+    return id;
+  }
+
+  static String _requireName(String name, String argument) {
     final slug = sessionSlug(name);
     if (slug == null) {
-      throw ArgumentError.value(name, 'name', 'not a valid session name');
+      throw ArgumentError.value(name, argument, 'not a valid session name');
     }
-    return '${await _rootPath()}/$slug';
+    return slug;
   }
 
-  /// Lists the saved sessions — one [SessionSummary] per `sessions/<slug>/`
-  /// folder that contains a `${Session.manifestName}`, sorted alphabetically
-  /// (case-insensitively). Enumeration only `stat`s for the manifest's presence
-  /// (never parses it), so a newer-version or otherwise unloadable bundle is
-  /// still listed; its typed failure surfaces on an actual load. A folder with
-  /// no manifest is skipped. Returns empty when the root does not exist yet.
+  /// The bundle directory holding [id], at the root or one folder down, or
+  /// `null` when no bundle has that id.
+  String? _locate(String root, SessionId id) {
+    if (_isBundle('$root/$id')) return '$root/$id';
+    final dir = Directory(root);
+    if (!dir.existsSync()) return null;
+    for (final entity in dir.listSync()) {
+      if (entity is Directory &&
+          _isFolder(entity) &&
+          _isBundle('${entity.path}/$id')) {
+        return '${entity.path}/$id';
+      }
+    }
+    return null;
+  }
+
+  /// Resolves [id]'s bundle directory: where it lives today, or `root/<id>`
+  /// (Unfiled) for an id that has no bundle yet. Throws [ArgumentError] for
+  /// an id that cannot be a directory name.
+  Future<String> bundlePathOf(SessionId id) async {
+    _requireId(id);
+    final root = await _rootPath();
+    return _locate(root, id) ?? '$root/$id';
+  }
+
+  /// Mints an unused bundle id from the clock, `s-YYYYMMDD-HHMMSS`, and
+  /// reserves it by creating its empty bundle directory at the root
+  /// (Unfiled). The id takes a `-N` suffix when any directory at the root or
+  /// one level down already has that name (a bundle, a folder, an interrupted
+  /// save or another reservation), so a same-second Save as and Duplicate, or
+  /// a folder named like an id, can never share a directory.
+  ///
+  /// A caller whose save then writes nothing gives the id back with
+  /// [releaseSessionId]; an empty directory would otherwise list as a folder.
+  Future<SessionId> newSessionId() async => _reserveId(await _rootPath());
+
+  /// Picks the first free id for this second and creates `parent/<id>`
+  /// (`parent` defaults to the root).
+  ///
+  /// The check and the create are synchronous with no await between them, so
+  /// no other catalog call in this isolate can claim the same id in between.
+  SessionId _reserveId(String root, {String? parent}) {
+    final base = sessionIdFor(_now());
+    var candidate = base;
+    for (var n = 2; _isTaken(root, candidate); n++) {
+      candidate = '$base-$n';
+    }
+    Directory('${parent ?? root}/$candidate').createSync(recursive: true);
+    return candidate;
+  }
+
+  /// Whether any entry named [id] exists at the root or inside any directory
+  /// directly under it.
+  static bool _isTaken(String root, String id) {
+    bool exists(String path) =>
+        FileSystemEntity.typeSync(path, followLinks: false) !=
+        FileSystemEntityType.notFound;
+    if (exists('$root/$id')) return true;
+    final dir = Directory(root);
+    if (!dir.existsSync()) return false;
+    for (final entity in dir.listSync(followLinks: false)) {
+      if (entity is Directory && exists('${entity.path}/$id')) return true;
+    }
+    return false;
+  }
+
+  /// Gives back an id [newSessionId] reserved when the save that was meant
+  /// to fill it wrote nothing: removes its directory only while it is still
+  /// empty. Anything written into it (a bundle, or an interrupted save's
+  /// layers) is left in place.
+  Future<void> releaseSessionId(SessionId id) async {
+    _requireId(id);
+    final dir = Directory('${await _rootPath()}/$id');
+    try {
+      if (dir.existsSync() && dir.listSync().isEmpty) dir.deleteSync();
+    } on FileSystemException {
+      // Something landed in it between the check and the delete: keep it.
+    }
+  }
+
+  /// Lists every bundle under the root and one folder down, newest save
+  /// first (unknown dates last, then by name). A bundle whose manifest does
+  /// not decode still lists, flagged [SessionSummary.unreadable]; an
+  /// interrupted save lists nowhere. Empty when the root does not exist yet.
   Future<List<SessionSummary>> listSessions() async {
     final root = Directory(await _rootPath());
     if (!root.existsSync()) return const [];
-    return <SessionSummary>[
-      for (final entity in root.listSync())
-        if (entity is Directory &&
-            File('${entity.path}/${Session.manifestName}').existsSync())
-          SessionSummary(
-            name: _basename(entity.path),
-            modifiedAt: _manifestModifiedAt(
-              File('${entity.path}/${Session.manifestName}'),
-            ),
-          ),
-    ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final out = <SessionSummary>[];
+    for (final entity in root.listSync()) {
+      if (entity is! Directory) continue;
+      if (_isTransient(_basename(entity.path))) continue;
+      if (_isBundle(entity.path)) {
+        out.add(_summaryOf(entity, folder: null));
+        continue;
+      }
+      if (_isInterruptedSave(entity)) continue;
+      final folder = _basename(entity.path);
+      for (final child in entity.listSync()) {
+        if (child is Directory &&
+            !_isTransient(_basename(child.path)) &&
+            _isBundle(child.path)) {
+          out.add(_summaryOf(child, folder: folder));
+        }
+      }
+    }
+    out.sort(_newestFirst);
+    return out;
+  }
+
+  static int _newestFirst(SessionSummary a, SessionSummary b) {
+    final at = a.modifiedAt;
+    final bt = b.modifiedAt;
+    if (at != null && bt != null && at != bt) return bt.compareTo(at);
+    if (at == null && bt != null) return 1;
+    if (at != null && bt == null) return -1;
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  }
+
+  /// The catalog row for the bundle at [dir]: a lenient read of its manifest
+  /// as a JSON map, never through [Session.fromJson], so a bundle this build
+  /// cannot load is still listed.
+  SessionSummary _summaryOf(Directory dir, {required String? folder}) {
+    final id = _basename(dir.path);
+    final manifest = File('${dir.path}/${Session.manifestName}');
+    final modifiedAt = _manifestModifiedAt(manifest);
+    Map<String, dynamic>? json;
+    try {
+      final decoded = jsonDecode(manifest.readAsStringSync());
+      if (decoded is Map<String, dynamic>) json = decoded;
+    } on Object {
+      json = null;
+    }
+    if (json == null) {
+      return SessionSummary(
+        id: id,
+        name: id,
+        folder: folder,
+        modifiedAt: modifiedAt,
+        unreadable: true,
+      );
+    }
+    return SessionSummary(
+      id: id,
+      name: _displayName(json['name'], id),
+      folder: folder,
+      modifiedAt: modifiedAt,
+      trackCount: _lengthOf(json['tracks']),
+      populatedChannels: _channelsOf(json['tracks']),
+      tempoBpm: _doubleOf(json['tempoBpm'], 0),
+      tsNum: _intOf(json['tsNum'], 4),
+      tsDen: _intOf(json['tsDen'], 4),
+      fxCount: _fxCountOf(json),
+    );
+  }
+
+  static String _displayName(Object? raw, String fallback) {
+    if (raw is! String) return fallback;
+    final trimmed = raw.trim();
+    return trimmed.isEmpty ? fallback : trimmed;
+  }
+
+  static int _lengthOf(Object? raw) => raw is List ? raw.length : 0;
+
+  static List<int> _channelsOf(Object? raw) => raw is! List
+      ? const []
+      : [
+          for (final track in raw)
+            if (track is Map<String, dynamic> && track['channel'] is num)
+              (track['channel'] as num).toInt(),
+        ];
+
+  static double _doubleOf(Object? raw, double fallback) =>
+      raw is num && raw.isFinite ? raw.toDouble() : fallback;
+
+  static int _intOf(Object? raw, int fallback) =>
+      raw is num && raw.isFinite ? raw.toInt() : fallback;
+
+  /// Effect entries across every chain stage the manifest carries.
+  ///
+  /// The one place this package looks inside a chain string, and only as far
+  /// as counting its entries: the envelope is `{"entries": [...]}` or a bare
+  /// array (`docs/design/session-bundle-format.md`), and the Library's row
+  /// shows the count. Anything else reads as zero.
+  static int _fxCountOf(Map<String, dynamic> json) {
+    // `masterChain` is the older schemas' spelling of a bus-stage chain.
+    var count =
+        _chainEntries(json['allTracksChain']) +
+        _chainEntries(json['masterChain']);
+    for (final key in const [
+      'laneChains',
+      'monitors',
+      'trackChains',
+      'outputChains',
+    ]) {
+      final chains = json[key];
+      if (chains is! List) continue;
+      for (final chain in chains) {
+        if (chain is Map<String, dynamic>) {
+          count += _chainEntries(chain['encoded']);
+        }
+      }
+    }
+    return count;
+  }
+
+  static int _chainEntries(Object? encoded) {
+    if (encoded is! String || encoded.isEmpty) return 0;
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is List) return decoded.length;
+      if (decoded is Map<String, dynamic>) {
+        final entries = decoded['entries'];
+        return entries is List ? entries.length : 0;
+      }
+    } on FormatException {
+      return 0;
+    }
+    return 0;
   }
 
   /// The manifest's mtime — the moment the session was last SAVED, which is
-  /// what the dialog's date column claims. Null on a stat failure rather than
+  /// what the Library's date column claims. Null on a stat failure rather than
   /// epoch: a wrong "1 Jan 1970" is worse than no date.
   static DateTime? _manifestModifiedAt(File manifest) {
     try {
@@ -369,65 +609,358 @@ class SessionRepository {
     }
   }
 
-  /// Renames the bundle folder for session [from] to [to]. Throws
-  /// [SessionNameCollision] when [to]'s slug already exists (named sessions
-  /// never silently overwrite) and [ArgumentError] when [to] is not a valid
-  /// name. Renaming to the same slug is a no-op.
-  Future<void> renameSession(String from, String to) async {
-    final toSlug = sessionSlug(to);
-    if (toSlug == null) {
-      throw ArgumentError.value(to, 'to', 'not a valid session name');
-    }
-    final fromSlug = sessionSlug(from) ?? from;
-    if (toSlug == fromSlug) return;
+  /// The decoded manifest and derived facts for the Library's preview panel
+  /// — populated tracks, bars, layers, mutes, effect counts — with no audio
+  /// read. Throws the typed [SessionException]s a load would, and
+  /// [StateError] for an id with no bundle.
+  Future<SessionPreview> readPreview(SessionId id) async {
+    _requireId(id);
     final root = await _rootPath();
-    if (Directory('$root/$toSlug').existsSync()) {
-      throw SessionNameCollision(slug: toSlug);
+    final path = _locate(root, id);
+    if (path == null) throw StateError('no session with id "$id"');
+    final dir = Directory(path);
+    final folder = dir.parent.path == root ? null : _basename(dir.parent.path);
+    final summary = _summaryOf(dir, folder: folder);
+    final session = decodeSessionManifest(
+      await File('$path/${Session.manifestName}').readAsString(),
+    ).session;
+    final laneFx = <int, int>{};
+    for (final chain in session.laneChains) {
+      laneFx[chain.channel] =
+          (laneFx[chain.channel] ?? 0) + _chainEntries(chain.encoded);
     }
-    Directory('$root/$fromSlug').renameSync('$root/$toSlug');
+    for (final chain in session.trackChains) {
+      laneFx[chain.channel] =
+          (laneFx[chain.channel] ?? 0) + _chainEntries(chain.encoded);
+    }
+    final tracks = <SessionPreviewTrack>[];
+    for (final track in session.tracks) {
+      if (track.lanes.isEmpty) continue;
+      final lane0 = track.lanes.first;
+      final live = lane0.undoCount < lane0.layers.length
+          ? lane0.layers[lane0.undoCount].file
+          : lane0.layers.last.file;
+      tracks.add(
+        SessionPreviewTrack(
+          channel: track.channel,
+          lengthFrames: track.lengthFrames,
+          baseLengthFrames: session.baseLengthFrames,
+          bars: _barsOf(
+            frames: track.lengthFrames,
+            sampleRate: session.sampleRate,
+            tempoBpm: session.tempoBpm,
+            tsNum: session.tsNum,
+            tsDen: session.tsDen,
+          ),
+          layers: lane0.undoCount + 1,
+          muted: track.lanes.every((lane) => lane.muted),
+          fxCount: laneFx[track.channel] ?? 0,
+          liveLayerFile: live,
+        ),
+      );
+    }
+    tracks.sort((a, b) => a.channel.compareTo(b.channel));
+    return SessionPreview(
+      summary: summary,
+      tracks: tracks,
+      fxCount: summary.fxCount,
+      sampleRate: session.sampleRate,
+    );
   }
 
-  /// Copies session [from]'s bundle to a NEW session [to]. Throws
-  /// [SessionNameCollision] when [to]'s slug already exists (never overwrites),
-  /// [ArgumentError] when [to] is not a valid name, and is a no-op when [from]
-  /// does not exist. The copy is independent — editing it never touches [from].
-  Future<void> duplicateSession(String from, String to) async {
-    final toSlug = sessionSlug(to);
-    if (toSlug == null) {
-      throw ArgumentError.value(to, 'to', 'not a valid session name');
-    }
-    final fromSlug = sessionSlug(from) ?? from;
-    final root = await _rootPath();
-    final src = Directory('$root/$fromSlug');
-    if (!src.existsSync()) return;
-    if (Directory('$root/$toSlug').existsSync()) {
-      throw SessionNameCollision(slug: toSlug);
-    }
-    _copyDirSync(src, Directory('$root/$toSlug'));
+  /// Whole bars at the saved tempo and signature, or 0 without a tempo.
+  static int _barsOf({
+    required int frames,
+    required int sampleRate,
+    required double tempoBpm,
+    required int tsNum,
+    required int tsDen,
+  }) {
+    if (tempoBpm <= 0 || sampleRate <= 0 || tsNum <= 0 || tsDen <= 0) return 0;
+    final framesPerBeat = sampleRate * 60 / tempoBpm * (4 / tsDen);
+    return (frames / (framesPerBeat * tsNum)).round();
   }
 
-  /// Recursively copies [src] to [dst] (files + nested folders). The catalog
-  /// bundles are shallow, but this stays correct for any nesting.
-  static void _copyDirSync(Directory src, Directory dst) {
-    dst.createSync(recursive: true);
-    for (final entity in src.listSync()) {
-      final name = _basename(entity.path);
-      if (entity is Directory) {
-        _copyDirSync(entity, Directory('${dst.path}/$name'));
-      } else if (entity is File) {
-        entity.copySync('${dst.path}/$name');
+  /// The smallest `"<prefix> N"` (N from 1) no catalog name carries,
+  /// compared case-insensitively so an automatic name never differs from an
+  /// existing one by case alone. This only skips numbers and never refuses;
+  /// a name the player picks collides case-sensitively ([_requireFreeName]).
+  Future<String> nextAutomaticName(String prefix) async {
+    final taken = {
+      for (final s in await listSessions()) s.name.toLowerCase(),
+    };
+    for (var n = 1; ; n++) {
+      final candidate = '$prefix $n';
+      if (!taken.contains(candidate.toLowerCase())) return candidate;
+    }
+  }
+
+  /// Throws [SessionNameCollision] when another session already carries
+  /// exactly [slug]. [except] is the id allowed to carry it.
+  ///
+  /// Case-sensitive, as the appliance has always been: a name used to be a
+  /// directory on case-sensitive ext4, so `Song` and `song` could both be
+  /// saved and existing installs may hold such pairs. Refusing them now would
+  /// turn a Save as that used to work into an error (rule 1, preserve
+  /// existing installs).
+  Future<void> _requireFreeName(String slug, {SessionId? except}) async {
+    for (final s in await listSessions()) {
+      if (s.id != except && s.name == slug) {
+        throw SessionNameCollision(slug: slug);
       }
     }
   }
 
-  /// Deletes session [name]'s bundle folder. A missing folder (or an invalid
-  /// name) is a no-op — there is no concurrent-mutation race to guard in a
-  /// single-window desktop app.
-  Future<void> deleteSession(String name) async {
-    final slug = sessionSlug(name);
-    if (slug == null) return;
+  /// Rewrites the manifest's `name` and nothing else; the bundle's identity
+  /// and every WAV stay as they are. Throws [SessionNameCollision] when
+  /// another session carries the name and [ArgumentError] for an invalid
+  /// name. Renaming a session to its own name, or a missing id, is a no-op.
+  Future<void> renameSession(SessionId id, String name) async {
+    _requireId(id);
+    final slug = _requireName(name, 'name');
+    final root = await _rootPath();
+    final path = _locate(root, id);
+    if (path == null) return;
+    final current = _summaryOf(
+      Directory(path),
+      folder: null,
+    ).name;
+    if (current == slug) return;
+    await _requireFreeName(slug, except: id);
+    final manifest = '$path/${Session.manifestName}';
+    _writeManifestNamed(from: manifest, to: manifest, name: slug);
+  }
+
+  /// Writes the manifest at [from] to [to] carrying [name], atomically: the
+  /// new manifest is written and flushed to a sibling temp file, then
+  /// renamed into place, so a power cut leaves the old manifest (or none)
+  /// or the new one at [to], never a torn file that would make the session
+  /// unopenable.
+  static void _writeManifestNamed({
+    required String from,
+    required String to,
+    required String name,
+  }) {
+    final json =
+        jsonDecode(File(from).readAsStringSync()) as Map<String, dynamic>;
+    json['name'] = name;
+    final temp = File('$to.tmp');
+    try {
+      temp
+        ..writeAsStringSync(
+          const JsonEncoder.withIndent('  ').convert(json),
+          flush: true,
+        )
+        ..renameSync(to);
+    } on Object {
+      if (temp.existsSync()) temp.deleteSync();
+      rethrow;
+    }
+  }
+
+  /// Copies the bundle [from] to a new bundle beside it (same folder) under
+  /// a fresh id, carrying [name] in the copy's own manifest. Returns the new
+  /// id. Throws [SessionNameCollision] when a session already carries [name],
+  /// [ArgumentError] for an invalid name, and [StateError] when [from] has no
+  /// bundle. The copy is independent — editing it never touches [from].
+  Future<SessionId> duplicateSession(SessionId from, String name) async {
+    _requireId(from);
+    final slug = _requireName(name, 'name');
+    final root = await _rootPath();
+    final source = _locate(root, from);
+    if (source == null) throw StateError('no session with id "$from"');
+    await _requireFreeName(slug);
+    final parent = Directory(source).parent.path;
+    final id = _reserveId(root, parent: parent);
+    final target = Directory('$parent/$id');
+    try {
+      // The manifest goes last: until it lands, the copy is a manifest-less
+      // directory of layer WAVs, an interrupted save that lists nowhere, so
+      // a power cut mid-copy never lists a half copy (D2).
+      _copyDirSync(
+        Directory(source),
+        target,
+        skip: const {Session.manifestName, '${Session.manifestName}.tmp'},
+      );
+      _writeManifestNamed(
+        from: '$source/${Session.manifestName}',
+        to: '${target.path}/${Session.manifestName}',
+        name: slug,
+      );
+      debugOnDuplicateWrite?.call('${target.path}/${Session.manifestName}');
+    } on Object {
+      // Everything in the reserved directory is this copy's own: remove it,
+      // so a failed Duplicate leaves neither a half bundle under the
+      // source's name nor an empty reservation. The source is untouched.
+      if (target.existsSync()) target.deleteSync(recursive: true);
+      rethrow;
+    }
+    return id;
+  }
+
+  /// Called with each path a Duplicate has just written, in order, so a
+  /// test can see what a power cut at that moment would leave behind.
+  @visibleForTesting
+  static void Function(String path)? debugOnDuplicateWrite;
+
+  /// Recursively copies [src] to [dst] (files + nested folders), leaving out
+  /// the top-level entries named in [skip]. The catalog bundles are
+  /// shallow, but this stays correct for any nesting.
+  static void _copyDirSync(
+    Directory src,
+    Directory dst, {
+    Set<String> skip = const {},
+  }) {
+    dst.createSync(recursive: true);
+    for (final entity in src.listSync()) {
+      final name = _basename(entity.path);
+      if (skip.contains(name)) continue;
+      if (entity is Directory) {
+        _copyDirSync(entity, Directory('${dst.path}/$name'));
+      } else if (entity is File) {
+        entity.copySync('${dst.path}/$name');
+        debugOnDuplicateWrite?.call('${dst.path}/$name');
+      }
+    }
+  }
+
+  /// Deletes the bundle [id] wherever it sits. A missing id is a no-op.
+  Future<void> deleteSession(SessionId id) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path != null) Directory(path).deleteSync(recursive: true);
+  }
+
+  /// Moves the bundle [id] into [folder], or to the root (Unfiled) when
+  /// [folder] is null. Throws [ArgumentError] when the folder does not exist.
+  /// A move to where the bundle already is, or of a missing id, is a no-op.
+  Future<void> moveSession(SessionId id, {String? folder}) async {
+    _requireId(id);
+    final root = await _rootPath();
+    final path = _locate(root, id);
+    if (path == null) return;
+    final String parent;
+    if (folder == null) {
+      parent = root;
+    } else {
+      final slug = _requireName(folder, 'folder');
+      final dir = Directory('$root/$slug');
+      if (!dir.existsSync() || !_isFolder(dir)) {
+        throw ArgumentError.value(folder, 'folder', 'no such folder');
+      }
+      parent = dir.path;
+    }
+    final target = '$parent/$id';
+    if (target == path) return;
+    Directory(path).renameSync(target);
+  }
+
+  /// The one-level folders under the root, sorted case-insensitively.
+  Future<List<String>> listFolders() async {
+    final root = Directory(await _rootPath());
+    if (!root.existsSync()) return const [];
+    return <String>[
+      for (final entity in root.listSync())
+        if (entity is Directory && _isFolder(entity)) _basename(entity.path),
+    ]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  /// Creates the folder [name] under the root. Throws [SessionNameCollision]
+  /// when a folder or bundle already has that directory name and
+  /// [ArgumentError] for an invalid name, or one shaped like a session id.
+  Future<void> createFolder(String name) async {
+    final slug = _requireName(name, 'name');
+    if (isMintedSessionId(slug)) {
+      // An empty folder with an id's name would read as a reservation.
+      throw ArgumentError.value(name, 'name', 'reads as a session id');
+    }
+    final root = await _rootPath();
+    if (Directory('$root/$slug').existsSync()) {
+      throw SessionNameCollision(slug: slug);
+    }
+    Directory('$root/$slug').createSync(recursive: true);
+  }
+
+  /// Renames the folder [name] to [to]; the sessions inside move with it and
+  /// keep their ids. Throws [SessionNameCollision] when a folder or bundle
+  /// already has that directory name, [ArgumentError] for an invalid name
+  /// (or one shaped like a session id) and for a missing folder. Renaming a
+  /// folder to its own name is a no-op.
+  Future<void> renameFolder(String name, String to) async {
+    final from = _requireName(name, 'name');
+    final slug = _requireName(to, 'to');
+    if (isMintedSessionId(slug)) {
+      throw ArgumentError.value(to, 'to', 'reads as a session id');
+    }
+    final root = await _rootPath();
+    final dir = Directory('$root/$from');
+    if (!dir.existsSync() || !_isFolder(dir)) {
+      throw ArgumentError.value(name, 'name', 'no such folder');
+    }
+    if (slug == from) return;
+    if (FileSystemEntity.typeSync('$root/$slug', followLinks: false) !=
+        FileSystemEntityType.notFound) {
+      throw SessionNameCollision(slug: slug);
+    }
+    dir.renameSync('$root/$slug');
+  }
+
+  /// Deletes the folder [name]. Throws [SessionFolderNotEmpty] while any
+  /// directory inside it holds anything: a bundle, or an interrupted save
+  /// the catalog does not list but leaves in place (plan D2). A missing
+  /// folder is a no-op.
+  Future<void> deleteFolder(String name) async {
+    final slug = _requireName(name, 'name');
     final dir = Directory('${await _rootPath()}/$slug');
-    if (dir.existsSync()) dir.deleteSync(recursive: true);
+    if (!dir.existsSync() || !_isFolder(dir)) return;
+    for (final child in dir.listSync(followLinks: false)) {
+      if (child is Directory && child.listSync().isNotEmpty) {
+        throw SessionFolderNotEmpty(folder: slug);
+      }
+    }
+    dir.deleteSync(recursive: true);
+  }
+
+  /// Copies the saved bundle [id]'s `mixdown.wav` to [destinationPath]
+  /// (creating its parent). Reads the saved bundle, never the live engine.
+  /// Throws [StateError] when the bundle or its mixdown is missing (an empty
+  /// session has none).
+  Future<void> exportMixdown(SessionId id, String destinationPath) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) throw StateError('no session with id "$id"');
+    final source = File('$path/$mixdownName');
+    if (!source.existsSync()) {
+      throw StateError('session "$id" has no mixdown to export');
+    }
+    await File(destinationPath).parent.create(recursive: true);
+    await source.copy(destinationPath);
+  }
+
+  /// Copies every lane's live layer of the saved bundle [id] into
+  /// [directory] as `track{c}_lane{l}_L0.wav` — the stems a DAW expects, one
+  /// per lane, history dropped. Reads the saved bundle, never the live
+  /// engine. Throws the typed [SessionException]s a load would and
+  /// [StateError] when the bundle is missing.
+  Future<void> exportStems(SessionId id, String directory) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) throw StateError('no session with id "$id"');
+    final session = decodeSessionManifest(
+      await File('$path/${Session.manifestName}').readAsString(),
+    ).session;
+    await Directory(directory).create(recursive: true);
+    for (final track in session.tracks) {
+      for (final lane in track.lanes) {
+        if (lane.layers.isEmpty) continue;
+        final live = lane.undoCount < lane.layers.length
+            ? lane.layers[lane.undoCount].file
+            : lane.layers.last.file;
+        await File('$path/$live').copy(
+          '$directory/track${track.channel}_lane${lane.lane}_L0.wav',
+        );
+      }
+    }
   }
 
   /// The final path segment of [path] (the folder name), split on either
@@ -454,6 +987,9 @@ class SessionRepository {
   /// [SessionChains] field because a remap is control-surface configuration,
   /// not an effect chain — the two travel together only by coincidence of
   /// both being opaque strings.
+  /// [name] is the session's display name, written into the manifest; `null`
+  /// leaves the manifest without one (the catalog then shows the directory
+  /// name).
   /// [captureStillValid] guards the snapshot boundary after asynchronous
   /// command settlement. Once [_capture] detaches the audio, this save writes
   /// that coherent image even if the device lifecycle changes afterward.
@@ -462,6 +998,7 @@ class SessionRepository {
     required SessionSettings settings,
     SessionChains chains = const SessionChains(),
     String pedalBindings = '',
+    String? name,
     bool Function()? captureStillValid,
   }) async {
     // Capture intent before any asynchronous audio or file work begins.
@@ -471,8 +1008,80 @@ class SessionRepository {
       throw StateError('session changed before save capture');
     }
     final captured = _capture(savedSettings);
-    await Directory(directory).create(recursive: true);
+    final target = Directory(directory);
+    // A save over an existing bundle never edits it in place: it writes a
+    // whole new bundle beside it and swaps the two, so a failure (a full
+    // disk, a power cut) leaves the previous save as it was. A new bundle is
+    // written where it goes; until its manifest lands it is a hidden
+    // interrupted save.
+    final rewrite = _isBundle(directory);
+    final dest = rewrite ? Directory('$directory$_stagingSuffix') : target;
+    if (rewrite && dest.existsSync()) dest.deleteSync(recursive: true);
+    await dest.create(recursive: true);
+    // A catalog read while this save writes must not take its stage for a
+    // leftover.
+    if (rewrite) _staging.add(dest.path);
+    final Session session;
+    try {
+      session = await _writeBundle(
+        dest.path,
+        captured,
+        chains,
+        savedSettings,
+        pedalBindings,
+        name,
+      );
+      if (rewrite) _carryForeignFiles(from: target, to: dest);
+    } on Object {
+      _staging.remove(dest.path);
+      if (rewrite && dest.existsSync()) dest.deleteSync(recursive: true);
+      rethrow;
+    }
+    try {
+      if (rewrite) _swapIn(staging: dest, target: target);
+    } on Object {
+      // The previous save is back in place; the stage is not needed.
+      if (dest.existsSync()) dest.deleteSync(recursive: true);
+      rethrow;
+    } finally {
+      _staging.remove(dest.path);
+    }
+    return session;
+  }
 
+  /// The stages of write-backs being written right now, by any repository
+  /// in this isolate: they all share the one sessions root.
+  static final Set<String> _staging = {};
+
+  /// The sibling a write-back is staged in before it is swapped in.
+  static const String _stagingSuffix = '.saving';
+
+  /// The name the previous save takes for the moment of the swap.
+  static const String _retiredSuffix = '.old';
+
+  /// Whether [name] is a staged or retired write-back, never a session or a
+  /// folder: neither suffix can occur in an id or a folder name, which keep
+  /// only letters, digits, spaces, hyphens and underscores.
+  static bool _isTransient(String name) =>
+      name.endsWith(_stagingSuffix) || name.endsWith(_retiredSuffix);
+
+  /// Called with each file a save has just written, in order, and with the
+  /// target before a write-back is swapped in; a test throws from it to
+  /// stand for a full disk or a failed write at that moment.
+  @visibleForTesting
+  static void Function(String path)? debugOnSaveWrite;
+
+  /// Writes the layers, the manifest and the mixdown of [captured] into the
+  /// directory [path], each flushed to the device, and prunes layer files
+  /// the manifest does not reference.
+  Future<Session> _writeBundle(
+    String path,
+    _Capture captured,
+    SessionChains chains,
+    SessionSettings settings,
+    String pedalBindings,
+    String? name,
+  ) async {
     final written = <String>{};
     for (final track in captured.tracks) {
       for (final lane in track.lanes) {
@@ -480,13 +1089,15 @@ class SessionRepository {
         for (var o = 0; o < lane.layers.length; o++) {
           final file = lane.layers[o].file;
           written.add(file);
-          await File('$directory/$file').writeAsBytes(
+          await File('$path/$file').writeAsBytes(
             WavCodec.encodeFloat32(
               samples: layerPcm[o],
               sampleRate: captured.snapshot.sampleRate,
               channels: 1,
             ),
+            flush: true,
           );
+          debugOnSaveWrite?.call('$path/$file');
         }
       }
     }
@@ -494,39 +1105,234 @@ class SessionRepository {
     final session = _sessionFrom(
       captured,
       chains,
-      savedSettings,
+      settings,
       pedalBindings,
+      name,
     );
-    // An older-schema manifest is an original no save may destroy: keep it
-    // as a backup first, exactly as opening it would have.
-    final previous = File('$directory/${Session.manifestName}');
-    if (previous.existsSync()) {
-      final original = await previous.readAsString();
-      final version = _versionOf(original);
-      if (version != null && version < Session.formatVersion) {
-        await _keepOriginal(directory, version, original);
-      }
-    }
-    await File('$directory/${Session.manifestName}').writeAsString(
+    await File('$path/${Session.manifestName}').writeAsString(
       const JsonEncoder.withIndent('  ').convert(session.toJson()),
+      flush: true,
     );
+    debugOnSaveWrite?.call('$path/${Session.manifestName}');
 
+    // The mixdown is the saved preview (Listen) and the mixdown export. An
+    // empty mix leaves none: a re-save of an emptied rig must not keep audio
+    // the session no longer holds.
     final mix = _mixdown(captured);
+    final mixdownFile = File('$path/$mixdownName');
     if (mix.isNotEmpty) {
-      await File('$directory/$mixdownName').writeAsBytes(
+      await mixdownFile.writeAsBytes(
         WavCodec.encodeFloat32(
           samples: mix,
           sampleRate: captured.snapshot.sampleRate,
           channels: 1,
         ),
+        flush: true,
       );
+      debugOnSaveWrite?.call(mixdownFile.path);
+    } else if (mixdownFile.existsSync()) {
+      mixdownFile.deleteSync();
     }
-    // The per-track file set is variable (lanes × layers shrink between saves),
-    // so a re-save would otherwise leave orphaned layer WAVs. The just-written
-    // manifest is the source of truth; prune every layer file it does not
-    // reference. Non-layer files (the manifest, the mixdown) are untouched.
-    await _pruneOrphanLayers(directory, written);
+    // The per-track file set is variable (lanes x layers shrink between
+    // saves), so a save over files already there would otherwise leave
+    // orphaned layer WAVs. The just-written manifest is the source of truth.
+    await _pruneOrphanLayers(path, written);
     return session;
+  }
+
+  /// Copies into the staged bundle [to] every file of the previous bundle
+  /// [from] that a save does not write itself, so a file this build does not
+  /// know is kept through a re-save.
+  static void _carryForeignFiles({
+    required Directory from,
+    required Directory to,
+  }) {
+    // Files an older-schema original names move with it (_keepOriginals).
+    final originals = {
+      for (final manifest in _originalManifests(from))
+        ..._layerFilesOf(File('${from.path}/$manifest').readAsStringSync()),
+    };
+    for (final entity in from.listSync()) {
+      if (entity is! File) continue;
+      final name = _basename(entity.path);
+      if (originals.contains(name) ||
+          name == Session.manifestName ||
+          name == '${Session.manifestName}.tmp' ||
+          name == mixdownName ||
+          _layerFilePattern.hasMatch(name) ||
+          _backupManifestPattern.hasMatch(name)) {
+        continue;
+      }
+      entity.copySync('${to.path}/$name');
+    }
+  }
+
+  /// Replaces [target] with [staging] in two renames: the previous save
+  /// steps aside as `<id>.old`, the staged one takes its name, and the old
+  /// one is deleted. A failed second rename puts the old one back. A power
+  /// cut between the two leaves `<id>.old` and no `<id>`, which
+  /// [_recoverInterruptedSwaps] puts back on the next catalog read: the
+  /// previous save, whole.
+  static void _swapIn({required Directory staging, required Directory target}) {
+    debugOnSaveWrite?.call(target.path);
+    final retired = Directory('${target.path}$_retiredSuffix');
+    if (retired.existsSync()) retired.deleteSync(recursive: true);
+    target.renameSync(retired.path);
+    try {
+      staging.renameSync(target.path);
+    } on Object {
+      retired.renameSync(target.path);
+      rethrow;
+    }
+    _retire(retired, live: target);
+  }
+
+  /// Removes the previous save [retired] once [live] has replaced it, after
+  /// moving its kept originals into [live] (see [_keepOriginals]). If that
+  /// move fails, [retired] stays for the next catalog read to finish.
+  static void _retire(Directory retired, {required Directory live}) {
+    try {
+      _keepOriginals(from: retired, to: live);
+      retired.deleteSync(recursive: true);
+    } on FileSystemException {
+      // Left for the next catalog read to finish.
+    }
+  }
+
+  /// Keeps every original of an older schema that the previous save
+  /// [from] held, as a whole bundle folder inside [to] that opens on its
+  /// own: a backup folder (`session.v<N>/`) moves across as it is; a backup
+  /// manifest (`session.v<N>.json`) and, when [from] was itself never
+  /// converted, its own older manifest each become such a folder, with the
+  /// layer WAVs it names moved in beside it. Moves, never copies: [from] is
+  /// about to be deleted.
+  static void _keepOriginals({
+    required Directory from,
+    required Directory to,
+  }) {
+    for (final entity in from.listSync()) {
+      final name = _basename(entity.path);
+      if (entity is Directory && _backupFolderPattern.hasMatch(name)) {
+        final kept = _freeBackupStem(to, name);
+        entity.renameSync('${to.path}/$kept');
+      }
+    }
+    for (final name in _originalManifests(from)) {
+      final manifest = File('${from.path}/$name');
+      final source = manifest.readAsStringSync();
+      final stem = name == Session.manifestName
+          ? backupName(_versionOf(source)!).replaceAll('.json', '')
+          : name.substring(0, name.length - '.json'.length);
+      final folder = Directory('${to.path}/${_freeBackupStem(to, stem)}')
+        ..createSync();
+      for (final file in _layerFilesOf(source)) {
+        final layer = File('${from.path}/$file');
+        if (layer.existsSync()) layer.renameSync('${folder.path}/$file');
+      }
+      manifest.renameSync('${folder.path}/${Session.manifestName}');
+    }
+  }
+
+  /// The older-schema manifests in [dir]: its kept backups and, when it was
+  /// never converted, its own `session.json`.
+  static List<String> _originalManifests(Directory dir) {
+    final names = [
+      for (final entity in dir.listSync())
+        if (entity is File &&
+            _backupManifestPattern.hasMatch(_basename(entity.path)))
+          _basename(entity.path),
+    ];
+    final own = File('${dir.path}/${Session.manifestName}');
+    if (own.existsSync()) {
+      final version = _versionOf(own.readAsStringSync());
+      if (version != null && version < Session.formatVersion) {
+        names.add(Session.manifestName);
+      }
+    }
+    return names;
+  }
+
+  /// [stem], or the next numbered stem when [dir] already holds it as a
+  /// backup file or folder.
+  static String _freeBackupStem(Directory dir, String stem) {
+    final match = RegExp(r'^session\.v(\d+)(?:\.(\d+))?$').firstMatch(stem)!;
+    final version = int.parse(match.group(1)!);
+    for (var attempt = int.parse(match.group(2) ?? '1'); ; attempt++) {
+      final candidate = backupName(version, attempt).replaceAll('.json', '');
+      if (!File('${dir.path}/$candidate.json').existsSync() &&
+          !Directory('${dir.path}/$candidate').existsSync()) {
+        return candidate;
+      }
+    }
+  }
+
+  /// The layer files a manifest [source] of any schema names.
+  static Iterable<String> _layerFilesOf(String source) sync* {
+    final Object? json;
+    try {
+      json = jsonDecode(source);
+    } on FormatException {
+      return;
+    }
+    if (json is! Map<String, dynamic>) return;
+    for (final track in json['tracks'] as List<dynamic>? ?? const []) {
+      if (track is! Map<String, dynamic>) continue;
+      final stem = track['stem'];
+      if (stem is String) yield stem;
+      for (final lane in track['lanes'] as List<dynamic>? ?? const []) {
+        if (lane is! Map<String, dynamic>) continue;
+        for (final layer in lane['layers'] as List<dynamic>? ?? const []) {
+          if (layer is Map<String, dynamic> && layer['file'] is String) {
+            yield layer['file'] as String;
+          }
+        }
+      }
+    }
+  }
+
+  /// A kept original manifest, `session.v<N>.json` or `session.v<N>.<k>.json`.
+  static final RegExp _backupManifestPattern = RegExp(
+    r'^session\.v\d+(\.\d+)?\.json$',
+  );
+
+  /// A kept original bundle folder, `session.v<N>` or `session.v<N>.<k>`.
+  static final RegExp _backupFolderPattern = RegExp(r'^session\.v\d+(\.\d+)?$');
+
+  /// Finishes or undoes write-backs a power cut interrupted, under [dir]
+  /// (the root, then one folder down): a retired `<id>.old` with no `<id>`
+  /// is put back (the swap never committed), one beside its `<id>` is
+  /// deleted (it did), and a staged `<id>.saving` that is not [inFlight] is
+  /// deleted (it was never swapped in).
+  static void _recoverInterruptedSwaps(
+    Directory dir, {
+    required Set<String> inFlight,
+    bool folders = true,
+  }) {
+    if (!dir.existsSync()) return;
+    for (final entity in dir.listSync(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final path = entity.path;
+      try {
+        if (path.endsWith(_retiredSuffix)) {
+          final live = path.substring(0, path.length - _retiredSuffix.length);
+          if (Directory(live).existsSync()) {
+            _retire(entity, live: Directory(live));
+          } else {
+            entity.renameSync(live);
+          }
+        } else if (path.endsWith(_stagingSuffix)) {
+          if (!inFlight.contains(path)) entity.deleteSync(recursive: true);
+        } else if (folders && !_isBundle(path)) {
+          _recoverInterruptedSwaps(
+            Directory(path),
+            inFlight: inFlight,
+            folders: false,
+          );
+        }
+      } on FileSystemException {
+        // Tried again on the next catalog read.
+      }
+    }
   }
 
   /// The pattern of a bundle's per-layer WAV filenames
@@ -629,8 +1435,10 @@ class SessionRepository {
   /// manifest is kept byte for byte beside it as `session.v<N>.json` (see
   /// [backupName]), then the converted manifest replaces `session.json`
   /// atomically. Does nothing when the manifest on disk is no longer the one
-  /// that was converted. The audio files are shared with the converted
-  /// manifest, not copied.
+  /// that was converted. Until the next save the audio files are shared with
+  /// the converted manifest, so the backup opens by putting it back as
+  /// `session.json`; that save moves the backup and the original layer files
+  /// into a `session.v<N>/` folder that opens as a bundle of its own.
   Future<void> commitConversion(
     String directory,
     SessionConversion conversion,
@@ -660,7 +1468,15 @@ class SessionRepository {
     String original,
   ) async {
     for (var attempt = 1; ; attempt++) {
-      final backup = File('$directory/${backupName(version, attempt)}');
+      final name = backupName(version, attempt);
+      final backup = File('$directory/$name');
+      final folder = File(
+        '$directory/${name.replaceAll('.json', '')}/${Session.manifestName}',
+      );
+      if (folder.existsSync()) {
+        if (await folder.readAsString() == original) return;
+        continue;
+      }
       if (backup.existsSync()) {
         if (await backup.readAsString() == original) return;
         continue;
@@ -679,12 +1495,14 @@ class SessionRepository {
   /// Replaces the bundle's manifest with [contents] through a temporary file
   /// and a rename, so a crash leaves either the old or the new manifest.
   Future<void> _replaceManifest(String directory, String contents) async {
-    final temporary = File(
-      '$directory/${Session.manifestName}.'
-      '${DateTime.now().microsecondsSinceEpoch}.tmp',
-    );
-    await temporary.writeAsString(contents, flush: true);
-    await temporary.rename('$directory/${Session.manifestName}');
+    final temporary = File('$directory/${Session.manifestName}.tmp');
+    try {
+      await temporary.writeAsString(contents, flush: true);
+      await temporary.rename('$directory/${Session.manifestName}');
+    } on Object {
+      if (temporary.existsSync()) temporary.deleteSync();
+      rethrow;
+    }
   }
 
   /// The integer `version` of a manifest [source], or null when it has none.
@@ -718,53 +1536,18 @@ class SessionRepository {
     }
   }
 
-  /// Exports a single mixed-down WAV of the current session to [path].
-  Future<void> exportMixdown(String path) async {
-    await _awaitLayersSettled();
-    final captured = _capture();
-    final mix = _mixdown(captured);
-    await File(path).writeAsBytes(
-      WavCodec.encodeFloat32(
-        samples: mix,
-        sampleRate: captured.snapshot.sampleRate,
-        channels: 1,
-      ),
-    );
-  }
-
-  /// Exports every lane of every track as a separate WAV in [directory]. A
-  /// stem is the lane's live (currently playing) buffer only — the undo/redo
-  /// history is not part of a flat stems export — so each file is named
-  /// `track{c}_lane{l}_L0.wav` regardless of the lane's undo depth.
-  Future<void> exportStems(String directory) async {
-    await _awaitLayersSettled();
-    final captured = _capture();
-    await Directory(directory).create(recursive: true);
-    for (final track in captured.tracks) {
-      for (final lane in track.lanes) {
-        final layerPcm = captured.laneStems[(track.channel, lane.lane)]!;
-        await File(
-          '$directory/track${track.channel}_lane${lane.lane}_L0.wav',
-        ).writeAsBytes(
-          WavCodec.encodeFloat32(
-            samples: layerPcm[lane.liveIndex],
-            sampleRate: captured.snapshot.sampleRate,
-            channels: 1,
-          ),
-        );
-      }
-    }
-  }
-
   /// Reads the engine snapshot and each settled track's per-lane overdub layers
   /// once.
   ///
-  /// Every active lane's full pool history is exported: the `undoDepth` undo
-  /// snapshots, the live buffer, then the `redoDepth` redo snapshots (the
-  /// undo/redo depths are track-wide, so every lane carries the same count). A
-  /// lane whose live buffer is empty is skipped, and a track left with no lane
-  /// is dropped.
-  _Capture _capture([SessionSettings? settings]) {
+  /// Every active lane's full history is exported: the track's history entries
+  /// with their kinds (#1164), and per lane the images they name — one per
+  /// undo entry, the live buffer, then one per redo entry that is not a Peel
+  /// marker (the history is track-wide, so every lane carries the same
+  /// images). The split is the engine's raw stack count that comes with the
+  /// entries, never the snapshot's `undoDepth`, which reads 0 while a Clear
+  /// restore is in flight. A lane whose live buffer is empty is skipped, and
+  /// a track left with no lane is dropped.
+  _Capture _capture(SessionSettings settings) {
     final snapshot = _engine.snapshot();
     final laneStems = <(int, int), List<Float32List>>{};
     final tracks = <SessionTrack>[];
@@ -778,9 +1561,11 @@ class SessionRepository {
         continue;
       }
       if (track.lengthFrames <= 0) continue;
-      final undoCount = track.undoDepth;
-      final redoCount = track.redoDepth;
-      final total = undoCount + 1 + redoCount;
+      // The kinds name the images (#1164): a redo-side Peel marker holds
+      // none, so the image count is not simply undo + 1 + redo.
+      final history = _engine.exportHistory(i);
+      final undoCount = history.undoCount;
+      final total = history.imageCount;
       final lanes = <SessionLane>[];
       for (var l = 0; l < track.lanes.length; l++) {
         // The live layer sits at ordinal `undoCount`; skip a lane whose live
@@ -805,10 +1590,9 @@ class SessionRepository {
         // The lane's mix (slice 3) comes from the looper repository, not
         // the engine: the engine holds the level times the balance and the
         // image plus the track's pan, and neither product can be taken
-        // apart again. An export hands in no settings and persists no
-        // manifest, so its fallback only feeds the mixdown, where the
-        // engine's gain times unity plays the same.
-        final mix = settings?.laneMix[(i, l)];
+        // apart again. A lane the settings do not describe falls back to the
+        // engine's gain times unity, which plays the same.
+        final mix = settings.laneMix[(i, l)];
         lanes.add(
           SessionLane(
             lane: l,
@@ -819,18 +1603,13 @@ class SessionRepository {
             layers: layerFiles,
             pan: mix?.imagePan ?? 0,
             balance: mix?.balance ?? 1,
-            undoCount: undoCount,
-            redoCount: redoCount,
+            history: history,
           ),
         );
       }
       if (lanes.isEmpty) continue;
       // Save uses its detached confirmed settings (absence means unity).
-      // A live export has no settings argument and captures the engine's
-      // independent track fader at the same boundary as the part levels.
-      trackLevels[i] = settings == null
-          ? track.volume
-          : settings.trackLevels[i] ?? 1;
+      trackLevels[i] = settings.trackLevels[i] ?? 1;
       tracks.add(
         SessionTrack(
           channel: i,
@@ -854,9 +1633,11 @@ class SessionRepository {
     SessionChains chains,
     SessionSettings settings,
     String pedalBindings,
+    String? name,
   ) {
     final snapshot = captured.snapshot;
     return Session(
+      name: name,
       sampleRate: snapshot.sampleRate,
       channels: 1,
       // The engine keeps the master grid alive after the last track is undone

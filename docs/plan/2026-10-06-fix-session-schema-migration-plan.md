@@ -1,9 +1,15 @@
 # Convert saved sessions from older schemas on open
 
-Tracking: #1196, `autonomy:merge-gate`. Owner decision, 2026-10-06: sessions
-saved by the shipped app (schema 7, on master and on the appliances) must keep
-opening after the trunk lands. This is a deliberate, owner-made exception to
-the AGENTS.md rule against migrations. It is kept to one module
+Tracking: #1196, `autonomy:merge-gate`. Owner decisions, 2026-10-06:
+
+- Sessions saved by the shipped app (schema 7, on master and on the
+  appliances) must keep opening after the trunk lands.
+- The oldest sessions convert too, back to schema 1. Use conservative
+  defaults: no FX chains, and a tempo derived from the loop length where none
+  was saved. Keep the original as a backup and show the same notice.
+
+This is a deliberate, owner-made exception to the AGENTS.md rule against
+migrations. It is kept to one module
 (`packages/session_repository/lib/src/session_migration.dart`), and the strict
 current-schema decoder (`Session.fromJson`) is unchanged.
 
@@ -18,43 +24,59 @@ and 9 accept both spellings.
 
 | Schema | Written by | What changed |
 | --- | --- | --- |
-| 7 | master `990a60f5b` (#611), every appliance | Monitor gate by name (`mode`) beside `enabled`. Tracks carry `lengthPresetBars` and `oneShot`; the session carries `oneShotChannels` and one `masterChain`. Tempo, signature, grid, click and count-in are saved but master never re-applied them on load. Rec dub, auto record, sync, default length and record timing are global settings, not in the file. |
-| 7 (slices) | `7a8c7c3bd`..`f628c7412` | Same number, extra optional keys: session `recordTiming`, `overdubDecay`, `defaultOnce`, `onceOverrides`, `lengthPresetOverrides`, `defaultLengthPresetBars`; track `pan`, `recordTiming`, `overdubDecay`; lane `pan`, `balance`; `inputSetup`, `outputSetup`. |
-| 8 (slices) | `919e337d2` (slice 3e) | Adds `allTracksChain`. `masterChain` is now output bus 0's chain. |
-| 9 (slices) | `30b38ea69` (slice 3f) | `outputChains` (one per destination) replaces `masterChain`, which it drops. |
-| 8 | `9264ccd9f`..`a0a54e57e` | Track settings become session maps (`trackRecordTimingOverrides`, `trackOverdubDecayOverrides`, `trackOneShotOverrides`, `trackLengthPresetOverrides`, `defaultOneShot`, `defaultLengthPresetBars`, `loopBars`); `syncTempo`, `recDub`, `autoRecord`, `defaultMultiple` become session settings; `oneShotChannels` and the per-track keys go. Monitors keep only `mode`; `undoCount`/`redoCount` become required. Adds `trackPans`, lane `pan`/`balance`, `inputSetup`, `outputSetup`, `laneInputs`/`laneOutputs`/`laneCounts`. `masterChain` is output bus 0's chain. |
-| 9 | `a52fe34d4`..`623a5a7ba` | `allTracksChain` (required), `trackLevels`; `0d601db8e` replaces `masterChain` with `outputChains`; `623a5a7ba` caps monitor `volume` at 1. |
-| 10 | `a921bd9a9` | `defaultFadeDurationMs`, `trackFadeDurationOverrides`. |
+| 1 | `8547affe7` | Tracks with one `stem` WAV, `volume`, `muted`. Saved and re-applied `tempoBpm`, `syncLoopToTempo`, `quantizeMode` (`off`/`beat`/`bar`), `metronomeOn`, `countInEnabled` (one bar). |
+| 2 | `93f2f0cb5` (#112) | Drops the transport keys; adds `laneChains` and `monitors` (with `enabled`), chains as bare arrays. |
+| 3 | `319a7dc9d` (#151) | `lanes` with ordered `layers` and undo/redo counts replace `stem`. |
+| 4 | `7e2515802`, `fb8d7cc2b` (#280, #295) | Tempo grid, click, count-in; per-track `lengthPresetBars` and `oneShot`; `looperMode`, `primaryTrack`, `oneShotChannels`. |
+| 5 | `b52c3d276` (#388) | `trackChains`, `masterChain`; chains become envelopes. |
+| 6 | `4dc33ac10` (#412) | `pedalBindings`. |
+| 7 | master `990a60f5b` (#611), every appliance | Monitor gate by name (`mode`) beside `enabled`. Master saved tempo, grid, click and count-in but never re-applied them on load. Rec dub, auto record, sync, default length and record timing were global settings, not in the file. |
+| 7 (slices) | `7a8c7c3bd`..`7a29dda18` | Same number with extra optional keys: `recordTiming`, `overdubDecay`, `defaultOnce`, `onceOverrides`, `lengthPresetOverrides`, `defaultLengthPresetBars`; track `pan`, `recordTiming`, `overdubDecay`; lane `pan`/`balance`; `inputSetup`, `outputSetup`. From slice 3b (`f628c7412`) `masterChain` already meant output bus 0's chain; see the limitation below. |
+| 8 (slices) | `919e337d2` | Adds `allTracksChain`. `masterChain` is output bus 0's chain. |
+| 9 (slices) | `30b38ea69` | `outputChains` replaces `masterChain`, which it drops. |
+| 8 | `9264ccd9f`..`a0a54e57e` | Track settings become session maps; `syncTempo`, `recDub`, `autoRecord`, `defaultMultiple` become session settings; monitors keep only `mode`; undo/redo counts required; track pans, lane routing, input and output setup. `masterChain` is output bus 0's chain. |
+| 9 | `a52fe34d4`..`623a5a7ba` | `allTracksChain` required, `trackLevels`; `0d601db8e` replaces `masterChain` with `outputChains`; `623a5a7ba` caps monitor volume at 1. |
+| 10 | `a921bd9a9` | Fade durations. |
 | 11 | `19a6faa8d` | Required per-track `fadeAmount`. |
-| 12 (in flight) | Peel P2, #1164, PR #1194 | Per-lane `history` entries with kinds. |
+| 12 | Peel P2 (#1164, PR #1194) | Per-lane `history` entries with kinds. |
 | 13 (in flight) | Reverse P2, #1162 | Required per-track `reversed`. |
 
 ## Design
 
-- `sessionMigrationSteps` maps each schema to one step, `vN → vN+1`, over the
-  decoded manifest. `decodeSessionManifest` runs the steps from the bundle's
-  schema up to `Session.formatVersion`, then the strict decoder. A test fails
-  when any schema from 7 to the current one lacks its step.
+- `sessionMigrationSteps` maps each schema from 1 to one step, `vN → vN+1`,
+  over the decoded manifest. `decodeSessionManifest` runs the steps from the
+  bundle's schema up to `Session.formatVersion`, then the strict decoder. A
+  test fails when any schema lacks its step.
 - `SessionRepository.open` reads, converts in memory and validates; it writes
-  nothing. `read` is `open` without the player's settings.
-- `SessionCubit.loadNamed` opens with the player's current settings
-  (`SessionSettingsCoordinator.current`). After the rig applies, it calls
+  nothing. `read`, the Library preview and the stems export decode through the
+  same conversion without the player's settings.
+- `SessionCubit.open` opens with the player's current settings
+  (`SessionSettingsCoordinator.current`). After the rig applies it calls
   `commitConversion`: the original manifest is kept byte for byte as
-  `session.v<N>.json` (no bundle file uses that name; an existing backup with
-  other bytes moves the new one to `session.v<N>.2.json`, and a backup with the
-  same bytes is reused), then the converted manifest replaces `session.json`
-  through a temporary file and a rename. The conversion notes go to the log.
-- The load succeeds with `SessionState.convertedFrom` set, and the existing
-  session notice says the session was converted and the original kept.
-- A newer schema is refused as before (`SessionUnsupportedVersion`). A schema
-  older than 7, or one a step or the strict decoder refuses, is refused with
-  `SessionUnconvertible` and its own message. Every refusal happens before
-  anything is written.
-- `save` keeps an older-schema manifest as its backup before overwriting it,
-  so the original survives even when the write-back after loading failed.
-- The backup holds the manifest only. Audio files are shared with the
-  converted session rather than copied, which would double a bundle's size on
-  the appliance.
+  `session.v<N>.json` (an existing backup with other bytes moves the new one
+  to `session.v<N>.2.json`, one with the same bytes is reused), then the
+  converted manifest replaces `session.json` through `session.json.tmp` and a
+  rename. A failed write deletes the temporary file.
+- Until the next save the backup shares the audio with the converted session,
+  so putting it back as `session.json` restores the original. The next save
+  (which writes a whole new bundle and swaps it in) moves the backup manifest
+  and the layer files it names out of the previous bundle into a
+  `session.v<N>/` folder in the new one, which opens as a bundle of its own.
+  Later saves move that folder along. The move happens after the swap; until
+  it finishes the previous bundle is kept as `<id>.old`, and the catalog's
+  recovery finishes the move before deleting it. A save over a bundle whose
+  write-back failed does the same with its own older manifest. A failed save
+  leaves the previous bundle, original included, as it was.
+- The notice says the session was converted and the original kept, or, when
+  the write-back failed, that the original file is unchanged. It adds a
+  sentence for each audible change: the Master effects (and their pedals) now
+  on All tracks, and a live input lowered to 100%. The conversion notes go to
+  the log.
+- A newer schema is refused as before (`SessionUnsupportedVersion`). A
+  manifest older than schema 1, or one a step or the strict decoder refuses,
+  is refused with `SessionUnconvertible` and its own message, in the session
+  notice, the Library preview and the Library's refusal banner. Every refusal
+  happens before anything is written.
 
 ## Defaults and decisions
 
@@ -63,71 +85,71 @@ Rule numbers are the owner rules (1 preserve existing behaviour, 2 fail safe,
 
 | Field (first schema) | Value for an older session | Why |
 | --- | --- | --- |
-| `syncTempo`, `recDub`, `autoRecord`, `defaultMultiple`, `recordTiming`, `trackRecordTimingOverrides` (8) | The player's live value at open | Master kept these as global settings and opening a session never changed them (rule 1). A file that saved them (slices, trunk) keeps its value. |
-| Tempo, signature, `quantizeDiv`, click, count-in, looper mode, crown (≤7) | As saved | The file's own data. Master saved them without re-applying them; the trunk applies them, and the notice tells the player the session was converted (rule 3). |
-| `trackOneShotOverrides` (8) | `oneShotChannels` and per-track `oneShot` as `true` entries | Master reset every other track to Loop on load, which `defaultOneShot: false` reproduces. |
-| `trackLengthPresetOverrides` (8) | Per-track `lengthPresetBars` above 0 | Master reset every other track to Auto (`defaultLengthPresetBars: 0`). |
-| `loopBars` (8) | 0 | Master committed loops with no bar count. |
-| `overdubDecay`, `trackOverdubDecayOverrides` (8) | 0, none | Decay did not exist; 0 keeps every layer whole. |
-| Monitor `mode` (7) | `mode`, else `enabled ? on : off` | Master's own fallback for pre-7 monitors. |
-| `masterChain` in a 7 file | `allTracksChain` | Master's insert ran on the summed tracks before live monitoring joined, which is the All tracks stage. An output chain would also colour live monitoring. Difference: master processed only the first enabled output pair; All tracks processes each destination's recorded mix. Identical for a rig whose tracks use one pair. |
-| `masterChain` in an 8 or 9 file | Output bus 0's chain | From slice 3b on, the Master insert was bus 0's chain. The slice-9 author dropped it; keeping it on bus 0 preserves the sound (rule 1). A file that also has a bus 0 chain cannot be converted (rule 2). |
+| Schema 1 `tempoBpm`, `syncLoopToTempo`, `quantizeMode`, `metronomeOn`, `countInEnabled` | Manual tempo in 4/4 (when 30–300), `syncTempo`, record timing and grid `off`→immediately/off, `beat`→quarter, `bar`→bar, click while playing or recording, one-bar count-in | Schema 1 saved and re-applied them. |
+| Stem (1–2) | Lane 0: the track's level and mute, both outputs, no input, one live layer | Master's own reading of these tracks. |
+| Lane and monitor chains (2), Track and Master chains (5) | Empty | No FX chains where none were saved. Bare-array chains of 2–4 are kept; the current decoder reads them. |
+| Tempo (4) where none was saved (2, 3, or 1 out of range) | Derived from the base loop as the engine does with loop sync: whole 4/4 bars, the tempo nearest 120 within 30–300 (`le_grid_derive_bpm`), `derived`, `loopBars` = those bars; none without a loop | Owner decision. |
+| Grid, click, count-in, looper mode, crown (4) | Off, multi, no crown | Master's reading of pre-4 bundles. |
+| `pedalBindings` (6) | Empty | The global remap applies, as on master. |
+| `syncTempo`, `recDub`, `autoRecord`, `defaultMultiple`, `recordTiming` (8) | The player's live value at open | Master kept these as global settings and opening a session never changed them (rule 1). A file that saved them keeps its value. |
+| `trackRecordTimingOverrides` (8) | Empty | Per-track timing did not exist before (slices aside); every track followed the global setting. Live values would carry the previous session's choices across. |
+| Tempo, signature, grid, click, count-in, looper mode, crown (4–7) | As saved | The file's own data. Master saved them without re-applying them; the trunk applies them, and the notice says the session was converted (rule 3). |
+| `trackOneShotOverrides`, `trackLengthPresetOverrides` (8) | From `oneShotChannels` and per-track `oneShot`, and presets above 0 | Master reset every other track to Loop and Auto. |
+| `loopBars` (8) | 0 unless derived above | Master committed loops with no bar count. |
+| `overdubDecay` (8) | 0, none | Decay did not exist. |
+| Monitor `mode` (7) | `mode`, else `enabled ? on : off` | Master's own fallback. |
+| `masterChain` in a schema 5–7 file | `allTracksChain`, and Master-stage pedal bindings retargeted to All tracks (slot kept); told in the notice | Master's insert ran on the summed tracks before live monitoring joined. Difference: master processed only the first enabled output pair, All tracks every destination's recorded mix. Identical when tracks use one pair. |
+| `masterChain` in a schema 8 or 9 file | Output bus 0's chain, and its pedal bindings to output 0 | From slice 3b the Master insert was bus 0's chain. A file that also has a bus 0 chain cannot be converted (rule 2). |
 | `allTracksChain` (8/9), `outputChains` (9) | Empty | No such stage before. |
-| `trackLevels`, `trackPans`, `inputSetup`, `outputSetup`, lane `pan`/`balance`, lane routing maps | Unity, centre, empty | Did not exist on master; the empty values reproduce how the takes were recorded and heard. They are not taken from the live device, because they describe the recording, not a preference. |
-| Monitor `volume` above 1 (cap from 9) | 1, noted | The live-input ceiling is unity by accepted design (#1124). Lowering one live monitor is safer than refusing the session (rule 2), and it is noted. |
-| `defaultFadeDurationMs`, `trackFadeDurationOverrides` (10) | 4000, none | Fade did not exist; the current default. |
-| `fadeAmount` (11) | 1 | An unfaded track. |
-| `pedalBindings` | Unchanged | The blob format did not change. A binding on the retired Master stage stays in the set, unresolved, and the assignment screen offers rebind (existing R25 behaviour), so it is not silent. |
-| Undo/redo layers | Unchanged | Same layout through schema 11. |
-| Schema 6 and older | Refused (`SessionUnconvertible`) | Out of the owner's decision; see open question. |
+| `trackLevels`, `trackPans`, `inputSetup`, `outputSetup`, lane `pan`/`balance`, lane routing maps | Unity, centre, empty | They reproduce how the takes were recorded and heard. |
+| Monitor `volume` above 1 (cap from 9) | 1, noted, told in the notice | Unity is the live-input ceiling (#1124); lowering is safer than refusing (rule 2). |
+| Fade durations (10), `fadeAmount` (11) | 4000 ms and none; 1 | Fade did not exist. |
+| Lane `history` (12) | One `layer` entry per undo and redo entry | Schema 11's recall filed every entry as `LE_HIST_LAYER`; images and counts are unchanged. |
+| A Master binding in a schema 10 or 11 file | Unchanged | It was already inert as written; making it live would change the session. |
 
 Every filled, moved or changed field is recorded in the conversion notes.
+
+**Known limitation.** A slice-era schema-7 file written between slice 3b
+(`f628c7412`) and the slices' own bump (`919e337d2`) stored output bus 0's
+chain as `masterChain`. The conversion cannot tell it from master's and moves
+it to All tracks, where live monitoring no longer passes through it. Such files
+exist only on development machines from those two weeks.
 
 ## Fixtures
 
 `packages/session_repository/test/fixtures/sessions/` holds bundles written by
-each schema's own code; `fixtures/generators/` holds the generator each one
-ran, with the commit in its name.
+each schema's own code; `fixtures/generators/` holds each generator, with the
+commit in its name.
 
 - `v7_master_full`, `v7_master_empty`: master `bedcecf27`, its native engine,
   `LooperRepository`, `chainsFromLooper`, `SessionRepository.save` and
-  `PedalBindingSet.encode`. Three tracks, two lanes, undo and redo layers, a
-  muted and a turned-down lane, lane, track, Master and monitor chains, an
-  auto monitor at 150%, tempo 100 in 3/4, bar grid, click, count-in, Sync
-  mode, Once channels, two pedal bindings (one on the Master stage).
-- `v8_slices_be987759d`, `v9_slices_95dcea0d8`, `v8_trunk_a0a54e57e`,
-  `v9_trunk_623a5a7ba`, `v10_trunk_a921bd9a9`, `v11_trunk_5c163d11f`: each
-  commit's `SessionRepository.save` over its own fake engine, with the chain
-  and binding strings master encoded.
+  `PedalBindingSet.encode`.
+- `v1_loopy_8547affe7` to `v6_loopy_4dc33ac10`, `v8_*`, `v9_*`, `v10_*`,
+  `v11_*`, `v12_peel_097e1ef68`: each commit's `SessionRepository.save` over
+  its own fake engine. Schemas 2–4 encode their chains with their own
+  `encodeTrackEffects`; later ones carry the strings master encoded.
 
-Tests open every fixture and check its values, apply the converted schema-7
-bundle to the native engine, check backup, write-back and byte-identical
-refusals, and check the notice and banners.
+Tests open every fixture and check its values, apply converted 1, 2, 4 and 7
+bundles to the native engine, check backup, write-back order, the backup
+folder after a save, byte-identical refusals and failed saves, and the notice
+and Library messages.
 
 ## Adding a schema bump
 
 Add the step to `sessionMigrationSteps` and a fixture from the bumping commit
 to the lists in `session_migration_test.dart` and `session_conversion_test.dart`.
-The coverage test fails until the step exists.
-
-- Peel P2 (12): history kinds default to `layer`, the kind the schema-11
-  rebuild gave every entry (`le_hist_layer`).
-- Reverse P2 (13): `reversed: false`.
+The coverage test fails until the step exists. Reverse P2 (13) adds
+`12: _v12ToV13`, setting every track's `reversed` to `false`.
 
 ## Library (#1178)
 
-The Library branches are not on the trunk yet. Their lenient summary lists a
-schema-7 bundle normally (name, tracks, tempo, signature), though its effect
-count misses `masterChain`. `readPreview` and the rename path call
-`Session.fromJson` directly and would refuse a schema-7 bundle; they should
-call `decodeSessionManifest` instead.
-
-## Open question for the owner
-
-Bundles saved before master reached schema 7 (before #611, 2026-08-10) opened
-on master and are refused here. Convert them too, or leave them refused?
+The lenient catalog row lists an older bundle normally and counts a
+`masterChain` in its effects. The preview and the stems export decode through
+the conversion; rename only edits `name` in the manifest and leaves the schema
+as it was.
 
 ## Design write-back
 
-No new surface. The unconvertible refusal reuses the `session-version-error`
-banner and the session notice with new text.
+No new surface. The notice adds sentences to the existing session toast; an
+unconvertible session uses the existing version refusal places with its own
+text.

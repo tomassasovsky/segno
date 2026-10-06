@@ -322,6 +322,54 @@ Base take `1.0`, three passes adding `0.5` (fixture of `test_per_pass_undo_layer
     schema number (12, or 13 if the Reverse Session part lands first; current-schema
     decode only, AGENTS.md), captured at `session_repository.dart:652-695` and
     replayed at `looper_repository.dart:4360-4411`.
+  - Note (Part 2 build): a Clear restore point sits on the redo side after Clear
+    then Undo. It is persisted as kind `clear` with an image of its own, and its
+    Redo re-clears from the live state, which needs none of the CLEAR payload.
+    A cleared track is EMPTY and never captured, so `finalize_history` refuses
+    a CLEAR on the undo side. The in-memory `SessionRigLane` derives `redoCount`
+    from its history instead of storing it twice.
+  - Note (Part 2 review, PR #1194). Each finding and what was done:
+    - Finding 1 (capture split by the gated depth). `le_engine_export_history`
+      now returns the raw `undo_count` through an out parameter, and the Dart
+      seam returns one `TrackHistory` value (entries plus that split). Capture
+      splits by it, so the published `undo_depth`, which reads 0 while a Clear
+      restore is in flight, never meets the raw stacks. The silent
+      `continue` on a disagreement is gone because the disagreement can no
+      longer happen.
+    - Finding 3 (strictness). Both validators (`le_engine_finalize_history`
+      and `TrackHistory.malformation`, which decode runs) now also refuse:
+      a CLEAR that is not the last entry; a `skipped` of `LE_POOL_SLOTS` or
+      more; an undo-side PEEL whose `skipped` exceeds the PEEL run directly
+      beneath it; and a redo marker that finds no LAYER when the redo walk
+      reaches it.
+    - Deviation from the review's wording. The run bound has an exception
+      for a run that reaches the bottom of the stack. Pool eviction removes
+      the oldest entries and Undo clamps its re-insertion there, so the live
+      engine can hold that shape. Refusing it would stop a real save from
+      opening (rule 1).
+    - The marker's own `skipped` is not checked against the walk, for two
+      reasons. Redo recomputes it (`le_peel_target`). After an eviction
+      clamp the two legitimately differ.
+    - Finding 5 (`SessionLane` shape). `SessionLane.history` is a required
+      `TrackHistory`, and `undoCount`/`redoCount` derive from it. The JSON
+      keeps both fields, and decode cross-checks the stored `redoCount`.
+      `SessionRigLane` carries the same value.
+    - Finding 4 (docs). `docs/design/session-bundle-format.md` now describes
+      v12 and the current-only rule, keeps the presence-keyed table as
+      history, and lists v8-v12. The `SessionCorruptLayers` comment is
+      current.
+    - Not done here, pre-existing (rule 5, follow-up). A lane whose image
+      export comes back short is still skipped without a notice
+      (`session_repository.dart`, the `layerPcm.length != total` check).
+      The native torn check accepts a stale allocated slot; Dart's decode
+      and `applySession` make that unreachable today, and a staged-slot
+      bitmask would close it if another caller appears.
+    - Not done here, owner decision. Appliance sessions are v7 or older. The
+      v7-to-current migration chain is #1196. A v11 bundle becomes v12 by
+      giving each lane `history` = `undoCount + redoCount` entries of
+      `{kind: layer, skipped: 0}` and keeping `undoCount`, `redoCount` and
+      `layers` unchanged. That is exactly how v11 recall filed them, and v11
+      capture dropped any track holding a redo marker.
 - Reopen (#1158): the stacks are material (its table keeps `undo_count`,
   `redo_count`, `a_undo_depth`, `a_redo_depth` for retained tracks). Peel has no
   pending shape: it completes on the control thread and the only cross-thread

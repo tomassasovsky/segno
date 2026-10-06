@@ -1,0 +1,77 @@
+// Fixture generator for #1196 (not part of this commit's tree): a real
+// schema-6 bundle written by this commit's own SessionRepository.save.
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:loopy_engine/loopy_engine.dart';
+import 'package:session_repository/session_repository.dart';
+
+import 'helpers/fake_session_engine.dart';
+
+Float32List pcm(int frames, double value) =>
+    Float32List.fromList(List.filled(frames, value));
+
+String get out => Platform.environment['FIXTURE_OUT']!;
+
+SessionRepository repoFor(AudioEngine engine) => SessionRepository(
+  engine: engine,
+  clearPollInterval: Duration.zero,
+  clearPollAttempts: 4,
+);
+
+const laneEnvelope = "{\"chainEnabled\":true,\"entries\":[{\"type\":3,\"params\":[0.3,0.4,0.5,0.0],\"slotId\":\"204f9ee7-0\"},{\"type\":7,\"params\":[0.5,0.5,0.35,0.0],\"slotId\":\"204f9ee7-1\"}]}";
+const monitorEnvelope = "{\"chainEnabled\":true,\"entries\":[{\"type\":6,\"params\":[0.45,0.5,0.35,0.0],\"slotId\":\"204f9ee7-5\"}]}";
+const trackEnvelope = "{\"chainEnabled\":true,\"entries\":[{\"type\":4,\"params\":[0.3,0.7,0.0,0.0],\"slotId\":\"204f9ee7-3\"}]}";
+const masterEnvelope = "{\"chainEnabled\":true,\"entries\":[{\"type\":2,\"params\":[0.5,0.2,0.0,0.0],\"slotId\":\"204f9ee7-4\"}]}";
+const bindings = "[{\"button\":\"track1\",\"bank\":0,\"target\":\"{\\\"stage\\\":\\\"loop\\\",\\\"index\\\":0,\\\"lane\\\":0}\",\"behavior\":\"toggle\"},{\"button\":\"track2\",\"bank\":0,\"target\":\"{\\\"stage\\\":\\\"master\\\",\\\"index\\\":0}\",\"behavior\":\"momentary\"}]";
+
+void main() {
+  test('generate', () async {
+    final engine = FakeSessionEngine()
+      ..seedLayers(0, [pcm(2400, 0.25), pcm(2400, 0.375)], undoDepth: 1)
+      ..seedTrack(1, pcm(4800, 0.5), multiple: 2, volume: 0.5, muted: true)
+      ..seedLane(1, 1, pcm(4800, 0.125), volume: 1.5, outputMask: 0x1)
+      ..tempoBpm = 110
+      ..tempoSource = TempoSource.manual
+      ..tsNum = 3
+      ..quantizeDiv = GridDivision.bar
+      ..clickMode = ClickMode.rec
+      ..clickMask = 0x2
+      ..countInBars = 2
+      ..looperMode = LooperMode.sync
+      ..primaryTrack = 0
+      ..oneShot[1] = true;
+    await repoFor(engine).save(
+      '$out/v6_loopy_4dc33ac10',
+      chains: SessionChains(
+        laneChains: [
+          SessionLaneChain(
+            channel: 0,
+            lane: 0,
+            encoded: encodeTrackEffects([
+              BuiltInEffect(type: TrackEffectType.delay),
+            ]),
+          ),
+        ],
+        monitors: [
+          SessionMonitor(
+            input: 0,
+            enabled: true,
+            outputMask: 3,
+            volume: 1.5,
+            muted: false,
+            encoded: encodeTrackEffects([
+              BuiltInEffect(type: TrackEffectType.reverb),
+            ]),
+          ),
+        ],
+        trackChains: const [
+          SessionTrackChain(channel: 1, encoded: trackEnvelope),
+        ],
+        masterChain: masterEnvelope,
+      ),
+      pedalBindings: bindings,
+    );
+  });
+}

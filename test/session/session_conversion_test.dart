@@ -75,19 +75,25 @@ void main() {
     ]);
     expect(typesOf(rig.monitors.first.effects), [TrackEffectType.echo]);
 
-    // Both bindings survive; the one on the retired Master stage stays in
-    // the set, unresolved, for the assignment screen to offer rebind.
+    // Both bindings survive; the one on the retired Master stage follows
+    // its chain to All tracks.
     final bindings = PedalBindingSet.decode(
       opened.bundle.session.pedalBindings,
     );
     expect(bindings.length, 2);
     expect(
       bindings.bindings.map((b) => b.decodeTarget()?.address.stage),
-      [FxStage.loop, null],
+      [FxStage.loop, FxStage.allTracks],
     );
   });
 
   for (final name in const [
+    'v1_loopy_8547affe7',
+    'v2_loopy_93f2f0cb5',
+    'v3_loopy_319a7dc9d',
+    'v4_loopy_fb8d7cc2b',
+    'v5_loopy_b52c3d276',
+    'v6_loopy_4dc33ac10',
     'v7_master_empty',
     'v8_slices_be987759d',
     'v8_trunk_a0a54e57e',
@@ -95,6 +101,7 @@ void main() {
     'v9_trunk_623a5a7ba',
     'v10_trunk_a921bd9a9',
     'v11_trunk_5c163d11f',
+    'v12_peel_097e1ef68',
   ]) {
     test('$name maps to a valid rig', () async {
       final opened = await SessionRepository(
@@ -104,7 +111,7 @@ void main() {
       expect(MixSettingsSnapshot.fromRig(rig).isValid, isTrue);
       expect(
         opened.conversion?.fromVersion,
-        name.startsWith('v11') ? isNull : isNotNull,
+        name.startsWith('v12') ? isNull : isNotNull,
       );
     });
   }
@@ -170,5 +177,29 @@ void main() {
       ]);
       expect(nativeLooper.monitorMode(0), MonitorMode.auto);
     }, skip: skip);
+
+    for (final (name, lengths) in const [
+      ('v1_loopy_8547affe7', [2400, 4800]),
+      ('v2_loopy_93f2f0cb5', [2400, 4800]),
+      ('v4_loopy_fb8d7cc2b', [2400, 4800]),
+    ]) {
+      test('$name applies with its tracks', () async {
+        final opened = await SessionRepository(
+          engine: native,
+        ).open(copyFixture(name));
+
+        await nativeLooper.applySession(
+          rigFromBundle(opened.bundle),
+          clearPollInterval: const Duration(milliseconds: 1),
+        );
+
+        final snapshot = native.snapshot();
+        expect(
+          snapshot.tracks.take(lengths.length).map((t) => t.lengthFrames),
+          lengths,
+        );
+        expect(snapshot.tempoBpm, opened.bundle.session.tempoBpm);
+      }, skip: skip);
+    }
   });
 }
