@@ -123,15 +123,18 @@ void main() {
     expect(decoder.mock.live, 1);
   });
 
-  test('NOT_READY is retried once, then reported busy', () async {
+  test('NOT_READY is retried a bounded number of times, then reported '
+      'busy', () async {
     final a = await asset('a.wav');
-    engine.notReadyCount = 1;
+    // A transit that outlasts one retry (two device blocks) still loads
+    // (review of P4, L1).
+    engine.notReadyCount = 5;
     expect(await repo.load(a.digest), isTrue);
-    expect(engine.handoffs, 2);
+    expect(engine.handoffs, 6);
     expect(repo.state.loaded, a.digest);
 
     final b = await asset('b.wav');
-    engine.notReadyCount = 2;
+    engine.notReadyCount = 9;
     expect(await repo.load(b.digest), isFalse);
     expect(failures.single.reason, BackingFailureReason.busy);
     expect(failures.single.name, 'b.wav');
@@ -148,6 +151,37 @@ void main() {
     engine.refuseWith = EngineResult.notRunning;
     expect(await repo.stageNext(a.digest), isFalse);
     expect(failures.last.reason, BackingFailureReason.notRunning);
+    // A hand-over refused for another reason at the engine's own rate (a
+    // full command ring) is not about the file (review of P4, L2).
+    engine.refuseWith = EngineResult.invalid;
+    expect(await repo.load(a.digest), isFalse);
+    expect(failures.last.reason, BackingFailureReason.busy);
+  });
+
+  test('the engine rate is read on a restart, not on every refresh '
+      '(review of P4, L3)', () async {
+    final counting = _CountingEngine()
+      ..start(const EngineConfig(sampleRate: 48000, outputChannels: 2));
+    final r = BackingRepository(
+      engine: counting,
+      metering: counting,
+      decoder: decoder,
+      store: store,
+      pollInterval: const Duration(hours: 1),
+    );
+    addTearDown(r.dispose);
+    final before = counting.snapshots;
+    for (var i = 0; i < 20; i++) {
+      r.refresh();
+    }
+    expect(counting.snapshots, before);
+    expect(r.state.sampleRate, 48000);
+    counting
+      ..stop()
+      ..start(const EngineConfig(sampleRate: 96000, outputChannels: 2));
+    r.refresh();
+    expect(counting.snapshots, before + 1);
+    expect(r.state.sampleRate, 96000);
   });
 
   test('a missing or damaged asset is reported, nothing decoded', () async {
@@ -336,4 +370,14 @@ void main() {
       repo.refresh(); // a no-op once disposed
     },
   );
+}
+
+class _CountingEngine extends MockAudioEngine {
+  int snapshots = 0;
+
+  @override
+  EngineSnapshot snapshot() {
+    snapshots++;
+    return super.snapshot();
+  }
 }
