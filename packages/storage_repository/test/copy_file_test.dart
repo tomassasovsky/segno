@@ -34,8 +34,8 @@ void main() {
 
   group('a copy that completes', () {
     test('writes a hidden part of its own first, renames it into place only '
-        'once it is complete, under a copy lease, then syncs the '
-        'directory', () async {
+        'once it is complete, under a copy lease, then syncs the directory '
+        'and every parent the copy created, bottom up', () async {
       final source = h.source('take.wav', 300000);
       final seen = <String>[];
       final target = File('${h.exports}/Segno/Performances/take.wav');
@@ -66,10 +66,86 @@ void main() {
         'synced: 0',
         'lease: copy',
       ]);
-      expect(h.synced, ['${h.exports}/Segno/Performances'], reason: 'after');
+      expect(h.synced, [
+        '${h.exports}/Segno/Performances',
+        '${h.exports}/Segno',
+        h.exports,
+      ], reason: 'after');
       expect(File(written).readAsBytesSync(), source.readAsBytesSync());
       expect(h.filesUnder(h.exports), ['Segno/Performances/take.wav']);
       expect(repo.leases, isEmpty);
+    });
+
+    test('a directory that was already there is the only one synced', () async {
+      final source = h.source('take.wav', 100);
+      repo = h.build();
+      Directory('${h.exports}/Segno').createSync();
+
+      await repo.copyFile(
+        source.path,
+        internal,
+        'Segno/take.wav',
+        onConflict: ConflictPolicy.ask,
+      );
+
+      expect(h.synced, ['${h.exports}/Segno']);
+    });
+
+    test('publishes with the rename that never replaces: no empty file ever '
+        'stands at the final name', () async {
+      final source = h.source('take.wav', 100);
+      repo = h.build();
+
+      final written = await repo.copyFile(
+        source.path,
+        internal,
+        'take.wav',
+        onConflict: ConflictPolicy.keepBoth,
+      );
+
+      final rename = h.io.renames.single;
+      expect(
+        rename.from,
+        matches(RegExp(r'/\.take\.wav\.[0-9a-f]{16}\.part$')),
+      );
+      expect(rename.to, written);
+      expect(rename.taken, isFalse);
+      expect(File(written).readAsBytesSync(), source.readAsBytesSync());
+    });
+
+    test('a directory sync the device refuses fails the copy as io: '
+        '"copied" is never claimed for a rename that is not durable', () async {
+      final source = h.source('take.wav', 100);
+      repo = h.build();
+      h.io.failingSyncs.add('${h.exports}/Segno');
+
+      await expectLater(
+        repo.copyFile(
+          source.path,
+          internal,
+          'Segno/take.wav',
+          onConflict: ConflictPolicy.ask,
+        ),
+        throwsA(isA<StorageIo>()),
+      );
+      expect(repo.leases, isEmpty);
+    });
+
+    test('the sync of a parent the copy created is honoured too', () async {
+      final source = h.source('take.wav', 100);
+      repo = h.build();
+      h.io.failingSyncs.add(h.exports);
+
+      await expectLater(
+        repo.copyFile(
+          source.path,
+          internal,
+          'Segno/take.wav',
+          onConflict: ConflictPolicy.ask,
+        ),
+        throwsA(isA<StorageIo>()),
+      );
+      expect(h.synced, ['${h.exports}/Segno']);
     });
 
     test('the real copy lands byte for byte on a mounted volume', () async {
@@ -304,317 +380,376 @@ void main() {
     });
   });
 
-  group('a name that is already there', () {
-    late File source;
-
-    setUp(() {
-      source = h.source('take.wav', 64);
-      repo = h.build();
-      File('${h.exports}/take.wav').writeAsStringSync('old');
-    });
-
-    Future<String> copyAs(String name, ConflictPolicy policy) =>
-        repo.copyFile(source.path, internal, name, onConflict: policy);
-
-    test('ask stops with NameConflict before writing anything', () async {
-      await expectLater(
-        copyAs('take.wav', ConflictPolicy.ask),
-        throwsA(
-          isA<NameConflict>()
-              .having(
-                (e) => e.existingPath,
-                'existingPath',
-                '${h.exports}/take.wav',
-              )
-              .having(
-                (e) => '$e',
-                'toString',
-                'a file already exists at ${h.exports}/take.wav',
-              ),
-        ),
-      );
-      expect(h.filesUnder(h.exports), ['take.wav']);
-      expect(File('${h.exports}/take.wav').readAsStringSync(), 'old');
-      expect(repo.leases, isEmpty);
-    });
-
-    test('keep both writes name (2).ext, then (3)', () async {
-      expect(
-        await copyAs('take.wav', ConflictPolicy.keepBoth),
-        '${h.exports}/take (2).wav',
-      );
-      expect(
-        await copyAs('take.wav', ConflictPolicy.keepBoth),
-        '${h.exports}/take (3).wav',
-      );
-      expect(h.filesUnder(h.exports), [
-        'take (2).wav',
-        'take (3).wav',
-        'take.wav',
-      ]);
-      expect(File('${h.exports}/take.wav').readAsStringSync(), 'old');
-      expect(
-        File('${h.exports}/take (2).wav').readAsBytesSync(),
-        source.readAsBytesSync(),
-      );
-    });
-
-    test('keep both puts the number at the end of a name without an '
-        'extension, a dotfile included', () async {
-      File('${h.exports}/notes').writeAsStringSync('old');
-      File('${h.exports}/.segno').writeAsStringSync('old');
-      Directory('${h.exports}/v1.2').createSync();
-      File('${h.exports}/v1.2/mix').writeAsStringSync('old');
-
-      expect(
-        await copyAs('notes', ConflictPolicy.keepBoth),
-        '${h.exports}/notes (2)',
-      );
-      expect(
-        await copyAs('.segno', ConflictPolicy.keepBoth),
-        '${h.exports}/.segno (2)',
-      );
-      expect(
-        await copyAs('v1.2/mix', ConflictPolicy.keepBoth),
-        '${h.exports}/v1.2/mix (2)',
-      );
-    });
-
-    test('replace writes over it', () async {
-      expect(
-        await copyAs('take.wav', ConflictPolicy.replace),
-        '${h.exports}/take.wav',
-      );
-      expect(h.filesUnder(h.exports), ['take.wav']);
-      expect(
-        File('${h.exports}/take.wav').readAsBytesSync(),
-        source.readAsBytesSync(),
-      );
-    });
-  });
-
-  group('copies in flight together', () {
-    /// A copy step that writes its source, then waits for [gate].
-    CopyBytes gated(Map<String, Completer<void>> gates) {
-      return (source, part, shouldAbort) async {
-        part.writeAsBytesSync(source.readAsBytesSync(), flush: true);
-        final gate = gates[source.path.split('/').last];
-        if (gate != null) await gate.future;
-      };
+  for (final noReplace in [true, false]) {
+    final fs = noReplace ? '' : ' (no RENAME_NOREPLACE: the claim)';
+    StorageRepository build({CopyBytes? copyBytes}) {
+      h.io.canRefuseReplacement = noReplace;
+      return h.build(copyBytes: copyBytes);
     }
 
-    test('two copies to one name never share a part, and each publishes '
-        'its own bytes', () async {
-      final a = h.source('a.wav', 2000);
-      final b = File('${h.root.path}/b.wav')
-        ..writeAsBytesSync(List.filled(2000, 7), flush: true);
-      final gates = {'a.wav': Completer<void>()};
-      final parts = <String>[];
-      repo = h.build(
-        copyBytes: (source, part, abort) {
-          parts.add(part.path);
-          return gated(gates)(source, part, abort);
-        },
-      );
-      File('${h.exports}/take.wav').writeAsStringSync('old');
+    group('a name that is already there$fs', () {
+      late File source;
 
-      final first = repo.copyFile(
-        a.path,
-        internal,
-        'take.wav',
-        onConflict: ConflictPolicy.keepBoth,
-      );
-      await pumpEventQueue();
-      final second = await repo.copyFile(
-        b.path,
-        internal,
-        'take.wav',
-        onConflict: ConflictPolicy.keepBoth,
-      );
-      gates['a.wav']!.complete();
-      final firstPath = await first;
+      setUp(() {
+        source = h.source('take.wav', 64);
+        repo = build();
+        File('${h.exports}/take.wav').writeAsStringSync('old');
+      });
 
-      expect(parts, hasLength(2));
-      expect(parts.toSet(), hasLength(2), reason: 'one part per copy');
-      expect(second, '${h.exports}/take (2).wav');
-      expect(firstPath, '${h.exports}/take (3).wav');
-      expect(File(second).readAsBytesSync(), b.readAsBytesSync());
-      expect(File(firstPath).readAsBytesSync(), a.readAsBytesSync());
-      expect(File('${h.exports}/take.wav').readAsStringSync(), 'old');
-      expect(h.filesUnder(h.exports), [
-        'take (2).wav',
-        'take (3).wav',
-        'take.wav',
-      ]);
+      Future<String> copyAs(String name, ConflictPolicy policy) =>
+          repo.copyFile(source.path, internal, name, onConflict: policy);
+
+      test('ask stops with NameConflict before writing anything', () async {
+        await expectLater(
+          copyAs('take.wav', ConflictPolicy.ask),
+          throwsA(
+            isA<NameConflict>()
+                .having(
+                  (e) => e.existingPath,
+                  'existingPath',
+                  '${h.exports}/take.wav',
+                )
+                .having(
+                  (e) => '$e',
+                  'toString',
+                  'a file already exists at ${h.exports}/take.wav',
+                ),
+          ),
+        );
+        expect(h.filesUnder(h.exports), ['take.wav']);
+        expect(File('${h.exports}/take.wav').readAsStringSync(), 'old');
+        expect(repo.leases, isEmpty);
+      });
+
+      test('keep both writes name (2).ext, then (3)', () async {
+        expect(
+          await copyAs('take.wav', ConflictPolicy.keepBoth),
+          '${h.exports}/take (2).wav',
+        );
+        expect(
+          await copyAs('take.wav', ConflictPolicy.keepBoth),
+          '${h.exports}/take (3).wav',
+        );
+        expect(h.filesUnder(h.exports), [
+          'take (2).wav',
+          'take (3).wav',
+          'take.wav',
+        ]);
+        expect(File('${h.exports}/take.wav').readAsStringSync(), 'old');
+        expect(
+          File('${h.exports}/take (2).wav').readAsBytesSync(),
+          source.readAsBytesSync(),
+        );
+      });
+
+      test('keep both puts the number at the end of a name without an '
+          'extension, a dotfile included', () async {
+        File('${h.exports}/notes').writeAsStringSync('old');
+        File('${h.exports}/.segno').writeAsStringSync('old');
+        Directory('${h.exports}/v1.2').createSync();
+        File('${h.exports}/v1.2/mix').writeAsStringSync('old');
+
+        expect(
+          await copyAs('notes', ConflictPolicy.keepBoth),
+          '${h.exports}/notes (2)',
+        );
+        expect(
+          await copyAs('.segno', ConflictPolicy.keepBoth),
+          '${h.exports}/.segno (2)',
+        );
+        expect(
+          await copyAs('v1.2/mix', ConflictPolicy.keepBoth),
+          '${h.exports}/v1.2/mix (2)',
+        );
+      });
+
+      test('replace writes over it', () async {
+        expect(
+          await copyAs('take.wav', ConflictPolicy.replace),
+          '${h.exports}/take.wav',
+        );
+        expect(h.filesUnder(h.exports), ['take.wav']);
+        expect(
+          File('${h.exports}/take.wav').readAsBytesSync(),
+          source.readAsBytesSync(),
+        );
+      });
     });
 
-    test('ask: of two copies to one new name the second meets NameConflict '
-        'and leaves nothing behind', () async {
-      final a = h.source('a.wav', 100);
-      final b = h.source('b.wav', 100);
-      final gates = {'a.wav': Completer<void>()};
-      repo = h.build(copyBytes: gated(gates));
+    group('copies in flight together$fs', () {
+      /// A copy step that writes its source, then waits for [gate].
+      CopyBytes gated(Map<String, Completer<void>> gates) {
+        return (source, part, shouldAbort) async {
+          part.writeAsBytesSync(source.readAsBytesSync(), flush: true);
+          final gate = gates[source.path.split('/').last];
+          if (gate != null) await gate.future;
+        };
+      }
 
-      final first = repo.copyFile(
-        a.path,
-        internal,
-        'take.wav',
-        onConflict: ConflictPolicy.ask,
-      );
-      await pumpEventQueue();
-      await repo.copyFile(
-        b.path,
-        internal,
-        'take.wav',
-        onConflict: ConflictPolicy.ask,
-      );
-      gates['a.wav']!.complete();
+      test('two copies to one name never share a part, and each publishes '
+          'its own bytes', () async {
+        final a = h.source('a.wav', 2000);
+        final b = File('${h.root.path}/b.wav')
+          ..writeAsBytesSync(List.filled(2000, 7), flush: true);
+        final gates = {'a.wav': Completer<void>()};
+        final parts = <String>[];
+        repo = build(
+          copyBytes: (source, part, abort) {
+            parts.add(part.path);
+            return gated(gates)(source, part, abort);
+          },
+        );
+        File('${h.exports}/take.wav').writeAsStringSync('old');
 
-      await expectLater(first, throwsA(isA<NameConflict>()));
-      expect(h.filesUnder(h.exports), ['take.wav']);
-      expect(
-        File('${h.exports}/take.wav').readAsBytesSync(),
-        b.readAsBytesSync(),
-      );
-    });
+        final first = repo.copyFile(
+          a.path,
+          internal,
+          'take.wav',
+          onConflict: ConflictPolicy.keepBoth,
+        );
+        await pumpEventQueue();
+        final second = await repo.copyFile(
+          b.path,
+          internal,
+          'take.wav',
+          onConflict: ConflictPolicy.keepBoth,
+        );
+        gates['a.wav']!.complete();
+        final firstPath = await first;
 
-    test('a file that appears under the name while the bytes are copied is '
-        'never overwritten', () async {
-      final source = h.source('take.wav', 100);
-      var policy = ConflictPolicy.ask;
-      repo = h.build(
-        copyBytes: (from, part, abort) async {
-          part.writeAsBytesSync(from.readAsBytesSync(), flush: true);
-          // Someone else writes the name meanwhile.
-          File('${h.exports}/x.wav').writeAsStringSync('theirs');
-        },
-      );
+        expect(parts, hasLength(2));
+        expect(parts.toSet(), hasLength(2), reason: 'one part per copy');
+        expect(second, '${h.exports}/take (2).wav');
+        expect(firstPath, '${h.exports}/take (3).wav');
+        expect(File(second).readAsBytesSync(), b.readAsBytesSync());
+        expect(File(firstPath).readAsBytesSync(), a.readAsBytesSync());
+        expect(File('${h.exports}/take.wav').readAsStringSync(), 'old');
+        expect(h.filesUnder(h.exports), [
+          'take (2).wav',
+          'take (3).wav',
+          'take.wav',
+        ]);
+      });
 
-      await expectLater(
-        repo.copyFile(source.path, internal, 'x.wav', onConflict: policy),
-        throwsA(isA<NameConflict>()),
-      );
-      expect(File('${h.exports}/x.wav').readAsStringSync(), 'theirs');
-      expect(h.filesUnder(h.exports), ['x.wav']);
+      test('ask: of two copies to one new name the second meets NameConflict '
+          'and leaves nothing behind', () async {
+        final a = h.source('a.wav', 100);
+        final b = h.source('b.wav', 100);
+        final gates = {'a.wav': Completer<void>()};
+        repo = build(copyBytes: gated(gates));
 
-      File('${h.exports}/x.wav').deleteSync();
-      policy = ConflictPolicy.keepBoth;
-      expect(
-        await repo.copyFile(source.path, internal, 'x.wav', onConflict: policy),
-        '${h.exports}/x (2).wav',
-      );
-      expect(File('${h.exports}/x.wav').readAsStringSync(), 'theirs');
-    });
-  });
-
-  group('names around the part', () {
-    test("a user's own <name>.part and other dotfiles are left alone; a "
-        'part a crash left is swept', () async {
-      final source = h.source('take.wav', 100);
-      repo = h.build();
-      File('${h.exports}/take.wav.part').writeAsStringSync('mine');
-      File('${h.exports}/.notes.part').writeAsStringSync('mine too');
-      File(
-        '${h.exports}/.take.wav.0123456789abcdef.part',
-      ).writeAsStringSync('left by a crash');
-
-      await repo.copyFile(
-        source.path,
-        internal,
-        'take.wav',
-        onConflict: ConflictPolicy.ask,
-      );
-
-      expect(h.filesUnder(h.exports), [
-        '.notes.part',
-        'take.wav',
-        'take.wav.part',
-      ]);
-      expect(File('${h.exports}/take.wav.part').readAsStringSync(), 'mine');
-    });
-
-    test('a directory at the name is a name that is taken: ask stops before '
-        'writing a byte', () async {
-      final source = h.source('take.wav', 100);
-      var copies = 0;
-      repo = h.build(
-        copyBytes: (from, part, abort) async {
-          copies++;
-          part.writeAsBytesSync(from.readAsBytesSync(), flush: true);
-        },
-      );
-      Directory('${h.exports}/take.wav').createSync();
-
-      await expectLater(
-        repo.copyFile(
-          source.path,
+        final first = repo.copyFile(
+          a.path,
           internal,
           'take.wav',
           onConflict: ConflictPolicy.ask,
-        ),
-        throwsA(isA<NameConflict>()),
-      );
-      expect(copies, 0, reason: 'nothing was written');
-      expect(
+        );
+        await pumpEventQueue();
+        await repo.copyFile(
+          b.path,
+          internal,
+          'take.wav',
+          onConflict: ConflictPolicy.ask,
+        );
+        gates['a.wav']!.complete();
+
+        await expectLater(first, throwsA(isA<NameConflict>()));
+        expect(h.filesUnder(h.exports), ['take.wav']);
+        expect(
+          File('${h.exports}/take.wav').readAsBytesSync(),
+          b.readAsBytesSync(),
+        );
+      });
+
+      test('a file that appears under the name while the bytes are copied is '
+          'never overwritten', () async {
+        final source = h.source('take.wav', 100);
+        var policy = ConflictPolicy.ask;
+        repo = build(
+          copyBytes: (from, part, abort) async {
+            part.writeAsBytesSync(from.readAsBytesSync(), flush: true);
+            // Someone else writes the name meanwhile.
+            File('${h.exports}/x.wav').writeAsStringSync('theirs');
+          },
+        );
+
+        await expectLater(
+          repo.copyFile(source.path, internal, 'x.wav', onConflict: policy),
+          throwsA(isA<NameConflict>()),
+        );
+        expect(File('${h.exports}/x.wav').readAsStringSync(), 'theirs');
+        expect(h.filesUnder(h.exports), ['x.wav']);
+
+        File('${h.exports}/x.wav').deleteSync();
+        policy = ConflictPolicy.keepBoth;
+        expect(
+          await repo.copyFile(
+            source.path,
+            internal,
+            'x.wav',
+            onConflict: policy,
+          ),
+          '${h.exports}/x (2).wav',
+        );
+        expect(File('${h.exports}/x.wav').readAsStringSync(), 'theirs');
+      });
+
+      test('a copy refused by the rename leaves the name as it was and no '
+          'part behind', () async {
+        final source = h.source('take.wav', 100);
+        repo = build(
+          copyBytes: (from, part, abort) async {
+            part.writeAsBytesSync(from.readAsBytesSync(), flush: true);
+            File('${h.exports}/y.wav').writeAsStringSync('theirs');
+          },
+        );
+
+        await expectLater(
+          repo.copyFile(
+            source.path,
+            internal,
+            'y.wav',
+            onConflict: ConflictPolicy.ask,
+          ),
+          throwsA(isA<NameConflict>()),
+        );
+        expect(h.filesUnder(h.exports), ['y.wav']);
+        expect(h.io.renames.single.taken, isTrue);
+      });
+    });
+
+    group('names around the part$fs', () {
+      test("a user's own <name>.part and other dotfiles are left alone; a "
+          'part a crash left is swept', () async {
+        final source = h.source('take.wav', 100);
+        repo = build();
+        File('${h.exports}/take.wav.part').writeAsStringSync('mine');
+        File('${h.exports}/.notes.part').writeAsStringSync('mine too');
+        File(
+          '${h.exports}/.take.wav.0123456789abcdef.part',
+        ).writeAsStringSync('left by a crash');
+
         await repo.copyFile(
           source.path,
           internal,
           'take.wav',
-          onConflict: ConflictPolicy.keepBoth,
-        ),
-        '${h.exports}/take (2).wav',
-      );
-    });
-
-    test('a rename that fails takes the claimed name with it: no empty '
-        'file is left under the final name', () async {
-      final source = h.source('take.wav', 100);
-      repo = h.build(
-        copyBytes: (from, part, abort) async {
-          // The part vanishes before the rename (a sweep by someone else).
-          part
-            ..writeAsBytesSync(from.readAsBytesSync(), flush: true)
-            ..deleteSync();
-        },
-      );
-
-      await expectLater(
-        repo.copyFile(
-          source.path,
-          internal,
-          'take.wav',
-          onConflict: ConflictPolicy.keepBoth,
-        ),
-        throwsA(isA<StorageIo>()),
-      );
-      expect(h.filesUnder(h.exports), isEmpty);
-    });
-
-    test('a name that cannot be claimed for another reason than "already '
-        'there" is an I/O failure', () async {
-      final source = h.source('take.wav', 100);
-      final dir = Directory('${h.exports}/locked');
-      addTearDown(() => Process.runSync('chmod', ['755', dir.path]));
-      repo = h.build(
-        copyBytes: (from, part, abort) async {
-          part.writeAsBytesSync(from.readAsBytesSync(), flush: true);
-          Process.runSync('chmod', ['555', dir.path]);
-        },
-      );
-      dir.createSync();
-
-      await expectLater(
-        repo.copyFile(
-          source.path,
-          internal,
-          'locked/take.wav',
           onConflict: ConflictPolicy.ask,
-        ),
-        throwsA(isA<StorageIo>()),
-      );
-      expect(File('${dir.path}/take.wav').existsSync(), isFalse);
+        );
+
+        expect(h.filesUnder(h.exports), [
+          '.notes.part',
+          'take.wav',
+          'take.wav.part',
+        ]);
+        expect(File('${h.exports}/take.wav.part').readAsStringSync(), 'mine');
+      });
+
+      test('a directory is swept once per run: a crash leaves its parts '
+          'before the run starts', () async {
+        final source = h.source('take.wav', 100);
+        repo = build();
+        await repo.copyFile(
+          source.path,
+          internal,
+          'a.wav',
+          onConflict: ConflictPolicy.ask,
+        );
+        final listed = File('${h.exports}/.b.wav.0123456789abcdef.part')
+          ..writeAsStringSync('not this run');
+
+        await repo.copyFile(
+          source.path,
+          internal,
+          'b.wav',
+          onConflict: ConflictPolicy.ask,
+        );
+
+        expect(listed.existsSync(), isTrue);
+      });
+
+      test('a directory at the name is a name that is taken: ask stops before '
+          'writing a byte', () async {
+        final source = h.source('take.wav', 100);
+        var copies = 0;
+        repo = build(
+          copyBytes: (from, part, abort) async {
+            copies++;
+            part.writeAsBytesSync(from.readAsBytesSync(), flush: true);
+          },
+        );
+        Directory('${h.exports}/take.wav').createSync();
+
+        await expectLater(
+          repo.copyFile(
+            source.path,
+            internal,
+            'take.wav',
+            onConflict: ConflictPolicy.ask,
+          ),
+          throwsA(isA<NameConflict>()),
+        );
+        expect(copies, 0, reason: 'nothing was written');
+        expect(
+          await repo.copyFile(
+            source.path,
+            internal,
+            'take.wav',
+            onConflict: ConflictPolicy.keepBoth,
+          ),
+          '${h.exports}/take (2).wav',
+        );
+      });
+
+      test('a rename that fails takes the claimed name with it: no empty '
+          'file is left under the final name', () async {
+        final source = h.source('take.wav', 100);
+        repo = build(
+          copyBytes: (from, part, abort) async {
+            // The part vanishes before the rename (a sweep by someone else).
+            part
+              ..writeAsBytesSync(from.readAsBytesSync(), flush: true)
+              ..deleteSync();
+          },
+        );
+
+        await expectLater(
+          repo.copyFile(
+            source.path,
+            internal,
+            'take.wav',
+            onConflict: ConflictPolicy.keepBoth,
+          ),
+          throwsA(isA<StorageIo>()),
+        );
+        expect(h.filesUnder(h.exports), isEmpty);
+      });
+
+      test('a name that cannot be claimed for another reason than "already '
+          'there" is an I/O failure', () async {
+        final source = h.source('take.wav', 100);
+        final dir = Directory('${h.exports}/locked');
+        addTearDown(() => Process.runSync('chmod', ['755', dir.path]));
+        repo = build(
+          copyBytes: (from, part, abort) async {
+            part.writeAsBytesSync(from.readAsBytesSync(), flush: true);
+            Process.runSync('chmod', ['555', dir.path]);
+          },
+        );
+        dir.createSync();
+
+        await expectLater(
+          repo.copyFile(
+            source.path,
+            internal,
+            'locked/take.wav',
+            onConflict: ConflictPolicy.ask,
+          ),
+          throwsA(isA<StorageIo>()),
+        );
+        expect(File('${dir.path}/take.wav').existsSync(), isFalse);
+      });
     });
-  });
+  }
 
   group('a source that cannot be read', () {
     test('is io at once, never a lost destination, even on a removable '

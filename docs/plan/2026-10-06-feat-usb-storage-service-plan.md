@@ -210,9 +210,12 @@ kernel's own refusal and is reported as `busy`. On success the JSON state
 becomes `ejected` (the "Safe to remove" screen) and stays until the physical
 removal deletes the file. Cancel during eject (pen `SowFm` has Cancel) is
 honoured only before the request is served: the app deletes its own request
-file; a served request is already past the point of return, and the next
-state is either `ejected` or `mounted` plus a failure, both of which the UI
-draws truthfully.
+file, and the helper takes a request by renaming it to `.taking-<id>.json`
+before reading it, so the delete and the take cannot both succeed and
+`cancelEject` reports which one did. A taken request is past the point of
+return, and the next state is either `ejected` or `mounted` plus a failure,
+both of which the UI draws truthfully. A request a killed run had taken is
+served by the next run (it holds the lock, so no other run is on it).
 
 ### 2.3 Domain model (`packages/storage_repository`)
 
@@ -370,7 +373,8 @@ Files, all under `deploy/yocto/meta-segno/recipes-segno/segno-bundle/`:
   does (`segno-update-ctl:43-56`), so the tests never touch `/run`, `/sys` or
   `/proc`. Temporary files are dotfiles beside their target
   (`volumes/.<gen>.json.tmp`, `requests/.<uuid>.json.tmp`) renamed into
-  place; `serve-requests` ignores dotfiles. Volume JSON schema (one object per
+  place; `serve-requests` ignores the app's dotfiles (it serves only its own
+  `.taking-` leftovers). Volume JSON schema (one object per
   file, keys in this order so the test oracle is literal): `generation`,
   `kname`, `fingerprint`, `label`, `fsType`, `mountPoint`, `sizeBytes`,
   `status`, `readOnly`, `writeBytesPerSecond`, `failureReason`, `eject`.
@@ -469,7 +473,7 @@ abstract interface class UsbStorageClient {
   bool get isSupported;                       // Linux and the run dir exists
   Stream<List<RemovableVolumeRecord>> get volumes;  // replays current list first
   Future<String> requestEject(int generation);     // returns the request id
-  Future<void> cancelEject(String requestId);      // deletes an unserved request
+  Future<bool> cancelEject(String requestId);      // deletes an unserved request; false once taken
 }
 ```
 
@@ -521,12 +525,20 @@ already passes to the repositories, `run_segno.dart:93-100`), the
   own `ejectPhase` stream and completes `EjectOutcome.safeToRemove` on
   status `ejected`, `EjectOutcome.failed(reason)` on an `eject.ok == false`
   record, `EjectOutcome.failed('timeout')` after 20 s (cancelling the request
-  file). `cancelEject()` before service completes `EjectOutcome.cancelled`.
+  file). A request the helper has taken is waited on for 2 min more; past
+  that the eject completes `failed('stillEjecting')` and the drive keeps
+  reading `ejecting` (no lease, shutdown waits) until the helper answers or
+  the drive is pulled. `cancelEject()` before service completes
+  `EjectOutcome.cancelled` and returns true; once taken it returns false.
 - `space(destination)` and `recordingTimeRemaining(destination,
   bytesPerSecond)`: Internal subtracts `internalReserveBytes`; null when the
   reader returns null.
 - `copyFile(sourcePath, destination, relativePath, {ConflictPolicy})` with
-  the `.part` + fsync + rename protocol; `ConflictPolicy.ask` throws
+  a hidden part of the copy's own, fsync, a rename that never replaces
+  (`le_fs_rename_noreplace` through `StorageIo`; an exclusive-create claim
+  where the filesystem cannot refuse a replacement), then `le_fs_sync_dir` on
+  the directory and every parent the copy created, a refused sync failing
+  the copy as `io`; `ConflictPolicy.ask` throws
   `NameConflict(existingPath)` before writing; `keepBoth` picks ` (2)`,
   ` (3)`…; `replace` renames over. ENOSPC → `full`; EROFS → `readOnly`;
   ENOENT/EIO on a removable destination whose record vanished → `volumeLost`.

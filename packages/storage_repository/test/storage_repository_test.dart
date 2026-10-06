@@ -401,10 +401,10 @@ void main() {
       () async {
         repo = h.build(initial: [h.record(1)]);
         await pumpEventQueue();
-        await repo.cancelEject();
+        expect(await repo.cancelEject(), isFalse);
 
         final outcome = repo.eject(1);
-        await repo.cancelEject();
+        expect(await repo.cancelEject(), isTrue);
 
         expect(await outcome, const EjectOutcome.cancelled());
         expect(h.client.pendingRequests, isEmpty);
@@ -444,8 +444,9 @@ void main() {
       });
     });
 
-    test('a taken request that never gets an answer fails with timeout '
-        'after the longer bound', () {
+    test('a taken request with no answer after the longer bound fails with '
+        'stillEjecting, and the drive stays ejecting: it may still be '
+        'unmounting, so nothing may write to it', () {
       fakeAsync((async) {
         repo = h.build(initial: [h.record(1)]);
         async.flushMicrotasks();
@@ -459,8 +460,61 @@ void main() {
         );
         expect(outcome, isNull);
         async.elapse(const Duration(seconds: 1));
-        expect(outcome, const EjectOutcome.failed('timeout'));
+        expect(
+          outcome,
+          const EjectOutcome.failed(StorageRepository.stillEjecting),
+        );
+        expect(repo.current.single.status, RemovableVolumeStatus.ejecting);
+        expect(repo.transferInFlight, isTrue);
+        expect(
+          () => repo.acquire(usb1, 'export'),
+          throwsA(const StorageFailure.volumeLost(1)),
+        );
+        EjectOutcome? again;
+        unawaited(repo.eject(1).then((o) => again = o));
+        async.flushMicrotasks();
+        expect(
+          again,
+          const EjectOutcome.failed(StorageRepository.stillEjecting),
+        );
+        expect(h.client.pendingRequests, isEmpty, reason: 'nothing re-filed');
+
+        // The helper answers at last: the drive reads what it says.
+        h.client.settleEject('req-1', ok: true);
+        async.flushMicrotasks();
+        expect(repo.current.single.status, RemovableVolumeStatus.ejected);
         expect(repo.transferInFlight, isFalse);
+
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+        disposed = true;
+      });
+    });
+
+    test('an unanswered eject ends when the helper refuses or the drive is '
+        'pulled', () {
+      fakeAsync((async) {
+        repo = h.build(initial: [h.record(1), h.record(2)]);
+        async.flushMicrotasks();
+        for (final generation in [1, 2]) {
+          unawaited(repo.eject(generation));
+          async.flushMicrotasks();
+          h.client.take('req-$generation');
+          async.elapse(const Duration(minutes: 3));
+        }
+        expect(
+          repo.current.map((v) => v.status),
+          everyElement(RemovableVolumeStatus.ejecting),
+        );
+
+        h.client.settleEject('req-1', ok: false, reason: 'busy');
+        h.client.detach(2);
+        async.flushMicrotasks();
+
+        expect(repo.current.single.generation, 1);
+        expect(repo.current.single.status, RemovableVolumeStatus.mounted);
+        expect(repo.transferInFlight, isFalse);
+        expect(repo.acquire(usb1, 'export').isLost, isFalse);
 
         unawaited(repo.dispose());
         async.flushMicrotasks();
@@ -476,7 +530,7 @@ void main() {
       final outcome = repo.eject(1);
       await pumpEventQueue();
       h.client.take('req-1');
-      await repo.cancelEject();
+      expect(await repo.cancelEject(), isFalse, reason: 'not withdrawn');
       await pumpEventQueue();
       expect(repo.current.single.status, RemovableVolumeStatus.ejecting);
 
