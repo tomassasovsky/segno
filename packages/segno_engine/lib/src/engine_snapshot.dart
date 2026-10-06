@@ -7,6 +7,7 @@ import 'dart:ffi';
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/instruments.dart';
 
 /// The maximum number of lanes a single track can hold, mirroring the native
 /// `LE_MAX_LANES`. Referenced (not re-typed) so it can never drift from the C.
@@ -1311,6 +1312,8 @@ class EngineSnapshot {
     this.perfCaptureMask = 0,
     this.perfOutputEnabledMask = 0,
     this.tracks = const [],
+    this.instruments = InstrumentsSnapshot.initial,
+    this.midiInput = MidiInputSnapshot.initial,
   });
 
   /// The snapshot of an engine that has never started.
@@ -1388,7 +1391,9 @@ class EngineSnapshot {
       perfOutputMuted = false,
       perfCaptureMask = 0,
       perfOutputEnabledMask = 0,
-      tracks = const [];
+      tracks = const [],
+      instruments = InstrumentsSnapshot.initial,
+      midiInput = MidiInputSnapshot.initial;
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
   /// [tracks] into an [EngineSnapshot].
@@ -1486,6 +1491,8 @@ class EngineSnapshot {
       perfCaptureMask: native.perf_capture_mask,
       perfOutputEnabledMask: native.perf_output_enabled_mask,
       tracks: tracks,
+      instruments: InstrumentsSnapshot.fromNative(native),
+      midiInput: MidiInputSnapshot.fromNative(native),
     );
   }
 
@@ -1568,6 +1575,8 @@ class EngineSnapshot {
     int? perfCaptureMask,
     int? perfOutputEnabledMask,
     List<TrackSnapshot>? tracks,
+    InstrumentsSnapshot? instruments,
+    MidiInputSnapshot? midiInput,
   }) => EngineSnapshot(
     isRunning: isRunning ?? this.isRunning,
     devicePresent: devicePresent ?? this.devicePresent,
@@ -1643,6 +1652,8 @@ class EngineSnapshot {
     perfCaptureMask: perfCaptureMask ?? this.perfCaptureMask,
     perfOutputEnabledMask: perfOutputEnabledMask ?? this.perfOutputEnabledMask,
     tracks: tracks ?? this.tracks,
+    instruments: instruments ?? this.instruments,
+    midiInput: midiInput ?? this.midiInput,
   );
 
   /// Whether the audio device is open and the callback is running.
@@ -1977,6 +1988,13 @@ class EngineSnapshot {
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
+  /// The instrument slots: patches, voices, peaks, the voice limit and the
+  /// synth epoch (#1197).
+  final InstrumentsSnapshot instruments;
+
+  /// The MIDI input ports: attached captures and running totals.
+  final MidiInputSnapshot midiInput;
+
   /// The number of tracks.
   int get trackCount => tracks.length;
 
@@ -2082,7 +2100,9 @@ class EngineSnapshot {
           perfCaptureMask == other.perfCaptureMask &&
           perfOutputEnabledMask == other.perfOutputEnabledMask &&
           perfCaptureBus == other.perfCaptureBus &&
-          _listEquals(tracks, other.tracks);
+          _listEquals(tracks, other.tracks) &&
+          instruments == other.instruments &&
+          midiInput == other.midiInput;
 
   @override
   int get hashCode => Object.hashAll([
@@ -2159,6 +2179,8 @@ class EngineSnapshot {
     perfOutputMuted,
     perfCaptureMask,
     perfOutputEnabledMask,
+    instruments,
+    midiInput,
     ...tracks,
   ]);
 

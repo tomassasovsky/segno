@@ -13,12 +13,14 @@ import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
+import 'package:segno_engine/src/instruments.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
+import 'package:segno_engine/src/synth_catalogue.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
@@ -27,7 +29,7 @@ import 'package:segno_engine/src/volume_space.dart';
 /// Owns a single native engine handle. Exactly one instance should own the
 /// audio device at a time (the main isolate); the visualizer window consumes
 /// pushed frames rather than sharing this handle.
-class NativeAudioEngine implements AudioEngine {
+class NativeAudioEngine implements AudioEngine, InstrumentHost, MidiInputSink {
   /// Creates a [NativeAudioEngine], loading the bundled native library and
   /// allocating the underlying engine.
   ///
@@ -2457,6 +2459,178 @@ class NativeAudioEngine implements AudioEngine {
     return EngineResult.fromCode(_bindings.le_perf_render_cancel(_engine));
   }
 
+  // ---- InstrumentHost (#1197) ----
+
+  /// The catalogue never changes for a build, so it is read once.
+  SynthCatalogue? _catalogue;
+
+  @override
+  SynthCatalogue synthCatalogue() =>
+      _catalogue ??= readSynthCatalogue(_bindings);
+
+  @override
+  EngineResult setInstrument({
+    required int slot,
+    required int? patch,
+    List<double>? params,
+  }) {
+    _checkAlive();
+    if (params != null && params.length != kSynthFamilyParams) {
+      return EngineResult.invalid;
+    }
+    final paramsPtr = params == null
+        ? nullptr
+        : calloc<Float>(kSynthFamilyParams);
+    try {
+      if (params != null) {
+        for (var p = 0; p < kSynthFamilyParams; p++) {
+          paramsPtr[p] = params[p];
+        }
+      }
+      return EngineResult.fromCode(
+        _bindings.le_engine_set_instrument(
+          _engine,
+          slot,
+          patch ?? -1,
+          paramsPtr,
+        ),
+      );
+    } finally {
+      if (paramsPtr != nullptr) calloc.free(paramsPtr);
+    }
+  }
+
+  @override
+  EngineResult setInstrumentParam({
+    required int slot,
+    required int param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_instrument_param(_engine, slot, param, value),
+    );
+  }
+
+  @override
+  EngineResult setVoiceLimit(int limit) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_voice_limit(_engine, limit),
+    );
+  }
+
+  @override
+  EngineResult resetInstrument(int slot) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_reset_instrument(_engine, slot),
+    );
+  }
+
+  @override
+  EngineResult instrumentNoteOn({
+    required int slot,
+    required int origin,
+    required int note,
+    required int velocity,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_instrument_note_on(
+        _engine,
+        slot,
+        origin,
+        note,
+        velocity,
+      ),
+    );
+  }
+
+  @override
+  EngineResult instrumentChordOn({
+    required int slot,
+    required int origin,
+    required List<int> notes,
+    required int velocity,
+  }) {
+    _checkAlive();
+    if (notes.isEmpty || notes.length > kMaxChordNotes) {
+      return EngineResult.invalid;
+    }
+    final notesPtr = calloc<Int32>(notes.length);
+    try {
+      for (var n = 0; n < notes.length; n++) {
+        notesPtr[n] = notes[n];
+      }
+      return EngineResult.fromCode(
+        _bindings.le_engine_instrument_chord_on(
+          _engine,
+          slot,
+          origin,
+          notesPtr,
+          notes.length,
+          velocity,
+        ),
+      );
+    } finally {
+      calloc.free(notesPtr);
+    }
+  }
+
+  @override
+  EngineResult instrumentRelease(int origin) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_instrument_note_off(_engine, origin),
+    );
+  }
+
+  @override
+  EngineResult instrumentSustain({
+    required int slot,
+    required int origin,
+    required bool on,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_instrument_sustain(_engine, slot, origin, on ? 1 : 0),
+    );
+  }
+
+  @override
+  EngineResult setInstrumentRoutes(List<InstrumentRoute> routes) {
+    _checkAlive();
+    if (routes.length > kMaxInstruments) return EngineResult.invalid;
+    final table = calloc<le_inst_routes>();
+    try {
+      writeInstrumentRoutes(table.ref, routes);
+      return EngineResult.fromCode(
+        _bindings.le_engine_set_instrument_routes(_engine, table),
+      );
+    } finally {
+      calloc.free(table);
+    }
+  }
+
+  // ---- MidiInputSink ----
+
+  @override
+  EngineResult attachMidiInput(MidiCaptureHandle capture, {required int port}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_attach_midi_input(_engine, capture.pointer, port),
+    );
+  }
+
+  @override
+  EngineResult detachMidiInput(int port) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_detach_midi_input(_engine, port),
+    );
+  }
+
   @override
   void dispose() {
     if (_disposed) return;
@@ -2652,4 +2826,98 @@ class _NativePluginSlotHandle implements PluginSlotHandle {
 
   @override
   int get hashCode => pointer.hashCode;
+}
+
+/// Reads the engine's synthesis catalogue through [bindings]: pure reads of
+/// static tables, no engine handle.
+@visibleForTesting
+SynthCatalogue readSynthCatalogue(SegnoEngineBindings bindings) {
+  final patch = calloc<le_synth_patch_desc>();
+  final param = calloc<le_synth_param_desc>();
+  try {
+    final patches = <SynthPatch>[];
+    final count = bindings.le_synth_patch_count();
+    for (var i = 0; i < count; i++) {
+      if (bindings.le_synth_patch_info(i, patch) != 0) continue;
+      final family = SynthFamily.fromCode(patch.ref.family);
+      if (family == null) continue;
+      patches.add(
+        SynthPatch(
+          index: i,
+          id: readNativeString(patch.ref.id, capacity: LE_SYNTH_ID_CHARS),
+          family: family,
+          defaults: List.unmodifiable([
+            for (var p = 0; p < kSynthFamilyParams; p++) patch.ref.defaults[p],
+          ]),
+        ),
+      );
+    }
+    final params = <SynthFamily, List<SynthParamInfo>>{};
+    for (final family in SynthFamily.values) {
+      final infos = <SynthParamInfo>[];
+      for (var p = 0; p < kSynthFamilyParams; p++) {
+        if (bindings.le_synth_param_info(family.index, p, param) != 0) break;
+        final unit = SynthParamUnit.fromCode(param.ref.unit);
+        if (unit == null) break;
+        infos.add(
+          SynthParamInfo(
+            key: readNativeString(param.ref.key, capacity: LE_SYNTH_KEY_CHARS),
+            unit: unit,
+            atMin: param.ref.at_min,
+            atMax: param.ref.at_max,
+            exponential: param.ref.exponential != 0,
+          ),
+        );
+      }
+      if (infos.length == kSynthFamilyParams) {
+        params[family] = List.unmodifiable(infos);
+      }
+    }
+    return SynthCatalogue(
+      patches: List.unmodifiable(patches),
+      params: Map.unmodifiable(params),
+    );
+  } finally {
+    calloc
+      ..free(patch)
+      ..free(param);
+  }
+}
+
+/// Writes [routes] (one per slot; missing slots play no MIDI) into [table].
+/// The engine validates every field; out-of-range values are written as given
+/// so it refuses them rather than this silently clamping them.
+@visibleForTesting
+void writeInstrumentRoutes(le_inst_routes table, List<InstrumentRoute> routes) {
+  for (var k = 0; k < kMaxInstruments; k++) {
+    final route = k < routes.length ? routes[k] : InstrumentRoute.disabled;
+    final out = table.inst[k]
+      ..midi_enabled = route.midiEnabled ? 1 : 0
+      ..port = route.port
+      ..channel = route.channel
+      ..low = route.low
+      ..high = route.high
+      // More remaps than the table holds: an invalid count the engine refuses.
+      ..remap_count = route.remaps.length;
+    final remaps = route.remaps.length < kMaxInstrumentRemaps
+        ? route.remaps.length
+        : kMaxInstrumentRemaps;
+    for (var m = 0; m < remaps; m++) {
+      final remap = route.remaps[m];
+      final x = out.remaps[m]
+        ..port = remap.port
+        ..channel = remap.channel
+        ..kind = remap.kind == MidiRemapKind.note
+            ? LE_INST_REMAP_NOTE
+            : LE_INST_REMAP_CC
+        ..number = remap.number
+        ..count = remap.notes.length;
+      final notes = remap.notes.length < kMaxRemapNotes
+          ? remap.notes.length
+          : kMaxRemapNotes;
+      for (var n = 0; n < notes; n++) {
+        x.notes[n] = remap.notes[n];
+      }
+    }
+  }
 }
