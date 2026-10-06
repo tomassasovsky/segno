@@ -20,3 +20,10 @@ bool isValidSessionId(String id) =>
     id != '..' &&
     !id.contains('/') &&
     !id.contains(r'\');
+
+final RegExp _mintedId = RegExp(r'^s-\d{8}-\d{6}(-\d+)?$');
+
+/// Whether [name] has the shape [sessionIdFor] mints (`s-YYYYMMDD-HHMMSS`,
+/// optionally `-N`). An empty directory with such a name is a reservation
+/// for a save in flight, or one a crash left behind, never a folder.
+bool isMintedSessionId(String name) => _mintedId.hasMatch(name);

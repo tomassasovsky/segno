@@ -248,6 +248,14 @@ void main() {
       );
     });
 
+    test('refuses a folder name shaped like a session id', () async {
+      await expectLater(
+        repo().createFolder('s-20261006-120000'),
+        throwsArgumentError,
+      );
+      expect(Directory('${root.path}/s-20261006-120000').existsSync(), isFalse);
+    });
+
     test('refuses an invalid folder name', () async {
       await expectLater(repo().createFolder('  '), throwsArgumentError);
     });
@@ -417,6 +425,30 @@ void main() {
         );
       },
     );
+  });
+
+  group('reservations', () {
+    test('a reservation in flight is no folder', () async {
+      await repo().newSessionId();
+
+      expect(await repo().listFolders(), isEmpty);
+    });
+
+    test('an empty reservation a crash left behind is no folder, and a '
+        'folder named like an id that holds something still is', () async {
+      Directory('${root.path}/s-20261006-115959').createSync();
+      Directory('${root.path}/s-20261006-115959-2').createSync();
+      makeBundle('s-gig', folder: 's-20261006-110000');
+
+      expect(await repo().listFolders(), ['s-20261006-110000']);
+      expect((await repo().listSessions()).single.folder, 's-20261006-110000');
+    });
+
+    test('a leftover reservation is still taken for new ids', () async {
+      Directory('${root.path}/s-20261006-120000').createSync();
+
+      expect(await repo().newSessionId(), 's-20261006-120000-2');
+    });
   });
 
   group('releaseSessionId', () {
@@ -682,6 +714,28 @@ void main() {
         expect(wavs, isNot(contains('track0_lane0_L1.wav')));
         expect(wavs, isNot(contains('track0_lane0_L2.wav')));
       },
+    );
+
+    test(
+      'a copy that fails removes what it wrote and leaves the source',
+      () async {
+        makeBundle('s-a', name: 'Source');
+        final unreadable = File('${root.path}/s-a/track0_lane0_L0.wav')
+          ..writeAsBytesSync([1, 2, 3]);
+        Process.runSync('chmod', ['000', unreadable.path]);
+        addTearDown(() => Process.runSync('chmod', ['644', unreadable.path]));
+
+        await expectLater(
+          repo().duplicateSession('s-a', 'Copy'),
+          throwsA(isA<FileSystemException>()),
+        );
+
+        final entries = root.listSync().map((e) => e.path.split('/').last);
+        expect(entries, ['s-a']);
+        expect(await repo().listFolders(), isEmpty);
+        expect((await repo().listSessions()).single.name, 'Source');
+      },
+      skip: Platform.isWindows ? 'needs chmod' : null,
     );
 
     test('throws ArgumentError when the new name is invalid', () async {
