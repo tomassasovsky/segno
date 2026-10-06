@@ -85,7 +85,7 @@ inline T le_cxx_atomic_exchange(T* slot, V value) {
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
 #include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
-#include "engine_direction.h"
+#include "engine_read_head.h"
 #include "engine_fade.h"
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
@@ -1280,21 +1280,21 @@ typedef struct le_track {
    * a take finalized or launched mid-lap plays at least one full lap before
    * Once stops it at a lap end. */
   uint64_t sounding_frames;
-  /* Audio-thread playback origin on the shared clock, in full-track frames.
-   * Only a launch after an automatic Once end changes it; ordinary captures
-   * and history recovery retain their established shared phase. */
-  int32_t playback_offset;
-  /* Reverse (#1162). `reversed` is the audio-thread-owned read direction of
-   * the recorded material (0 forward, 1 reversed); playback_offset above is
-   * the read origin in BOTH directions (engine_direction.h), re-origined at a
-   * toggle so the read index is continuous at the turn. Material, not
-   * runtime: it resets with the content (le_transform_reset) and survives a
-   * retained reopen. The turn window mixes the pre-turn head over the first
-   * turn_frames frames (turn_left counts down once per frame per track):
-   * turn_reversed/turn_offset are that old head's direction and origin. */
-  int32_t reversed;
-  int32_t turn_left, turn_frames, turn_reversed, turn_offset;
+  /* The audio-thread read head (engine_read_head.h): direction (Reverse,
+   * #1162), origin in source frames and rate (Speed, #1179). The origin is
+   * parked at 0 for the master path; a launch after an automatic Once end, a
+   * Reverse turn and a rate step re-origin it so the index is continuous.
+   * Direction is material, not runtime: it resets with the content
+   * (le_transform_reset) and survives a retained reopen; the rate follows
+   * the global Speed (e->speed). The turn window mixes prev_head, the
+   * pre-turn head, over the first turn_frames frames (turn_left counts down
+   * once per frame per track); both heads read the lane's live buffer, so
+   * the window pins no other source. */
+  le_read_head head;
+  le_read_head prev_head;
+  int32_t turn_left, turn_frames;
   _Atomic int32_t a_reversed; /* published direction (snapshot) */
+  _Atomic int32_t a_head_rate_milli; /* published head rate x1000 (#1179) */
   /* Control's view of direction while toggles are in flight
    * (le_effective_reversed): the number of REVERSE commands posted, the
    * direction they predict once applied, and the callback's count of REVERSE
@@ -1701,6 +1701,16 @@ struct le_engine {
     uint64_t request, command;
     _Atomic int32_t result;
   } receipts[LE_RING_CAPACITY];
+  /* Global Speed (#1179): the callback's factor (numer/denom of 1/2, 1, 2, 4,
+   * 8), published for the snapshot. Control's view while SET_SPEED commands
+   * are in flight, like Reverse's: the count posted, the factor they predict
+   * (speed_pending_one: whether it is 1x) and the callback's count processed
+   * (accepted or refused), released after the published factor. */
+  int32_t speed_numer, speed_denom;
+  _Atomic int32_t a_speed_numer, a_speed_denom;
+  uint32_t speed_posted;
+  int32_t speed_pending_one;
+  _Atomic uint32_t a_speed_applied;
   uint64_t commands_posted;
   uint64_t commands_applied;
   /* Callback-only: image publication invalidates the current frame snapshots. */

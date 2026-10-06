@@ -121,6 +121,7 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
   out->one_shot = load_i32(&tr->a_one_shot);
   out->reversed = load_i32(&tr->a_reversed); /* #1162 */
+  out->head_rate_milli = load_i32(&tr->a_head_rate_milli); /* #1179 */
   /* Timing fields are filled below from one coherent callback tuple. */
   /* The caller fills timing from one coherent family tuple. */
   out->overdub_feedback_override = load_f32(&tr->a_overdub_fb_bits);
@@ -461,6 +462,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     out->output_mono[k] = load_i32(&engine->outputs[k].a_mono);
     out->output_balance[k] = load_f32(&engine->outputs[k].a_balance_bits);
   }
+  out->speed_numer = load_i32(&engine->a_speed_numer); /* #1179 */
+  out->speed_denom = load_i32(&engine->a_speed_denom);
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =

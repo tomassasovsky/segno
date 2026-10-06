@@ -1,24 +1,28 @@
 /*
- * engine_read_head.h — the per-track fractional read coordinate (#1179).
+ * engine_read_head.h — the per-track read coordinate (Reverse #1162, Speed
+ * #1179).
  *
- * One pure header shared by the audio callback, the offline performance
- * renderer and the bench harness, in the role engine_fade.h plays for the Fade
- * envelope: positional initializers only, no _Atomic, no allocation and no
- * libm, so it is C++17-clean (the VST3 host TUs reach every core header) and
- * safe on the audio thread.
+ * One pure header shared by the audio callback (mix_tracks_frame), the offline
+ * performance renderer (perf_render.c) and the bench, so they can never
+ * disagree about which sample a track reads. Positional initializers only, no
+ * _Atomic, no allocation and no libm: it reaches every VST3 C++ translation
+ * unit through engine_private.h (docs/PROGRESS.md, the C++ blast radius) and
+ * runs on the audio thread.
  *
  * A track reads its source through a head {reversed, origin, rate}. For the
  * UNBOUNDED song position `pos` (a count of song frames since the track's
  * start, never the wrapped per-frame position) the source index is
  *
  *   forward:  (origin + rate * pos) mod len
- *   reversed: (origin - rate * pos) mod len
+ *   reversed: (origin - 1 - rate * pos) mod len
  *
  * derived from the clock on every frame rather than integrated, so nothing
- * drifts. `rate == 1`, `origin` integral and `reversed == 0` is the identity
- * head: le_head_sample returns buf[i] exactly, so the mixer's integer read path
- * stays bit-identical. `rate == 1`, `reversed == 1` is the Foot Reverse
- * coordinate; Speed and tempo follow are rates other than 1.
+ * drifts. The reversed form keeps Reverse's convention: with origin 0 a
+ * reversed lap starts at len - 1 exactly where a forward lap starts at 0, so
+ * a reversed Sync division still meets the primary's loop top. At rate 1 with
+ * an integral origin every index is integral and le_head_sample returns
+ * buf[i] itself, so the mixer's integer path stays bit-identical. A change of
+ * rate or direction re-origins (le_head_origin) so the index is continuous.
  */
 #ifndef LE_ENGINE_READ_HEAD_H
 #define LE_ENGINE_READ_HEAD_H
@@ -45,8 +49,8 @@ static inline double le_head_index(const le_read_head* h, int64_t pos,
                                    int32_t len) {
   if (len <= 0) return 0.0;
   const double travel = h->rate * (double)pos;
-  return le_head_wrap(h->reversed ? h->origin - travel : h->origin + travel,
-                      len);
+  return le_head_wrap(
+      h->reversed ? h->origin - 1.0 - travel : h->origin + travel, len);
 }
 
 /* The origin that makes le_head_index == `index` at `pos` (continuity at a
@@ -55,11 +59,18 @@ static inline double le_head_origin(const le_read_head* h, double index,
                                     int64_t pos, int32_t len) {
   if (len <= 0) return 0.0;
   const double travel = h->rate * (double)pos;
-  return le_head_wrap(h->reversed ? index + travel : index - travel, len);
+  return le_head_wrap(h->reversed ? index + 1.0 + travel : index - travel, len);
 }
 
+/* The default head: forward, parked, rate 1 (the mixer's integer path). */
 static inline int le_head_is_identity(const le_read_head* h) {
   return h->reversed == 0 && h->origin == 0.0 && h->rate == 1.0;
+}
+
+/* Whether every index the head reads is a whole sample: rate 1 from an
+ * integral origin (the integer read path and an engaged print apply). */
+static inline int le_head_is_integral(const le_read_head* h) {
+  return h->rate == 1.0 && h->origin == (double)(int64_t)h->origin;
 }
 
 /* Linear interpolation between the two source samples around `index`, with
@@ -76,31 +87,56 @@ static inline float le_head_sample(const float* buf, int32_t len,
   return buf[i] + frac * (buf[j] - buf[i]);
 }
 
-/* Box average of the floor(rate) source samples a head stepping `rate` per
- * frame passes over, from floor(index), wrapped: the first-order anti-alias
- * for rate >= 2 (first sidelobe -13 dB). Below 2 it is the plain sample. */
+/* Mean of the n source samples a head passes over from index i in its
+ * direction: i .. i+n-1 forward, i-n+1 .. i reversed, wrapped. */
+static inline float le_head_box(const float* buf, int32_t len, int64_t i,
+                                int32_t n, int32_t reversed) {
+  int64_t j = reversed ? i - n + 1 : i;
+  while (j < 0) j += len;
+  float sum = 0.0f;
+  for (int32_t k = 0; k < n; ++k) {
+    sum += buf[j];
+    if (++j >= len) j = 0;
+  }
+  return sum / (float)n;
+}
+
+/* The first-order anti-alias for rate >= 2: a box of floor(rate) samples in
+ * the head's direction (first sidelobe -13 dB), interpolated between the
+ * boxes at floor(index) and the next index so a non-integer position is not
+ * quantised to whole samples. Below 2 it is the plain sample. */
 static inline float le_head_sample_decimated(const float* buf, int32_t len,
-                                             double index, double rate) {
+                                             double index, double rate,
+                                             int32_t reversed) {
   int32_t n = (int32_t)rate;
   if (n < 2 || len <= 0) return le_head_sample(buf, len, index);
   if (n > len) n = len;
   int64_t i = (int64_t)index;
+  const float frac = (float)(index - (double)i);
   if (i >= len) i -= len;
   if (i < 0) i = 0;
-  float sum = 0.0f;
-  for (int32_t k = 0; k < n; ++k) {
-    sum += buf[i];
-    if (++i >= len) i = 0;
-  }
-  return sum / (float)n;
+  const float b0 = le_head_box(buf, len, i, n, reversed);
+  if (frac == 0.0f) return b0;
+  const float b1 = le_head_box(buf, len, i + 1 >= len ? 0 : i + 1, n, reversed);
+  return b0 + frac * (b1 - b0);
+}
+
+/* The sample a head reads at `index`: decimated at rate >= 2, interpolated
+ * below. One definition for the callback and the renderer. */
+static inline float le_head_read(const float* buf, int32_t len,
+                                 const le_read_head* h, double index) {
+  return h->rate >= 2.0
+             ? le_head_sample_decimated(buf, len, index, h->rate, h->reversed)
+             : le_head_sample(buf, len, index);
 }
 
 /* Weight of the NEW head `i` frames into a window of `F` frames. The old
  * head's weight is le_head_turn_mix(F - i, F, equal_power). Equal-gain (i/F)
  * for a rate or direction turn: both heads read the same material and are
- * continuous at the turn. Equal-power (sin(i/F * pi/2), an odd polynomial so
- * no libm, error < 2e-4) for a swap between source kinds, whose signals are
- * uncorrelated and would dip 6 dB at mid-fade under equal gain. */
+ * continuous at the turn (the law le_seam_fold uses for the loop seam).
+ * Equal-power (sin(i/F * pi/2), an odd polynomial so no libm, error < 2e-4)
+ * for a swap between source kinds, whose signals are uncorrelated and would
+ * dip 6 dB at mid-fade under equal gain. */
 static inline float le_head_turn_mix(int32_t i, int32_t F,
                                      int32_t equal_power) {
   if (F <= 0 || i >= F) return 1.0f;
@@ -115,7 +151,9 @@ static inline float le_head_turn_mix(int32_t i, int32_t F,
 }
 
 /* Whether the head wrapped between two consecutive indices, in its direction:
- * a forward head wraps when the index falls, a reversed one when it rises. */
+ * a forward head wraps when the index falls, a reversed one when it rises.
+ * At rate 1 this is "the index reached the lap start" (0 forward, len - 1
+ * reversed), the edge Once stops at. */
 static inline int le_head_wrapped(double prev, double next, int32_t reversed) {
   return reversed ? (next > prev) : (next < prev);
 }

@@ -51,6 +51,9 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
+  LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x
+                              * (#1179): capture never writes through a
+                              * fractional read head */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -518,6 +521,9 @@ typedef enum le_command_code {
   LE_CMD_RESET_TRANSFORMS = 82, /* internal material-import transform reset
                                  * (Fade and direction); never raw-posted */
   LE_CMD_REVERSE = 83, /* checked internal Reverse request; never raw-posted */
+  /* 84 is held by Multiply/Divide's LE_CMD_SET_LENGTH (#1168 plan). */
+  LE_CMD_SET_SPEED = 85, /* checked internal Speed request (#1179); never
+                          * raw-posted */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -945,6 +951,11 @@ typedef struct le_track_snapshot {
    * reads 0 here too. The host derives its layer count from this: PEEL
    * entries keep undo_depth constant while a layer disappears. */
   int32_t peel_depth;
+  /* Trailing (#1179): the track's effective read rate x1000 (source frames
+   * per song frame; 500 at 1/2x Speed, 8000 at 8x), so the host shows the
+   * derived pitch and progress without re-deriving them. position_frames
+   * moves at this rate. */
+  int32_t head_rate_milli;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1359,6 +1370,10 @@ typedef struct le_snapshot {
   uint32_t record_timing_revision;
   int32_t record_timing_result;
   int32_t record_timing_overrides[LE_MAX_TRACKS];
+  /* Trailing (#1179): the global Speed the callback applies, as
+   * numer/denom (1/2, 1/1, 2/1, 4/1 or 8/1; 1/1 before any request). */
+  int32_t speed_numer;
+  int32_t speed_denom;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -3225,7 +3240,22 @@ LE_EXPORT int32_t le_engine_toggle_reverse(le_engine* engine, int32_t channel,
                                           uint64_t* request);
 LE_EXPORT int32_t le_engine_install_reverse(le_engine* engine, int32_t channel,
                                            int32_t reversed, uint64_t* request);
-/* Consumes one completed Fade or Reverse result. Returns NOT_READY before
+/* Speed (#1179): plays every recorded track at numer/denom of its speed —
+ * 1/2, 1/1, 2/1, 4/1 or 8/1 (anything else is LE_ERR_INVALID) — through one
+ * fractional read head per track, click-free (each sounding track mixes its
+ * old head out over ~10 ms); pitch follows the speed. The song clock, click,
+ * quantize and capture are untouched. A request equal to the factor in force
+ * is accepted and changes nothing. Admission returns a nonzero request id
+ * only on LE_OK; the receipt below carries the callback's verdict.
+ * Refusals: LE_ERR_NOT_READY while any track reads RECORDING or OVERDUBBING,
+ * an arm or Count-in launch is pending, a count-in runs, or no receipt slot
+ * is free (the callback refuses the same states with receipt
+ * LE_ERR_NOT_READY, plus a punch-out tail still writing); LE_ERR_NOT_RUNNING
+ * when not configured. While Speed is not 1x le_engine_record refuses a
+ * record or punch-in with LE_ERR_TRANSFORMED. */
+LE_EXPORT int32_t le_engine_set_speed(le_engine* engine, int32_t numer,
+                                     int32_t denom, uint64_t* request);
+/* Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
  * callback publication, INVALID for an absent/consumed/retired id; otherwise
  * OK and fills result. */
 LE_EXPORT int32_t le_engine_read_request_result(le_engine* engine,

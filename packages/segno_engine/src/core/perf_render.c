@@ -1,4 +1,4 @@
-#include "engine_direction.h"
+#include "engine_read_head.h"
 #include "engine_fade.h"
 /*
  * perf_render.c — see perf_render.h.
@@ -661,7 +661,7 @@ static float* le_pr_restore_image(const char* dir, const le_pr_manifest* m,
 typedef struct le_pr_segment {
   int owns_image, silent;
   uint64_t start_frame;
-  uint64_t phase0;   /* loop position (image index) the segment plays from at
+  double phase0;     /* loop position (image index) the segment plays from at
                       * start_frame — stems are PHASE-LOCKED to what the
                       * performer heard (#255): a layer image is loop-position-
                       * indexed (buffer index == loop position), and the loop's
@@ -678,30 +678,37 @@ typedef struct le_pr_segment {
                       * (#260). */
   float* image;      /* owned; NULL = silence */
   int32_t image_len; /* loop period in frames; meaningless if image is NULL */
-  /* Read direction (#1162, LE_PLOG_REVERSE): phase0 is the index read at
-   * start_frame in either direction, and the index then steps +1 forward or
-   * -1 reversed (engine_direction.h, the callback's own arithmetic). A
-   * segment appended by a direction fact also mixes the pre-turn head for
-   * turn_frames frames: turn_phase0/turn_reversed are that head's index at
-   * start_frame and its direction. Inherited by every later segment of the
-   * same material; a new take and an emptying read forward. */
+  /* Read head (#1162 direction, #1179 rate; engine_read_head.h, the
+   * callback's own arithmetic): phase0 is the index read at start_frame, and
+   * the index then steps `rate` per frame, forward or reversed. A segment
+   * appended by a direction or rate fact also mixes the pre-turn head for
+   * turn_frames frames: `turn` is that head, its origin set so it reads the
+   * pre-turn index at start_frame. Direction is inherited by every later
+   * segment of the same material (a new take and an emptying read forward);
+   * the rate is the global Speed's, inherited throughout. */
   int reversed;
+  double rate;
   int32_t turn_frames;
-  int32_t turn_phase0;
-  int turn_reversed;
+  le_read_head turn;
 } le_pr_segment;
 
+/* The head segment `seg` reads through, its origin anchored at start_frame. */
+static le_read_head le_pr_segment_head(const le_pr_segment* seg) {
+  le_read_head h = {seg->reversed, 0.0, seg->rate};
+  h.origin = le_head_origin(&h, seg->phase0, 0, seg->image_len);
+  return h;
+}
+
 /* The image index segment `seg` reads at capture frame `f` (>= start_frame). */
-static int32_t le_pr_segment_index(const le_pr_segment* seg, uint64_t f) {
-  const int32_t origin = le_direction_origin(seg->reversed, (int32_t)seg->phase0,
-                                             0, seg->image_len);
-  return le_direction_index(seg->reversed, origin,
-                            (int64_t)(f - seg->start_frame), seg->image_len);
+static double le_pr_segment_index(const le_pr_segment* seg, uint64_t f) {
+  const le_read_head h = le_pr_segment_head(seg);
+  return le_head_index(&h, (int64_t)(f - seg->start_frame), seg->image_len);
 }
 
 typedef struct le_pr_track_build {
   le_pr_segment segments[LE_PR_MAX_SEGMENTS];
   int segment_count;
+  double rate; /* the channel's head rate from its last LE_PLOG_SPEED (#1179) */
   int load_failed; /* 1 if a pcmRef/layer file this track's manifest entries
                     * NAME could not actually be read — the per-stem failure
                     * the "partial success" acceptance criterion means. A
@@ -711,7 +718,7 @@ typedef struct le_pr_track_build {
 } le_pr_track_build;
 
 static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
-                                 uint64_t phase0, float* image,
+                                 double phase0, float* image,
                                  int32_t image_len) {
   if (b->segment_count >= LE_PR_MAX_SEGMENTS) {
     free(image);
@@ -733,13 +740,13 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   seg->owns_image = 1;
   seg->silent = 0;
   seg->start_frame = start_frame;
-  seg->phase0 = image_len > 0 ? phase0 % (uint64_t)image_len : 0;
+  seg->phase0 = image_len > 0 ? le_head_wrap(phase0, image_len) : 0.0;
   seg->image = image;
   seg->image_len = image_len;
   seg->reversed = reversed;
+  seg->rate = b->rate;
   seg->turn_frames = 0;
-  seg->turn_phase0 = 0;
-  seg->turn_reversed = 0;
+  seg->turn = (le_read_head){0, 0.0, 1.0};
 }
 
 /* The loop phase (image index) the CURRENT last segment would play at
@@ -749,12 +756,53 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
  * (baseline, or post-CLEAR) has no phase to carry: the next content supplies
  * its own anchor (the arm image's PERF_ARMED phase, or a RECORD_END's track
  * epoch — le_pr_record_end_phase below). */
-static uint64_t le_pr_build_phase_at(const le_pr_track_build* b,
-                                     uint64_t frame) {
+static double le_pr_build_phase_at(const le_pr_track_build* b,
+                                   uint64_t frame) {
   if (b->segment_count == 0) return 0;
   const le_pr_segment* seg = &b->segments[b->segment_count - 1];
   if (seg->image == NULL || seg->image_len <= 0) return 0;
-  return (uint64_t)le_pr_segment_index(seg, frame);
+  return le_pr_segment_index(seg, frame);
+}
+
+/* The exact index for a fact that logs an integral one (322/323 phases,
+ * 324's read_index): at a rate other than 1 the callback's index can be
+ * fractional (#1179), so the continuing head's own index is kept when its
+ * integral part is the logged one; otherwise, and always at rate 1 (where
+ * the two agree exactly), the logged index. */
+static double le_pr_anchor(const le_pr_track_build* b, uint64_t frame,
+                           int32_t logged) {
+  const double c = le_pr_build_phase_at(b, frame);
+  return (int32_t)c == logged ? c : (double)logged;
+}
+
+/* Re-anchors the material at `index` (exact) with a new head, mixing the
+ * pre-change head out over `turn_frames` (a direction or rate fact). A fact on
+ * silence has nothing to read: the next content supplies its own anchor. */
+static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
+                           double index, int32_t turn_frames) {
+  if (b->segment_count == 0) return;
+  const le_pr_segment* last = &b->segments[b->segment_count - 1];
+  if (last->image == NULL || last->image_len <= 0) return;
+  const double old_index = le_pr_build_phase_at(b, frame);
+  le_read_head old = {last->reversed, 0.0, last->rate};
+  const int silent = last->silent;
+  float* image = last->image;
+  const int32_t image_len = last->image_len;
+  old.origin = le_head_origin(&old, old_index, 0, image_len);
+  /* The image stays owned by the segment that loaded it: hand the append no
+   * image, so a full segment table frees nothing here, and borrow it after,
+   * as the restored-image path does. */
+  le_pr_append_segment(b, frame, 0, NULL, 0);
+  if (b->load_failed) return;
+  le_pr_segment* seg = &b->segments[b->segment_count - 1];
+  seg->owns_image = 0;
+  seg->image = image;
+  seg->image_len = image_len;
+  seg->phase0 = le_head_wrap(index, image_len);
+  seg->silent = silent;
+  seg->reversed = reversed;
+  seg->turn_frames = turn_frames;
+  seg->turn = old;
 }
 
 /* A direction fact (LE_PLOG_REVERSE, #1162) on this channel. A toggle or
@@ -771,30 +819,25 @@ static void le_pr_apply_direction(le_pr_track_build* b, uint64_t frame,
   if (last->image == NULL || last->image_len <= 0) return;
   if (read_index < 0) {
     if (!last->reversed) return;
-    reversed = 0;
-    read_index = (int32_t)le_pr_build_phase_at(b, frame);
-    turn_frames = 0;
+    le_pr_reanchor(b, frame, 0, le_pr_build_phase_at(b, frame), 0);
+    return;
   }
-  const int32_t old_phase0 = (int32_t)le_pr_build_phase_at(b, frame);
-  const int old_reversed = last->reversed;
-  const int silent = last->silent;
-  float* image = last->image;
-  const int32_t image_len = last->image_len;
-  /* The image stays owned by the segment that loaded it: hand the append no
-   * image, so a full segment table frees nothing here, and borrow it after,
-   * as the restored-image path does. */
-  le_pr_append_segment(b, frame, 0, NULL, 0);
-  if (b->load_failed) return;
-  le_pr_segment* seg = &b->segments[b->segment_count - 1];
-  seg->owns_image = 0;
-  seg->image = image;
-  seg->image_len = image_len;
-  seg->phase0 = (uint64_t)read_index % (uint64_t)image_len;
-  seg->silent = silent;
-  seg->reversed = reversed;
-  seg->turn_frames = turn_frames;
-  seg->turn_phase0 = old_phase0;
-  seg->turn_reversed = old_reversed;
+  le_pr_reanchor(b, frame, reversed, le_pr_anchor(b, frame, read_index),
+                 turn_frames);
+}
+
+/* A rate fact (LE_PLOG_SPEED, #1179) on this channel: later segments read at
+ * the new rate, and content re-anchors at the exact Q32.32 index the
+ * callback logged, mixing the old head out over its turn window. */
+static void le_pr_apply_speed(le_pr_track_build* b, uint64_t frame,
+                              const le_log_command* cmd) {
+  b->rate = (double)cmd->speed_log.numer / (double)cmd->speed_log.denom;
+  if (b->segment_count == 0) return;
+  const le_pr_segment* last = &b->segments[b->segment_count - 1];
+  const uint64_t q = (uint64_t)cmd->speed_log.index_lo |
+                     ((uint64_t)cmd->speed_log.index_hi << 32);
+  le_pr_reanchor(b, frame, last->reversed, le_head_index_from_q32(q),
+                 cmd->speed_log.turn_frames);
 }
 
 /* The latest LE_PLOG_LOOP_LENGTH_LOCKED at or before `frame` (INCLUSIVE, so
@@ -901,6 +944,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
                                  int32_t channel, int32_t* out_failed) {
   *out_failed = 0;
   le_pr_track_build build = {0};
+  build.rate = 1.0;
   /* A baseline silence segment at frame 0 always exists first — even a
    * track absent from armSnapshot entirely (recorded fresh later, or
    * mid-overdub/deferred at arm) needs SOMETHING covering [0, first real
@@ -997,7 +1041,8 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         build.load_failed = 1;
         break;
       }
-      le_pr_append_segment(&build, e->frame, phase,
+      const double anchor = le_pr_anchor(&build, e->frame, phase);
+      le_pr_append_segment(&build, e->frame, anchor,
                            initial ? restore_image : NULL, initial ? restore_len : 0);
       if (build.load_failed) break;
       le_pr_segment* seg = &build.segments[build.segment_count - 1];
@@ -1006,7 +1051,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         seg->owns_image = 0;
         seg->image = restore_image;
         seg->image_len = restore_len;
-        seg->phase0 = phase;
+        seg->phase0 = anchor;
       }
     } else if (e->cmd.code == LE_PLOG_RECORD_END && e->cmd.take.channel == channel &&
         disarm_lane != NULL && disarm_take_id != 0 &&
@@ -1143,6 +1188,9 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       if (!build.load_failed) {
         build.segments[build.segment_count - 1].reversed = 0; /* #1162 */
       }
+    } else if (e->cmd.code == LE_PLOG_SPEED &&
+               e->cmd.speed_log.channel == channel) {
+      le_pr_apply_speed(&build, e->frame, &e->cmd);
     } else if (e->cmd.code == LE_PLOG_REVERSE &&
                e->cmd.reverse_log.channel == channel) {
       le_pr_apply_direction(&build, e->frame, e->cmd.reverse_log.reversed != 0,
@@ -1178,16 +1226,16 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
        * its own index 0, in its own direction (#1162) — stems reproduce
        * exactly what the performer heard. A direction turn mixes the old
        * head out with the callback's equal-gain law for its window. */
-      const int32_t pos = le_pr_segment_index(seg, f);
-      stem[f] = seg->image[pos];
+      const le_read_head head = le_pr_segment_head(seg);
       const int64_t into = (int64_t)(f - seg->start_frame);
+      stem[f] = le_head_read(seg->image, seg->image_len, &head,
+                             le_head_index(&head, into, seg->image_len));
       if (seg->turn_frames > 0 && into < seg->turn_frames) {
-        const int32_t old_origin = le_direction_origin(
-            seg->turn_reversed, seg->turn_phase0, 0, seg->image_len);
-        const int32_t old = le_direction_index(seg->turn_reversed, old_origin,
-                                               into, seg->image_len);
-        const float x = le_direction_turn_mix((int32_t)into, seg->turn_frames);
-        stem[f] = stem[f] * x + seg->image[old] * (1.0f - x);
+        const double old = le_head_index(&seg->turn, into, seg->image_len);
+        const float x = le_head_turn_mix((int32_t)into, seg->turn_frames, 0);
+        stem[f] = stem[f] * x +
+                  le_head_read(seg->image, seg->image_len, &seg->turn, old) *
+                      (1.0f - x);
       }
     }
   }
