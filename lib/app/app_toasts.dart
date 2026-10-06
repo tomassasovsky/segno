@@ -27,6 +27,7 @@ abstract final class AppToastId {
   static const waveformFailed = 'app_waveformWindowFailed_banner';
   static const singleDisplay = 'app_singleDisplay_banner';
   static const bootModeRetired = 'app_bootModeRetired_toast';
+  static const fxStopChanged = 'app_fxStopChanged_toast';
   static const bluetoothRetired = 'app_bluetoothRetired_toast';
   static const recoveryRefused = 'app_recoveryRefused_toast';
   static const undoClearAll = 'app_undoClearAll_snackbar';
@@ -35,6 +36,7 @@ abstract final class AppToastId {
   static const footFadeFailure = 'app_footFadeFailure_error';
   static const footReverseFailure = 'app_footReverseFailure_error';
   static const footPeelRefused = 'app_footPeelRefused_toast';
+  static const footFxFailure = 'app_footFxFailure_error';
   static const mixSettings = 'app_mixSettings_error';
   static const clickSettings = 'app_clickSettings_error';
   static const decaySettings = 'app_decaySettings_error';

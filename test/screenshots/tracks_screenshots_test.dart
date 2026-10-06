@@ -554,6 +554,105 @@ void main() {
     }, skip: !hasScreenshotFonts);
   }
 
+  // The accepted FX face (segno-ui.pen 10/03 `noDGu`) and the approved FX
+  // held-contact proposal (`ri60q`): four bound track switches, two Toggle
+  // and two Hold, the held one lit while its contact is down (#1229).
+  for (final scene in ['default', 'held', 'spanish']) {
+    testWidgets('Foot FX $scene accepted scene', (tester) async {
+      const effects = [
+        TrackEffectType.reverb,
+        TrackEffectType.drive,
+        TrackEffectType.filter,
+        TrackEffectType.delay,
+      ];
+      when(repository.allMonitors).thenReturn({
+        for (var input = 0; input < 4; input++)
+          input: InputMonitor(
+            input: input,
+            effects: [BuiltInEffect(type: effects[input])],
+          ),
+      });
+      for (var input = 0; input < 4; input++) {
+        when(
+          () => repository.monitorEffects(input),
+        ).thenReturn([BuiltInEffect(type: effects[input])]);
+        // Input 1 and 4 are on; the momentary ones rest off.
+        when(
+          () => repository.monitorChainEnabled(input),
+        ).thenReturn(input == 0 || input == 3);
+      }
+      when(
+        () => repository.setMonitorChainEnabled(
+          input: any(named: 'input'),
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenReturn(EngineResult.ok);
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 4,
+            outputChannels: 2,
+          ),
+          tracks: [
+            for (var channel = 0; channel < 8; channel++)
+              Track(channel: channel),
+          ],
+        ),
+      );
+      PedalBinding bind(
+        PedalButton button,
+        int input, {
+        BindingBehavior behavior = BindingBehavior.toggle,
+      }) => PedalBinding(
+        key: PedalBindingKey(button: button, bank: 0),
+        target: FxChainTarget(
+          FxAddress(stage: FxStage.input, index: input),
+        ).canonicalString(),
+        behavior: behavior,
+      );
+      await tester.runAsync(
+        () => control.setGlobalBindings(
+          PedalBindingSet([
+            bind(PedalButton.track1, 0),
+            bind(PedalButton.track2, 1, behavior: BindingBehavior.momentary),
+            bind(PedalButton.track3, 2, behavior: BindingBehavior.momentary),
+            bind(PedalButton.track4, 3),
+          ]),
+        ),
+      );
+      control.setMode(InteractionMode.fx);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      final contact = Object();
+      if (scene == 'held') {
+        when(
+          () => repository.settleFxRecipes(
+            waitForCallback: any(named: 'waitForCallback'),
+            cancelled: any(named: 'cancelled'),
+          ),
+        ).thenAnswer((_) async => EngineResult.ok);
+        when(() => repository.monitorChainEnabled(1)).thenReturn(true);
+        control.footFxPressed(PedalButton.track2, contact);
+        await tester.pump();
+        await tester.pump();
+      }
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_fx_$scene.png'),
+      );
+      if (scene == 'held') {
+        control.footFxReleased(PedalButton.track2, contact);
+        await tester.pump();
+      }
+    }, skip: !hasScreenshotFonts);
+  }
+
   testWidgets(
     'console main window (16" panel decal)',
     (tester) async {
@@ -809,63 +908,4 @@ void main() {
   // meters recede to 40%, and each tile re-dresses with a power pill and its
   // chain's entries (or NO CHAIN). Same seed as the nominal decal, in FX mode
   // and with two real chains, so the decal shows the transform end to end.
-  testWidgets(
-    'console main window — FX mode transform (#692)',
-    (tester) async {
-      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
-      for (var i = 0; i < names.length; i++) {
-        await tracks.rename(i, names[i]);
-      }
-      control.setMode(InteractionMode.fx);
-      seed(
-        LooperState(
-          status: const EngineStatus(
-            isConnected: true,
-            devicePresent: true,
-            deviceName: 'Segno',
-            sampleRate: 48000,
-            inputChannels: 2,
-            outputChannels: 2,
-          ),
-          tracks: [
-            // An engaged two-entry chain.
-            Track(
-              state: TrackState.playing,
-              peak: 0.9,
-              lengthFrames: 96000,
-              effects: [
-                BuiltInEffect(type: TrackEffectType.drive),
-                BuiltInEffect(type: TrackEffectType.reverb),
-              ],
-            ),
-            // A bypassed chain.
-            Track(
-              channel: 1,
-              state: TrackState.playing,
-              peak: 0.68,
-              lengthFrames: 96000,
-              chainEnabled: false,
-              effects: [BuiltInEffect(type: TrackEffectType.filter)],
-            ),
-            // A single-entry engaged chain.
-            Track(
-              channel: 2,
-              state: TrackState.playing,
-              peak: 0.55,
-              lengthFrames: 96000,
-              effects: [BuiltInEffect(type: TrackEffectType.tremolo)],
-            ),
-            // Empty: NO CHAIN.
-            const Track(channel: 3),
-          ],
-        ),
-      );
-      await pump(tester);
-      await expectLater(
-        find.byType(TracksView),
-        matchesGoldenFile('goldens/tracks_fx_window.png'),
-      );
-    },
-    skip: !hasScreenshotFonts,
-  );
 }

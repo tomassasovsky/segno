@@ -921,19 +921,44 @@ void main() {
     expect(control.state.cursor, 1);
   });
 
-  testWidgets('tapping a tile toggles that track FX chain in FX mode', (
+  testWidgets('FX mode draws the FX face instead of the track tiles', (
     tester,
   ) async {
     control.setMode(InteractionMode.fx);
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
 
-    await tester.tap(find.byKey(const Key('tracks_tile_1')));
-    // One interaction mode for every surface: touch does what the pedal's
-    // track stomp and the number keys do.
-    verify(() => bloc.add(const LooperTrackChainToggled(1))).called(1);
-    verifyNever(() => bloc.add(const LooperRecordPressed(1)));
-    verifyNever(() => bloc.add(const LooperMuteToggled(1)));
+    // The pen's pedal-map face (10/03) replaces the stage; no tile is drawn
+    // to tap (#1229).
+    expect(find.byKey(const Key('foot_fx_view')), findsOneWidget);
+    expect(find.byKey(const Key('tracks_tile_1')), findsNothing);
+  });
+
+  testWidgets('a refused FX stomp says why, once (#1229)', (tester) async {
+    seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+    await control.setGlobalBindings(
+      PedalBindingSet([
+        PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.undo),
+          target: const FxChainTarget(
+            FxAddress(stage: FxStage.input, index: 9),
+          ).canonicalString(),
+        ),
+      ]),
+    );
+    control.setMode(InteractionMode.fx);
+    await pump(tester);
+    control.activateFootFxPedal(PedalButton.undo);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        "This pedal's effect is no longer available. Reassign it.",
+      ),
+      findsOneWidget,
+    );
+    expect(control.state.footFxFailure, 1);
+    dismissAppToast(AppToastId.footFxFailure);
+    await tester.pump(const Duration(seconds: 10));
   });
 
   testWidgets('the number keys toggle FX chains in FX mode', (tester) async {
@@ -1037,176 +1062,14 @@ void main() {
     expect(l10n.a11yTrackFxChainOn, 'Track FX chain on');
   });
 
-  testWidgets('an FX-mode track tile reads its chain state to a screen '
-      'reader', (tester) async {
-    final handle = tester.ensureSemantics();
-    try {
-      control.setMode(InteractionMode.fx);
-      seed(
-        const LooperState(
-          tracks: [Track(), Track(channel: 1, chainEnabled: false)],
-        ),
-      );
-      await pump(tester);
-
-      // The tile carries no other cue for chain state, so the label must:
-      // one track engaged, one bypassed.
-      expect(find.bySemanticsLabel(RegExp('FX chain on')), findsOneWidget);
-      expect(find.bySemanticsLabel(RegExp('FX chain off')), findsOneWidget);
-    } finally {
-      handle.dispose();
-    }
-  });
-
-  group('FX-mode stage transform (#692)', () {
-    // A track with a real two-entry chain, so the entry run has chips to draw.
-    // Not const: BuiltInEffect is not a const constructor.
-    final chainedTrack = Track(
-      effects: [
-        BuiltInEffect(type: TrackEffectType.drive),
-        BuiltInEffect(type: TrackEffectType.reverb),
-      ],
-    );
-
-    testWidgets('an engaged chain re-dresses the tile with an ON power pill '
-        'and its entries in signal order', (tester) async {
-      control.setMode(InteractionMode.fx);
-      seed(LooperState(tracks: [chainedTrack]));
-      await pump(tester);
-
-      // The cell is named CHAIN-FIRST (#692): its bound chain's target and the
-      // chain itself — TRACK 1 (its own Track-stage chain, the default target)
-      // and the head effect — never the track's own name as the cell identity.
-      expect(find.byKey(const Key('tracks_tileFxTarget')), findsOneWidget);
-      expect(find.text('TRACK 1 · DRIVE'), findsOneWidget);
-      // The dominant power pill states the whole chain's on/off…
-      expect(find.byKey(const Key('tracks_tileFxPower')), findsOneWidget);
-      expect(find.text('ON'), findsOneWidget);
-      // …and the entries read as chips in processing order.
-      expect(find.byKey(const Key('tracks_tileFxEntryRun')), findsOneWidget);
-      expect(find.text('Drive'), findsOneWidget);
-      expect(find.text('Reverb'), findsOneWidget);
-    });
-
-    testWidgets('a bypassed chain shows an OFF pill and dims its entry run', (
-      tester,
-    ) async {
-      control.setMode(InteractionMode.fx);
-      seed(
-        LooperState(
-          tracks: [
-            Track(
-              chainEnabled: false,
-              effects: [BuiltInEffect(type: TrackEffectType.drive)],
-            ),
-          ],
-        ),
-      );
-      await pump(tester);
-
-      expect(find.text('OFF'), findsOneWidget);
-      // A switched-off chain is still named, but dimmed (R26) rather than
-      // hidden — the entries stay on the tile so the player sees what is out.
-      final runOpacity = tester.widget<Opacity>(
-        find
-            .ancestor(
-              of: find.byKey(const Key('tracks_tileFxEntryRun')),
-              matching: find.byType(Opacity),
-            )
-            .first,
-      );
-      expect(runOpacity.opacity, lessThan(1));
-      expect(find.text('Drive'), findsOneWidget);
-    });
-
-    testWidgets('an empty track says NO CHAIN and shows no power pill', (
-      tester,
-    ) async {
-      control.setMode(InteractionMode.fx);
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_tileFxNoChain')), findsOneWidget);
-      expect(find.text('NO CHAIN'), findsOneWidget);
-      // Nothing to power and no chain to name: the whole centered group is
-      // replaced by NO CHAIN, so neither the pill, the entry run, nor the
-      // TARGET · CHAIN identity is drawn.
-      expect(find.byKey(const Key('tracks_tileFxTarget')), findsNothing);
-      expect(find.byKey(const Key('tracks_tileFxPower')), findsNothing);
-      expect(find.byKey(const Key('tracks_tileFxEntryRun')), findsNothing);
-    });
-
-    testWidgets('the stage takes the FX surface only in FX mode', (
-      tester,
-    ) async {
-      final fxSurface = AppTheme.neon.extension<SurfaceTheme>()!.fxSurface;
-      Iterable<Color?> scaffoldBackgrounds() => tester
-          .widgetList<Scaffold>(find.byType(Scaffold))
-          .map((s) => s.backgroundColor);
-
-      seed(LooperState(tracks: [chainedTrack]));
-      await pump(tester);
-      // Record mode: no stage takes the FX surface.
-      expect(scaffoldBackgrounds(), isNot(contains(fxSurface)));
-
-      control.setMode(InteractionMode.fx);
-      await tester.pump();
-      // FX mode: the stage does.
-      expect(scaffoldBackgrounds(), contains(fxSurface));
-    });
-
-    testWidgets('leaving FX mode restores the tile exactly', (tester) async {
-      control.setMode(InteractionMode.fx);
-      seed(LooperState(tracks: [chainedTrack]));
-      await pump(tester);
-      expect(find.byKey(const Key('tracks_tileFxPower')), findsOneWidget);
-
-      // Back to record: the dressing is gone and the tile is its plain self —
-      // the geometry and keys never moved, only the dressing came and went.
-      control.setMode(InteractionMode.record);
-      await tester.pump();
-      expect(find.byKey(const Key('tracks_tileFxPower')), findsNothing);
-      expect(find.byKey(const Key('tracks_tileFxEntryRun')), findsNothing);
-      expect(find.text('ON'), findsNothing);
-      // The chain-first identity is an FX-mode dressing too: gone with the
-      // rest, and the track name label returns to identify the column.
-      expect(find.byKey(const Key('tracks_tileFxTarget')), findsNothing);
-      // The tile itself — its key, its tap target — is untouched.
-      expect(find.byKey(const Key('tracks_tile_0')), findsOneWidget);
-    });
-
-    testWidgets('the FX-mode tap still toggles the chain past the dressing', (
-      tester,
-    ) async {
-      // The dressing is an IgnorePointer overlay, so the tile tap that toggles
-      // the chain must still land — the footswitch/tap map is frozen (#692).
-      control.setMode(InteractionMode.fx);
-      seed(LooperState(tracks: [chainedTrack]));
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_tile_0')));
-      verify(() => bloc.add(const LooperTrackChainToggled(0))).called(1);
-    });
-  });
-
-  group('FX-mode cell identity is chain-first, never the track (#692)', () {
-    /// The cell's identity line — the FX-mode dressing's own text, which the
-    /// always-visible track name above the meter is not part of.
-    String fxIdentity(WidgetTester tester) => tester
-        .widget<AppText>(find.byKey(const Key('tracks_tileFxTarget')))
-        .data!;
-
-    // These pump a TrackColumn DIRECTLY so the bound chain's FX target can be
-    // injected — the on-screen stage wires every column to its own Track
-    // chain, so a non-track target (e.g. Master) cannot reach the cell through
-    // TracksView, but the cell must still name it and never the column's track.
+  group('a track column is a live view of the bloc', () {
+    // These pump a TrackColumn DIRECTLY, so the track it is handed and the
+    // track the bloc holds can be made to differ on purpose.
     Future<void> pumpColumn(
       WidgetTester tester, {
       required Track track,
       required String name,
       required InteractionMode mode,
-      FxAddress? fxTarget,
-      Map<int, String> inputNames = const {},
       Track? liveTrack,
     }) {
       // [track] is seeded as the bloc's OWN track for its channel, not just
@@ -1242,8 +1105,6 @@ void main() {
                       name: name,
                       selected: false,
                       mode: mode,
-                      fxTarget: fxTarget,
-                      inputNames: inputNames,
                     ),
                   ),
                 ),
@@ -1253,26 +1114,6 @@ void main() {
         ),
       );
     }
-
-    testWidgets("a chain on the column's own track reads TRACK n · CHAIN, "
-        'not the track name', (tester) async {
-      await pumpColumn(
-        tester,
-        // A custom name distinct from its stage label, so borrowing it as the
-        // identity would be visible — the default name is itself "TRACK n".
-        name: 'GUITAR',
-        mode: InteractionMode.fx,
-        track: Track(
-          channel: 2,
-          effects: [BuiltInEffect(type: TrackEffectType.filter)],
-        ),
-      );
-
-      // Chain-first: the default Track-stage target (TRACK 3, 1-based) and the
-      // chain's head effect — never GUITAR as the cell identity.
-      expect(find.text('TRACK 3 · FILTER'), findsOneWidget);
-      expect(fxIdentity(tester), isNot(contains('GUITAR')));
-    });
 
     testWidgets('a value-equal Track from an EARLIER poll is accepted', (
       tester,
@@ -1340,80 +1181,6 @@ void main() {
       );
 
       expect(tester.takeException(), isA<AssertionError>());
-    });
-
-    testWidgets('a bound chain targeting a NON-track stage reads that stage, '
-        'not the column track', (tester) async {
-      await pumpColumn(
-        tester,
-        name: 'GUITAR',
-        mode: InteractionMode.fx,
-        // The footswitch over the GUITAR column is bound to the FIRST OUTPUT
-        // destination's chain: the cell must say OUT 1, never TRACK 1 /
-        // GUITAR.
-        fxTarget: const FxAddress(stage: FxStage.output),
-        track: Track(effects: [BuiltInEffect(type: TrackEffectType.reverb)]),
-      );
-
-      expect(find.text('OUT 1 · REVERB'), findsOneWidget);
-      expect(fxIdentity(tester), isNot(contains('GUITAR')));
-      expect(fxIdentity(tester), isNot(contains('TRACK')));
-    });
-
-    testWidgets('a NAMED input reads its name over a smaller INPUT n, chain '
-        'in the chips', (tester) async {
-      await pumpColumn(
-        tester,
-        name: 'TRACK 5',
-        mode: InteractionMode.fx,
-        // A footswitch bound to input socket 0's monitor chain, and the player
-        // has named that socket "Guitar".
-        fxTarget: const FxAddress(stage: FxStage.input),
-        inputNames: const {0: 'Guitar'},
-        track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
-      );
-
-      // Two tiers: the socket's own name on the primary line, a smaller
-      // INPUT 1 beneath it. The chain is NOT jammed into the identity — it
-      // reads from the entry-run chip.
-      expect(find.text('GUITAR'), findsOneWidget); // primary, uppercased
-      expect(find.byKey(const Key('tracks_tileFxTargetSub')), findsOneWidget);
-      expect(find.text('INPUT 1'), findsOneWidget); // sub-label
-      expect(find.text('Filter'), findsOneWidget); // chain, in the chips
-      // The identity line carries no "· CHAIN" for a named input.
-      expect(find.textContaining('·'), findsNothing);
-    });
-
-    testWidgets('an UNNAMED input reads a single INPUT n line', (tester) async {
-      await pumpColumn(
-        tester,
-        name: 'TRACK 5',
-        mode: InteractionMode.fx,
-        fxTarget: const FxAddress(stage: FxStage.input, index: 1),
-        // No name for socket 1.
-        track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
-      );
-
-      // Single line, the generic stage label — no name, no second tier.
-      expect(find.text('INPUT 2'), findsOneWidget);
-      expect(find.byKey(const Key('tracks_tileFxTargetSub')), findsNothing);
-      expect(find.text('Filter'), findsOneWidget); // chain, in the chips
-    });
-
-    testWidgets('leaving FX mode brings the track name back as the identity', (
-      tester,
-    ) async {
-      await pumpColumn(
-        tester,
-        name: 'GUITAR',
-        mode: InteractionMode.record,
-        track: Track(effects: [BuiltInEffect(type: TrackEffectType.reverb)]),
-      );
-
-      // Outside FX mode the column is the track again: its name identifies it,
-      // and no chain-first identity is drawn.
-      expect(find.text('GUITAR'), findsOneWidget);
-      expect(find.byKey(const Key('tracks_tileFxTarget')), findsNothing);
     });
   });
 

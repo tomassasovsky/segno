@@ -15,14 +15,14 @@ enum InteractionMode {
   /// action in this mode is mute toggling.
   mute,
 
-  /// Track presses toggle each track's Track-stage FX chain; the track LEDs
-  /// carry chain-enabled state (FX v3 part 5b).
+  /// The FX face (pen 10/03, #1229): every switch but MODE and Bank runs its
+  /// FX binding for the current bank, and an unbound track switch toggles
+  /// its own track's Track-stage chain; the LEDs carry what each drives.
   ///
-  /// Every one of the pedal's ten controls is explicitly defined here: the
-  /// bank's four track switches stomp Track chains, Stop is FX panic (all
-  /// chains off; long-press restores them), Bank / Mode / the encoder keep
-  /// their usual jobs, and Rec/Play, Undo and Clear are deliberately INERT —
-  /// a stray stomp must never erase the set.
+  /// Unbound Rec/Play, Stop, Undo and Clear are deliberately INERT — a stray
+  /// stomp must never erase the set. MODE is the face's Exit, back to the
+  /// mode FX was entered from; Bank pages, and its Hold arms performance
+  /// recording.
   fx,
 
   /// Every switch but MODE and BANK runs whatever the Pedals setup assigned
