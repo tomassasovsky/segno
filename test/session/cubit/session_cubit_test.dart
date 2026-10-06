@@ -1452,6 +1452,64 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
+      'deleteFolder deletes an empty folder and re-lists',
+      setUp: () {
+        stubCatalog();
+        when(() => repository.deleteFolder(any())).thenAnswer((_) async {});
+      },
+      build: build,
+      act: (cubit) => cubit.deleteFolder('Spare'),
+      skip: 1,
+      expect: () => [
+        isA<SessionState>().having(
+          (s) => s.outcome,
+          'outcome',
+          SessionOutcome.folderDeleted,
+        ),
+      ],
+      verify: (_) => verify(() => repository.deleteFolder('Spare')).called(1),
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'deleteFolder on a folder holding sessions fails with folderNotEmpty',
+      setUp: () {
+        stubCatalog();
+        when(
+          () => repository.deleteFolder(any()),
+        ).thenThrow(const SessionFolderNotEmpty(folder: 'Gigs'));
+      },
+      build: build,
+      act: (cubit) => cubit.deleteFolder('Gigs'),
+      skip: 1,
+      expect: () => [
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.failure)
+            .having((s) => s.error, 'error', SessionError.folderNotEmpty),
+      ],
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'renameFolder renames it and re-lists',
+      setUp: () {
+        stubCatalog();
+        when(
+          () => repository.renameFolder(any(), any()),
+        ).thenAnswer((_) async {});
+        when(repository.listFolders).thenAnswer((_) async => ['Shows']);
+      },
+      build: build,
+      act: (cubit) => cubit.renameFolder('Gigs', 'Shows'),
+      skip: 1,
+      expect: () => [
+        isA<SessionState>()
+            .having((s) => s.outcome, 'outcome', SessionOutcome.folderRenamed)
+            .having((s) => s.folders, 'folders', ['Shows']),
+      ],
+      verify: (_) =>
+          verify(() => repository.renameFolder('Gigs', 'Shows')).called(1),
+    );
+
+    blocTest<SessionCubit, SessionState>(
       'createFolder on a taken name fails with nameCollision',
       setUp: () {
         stubCatalog();

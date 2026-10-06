@@ -45,12 +45,23 @@ Future<void> showLibraryManage(
   final l10n = context.l10n;
   final session = context.read<SessionCubit>();
   final isCurrent = summary.id == session.state.currentSessionId;
+  // Save and Save as write the live rig whichever session is selected
+  // (plan D5); on another session's sheet they say whose.
+  final open = session.state.currentSessionName ?? l10n.libraryCurrentLoop;
   final choice = await showFxOptionsSheet(
     context,
     title: summary.name,
     options: [
-      FxOption(id: LibraryManageAction.save.name, label: l10n.sessionSave),
-      FxOption(id: LibraryManageAction.saveAs.name, label: l10n.sessionSaveAs),
+      FxOption(
+        id: LibraryManageAction.save.name,
+        label: isCurrent ? l10n.sessionSave : l10n.libraryManageSaveOpen(open),
+      ),
+      FxOption(
+        id: LibraryManageAction.saveAs.name,
+        label: isCurrent
+            ? l10n.sessionSaveAs
+            : l10n.libraryManageSaveOpenAs(open),
+      ),
       FxOption(
         id: LibraryManageAction.duplicate.name,
         label: l10n.sessionDuplicate,
@@ -158,7 +169,9 @@ Future<void> promptNewFolder(
     fieldLabel: l10n.libraryFolderName,
     onSave: (raw) async {
       final slug = sessionSlug(raw);
-      if (slug == null) return l10n.sessionNameInvalid;
+      if (slug == null || isMintedSessionId(slug)) {
+        return l10n.sessionNameInvalid;
+      }
       if (session.state.folders.contains(slug)) {
         return l10n.libraryFolderNameTaken(slug);
       }
@@ -227,4 +240,55 @@ String? _refusalOf(
     SessionError.saveFailed => l10n.librarySaveFailed,
     _ => l10n.libraryActionFailed,
   };
+}
+
+/// A folder chip's options (a long press): `Rename folder`, and `Delete
+/// folder` while no session is filed in it. The pen draws neither; plan D2
+/// keeps a folder until it is deleted.
+Future<void> showFolderManage(BuildContext context, String folder) async {
+  final l10n = context.l10n;
+  final session = context.read<SessionCubit>();
+  final empty = !session.state.sessions.any((s) => s.folder == folder);
+  final choice = await showFxOptionsSheet(
+    context,
+    title: folder,
+    options: [
+      FxOption(id: 'rename', label: l10n.libraryRenameFolder),
+      FxOption(id: 'delete', label: l10n.libraryDeleteFolder, enabled: empty),
+    ],
+  );
+  if (choice == null || !context.mounted) return;
+  if (choice == 'delete') {
+    final confirmed = await showConsoleConfirmDialog(
+      context,
+      title: l10n.libraryDeleteFolderTitle(folder),
+      body: l10n.libraryDeleteFolderBody,
+      confirmLabel: l10n.libraryDeleteFolder,
+    );
+    if (confirmed) await session.deleteFolder(folder);
+    return;
+  }
+  await showConsoleRenameSheet(
+    context,
+    title: l10n.libraryFolderName,
+    subtitle: l10n.libraryRenameFolder,
+    current: folder,
+    fieldLabel: l10n.libraryFolderName,
+    onSave: (raw) async {
+      final slug = sessionSlug(raw);
+      if (slug == null || isMintedSessionId(slug)) {
+        return l10n.sessionNameInvalid;
+      }
+      if (slug == folder) return null;
+      if (session.state.folders.contains(slug)) {
+        return l10n.libraryFolderNameTaken(slug);
+      }
+      await session.renameFolder(folder, raw);
+      return _refusalOf(
+        l10n,
+        session.state,
+        taken: l10n.libraryFolderNameTaken(slug),
+      );
+    },
+  );
 }

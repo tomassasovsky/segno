@@ -510,6 +510,28 @@ class SessionCubit extends Cubit<SessionState> {
     );
   });
 
+  /// Deletes the folder [name]. One that still holds a session, or an
+  /// interrupted save, is refused with [SessionError.folderNotEmpty] and
+  /// nothing is removed: the catalog never deletes audio as a side effect.
+  Future<void> deleteFolder(String name) => _run(() async {
+    await _repository.deleteFolder(name);
+    return _ActionResult(
+      SessionOutcome.folderDeleted,
+      sessions: await _repository.listSessions(),
+    );
+  });
+
+  /// Renames the folder [name] to [to]; its sessions move with it and keep
+  /// their ids, so the open session stays open. A taken name surfaces as
+  /// [SessionError.nameCollision].
+  Future<void> renameFolder(String name, String to) => _run(() async {
+    await _repository.renameFolder(name, to);
+    return _ActionResult(
+      SessionOutcome.folderRenamed,
+      sessions: await _repository.listSessions(),
+    );
+  });
+
   /// Creates the folder [name]. A name a folder or session directory already
   /// has surfaces as [SessionError.nameCollision].
   Future<void> createFolder(String name) => _run(() async {
@@ -686,7 +708,7 @@ class SessionCubit extends Cubit<SessionState> {
     SessionUnsupportedVersion() => SessionError.unsupportedVersion,
     SessionNameCollision() => SessionError.nameCollision,
     SessionCorruptLayers() => SessionError.corruptLayers,
-    SessionFolderNotEmpty() => SessionError.unknown,
+    SessionFolderNotEmpty() => SessionError.folderNotEmpty,
   };
 }
 

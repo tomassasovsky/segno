@@ -166,33 +166,53 @@ a design change; this plan does not edit the pen):
      one pixel past its own 1792 layout.
    - Saved dates read `7 Sep` (the English locale data), not the pen's `7 Sept`.
    - Preview lanes draw the clip without a waveform (D11, until Part 6b).
-6. Part 3 as built:
+6. Part 3 as built (`lib/library/view/library_manage.dart`; its tests are in
+   `test/library/view/library_page_test.dart`):
    - `Manage` opens the options sheet (deviation 1) for the selected
      session: `Save`, `Save as…`, `Duplicate`, `Rename`, `Move to folder…`,
-     `Delete`, with `Delete` dimmed on the open session. `Manage` is also
-     drawn for a session whose preview cannot be read, so it can still be
-     renamed, moved or deleted.
-   - Save as, Duplicate and Rename use 19/04's keyboard sheet titled
-     `Session name`, with a subtitle naming the action (`Save as new
-     session`, `Duplicate as…`, `Rename session`); New folder uses it titled
-     `Folder name`. A name that is invalid or taken, or that the cubit
-     refuses, is answered inside the sheet, which stays open. The sheet is
-     the app's shared console keyboard (`Cancel` at the top right, `Save`
-     at the bottom right), not 19/04's own `Cancel` / `Done` row.
+     `Delete`, with `Delete` dimmed on the open session. On a session that
+     is not open, the two save rows say whose rig they save, since they act
+     on the live rig (D5): `Save New loop 2`, `Save New loop 2 as…`, or `Save
+     the current loop` when no session is open. `Manage` is also drawn for a
+     session whose preview cannot be read, so it can still be renamed, moved
+     or deleted.
+   - Save as, Duplicate and Rename ask for the name on the app's shared
+     console keyboard sheet, titled `Session name` with a subtitle naming
+     the action (`Save as new session`, `Duplicate as…`, `Rename session`);
+     New folder and Rename folder use it titled `Folder name`. That sheet
+     replaces 19/04's whole layout, not only its buttons: it is much
+     smaller (a title of about 18 pt against the pen's 30, keys of about 16
+     against 26), with `Cancel` at the top right and `Save` where 19/04 has
+     `Done`. A name that is invalid (including one shaped like a session
+     id), taken, or refused by the cubit is answered inside the sheet, which
+     stays open.
    - `Move to folder` is a second options sheet: `Unfiled`, each folder and
      `New folder…`, with where the session already is dimmed. The pen draws
      none of it.
+   - A long press on a folder chip opens `Rename folder` and `Delete
+     folder`; Delete is dimmed while a session is filed in the folder, asks
+     first, and the repository still refuses a folder holding anything
+     ("That folder still holds sessions. Move them out first."). The pen
+     draws neither.
    - Delete asks first with the console's confirm dialog (`Delete "name"?`);
      the pen draws no confirmation.
    - The 19/05 line is drawn in the failure token (`rec`), not the pen's
      `#efbea0`. Besides the pen's save failure it reports a refused delete
-     ("The open session cannot be deleted.") and any other failed catalog
-     action ("That did not work. Try again."); an Open's refusal stays on
-     its preview card.
+     ("The open session cannot be deleted."), a folder that still holds
+     sessions, and any other failed catalog action ("That did not work. Try
+     again."); an Open's refusal stays on its preview card. It reports only
+     failures of actions taken while the Library is open; any but a failed
+     save goes once another row is selected.
+   - "Nothing was changed" is true of a failed write-back too: a save over
+     an existing bundle writes a whole new bundle beside it
+     (`<id>.saving`) and swaps it in with two renames (the previous one
+     steps aside as `<id>.old` until the new one is in place). A failure
+     before the swap leaves the previous save as it was; a power cut between
+     the renames is undone on the next catalog read, which puts `<id>.old`
+     back (Part 3 review, finding 1).
    - The automatic name is `New loop N` in every language: a name is the
-     session's data, not interface copy.
-   - A folder cannot be deleted yet: D2's "deleted from Manage" has no row,
-     because Manage acts on a session.
+     session's data, not interface copy. So the Spanish UI shows a `Nuevo
+     loop` button beside sessions named `New loop N`.
    - Decision (rule 4, D4): the quick Save's name prompt is removed rather
      than repointed to the Library. A Save with no open session now saves
      as `New loop N` and the toast says so ("Saved as New loop 2"), so
@@ -684,7 +704,7 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
 
 ### Part 3: Manage: Save, Save as, Duplicate, Rename, Move to folder, Delete; New folder; automatic names (about 380 lines)
 
-Files: new `lib/library/view/library_manage_sheet.dart` (the options sheet,
+Files: new `lib/library/view/library_manage.dart` (the options sheet,
 deviation 1), `library_sessions_tab.dart` (`Manage`, `New folder`, storage
 error banner 19/05), `lib/session/cubit/session_cubit.dart` (`save` with
 automatic name, `saveAs(name)`, `duplicateSession(id, name)`,
@@ -707,7 +727,7 @@ bundle intact; Duplicate of a non-current session leaves the current pointer;
 Rename of the current session updates the header name and not the id; Delete
 of the current id refuses with the typed error and deletes nothing; a write
 failure leaves `currentSessionId` and `sessions` as before),
-`test/library/view/library_manage_sheet_test.dart` (rows, disabled Delete on
+`test/library/view/library_page_test.dart` (the manage group: rows, disabled Delete on
 the current session, folder picker, the banner on failure).
 
 ```success-criteria

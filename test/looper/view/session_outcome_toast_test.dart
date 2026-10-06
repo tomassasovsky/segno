@@ -44,6 +44,17 @@ void main() {
       expect(find.text(l10n.sessionSavedAs('New loop 2')), findsOneWidget);
     });
 
+    testWidgets('a folder that still holds sessions says so', (tester) async {
+      await show(
+        tester,
+        const SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.folderNotEmpty,
+        ),
+      );
+      expect(find.text(l10n.libraryFolderNotEmpty), findsOneWidget);
+    });
+
     testWidgets('a failed save says nothing was changed', (tester) async {
       await show(
         tester,
@@ -64,6 +75,8 @@ void main() {
         SessionOutcome.duplicated,
         SessionOutcome.moved,
         SessionOutcome.folderCreated,
+        SessionOutcome.folderRenamed,
+        SessionOutcome.folderDeleted,
       ]) {
         await show(
           tester,

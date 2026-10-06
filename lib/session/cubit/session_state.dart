@@ -42,6 +42,12 @@ enum SessionOutcome {
 
   /// A folder was created.
   folderCreated,
+
+  /// A folder was renamed.
+  folderRenamed,
+
+  /// An empty folder was deleted.
+  folderDeleted,
 }
 
 /// A classified failure kind, so the UI can show a localized, human-readable
@@ -71,6 +77,9 @@ enum SessionError {
 
   /// The open session cannot be deleted (plan D6).
   currentSessionProtected,
+
+  /// A folder that still holds sessions cannot be deleted.
+  folderNotEmpty,
 }
 
 /// State of the [SessionCubit].
