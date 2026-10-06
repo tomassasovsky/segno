@@ -100,3 +100,4 @@ export 'src/track_effect.dart'
         kPluginFxCode,
         kTrackEffectMax,
         kTrackEffectParams;
+export 'src/volume_space.dart' show VolumeSpace;

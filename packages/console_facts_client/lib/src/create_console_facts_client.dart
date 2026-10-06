@@ -23,20 +23,24 @@ const kFakeConsoleFacts = bool.fromEnvironment('SEGNO_FAKE_RADIOS');
 /// so the real client measures the app's actual data volume (`/data` on the
 /// appliance) rather than guessing where it lives.
 ///
-/// Windows keeps [UnsupportedConsoleFactsClient]: it has no `df`, and the
-/// Storage face's "this build can't read the console's disk" is the truthful
-/// answer there. Disk accounting is real on Linux/macOS now; capture retention
-/// and USB export remain unimplemented on every platform (see
-/// [LocalConsoleFactsClient]).
+/// [diskSpace] reads a volume's total/free capacity for an existing path; the
+/// root passes the engine's `statvfs` (no subprocess, #806).
+///
+/// Windows keeps [UnsupportedConsoleFactsClient]: the Storage face's "this
+/// build can't read the console's disk" stays the answer there. Disk
+/// accounting is real on Linux/macOS; capture retention and USB export remain
+/// unimplemented on every platform (see [LocalConsoleFactsClient]).
 ConsoleFactsClient createConsoleFactsClient({
   required Future<String> Function() sessionsRoot,
   required Future<String> Function() capturesRoot,
+  required Future<DiskSpace?> Function(String path) diskSpace,
 }) {
   if (kFakeConsoleFacts) return FakeConsoleFactsClient();
   if (Platform.isLinux || Platform.isMacOS) {
     return LocalConsoleFactsClient(
       sessionsRoot: sessionsRoot,
       capturesRoot: capturesRoot,
+      diskSpace: diskSpace,
     );
   }
   return const UnsupportedConsoleFactsClient();
