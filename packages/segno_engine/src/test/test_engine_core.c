@@ -19060,7 +19060,8 @@ static void test_perf_render_unlisted_retire_fails_stem(void) {
                      .evt = {.channel = 1, .slot = 1, .generation = 1}});
     fclose(lf);
   }
-  for (int dropped = 1; dropped >= 0; --dropped) {
+  /* 2: overruns (refused at staging), 1: dropped (manifest full), 0: none. */
+  for (int dropped = 2; dropped >= 0; --dropped) {
     char manifest[1024];
     snprintf(manifest, sizeof(manifest),
         "{\"sample_rate\": 4800, \"capture_frames\": 12, "
@@ -19068,7 +19069,9 @@ static void test_perf_render_unlisted_retire_fails_stem(void) {
         "[{\"channel\": 1, \"volume\": 1, \"lanes\": [{\"lane\": 0, "
         "\"deferred\": false, \"pcmRef\": \"track1.wav\"}]}]}, "
         "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []%s}",
-        dropped ? ", \"layers_dropped\": 1" : "");
+        dropped == 2   ? ", \"layer_overruns\": 1"
+        : dropped == 1 ? ", \"layers_dropped\": 1"
+                       : "");
     test_write_manifest(dir, manifest);
     le_engine* e = le_engine_create();
     CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -19415,34 +19418,91 @@ static void test_perf_render_partial_success(void) {
   le_engine_destroy(e);
 }
 
-/* Acceptance (robustness): pointing a render at a directory with no
- * performance.json (or, separately, a corrupt one) must not hang or crash —
- * the worker should reach `done` with zero tracks, matching a render that
- * legitimately has nothing to do. */
-static void test_perf_render_missing_or_corrupt_manifest(void) {
-  printf("test_perf_render_missing_or_corrupt_manifest\n");
-
-  const char* missing_dir = render_test_dir("missing-manifest");
-  le_engine* e1 = le_engine_create();
-  CHECK(le_perf_render_begin(e1, missing_dir) == LE_OK);
-  test_wait_for_render(e1, 2000);
+/* An unusable manifest finishes as a FAILED render (#1144): nonzero poll
+ * status, done, and no invented track results. A valid empty manifest is
+ * still a successful render with zero tracks, and the same engine renders
+ * again afterwards with its status reset. */
+static void expect_render_status(le_engine* e, const char* dir, int32_t want) {
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
   int32_t done = 0, track_count = -1;
-  CHECK(le_perf_render_poll(e1, &done, NULL, &track_count) == LE_OK);
+  CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == want);
   CHECK(done == 1);
   CHECK(track_count == 0);
-  le_engine_destroy(e1);
+}
+
+static void test_perf_render_missing_or_corrupt_manifest(void) {
+  printf("test_perf_render_missing_or_corrupt_manifest\n");
+  le_engine* e = le_engine_create();
+  int32_t done = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, NULL) == LE_OK); /* idle */
+  CHECK(done == 1);
+
+  expect_render_status(e, render_test_dir("missing-manifest"), LE_ERR_INVALID);
 
   const char* corrupt_dir = render_test_dir("corrupt-manifest");
   test_write_manifest(corrupt_dir, "{not valid json");
-  le_engine* e2 = le_engine_create();
-  CHECK(le_perf_render_begin(e2, corrupt_dir) == LE_OK);
-  test_wait_for_render(e2, 2000);
-  done = 0;
-  track_count = -1;
-  CHECK(le_perf_render_poll(e2, &done, NULL, &track_count) == LE_OK);
-  CHECK(done == 1);
-  CHECK(track_count == 0);
-  le_engine_destroy(e2);
+  expect_render_status(e, corrupt_dir, LE_ERR_INVALID);
+
+  const char* policy_dir = render_test_dir("no-policy-manifest");
+  test_write_manifest(policy_dir,
+      "{\"sample_rate\": 4800, \"capture_frames\": 4, "
+      "\"armSnapshot\": {\"captureMask\": 1, \"tracks\": []}, \"layers\": []}");
+  expect_render_status(e, policy_dir, LE_ERR_INVALID);
+
+  const char* empty_dir = render_test_dir("empty-valid-manifest");
+  test_write_manifest(empty_dir,
+      "{\"sample_rate\": 4800, \"capture_frames\": 4, "
+      "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": 1, "
+      "\"tracks\": []}, \"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}");
+  expect_render_status(e, empty_dir, LE_OK); /* reset after the failures */
+  le_engine_destroy(e);
+}
+
+/* A valid manifest larger than any fixed arena this renderer has used (8,192
+ * nodes, then 8,192 + 16 x 2,048 = 40,960) parses and renders a real track:
+ * the arena is sized from the complete text (#1144). */
+static void test_perf_render_large_manifest_parses(void) {
+  printf("test_perf_render_large_manifest_parses\n");
+  const char* dir = render_test_dir("large-manifest");
+  const float content[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track1.wav", dir);
+  test_write_wav_mono(wav_path, content, 4, 4800);
+  const int entries = 4300; /* 10 nodes each: ~43,000 > 40,960 */
+  const size_t cap = 512 + (size_t)entries * 192;
+  char* text = malloc(cap);
+  CHECK(text != NULL);
+  if (text == NULL) return;
+  size_t off = (size_t)snprintf(text, cap,
+      "{\"sample_rate\": 4800, \"capture_frames\": 4, "
+      "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": 1, "
+      "\"tracks\": [{\"channel\": 1, \"volume\": 1, \"lanes\": [{\"lane\": 0, "
+      "\"deferred\": false, \"pcmRef\": \"track1.wav\"}]}]}, "
+      "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": [");
+  for (int i = 0; i < entries; ++i) {
+    off += (size_t)snprintf(text + off, cap - off,
+        "%s{\"channel\": 7, \"slot\": %d, \"generation\": %d, \"frame\": 0, "
+        "\"frame_count\": 4, \"lane_count\": 1, \"kind\": 0, "
+        "\"restore_id\": 0, \"filename\": \"layer-7-0-%d.pcm\"}",
+        i ? ", " : "", i % 256, i, i);
+  }
+  snprintf(text + off, cap - off, "]}");
+  test_write_manifest(dir, text);
+  free(text);
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+  int32_t done = 0, track_count = -1;
+  CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == LE_OK);
+  CHECK(done == 1 && track_count == 1);
+  int32_t channel = -1, succeeded = -1;
+  CHECK(le_perf_render_track_status(e, 0, &channel, &succeeded) == LE_OK);
+  CHECK(channel == 1 && succeeded == 1);
+  float stem[4] = {0};
+  CHECK(test_read_stem(dir, 1, stem, 4) == 4);
+  for (int i = 0; i < 4; ++i) CHECK(fabsf(stem[i] - 0.5f) < 1e-6f);
+  le_engine_destroy(e);
 }
 
 /* ---- perf_render: the wet pass + master reconstruction (part 8) ---- */
@@ -32360,7 +32420,8 @@ static void test_perf_render_requires_explicit_capture_policy(void) {
     CHECK(le_perf_render_begin(e, dir) == LE_OK);
     test_wait_for_render(e, 5000);
     int32_t done = 0, count = -1;
-    CHECK(le_perf_render_poll(e, &done, NULL, &count) == LE_OK);
+    /* Missing or invalid policy is a failed render (#1144). */
+    CHECK(le_perf_render_poll(e, &done, NULL, &count) == LE_ERR_INVALID);
     CHECK(done && count == 0);
   }
   le_engine_destroy(e);
@@ -32403,7 +32464,9 @@ static void test_perf_render_validates_capture_identity(void) {
     le_engine* e = le_engine_create();
     CHECK(le_perf_render_begin(e, dir) == LE_OK); test_wait_for_render(e, 5000);
     int32_t done = 0, count = -1;
-    CHECK(le_perf_render_poll(e, &done, NULL, &count) == LE_OK);
+    /* An invalid identity is a failed render (#1144), never an empty one. */
+    CHECK(le_perf_render_poll(e, &done, NULL, &count) ==
+          (i < 20 ? LE_ERR_INVALID : LE_OK));
     CHECK(done && (i < 20 ? count == 0 : count > 0));
     le_engine_destroy(e);
   }
@@ -33441,6 +33504,7 @@ int main(void) {
   test_perf_render_concurrent_with_live_engine();
   test_perf_render_partial_success();
   test_perf_render_missing_or_corrupt_manifest();
+  test_perf_render_large_manifest_parses();
   test_perf_render_wet_fx_sweep();
   test_perf_render_dry_write_fail_excludes_from_master();
   test_perf_render_multi_channel_dry_fail_isolated();
