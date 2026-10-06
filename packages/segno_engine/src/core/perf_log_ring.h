@@ -233,7 +233,9 @@ static inline int le_log_extract(const le_command* command, le_log_command* out)
       command->code == LE_CMD_REVERSE || command->code == LE_CMD_SET_MIX ||
       command->code == LE_CMD_RECORD_IMAGE ||
       command->code == LE_CMD_SET_LENGTH_PRESETS ||
-      command->code == LE_CMD_RENDER_FREEZE) return 0;
+      command->code == LE_CMD_RENDER_FREEZE ||
+      command->code == LE_CMD_BOUNCE ||
+      command->code == LE_CMD_BOUNCE_RECOVER) return 0;
   out->code = command->code;
   memcpy(&out->arg_i, &command->arg_i, 16);
   return 1;

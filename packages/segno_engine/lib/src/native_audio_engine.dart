@@ -1251,7 +1251,10 @@ class NativeAudioEngine implements AudioEngine {
         return TrackHistory(
           [
             for (var i = 0; i < count; i++)
-              HistoryEntry(HistoryKind.values[kinds[i]], skipped: skipped[i]),
+              HistoryEntry(
+                HistoryKind.fromCode(kinds[i]) ?? HistoryKind.bounce,
+                skipped: skipped[i],
+              ),
           ],
           undoCount: undoCount.value,
         );
@@ -1277,7 +1280,7 @@ class NativeAudioEngine implements AudioEngine {
     final skipped = calloc<Int32>(count == 0 ? 1 : count);
     try {
       for (var i = 0; i < count; i++) {
-        kinds[i] = entries[i].kind.index;
+        kinds[i] = entries[i].kind.code;
         skipped[i] = entries[i].skipped;
       }
       return EngineResult.fromCode(

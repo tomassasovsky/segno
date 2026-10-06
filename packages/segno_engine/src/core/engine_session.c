@@ -151,13 +151,40 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
  * above live — see le_undo_swap in engine_commands.c). Image-bearing entries
  * only: a redo-side PEEL marker (slot -1, #1164) holds no image and is skipped,
  * so an ordinal never tears on one. Returns -1 for an ordinal past the end. */
+/* The part of a track's history a Session can carry (#1202). A Bounce is
+ * never saved: on the Undo side the export starts above the newest BOUNCE
+ * entry (the bounced take is the saved base), and on the Redo side it stops
+ * at the first BOUNCE or grouped entry (a group must not come back as a lone
+ * Redo). *undo_from is the first exported undo index; *redo_floor the lowest
+ * exported redo index (the redo stack exports from redo_count - 1 down). */
+static void le_export_window(const le_track* t, int32_t* undo_from,
+                             int32_t* redo_floor) {
+  *undo_from = 0;
+  for (int32_t i = t->undo_count - 1; i >= 0; --i) {
+    if (t->undo_stack[i].kind == LE_HIST_BOUNCE) {
+      *undo_from = i + 1;
+      break;
+    }
+  }
+  *redo_floor = 0;
+  for (int32_t k = t->redo_count - 1; k >= 0; --k) {
+    if (t->redo_stack[k].kind == LE_HIST_BOUNCE ||
+        t->redo_stack[k].group_id != 0) {
+      *redo_floor = k + 1;
+      break;
+    }
+  }
+}
+
 static int32_t le_layer_slot_for_ordinal(const le_track* t, int32_t ordinal,
                                           int32_t live) {
-  const int32_t undo_c = t->undo_count;
-  if (ordinal < undo_c) return t->undo_stack[ordinal].slot;
+  int32_t undo_from, redo_floor;
+  le_export_window(t, &undo_from, &redo_floor);
+  const int32_t undo_c = t->undo_count - undo_from;
+  if (ordinal < undo_c) return t->undo_stack[undo_from + ordinal].slot;
   if (ordinal == undo_c) return live;
   int32_t j = ordinal - undo_c - 1; /* 0-based into the post-live images */
-  for (int32_t k = t->redo_count - 1; k >= 0; --k) {
+  for (int32_t k = t->redo_count - 1; k >= redo_floor; --k) {
     if (t->redo_stack[k].slot < 0) continue;
     if (j-- == 0) return t->redo_stack[k].slot;
   }
@@ -177,14 +204,16 @@ int32_t le_engine_export_history(le_engine* engine, int32_t channel,
    * gated (0 while a content-giving command is in flight, until the next
    * drain republishes it), so a caller that split these entries by it could
    * misread the live image's ordinal (#1164 review finding 1). */
-  *undo_count = t->undo_count;
+  int32_t undo_from, redo_floor;
+  le_export_window(t, &undo_from, &redo_floor);
+  *undo_count = t->undo_count - undo_from;
   int32_t n = 0;
-  for (int32_t i = 0; i < t->undo_count; ++i, ++n) {
+  for (int32_t i = undo_from; i < t->undo_count; ++i, ++n) {
     if (n >= max) continue;
     kinds[n] = t->undo_stack[i].kind;
     skipped[n] = t->undo_stack[i].skipped;
   }
-  for (int32_t k = t->redo_count - 1; k >= 0; --k, ++n) {
+  for (int32_t k = t->redo_count - 1; k >= redo_floor; --k, ++n) {
     if (n >= max) continue;
     kinds[n] = t->redo_stack[k].kind;
     skipped[n] = t->redo_stack[k].skipped;
@@ -290,6 +319,8 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
   for (int32_t i = 0; i < count; ++i) {
     const int32_t kind = kinds[i];
     const int redo = i >= undo_count;
+    /* LE_HIST_BOUNCE (#1202) is refused like any unknown kind: export cuts
+     * it, so a Session that carries one was not written by this engine. */
     if (kind != LE_HIST_LAYER && kind != LE_HIST_CLEAR &&
         kind != LE_HIST_PEEL && kind != LE_HIST_PROCESSED) {
       return LE_ERR_INVALID;

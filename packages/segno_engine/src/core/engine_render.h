@@ -48,6 +48,14 @@ void le_render_worker_step(le_engine* engine);
  * unfinished job with LE_ERR_DEVICE and returns its bytes to the cache. */
 void le_render_on_cache_shutdown(le_engine* engine);
 
+/* Control thread, le_engine_bounce: the finished memory result of `job`
+ * (interleaved stereo, *frames frames) and the iteration its freeze landed
+ * in. LE_ERR_NOT_READY unless `job` is the current DONE memory job;
+ * LE_ERR_TRACKS_CHANGED when a source's content moved since the freeze. The
+ * pointer stays valid until the job is cancelled or replaced. */
+int32_t le_render_take(le_engine* engine, uint32_t job, const float** stereo,
+                       int32_t* frames, uint64_t* i_ref);
+
 /* Control thread, le_engine_destroy: frees every job. */
 void le_render_destroy(le_engine* engine);
 

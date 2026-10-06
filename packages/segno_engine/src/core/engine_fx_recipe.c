@@ -178,6 +178,32 @@ struct le_prepared_fx* le_fx_prepare_capture(le_engine* e, int ch,
   return p;
 }
 
+struct le_prepared_fx* le_fx_prepare_chains(le_engine* e, int owner,
+                                            int channel, int count,
+                                            const le_fx_recipe* recipes,
+                                            int recipe_count) {
+  if (owner != LE_FX_OWNER_LANE && owner != LE_FX_OWNER_TRACK) return NULL;
+  if (owner == LE_FX_OWNER_TRACK) count = 1;
+  if (count < 1 || count > LE_MAX_LANES) return NULL;
+  struct le_prepared_fx* p = calloc(1, sizeof(*p));
+  if (!p) return NULL;
+  p->owner = owner; p->channel = channel;
+  le_fx_recipe empty;
+  memset(&empty, 0, sizeof(empty));
+  empty.enabled = 1;
+  for (int lane = 0; lane < count; ++lane) {
+    const le_fx_recipe* r =
+        recipes != NULL && lane < recipe_count ? &recipes[lane] : &empty;
+    p->lane_mask |= 1u << lane;
+    if (!prepare_recipe(e, p, lane, r)) {
+      free(p);
+      return NULL;
+    }
+  }
+  for (int i = 0; i < p->added_count; ++i) le_plugin_slot_set_ready(p->added[i], 1);
+  return p;
+}
+
 void le_fx_recipe_abandon(struct le_prepared_fx* p) {
   if (!p) return;
   for (int i = 0; i < p->added_count; ++i) le_plugin_slot_set_ready(p->added[i], 0);

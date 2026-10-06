@@ -91,6 +91,7 @@ struct le_render_job {
   char* part_path;
   le_render_plan plan;
   int32_t frames, sample_rate, cap, passes;
+  uint64_t i_ref; /* the iteration the freeze landed in */
   int32_t nsrc;
   le_render_src src[LE_MAX_TRACKS];
   le_fx_frozen_chain mix;
@@ -465,6 +466,7 @@ int32_t le_engine_render_begin(le_engine* engine,
 
 static void le_render_after_freeze(le_engine* e, le_render_job* j) {
   const le_render_freeze* fz = &e->render_freeze;
+  j->i_ref = fz->i_ref;
   for (int32_t i = 0; i < j->nsrc; ++i) {
     le_render_src* s = &j->src[i];
     const le_render_freeze_src* f = &fz->src[s->channel];
@@ -644,6 +646,25 @@ void le_render_on_cache_shutdown(le_engine* engine) {
   /* The books this job was charged to are being freed with the cache. */
   if (j->charged > 0) le_cache_release(engine, j->charged);
   j->charged = 0;
+}
+
+int32_t le_render_take(le_engine* engine, uint32_t job, const float** stereo,
+                       int32_t* frames, uint64_t* i_ref) {
+  le_render_job* j = engine->render_job;
+  if (j == NULL || j->id != job || j->req.target != LE_RENDER_TARGET_MEMORY ||
+      j->state != LE_RENDER_DONE || j->out == NULL) {
+    return LE_ERR_NOT_READY;
+  }
+  for (int32_t i = 0; i < j->nsrc; ++i) {
+    if (atomic_load_explicit(&engine->tracks[j->src[i].channel].a_audio_rev,
+                             memory_order_acquire) != j->src[i].audio_rev) {
+      return LE_ERR_TRACKS_CHANGED;
+    }
+  }
+  *stereo = j->out;
+  *frames = j->frames;
+  *i_ref = j->i_ref;
+  return LE_OK;
 }
 
 void le_render_destroy(le_engine* engine) {
