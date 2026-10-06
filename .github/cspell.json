@@ -1041,6 +1041,7 @@
     "sinc",
     "gaplessly",
     "Goertzel",
-    "bandlimited"
+    "bandlimited",
+    "polyphase"
   ]
 }
