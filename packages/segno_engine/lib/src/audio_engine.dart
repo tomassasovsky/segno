@@ -227,6 +227,18 @@ abstract interface class EngineMetering {
   /// when the tuner is on screen and disarm it when it leaves.
   EngineResult setTunerInput({required int input});
 
+  /// Silences the live monitors of the inputs in [inputMask] (bit `c` =
+  /// input `c`) for as long as the tuner stays armed (#1229): the foot
+  /// Tuner's temporary mute of the input or pair being tuned.
+  ///
+  /// Owned by the tuner arm, not the monitor's persistent mute: the two are
+  /// ORed and neither changes the other. Arm with [setTunerInput] first — a
+  /// mask sent while disarmed is stored as `0`, and every [setTunerInput]
+  /// clears it. Only monitoring changes: track capture and the detector still
+  /// hear the input, and nothing is perf-logged. Mirrored on the snapshot as
+  /// [EngineSnapshot.tunerMuteMask].
+  EngineResult setTunerMute({required int inputMask});
+
   /// Detects a cable-free loopback capture path (PulseAudio monitor / virtual
   /// driver / backend built-in loopback) for auto-measuring latency. The result
   /// captures the digital round-trip only (see [LoopbackInfo]).

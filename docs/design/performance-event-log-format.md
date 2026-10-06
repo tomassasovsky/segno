@@ -173,6 +173,13 @@ nothing, and an accepted one logs the primitive fact the callback applied
 (`LE_PLOG_FADE` 321, `LE_PLOG_REVERSE` 324). Input capture trim is already present in captured
 PCM and is not applied a second time by replay.
 
+The tuner's commands are not logged at all: `LE_CMD_SET_TUNER_INPUT` (53)
+changes no output, and `LE_CMD_SET_TUNER_MUTE` (132, #1229) silences the
+live monitors of the inputs being tuned without touching any recorded
+material. A captured monitor stem already holds that silence, exactly as
+heard, through the same path a monitor mute takes, so replay has nothing to
+apply.
+
 Recording images retain source balance and position separately from live
 lane level and track pan. The volume/pan events contain their effective
 composition at application time, so replay does not apply the image twice.

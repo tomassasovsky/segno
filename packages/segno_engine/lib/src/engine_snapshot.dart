@@ -1261,6 +1261,7 @@ class EngineSnapshot {
     this.tunerHz = 0,
     this.tunerConfidence = 0,
     this.tunerInput = -1,
+    this.tunerMuteMask = 0,
     this.activeBackend = AudioBackend.miniaudio,
     this.outputEnabledMask = 0xFFFFFFFF,
     this.isPerfArmed = false,
@@ -1329,6 +1330,7 @@ class EngineSnapshot {
       tunerHz = 0,
       tunerConfidence = 0,
       tunerInput = -1,
+      tunerMuteMask = 0,
       inputPeak = 0,
       outputRms = 0,
       outputPeak = 0,
@@ -1422,6 +1424,7 @@ class EngineSnapshot {
       tunerHz: native.tuner_hz,
       tunerConfidence: native.tuner_confidence,
       tunerInput: native.tuner_input,
+      tunerMuteMask: native.tuner_mute_mask,
       inputPeak: native.input_peak,
       outputRms: native.output_rms,
       outputPeak: native.output_peak,
@@ -1507,6 +1510,7 @@ class EngineSnapshot {
     double? tunerHz,
     double? tunerConfidence,
     int? tunerInput,
+    int? tunerMuteMask,
     double? inputRms,
     double? inputPeak,
     double? outputRms,
@@ -1582,6 +1586,7 @@ class EngineSnapshot {
     tunerHz: tunerHz ?? this.tunerHz,
     tunerConfidence: tunerConfidence ?? this.tunerConfidence,
     tunerInput: tunerInput ?? this.tunerInput,
+    tunerMuteMask: tunerMuteMask ?? this.tunerMuteMask,
     inputRms: inputRms ?? this.inputRms,
     inputPeak: inputPeak ?? this.inputPeak,
     outputRms: outputRms ?? this.outputRms,
@@ -1706,6 +1711,11 @@ class EngineSnapshot {
   /// from a zero [tunerHz]: armed-and-silent and not-armed need different
   /// words on screen.
   final int tunerInput;
+
+  /// Inputs whose live monitors the tuner is silencing (bit `c` = input `c`),
+  /// `0` whenever [tunerInput] is `-1` (#1229). Separate from, and ORed with,
+  /// each monitor's own persistent mute.
+  final int tunerMuteMask;
 
   /// Input RMS level for the most recent block, in `0..1`.
   final double inputRms;
@@ -2022,6 +2032,7 @@ class EngineSnapshot {
           tunerHz == other.tunerHz &&
           tunerConfidence == other.tunerConfidence &&
           tunerInput == other.tunerInput &&
+          tunerMuteMask == other.tunerMuteMask &&
           inputRms == other.inputRms &&
           inputPeak == other.inputPeak &&
           outputRms == other.outputRms &&
@@ -2100,6 +2111,7 @@ class EngineSnapshot {
     tunerHz,
     tunerConfidence,
     tunerInput,
+    tunerMuteMask,
     inputPeak,
     outputRms,
     outputPeak,

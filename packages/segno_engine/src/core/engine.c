@@ -797,6 +797,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
    * tuner that silently analyses input 1 on every boot is a CPU cost nobody
    * asked for. */
   atomic_store_explicit(&engine->a_tuner_input, -1, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_tuner_mute_mask, 0u, memory_order_relaxed);
 
   /* Per-input live monitors: all disabled by default (each defaults to full
    * stereo output, empty chain). Inputs are monitored only when explicitly
