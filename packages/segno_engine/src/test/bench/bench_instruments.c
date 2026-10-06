@@ -26,9 +26,14 @@
  *             8 x 8 baseline with eight live inputs monitored through one
  *             reverb each, the pitch/time read head at 8x over the 64 lanes
  *             (the Speed work its plan adds to the mixer), and 32 held
- *             voices of the costliest melodic patch inside the callback.
- *             Reported with p99.9 and the count of periods over the budget
- *             ("late").
+ *             voices of the costliest melodic patch inside the callback,
+ *             plus the MIDI routing cost (#1197 Part 2c): before every
+ *             period, 255 events on each of the 8 ports (a full ring) and
+ *             256 control note-offs, routed against 8 instruments x 32
+ *             remaps. The port events are Note Ons above every range, Note
+ *             Offs and CC 7, so each one scans all 256 remaps and the voice
+ *             pool without changing the voice load. Reported with p99.9 and
+ *             the count of periods over the budget ("late").
  *
  * Scheduling: SCHED_FIFO (BENCH_RT_PRIO, below the app's audio thread) around
  * the timed loops only. Thresholds (--assert): the Pi 5 set, refused on
@@ -55,6 +60,7 @@
 #endif
 
 #include "engine_read_head.h"
+#include "le_midi_port.h"
 #include "segno_engine_api.h"
 #include "synth_voice.h"
 
@@ -199,6 +205,70 @@ static stats run_engine(const bench_opts* o, int32_t patch, int32_t voices,
   return s;
 }
 
+/* A capture stand-in for the routing load: the engine reaches a capture
+ * through the le_midi_sink at its start (le_midi_port.h). */
+typedef struct bench_capture {
+  le_midi_sink sink;
+} bench_capture;
+
+enum { kRoutePorts = 8 };
+
+/* Instruments 1-7 get `patch` too (instrument 0 already holds the voices),
+ * each listens on its own port over notes 0-23, and each carries 32 remaps
+ * on channel 16 that the load never matches, so every message scans them
+ * all. */
+static void route_load_setup(le_engine* e, bench_capture* caps, int32_t patch) {
+  le_inst_routes* r = (le_inst_routes*)calloc(1, sizeof(le_inst_routes));
+  for (int32_t k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+    if (k > 0 && le_engine_set_instrument(e, k, patch, NULL) != LE_OK) {
+      fprintf(stderr, "routing instrument %d failed\n", k);
+      exit(3);
+    }
+    le_inst_route* q = &r->inst[k];
+    q->midi_enabled = 1;
+    q->port = k % kRoutePorts;
+    q->high = 23;
+    q->remap_count = LE_INST_MAX_REMAPS;
+    for (int32_t m = 0; m < LE_INST_MAX_REMAPS; ++m) {
+      le_inst_remap* x = &q->remaps[m];
+      x->port = q->port;
+      x->channel = 16;
+      x->kind = LE_INST_REMAP_NOTE;
+      x->number = 60 + m;
+      x->count = LE_INST_REMAP_NOTES;
+      for (int32_t n = 0; n < LE_INST_REMAP_NOTES; ++n) x->notes[n] = 48 + n;
+    }
+  }
+  if (le_engine_set_instrument_routes(e, r) != LE_OK) {
+    fprintf(stderr, "routes failed\n");
+    exit(3);
+  }
+  free(r);
+  for (int32_t p = 0; p < kRoutePorts; ++p) {
+    memset(&caps[p], 0, sizeof(caps[p]));
+    if (le_engine_attach_midi_input(e, (le_midi*)(void*)&caps[p], p) != LE_OK) {
+      fprintf(stderr, "attach %d failed\n", p);
+      exit(3);
+    }
+  }
+}
+
+/* One period's routing load, queued before the callback (untimed: the MIDI
+ * threads and the control thread carry the posting). */
+static void route_load_post(le_engine* e, bench_capture* caps, size_t k) {
+  for (int32_t p = 0; p < kRoutePorts; ++p) {
+    for (int32_t i = 0; i < LE_MIDI_PORT_RING_CAP - 1; ++i) {
+      const uint8_t note = (uint8_t)(60 + (i % 40));
+      const uint8_t status = i % 3 == 0 ? 0x90 : i % 3 == 1 ? 0x80 : 0xB0;
+      le_midi_sink_push(&caps[p].sink, status, status == 0xB0 ? 7 : note, 100,
+                        (uint64_t)k);
+    }
+  }
+  for (uint32_t i = 0; i < 256; ++i) {
+    le_engine_instrument_note_off(e, 100000u + (uint32_t)(k & 0xFFFFu) * 256u + i);
+  }
+}
+
 /* The joint worst case: everything the period may have to carry at once. */
 static stats run_joint(const bench_opts* o, int32_t patch, int32_t voices,
                        const float* src, int32_t frames) {
@@ -233,12 +303,15 @@ static stats run_joint(const bench_opts* o, int32_t patch, int32_t voices,
   }
   float* acc = (float*)calloc((size_t)o->period, sizeof(float));
   hold_engine_voices(r.e, o, &r, patch, voices);
+  bench_capture caps[kRoutePorts];
+  route_load_setup(r.e, caps, patch);
   const size_t periods = (size_t)(o->seconds * o->rate / o->period);
   double* t = (double*)malloc(sizeof(double) * (periods ? periods : 1));
   le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
   int64_t base = 0;
   rt_enter();
   for (size_t k = 0; k < periods; ++k) {
+    route_load_post(r.e, caps, k);
     const double a = now_us();
     le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
     head_period(heads, lanes, kLanesPerTrack, frames, base, o->period, 8.0, acc);
@@ -248,9 +321,16 @@ static stats run_joint(const bench_opts* o, int32_t patch, int32_t voices,
     if ((k & 63) == 0) le_engine_get_snapshot(r.e, snap);
   }
   rt_leave();
+  le_engine_get_snapshot(r.e, snap);
+  if (snap->instrument_voices[0] != voices || snap->midi_in_overflows != 0u) {
+    fprintf(stderr, "routing load disturbed the voices (%d) or overflowed (%u)\n",
+            snap->instrument_voices[0], snap->midi_in_overflows);
+    exit(3);
+  }
   free(snap);
   free(acc);
   for (int i = 0; i < LE_MAX_TRACKS; ++i) free(copies[i]);
+  for (int32_t p = 0; p < kRoutePorts; ++p) le_engine_detach_midi_input(r.e, p);
   const stats s = stats_of(t, periods);
   free(t);
   rig_destroy(&r);
@@ -375,7 +455,9 @@ int main(int argc, char** argv) {
   print_row("8 x 8 lanes", base);
   const stats with = run_engine(&o, costliest_melodic, 32, src, frames);
   print_row("8 x 8 lanes + 32 voices", with);
-  printf("\n## joint (8 x 8 lanes + 8 monitored inputs with reverb + read head 8x + 32 voices)\n\n");
+  printf("\n## joint (8 x 8 lanes + 8 monitored inputs with reverb + read head 8x + 32 voices\n"
+         "## + MIDI routing: 8 ports x 255 events + 256 control events per period,\n"
+         "## 8 instruments x 32 remaps)\n\n");
   print_tail_header();
   const stats joint = run_joint(&o, costliest_melodic, 32, src, frames);
   print_tail_row("joint worst case", joint);

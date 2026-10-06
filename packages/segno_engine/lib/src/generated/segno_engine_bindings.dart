@@ -6273,6 +6273,74 @@ class SegnoEngineBindings {
   late final _le_engine_instrument_note_off = _le_engine_instrument_note_offPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Adds (`on` 1) or removes (0) sustain contributor `origin` on `slot`: a
+  /// pedal or external switch holding sustain. Released notes ring until every
+  /// contributor, these and each port's CC64, lets go. Adding rides the note-on
+  /// ring (LE_ERR_CAPACITY like a note-on), removing rides the release lane
+  /// (LE_ERR_CAPACITY only when it is full: retry, never drop). Returns LE_OK,
+  /// LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (adding on an empty slot) or
+  /// LE_ERR_NOT_RUNNING. Control-thread origins share a space of their own:
+  /// they never collide with a MIDI port's notes.
+  int le_engine_instrument_sustain(
+    ffi.Pointer<le_engine> engine,
+    int slot,
+    int origin,
+    int on$,
+  ) {
+    return _le_engine_instrument_sustain(
+      engine,
+      slot,
+      origin,
+      on$,
+    );
+  }
+
+  late final _le_engine_instrument_sustainPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Uint32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_instrument_sustain');
+  late final _le_engine_instrument_sustain = _le_engine_instrument_sustainPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Publishes a complete routing table (copied; the caller keeps its own).
+  /// While the audio callback runs, a table is switched in at the next block
+  /// and acknowledged there; a second publish before that acknowledgement
+  /// returns LE_ERR_NOT_READY (retry on the next snapshot, latest wins). While
+  /// the engine is stopped the table switches at once. Returns LE_OK,
+  /// LE_ERR_INVALID (a field out of range), LE_ERR_NOT_READY or
+  /// LE_ERR_NOT_RUNNING.
+  int le_engine_set_instrument_routes(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_inst_routes> routes,
+  ) {
+    return _le_engine_set_instrument_routes(
+      engine,
+      routes,
+    );
+  }
+
+  late final _le_engine_set_instrument_routesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_inst_routes>,
+          )
+        >
+      >('le_engine_set_instrument_routes');
+  late final _le_engine_set_instrument_routes =
+      _le_engine_set_instrument_routesPtr
+          .asFunction<
+            int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_inst_routes>)
+          >();
+
   /// Number of patches (LE_SYNTH_PATCHES).
   int le_synth_patch_count() {
     return _le_synth_patch_count();
@@ -8080,6 +8148,11 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Uint32()
   external int instrument_fallback_blocks;
 
+  /// sustain contributors refused because an instrument already had
+  /// LE_SYNTH_SUSTAIN_MAX (16) (#1197 Part 2c)
+  @ffi.Uint32()
+  external int instrument_sustain_refused;
+
   /// ---- native MIDI input (#1228 Part 1; trailing). Totals across all
   /// LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
   /// from the current binding, events dropped as stale (pushed by a binding
@@ -8363,6 +8436,65 @@ final class le_midi extends ffi.Opaque {}
 
 final class le_midi_out extends ffi.Opaque {}
 
+final class le_inst_remap extends ffi.Struct {
+  /// 0..LE_MAX_MIDI_PORTS-1
+  @ffi.Int32()
+  external int port;
+
+  /// 0: any, 1..16
+  @ffi.Int32()
+  external int channel;
+
+  /// LE_INST_REMAP_NOTE or LE_INST_REMAP_CC
+  @ffi.Int32()
+  external int kind;
+
+  /// the note or controller, 0..127
+  @ffi.Int32()
+  external int number;
+
+  /// notes to play, 1..LE_INST_REMAP_NOTES
+  @ffi.Int32()
+  external int count;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> notes;
+}
+
+final class le_inst_route extends ffi.Struct {
+  /// 0/1: ordinary notes and controllers
+  @ffi.Int32()
+  external int midi_enabled;
+
+  /// 0..LE_MAX_MIDI_PORTS-1
+  @ffi.Int32()
+  external int port;
+
+  /// 0: any, 1..16
+  @ffi.Int32()
+  external int channel;
+
+  /// note range, 0 <= low <= high <= 127
+  @ffi.Int32()
+  external int low;
+
+  @ffi.Int32()
+  external int high;
+
+  /// 0..LE_INST_MAX_REMAPS; remaps, like ordinary
+  /// notes, need midi_enabled
+  @ffi.Int32()
+  external int remap_count;
+
+  @ffi.Array.multi([32])
+  external ffi.Array<le_inst_remap> remaps;
+}
+
+final class le_inst_routes extends ffi.Struct {
+  @ffi.Array.multi([8])
+  external ffi.Array<le_inst_route> inst;
+}
+
 /// Instrument families, in catalogue order.
 enum le_synth_family {
   LE_SYNTH_KEYS(0),
@@ -8492,6 +8624,14 @@ const int LE_MAX_MIDI_PORTS = 8;
 const int LE_INST_EVENT_CAPACITY = 256;
 
 const int LE_INST_RELEASE_CAPACITY = 1024;
+
+const int LE_INST_MAX_REMAPS = 32;
+
+const int LE_INST_REMAP_NOTES = 8;
+
+const int LE_INST_REMAP_NOTE = 0;
+
+const int LE_INST_REMAP_CC = 1;
 
 const int LE_SYNTH_PATCHES = 19;
 

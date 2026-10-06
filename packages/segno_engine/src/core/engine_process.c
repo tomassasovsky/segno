@@ -6372,17 +6372,30 @@ typedef struct le_midi_drain_counts {
   uint32_t events, stale, gaps, lost, rebinds;
 } le_midi_drain_counts;
 
-/* The one place the drain hands something to its consumers. Part 1 only
- * counts; MIDI clock (#1228 Part 2) and instrument routing (#1197 Part 2c)
- * act here, in the order this is called. */
+/* The one place the drain hands something to its consumers, in the order
+ * this is called. Instrument routing (#1197 Part 2c) plays an event and ends
+ * the port's notes, sustain and expression on a GAP, LOST or REBOUND; MIDI
+ * clock (#1228 Part 2) acts here too. */
 static void le_midi_port_dispatch(le_engine* e, int port, int kind,
                                   const le_midi_port_event* ev,
                                   le_midi_drain_counts* n) {
   switch (kind) {
-    case LE_MIDI_DISPATCH_EVENT: n->events++; break;
-    case LE_MIDI_DISPATCH_GAP: n->gaps++; break;
-    case LE_MIDI_DISPATCH_LOST: n->lost++; break;
-    case LE_MIDI_DISPATCH_REBOUND: n->rebinds++; break;
+    case LE_MIDI_DISPATCH_EVENT:
+      n->events++;
+      le_instruments_midi_event(e, port, ev);
+      break;
+    case LE_MIDI_DISPATCH_GAP:
+      n->gaps++;
+      le_instruments_midi_gone(e, port);
+      break;
+    case LE_MIDI_DISPATCH_LOST:
+      n->lost++;
+      le_instruments_midi_gone(e, port);
+      break;
+    case LE_MIDI_DISPATCH_REBOUND:
+      n->rebinds++;
+      le_instruments_midi_gone(e, port);
+      break;
     default: break;
   }
 #ifdef LE_NATIVE_TESTS
@@ -6417,6 +6430,7 @@ static void le_midi_port_dispatch(le_engine* e, int port, int kind,
  * allocation, no lock. */
 static void le_midi_ports_drain(le_engine* e) {
   le_midi_drain_counts n = {0u, 0u, 0u, 0u, 0u};
+  le_instruments_midi_begin(e); /* this block's route table (#1197 Part 2c) */
   for (int p = 0; p < LE_MAX_MIDI_PORTS; ++p) {
     le_midi_port* port = &e->midi_ports[p];
     const int32_t is_lost =
