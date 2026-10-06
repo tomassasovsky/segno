@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/src/models/capture_summary.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
@@ -73,6 +74,18 @@ class PerformanceRepository {
 
   /// What the Storage page and the recorder name a take by.
   static const String capturePurpose = 'recording';
+
+  /// Called with the hidden directory a delete is about to remove, so a
+  /// test can see that the take left the listing before any file went.
+  @visibleForTesting
+  static void Function(String doomed)? debugBeforeDeleting;
+
+  /// What a guard refusal names a recording's delete by.
+  static const String deletePurpose = 'deleting a recording';
+
+  /// The suffix a take's directory takes while [deleteCapture] removes it:
+  /// a hidden sibling the listing skips and the next boot finishes.
+  static const String deletingSuffix = '.deleting';
 
   /// The `exports/` root new bundles are created under.
   ///
@@ -729,6 +742,7 @@ class PerformanceRepository {
       return; // cannot resolve the root: nothing to recover this boot
     }
     _pruneRecovered(root);
+    _finishDeletes(root);
     final List<UnfinalizedCapture> unfinalized;
     try {
       unfinalized = await findUnfinalized();
@@ -1029,6 +1043,7 @@ class PerformanceRepository {
         // The take being recorded is never finalized, so it is left out
         // with the crashed ones.
         if (entity is Directory &&
+            !_basename(entity.path).startsWith('.') &&
             (recovered || _basename(entity.path) != recoveredDirName) &&
             !File('${entity.path}/$recoveryMarkerName').existsSync())
           ?_readCapture(entity.path, recovered: recovered),
@@ -1176,12 +1191,50 @@ class PerformanceRepository {
     final guard = _guards.enter(
       GuardKind.sessionWrite,
       GuardScope.internal(item: dir),
-      purpose: capturePurpose,
+      purpose: deletePurpose,
     );
     try {
-      Directory(dir).deleteSync(recursive: true);
+      // One rename takes the whole take out of the listing at once (atomic
+      // on the internal ext4); the recursive delete then works on a hidden
+      // directory, and the next boot finishes one a cut left behind.
+      final doomed = '${_dirname(dir)}/.${_basename(dir)}$deletingSuffix';
+      if (Directory(doomed).existsSync()) {
+        Directory(doomed).deleteSync(recursive: true);
+      }
+      Directory(dir).renameSync(doomed);
+      debugBeforeDeleting?.call(doomed);
+      try {
+        Directory(doomed).deleteSync(recursive: true);
+      } on FileSystemException {
+        // Hidden already; the next boot removes the rest.
+      }
     } finally {
       guard.release();
+    }
+  }
+
+  /// Removes the takes a delete hid but could not finish ([deletingSuffix]),
+  /// in the exports root and the recovered area.
+  void _finishDeletes(String root) {
+    for (final dir in [root, '$root/$recoveredDirName']) {
+      final List<FileSystemEntity> entries;
+      try {
+        entries = Directory(dir).listSync();
+      } on FileSystemException {
+        continue;
+      }
+      for (final e in entries) {
+        final name = _basename(e.path);
+        if (e is Directory &&
+            name.startsWith('.') &&
+            name.endsWith(deletingSuffix)) {
+          try {
+            e.deleteSync(recursive: true);
+          } on FileSystemException {
+            continue;
+          }
+        }
+      }
     }
   }
 
@@ -1189,14 +1242,26 @@ class PerformanceRepository {
   /// (the Library's `Preview`), decoded by the engine's one decoder off the
   /// UI isolate. A take with no main-output part is refused with
   /// [EngineResult.invalid] before the engine.
-  Future<AuditionStart> startAudition(CaptureSummary capture) async {
+  ///
+  /// [stillWanted] is handed to the engine: a start the caller withdrew
+  /// while it decoded never reaches the voice ([AuditionStart.cancelled]).
+  Future<AuditionStart> startAudition(
+    CaptureSummary capture, {
+    bool Function()? stillWanted,
+  }) async {
     final first = capture.masterParts.firstOrNull;
     final path = first == null ? null : '${capture.path}/${first.file}';
     if (path == null || !File(path).existsSync()) {
       return const AuditionStart(result: EngineResult.invalid);
     }
-    return _engine.auditionStartFile(path);
+    return _engine.auditionStartFile(path, stillWanted: stillWanted);
   }
+
+  /// Whether a take's stems may still be being written: the engine's one
+  /// render slot is busy, and the render writes `stems/` in place. The DAW
+  /// project and the DAW package wait for it (#1178 Part 7 review,
+  /// finding 4); the take's own parts are final and may go.
+  bool get rendering => !renderProgress.done;
 
   /// [buckets] absolute peaks over [capture]'s main output, streamed off the
   /// UI isolate through the engine's one decoder, the parts concatenated in

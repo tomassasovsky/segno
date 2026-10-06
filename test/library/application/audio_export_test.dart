@@ -12,6 +12,8 @@ void main() {
   late FakeDrive drive;
   late AudioExporter exporter;
 
+  const perf = AudioExportFolders.performances;
+
   setUp(() {
     temp = Directory.systemTemp.createTempSync('segno_audio_export');
     internal = '${temp.path}/internal';
@@ -21,11 +23,12 @@ void main() {
   });
 
   tearDown(() async {
+    AudioExporter.debugOnSwap = null;
     await drive.close();
     temp.deleteSync(recursive: true);
   });
 
-  /// An internal file of [bytes] bytes.
+  /// An internal file of [bytes] bytes, each [fill].
   String source(String relative, {int bytes = 4, int fill = 1}) {
     final file = File('$internal/$relative')
       ..parent.createSync(recursive: true)
@@ -39,29 +42,40 @@ void main() {
         ..parent.createSync(recursive: true)
         ..writeAsBytesSync([fill]);
 
-  AudioExportPlan parts(int count) => AudioExportPlan(
+  /// Every file on the drive and its bytes.
+  Map<String, List<int>> driveBytes() => {
+    for (final f in drive.files) f: File('${drive.mount}/$f').readAsBytesSync(),
+  };
+
+  final earlier = RegExp(r'^Evening loop( · Part \d{3})?\.wav$');
+
+  AudioExportPlan parts(int count, {int fill = 1}) => AudioExportPlan(
     name: 'Evening loop',
-    folder: AudioExportFolders.performances,
+    folder: perf,
+    earlier: earlier,
     files: [
       for (var i = 1; i <= count; i++)
         AudioExportFile(
-          source('take/master-00$i.wav'),
+          source('take/master-00$i.wav', fill: fill),
           '{name} · Part 00$i.wav',
         ),
     ],
   );
 
-  AudioExportPlan package() => AudioExportPlan(
+  AudioExportPlan package({int fill = 1}) => AudioExportPlan(
     name: 'Evening loop',
-    folder: AudioExportFolders.performances,
+    folder: perf,
     package: true,
     files: [
-      AudioExportFile(source('take/master-001.wav'), 'master-001.wav'),
       AudioExportFile(
-        source('take/stems/wet/track0.wav'),
+        source('take/master-001.wav', fill: fill),
+        'master-001.wav',
+      ),
+      AudioExportFile(
+        source('take/stems/wet/track0.wav', fill: fill),
         'stems/wet/track0.wav',
       ),
-      AudioExportFile(source('take/project.als'), 'project.als'),
+      AudioExportFile(source('take/project.als', fill: fill), 'project.als'),
     ],
   );
 
@@ -85,40 +99,32 @@ void main() {
       if (e is File) e.path: e.readAsBytesSync(),
   };
 
+  const staging = '$perf/${AudioExporter.stagingPrefix}Evening loop';
+  const aside = '$staging.old';
+
   group('loose files', () {
-    test(
-      'copies each part once, under the lease, as consecutive files',
-      () async {
-        final plan = parts(3);
-        final progress = <double>[];
+    test('copies each part once into the export staging, under the lease, '
+        'then places them as consecutive files', () async {
+      final progress = <double>[];
 
-        final at = await run(plan, onProgress: progress.add);
+      final at = await run(parts(3), onProgress: progress.add);
 
-        expect(at, 'Segno/Performances/Evening loop · Part 001.wav');
-        expect(drive.leases, ['Exporting Evening loop']);
-        expect(drive.copies.map((c) => (c.relativePath, c.policy)), [
-          (
-            'Segno/Performances/Evening loop · Part 001.wav',
-            ConflictPolicy.ask,
-          ),
-          (
-            'Segno/Performances/Evening loop · Part 002.wav',
-            ConflictPolicy.ask,
-          ),
-          (
-            'Segno/Performances/Evening loop · Part 003.wav',
-            ConflictPolicy.ask,
-          ),
-        ]);
-        expect(drive.files, hasLength(3));
-        expect(progress.last, 1);
-      },
-    );
+      expect(at, '$perf/Evening loop · Part 001.wav');
+      expect(drive.leases, ['Exporting Evening loop']);
+      expect(drive.copies.map((c) => (c.relativePath, c.policy)), [
+        for (var i = 1; i <= 3; i++)
+          ('$staging/Evening loop · Part 00$i.wav', ConflictPolicy.replace),
+      ]);
+      expect(drive.files, [
+        for (var i = 1; i <= 3; i++) '$perf/Evening loop · Part 00$i.wav',
+      ]);
+      expect(progress.last, 1);
+    });
 
     test(
       'ask reports a name already on the drive before writing anything',
       () async {
-        onDrive('Segno/Performances/Evening loop · Part 002.wav');
+        onDrive('$perf/Evening loop · Part 002.wav');
 
         await expectLater(
           run(parts(3)),
@@ -126,7 +132,7 @@ void main() {
             isA<NameConflict>().having(
               (c) => c.existingPath,
               'existingPath',
-              '${drive.mount}/Segno/Performances/Evening loop · Part 002.wav',
+              '${drive.mount}/$perf/Evening loop · Part 002.wav',
             ),
           ),
         );
@@ -135,33 +141,39 @@ void main() {
     );
 
     test('Keep both gives every part the first free name', () async {
-      onDrive('Segno/Performances/Evening loop · Part 002.wav');
-      onDrive('Segno/Performances/Evening loop (2) · Part 001.wav');
+      onDrive('$perf/Evening loop · Part 002.wav');
+      onDrive('$perf/Evening loop (2) · Part 001.wav');
 
       await run(parts(2), policy: ConflictPolicy.keepBoth);
 
-      expect(drive.copies.map((c) => c.relativePath), [
-        'Segno/Performances/Evening loop (3) · Part 001.wav',
-        'Segno/Performances/Evening loop (3) · Part 002.wav',
-      ]);
-      expect(drive.copies.map((c) => c.policy).toSet(), {
-        ConflictPolicy.keepBoth,
-      });
-    });
-
-    test('Replace writes over the files there', () async {
-      onDrive('Segno/Performances/Evening loop · Part 001.wav');
-
-      await run(parts(1), policy: ConflictPolicy.replace);
-
-      expect(drive.copies.single.policy, ConflictPolicy.replace);
       expect(
-        File(
-          '${drive.mount}/Segno/Performances/Evening loop · Part 001.wav',
-        ).readAsBytesSync(),
-        [1, 1, 1, 1],
+        drive.files,
+        containsAll([
+          '$perf/Evening loop (3) · Part 001.wav',
+          '$perf/Evening loop (3) · Part 002.wav',
+        ]),
       );
+      expect(drive.files, hasLength(4));
     });
+
+    test(
+      'Replace swaps the earlier export whole, its extra parts too',
+      () async {
+        for (var i = 1; i <= 3; i++) {
+          onDrive('$perf/Evening loop · Part 00$i.wav');
+        }
+        onDrive('$perf/Evening loop.wav');
+        onDrive('$perf/Other.wav');
+
+        await run(parts(2, fill: 5), policy: ConflictPolicy.replace);
+
+        expect(driveBytes(), {
+          '$perf/Evening loop · Part 001.wav': [5, 5, 5, 5],
+          '$perf/Evening loop · Part 002.wav': [5, 5, 5, 5],
+          '$perf/Other.wav': [9],
+        });
+      },
+    );
 
     for (final failure in <Exception>[
       const StorageFailure.full(),
@@ -169,9 +181,9 @@ void main() {
       const StorageFailure.readOnly(),
       const StorageFailure.io('write error'),
     ]) {
-      test('$failure on the third part removes the two already placed and '
-          'leaves the rest of the drive and the recording alone', () async {
-        onDrive('Segno/Performances/Other.wav');
+      test('$failure on the third part leaves the drive and the recording '
+          'as they were', () async {
+        onDrive('$perf/Other.wav');
         final plan = parts(3);
         final before = internalBytes();
         drive
@@ -181,21 +193,99 @@ void main() {
         await expectLater(run(plan), throwsA(failure));
 
         expect(drive.copies, hasLength(3));
-        expect(drive.files, ['Segno/Performances/Other.wav']);
+        expect(drive.files, ['$perf/Other.wav']);
         expect(internalBytes(), before);
       });
     }
 
-    test('a cancel removes what was placed', () async {
-      var asked = 0;
+    test('a Replace that fails or is cancelled part-way leaves the earlier '
+        'export byte for byte', () async {
+      for (var i = 1; i <= 3; i++) {
+        onDrive('$perf/Evening loop · Part 00$i.wav', fill: i);
+      }
+      final before = driveBytes();
 
+      drive.failOnCopy = 2;
       await expectLater(
-        run(parts(3), cancelled: () => ++asked > 1),
+        run(parts(3, fill: 5), policy: ConflictPolicy.replace),
+        throwsA(isA<StorageIo>()),
+      );
+      expect(driveBytes(), before);
+
+      drive.failOnCopy = null;
+      var asked = 0;
+      await expectLater(
+        run(
+          parts(3, fill: 5),
+          policy: ConflictPolicy.replace,
+          cancelled: () => ++asked > 2,
+        ),
         throwsA(isA<AudioExportCancelled>()),
       );
+      expect(driveBytes(), before);
+    });
 
-      expect(drive.copies, hasLength(1));
-      expect(drive.files, isEmpty);
+    test(
+      'a rename refused during the swap puts the earlier export back',
+      () async {
+        for (var i = 1; i <= 3; i++) {
+          onDrive('$perf/Evening loop · Part 00$i.wav', fill: i);
+        }
+        final before = driveBytes();
+        AudioExporter.debugOnSwap = (step) {
+          if (step == 'placed Evening loop · Part 001.wav') {
+            throw const FileSystemException('unplugged');
+          }
+        };
+
+        await expectLater(
+          run(parts(2, fill: 5), policy: ConflictPolicy.replace),
+          throwsA(isA<StorageIo>()),
+        );
+
+        expect(driveBytes(), before);
+      },
+    );
+  });
+
+  test('a Replace stopped while it moves the earlier parts aside keeps the '
+      'ones not moved yet and puts back the moved ones', () async {
+    for (var i = 1; i <= 2; i++) {
+      onDrive('$perf/Evening loop · Part 00$i.wav', fill: i);
+    }
+    final before = driveBytes();
+    AudioExporter.debugOnSwap = (step) {
+      if (step == 'aside Evening loop · Part 002.wav') {
+        throw const FileSystemException('unplugged');
+      }
+    };
+
+    await expectLater(
+      run(parts(2, fill: 5), policy: ConflictPolicy.replace),
+      throwsA(isA<StorageIo>()),
+    );
+
+    expect(driveBytes(), before);
+  });
+
+  test('a cut after the commit point keeps the new export: the next export '
+      'only clears what is left aside', () async {
+    onDrive('$perf/Evening loop/old.wav', fill: 7);
+    AudioExporter.debugOnSwap = (step) {
+      if (step == 'committed') throw const _Cut();
+    };
+
+    await expectLater(
+      run(package(fill: 5), policy: ConflictPolicy.replace),
+      throwsA(isA<_Cut>()),
+    );
+    AudioExporter.debugOnSwap = null;
+    AudioExporter.recoverFolder(Directory('${drive.mount}/$perf'));
+
+    expect(driveBytes(), {
+      '$perf/Evening loop/master-001.wav': [5, 5, 5, 5],
+      '$perf/Evening loop/project.als': [5, 5, 5, 5],
+      '$perf/Evening loop/stems/wet/track0.wav': [5, 5, 5, 5],
     });
   });
 
@@ -225,57 +315,44 @@ void main() {
         'kept', () async {
       final at = await run(package());
 
-      expect(at, 'Segno/Performances/Evening loop');
+      expect(at, '$perf/Evening loop');
       expect(drive.files, [
-        'Segno/Performances/Evening loop/master-001.wav',
-        'Segno/Performances/Evening loop/project.als',
-        'Segno/Performances/Evening loop/stems/wet/track0.wav',
+        '$perf/Evening loop/master-001.wav',
+        '$perf/Evening loop/project.als',
+        '$perf/Evening loop/stems/wet/track0.wav',
       ]);
       expect(drive.copies.map((c) => (c.relativePath, c.policy)), [
-        (
-          'Segno/Performances/${AudioExporter.stagingName}/master-001.wav',
-          ConflictPolicy.replace,
-        ),
-        (
-          'Segno/Performances/${AudioExporter.stagingName}/'
-              'stems/wet/track0.wav',
-          ConflictPolicy.replace,
-        ),
-        (
-          'Segno/Performances/${AudioExporter.stagingName}/project.als',
-          ConflictPolicy.replace,
-        ),
+        ('$staging/Evening loop/master-001.wav', ConflictPolicy.replace),
+        ('$staging/Evening loop/stems/wet/track0.wav', ConflictPolicy.replace),
+        ('$staging/Evening loop/project.als', ConflictPolicy.replace),
       ]);
     });
 
     test('ask reports the directory already there before writing', () async {
-      onDrive('Segno/Performances/Evening loop/old.wav');
+      onDrive('$perf/Evening loop/old.wav');
 
       await expectLater(run(package()), throwsA(isA<NameConflict>()));
       expect(drive.copies, isEmpty);
     });
 
     test('Keep both writes beside it; Replace swaps it whole', () async {
-      onDrive('Segno/Performances/Evening loop/old.wav');
+      onDrive('$perf/Evening loop/old.wav');
 
       await run(package(), policy: ConflictPolicy.keepBoth);
-      expect(
-        drive.files,
-        contains('Segno/Performances/Evening loop (2)/project.als'),
-      );
-      expect(drive.files, contains('Segno/Performances/Evening loop/old.wav'));
+      expect(drive.files, contains('$perf/Evening loop (2)/project.als'));
+      expect(drive.files, contains('$perf/Evening loop/old.wav'));
 
       await run(package(), policy: ConflictPolicy.replace);
-      final inPlace = drive.files
-          .where((f) => f.startsWith('Segno/Performances/Evening loop/'))
-          .toList();
-      expect(inPlace, [
-        'Segno/Performances/Evening loop/master-001.wav',
-        'Segno/Performances/Evening loop/project.als',
-        'Segno/Performances/Evening loop/stems/wet/track0.wav',
-      ]);
       expect(
-        drive.files.where((f) => f.contains(AudioExporter.stagingName)),
+        drive.files.where((f) => f.startsWith('$perf/Evening loop/')),
+        [
+          '$perf/Evening loop/master-001.wav',
+          '$perf/Evening loop/project.als',
+          '$perf/Evening loop/stems/wet/track0.wav',
+        ],
+      );
+      expect(
+        drive.files.where((f) => f.contains(AudioExporter.stagingPrefix)),
         isEmpty,
       );
     });
@@ -289,7 +366,7 @@ void main() {
       test(
         '$failure part-way leaves no package and no staging on the drive',
         () async {
-          onDrive('Segno/Performances/Other.wav');
+          onDrive('$perf/Other.wav');
           final plan = package();
           final before = internalBytes();
           drive
@@ -298,7 +375,7 @@ void main() {
 
           await expectLater(run(plan), throwsA(failure));
 
-          expect(drive.files, ['Segno/Performances/Other.wav']);
+          expect(drive.files, ['$perf/Other.wav']);
           expect(internalBytes(), before);
         },
       );
@@ -316,24 +393,89 @@ void main() {
       expect(drive.files, isEmpty);
     });
 
-    test('clears a staging directory a crash left behind', () async {
-      onDrive('Segno/Performances/${AudioExporter.stagingName}/stale.wav');
-
-      await run(package());
-
-      expect(drive.files.where((f) => f.contains('stale')), isEmpty);
-    });
-
-    test('a rename the drive refuses is a typed I/O failure, with the '
-        'staging gone', () async {
-      // A file where the package directory goes: the rename cannot land.
-      onDrive('Segno/Performances/Evening loop');
+    test('a Replace refused between its renames puts the old package back '
+        'at once', () async {
+      onDrive('$perf/Evening loop/old.wav', fill: 7);
+      final before = driveBytes();
+      AudioExporter.debugOnSwap = (step) {
+        if (step == 'aside') throw const FileSystemException('unplugged');
+      };
 
       await expectLater(
         run(package(), policy: ConflictPolicy.replace),
         throwsA(isA<StorageIo>()),
       );
-      expect(drive.files, ['Segno/Performances/Evening loop']);
+
+      expect(driveBytes(), before);
+    });
+  });
+
+  group('after a cut', () {
+    /// What a power cut between the two renames of a package Replace leaves:
+    /// the old package aside with its target list, the new one staged, no
+    /// package under its name.
+    void cutMidSwap() {
+      onDrive(
+        '$aside/Evening loop/old.wav',
+        fill: 7,
+      );
+      File(
+        '${drive.mount}/$perf/${AudioExporter.stagingPrefix}Evening loop.old/'
+        '${AudioExporter.targetsName}',
+      ).writeAsStringSync('Evening loop');
+      onDrive('$staging/Evening loop/new.wav', fill: 8);
+    }
+
+    test('the next export into the folder puts the old package back first, '
+        'and a Replace of another package leaves it alone', () async {
+      cutMidSwap();
+
+      await run(
+        const AudioExportPlan(
+          name: 'Other',
+          folder: perf,
+          package: true,
+          files: [],
+        ).withFile(source('other/master.wav')),
+        policy: ConflictPolicy.replace,
+      );
+
+      expect(driveBytes(), {
+        '$perf/Evening loop/old.wav': [7],
+        '$perf/Other/master.wav': [1, 1, 1, 1],
+      });
+    });
+
+    test('a cut after a swap was committed only loses its aside, and a '
+        'loose rename that was half done is undone', () async {
+      // Committed: no target list left in the aside.
+      onDrive('$perf/${AudioExporter.stagingPrefix}Done.old/Done/old.wav');
+      onDrive('$perf/Done/new.wav', fill: 3);
+      // Half done: Part 001 placed, Part 002 still staged, both old aside.
+      for (var i = 1; i <= 2; i++) {
+        onDrive(
+          '$aside/Evening loop · Part 00$i.wav',
+          fill: i,
+        );
+      }
+      File(
+        '${drive.mount}/$perf/${AudioExporter.stagingPrefix}Evening loop.old/'
+        '${AudioExporter.targetsName}',
+      ).writeAsStringSync(
+        'Evening loop · Part 001.wav\nEvening loop · Part 002.wav',
+      );
+      onDrive('$perf/Evening loop · Part 001.wav', fill: 5);
+      onDrive('$staging/Evening loop · Part 002.wav', fill: 5);
+      // An older build's staging.
+      onDrive('$perf/.segno-export/stale.wav');
+
+      AudioExporter.recoverFolder(Directory('${drive.mount}/$perf'));
+
+      expect(driveBytes(), {
+        '$perf/Done/new.wav': [3],
+        '$perf/Evening loop · Part 001.wav': [1],
+        '$perf/Evening loop · Part 002.wav': [2],
+      });
     });
   });
 
@@ -360,4 +502,19 @@ void main() {
     expect(driveSafeName('...'), '-');
     expect(driveSafeName('Evening loop · Take 1'), 'Evening loop · Take 1');
   });
+}
+
+extension on AudioExportPlan {
+  AudioExportPlan withFile(String path) => AudioExportPlan(
+    name: name,
+    folder: folder,
+    package: package,
+    files: [AudioExportFile(path, 'master.wav')],
+  );
+}
+
+/// Stands for the process stopping: no handler of the exporter's catches it
+/// as a filesystem failure.
+class _Cut implements Exception {
+  const _Cut();
 }

@@ -2477,5 +2477,8 @@
     "libraryAudioDawProjectFailed": "No se pudo escribir el proyecto DAW.",
     "libraryAudioDeleteBusy": "No mientras se graba o procesa una actuación.",
     "libraryAudioDeleteFailed": "No se pudo eliminar la grabación.",
-    "libraryAudioPurpose": "Exportando {name}"
+    "libraryAudioPurpose": "Exportando {name}",
+    "libraryAudioStillRendering": "La grabación todavía se está procesando. Inténtalo de nuevo cuando termine.",
+    "libraryAudioExportBusy": "Otra operación está usando esta grabación. Inténtalo de nuevo en un momento.",
+    "libraryAudioDeleteWaits": "{purpose}. Podrás eliminarla cuando termine."
 }

@@ -164,6 +164,13 @@ enum LibraryAudioError {
   /// A take is being recorded or rendered, or the console is shutting down.
   deleteBusy,
 
+  /// The take's render is still writing its stems: the DAW project and the
+  /// DAW package wait for it.
+  stillRendering,
+
+  /// Another operation forbids reading the take now (the guard table).
+  exportBusy,
+
   /// The recording could not be deleted.
   deleteFailed,
 }
@@ -177,6 +184,7 @@ class LibraryAudioPreview extends Equatable {
     required this.sampleRate,
     this.position = 0,
     this.truncated = false,
+    this.starting = false,
   });
 
   /// The item that plays.
@@ -194,6 +202,9 @@ class LibraryAudioPreview extends Equatable {
   /// Whether only the first [kAuditionMaxSeconds] play.
   final bool truncated;
 
+  /// Whether the file is still decoding; pressing again withdraws it.
+  final bool starting;
+
   /// This preview at [position].
   LibraryAudioPreview at(int position) => LibraryAudioPreview(
     key: key,
@@ -204,7 +215,14 @@ class LibraryAudioPreview extends Equatable {
   );
 
   @override
-  List<Object?> get props => [key, frames, sampleRate, position, truncated];
+  List<Object?> get props => [
+    key,
+    frames,
+    sampleRate,
+    position,
+    truncated,
+    starting,
+  ];
 }
 
 /// The Audio tab's state: the two folders' items, where the browser is,
@@ -225,6 +243,7 @@ class LibraryAudioState extends Equatable {
     this.export,
     this.error,
     this.dawProjectWritten = false,
+    this.deleteBlockedBy,
   });
 
   /// Whether the folders have been read once.
@@ -264,6 +283,10 @@ class LibraryAudioState extends Equatable {
   /// Whether `DAW project` just wrote the project into the recording.
   final bool dawProjectWritten;
 
+  /// The purpose of the operation that holds the selected recording (its
+  /// export), while Delete would be refused; null when Delete may go.
+  final String? deleteBlockedBy;
+
   /// The open folder's items that match the search; empty at the top.
   List<LibraryAudioItem> get items {
     final needle = query.trim().toLowerCase();
@@ -296,6 +319,8 @@ class LibraryAudioState extends Equatable {
     LibraryAudioExport? export,
     LibraryAudioError? error,
     bool? dawProjectWritten,
+    String? deleteBlockedBy,
+    bool clearDeleteBlockedBy = false,
     bool atTop = false,
     bool clearSelection = false,
     bool clearPeaks = false,
@@ -318,6 +343,9 @@ class LibraryAudioState extends Equatable {
     export: clearExport ? null : (export ?? this.export),
     error: clearError ? null : (error ?? this.error),
     dawProjectWritten: dawProjectWritten ?? this.dawProjectWritten,
+    deleteBlockedBy: clearDeleteBlockedBy
+        ? null
+        : (deleteBlockedBy ?? this.deleteBlockedBy),
   );
 
   @override
@@ -334,5 +362,6 @@ class LibraryAudioState extends Equatable {
     export,
     error,
     dawProjectWritten,
+    deleteBlockedBy,
   ];
 }

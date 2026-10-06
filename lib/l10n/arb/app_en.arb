@@ -6305,5 +6305,22 @@
                 "type": "String"
             }
         }
+    },
+    "libraryAudioStillRendering": "The recording is still rendering. Try again when it has finished.",
+    "@libraryAudioStillRendering": {
+        "description": "The DAW project and package wait for a take's render."
+    },
+    "libraryAudioExportBusy": "Something else is using this recording. Try again in a moment.",
+    "@libraryAudioExportBusy": {
+        "description": "The guard table refused an export."
+    },
+    "libraryAudioDeleteWaits": "{purpose}. Delete is available when it finishes.",
+    "@libraryAudioDeleteWaits": {
+        "description": "A recording's Delete waits for an export of it.",
+        "placeholders": {
+            "purpose": {
+                "type": "String"
+            }
+        }
     }
 }

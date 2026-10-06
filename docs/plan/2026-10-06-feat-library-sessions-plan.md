@@ -376,10 +376,15 @@ a design change; this plan does not edit the pen):
    - **Recovered takes are listed and kept** (owner decision): the
      `Performances` folder lists the takes boot recovery moved under
      `recovered/`, marked `Recovered` in the row and the card, beside the
-     others. Removing the 30-day prune is #1198 Part 2's change; this part
-     lists what is there and adds the only delete, the recording's `Delete`
+     others. **Merge order:** the 30-day prune of the recovered area is
+     removed by #1198 Part 2 (#1245), not here; until that lands, a take
+     listed as kept would still be pruned at boot, so this part merges
+     after it. This part adds the only delete, the recording's `Delete`
      (confirmed; refused while a take is being recorded, finalized or
-     rendered, and through the guard table during a shutdown).
+     rendered, while an export reads it, and through the guard table during
+     a shutdown). A delete renames the take to a hidden `.<name>.deleting`
+     sibling first, so it leaves the listing in one step; the next boot
+     finishes a delete a cut left behind.
    - **Parts.** The listing reads a take's audio from the sidecar's `parts`
      list in stream and index order, and a take written before that format
      as its single `master.wav` and `live-input-<n>.wav`. Until #1198
@@ -395,24 +400,53 @@ a design change; this plan does not edit the pen):
      `fx-chains.txt`, copied keeping their paths so the Live Set opens on
      the drive. `DAW project` and the package write the project through
      `writeDawProject` (`lib/performance/application/daw_project_export.dart`),
-     which the capture pipeline also calls.
-   - **All or nothing on the drive.** Loose files are removed if a later one
-     fails; a package or a stems set is copied into a hidden `.segno-export`
-     directory and renamed into place once complete. `Keep both` picks one
-     free `<name> (n)` for every file of the export. `Replace` on a package
-     moves the old directory aside until the new one is in place.
-   - **The delete guard.** A recording's delete enters `sessionWrite` on
-     the bundle's path: the guard table has no kind for a recording
-     delete, and `sessionWrite` refuses during a shutdown and over the same
-     item, which is what a delete needs. A `recordingWrite` kind is the
-     owner's call if one is wanted.
+     which the capture pipeline also calls; it writes each file through a
+     flushed temp file and a rename, so a cut write never leaves a
+     truncated Live Set that reads as finished. `DAW project` and the DAW
+     package wait for the take's render (its stems are written in place):
+     while the engine's render slot is busy they are refused with "The
+     recording is still rendering"; the recording's own parts are final
+     and may go.
+   - **All or nothing on the drive, loose files and packages alike.**
+     Every file is copied into a hidden staging directory named after the
+     export (`<folder>/.segno-export-<name>/`). A short swap then puts it
+     in place: what it replaces (the targets already there and, for a
+     recording, every `<name>.wav` or `<name> · Part NNN.wav` of an
+     earlier export, so no part of another take stays) moves into
+     `.segno-export-<name>.old/` beside a list of the targets; the staged
+     entries are renamed into place; the list is removed (the commit
+     point); only then is the aside deleted. A failure before the commit
+     point puts everything back at once; a cut leaves the aside with its
+     list, and the next export into that folder puts it back first. The
+     drive returns to what it held before, never a mixture. `Keep both`
+     picks one free `<name> (n)` for every file of the export. The space
+     check counts the whole export and credits nothing a `Replace` frees.
+   - **Guards.** A recording's export holds a `transfer` guard on the take
+     (`GuardScope.internal(item: <take path>)`) for its whole copy, and
+     the guard table's `sessionWrite` row now refuses a `transfer` on the
+     same item (the one change to #1198's D8 table, review finding 1). A
+     delete enters `sessionWrite` on the take, so it waits for an export
+     of it even from a Library opened later; the card disables `Delete`
+     and says "<the export's purpose>. Delete is available when it
+     finishes." The delete's own guard names itself "deleting a
+     recording". Whether a recording delete wants its own kind rather
+     than `sessionWrite` is with the Part 7 reviewer.
    - Pen departures: the top of the browser lists the two folders
      (`Performances`, `Sessions`) with a file count; the path row reads
      `Internal` there. The search filters the open folder. The USB location
      shows 18/06's notice or an empty list (browsing a drive's audio is not
      this part). 20/12 has no `Show on USB` (deviation 3). The chooser and
-     the line's read-only, failed-export, DAW-project and delete texts are
-     ours.
+     the line's read-only, failed-export, DAW-project, rendering,
+     delete-waits and delete texts are ours.
+   - More pen departures (to be written back into the pen's `c/` notes by
+     whoever edits it; this build does not edit the pen): 18/01 and 20/07
+     draw `Prepared audio`, `Save audio` and `Record performance` in the
+     title row; they are not drawn (prepared audio and Save audio are
+     E7-8 and E7-10, Record performance E7-11). The card's `Add to
+     prepared`, `Use as backing` (backing player, #1200) and `Use in loop`
+     (E7-9) are not drawn; `DAW project` and `Delete` are added in their
+     rows. `Preview` reads `Stop` while it plays and while its file
+     decodes, as Listen does.
 
 ## 3. Decisions
 

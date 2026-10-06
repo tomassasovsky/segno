@@ -1,7 +1,9 @@
 import 'package:operation_guards/operation_guards.dart';
 import 'package:test/test.dart';
 
-/// The D8 table of the recording-recovery plan, transcribed literally:
+/// The D8 table of the recording-recovery plan, with one change from the
+/// Library's review (#1178 Part 7, finding 1): a sessionWrite is refused
+/// over a transfer of the same item. Transcribed:
 /// rows want to commit, columns are active, in the order capture,
 /// sessionApply, sessionWrite, transfer, eject, deviceChange, calibration,
 /// restart. a = allow, r = refuse, v = refuse on the same volume,
@@ -9,7 +11,7 @@ import 'package:test/test.dart';
 const Map<GuardKind, String> _d8 = {
   GuardKind.capture: 'r r a v v r r r',
   GuardKind.sessionApply: 'a r r a a r r r',
-  GuardKind.sessionWrite: 'a a i a a a a r',
+  GuardKind.sessionWrite: 'a a i i a a a r',
   GuardKind.transfer: 'v a a a v a a r',
   GuardKind.eject: 'v a a v r a a r',
   GuardKind.deviceChange: 'r r a a a r r r',

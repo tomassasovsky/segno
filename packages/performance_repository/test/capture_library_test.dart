@@ -387,6 +387,93 @@ void main() {
     });
   });
 
+  group('deleteCapture, atomically (#1265 review)', () {
+    test('takes the whole take out of the listing in one rename, and is '
+        'refused while an export reads it', () async {
+      take('perf-20261006-201500', files: {'master.wav': 10});
+      final capture = (await repo.listCaptures()).single;
+      final export = guards.enter(
+        GuardKind.transfer,
+        GuardScope.internal(item: capture.path),
+        purpose: 'Exporting',
+      );
+
+      await expectLater(
+        repo.deleteCapture(capture),
+        throwsA(
+          isA<GuardRefused>().having(
+            (e) => e.blockers.single.purpose,
+            'blocker',
+            'Exporting',
+          ),
+        ),
+      );
+      expect(Directory(capture.path).existsSync(), isTrue);
+
+      export.release();
+      PerformanceRepository.debugBeforeDeleting = (doomed) {
+        // Hidden whole before any file goes.
+        expect(Directory(capture.path).existsSync(), isFalse);
+        expect(File('$doomed/master.wav').existsSync(), isTrue);
+        expect(File('$doomed/performance.json').existsSync(), isTrue);
+      };
+      addTearDown(() => PerformanceRepository.debugBeforeDeleting = null);
+      await repo.deleteCapture(capture);
+      expect(Directory(root).listSync(), isEmpty);
+    });
+
+    test('a delete a cut left half done is hidden, and the next boot '
+        'finishes it', () async {
+      take('perf-20261006-201600');
+      // A cut part-way: the hidden take may still hold its finished sidecar.
+      final half = Directory(
+        take(
+          '.perf-20261006-201500${PerformanceRepository.deletingSuffix}',
+          slug: 'perf-20261006-201500',
+          files: {'master.wav': 1},
+        ),
+      );
+      final recoveredHalf = Directory(
+        '$root/recovered/.perf-x${PerformanceRepository.deletingSuffix}',
+      )..createSync(recursive: true);
+
+      expect(
+        (await repo.listCaptures()).map((c) => c.name),
+        ['perf-20261006-201600'],
+      );
+
+      await repo.runBootRecovery();
+
+      expect(half.existsSync(), isFalse);
+      expect(recoveredHalf.existsSync(), isFalse);
+      expect(Directory('$root/perf-20261006-201600').existsSync(), isTrue);
+    });
+
+    test(
+      'a leftover of an earlier delete of the same name is cleared first',
+      () async {
+        take('perf-20261006-201500');
+        Directory(
+          '$root/.perf-20261006-201500${PerformanceRepository.deletingSuffix}',
+        ).createSync();
+        final capture = (await repo.listCaptures()).single;
+
+        await repo.deleteCapture(capture);
+
+        expect(Directory(root).listSync(), isEmpty);
+      },
+    );
+  });
+
+  test('rendering says whether the render slot is busy', () {
+    expect(repo.rendering, isFalse);
+    engine.renderProgress = const PerformanceRenderProgress(
+      done: false,
+      progressPercent: 10,
+    );
+    expect(repo.rendering, isTrue);
+  });
+
   group('Preview', () {
     test("plays the main output's first part", () async {
       take(

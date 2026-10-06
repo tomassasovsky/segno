@@ -54,6 +54,7 @@ class LibraryPage extends StatelessWidget {
           performance: context.read<PerformanceRepository>(),
           sessions: context.read<SessionRepository>(),
           volumes: context.read<RemovableVolumes>(),
+          guards: context.read<GuardRegistry>(),
         ),
       ),
     ],
