@@ -1154,3 +1154,83 @@ human merge gate stays.
   analyze, Bloc lint and format clean. Mutations: 15 run, 14 killed; the
   survivor (not latching the notice flag in memory) only repeats a write of a
   flag already set, since the state field and its listener fire once.
+
+### Part 1 rebase (`59cb70b72`, on the trunk at `6eabf241d`)
+
+- Rebased for merge. `ControlState` keeps Peel P3's refusal fields beside
+  `pendingHolds` and `holdThreshold`; `_restore` keeps the trunk's
+  `retiredBootMode` and sets `holdThreshold`. Every `_armGesture` call on the
+  trunk already passes a `cue`. The test rig builds the recorder with the
+  trunk's `GuardRegistry`.
+- Verification: app suite 3476 passed, 56 skipped; analyze, Bloc lint and
+  format clean.
+
+### Part 2 review fixes (`13ed4750a`, on the trunk at `c4b5cf909`)
+
+- **M1.** The face selects an Equatable `FootFxProjection` from the looper,
+  so meter and playhead ticks do not redraw the pedals. The projection
+  carries the chains a binding and its Hold reach (`chainEntriesAt`), so the
+  names stay current without a whole-bloc watch.
+- **M2.** A pedal reads its chain's rack name (`TrackEffect.rack.name`); a
+  slot target reads its effect; a chain of several racks reads as the
+  pedal's slot (`FX A1`), or the binding's label on a switch that has no
+  slot. The FX goldens use the pen's racks and now match 10/03's titles.
+- **L1.** An install with no stored pedal setup, bindings or boot default is
+  treated as fresh and is never told about the old Stop. Boot writes
+  nothing; the decision is stored at the first FX entry or the first setup or
+  bindings save, so a later boot cannot read it as an upgrade.
+  - Limit: an upgraded install that never saved a pedal setup or binding
+    also reads as fresh, since nothing on disk says it used FX mode.
+  - Limit: an upgrade known only by its retired boot default (consumed at
+    boot) that reboots before entering FX loses the notice.
+- **L2.** Number keys 1 to 8 in FX run the matching track switch's binding,
+  bank B on 5 to 8 (pen 02 `FfZQI`). An unbound switch still toggles the
+  track's chain through the bloc.
+- **L3.** The one-time toast gets a second line: "MODE now leaves FX mode.
+  Its Mute and Hold · Custom still work in the other modes.", built from
+  the stored MODE pair. It is one notice for the one update (rule 4).
+- Verification: app suite 3474 passed, 56 skipped; settings_repository 204;
+  analyze, Bloc lint and format clean. Mutations on the fixes: 15 run, all
+  killed.
+
+### Part 3 (branch `claude/foot-surfaces-1229-p3`, `e708584a2`, on the trunk at `c4b5cf909`)
+
+- Built as planned: `projectFootCustom(ControlState)` and `FootCustomView`.
+  - The face reads `ControlState.customLit`, which `_pushProjected` publishes
+    from the same map it sends to the switch LEDs.
+  - The cubit gains `footCustomPressed/Released/Cancelled` and
+    `activateFootCustomPedal`.
+  - `Stop recording` shows while the recorder is armed.
+  - The header shows the elapsed time when recording.
+- **Refusals.** `_runAction` reports a refusal itself, because all three of
+  its callers are assignments (Custom, CTRL, MIDI).
+  - It skips Fade, Reverse and Peel (#1233's reporters) and Record
+    performance (the recorder's toast).
+  - It also reports when a refusal resolves later, such as a Solo the mix
+    turns away during a session change.
+  - An assignment this build cannot decode reports at the Custom early return
+    and at the MIDI parse. A CTRL `UnavailableAction` reaches `_runAction` and
+    reports there; the External path has no early return of its own.
+  - The toast names an undecodable assignment by its saved key ("future:thing
+    is unavailable right now."), so it does not say "Unavailable" twice.
+- **Departures:**
+  - Captions are the catalogue labels (`Selected track · Mute`), as this
+    part specifies, not the pen's short names (`Mute`). They wrap to two
+    lines (`PerformancePedal.titleMaxLines`); other faces keep one line, and
+    their goldens are unchanged.
+  - An assignment this build cannot run keeps its switch enabled with the
+    caption muted (`titleMuted`). A setup that could not load assigns
+    nothing, so every assignable switch is dimmed and inert.
+  - The recording indicator is the face's own pill (mark and `mm:ss`),
+    because the stage bar's light is private to it.
+  - The Pending Hold cue (Part 1) is not wired into this face: whichever of
+    #1247 and this part lands second passes `holdPending` here.
+- Verification: app suite 3490 passed, 56 skipped; analyze, Bloc lint and
+  format clean.
+  - Mutations: 20 run. Two first survived: the late (async) refusal
+    report, and a contact admitted outside Custom. Both now have tests and
+    are killed.
+  - Untested: the guard that drops a refusal whose Session was replaced
+    before it resolved.
+- Not verified: the hardware criterion (enter Custom with MODE Hold; each
+  assigned switch acts and the face matches the LEDs).
