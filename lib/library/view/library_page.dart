@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart' show LooperState;
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -9,6 +10,7 @@ import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
 import 'package:segno/library/view/new_loop_sheet.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
@@ -128,6 +130,14 @@ class _LibraryViewState extends State<LibraryView> {
               previous.status != current.status &&
               current.status == SessionStatus.success,
           listener: _reselect,
+        ),
+        // A track that starts recording ends Listen (plan D10).
+        BlocListener<LooperBloc, LooperState>(
+          listenWhen: (previous, current) =>
+              !previous.tracks.any((t) => t.isCapturing) &&
+              current.tracks.any((t) => t.isCapturing),
+          listener: (context, _) =>
+              context.read<LibraryCubit>().stopListening(),
         ),
         // A new loop is played on the stage (19/06), which names it; one
         // that started but could not be saved yet goes there too, where the

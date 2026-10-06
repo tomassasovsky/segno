@@ -680,6 +680,53 @@ class SessionRepository {
     );
   }
 
+  /// Starts the Library's preview of the saved session [id] (plan D10): its
+  /// `mixdown.wav` through the engine's audition voice on the main outputs,
+  /// decoded off the UI isolate by the engine's one decoder, at most
+  /// [kAuditionMaxSeconds] of it ([AuditionStart.truncated] says when the
+  /// file is longer). A session with no mixdown is refused with
+  /// [EngineResult.invalid] and nothing reaches the engine. Never loads the
+  /// session.
+  Future<AuditionStart> startAudition(SessionId id) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    final mixdown = '$path/$mixdownName';
+    if (!File(mixdown).existsSync()) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    return _engine.auditionStartFile(mixdown);
+  }
+
+  /// Silences the Library's preview at the next block.
+  EngineResult stopAudition() => _engine.auditionStop();
+
+  /// The preview as the engine last reported it; a length of 0 means none
+  /// plays (it ended, was stopped, or a device reopen or a performance arm
+  /// ended it).
+  AuditionState auditionState() => _engine.auditionState();
+
+  /// [buckets] absolute peaks over [track]'s lane-0 live layer in the saved
+  /// session [id], streamed off the UI isolate through the app's one decoder,
+  /// or null when the layer cannot be read (plan D11: the lane then draws its
+  /// length only).
+  Future<Float32List?> readPeaks(
+    SessionId id,
+    SessionPreviewTrack track, {
+    int buckets = 256,
+  }) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null || !_layerFilePattern.hasMatch(track.liveLayerFile)) {
+      return null;
+    }
+    final layer = '$path/${track.liveLayerFile}';
+    if (!File(layer).existsSync()) return null;
+    return _engine.filePeaks(layer, buckets: buckets);
+  }
+
   /// Whole bars at the saved tempo and signature, or 0 without a tempo.
   static int _barsOf({
     required int frames,

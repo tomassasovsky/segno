@@ -1013,4 +1013,108 @@ void main() {
       await expectLater(noRoot.newSessionId(), throwsStateError);
     });
   });
+
+  group('Listen (plan D10)', () {
+    test("hands the bundle's mixdown to the audition voice and reports what "
+        'it said', () async {
+      final engine = FakeSessionEngine()
+        ..auditionAnswer = const AuditionStart(
+          result: EngineResult.ok,
+          frames: 5760000,
+          sourceRate: 44100,
+          truncated: true,
+        );
+      final dir = makeBundle('s-a', folder: 'Gigs');
+      File('${dir.path}/${SessionRepository.mixdownName}').createSync();
+
+      final started = await repo(engine: engine).startAudition('s-a');
+
+      expect(engine.auditioned.single.path, '${dir.path}/mixdown.wav');
+      expect(engine.auditioned.single.bus, 0);
+      expect(started.truncated, isTrue);
+      expect(started.frames, 5760000);
+    });
+
+    test('a session with no mixdown, or no bundle, is refused without '
+        'reaching the engine', () async {
+      final engine = FakeSessionEngine();
+      makeBundle('s-empty');
+
+      expect(
+        (await repo(engine: engine).startAudition('s-empty')).result,
+        EngineResult.invalid,
+      );
+      expect(
+        (await repo(engine: engine).startAudition('s-ghost')).result,
+        EngineResult.invalid,
+      );
+      expect(engine.auditioned, isEmpty);
+    });
+
+    test('stop and state go straight to the engine', () {
+      final engine = FakeSessionEngine()
+        ..auditionNow = const AuditionState(frames: 100, position: 40, bus: 0);
+      final r = repo(engine: engine);
+
+      expect(r.auditionState().position, 40);
+      expect(r.stopAudition(), EngineResult.ok);
+      expect(engine.auditionStops, 1);
+    });
+  });
+
+  group('readPeaks (plan D11)', () {
+    const track = SessionPreviewTrack(
+      channel: 2,
+      lengthFrames: 96000,
+      baseLengthFrames: 96000,
+      bars: 0,
+      layers: 1,
+      muted: false,
+      fxCount: 0,
+      liveLayerFile: 'track2_lane0_L0.wav',
+    );
+
+    test('reads the lane-0 live layer', () async {
+      final engine = FakeSessionEngine()
+        ..peaksAnswer = Float32List.fromList([0.5, 1]);
+      final dir = makeBundle('s-a');
+      File('${dir.path}/track2_lane0_L0.wav').createSync();
+
+      final peaks = await repo(
+        engine: engine,
+      ).readPeaks('s-a', track, buckets: 2);
+
+      expect(peaks, [0.5, 1]);
+      final read = engine.peakReads.single;
+      expect(read.path, '${dir.path}/track2_lane0_L0.wav');
+      expect(read.buckets, 2);
+    });
+
+    test('a missing layer, a name that is not a layer, or a missing bundle '
+        'reads nothing', () async {
+      final engine = FakeSessionEngine();
+      makeBundle('s-a');
+      final r = repo(engine: engine);
+
+      expect(await r.readPeaks('s-a', track), isNull);
+      expect(
+        await r.readPeaks(
+          's-a',
+          const SessionPreviewTrack(
+            channel: 0,
+            lengthFrames: 1,
+            baseLengthFrames: 1,
+            bars: 0,
+            layers: 1,
+            muted: false,
+            fxCount: 0,
+            liveLayerFile: 'session.json',
+          ),
+        ),
+        isNull,
+      );
+      expect(await r.readPeaks('s-ghost', track), isNull);
+      expect(engine.peakReads, isEmpty);
+    });
+  });
 }

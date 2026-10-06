@@ -69,6 +69,51 @@ enum LibraryPreviewError {
   unreadable,
 }
 
+/// A preview playing through Listen (plan D10).
+class LibraryListen extends Equatable {
+  /// Creates the Listen state for session [id].
+  const LibraryListen({
+    required this.id,
+    required this.frames,
+    this.position = 0,
+    this.truncated = false,
+    this.sampleRate = 0,
+  });
+
+  /// The session whose preview plays.
+  final SessionId id;
+
+  /// The preview's length in frames.
+  final int frames;
+
+  /// Frames of it played.
+  final int position;
+
+  /// Whether only the first [kAuditionMaxSeconds] of a longer preview play.
+  final bool truncated;
+
+  /// The rate [frames] and [position] count at.
+  final int sampleRate;
+
+  @override
+  List<Object?> get props => [id, frames, position, truncated, sampleRate];
+}
+
+/// Why Listen did not start.
+enum LibraryListenRefusal {
+  /// The session has no preview, or it does not decode.
+  unplayable,
+
+  /// No audio device is running.
+  noDevice,
+
+  /// A performance capture is armed.
+  performanceArmed,
+
+  /// The preview before last is still being handed back.
+  busy,
+}
+
 /// The Library's browsing state: location, search, folder chip, selection and
 /// the selected session's preview, the drives the port reports, and the
 /// footswitch's return-to-Tracks request.
@@ -86,6 +131,9 @@ class LibraryState extends Equatable {
     this.previewError,
     this.volumes = const [],
     this.dismissalRequested = false,
+    this.listen,
+    this.listenRefusal,
+    this.peaks = const {},
   });
 
   /// Internal or USB.
@@ -111,6 +159,16 @@ class LibraryState extends Equatable {
 
   /// A footswitch asked the Library to return to Tracks; set once.
   final bool dismissalRequested;
+
+  /// The preview playing through Listen, or null.
+  final LibraryListen? listen;
+
+  /// Why the last Listen did not start, until the next Listen or selection.
+  final LibraryListenRefusal? listenRefusal;
+
+  /// The selected session's lane peaks by channel, for the tracks whose live
+  /// layer read (plan D11); a track missing here draws its length only.
+  final Map<int, List<double>> peaks;
 
   /// Whether a drive is mounted and readable.
   bool get hasReadableVolume => volumes.any((v) => v.readable);
@@ -149,7 +207,12 @@ class LibraryState extends Equatable {
     LibraryPreviewError? previewError,
     List<RemovableVolume>? volumes,
     bool? dismissalRequested,
+    LibraryListen? listen,
+    LibraryListenRefusal? listenRefusal,
+    Map<int, List<double>>? peaks,
     bool clearPreview = false,
+    bool clearListen = false,
+    bool clearListenRefusal = false,
   }) => LibraryState(
     location: location ?? this.location,
     query: query ?? this.query,
@@ -159,6 +222,11 @@ class LibraryState extends Equatable {
     previewError: clearPreview ? null : (previewError ?? this.previewError),
     volumes: volumes ?? this.volumes,
     dismissalRequested: dismissalRequested ?? this.dismissalRequested,
+    listen: clearListen ? null : (listen ?? this.listen),
+    listenRefusal: clearListenRefusal
+        ? null
+        : (listenRefusal ?? this.listenRefusal),
+    peaks: clearPreview ? const {} : (peaks ?? this.peaks),
   );
 
   @override
@@ -171,5 +239,8 @@ class LibraryState extends Equatable {
     previewError,
     volumes,
     dismissalRequested,
+    listen,
+    listenRefusal,
+    peaks,
   ];
 }

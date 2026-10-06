@@ -1027,6 +1027,11 @@ class MockAudioEngine implements AudioEngine {
     );
   }
 
+  /// The mock decodes nothing: an existing file reads as silence.
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async =>
+      File(path).existsSync() ? Float32List(buckets) : null;
+
   @override
   EngineResult auditionStop() {
     _endAudition();

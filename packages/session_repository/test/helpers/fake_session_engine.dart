@@ -54,16 +54,50 @@ class _FakeTrack {
 class FakeSessionEngine implements AudioEngine {
   FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
 
-  // The audition voice (#1178): inert here.
-  @override
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async =>
-      const AuditionStart(result: EngineResult.ok);
+  // The audition voice (#1178): records what it was asked to play.
+
+  /// The files [auditionStartFile] was handed, in order.
+  final List<({String path, int bus})> auditioned = [];
+
+  /// What [auditionStartFile] answers.
+  AuditionStart auditionAnswer = const AuditionStart(
+    result: EngineResult.ok,
+    frames: 48000,
+    sourceRate: 48000,
+  );
+
+  /// What [auditionState] reports.
+  AuditionState auditionNow = const AuditionState();
+
+  /// How many times [auditionStop] was called.
+  int auditionStops = 0;
+
+  /// The files [filePeaks] was asked for.
+  final List<({String path, int buckets})> peakReads = [];
+
+  /// What [filePeaks] answers.
+  Float32List? peaksAnswer;
 
   @override
-  EngineResult auditionStop() => EngineResult.ok;
+  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async {
+    auditioned.add((path: path, bus: bus));
+    return auditionAnswer;
+  }
 
   @override
-  AuditionState auditionState() => const AuditionState();
+  EngineResult auditionStop() {
+    auditionStops++;
+    return EngineResult.ok;
+  }
+
+  @override
+  AuditionState auditionState() => auditionNow;
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async {
+    peakReads.add((path: path, buckets: buckets));
+    return peaksAnswer;
+  }
 
   @override
   OutputFxSnapshot outputFxSnapshot({required int bus}) =>

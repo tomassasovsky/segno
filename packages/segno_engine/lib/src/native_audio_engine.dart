@@ -2527,6 +2527,12 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async {
+    if (buckets <= 0) return null;
+    return Isolate.run(() => _filePeaks(path, buckets));
+  }
+
+  @override
   EngineResult auditionStop() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_engine_audition_stop(_engine));
@@ -2795,6 +2801,28 @@ _decodeAudition(String path, int rate, int maxFrames) {
     calloc
       ..free(out)
       ..free(info);
+    malloc.free(cPath);
+  }
+}
+
+/// Streams the file at [path] through the decoder (`le_backing_probe_file`)
+/// and reads [buckets] peaks, keeping no PCM. Runs inside `Isolate.run`;
+/// null when the file does not decode.
+Float32List? _filePeaks(String path, int buckets) {
+  final bindings = SegnoEngineBindings(openSegnoEngineLibrary());
+  final info = calloc<le_backing_decode_info>();
+  final peaks = calloc<Float>(buckets);
+  final cPath = path.toNativeUtf8();
+  try {
+    if (bindings.le_backing_probe_file(cPath.cast(), info, peaks, buckets) !=
+        0) {
+      return null;
+    }
+    return Float32List.fromList(peaks.asTypedList(buckets));
+  } finally {
+    calloc
+      ..free(info)
+      ..free(peaks);
     malloc.free(cPath);
   }
 }

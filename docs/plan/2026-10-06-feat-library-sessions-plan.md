@@ -306,6 +306,56 @@ a design change; this plan does not edit the pen):
      Library returns to the stage, which says "New loop N started, but it
      could not be saved yet. Save it to keep it." The real-engine cubit test
      covers New loop from a played session and with a take recording.
+9. Part 6a as built (`claude/library-1178-p6a`, based on the backing
+   player's Part 2, #1200 PR #1223, which must land first):
+   - The engine has one audio-file decoder, the backing player's
+     (`engine_decode.c`: WAV and MP3; FLAC is compiled out until the
+     vendored miniaudio carries the fix for CVE-2024-41147; band-limited
+     rate conversion). A preview is its bounded read:
+     `le_backing_decode_file(path, rate, 0, LE_AUDITION_MAX_SECONDS * rate)`
+     keeps the first 120 s and sets `info.truncated`. **A preview at another
+     rate is converted, not refused**, so the plan's rate-mismatch refusal
+     and the Dart `WavCodec.decodeFloat32(maxFrames)` path are gone.
+   - The voice uses the backing player's buffer type (`le_backing_buffer`)
+     and its hand-back: the callback returns a buffer it will never read
+     again through an `a_audition_dead` slot and the control thread frees it
+     in `le_engine_audition_state` (the collect point), before every start,
+     at configure, reopen and destroy. Its registry is its own
+     (`LE_AUDITION_MAX_BUFFERS` 2), so a preview never takes a backing
+     slot or budget; a start replacing a preview while the one before is not
+     yet handed back reads `LE_ERR_NOT_READY`. This replaces the plan's
+     `a_audition_ack` generation.
+   - The mix point is the plan's: after the output-bus loop (whose pre-level
+     tap is the performance capture), before `master_bus_frame`; a disabled
+     jack is never written. Commands 136 (`AUDITION_START`) and 137
+     (`AUDITION_STOP`), this part's range in the numbering ledger; raw posts are
+     refused. A performance arm and Cut sound end the preview on the audio
+     thread; a start while armed reads `LE_ERR_ALREADY_RUNNING`. State is a
+     dedicated `le_engine_audition_state` (like the backing's), not snapshot
+     fields. Stop with the callback stopped does not free at once: the
+     buffer is freed at the next configure or reopen, as the backing's are.
+   - Dart: the `EngineAudition` role (`auditionStartFile`, `auditionStop`,
+     `auditionState`). The decode runs in `Isolate.run`, which opens the
+     library itself (`openSegnoEngineLibrary`); the buffer comes back as an
+     address. One retry after `auditionRetryWait` on `notReady`.
+10. Part 6b as built:
+   - `SessionRepository.startAudition(id)` plays the bundle's `mixdown.wav`
+     on output pair 0 (no mixdown: refused before the engine);
+     `stopAudition`, `auditionState`; `readPeaks(id, track)` reads the lane-0
+     live layer's peaks with the decoder's streaming probe
+     (`le_backing_probe_file`, no PCM kept) through a new
+     `EngineAudition.filePeaks`, in `Isolate.run`.
+   - `LibraryCubit.listen()` toggles; it polls `auditionState` every 100 ms.
+     Listen ends on a new selection, a footswitch press and when the page
+     closes (cubit); before Open and New loop and when a track starts
+     recording (page); on a performance arm and a device reopen the engine
+     ends it and the poll reads it gone. A start that has not landed yet is
+     given five polls.
+   - Pen departures: 19/01 draws `Listen` only. `Stop`, the `0:12 / 2:00`
+     readout beside it, the `Preview plays the first 2:00` line and the
+     refusal banners (no preview, no device, a performance armed, still
+     stopping) are ours. The waveform is one filled bar per peak in the
+     accent token, where the pen draws a smooth path in `#9eb9dc`.
 
 ## 3. Decisions
 

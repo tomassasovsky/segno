@@ -1303,6 +1303,14 @@ void main() {
         expect(engine.auditionState().bus, 1);
         expect(engine.auditionStop(), EngineResult.ok);
         expect(engine.auditionState().playing, isFalse);
+        expect(
+          await engine.filePeaks(file.path, buckets: 4),
+          [0, 0, 0, 0],
+        );
+        expect(
+          await engine.filePeaks('/absent.wav', buckets: 4),
+          isNull,
+        );
       },
     );
 
