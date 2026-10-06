@@ -5,12 +5,13 @@ import 'package:test/test.dart';
 import 'package:wav_codec/wav_codec.dart';
 
 /// The 84-byte header the native drain writes for take id 00..0f, stream 0,
-/// part 1, 48 kHz stereo, before any audio (plan Part 2's first criterion).
+/// part 1, 48 kHz stereo float, before any audio (plan Part 2's first
+/// criterion).
 final _nativeHeader = Uint8List.fromList([
   ...'RIFF'.codeUnits, 0x4C, 0x00, 0x00, 0x00, ...'WAVE'.codeUnits, //
   ...'fmt '.codeUnits, 0x10, 0x00, 0x00, 0x00, //
-  0x01, 0x00, 0x02, 0x00, 0x80, 0xBB, 0x00, 0x00, //
-  0x00, 0x65, 0x04, 0x00, 0x06, 0x00, 0x18, 0x00, //
+  0x03, 0x00, 0x02, 0x00, 0x80, 0xBB, 0x00, 0x00, //
+  0x00, 0xDC, 0x05, 0x00, 0x08, 0x00, 0x20, 0x00, //
   ...'sgno'.codeUnits, 0x20, 0x00, 0x00, 0x00, //
   for (var i = 0; i < 16; i++) i, //
   0x00, 0x00, 0x01, 0x00, //
@@ -20,8 +21,8 @@ final _nativeHeader = Uint8List.fromList([
 
 Uint8List _takeId() => Uint8List.fromList([for (var i = 0; i < 16; i++) i]);
 
-Pcm24PartHeader _header({int channels = 2, int dataBytes = 0}) =>
-    Pcm24PartHeader(
+RecordedPartHeader _header({int channels = 2, int dataBytes = 0}) =>
+    RecordedPartHeader(
       sampleRate: 48000,
       channels: channels,
       takeId: _takeId(),
@@ -32,41 +33,41 @@ Pcm24PartHeader _header({int channels = 2, int dataBytes = 0}) =>
 
 void main() {
   late Directory dir;
-  setUp(() => dir = Directory.systemTemp.createTempSync('pcm24_part_test'));
+  setUp(() => dir = Directory.systemTemp.createTempSync('recorded_part_test'));
   tearDown(() => dir.deleteSync(recursive: true));
 
-  group('Pcm24PartHeader', () {
+  group('RecordedPartHeader', () {
     test('encodes the native header byte for byte', () {
-      expect(_nativeHeader, hasLength(Pcm24PartHeader.headerBytes));
+      expect(_nativeHeader, hasLength(RecordedPartHeader.headerBytes));
       expect(_header().encode(), _nativeHeader);
     });
 
     test('decodes the native header', () {
-      final header = Pcm24PartHeader.decode(_nativeHeader);
+      final header = RecordedPartHeader.decode(_nativeHeader);
       expect(header, _header());
       expect(header.hashCode, _header().hashCode);
       expect(header.takeId, _takeId());
-      expect(header.frameBytes, 6);
+      expect(header.frameBytes, 8);
       expect(header.frames, 0);
     });
 
     test('round-trips stream, part index and payload size', () {
-      final header = Pcm24PartHeader(
+      final header = RecordedPartHeader(
         sampleRate: 96000,
         channels: 1,
         takeId: _takeId(),
         stream: 4,
         partIndex: 512,
-        dataBytes: 3 * 1000,
+        dataBytes: 4 * 1000,
       );
-      final decoded = Pcm24PartHeader.decode(header.encode());
+      final decoded = RecordedPartHeader.decode(header.encode());
       expect(decoded, header);
       expect(decoded.frames, 1000);
       final bd = ByteData.view(header.encode().buffer);
-      expect(bd.getUint32(4, Endian.little), 76 + 3000);
+      expect(bd.getUint32(4, Endian.little), 76 + 4000);
     });
 
-    test('refuses anything that is not a Segno 24-bit part', () {
+    test('refuses anything that is not a Segno float part', () {
       Uint8List patched(int offset, List<int> bytes) =>
           Uint8List.fromList(_nativeHeader)
             ..setRange(offset, offset + bytes.length, bytes);
@@ -79,37 +80,30 @@ void main() {
         patched(36, 'LIST'.codeUnits),
         patched(40, [16]),
         patched(76, 'fact'.codeUnits),
+        patched(20, [1]), // integer PCM
+        patched(34, [24]), // 24-bit
+        patched(22, [0]), // no channels
+        patched(32, [6]), // wrong block align
+        patched(28, [0x01]), // wrong byte rate
+        patched(80, [5]), // not whole frames
       ]) {
         expect(
-          () => Pcm24PartHeader.decode(bad),
+          () => RecordedPartHeader.decode(bad),
           throwsFormatException,
           reason: '$bad',
         );
       }
-      for (final bad in [
-        patched(20, [3]), // IEEE float
-        patched(34, [16]), // 16-bit
-        patched(22, [0]), // no channels
-        patched(32, [4]), // wrong block align
-        patched(28, [0x01]), // wrong byte rate
-      ]) {
-        expect(() => Pcm24PartHeader.decode(bad), throwsFormatException);
-      }
-      expect(
-        () => Pcm24PartHeader.decode(patched(80, [5])),
-        throwsFormatException,
-      );
     });
 
     test('rejects out-of-range fields', () {
-      Pcm24PartHeader make({
+      RecordedPartHeader make({
         int sampleRate = 48000,
         int channels = 2,
         int stream = 0,
         int partIndex = 1,
         int dataBytes = 0,
         int idBytes = 16,
-      }) => Pcm24PartHeader(
+      }) => RecordedPartHeader(
         sampleRate: sampleRate,
         channels: channels,
         takeId: Uint8List(idBytes),
@@ -128,21 +122,27 @@ void main() {
       expect(() => make(partIndex: 0x10000), throwsArgumentError);
       expect(() => make(dataBytes: -1), throwsArgumentError);
       expect(
-        () => make(dataBytes: Pcm24PartHeader.maxDataBytes + 1),
+        () => make(dataBytes: RecordedPartHeader.maxDataBytes + 1),
         throwsArgumentError,
       );
-      expect(make(dataBytes: Pcm24PartHeader.maxDataBytes), isNotNull);
+      expect(make(dataBytes: RecordedPartHeader.maxDataBytes), isNotNull);
     });
 
-    test('copies the take id it is given', () {
+    test('copies the take id it is given and compares by value', () {
       final id = _takeId();
-      final header = _header();
+      final header = RecordedPartHeader(
+        sampleRate: 48000,
+        channels: 2,
+        takeId: id,
+        stream: 0,
+        partIndex: 1,
+      );
       id[0] = 99;
       expect(header.takeId[0], 0);
-      expect(header == _header(dataBytes: 6), isFalse);
+      expect(header == _header(dataBytes: 8), isFalse);
       expect(
         header ==
-            Pcm24PartHeader(
+            RecordedPartHeader(
               sampleRate: 48000,
               channels: 2,
               takeId: Uint8List(16),
@@ -154,61 +154,49 @@ void main() {
     });
   });
 
-  group('pcm24FromFloat', () {
-    test('matches the native conversion', () {
-      expect(pcm24FromFloat(0.5), 0x400000);
-      expect(pcm24FromFloat(-1), -0x800000);
-      expect(pcm24FromFloat(1), 0x7FFFFF);
-      expect(pcm24FromFloat(2), 0x7FFFFF);
-      expect(pcm24FromFloat(-2), -0x800000);
-      expect(pcm24FromFloat(-0.25), -0x200000);
-      expect(pcm24FromFloat(0.25), 0x200000);
-      expect(pcm24FromFloat(0), 0);
-      expect(pcm24FromFloat(double.nan), 0);
-      // Half away from zero, like the native writer.
-      expect(pcm24FromFloat(0.5 / 8388608), 1);
-      expect(pcm24FromFloat(-0.5 / 8388608), -1);
-    });
+  test('isOver counts only magnitudes above 1.0', () {
+    expect([1.0, -1.0, 0.0, 0.5].where(isOver), isEmpty);
+    expect([1.0000001, -1.5, 2.0, double.infinity].where(isOver), hasLength(4));
+    expect(isOver(double.nan), isFalse);
   });
 
-  group('Pcm24Writer', () {
-    test('writes 24-bit little-endian samples and seals the sizes', () {
+  group('RecordedPartWriter', () {
+    test('writes samples unchanged, counts overs and seals the sizes', () {
       final path = '${dir.path}/master-001.wav';
-      final writer = Pcm24Writer.create(path, _header())
-        ..append(Float32List.fromList([0.5, -1, 1, 2, -0.25, 0.25]));
-      expect(writer.frames, 3);
-      expect(writer.dataBytes, 18);
+      final writer = RecordedPartWriter.create(path, _header())
+        ..append(Float32List.fromList([0.5, -1, 1.5, -2]));
+      expect(writer.frames, 2);
+      expect(writer.dataBytes, 16);
+      expect(writer.overs, 2);
       final sealed = writer.seal();
-      expect(sealed, _header(dataBytes: 18));
+      expect(sealed, _header(dataBytes: 16));
 
       final bytes = File(path).readAsBytesSync();
-      expect(bytes, hasLength(84 + 18));
+      expect(bytes, hasLength(84 + 16));
       expect(bytes.sublist(84), [
-        0x00, 0x00, 0x40, //
-        0x00, 0x00, 0x80, //
-        0xFF, 0xFF, 0x7F, //
-        0xFF, 0xFF, 0x7F, //
-        0x00, 0x00, 0xE0, //
-        0x00, 0x00, 0x20,
+        0x00, 0x00, 0x00, 0x3F, //
+        0x00, 0x00, 0x80, 0xBF, //
+        0x00, 0x00, 0xC0, 0x3F, //
+        0x00, 0x00, 0x00, 0xC0,
       ]);
-      expect(Pcm24PartHeader.decode(bytes), sealed);
+      expect(RecordedPartHeader.decode(bytes), sealed);
       final bd = ByteData.view(bytes.buffer);
       expect(bd.getUint32(4, Endian.little), bytes.length - 8);
     });
 
     test('an unsealed part reads its zero size header', () {
       final path = '${dir.path}/open.wav';
-      final writer = Pcm24Writer.create(path, _header(dataBytes: 600))
+      final writer = RecordedPartWriter.create(path, _header(dataBytes: 800))
         ..append(Float32List.fromList([0.5, 0.5]));
       expect(
-        Pcm24PartHeader.decode(File(path).readAsBytesSync()).dataBytes,
+        RecordedPartHeader.decode(File(path).readAsBytesSync()).dataBytes,
         0,
       );
       writer.seal();
     });
 
-    test('refuses partial frames, oversize payloads and use after seal', () {
-      final writer = Pcm24Writer.create('${dir.path}/x.wav', _header());
+    test('refuses partial frames and use after seal', () {
+      final writer = RecordedPartWriter.create('${dir.path}/x.wav', _header());
       expect(
         () => writer.append(Float32List.fromList([0.5])),
         throwsArgumentError,
@@ -222,11 +210,11 @@ void main() {
     });
 
     test('holds at most partBytes, header included', () {
-      // 84 + 6 * 1000 bytes: exactly 1000 stereo frames.
-      final writer = Pcm24Writer.create(
+      // 84 + 8 * 1000 bytes: exactly 1000 stereo frames.
+      final writer = RecordedPartWriter.create(
         '${dir.path}/small.wav',
         _header(),
-        partBytes: 84 + 6 * 1000 + 5,
+        partBytes: 84 + 8 * 1000 + 7,
       );
       expect(writer.remainingFrames, 1000);
       writer.append(Float32List(2 * 999));
@@ -234,17 +222,24 @@ void main() {
       expect(() => writer.append(Float32List(4)), throwsArgumentError);
       writer.append(Float32List(2));
       expect(writer.remainingFrames, 0);
-      expect(writer.seal().dataBytes, 6000);
-      expect(File('${dir.path}/small.wav').lengthSync(), 84 + 6000);
-      final full = Pcm24Writer.create('${dir.path}/default.wav', _header());
-      expect(full.remainingFrames, 333333319);
+      expect(writer.seal().dataBytes, 8000);
+      expect(File('${dir.path}/small.wav').lengthSync(), 84 + 8000);
+      final full = RecordedPartWriter.create(
+        '${dir.path}/default.wav',
+        _header(),
+      );
+      expect(full.remainingFrames, 249999989);
       full.seal();
       expect(
-        () => Pcm24Writer.create('${dir.path}/t.wav', _header(), partBytes: 89),
+        () => RecordedPartWriter.create(
+          '${dir.path}/t.wav',
+          _header(),
+          partBytes: 91,
+        ),
         throwsArgumentError,
       );
       expect(
-        () => Pcm24Writer.create(
+        () => RecordedPartWriter.create(
           '${dir.path}/t.wav',
           _header(),
           partBytes: 0x100000000 + 84,
@@ -253,48 +248,55 @@ void main() {
       );
     });
 
-    test('a create that cannot write leaves no open file behind', () {
+    test('a create that cannot open the file throws', () {
       expect(
-        () => Pcm24Writer.create('${dir.path}/missing/x.wav', _header()),
+        () => RecordedPartWriter.create('${dir.path}/missing/x.wav', _header()),
         throwsA(isA<FileSystemException>()),
       );
     });
   });
 
-  group('readPcm24Frames', () {
+  group('readRecordedPartFrames', () {
     late String path;
     setUp(() {
       path = '${dir.path}/read.wav';
       final samples = Float32List(2000);
       for (var i = 0; i < samples.length; i++) {
-        samples[i] = (i - 1000) / 1000;
+        samples[i] = (i - 1000) / 400;
       }
-      Pcm24Writer.create(path, _header())
+      RecordedPartWriter.create(path, _header())
         ..append(samples)
         ..seal();
     });
 
-    test('reads the requested range within one 24-bit step', () {
-      final frames = readPcm24Frames(path, offsetFrames: 10, count: 5);
+    test('reads the requested range exactly, overs included', () {
+      final frames = readRecordedPartFrames(path, offsetFrames: 10, count: 5);
       expect(frames, hasLength(10));
       for (var i = 0; i < frames.length; i++) {
-        expect(frames[i], closeTo((20 + i - 1000) / 1000, 1 / 8388608));
+        expect(frames[i], Float32List.fromList([(20 + i - 1000) / 400])[0]);
       }
+      expect(frames.first, lessThan(-1));
     });
 
     test('stops at the end of the payload', () {
-      expect(readPcm24Frames(path, offsetFrames: 998, count: 10), hasLength(4));
-      expect(readPcm24Frames(path, offsetFrames: 5000, count: 10), isEmpty);
+      expect(
+        readRecordedPartFrames(path, offsetFrames: 998, count: 10),
+        hasLength(4),
+      );
+      expect(
+        readRecordedPartFrames(path, offsetFrames: 5000, count: 10),
+        isEmpty,
+      );
     });
 
     test('reads an unsealed part to its last whole frame', () {
       final open = '${dir.path}/unsealed.wav';
-      final writer = Pcm24Writer.create(open, _header())
+      final writer = RecordedPartWriter.create(open, _header())
         ..append(Float32List.fromList([0.5, -0.5, 0.25, -0.25]));
       // Simulate a crash: the header still says 0, the file holds 2 frames
       // plus a torn byte.
       File(open).writeAsBytesSync([0x01], mode: FileMode.append);
-      expect(readPcm24Frames(open, offsetFrames: 0, count: 10), [
+      expect(readRecordedPartFrames(open, offsetFrames: 0, count: 10), [
         0.5,
         -0.5,
         0.25,
@@ -305,11 +307,11 @@ void main() {
 
     test('refuses negative ranges and a file that is not a part', () {
       expect(
-        () => readPcm24Frames(path, offsetFrames: -1, count: 1),
+        () => readRecordedPartFrames(path, offsetFrames: -1, count: 1),
         throwsArgumentError,
       );
       expect(
-        () => readPcm24Frames(path, offsetFrames: 0, count: -1),
+        () => readRecordedPartFrames(path, offsetFrames: 0, count: -1),
         throwsArgumentError,
       );
       final float = '${dir.path}/float.wav';
@@ -321,7 +323,7 @@ void main() {
         ),
       );
       expect(
-        () => readPcm24Frames(float, offsetFrames: 0, count: 1),
+        () => readRecordedPartFrames(float, offsetFrames: 0, count: 1),
         throwsFormatException,
       );
     });

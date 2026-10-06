@@ -1,17 +1,22 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:meta/meta.dart';
 import 'package:wav_codec/wav_codec.dart';
 
-/// The frozen format of one recorded stream: 24-bit PCM at the device rate,
-/// written as ordered WAV parts of at most [partBytes] bytes each, header
-/// included (plan `docs/plan/2026-10-06-feat-recording-recovery-plan.md`,
-/// D3; accepted behaviour 6.7).
+/// The frozen format of one recorded stream: 32-bit float at the device
+/// rate, written as ordered WAV parts of at most [partBytes] bytes each,
+/// header included (plan `docs/plan/2026-10-06-feat-recording-recovery-plan.md`,
+/// D3; accepted behaviour 6.7). Float, because the capture tap is before the
+/// master gain and limiter and a fixed-point format would clip what the
+/// listener heard limited.
 @immutable
 class RecordingFormat {
   /// Creates a [RecordingFormat].
   RecordingFormat({
     required this.sampleRate,
     required this.channels,
-    this.partBytes = Pcm24Writer.defaultPartBytes,
+    this.partBytes = RecordedPartWriter.defaultPartBytes,
   }) {
     if (sampleRate < 1) throw ArgumentError.value(sampleRate, 'sampleRate');
     if (channels < 1) throw ArgumentError.value(channels, 'channels');
@@ -21,10 +26,10 @@ class RecordingFormat {
   }
 
   /// Bits per sample.
-  static const int bitDepth = 24;
+  static const int bitDepth = 32;
 
   /// Bytes every part spends on its header.
-  static const int headerBytes = Pcm24PartHeader.headerBytes;
+  static const int headerBytes = RecordedPartHeader.headerBytes;
 
   /// Sample rate in Hz, frozen when recording starts.
   final int sampleRate;
@@ -36,7 +41,7 @@ class RecordingFormat {
   final int partBytes;
 
   /// Bytes per interleaved frame.
-  int get frameBytes => channels * Pcm24PartHeader.bytesPerSample;
+  int get frameBytes => channels * RecordedPartHeader.bytesPerSample;
 
   /// Frames one full part holds.
   int get partFrames => (partBytes - headerBytes) ~/ frameBytes;
@@ -133,6 +138,7 @@ class TakePart {
     required this.file,
     required this.frames,
     required this.bytes,
+    this.overs = 0,
     this.sha256,
   });
 
@@ -147,6 +153,7 @@ class TakePart {
     final file = json['file'];
     final frames = json['frames'];
     final bytes = json['bytes'];
+    final overs = json['overs'] ?? 0;
     final sha256 = json['sha256'];
     if (s is! int ||
         s < 0 ||
@@ -160,6 +167,8 @@ class TakePart {
         frames < 0 ||
         bytes is! int ||
         bytes < RecordingFormat.headerBytes ||
+        overs is! int ||
+        overs < 0 ||
         (sha256 != null &&
             (sha256 is! String || !_sha256Hex.hasMatch(sha256)))) {
       throw FormatException('malformed take part', json);
@@ -170,6 +179,7 @@ class TakePart {
       file: file,
       frames: frames,
       bytes: bytes,
+      overs: overs,
       sha256: sha256 as String?,
     );
   }
@@ -191,6 +201,10 @@ class TakePart {
   /// The file's size in bytes, header included.
   final int bytes;
 
+  /// Samples in the part whose magnitude exceeds 1.0. They are kept as
+  /// recorded; the count lets the page say the take holds them.
+  final int overs;
+
   /// The SHA-256 of the part's payload once it is sealed, as 64 lower-case
   /// hex digits; null while the part is still open.
   final String? sha256;
@@ -205,6 +219,7 @@ class TakePart {
     'file': file,
     'frames': frames,
     'bytes': bytes,
+    'overs': overs,
     'sha256': ?sha256,
   };
 
@@ -216,10 +231,12 @@ class TakePart {
       other.file == file &&
       other.frames == frames &&
       other.bytes == bytes &&
+      other.overs == overs &&
       other.sha256 == sha256;
 
   @override
-  int get hashCode => Object.hash(stream, index, file, frames, bytes, sha256);
+  int get hashCode =>
+      Object.hash(stream, index, file, frames, bytes, overs, sha256);
 }
 
 /// One stream's durable state in a checkpoint.
@@ -245,48 +262,113 @@ class TakeCheckpointStream {
   int get frames => parts.fold(0, (sum, part) => sum + part.frames);
 }
 
-/// The durable record the checkpoint thread writes every few seconds
-/// (`checkpoint.json`): how much of each stream is safely on the device.
+/// The durable record the checkpoint thread writes every few seconds: how
+/// much of each stream is safely on the device.
 ///
-/// After a power cut, recovery trusts these counts and nothing more (plan D4;
-/// pen 47 "The saved checkpoint can be recovered. Audio after it may be
+/// It lives in two slot files, `checkpoint-a.json` and `checkpoint-b.json`,
+/// rewritten in place alternately and never renamed over (a rename over a
+/// file is not atomic on FAT or exFAT; plan D4). Each slot carries a
+/// `sequence` and ends with a `checksum`: the SHA-256 hex of every byte
+/// before the `"checksum"` key. A torn slot fails its checksum and the other
+/// slot stands. After a power cut, recovery trusts these counts and nothing
+/// more (pen 47 "The saved checkpoint can be recovered. Audio after it may be
 /// unavailable.").
 @immutable
 class TakeCheckpoint {
   /// Creates a [TakeCheckpoint].
   const TakeCheckpoint({
+    required this.sequence,
     required this.takeId,
     required this.bootId,
+    required this.volumeGeneration,
     required this.sampleRate,
     required this.frames,
+    required this.overs,
     required this.streams,
     required this.eventsBytes,
     required this.layers,
     required this.writtenAt,
   });
 
-  /// Reads a decoded `checkpoint.json`.
+  /// Reads the newer valid slot of [a] and [b] (either may be null when its
+  /// file is absent).
   ///
-  /// Throws [FormatException] for any other version, encoding or shape, and
-  /// when the parts of a stream are not numbered 1, 2, 3 … in order.
-  factory TakeCheckpoint.fromJson(Map<String, dynamic> json) {
+  /// [digest] is the SHA-256 of bytes as 64 lower-case hex digits — the
+  /// engine's `StorageIo.digestBytes`, one hash for the engine and Dart. A
+  /// slot is valid when its checksum matches and it parses; the valid slot
+  /// with the higher sequence wins. Throws [FormatException] when neither
+  /// is valid.
+  factory TakeCheckpoint.fromSlots(
+    Uint8List? a,
+    Uint8List? b, {
+    required String Function(Uint8List bytes) digest,
+  }) {
+    TakeCheckpoint? best;
+    for (final slot in [a, b]) {
+      if (slot == null) continue;
+      final TakeCheckpoint parsed;
+      try {
+        parsed = TakeCheckpoint.fromSlot(slot, digest: digest);
+      } on FormatException {
+        continue;
+      }
+      if (best == null || parsed.sequence > best.sequence) best = parsed;
+    }
+    if (best == null) throw const FormatException('no valid checkpoint slot');
+    return best;
+  }
+
+  /// Reads one slot, checking its checksum with [digest].
+  ///
+  /// Throws [FormatException] for a checksum that does not match, any other
+  /// version or encoding, a malformed shape, or parts not numbered 1, 2, 3 …
+  factory TakeCheckpoint.fromSlot(
+    Uint8List bytes, {
+    required String Function(Uint8List bytes) digest,
+  }) {
+    final text = utf8.decode(bytes, allowMalformed: true);
+    final at = text.lastIndexOf(_checksumKey);
+    if (at < 0) throw const FormatException('checkpoint without a checksum');
+    final covered = Uint8List.fromList(utf8.encode(text.substring(0, at)));
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(text);
+    } on FormatException {
+      throw const FormatException('checkpoint is not JSON');
+    }
+    if (decoded is! Map<String, dynamic> ||
+        decoded['checksum'] != digest(covered)) {
+      throw const FormatException('checkpoint checksum does not match');
+    }
+    return TakeCheckpoint._fromJson(decoded);
+  }
+
+  factory TakeCheckpoint._fromJson(Map<String, dynamic> json) {
+    final sequence = json['sequence'];
     final takeId = json['take_id'];
     final bootId = json['boot_id'];
+    final generation = json['volume_generation'];
     final sampleRate = json['sample_rate'];
     final frames = json['frames'];
+    final overs = json['overs'];
     final streamsJson = json['streams'];
     final eventsBytes = json['events_bytes'];
     final layersJson = json['layers'];
     final writtenAt = json['written_at_ms'];
     if (json['version'] != version ||
         json['encoding'] != encoding ||
+        sequence is! int ||
+        sequence < 0 ||
         takeId is! String ||
         !_takeIdHex.hasMatch(takeId) ||
         bootId is! String ||
+        generation is! int ||
         sampleRate is! int ||
         sampleRate < 1 ||
         frames is! int ||
         frames < 0 ||
+        overs is! int ||
+        overs < 0 ||
         streamsJson is! List ||
         eventsBytes is! int ||
         eventsBytes < 0 ||
@@ -329,10 +411,13 @@ class TakeCheckpoint {
       layers.add(l);
     }
     return TakeCheckpoint(
+      sequence: sequence,
       takeId: takeId,
       bootId: bootId,
+      volumeGeneration: generation,
       sampleRate: sampleRate,
       frames: frames,
+      overs: overs,
       streams: streams,
       eventsBytes: eventsBytes,
       layers: layers,
@@ -343,24 +428,36 @@ class TakeCheckpoint {
   /// The only checkpoint version this build reads.
   static const int version = 1;
 
-  /// The only sample encoding this build reads.
-  static const String encoding = 'pcm24';
+  /// The only sample encoding this build reads: 32-bit float.
+  static const String encoding = 'f32';
+
+  static const String _checksumKey = '"checksum"';
 
   static final RegExp _takeIdHex = RegExp(r'^[0-9a-f]{32}$');
+
+  /// Increases with every checkpoint the take writes.
+  final int sequence;
 
   /// The take's id, 32 lower-case hex digits.
   final String takeId;
 
   /// The kernel boot id when the checkpoint was written; empty where the
-  /// platform has none. Recovery in the same boot may trust more than this
-  /// checkpoint (plan D4).
+  /// platform has none.
   final String bootId;
+
+  /// The removable volume generation the take was armed on, or -1 for
+  /// Internal. A different generation at recovery means the volume was not
+  /// mounted for the whole take, so only this checkpoint is trusted (D4).
+  final int volumeGeneration;
 
   /// Sample rate in Hz.
   final int sampleRate;
 
   /// Frames durable in every stream.
   final int frames;
+
+  /// Samples above full scale in the durable audio, every stream together.
+  final int overs;
 
   /// Each stream's durable parts.
   final List<TakeCheckpointStream> streams;
@@ -373,4 +470,17 @@ class TakeCheckpoint {
 
   /// When the checkpoint was written.
   final DateTime writtenAt;
+
+  /// Whether the files on disk may be trusted beyond this checkpoint: only
+  /// in the same boot ([currentBootId]) on a volume that stayed mounted for
+  /// the whole take ([currentGeneration] equal to the generation at arm; -1
+  /// for Internal). Otherwise a size on disk can cover clusters that never
+  /// received the audio (plan D4, review H2).
+  bool trustsFilesBeyond({
+    required String currentBootId,
+    required int currentGeneration,
+  }) =>
+      bootId.isNotEmpty &&
+      bootId == currentBootId &&
+      volumeGeneration == currentGeneration;
 }
