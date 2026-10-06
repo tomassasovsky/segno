@@ -41,12 +41,9 @@ SRC_URI = "file://segno.service \
            file://segno-nm-persist.service \
            file://segno-ssh-persist \
            file://segno-ssh-persist.service \
-           file://segno-bt-persist \
-           file://segno-bt-persist.service \
            file://segno-mark-good \
            file://segno-mark-good.service \
            file://dropbear-segno.conf \
-           file://segno-bt-ctl \
            file://segno-brightness-ctl \
            file://segno-touch-ctl \
            file://segno-touch-calibration-helper \
@@ -106,7 +103,7 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # regulatory.bin the image has, or the /lib/firmware/regulatory.db it does not,
 # is answered on device: segno-wifi-regdom warns when the latter is missing.
 # networkmanager-nmcli: segno-wifi-ctl (NM owns wpa_supplicant via -wifi plugin).
-# bluez5: segno-bt-ctl. ddcutil: segno-brightness-ctl.
+# ddcutil: segno-brightness-ctl. No BlueZ: Bluetooth was retired (#1199).
 # weston-examples: ships weston-touch-calibrator, which is what actually measures
 # the touchscreen (segno-touch-ctl only persists the result). core-image-weston
 # happens to pull it in today via packagegroup-core-weston — named here so a
@@ -116,7 +113,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   curl jq ca-certificates rauc \
                   parted e2fsprogs-resize2fs \
                   networkmanager-nmcli networkmanager-wifi \
-                  bluez5 ddcutil \
+                  ddcutil \
                   iw \
                   weston-examples \
                   util-linux-mount util-linux-umount util-linux-blkid util-linux-flock \
@@ -129,7 +126,7 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via segno-update-ctl).
 # So segno-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount segno-usb-eject.path"
+SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount segno-usb-eject.path"
 
 FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-wayland ${bindir}/segno-rtirq \
                 ${bindir}/segno-data-grow \
@@ -141,10 +138,8 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-way
                 ${bindir}/segno-wifi-retry \
                 ${bindir}/segno-iwd-tame \
                 ${bindir}/segno-ssh-persist \
-                ${bindir}/segno-bt-persist \
                 ${bindir}/segno-mark-good \
                 ${bindir}/segno-log-check \
-                ${bindir}/segno-bt-ctl \
                 ${bindir}/segno-brightness-ctl \
                 ${bindir}/segno-touch-ctl \
                 ${bindir}/segno-touch-calibration-helper \
@@ -168,7 +163,6 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-way
                 ${systemd_system_unitdir}/segno-nm-persist.service \
                 ${systemd_system_unitdir}/segno-wifi-regdom.service \
                 ${systemd_system_unitdir}/segno-ssh-persist.service \
-                ${systemd_system_unitdir}/segno-bt-persist.service \
                 ${systemd_system_unitdir}/segno-touch-persist.service \
                 ${systemd_system_unitdir}/segno-touch-apply.path \
                 ${systemd_system_unitdir}/segno-touch-apply.service \
@@ -261,10 +255,9 @@ do_install() {
     install -m 0644 ${UNPACKDIR}/segno-ota-check.service ${D}${systemd_system_unitdir}/segno-ota-check.service
     install -m 0644 ${UNPACKDIR}/segno-ota-check.timer ${D}${systemd_system_unitdir}/segno-ota-check.timer
 
-    # Control Center host helpers (WiFi / Bluetooth / brightness) — Flutter
+    # Control Center host helpers (WiFi / brightness) — Flutter
     # shells out to these the same way it drives segno-update-ctl.
     install -m 0755 ${UNPACKDIR}/segno-wifi-ctl ${D}${bindir}/segno-wifi-ctl
-    install -m 0755 ${UNPACKDIR}/segno-bt-ctl ${D}${bindir}/segno-bt-ctl
     install -m 0755 ${UNPACKDIR}/segno-brightness-ctl ${D}${bindir}/segno-brightness-ctl
 
     # Touchscreen calibration. weston-touch-calibrator does the measuring;
@@ -344,12 +337,6 @@ do_install() {
     # alongside iwd would recreate the two-supplicants bug this release exists
     # to remove — so mask it rather than trust that nothing activates it.
     ln -sf /dev/null ${D}${sysconfdir}/systemd/system/wpa_supplicant.service
-
-    # BlueZ has no keyfile.path equivalent, so segno-bt-persist bind-mounts
-    # /data/bluetooth over /var/lib/bluetooth before bluetoothd starts (#451).
-    install -m 0755 ${UNPACKDIR}/segno-bt-persist ${D}${bindir}/segno-bt-persist
-    install -m 0644 ${UNPACKDIR}/segno-bt-persist.service \
-        ${D}${systemd_system_unitdir}/segno-bt-persist.service
 
     # meta-rauc's own rauc-mark-good.service is condition-gated on a rauc.slot
     # kernel argument the Pi tryboot backend never sets, so it is skipped every

@@ -1260,7 +1260,9 @@ int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
      * e.g. the octaver's shift smoother seeds at unison 0.5, not 0.0). A
      * hosted plugin's offline slot stays NULL and renders dry. */
     le_fx_entry_reset(fx, s);
-    if (c->type[s] != LE_FX_NONE && c->type[s] != LE_FX_PLUGIN &&
+    /* Only the entries this state processes own buffers (review L5). */
+    if (s >= from && s < to && c->type[s] != LE_FX_NONE &&
+        c->type[s] != LE_FX_PLUGIN &&
         le_fx_prepare(fx, s, c->type[s], cap) != LE_OK) {
       rc = LE_ERR_INVALID; /* OOM on a ring/octaver heap: a real failure, not
                             * a silent dry-slot degradation */
@@ -1311,18 +1313,9 @@ int32_t le_fx_print(const le_fx_frozen_chain* c, int32_t count,
   return rc;
 }
 
-int le_cache_reserve(le_engine* engine, int64_t bytes) {
+int le_cache_shutting_down(le_engine* engine) {
   struct le_fx_cache* c = engine->cache;
-  if (c == NULL) return 0;
-  const int64_t cap =
-      atomic_load_explicit(&engine->a_fx_cache_cap, memory_order_relaxed);
-  if (cap <= 0 || !le_cache_ensure_budget(engine, c, cap, bytes)) return 0;
-  c->used_bytes += bytes;
-  return 1;
-}
-
-void le_cache_release(le_engine* engine, int64_t bytes) {
-  if (engine->cache != NULL) engine->cache->used_bytes -= bytes;
+  return c != NULL && atomic_load_explicit(&c->a_shutdown, memory_order_acquire);
 }
 
 int le_cache_source_ready(le_engine* engine, int32_t channel) {

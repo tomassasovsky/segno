@@ -1,8 +1,8 @@
 # Foot Peel: remove the latest overdub layer as a recoverable history entry
 
-<!-- cspell:ignore plog evt lanei hist acks -->
+<!-- cspell:ignore plog evt lanei hist acks slotless Inténtalo nuevo -->
 
-Status: plan for owner review (merging this plan approves its direction); implementation not started.
+Status: Parts 1 and 2 built and merged into the trunk; Part 3 built (PR #1233), awaiting review and the appliance hardware evidence.
 Tracking: #1164 (parent #1026, M4 operations), `autonomy:merge-gate`.
 Source baseline: `origin/claude/fade-duration-targets-1148` (PR #1156),
 `c9b420d41cd7312f66ea5f15b0e4ed096d4a87f4`. Precedents: Foot Fade
@@ -546,6 +546,98 @@ NON-GOALS:
 - Queued peels, hold gestures, new owners, native changes beyond label plumbing.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
+
+#### Part 3 as built
+
+Status: built on branch `claude/peel-1164-p3` (PR #1233), merged with the
+trunk that carries Part 2 and Reverse Part 3. It follows the Reverse surface
+(#1162 Part 3, PR #1209) and avoids the findings of that PR's review.
+
+- **Mode and vocabulary.**
+  - `InteractionMode.peel` is not a boot default; the mode chip and
+    `toggleMode` return to Tracks.
+  - `ModeAction` token `peel`.
+  - `TrackOperation.peel`, with `allowsAllTracks` false, like Clear.
+  - Labels in English and Spanish.
+- **Model and actions.**
+  - `lib/control/model/foot_peel.dart` holds the role table: every role
+    fires on contact, and Undo and Clear are `none`.
+  - A `FootPeelTrack` keeps `hasContent`, `layers` (`Track.layers`) and
+    `busy` (capturing, layer in flight, or Count-in launch) apart.
+    `available` is `Track.canPeel`.
+  - A busy recorded track therefore reads its real layer count, dimmed,
+    never "Empty" (Reverse review, Medium 2).
+  - The stateless `FootPeelActions.peel` returns null when a layer was
+    removed, or a `FootPeelRefusal`: `empty`, `originalOnly`, `busy` or
+    `failed`. The surface and every assigned Peel share it.
+- **Notice policy, shared by Fade, Reverse and Peel (rules 3 and 4).**
+  - On the surface, an EMPTY track's pedal is dimmed and silent, as on Fade
+    and Reverse: there is nothing there to act on, and the dimmed pedal and
+    "Empty" word already say so.
+  - On the surface, a press on a RECORDED track that removes nothing (busy,
+    original only, or an engine refusal) raises
+    `ControlState.footPeelFailure`/`footPeelRefusal`, and Tracks shows one
+    toast with the reason: a warning, or an error for `failed`. Reverse does
+    the same for a busy recorded track.
+  - An ASSIGNED Peel (Custom, CTRL, MIDI) that removes nothing always shows
+    its toast, in any mode, the empty-track case included. The stomp came
+    from a control away from the track, so silence would read as a dead
+    pedal.
+  - A separate commit gives assigned Fade and Reverse the same rule: when an
+    assigned toggle reaches no track (every target refused or empty), their
+    failure notice now shows in any mode, so no assigned refusal is silent.
+  - §3 said an unavailable track is refused "without a notice". The policy
+    above keeps that only for the empty track on the surface.
+  - Peel completes on the control thread, so the report always belongs to
+    the press that caused it. It needs none of Reverse's visit or session
+    checks for a late result.
+- **Surface pedals.**
+  - A recorded track's pedal takes a press even when it cannot peel now, so
+    the refusal can say why; an empty track's pedal is disabled.
+  - The selection bar and the physical LED light only while `canPeel`.
+- **Gating.**
+  - `_peelEditable` checks `_takeLocked()`, input retirement and the
+    Session transition. It covers contacts, `peelFootPeelTrack` and
+    semantic activation; Exit bypasses it.
+  - Assigned paths keep their existing `_takeLocked()` gates (Custom,
+    External/CTRL, MIDI).
+- **`trackPressed` is inert in Peel mode**, as in Mixer and Fade (Reverse
+  review, Low 3).
+- **LED.**
+  - Blue while `canPeel`, so "none remain", the drain window, capture and
+    a pending launch are visible by foot.
+  - The physical mask treats slot-less Fade, Reverse and Peel pedals alike
+    through `_slotless`.
+  - The wire mode is `PedalMode.custom`.
+- **No Tracks status marker.** The layer badge already reports
+  `Track.layers`, which Part 1 makes drop on a peel, so nothing new paints
+  in the meta row (Reverse review, Medium 1).
+- **Overview wording.**
+  - The overview heading is "Layers", and counts include the original, as
+    the badge does.
+  - One layer reads "Original only".
+  - The Spanish keeps "Peel" in English, like "Fade". Its retry wording is
+    the file's ("Inténtalo de nuevo"), the same as every sibling notice.
+- **Test helper fix.** The root `FakeAudioEngine` snapshot wrapper now
+  forwards `peelDepth` and `pendingLaunch`, which it had dropped since
+  Part 1.
+- **Pen.** `segno-ui.pen` has no Peel performance screen. It lists the mode
+  in the external function picker ("Peel", "Remove an overdub layer") and
+  uses "Hold · Peel" as a Custom assignment example.
+  - The surface follows the Fade and Reverse layout.
+  - Pen write-back list (outstanding, not done in code work; the pen is
+    edited only by its owner):
+    - add a Peel performance frame beside 13 (Reverse) with the overview
+      heading "Layers" and the "N layers", "Original only" and "Empty"
+      words;
+    - draw the empty track's pedal dimmed;
+    - add the three recorded-track refusal notices and the assigned-Peel
+      notice, with a `c/` note recording the notice policy above.
+- **Merge with Reverse Part 3.** Both edited the same mode switches; the
+  merge keeps both arms, and the identical Reverse and Peel cases in
+  `setMode` and `recPlay` are one grouped case each.
+- **Outstanding:** the appliance hardware evidence (the last success
+  criterion).
 
 ## 5. Decisions taken under the standing rules
 

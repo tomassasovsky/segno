@@ -55,6 +55,8 @@ class LibraryCubit extends Cubit<LibraryState> {
       preview = await _sessions.readPreview(id);
     } on SessionUnsupportedVersion {
       error = LibraryPreviewError.unsupportedVersion;
+    } on SessionUnconvertible {
+      error = LibraryPreviewError.unconvertible;
     } on Object {
       error = LibraryPreviewError.unreadable;
     }
