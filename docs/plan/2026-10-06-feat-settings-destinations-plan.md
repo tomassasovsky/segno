@@ -627,3 +627,64 @@ favour of the Length & quantize default?
 Q2. **Boot default mode.** Default taken (D4): retired, with a one-time notice
 for installs that stored Mute. The alternative is to keep it as a setting.
 The pen draws no place for it.
+
+## 11. Build record
+
+### Part 1 (branch `claude/settings-1199-p1`, `179e72bb3`)
+
+Built as planned, with these departures:
+
+- **D2 needed no new row.** The Device tab already carries the click level:
+  `DeviceAudioTab` includes `AudioRoutingCard`
+  (`lib/audio_setup/view/console/audio_routing_card.dart`), whose
+  `ConsoleValueBar` writes `TempoCubit.setClickVolume`. The Device page hosts
+  that tab unchanged. E3-3 still removes the bar when the Mixer strip lands.
+- **Brightness is a `ConsoleValueBar`, not a `LoopSlider`.** It sits in the
+  tray bodies' card style, beside the click bar it matches, with
+  `resetValue: kDefaultDisplayBrightness` for the double tap and the
+  existing `trayBrightnessPercent` readout. The cubit's floor (0.1) clamps a
+  drag to the left end. The tray popover and the page share one helper,
+  `editDisplayBrightness` (`lib/appliance/display_brightness_edit.dart`), so
+  the save-failure toast is defined once.
+- **Interim bodies sit on a card-toned panel** (`SettingsDestinationPage`).
+  The tray bodies' pinned captions paint `SurfaceTheme.card`; on the page
+  background each caption would draw a band.
+- The Network page owns its `WifiCubit`. The body loads and scans on mount,
+  so the radio is read only while the page is open (the tray read it for the
+  stage's whole lifetime).
+- About opens as its own route, `segno/settings/about`.
+- `openUpdateSettings` dismisses the update toast itself. The audio-recovery
+  toast keeps its "Settings…" label and now opens Device.
+- Goldens: `control_center_audio_recording.png` and
+  `control_center_audio_max_loop.png` regenerated (the three rows left); five
+  new `settings_<page>.png` goldens, all checked by eye.
+
+### Part 2 (branch `claude/settings-1199-p2`, `86bedb152`, on Part 1)
+
+Built as planned, with these departures:
+
+- **Tile fill is a new token, `SurfaceTheme.menuArtGround` (#202735 in both
+  flavours).** The ten pictures are opaque on that colour; on `cardHigh`
+  each would show as a lighter square. The pen's tile stroke (#556881) has no
+  token, so the border is `borderStrong`, painted in front (the pen strokes
+  inside, and a decoration border would inset the art by 1 px).
+- Encoder focus uses `surface.warning`, as the pedal setup map does.
+- The title reuses `stageSettings` ("Settings") and the crumb reuses
+  `loopSettingsCrumb`. New strings: `settingsMidiTitle`, `settingsPower`.
+- Power shows only when `isAppliance()`. `SettingsHomePage.powerAvailable`
+  overrides that for tests. `requestPowerOff` and
+  `currentPowerOffSnapshot` are extracted from `PowerOffHost`, so the
+  button and the rear key send the same snapshot.
+- The art ships as the ten PNGs, byte-identical to `56410d148` (1.3 MB), not
+  re-encoded.
+- `openSegnoSettings` lost its `section` parameter. The old `SettingsPage` is
+  unreachable from here until Part 3 deletes it.
+- New golden `settings_home.png`, checked by eye against `v7Ekz`.
+
+### Pen write-back list (for the owner; this build did not edit the pen)
+
+- Section 05: a `c/ Interim · Settings destinations` note listing the five
+  interim pages and what each hosts (Device: Device and Recording tabs with
+  the click bar; Displays: brightness bar first; Updates: About row).
+- `01 Settings`: tile fill mapped to `menuArtGround`, stroke to
+  `borderStrong`, focus to `warning`.
