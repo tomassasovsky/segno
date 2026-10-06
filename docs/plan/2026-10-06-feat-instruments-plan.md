@@ -1117,7 +1117,7 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && NATIVE_TESTS_ONLY=races EXTRA_CFLAGS='-fsanitize=thread -g' bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
-### Part 3a. Dart engine seam (about 300 production lines)
+### Part 3a. Dart engine seam (built: branch `claude/instruments-1197-p3a`; about 300 production lines)
 
 A new role `InstrumentHost` in `packages/segno_engine/lib/src/audio_engine.dart`
 beside `MonitorControl` (`:1125`) and composed into `AudioEngine` (`:1513`):
@@ -1141,6 +1141,47 @@ NON-GOALS:
 - Instrument domain, persistence, UI.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
+
+As built (differences from the text above):
+- **Two roles, not one.** `InstrumentHost` carries the slots, notes,
+  sustain and routes; attach and detach live in a separate
+  `MidiInputSink` role (`attachMidiInput(MidiCaptureHandle, {port})`,
+  `detachMidiInput(port)`), both composed into `AudioEngine`. The MIDI clock
+  plan (#1236, section 3) also lists `attachMidiInput`/`detach` on its
+  `ClockSync` role; the sink is one engine resource, so its Dart builder
+  should use `MidiInputSink` rather than add a second pair (owner rule 4).
+- **Method names.** `instrumentNoteOn` (the plan's `instrumentEvent`),
+  `instrumentRelease`, plus `instrumentSustain` (the control-thread
+  contributor Part 2c added) and `resetInstrument` (the fade on removal
+  Part 3b needs). `setInstrument(slot, patch: int?, params)` takes `null`
+  for an empty slot.
+- **Types.** `SynthCatalogue` / `SynthPatch` / `SynthParamInfo` (with
+  `valueAt`, the engine's 0..100 mapping), `InstrumentRoute` /
+  `InstrumentRemap` (with `isValid`), `MidiCaptureHandle`, and two snapshot
+  groups on `EngineSnapshot`: `instruments` (patches, voices, peaks, the
+  instrument sources' monitor peaks, voice limit, steal and refusal counts,
+  synth epoch) and `midiInput` (attached mask, overflows, losses, rebinds).
+  The per-message totals `midi_in_events` and `midi_in_stale` are not
+  projected: they tick with every message (a MIDI clock 48 times a second)
+  and would make every snapshot unequal to the last; the snapshot field
+  golden names the two new groups.
+- **One model for the mock and the fakes.** `SimulatedInstruments`, a mixin
+  in `segno_engine`, is the deterministic voice model (results, release by
+  origin, sustain contributors, drums ignoring sustain, the voice limit
+  with stealing, the synth epoch, attach bookkeeping, a call log).
+  `MockAudioEngine` and the four fakes mix it in instead of each carrying
+  its own. It needs a catalogue without a native library, so it carries
+  `referenceSynthCatalogue`, a Dart copy of `synth_patch.c`'s table; the
+  native-library test pins the copy to the engine's catalogue field by
+  field, so it cannot drift silently.
+- **`MidiClient.captureHandle`** returns the handle; the engine detaches it
+  on close and dispose (the sink's own rule).
+- **Size.** About 1,200 production lines (comments and blank lines
+  excluded), well above the 300 estimate and the 700 ceiling. The excess is
+  the shared voice model (about 330 lines) and the reference catalogue
+  (about 200 lines once formatted), which the estimate did not count, plus
+  the value types' equality. Splitting it would leave the mock or the
+  fakes not compiling against the new roles, so it stays one part.
 
 ### Part 3b. Instrument domain and repository (about 650 production lines)
 
