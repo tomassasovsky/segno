@@ -1173,9 +1173,11 @@ class ControlCubit extends Cubit<ControlState> {
         t.channel,
   };
 
-  /// Restores the persisted boot-default mode (applying it — a `mute`
-  /// default runs the same entry side effects as a live toggle) and the
-  /// undo long-press threshold.
+  /// Restores the pedal setup, the global bindings and the undo long-press
+  /// threshold, and enters Record: the console always starts there.
+  ///
+  /// An install whose retired boot default was Mute is marked once in
+  /// [ControlState.retiredBootMode], so the change is not silent.
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
@@ -1183,12 +1185,13 @@ class ControlCubit extends Cubit<ControlState> {
     final storedBindings = PedalBindingSet.decode(
       await _settings.loadPedalBindings() ?? '',
     );
-    // bootDefaultFromToken, not fromToken: a stored `'fx'` (hand-edited or
-    // corrupted — no build writes it) falls back to record rather than booting
-    // the dead FX surface (R12).
-    final defaultMode = InteractionMode.bootDefaultFromToken(
-      await _settings.loadDefaultInteractionMode(),
-    );
+    // Mute was the only mode a stored default ever booted into besides
+    // Record: anything else was coerced to Record already, so only a Mute
+    // install has a behaviour change to be told about.
+    final retired = await _settings.takeRetiredDefaultInteractionMode();
+    final retiredBootMode = retired == InteractionMode.mute.token
+        ? InteractionMode.mute
+        : null;
     var setup = state.pedalSetup;
     var setupUnavailable = false;
     try {
@@ -1204,7 +1207,7 @@ class ControlCubit extends Cubit<ControlState> {
     if (_inputRetired || _closing || isClosed) return;
     emit(
       state.copyWith(
-        defaultMode: defaultMode,
+        retiredBootMode: retiredBootMode,
         pedalSetup: setup,
         pedalSetupUnavailable: setupUnavailable,
         globalBindings: storedBindings,
@@ -1212,7 +1215,7 @@ class ControlCubit extends Cubit<ControlState> {
     );
     await _loadMidiConfiguration();
     if (_inputRetired || _closing || isClosed) return;
-    setMode(defaultMode);
+    setMode(InteractionMode.record);
   }
 
   // ---------------------------------------------------------------------------
@@ -1534,25 +1537,6 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
     }
-  }
-
-  /// Sets and persists the default [mode] the system boots into, applying it
-  /// to the live mode now.
-  ///
-  /// Ignores a mode outside [InteractionMode.bootDefaults] (R12): the settings
-  /// picker never offers FX, and a boot into FX with no chains configured is a
-  /// dead surface.
-  Future<void> setDefaultMode(InteractionMode mode) async {
-    // Loud in debug, defensive in release: a caller offering FX here has a
-    // bug, but shipping a dead boot surface is the worse outcome.
-    assert(
-      InteractionMode.bootDefaults.contains(mode),
-      '$mode is not a boot-eligible default mode',
-    );
-    if (!InteractionMode.bootDefaults.contains(mode)) return;
-    emit(state.copyWith(defaultMode: mode));
-    setMode(mode);
-    await _settings.saveDefaultInteractionMode(mode.token);
   }
 
   // ---------------------------------------------------------------------------

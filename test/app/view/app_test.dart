@@ -3690,6 +3690,37 @@ void main() {
       expect(find.byType(TracksView), findsOneWidget);
     });
 
+    testWidgets('an install that started in Mute starts in Record and is '
+        'told once', (tester) async {
+      final store = FakeKeyValueStore();
+      await store.setString('looper.default_mode', 'mute');
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      final control = tester
+          .element(find.byType(TracksView))
+          .read<ControlCubit>();
+      expect(control.state.mode, InteractionMode.record);
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isTrue);
+
+      // The next start has nothing to say.
+      dismissAppToast(AppToastId.bootModeRetired);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+    });
+
+    testWidgets('an install that started in Record is not told anything', (
+      tester,
+    ) async {
+      final store = FakeKeyValueStore();
+      await store.setString('looper.default_mode', 'record');
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+    });
+
     testWidgets('the S key opens Settings', (tester) async {
       await pumpApp(tester, NoopWaveformWindowService());
 
