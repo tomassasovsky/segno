@@ -460,7 +460,12 @@ static void le_ticket_emptying(le_engine* engine, int32_t channel) {
 static void le_ticket_launch_cancel(le_engine* engine, int32_t channel) {
   if (channel < 0 || channel >= engine->track_count) return;
   le_track* t = &engine->tracks[channel];
-  if (load_i32(&t->a_launch_grace) || load_i32(&t->a_pending_launch)) {
+  /* Pending first, then grace, both acquire: le_count_in_commit stores the
+   * grace (release) before it clears the pending flag (release), so a clear
+   * read here implies the grace store is visible — no instant exists where a
+   * cancellable launch reads as neither. */
+  if (atomic_load_explicit(&t->a_pending_launch, memory_order_acquire) ||
+      atomic_load_explicit(&t->a_launch_grace, memory_order_acquire)) {
     le_ticket_emptying(engine, channel);
   }
 }
@@ -1575,7 +1580,14 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
    * finish arm firing on a take that captured nothing, a launch commit
    * closing another channel's grace take (close_active_capture) — have no
    * command of their own to ticket; the ticket then dates from the command
-   * that scheduled them, so the firing block itself is not fenced. */
+   * that scheduled them, so the firing block itself is not fenced.
+   *
+   * Behaviour note: starts are ticketed too (see the RECORD post), so with a
+   * master present a second Record press inside the block that starts the
+   * take is refused as switch bounce — the take keeps recording and the host
+   * drops its retry silently — where it used to become a void finish. Within
+   * one block only bounce produces two presses (the pedal debounce is longer).
+   * Without a master nothing is touched, so it is still admitted. */
   if (st == LE_TRACK_EMPTY &&
       !(engine->armed[channel] && load_i32(&t->a_pending) &&
         (sound_arm || quantized_arm || engine->armed_trigger[channel] == 2))) {
