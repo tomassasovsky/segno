@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/control/binding/control_availability.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/control/binding/owned_value_control.dart';
@@ -30,6 +31,15 @@ ControlAvailability controlAvailability(
       : context.read<RecordTimingCubit>();
   // Not a Bloc: its durations are read when the page builds or acts.
   final fade = context.read<FadeSettings>();
+  // The backing's owners (#1200), where the host provides them.
+  BackingMixState? backing;
+  try {
+    backing = watch
+        ? context.watch<BackingMixCubit>().state
+        : context.read<BackingMixCubit>().state;
+  } on ProviderNotFoundException {
+    backing = null;
+  }
   return ControlAvailability(
     looper: context.read<LooperRepository>(),
     owned: OwnedValueSnapshots(
@@ -41,6 +51,10 @@ ControlAvailability controlAvailability(
       oneShotSnapshot: playback.state.oneShotSnapshot,
       recordLengthSnapshot: record.state.options.recordLengthSnapshot,
       recordTimingSnapshot: timing.state.recordTimingSnapshot,
+      backingMix: backing != null && backing.mixReady ? backing.mix : null,
+      clickPan: backing != null && backing.clickPanReady
+          ? backing.clickPan
+          : null,
     ),
   );
 }

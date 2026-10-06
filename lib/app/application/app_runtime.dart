@@ -15,6 +15,7 @@ import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/backing/application/backing_player.dart';
 import 'package:segno/backing/application/session_backing.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
+import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/application/backing_settings.dart';
 import 'package:segno/looper/application/fade_settings.dart';
@@ -104,6 +105,7 @@ class AppRuntime {
         recordLength: record,
         recordTiming: timing,
         fade: fade,
+        backing: backingSettings,
       ),
       fadeSettings: fade,
       pedal: pedal,
@@ -143,6 +145,7 @@ class AppRuntime {
       guards: guards,
     );
     backingView = BackingCubit(player: backingPlayer);
+    backingMixView = BackingMixCubit(settings: backingSettings);
   }
 
   /// Shared durable mix owner supplied by bootstrap.
@@ -166,6 +169,7 @@ class AppRuntime {
   late final BackingSettings backingSettings;
   late final BackingPlayer backingPlayer;
   late final BackingCubit backingView;
+  late final BackingMixCubit backingMixView;
 
   /// The owned settings that run on the shared owner, in their fixed order.
   late final SettingsOwners owners;
@@ -264,6 +268,7 @@ class AppRuntime {
       // and the repository still live. A failure must not skip disposal.
       fxPersistence.flush,
       backingView.close,
+      backingMixView.close,
       backingPlayer.close,
       backingSettings.close,
       fade.close,
