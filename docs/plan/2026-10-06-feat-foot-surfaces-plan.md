@@ -338,7 +338,18 @@ projection can take):
   `Toggle` (it toggles the track chain, `:1802-1803`).
 - Unbound Rec/Play, Stop, Undo and Clear: dimmed and inert, as the pen draws
   them (`noDGu`, opacity 0.3). This removes the unbound-Stop panic and its
-  restore hold (decision D3, question Q3).
+  restore hold (decision D3, owner decision O3).
+- **Track FX off / Track FX on (O3).** `ControlCommand.trackFxOff`
+  (`command:track-fx-off`) and `trackFxOn` (`command:track-fx-on`), listed in
+  `ControlActionGroup.fx` and run through `_sweepTrackChains`
+  (`control_cubit.dart:1916-1923`), the panic's own code: off turns every
+  track chain that has effects off, on turns every track chain on. Assignable
+  on Custom, External and MIDI like any command; an unaccepted sweep is a
+  refused assignment and gets the §3 notice. The PR's release note says:
+  "FX mode: Stop no longer switches every track's effects off, and holding it
+  no longer switches them back on. Assign Track FX off and Track FX on to any
+  pedal, CTRL switch or MIDI control instead (Pedals > Custom controls,
+  External pedals or MIDI controls)."
 - Bank: `Bank A/B`, `Switch bank`, as the pen draws it. Its hold keeps
   Record performance (`_armBank` `:2861-2867`), which the pen's slice-4c note
   documents (`po4RZ`: "Bank Hold retains performance-recording access");
@@ -879,6 +890,11 @@ Owner decisions (2026-10-06, answering the planner's questions):
   when it lands). Building pen 10/01 as a Tracks pedal face is separate work.
 - **O2.** New Loop by foot finishes a running performance recording, as the
   Library's New loop does (Part 7 says what the stage shows).
+- **O3 (answering Q3).** The FX-mode Stop panic and its restore hold are
+  dropped, as pen 10/03 shows. Two assignable commands, `Track FX off` and
+  `Track FX on`, join the FX action group so a player can put the sweep on any
+  switch through Custom, External or MIDI. The release note names the change
+  (Part 2).
 
 Decisions taken under the standing rules:
 
@@ -890,8 +906,8 @@ Decisions taken under the standing rules:
 - **D3 (pen authority, review M1).** The FX face follows 10/03 for Stop and
   Bank: an unbound Stop is dimmed and inert, so the track-chain panic and its
   restore hold leave FX mode; Bank reads `Switch bank` and keeps its Record
-  performance hold, which pen note `po4RZ` documents. Where the panic goes is
-  question Q3.
+  performance hold, which pen note `po4RZ` documents. The panic's new home is
+  owner decision O3.
 - **D4 (rule 4).** Tuner arming moves from `TunerCubit` to Control's foot
   actions in Part 6; `TunerCubit` keeps the reading. One surface, one arm
   owner.
@@ -967,18 +983,8 @@ the pen, the coordinator writes each `c/` note when its part merges):
 
 ## 7. Questions for the owner
 
-The planner's Q1 and Q2 are answered (O1, O2 in §5). One question remains:
-
-- **Q3 (review M1).** Following pen 10/03 removes the FX-mode Stop panic (tap:
-  every track chain off; hold: every track chain on) and its restore hold, and
-  nothing else in the pen gives it a home. Accepted §4's FX row ("clear current
-  actions") reads as clearing what the pedals made active, which the panic
-  does not do (it never touches Master, Input or Output chains). Recommended
-  default, built in Part 2 unless the owner says otherwise: drop the panic
-  from FX mode and offer it as two assignable commands in the empty
-  `ControlActionGroup.fx` (`Track FX off`, `Track FX on`), so a player who
-  used it can put it on Stop through the Custom, External or MIDI setup. The
-  release note names the change (rule 3).
+None open. The planner's Q1 and Q2 and the review's Q3 are answered (O1, O2
+and O3 in §5).
 
 ## 8. Budget and review ceiling
 
@@ -997,7 +1003,7 @@ human merge gate stays.
 |---|---|
 | H1 assigned Fade and Reverse refusals silent outside their mode | Part 3 depends on #1233 and reuses its reporters; generic notice for the rest |
 | H2 FX face hides bound Rec/Play, Stop, Undo, Clear | Part 2 projects every bindable switch |
-| M1 D3 departure | D3 follows the pen; Q3 for the panic's home |
+| M1 D3 departure | D3 follows the pen; O3 gives the panic two commands |
 | M2 New Loop guard in the wrong layer; Library toast | Part 7: one `newLoop` path, request-scoped toast, depends on Finding 2's fix |
 | M3 Tuner unreachable after the tray | Part 6 default route, D11, W4, W5; hardware criterion with its setup |
 | M4 notice policy inconsistencies | §3 rule 2 rewritten; Parts 2, 3, 8 keep switches with actions enabled |
