@@ -1015,6 +1015,63 @@ void main() {
     });
 
     expressionTestWidgets(
+      'level faders cap both endpoints at unity, other targets do not',
+      (tester) async {
+        final unity = const TrackVolumeTarget(0).mappingTop;
+        expect(unity, lessThan(1));
+        final cases = <ControlValueTarget, double>{
+          const TrackVolumeTarget(0): unity,
+          const LaneVolumeTarget(0, 0): unity,
+          const MasterGainTarget(): 1,
+        };
+        for (final MapEntry(key: target, value: max) in cases.entries) {
+          await pump(
+            tester,
+            jack: ExternalJackSetup(
+              type: ExternalJackType.expression,
+              expression: ExternalExpressionSetup(
+                calibration: ExpressionCalibration(heel: 0, toe: 255),
+                // A stored toe between unity and full travel plays as before.
+                mappings: [
+                  ExpressionMapping(target: target, heel: 0.2, toe: 0.95),
+                ],
+              ),
+            ),
+          );
+          for (final id in ['heel', 'toe']) {
+            final slider = find.byKey(Key('expression_endpoint_$id'));
+            expect(
+              tester.widget<LoopSlider>(slider).max,
+              max,
+              reason: '$target',
+            );
+            final rect = tester.getRect(slider);
+            // A touch near the right end lands at the max, not past it.
+            await tester.tapAt(
+              Offset(rect.left + rect.width * 0.97, rect.center.dy),
+            );
+            await tester.pump(const Duration(milliseconds: 400));
+            expect(
+              tester.widget<LoopSlider>(slider).value,
+              max < 1 ? max : closeTo(0.97, 0.01),
+            );
+            // Drag well past the right edge: the slider stops at its max.
+            await tester.dragFrom(rect.center, const Offset(2000, 0));
+            await tester.pumpAndSettle();
+            expect(tester.widget<LoopSlider>(slider).value, max);
+          }
+          await tap(tester, 'external_save');
+          final saved = control.state.pedalSetup.external
+              .forJack(PedalCtrlJack.ctrl1)
+              .expression
+              .mappings
+              .single;
+          expect((saved.heel, saved.toe), (max, max), reason: '$target');
+        }
+      },
+    );
+
+    expressionTestWidgets(
       'Escape cancels a heel edit and Enter keeps the next',
       (
         tester,

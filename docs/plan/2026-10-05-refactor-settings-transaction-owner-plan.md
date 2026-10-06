@@ -912,8 +912,8 @@ decision 1. A fourth item was added: one flush rule for every owner.
   as unity wherever a mapping is built: the MIDI draft (so a slider at full
   travel, a double-tap reset and a repoint all read unity at once), the MIDI
   save and load, and the `ExpressionMapping` constructor (authoring,
-  repointing and decode). The law is unchanged; every other endpoint keeps
-  its value (decision 48).
+  changing the target, and decode). The law is unchanged; every other
+  endpoint keeps its value (decision 48).
 - Encoder. Master gain (and the foot Mixer gain step) runs behind the
   power-off dialog and stops when the flush suspends input
   (`_inputLocked() || _controlInputSuspended`; decision 49).
@@ -937,7 +937,10 @@ Decisions taken under the owner rules (2026-10-06):
     refuses during a take. Rule 3: the copy states what is known (see 47).
 44. An owed value never blocks power-off on its own, for the owners and the
     Mixer alike; Session Save already follows the same rule (decision 30).
-    Rules 2 and 4.
+    An owner whose startup replay went unanswered is still "not
+    initialized", so its flush blocks power-off even though storage holds
+    the value; this fails safe (Retry, then Power off anyway) and is
+    accepted. Rules 2 and 4.
 45. A fresh install is one with no saved audio configuration and no Hear
     click key; it stores Off. Rule 1 keeps existing installs on Rec first.
 46. The literal-1.0 rule applies to Track and Lane volume (the two log-law
@@ -953,8 +956,10 @@ Decisions taken under the owner rules (2026-10-06):
 48. A literal 1.0 on Track or Lane volume is unity at authoring as well as
     at load, so a +6 dB top is never played in session and then silently
     lost at restart. The MIDI high double-tap reset writes `mappingTop`.
-    Values between unity and full travel stay reachable by slider, as
-    before. Rule 3, owner call.
+    The endpoint sliders of Track and Lane volume mappings stop at
+    `mappingTop`, so the slider never jumps from +5.95 dB to 0 dB at full
+    travel; a stored value between unity and full travel still plays as
+    before and is drawn at unity. Rule 3, owner call.
 49. The encoder is a continuous value and runs behind the power-off dialog,
     as decision 42 states; it stops when the flush suspends input. Rule 4.
 

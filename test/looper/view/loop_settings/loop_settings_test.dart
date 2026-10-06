@@ -827,6 +827,56 @@ void main() {
     expect(commits, hasLength(2));
   });
 
+  testWidgets('slider with a max stops there for touch, drag and keys', (
+    tester,
+  ) async {
+    const max = 0.9;
+    final previews = <double>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+        home: Scaffold(
+          body: Center(
+            child: LoopSlider(
+              key: const Key('test_loop_slider'),
+              value: 0.5,
+              max: max,
+              width: 300,
+              semanticLabel: 'Test level',
+              onChanged: previews.add,
+            ),
+          ),
+        ),
+      ),
+    );
+    final slider = find.byKey(const Key('test_loop_slider'));
+    final rect = tester.getRect(slider);
+    await tester.tapAt(rect.centerRight - const Offset(1, 0));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(previews.last, max);
+
+    await tester.dragFrom(rect.center, const Offset(400, 0));
+    await tester.pumpAndSettle();
+    expect(previews.every((value) => value <= max), isTrue);
+    expect(previews.last, max);
+
+    Focus.of(
+      tester.element(
+        find
+            .descendant(of: slider, matching: find.byType(GestureDetector))
+            .first,
+      ),
+    ).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    for (var i = 0; i < 80; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    }
+    await tester.pump();
+    expect(previews.last, max);
+    expect(previews.every((value) => value <= max), isTrue);
+  });
+
   group('hub', () {
     testWidgets('tray Loop entry: Back keeps tray, Stage reveals Tracks', (
       tester,
