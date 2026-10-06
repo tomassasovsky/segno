@@ -35,6 +35,7 @@
 
 #include "audio_ring.h" /* le_audio_ring_release (capture-ring teardown) */
 #include "engine_cache.h" /* le_cache_init/shutdown (wet-cache lifecycle) */
+#include "engine_render.h" /* le_render_destroy (render recipe jobs) */
 #include "engine_restore.h" /* le_restore_init/shutdown (restoration worker) */
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
@@ -1222,6 +1223,7 @@ void le_engine_destroy(le_engine* engine) {
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
   le_restore_shutdown(engine); /* #697 S9: join before the pool frees below */
+  le_render_destroy(engine); /* render recipe jobs (#1202): worker joined */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
@@ -1523,6 +1525,7 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (code == LE_CMD_RESET_TRANSFORMS) return LE_ERR_INVALID;
   if (code == LE_CMD_FADE) return LE_ERR_INVALID;
   if (code == LE_CMD_REVERSE) return LE_ERR_INVALID;
+  if (code == LE_CMD_RENDER_FREEZE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_CLICK_MODE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_RECORD_START) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_LOOPER_MODE) {

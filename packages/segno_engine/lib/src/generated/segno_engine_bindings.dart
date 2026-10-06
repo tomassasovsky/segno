@@ -6027,6 +6027,177 @@ class SegnoEngineBindings {
       .asFunction<
         int Function(ffi.Pointer<le_midi_out>, ffi.Pointer<ffi.Uint8>, int)
       >();
+
+  /// Admission only: the verdict and the plan, with no job. Returns LE_OK,
+  /// LE_ERR_NO_COMMON_CYCLE, LE_ERR_CAPACITY (over max_frames), LE_ERR_INVALID
+  /// (no sources, an empty source, a chosen length without a tempo, a file
+  /// target without a path), LE_ERR_NOT_READY (a source is recording,
+  /// overdubbing, has a layer in flight or an unacknowledged state command) or
+  /// LE_ERR_NOT_RUNNING.
+  int le_engine_render_measure(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_render_request> request,
+    ffi.Pointer<le_render_plan> plan,
+  ) {
+    return _le_engine_render_measure(
+      engine,
+      request,
+      plan,
+    );
+  }
+
+  late final _le_engine_render_measurePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_render_request>,
+            ffi.Pointer<le_render_plan>,
+          )
+        >
+      >('le_engine_render_measure');
+  late final _le_engine_render_measure = _le_engine_render_measurePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_render_request>,
+          ffi.Pointer<le_render_plan>,
+        )
+      >();
+
+  /// Starts the job: re-measures, reserves its bytes against the cache's cap,
+  /// and posts LE_CMD_RENDER_FREEZE. Returns LE_OK with *job set, any measure
+  /// refusal, LE_ERR_ALREADY_RUNNING while a job exists, LE_ERR_CAPACITY when
+  /// the bytes do not fit the cap, LE_ERR_UNSUPPORTED without a render worker,
+  /// or a ring refusal.
+  int le_engine_render_begin(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_render_request> request,
+    ffi.Pointer<ffi.Uint32> job,
+  ) {
+    return _le_engine_render_begin(
+      engine,
+      request,
+      job,
+    );
+  }
+
+  late final _le_engine_render_beginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_render_request>,
+            ffi.Pointer<ffi.Uint32>,
+          )
+        >
+      >('le_engine_render_begin');
+  late final _le_engine_render_begin = _le_engine_render_beginPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_render_request>,
+          ffi.Pointer<ffi.Uint32>,
+        )
+      >();
+
+  /// Progress of job `job`: *state (le_render_state), *permille (0..1000) and,
+  /// once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
+  /// LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
+  /// failure or a configure/stop that joined the worker). Also the staging
+  /// heartbeat: call it from the control thread until DONE or FAILED. Returns
+  /// LE_OK, or LE_ERR_INVALID for an unknown job.
+  int le_engine_render_poll(
+    ffi.Pointer<le_engine> engine,
+    int job,
+    ffi.Pointer<ffi.Int32> state,
+    ffi.Pointer<ffi.Int32> permille,
+    ffi.Pointer<ffi.Int32> result,
+  ) {
+    return _le_engine_render_poll(
+      engine,
+      job,
+      state,
+      permille,
+      result,
+    );
+  }
+
+  late final _le_engine_render_pollPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_engine_render_poll');
+  late final _le_engine_render_poll = _le_engine_render_pollPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
+  /// Copies a DONE memory result (interleaved stereo) into `out`. Returns the
+  /// frames copied (at most max_frames), or LE_ERR_INVALID / LE_ERR_NOT_READY.
+  int le_engine_render_copy(
+    ffi.Pointer<le_engine> engine,
+    int job,
+    ffi.Pointer<ffi.Float> out,
+    int max_frames,
+  ) {
+    return _le_engine_render_copy(
+      engine,
+      job,
+      out,
+      max_frames,
+    );
+  }
+
+  late final _le_engine_render_copyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_render_copy');
+  late final _le_engine_render_copy = _le_engine_render_copyPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Float>, int)
+      >();
+
+  /// Cancels and releases job `job` (any state). A file target leaves no
+  /// partial file. Returns LE_OK or LE_ERR_INVALID for an unknown job.
+  int le_engine_render_cancel(
+    ffi.Pointer<le_engine> engine,
+    int job,
+  ) {
+    return _le_engine_render_cancel(
+      engine,
+      job,
+    );
+  }
+
+  late final _le_engine_render_cancelPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Uint32)
+        >
+      >('le_engine_render_cancel');
+  late final _le_engine_render_cancel = _le_engine_render_cancelPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -6060,7 +6231,16 @@ enum le_result {
 
   /// a punch-in on a reversed track (#1162): overdub
   /// is unavailable while Reverse is on
-  LE_ERR_REVERSED(-9);
+  LE_ERR_REVERSED(-9),
+
+  /// render recipe (#1202): the selected tracks'
+  /// lengths share no common cycle within the
+  /// cap; a chosen length is required
+  LE_ERR_NO_COMMON_CYCLE(-16),
+
+  /// render recipe (#1202): a source's material
+  /// changed after the render froze it
+  LE_ERR_TRACKS_CHANGED(-17);
 
   final int value;
   const le_result(this.value);
@@ -6076,6 +6256,8 @@ enum le_result {
     -7 => LE_ERR_MODE_MISMATCH,
     -8 => LE_ERR_NOT_READY,
     -9 => LE_ERR_REVERSED,
+    -16 => LE_ERR_NO_COMMON_CYCLE,
+    -17 => LE_ERR_TRACKS_CHANGED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -6518,7 +6700,11 @@ enum le_command_code {
   LE_CMD_RESET_TRANSFORMS(82),
 
   /// checked internal Reverse request; never raw-posted
-  LE_CMD_REVERSE(83);
+  LE_CMD_REVERSE(83),
+
+  /// render recipe (#1202): the callback records
+  /// every source's read law; never raw-posted
+  LE_CMD_RENDER_FREEZE(112);
 
   final int value;
   const le_command_code(this.value);
@@ -6606,6 +6792,7 @@ enum le_command_code {
     81 => LE_CMD_FADE,
     82 => LE_CMD_RESET_TRANSFORMS,
     83 => LE_CMD_REVERSE,
+    112 => LE_CMD_RENDER_FREEZE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -7972,6 +8159,68 @@ typedef le_midi_event_cb =
 final class le_midi extends ffi.Opaque {}
 
 final class le_midi_out extends ffi.Opaque {}
+
+final class le_render_request extends ffi.Struct {
+  /// bit t = track t
+  @ffi.Uint32()
+  external int source_mask;
+
+  /// 0 = the common cycle
+  @ffi.Int32()
+  external int length_bars;
+
+  /// le_render_tails
+  @ffi.Int32()
+  external int tails;
+
+  /// 1 = include the All tracks chain
+  @ffi.Int32()
+  external int mix_fx;
+
+  /// le_render_target
+  @ffi.Int32()
+  external int target;
+
+  /// file target: the final path ("<path>.part" while
+  /// writing)
+  external ffi.Pointer<ffi.Char> path;
+
+  /// 0 = no cap beyond the cycle cap; Bounce passes the
+  /// destination's capacity
+  @ffi.Int32()
+  external int max_frames;
+}
+
+final class le_render_plan extends ffi.Struct {
+  /// the window, in frames
+  @ffi.Int32()
+  external int frames;
+
+  /// le_render_method
+  @ffi.Int32()
+  external int method;
+
+  /// the window in beats x 1000 (0 without a tempo)
+  @ffi.Int32()
+  external int beats_milli;
+
+  /// 0 = no tempo: lengths read in seconds
+  @ffi.Int32()
+  external int tempo_set;
+
+  /// sources whose chains hold a hosted plugin, which
+  /// renders dry
+  @ffi.Uint32()
+  external int plugin_mask;
+
+  /// sources whose Fade amount is below unity
+  @ffi.Uint32()
+  external int faded_mask;
+
+  /// sources heard through a not-yet-ready transform
+  @ffi.Uint32()
+  external int pending_mask;
+}
 
 const int LE_MAX_CHANNELS = 32;
 

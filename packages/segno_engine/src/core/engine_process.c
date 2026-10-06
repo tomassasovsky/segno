@@ -155,6 +155,42 @@ static int32_t le_track_read_index(le_engine* e, le_track* t) {
   return le_direction_index(t->reversed, t->playback_offset, base, len);
 }
 
+/* LE_CMD_RENDER_FREEZE (#1202): records every selected source's complete read
+ * law at this drain — its clock position at the top of the current iteration,
+ * direction and origin (so render frame f reads exactly what
+ * le_track_read_index reads f frames after that top), plus its live slot,
+ * length, state, Fade amount and content revision. Reads only; writes the
+ * engine-owned record, then publishes it. A stale command for an older job
+ * (another id) changes nothing. */
+static void le_render_freeze_apply(le_engine* e, const le_command* cmd) {
+  le_render_freeze* fz = cmd->render_freeze.record;
+  const uint32_t id = cmd->render_freeze.id;
+  if (fz == NULL ||
+      atomic_load_explicit(&fz->a_id, memory_order_acquire) != id) {
+    return;
+  }
+  fz->i_ref = e->loop_iteration;
+  for (int32_t c = 0; c < e->track_count && c < LE_MAX_TRACKS; ++c) {
+    if (!(cmd->render_freeze.mask & (1u << c))) continue;
+    le_track* t = &e->tracks[c];
+    le_render_freeze_src* f = &fz->src[c];
+    int32_t len;
+    const int64_t position = le_track_base_position(e, t, &len);
+    const int64_t top = e->clock.length > 0 ? e->clock.position
+                        : t->free_clock.length > 0 ? t->free_clock.position
+                                                   : 0;
+    f->base0 = position - top;
+    f->reversed = t->reversed;
+    f->offset = t->playback_offset;
+    f->len = len;
+    f->slot = load_i32(&t->lanes[0].a_live);
+    f->state = load_i32(&t->a_state);
+    f->fade = (float)t->fade.amount;
+    f->audio_rev = atomic_load_explicit(&t->a_audio_rev, memory_order_relaxed);
+  }
+  atomic_store_explicit(&fz->a_done, id, memory_order_release);
+}
+
 /* Only an explicit launch after automatic end restarts the audio. History
  * restoration and ordinary manual Stop keep their separate phase rules. The
  * relaunch starts at the read lap's start in the track's direction (0
@@ -3237,6 +3273,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                              accepted ? LE_OK : LE_ERR_INVALID, memory_order_relaxed);
       break;
     }
+    case LE_CMD_RENDER_FREEZE:
+      le_render_freeze_apply(e, cmd);
+      break;
     case LE_CMD_REVERSE: {
       /* Reverse (#1162): flip (or install) the read direction at the current
        * position. Accepted only on material that can be read backward
