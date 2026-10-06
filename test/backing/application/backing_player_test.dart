@@ -1,6 +1,8 @@
 import 'package:backing_repository/backing_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/backing/application/backing_player.dart';
+import 'package:segno/backing/model/backing_state.dart';
+import 'package:segno_engine/segno_engine.dart' show EngineConfig;
 import 'package:session_repository/session_repository.dart';
 
 import '../../helpers/backing_fixture.dart';
@@ -232,6 +234,69 @@ void main() {
     );
   });
 
+  group('an interface change (review of P5, M1)', () {
+    Future<BackingAsset> loadedStopped() async {
+      final a = await f.asset('a.wav', frames: 48000);
+      await player.useAsBacking(a);
+      expect(player.state.loaded?.digest, a.digest);
+      return a;
+    }
+
+    void configureAt(int rate) => f.engine
+      ..stop()
+      ..start(EngineConfig(sampleRate: rate, outputChannels: 2));
+
+    test('the restart reloads the file stopped, the player keeps it and '
+        'Save keeps it', () async {
+      final a = await loadedStopped();
+      configureAt(44100);
+      f.repository.refresh(); // what the app does when the engine restarts
+      await pumpQueue();
+      expect(f.engine.backingState().frames, 44100);
+      expect(f.repository.state.loaded, a.digest);
+      expect(f.repository.state.transport, BackingTransport.stopped);
+      expect(player.state.loaded?.digest, a.digest);
+      expect(player.state.loaded?.name, 'a.wav');
+      expect(player.capture(f.settings.mix).loaded?.digest, a.digest);
+      expect(f.decoder.mock.decoded, 2);
+      await player.play();
+      expect(f.repository.state.playing, isTrue);
+      expect(f.decoder.mock.decoded, 2);
+    });
+
+    test('Play right after a restart nobody saw plays, first time, after '
+        'one reload', () async {
+      final a = await loadedStopped();
+      configureAt(44100);
+      await player.play();
+      await pumpQueue();
+      expect(f.repository.state.loaded, a.digest);
+      expect(f.repository.state.playing, isTrue);
+      expect(player.state.loaded?.digest, a.digest);
+      expect(f.decoder.mock.decoded, 2);
+    });
+
+    test('the player follows the file the repository holds', () async {
+      await loadedStopped();
+      final b = await f.asset('b.wav');
+      await f.repository.load(b.digest, name: 'b.wav');
+      await pumpQueue();
+      expect(player.state.loaded?.digest, b.digest);
+      expect(player.state.loaded?.name, 'b.wav');
+    });
+
+    test('no state while it reloads says nothing is loaded', () async {
+      await loadedStopped();
+      final seen = <String?>[];
+      final sub = player.states.listen((s) => seen.add(s.loaded?.name));
+      configureAt(44100);
+      f.repository.refresh();
+      await pumpQueue();
+      await sub.cancel();
+      expect(seen, isNot(contains(isNull)));
+    });
+  });
+
   group('the Session', () {
     test('capture and recall round-trip; recall loads stopped at 0', () async {
       final [a, b] = await prepare(['a.wav', 'b.wav']);
@@ -273,8 +338,11 @@ void main() {
       );
       expect(order(), ['Ghost.wav', 'a.wav']);
       expect(player.state.missing, {ghost.digest});
-      expect(player.state.loaded, isNull);
+      expect(f.repository.state.loaded, isNull);
       expect(player.state.failure?.name, 'Ghost.wav');
+      // Still named, and the next Save keeps it (review of P5, L1).
+      expect(player.state.loaded, ghost.toItem);
+      expect(player.capture(f.settings.mix).loaded, ghost);
       // Never matched by name: a file called Ghost.wav is another asset.
       final named = await f.asset('Ghost.wav');
       expect(named.digest, isNot(ghost.digest));
@@ -316,4 +384,8 @@ void main() {
     expect(player.state.loaded, isNull);
     expect(order(), ['a.wav']);
   });
+}
+
+extension on SessionBackingItem {
+  BackingItem get toItem => BackingItem(digest: digest, name: name);
 }

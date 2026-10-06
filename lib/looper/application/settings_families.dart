@@ -1578,7 +1578,11 @@ final class BackingMixFamily implements SettingsFamily<BackingMix, String?> {
   @override
   EngineResult recover() => EngineResult.ok;
 
-  /// A new session or device lifetime retires a held controller value.
+  /// A new session or device lifetime retires a held controller value. On
+  /// an engine restart (the looper's mix generation moves) this re-applies
+  /// the durable mix, and each setter refreshes the repository, which is
+  /// what reloads the backing's file when the interface comes back rather
+  /// than at the next press (D10; review of P5, M1).
   @override
   void retireLive() {
     _live = _durable;
