@@ -535,7 +535,7 @@ one case in its `TrackOperation` switch).
   - track names render in the app's display case ("TRACK 2"), and the top
     bar has no STAGE breadcrumb, as on the Fade surface;
   - the direction detail is 24 px (the shared pedal detail size), not 26.
-- Size: production +893 / -51 Dart (plus 51 strings), past the 700-line
+- Size: production +901 / -62 Dart (plus 51 strings), past the 700-line
   review ceiling: the view alone is 342 lines, mirroring the Fade view.
 
 ## 5. Decisions taken under the standing rules
