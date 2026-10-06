@@ -31,8 +31,10 @@ import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/control_projection.dart';
 import 'package:segno/control/foot_fade_actions.dart';
 import 'package:segno/control/foot_mixer_actions.dart';
+import 'package:segno/control/foot_peel_actions.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -40,6 +42,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'control_foot_fade.dart';
 part 'control_foot_mixer.dart';
+part 'control_foot_peel.dart';
 part 'control_midi.dart';
 part 'control_state.dart';
 
@@ -187,6 +190,7 @@ class ControlCubit extends Cubit<ControlState> {
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
        _owned = ownedValues,
+       _footPeelActions = FootPeelActions(repository: looper),
        _footFadeActions = FootFadeActions(
          repository: looper,
          settings: fadeSettings,
@@ -1047,6 +1051,7 @@ class ControlCubit extends Cubit<ControlState> {
   Object _surfaceVisit = Object();
   (int, int)? _footMixerSource;
   final FootFadeActions _footFadeActions;
+  final FootPeelActions _footPeelActions;
   int _footFadeSession = 0;
   late final _footMixerActions = FootMixerActions(
     repository: _looper,
@@ -1306,7 +1311,8 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.fx => InteractionMode.custom,
     InteractionMode.custom ||
     InteractionMode.mixer ||
-    InteractionMode.fade => InteractionMode.record,
+    InteractionMode.fade ||
+    InteractionMode.peel => InteractionMode.record,
   });
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
@@ -1456,6 +1462,14 @@ class ControlCubit extends Cubit<ControlState> {
             parkedResume: const {},
           ),
         );
+      case InteractionMode.peel:
+        emit(
+          state.copyWith(
+            mode: next,
+            excluded: const {},
+            parkedResume: const {},
+          ),
+        );
       case InteractionMode.mixer:
         _footMixerSource = (_looper.sessionRevision, _looper.mixGeneration);
         emit(
@@ -1578,6 +1592,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.record:
       case InteractionMode.mixer:
       case InteractionMode.fade:
+      case InteractionMode.peel:
         _recAdvance(state.cursor);
       case InteractionMode.mute:
         _muteRecPlay();
@@ -1720,6 +1735,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.mute:
       case InteractionMode.mixer:
       case InteractionMode.fade:
+      case InteractionMode.peel:
         parkAll();
       case InteractionMode.fx:
         panicTrackChains();
@@ -1786,6 +1802,10 @@ class ControlCubit extends Cubit<ControlState> {
         toggleTrackChain(channel);
       case InteractionMode.mixer:
       case InteractionMode.fade:
+      case InteractionMode.peel:
+        // Inert: the performance surfaces replace the Tracks columns, and
+        // their track pedals act through their own roles. A tile tap here
+        // would otherwise remove a layer where it meant to select.
         break;
       case InteractionMode.custom:
         // Inert here: the switch runs its assignment at the press. Note the
@@ -2089,6 +2109,35 @@ class ControlCubit extends Cubit<ControlState> {
     if (action != null) _dispatchFadeAction(action, role.slot);
   }
 
+  /// Admits a screen contact on the Peel surface into the shared ledger.
+  void footPeelPressed(PedalButton button, Object contact) {
+    if (state.mode != InteractionMode.peel || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the admitted screen contact may complete its Peel contact.
+  void footPeelReleased(PedalButton button, Object contact) =>
+      footMixerReleased(button, contact);
+
+  /// Cancels an abandoned Peel contact.
+  void footPeelCancelled(PedalButton button, Object contact) =>
+      footMixerCancelled(button, contact);
+
+  /// Accessible semantic activation uses the same Peel role as contacts.
+  void activateFootPeelPedal(PedalButton button) {
+    final role = FootPeelProjection.pedalRoles[button]!;
+    if (role.press != FootPeelAction.exit && !_peelEditable) return;
+    _dispatchPeelAction(role.press, role.slot);
+  }
+
+  /// Removes the newest overdub layer of the track in visible [slot] of the
+  /// current bank. A press that removes nothing says why.
+  void peelFootPeelTrack(int slot) {
+    if (!_peelEditable || slot < 0 || slot >= 4) return;
+    final refusal = _footPeelActions.peel(state.activeBank * 4 + slot);
+    if (refusal != null) _reportPeelRefusal(refusal);
+  }
+
   /// Fades the recorded track in visible [slot] of the current bank.
   Future<void> toggleFootFadeTrack(int slot) async {
     final fade = _footFadeActions;
@@ -2296,6 +2345,10 @@ class ControlCubit extends Cubit<ControlState> {
       _onFadePress(button);
       return;
     }
+    if (state.mode == InteractionMode.peel) {
+      _onPeelPress(button);
+      return;
+    }
     if (state.mode == InteractionMode.custom) {
       // These two physical exits cannot be assigned. They act on contact,
       // without a second action waiting on the release.
@@ -2347,7 +2400,8 @@ class ControlCubit extends Cubit<ControlState> {
           InteractionMode.fx ||
           InteractionMode.custom ||
           InteractionMode.mixer ||
-          InteractionMode.fade => false,
+          InteractionMode.fade ||
+          InteractionMode.peel => false,
         };
         if (accepted) _acceptedContacts.add(button);
         _armRecordHold();
@@ -2587,6 +2641,11 @@ class ControlCubit extends Cubit<ControlState> {
       case TrackOperation.fade:
         if (track == null) return false;
         return _footFadeActions.toggle(channel).then((result) => result.isOk);
+      case TrackOperation.peel:
+        // An assigned Peel says why it removed nothing, from any mode.
+        final refusal = _footPeelActions.peel(channel);
+        if (refusal != null) _reportPeelRefusal(refusal);
+        return refusal == null;
     }
   }
 

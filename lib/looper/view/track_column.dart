@@ -370,7 +370,8 @@ class TrackColumn extends StatelessWidget {
                       : l10n.a11yTrackTileFxOff(fxCellLabel, stateWord),
                 InteractionMode.custom ||
                 InteractionMode.mixer ||
-                InteractionMode.fade => l10n.a11yTrackTileCustom(
+                InteractionMode.fade ||
+                InteractionMode.peel => l10n.a11yTrackTileCustom(
                   name,
                   stateWord,
                 ),
@@ -395,6 +396,7 @@ class TrackColumn extends StatelessWidget {
                     bloc.add(LooperTrackChainToggled(track.channel));
                   case InteractionMode.mixer:
                   case InteractionMode.fade:
+                  case InteractionMode.peel:
                   case InteractionMode.custom:
                     // Selection only. What a control does in Custom controls
                     // is assigned per FOOTSWITCH, and a tile is not one —

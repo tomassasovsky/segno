@@ -6019,6 +6019,42 @@
     "@footFadeFailure": {
         "description": "Foot Fade performance surface."
     },
+    "actionModePeel": "Peel",
+    "@actionModePeel": {
+        "description": "Foot Peel performance surface."
+    },
+    "actionOperationPeel": "Peel",
+    "@actionOperationPeel": {
+        "description": "Foot Peel performance surface."
+    },
+    "footPeelLayers": "Layers",
+    "@footPeelLayers": {
+        "description": "Foot Peel performance surface."
+    },
+    "footPeelOriginalOnly": "Original only",
+    "@footPeelOriginalOnly": {
+        "description": "Foot Peel performance surface."
+    },
+    "footPeelSwitchBank": "Switch bank",
+    "@footPeelSwitchBank": {
+        "description": "Foot Peel performance surface."
+    },
+    "footPeelRefusedEmpty": "The track is empty: there is no layer to peel.",
+    "@footPeelRefusedEmpty": {
+        "description": "Foot Peel performance surface."
+    },
+    "footPeelRefusedOriginalOnly": "Only the original take remains: there is no overdub to peel.",
+    "@footPeelRefusedOriginalOnly": {
+        "description": "Foot Peel performance surface."
+    },
+    "footPeelRefusedBusy": "Peel is unavailable while the track records or is about to. Try again when it plays.",
+    "@footPeelRefusedBusy": {
+        "description": "Foot Peel performance surface."
+    },
+    "footPeelFailure": "The layer could not be peeled. Try again.",
+    "@footPeelFailure": {
+        "description": "Foot Peel performance surface."
+    },
     "mixerFading": "Fading",
     "@mixerFading": {
         "description": "Foot Fade performance surface."

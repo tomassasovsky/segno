@@ -43,7 +43,11 @@ enum InteractionMode {
   mixer,
 
   /// Foot-controlled independent track fades and their durations.
-  fade;
+  fade,
+
+  /// Foot-controlled Peel: each track pedal removes its track's newest
+  /// overdub layer, recoverable through Undo.
+  peel;
 
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes the current stored identity.

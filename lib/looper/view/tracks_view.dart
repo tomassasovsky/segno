@@ -8,6 +8,7 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -16,6 +17,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
+import 'package:segno/looper/view/foot_peel_view.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
@@ -54,6 +56,7 @@ class _TracksViewState extends State<TracksView> {
     dismissAppToast(AppToastId.undoClearAll);
     dismissAppToast(AppToastId.footMixerFailure);
     dismissAppToast(AppToastId.footFadeFailure);
+    dismissAppToast(AppToastId.footPeelRefused);
     super.dispose();
   }
 
@@ -146,6 +149,22 @@ class _TracksViewState extends State<TracksView> {
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),
+          BlocListener<ControlCubit, ControlState>(
+            // Every refused Peel says why, whether the press came from the
+            // Peel surface or from an assigned Peel in another mode.
+            listenWhen: (before, after) =>
+                before.footPeelFailure != after.footPeelFailure,
+            listener: (context, state) => showAppToast(
+              id: AppToastId.footPeelRefused,
+              type: state.footPeelRefusal == FootPeelRefusal.failed
+                  ? ToastificationType.error
+                  : ToastificationType.warning,
+              title: Text(
+                footPeelRefusalText(context.l10n, state.footPeelRefusal),
+              ),
+              autoCloseDuration: const Duration(seconds: 5),
+            ),
+          ),
           BlocListener<SessionCubit, SessionState>(
             // React to a settled action — a save/load/export that finished or
             // failed — never the transient `working` tick; plus the
@@ -210,6 +229,8 @@ class _TracksViewState extends State<TracksView> {
                             ? const FootMixerView()
                             : mode == InteractionMode.fade
                             ? const FootFadeView()
+                            : mode == InteractionMode.peel
+                            ? const FootPeelView()
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
