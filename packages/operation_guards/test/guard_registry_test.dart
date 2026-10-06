@@ -185,6 +185,25 @@ void main() {
       expect(registry.blockers(GuardKind.capture, internal), isEmpty);
     });
 
+    test('an owner can register itself after the table is built, once', () {
+      final registry = GuardRegistry();
+      final storage = _Source();
+      registry
+        ..addSource(storage)
+        ..addSource(storage);
+      const lease = ActiveOperation(
+        kind: GuardKind.transfer,
+        scope: usb1,
+        purpose: 'copy',
+      );
+      storage.ops.add(lease);
+      expect(registry.active, [lease]);
+      expect(
+        () => registry.enter(GuardKind.eject, usb1, purpose: 'eject'),
+        throwsA(isA<GuardRefused>()),
+      );
+    });
+
     test('reports operations an owner tracks itself', () {
       final storage = _Source();
       final registry = GuardRegistry(sources: [storage]);
