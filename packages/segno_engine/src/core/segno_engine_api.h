@@ -3503,9 +3503,9 @@ typedef struct le_render_plan {
 /* Admission only: the verdict and the plan, with no job. Returns LE_OK,
  * LE_ERR_NO_COMMON_CYCLE, LE_ERR_CAPACITY (over max_frames), LE_ERR_INVALID
  * (no sources, an empty source, a chosen length without a tempo, a file
- * target without a path), LE_ERR_NOT_READY (a source is recording,
- * overdubbing, has a layer in flight or an unacknowledged state command) or
- * LE_ERR_NOT_RUNNING. */
+ * target without a path), LE_ERR_NOT_READY (a source is recording or
+ * overdubbing, counting a posted command that will make it so, or has a
+ * layer in flight) or LE_ERR_NOT_RUNNING. */
 LE_EXPORT int32_t le_engine_render_measure(le_engine* engine,
                                            const le_render_request* request,
                                            le_render_plan* plan);
@@ -3522,7 +3522,8 @@ LE_EXPORT int32_t le_engine_render_begin(le_engine* engine,
 /* Progress of job `job`: *state (le_render_state), *permille (0..1000) and,
  * once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
  * LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
- * failure or a configure/stop that joined the worker). Also the staging
+ * failure or a configure/stop that joined the worker; a file whose
+ * directory sync alone failed is published and reads DONE). Also the staging
  * heartbeat: call it from the control thread until DONE or FAILED. Returns
  * LE_OK, or LE_ERR_INVALID for an unknown job. */
 LE_EXPORT int32_t le_engine_render_poll(le_engine* engine, uint32_t job,

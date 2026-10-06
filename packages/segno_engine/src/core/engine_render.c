@@ -97,7 +97,8 @@ struct le_render_job {
   le_fx_state* mixfx;
   int32_t mix_bits[LE_FX_MAX];
   int mix_on;
-  int64_t charged;
+  int64_t bytes;  /* what the job holds, against LE_RENDER_BUDGET_BYTES */
+  le_engine* engine;
   /* control */
   int32_t state; /* le_render_state */
   int32_t result;
@@ -279,10 +280,9 @@ static void le_render_free_buffers(le_render_job* j) {
   }
 }
 
-static void le_render_free_job(le_engine* e, le_render_job* j) {
+static void le_render_free_job(le_render_job* j) {
   if (j == NULL) return;
   le_render_free_buffers(j);
-  if (j->charged > 0) le_cache_release(e, j->charged);
   free(j->path);
   free(j->part_path);
   free(j);
@@ -294,7 +294,7 @@ static void le_render_sweep_retired(le_engine* e) {
   if (atomic_load_explicit(&e->a_render_worker_busy, memory_order_seq_cst)) {
     return;
   }
-  le_render_free_job(e, e->render_retired);
+  le_render_free_job(e->render_retired);
   e->render_retired = NULL;
 }
 
@@ -311,7 +311,7 @@ static void le_render_retire(le_engine* e) {
     while (atomic_load_explicit(&e->a_render_worker_busy,
                                 memory_order_seq_cst)) {
     }
-    le_render_free_job(e, e->render_retired);
+    le_render_free_job(e->render_retired);
   }
   e->render_retired = j;
   le_render_sweep_retired(e);
@@ -338,6 +338,22 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
   bytes += j->req.target == LE_RENDER_TARGET_MEMORY
                ? 2ll * j->frames * 4
                : 2ll * LE_RENDER_SLICE_FRAMES * 4;
+  /* The heap effect states the job prepares: one per lane, track and Mix
+   * FX chain (and one transient per print), each entry's rings at most a
+   * stereo delay line of fx_delay_frames. */
+  int64_t entries = j->mix.count;
+  int64_t states = 1;
+  for (int32_t i = 0; i < j->nsrc; ++i) {
+    const le_render_src* s = &j->src[i];
+    entries += s->track.count;
+    states += 2;
+    for (int32_t l = 0; l < s->lanes; ++l) {
+      entries += s->lane[l].chain.count;
+      states += 2;
+    }
+  }
+  bytes += states * (int64_t)sizeof(le_fx_state) +
+           entries * 2ll * j->cap * (int64_t)sizeof(float);
   return bytes;
 }
 
@@ -374,7 +390,7 @@ int32_t le_engine_render_begin(le_engine* engine,
     j->path = (char*)malloc(n + 1);
     j->part_path = (char*)malloc(n + 6);
     if (j->path == NULL || j->part_path == NULL) {
-      le_render_free_job(engine, j);
+      le_render_free_job(j);
       return LE_ERR_CAPACITY;
     }
     memcpy(j->path, request->path, n + 1);
@@ -426,7 +442,9 @@ int32_t le_engine_render_begin(le_engine* engine,
     j->mix_on = le_fx_frozen_has(&j->mix, 0, j->mix.count, LE_FX_NONE);
     le_fx_frozen_bits(&j->mix, 0, j->mix.count, j->mix_bits);
   }
-  /* Setup units: one per lane print, one per track print, one for the states. */
+  /* Setup units: one to lay reversed sources out in read order, one per
+   * lane print, one per track print, one for the states. */
+  j->units = 1;
   for (int32_t i = 0; i < j->nsrc; ++i) {
     for (int32_t l = 0; l < j->src[i].lanes; ++l) {
       j->units += j->src[i].lane[l].has_pre;
@@ -435,12 +453,15 @@ int32_t le_engine_render_begin(le_engine* engine,
   }
   j->units += 1;
 
+  /* The recipe has its own budget (plan 4.7, D-M2): it never evicts the
+   * wet cache's prints, so starting a render cannot change what plays. */
   const int64_t bytes = le_render_job_bytes(j);
-  if (!le_cache_reserve(engine, bytes)) {
-    le_render_free_job(engine, j);
+  if (bytes > LE_RENDER_BUDGET_BYTES) {
+    le_render_free_job(j);
     return LE_ERR_CAPACITY;
   }
-  j->charged = bytes;
+  j->bytes = bytes;
+  j->engine = engine;
 
   uint32_t id = ++engine->render_next_id;
   if (id == 0) id = ++engine->render_next_id;
@@ -452,7 +473,7 @@ int32_t le_engine_render_begin(le_engine* engine,
                                              request->source_mask}});
   if (rc != LE_OK) {
     atomic_store_explicit(&engine->render_freeze.a_id, 0, memory_order_release);
-    le_render_free_job(engine, j);
+    le_render_free_job(j);
     return rc;
   }
   j->state = LE_RENDER_FREEZING;
@@ -552,6 +573,12 @@ static void le_render_stage(le_engine* e, le_render_job* j) {
   atomic_store_explicit(&e->a_render_runnable, j, memory_order_seq_cst);
 }
 
+int64_t le_render_held_bytes(le_engine* engine) {
+  return engine != NULL && engine->render_job != NULL
+             ? engine->render_job->bytes
+             : 0;
+}
+
 void le_render_tick(le_engine* engine) {
   if (engine == NULL) return;
   le_render_sweep_retired(engine);
@@ -576,17 +603,23 @@ void le_render_tick(le_engine* engine) {
       }
     }
   }
-  if (j->state == LE_RENDER_FAILED && j->charged > 0) {
-    /* A failed job keeps only its verdict; wait for the worker before the
-     * buffers go. */
-    if (!atomic_load_explicit(&engine->a_render_worker_busy,
-                              memory_order_seq_cst) &&
-        atomic_load_explicit(&engine->a_render_runnable,
-                             memory_order_seq_cst) == NULL) {
-      le_render_free_buffers(j);
-      le_cache_release(engine, j->charged);
-      j->charged = 0;
-    }
+  if ((j->state == LE_RENDER_FAILED || j->state == LE_RENDER_DONE) &&
+      j->bytes > 0 &&
+      !atomic_load_explicit(&engine->a_render_worker_busy,
+                            memory_order_seq_cst) &&
+      atomic_load_explicit(&engine->a_render_runnable,
+                           memory_order_seq_cst) == NULL) {
+    /* A finished job keeps only what its result needs (review M1): a memory
+     * job its output, a file job (already published) and a failed job
+     * nothing. Freed once the worker is provably out of the job. */
+    float* keep = j->state == LE_RENDER_DONE &&
+                          j->req.target == LE_RENDER_TARGET_MEMORY
+                      ? j->out
+                      : NULL;
+    j->out = NULL;
+    le_render_free_buffers(j);
+    j->out = keep;
+    j->bytes = keep != NULL ? 2ll * j->frames * (int64_t)sizeof(float) : 0;
   }
 }
 
@@ -634,31 +667,32 @@ void le_render_on_cache_shutdown(le_engine* engine) {
   le_render_job* j = engine->render_job;
   /* The worker is joined: nothing holds a job. */
   atomic_store_explicit(&engine->a_render_runnable, NULL, memory_order_seq_cst);
-  le_render_free_job(engine, engine->render_retired);
+  le_render_free_job(engine->render_retired);
   engine->render_retired = NULL;
   if (j == NULL) return;
   if (j->state != LE_RENDER_DONE && j->state != LE_RENDER_FAILED) {
     le_render_fail(j, LE_ERR_DEVICE);
   }
   if (j->state == LE_RENDER_FAILED) le_render_free_buffers(j);
-  /* The books this job was charged to are being freed with the cache. */
-  if (j->charged > 0) le_cache_release(engine, j->charged);
-  j->charged = 0;
 }
 
 void le_render_destroy(le_engine* engine) {
   if (engine == NULL) return;
-  le_render_free_job(engine, engine->render_job);
-  le_render_free_job(engine, engine->render_retired);
+  le_render_free_job(engine->render_job);
+  le_render_free_job(engine->render_retired);
   engine->render_job = NULL;
   engine->render_retired = NULL;
 }
 
 /* ---- the worker ---- */
 
+/* A print stops at its next abort check when the job is cancelled or the
+ * worker is being joined (review M2), so a configure or stop never waits
+ * for a whole print. */
 static int le_render_cancelled(void* arg) {
   const le_render_job* j = (const le_render_job*)arg;
-  return atomic_load_explicit(&j->a_cancel, memory_order_acquire);
+  return atomic_load_explicit(&j->a_cancel, memory_order_acquire) ||
+         le_cache_shutting_down(j->engine);
 }
 
 static void le_render_worker_fail(le_render_job* j, int32_t result) {
@@ -668,7 +702,26 @@ static void le_render_worker_fail(le_render_job* j, int32_t result) {
 
 /* One setup unit: the next lane print, the next track print, or the states. */
 static void le_render_setup_unit(le_render_job* j) {
-  int32_t k = 0;
+  if (j->unit == 0) {
+    /* A reversed source's material laid out in the order it is heard (lap
+     * phase 0 = its lap start): the live rig never prints a reversed track
+     * and runs its chains forward over the backward read (review H1), so its
+     * Pre steady state is a print over exactly this sequence. */
+    for (int32_t i = 0; i < j->nsrc; ++i) {
+      le_render_src* s = &j->src[i];
+      if (!s->reversed) continue;
+      for (int32_t l = 0; l < s->lanes; ++l) {
+        float* d = s->lane[l].dry;
+        for (int32_t a = 0, b = s->len - 1; a < b; ++a, --b) {
+          const float t = d[a];
+          d[a] = d[b];
+          d[b] = t;
+        }
+      }
+    }
+    return;
+  }
+  int32_t k = 1;
   for (int32_t i = 0; i < j->nsrc; ++i) {
     le_render_src* s = &j->src[i];
     for (int32_t l = 0; l < s->lanes; ++l) {
@@ -773,10 +826,24 @@ static void le_render_window(le_render_job* j, int32_t from, int32_t n,
     float mr = 0.0f;
     for (int32_t i = 0; i < j->nsrc; ++i) {
       le_render_src* s = &j->src[i];
-      const int32_t idx =
+      int32_t idx =
           le_direction_index(s->reversed, s->offset, s->base0 + f, s->len);
-      const int sounding =
-          !s->once || le_render_mod(f - s->once_start, j->frames) < s->len;
+      int sounding = 1;
+      if (s->once) {
+        /* One pass from its start, then silence (AB §3.11). A pass that
+         * crosses the window end continues at the window start, from its
+         * own lap phase; a window shorter than the span holds one pass from
+         * its start, cut at the window end (review M3). */
+        const int64_t p = s->len <= j->frames
+                              ? le_render_mod(f - s->once_start, j->frames)
+                              : f - s->once_start;
+        sounding = p >= 0 && p < s->len;
+        idx = sounding ? (s->reversed ? s->len - 1 - (int32_t)p : (int32_t)p)
+                       : 0;
+      }
+      /* The material's own order: reversed sources were laid out in read
+       * order by the first setup unit. */
+      if (s->reversed) idx = s->len - 1 - idx;
       const float g = s->gain * s->fade;
       float tl = 0.0f;
       float tr = 0.0f;
