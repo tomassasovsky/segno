@@ -4527,6 +4527,23 @@ void main() {
       expect(engine.conditioningEnabled[0], isTrue);
     });
 
+    test('conditioning refuses instrument sources, which have no stage', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(
+        repo.setInputConditioningEnabled(input: kMaxChannels, enabled: true),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setInputConditioningParam(
+          input: kMaxChannels,
+          param: InputConditioningParam.hpfHz,
+          value: 80,
+        ),
+        EngineResult.invalid,
+      );
+      expect(engine.conditioningEnabled, isNot(contains(kMaxChannels)));
+    });
+
     test('setInputConditioningParam forwards the code + real-unit value', () {
       buildRepo()
         ..startEngine(const EngineConfig())
