@@ -67,6 +67,10 @@ void main() {
       late PumpedNativeEngine engine;
       late LooperRepository looper;
       late SessionRepository sessions;
+
+      /// The id the catalog gave the session saved as [name].
+      Future<SessionId> idOf(String name) async =>
+          (await sessions.listSessions()).singleWhere((s) => s.name == name).id;
       late _Store store;
       late FakePedalLink link;
       var halts = 0;
@@ -143,7 +147,6 @@ void main() {
           pedal: pedal,
           performance: performance,
           sessions: sessions,
-          exportDirectory: () async => directory.path,
           powerOff: () async => halts++,
         );
         addTearDown(() async {
@@ -202,7 +205,7 @@ void main() {
             await runtime.session.saveAs('Held choice');
             expect(runtime.session.state.status, SessionStatus.success);
             final savedAs = await sessions.read(
-              await sessions.bundlePath('Held choice'),
+              await sessions.bundlePathOf(await idOf('Held choice')),
             );
             expect(savedAs.session.countInBars, held ? 0 : 2);
             expect(savedAs.session.autoRecord, isFalse);
@@ -212,7 +215,7 @@ void main() {
             await runtime.session.save();
             expect(runtime.session.state.status, SessionStatus.success);
             final saved = await sessions.read(
-              await sessions.bundlePath('Held choice'),
+              await sessions.bundlePathOf(await idOf('Held choice')),
             );
             expect(saved.session.countInBars, held ? 0 : 2);
             expect(saved.session.autoRecord, isFalse);
@@ -220,7 +223,7 @@ void main() {
             expect(saved.session.tracks, hasLength(1));
             expect(engine.snapshot().countInBars, held ? 2 : 0);
             printOnFailure('Both files checked; recalling');
-            await runtime.session.loadNamed('Held choice');
+            await runtime.session.open(await idOf('Held choice'));
             printOnFailure('Recall completed');
             expect(runtime.session.state.status, SessionStatus.success);
             expect(engine.snapshot().countInBars, held ? 0 : 2);

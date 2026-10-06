@@ -214,7 +214,6 @@ void main() {
                     record: recordOptions,
                     timing: timing,
                   ),
-                  exportDirectory: () async => '.',
                   currentPedalBindings: () =>
                       context.read<ControlCubit>().state.bindings.encode(),
                   onPedalBindings: (encoded) => context

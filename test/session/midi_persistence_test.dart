@@ -74,6 +74,10 @@ void main() {
           engine: engine,
           sessionsRoot: () async => directory.path,
         );
+        Future<SessionId> idOf(String name) async =>
+            (await sessions.listSessions())
+                .singleWhere((s) => s.name == name)
+                .id;
         final performance = PerformanceRepository(
           guards: GuardRegistry(),
           engine: engine,
@@ -128,7 +132,6 @@ void main() {
           mixSettings: mix,
           fxPersistence: projection,
           mixPersistence: SettingsMixPersistence(settings),
-          exportDirectory: () async => directory.path,
         );
         ControlCubit? control;
         PedalRepository? pedal;
@@ -296,9 +299,9 @@ void main() {
           )
           ..finishPending(ticket);
         await saving;
-        expect(cubit.state.outcome, SessionOutcome.saved);
+        expect(cubit.state.outcome, SessionOutcome.savedAs);
         final bundle = await sessions.read(
-          await sessions.bundlePath('held MIDI'),
+          await sessions.bundlePathOf(await idOf('held MIDI')),
         );
         expect(bundle.session.trackLevels[0], closeTo(.2, .0001));
         expect(
@@ -339,15 +342,15 @@ void main() {
         );
         expect(looper.mixSettingsSnapshot.monitorLevels[0], closeTo(.2, .0001));
         await cubit.saveAs('released MIDI');
-        expect(cubit.state.outcome, SessionOutcome.saved);
+        expect(cubit.state.outcome, SessionOutcome.savedAs);
         final afterRelease = await sessions.read(
-          await sessions.bundlePath('released MIDI'),
+          await sessions.bundlePathOf(await idOf('released MIDI')),
         );
         expect(afterRelease.session.monitors.single.volume, closeTo(.2, .0001));
         expect(afterRelease.session.inputSetup.pairs[0], -.25);
         await control?.close();
         control = null;
-        await cubit.loadNamed('held MIDI');
+        await cubit.open(await idOf('held MIDI'));
         expect(cubit.state.outcome, SessionOutcome.loaded);
         expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(.2, .0001));
         expect(

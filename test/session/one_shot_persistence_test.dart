@@ -51,6 +51,10 @@ void main() {
       late FxChainPersistence projection;
       late SessionCubit session;
       late SessionRepository sessions;
+
+      /// The id the catalog gave the session saved as [name].
+      Future<SessionId> idOf(String name) async =>
+          (await sessions.listSessions()).singleWhere((s) => s.name == name).id;
       late PerformanceRepository performance;
       late MixSettingsCoordinator mix;
       late _OnceSaveStore store;
@@ -137,7 +141,6 @@ void main() {
             record: record,
             timing: timing,
           ),
-          exportDirectory: () async => directory.path,
         );
         expect(looper.record(), EngineResult.ok);
         engine.pump(frames: 256, input: .5);
@@ -185,7 +188,7 @@ void main() {
           for (var pass = 0; pass < 2; pass++) {
             if (pass == 1) await session.save();
             final bundle = await sessions.read(
-              await sessions.bundlePath('Playback held'),
+              await sessions.bundlePathOf(await idOf('Playback held')),
             );
             expect(bundle.session.defaultOneShot, isFalse);
             expect(bundle.session.trackOneShotOverrides, {0: true});
@@ -218,7 +221,7 @@ void main() {
           expect((await write).isOk, isTrue);
           await save;
           final bundle = await sessions.read(
-            await sessions.bundlePath('Playback pending'),
+            await sessions.bundlePathOf(await idOf('Playback pending')),
           );
           expect(bundle.session.trackOneShotOverrides, {7: false});
         },

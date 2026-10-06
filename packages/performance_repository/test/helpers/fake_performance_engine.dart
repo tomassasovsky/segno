@@ -211,7 +211,10 @@ class FakePerformanceEngine implements AudioEngine {
   ) => EngineResult.ok;
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
+  TrackHistory exportHistory(int channel) => TrackHistory.none;
+
+  @override
+  EngineResult finalizeHistory(int channel, TrackHistory history) =>
       EngineResult.ok;
 
   @override
@@ -268,6 +271,9 @@ class FakePerformanceEngine implements AudioEngine {
     perfArmPending = false;
     return EngineResult.ok;
   }
+
+  @override
+  bool syncDirectory(String path) => path.isNotEmpty;
 
   @override
   VolumeSpace? volumeSpace(String path) => freeBytes == null

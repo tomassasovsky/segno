@@ -536,9 +536,10 @@ static void test_peel_processed_restoration(void) {
   peel_history_image h = peel_history_snapshot(t);
   CHECK(le_engine_peel(e, 0) == LE_ERR_INVALID);
   peel_expect_unchanged(t, &h);
-  int32_t kinds[4], skipped[4];
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 4) == 2);
+  int32_t kinds[4], skipped[4], undo_count = -1;
+  CHECK(le_engine_export_history(e, 0, kinds, skipped, 4, &undo_count) == 2);
   CHECK(kinds[0] == LE_HIST_LAYER && kinds[1] == LE_HIST_PROCESSED);
+  CHECK(undo_count == 2);
   /* Undo swaps the raw take back and keeps the kind on the redo side. */
   CHECK(le_engine_undo(e, 0) == LE_OK);
   check_content(e, 1.5f);
@@ -679,34 +680,42 @@ static void test_peel_export_ordinals_and_history(void) {
     for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - want[ordinal]) < 1e-6f);
   }
   CHECK(le_engine_export_layer(e, 0, 0, 4, pcm, LOOP_N) == LE_ERR_INVALID);
-  int32_t kinds[8], skipped[8];
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 8) == 4);
+  int32_t kinds[8], skipped[8], undo_count = -1;
+  CHECK(le_engine_export_history(e, 0, kinds, skipped, 8, &undo_count) == 4);
+  CHECK(undo_count == 2);
   CHECK(kinds[0] == LE_HIST_LAYER && kinds[1] == LE_HIST_LAYER &&
         kinds[2] == LE_HIST_PEEL && kinds[3] == LE_HIST_LAYER);
   CHECK(skipped[0] == 0 && skipped[1] == 0 && skipped[2] == 0 && skipped[3] == 0);
   /* The count is the total even when fewer fit. */
   kinds[1] = -7;
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 1) == 4);
+  CHECK(le_engine_export_history(e, 0, kinds, skipped, 1, &undo_count) == 4);
   CHECK(kinds[0] == LE_HIST_LAYER && kinds[1] == -7);
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 0) == 4);
+  CHECK(le_engine_export_history(e, 0, kinds, skipped, 0, &undo_count) == 4);
   CHECK(le_engine_redo(e, 0) == LE_OK); /* re-peel: [L0, Pa], redo [L(1.75)] */
   CHECK(le_engine_redo(e, 0) == LE_OK); /* [L0, Pa, L3], live 1.75 */
   check_content(e, 1.75f);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   CHECK(le_engine_undo(e, 0) == LE_OK); /* [L0, L1], live 2.0 */
   check_content(e, 2.0f);
-  CHECK(le_engine_export_history(e, 0, NULL, skipped, 8) == LE_ERR_INVALID);
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, -1) == LE_ERR_INVALID);
-  CHECK(le_engine_export_history(e, LE_MAX_TRACKS, kinds, skipped, 8) ==
+  CHECK(le_engine_export_history(e, 0, NULL, skipped, 8, &undo_count) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_export_history(NULL, 0, kinds, skipped, 8) == LE_ERR_INVALID);
+  CHECK(le_engine_export_history(e, 0, kinds, skipped, 8, NULL) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_export_history(e, 0, kinds, skipped, -1, &undo_count) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_export_history(e, LE_MAX_TRACKS, kinds, skipped, 8,
+                                 &undo_count) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_export_history(NULL, 0, kinds, skipped, 8, &undo_count) ==
+        LE_ERR_INVALID);
   /* A skipped count rides along. */
   CHECK(le_engine_redo(e, 0) == LE_OK);
   CHECK(le_engine_redo(e, 0) == LE_OK); /* [L0, Pa, L3], live 1.75 */
   CHECK(le_engine_peel(e, 0) == LE_OK); /* [L0, Pa, Pb(0)], live 1.5 */
   CHECK(le_engine_peel(e, 0) == LE_OK); /* [Pa, Pb, Pc(2)], live 1.0 */
   check_content(e, 1.0f);
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 8) == 3);
+  CHECK(le_engine_export_history(e, 0, kinds, skipped, 8, &undo_count) == 3);
+  CHECK(undo_count == 3);
   CHECK(kinds[0] == LE_HIST_PEEL && kinds[1] == LE_HIST_PEEL &&
         kinds[2] == LE_HIST_PEEL);
   CHECK(skipped[0] == 0 && skipped[1] == 0 && skipped[2] == 2);
@@ -897,6 +906,324 @@ static void test_peel_late_retire_race(void) {
   le_engine_destroy(e);
 }
 
+/* #1164 Part 2: the history a Session saves. Exports every image and entry of
+ * track 0 the way the Session capture does (le_engine_export_history, then one
+ * le_engine_export_layer per image ordinal). */
+typedef struct {
+  int32_t kinds[2 * LE_POOL_SLOTS];
+  int32_t skipped[2 * LE_POOL_SLOTS];
+  float images[8][LOOP_N];
+  int32_t count, undo_count, image_count;
+} peel_saved_history;
+
+static void peel_save_history(le_engine* e, peel_saved_history* h) {
+  const le_track* t = &e->tracks[0];
+  h->count = le_engine_export_history(e, 0, h->kinds, h->skipped,
+                                      2 * LE_POOL_SLOTS, &h->undo_count);
+  CHECK(h->count == t->undo_count + t->redo_count);
+  CHECK(h->undo_count == t->undo_count);
+  h->image_count = h->undo_count + 1;
+  for (int32_t i = h->undo_count; i < h->count; ++i) {
+    if (h->kinds[i] != LE_HIST_PEEL) h->image_count++;
+  }
+  CHECK(h->image_count <= 8);
+  for (int32_t o = 0; o < h->image_count; ++o) {
+    CHECK(le_engine_export_layer(e, 0, 0, o, h->images[o], LOOP_N) == LOOP_N);
+  }
+  float past[LOOP_N];
+  CHECK(le_engine_export_layer(e, 0, 0, h->image_count, past, LOOP_N) ==
+        LE_ERR_INVALID);
+}
+
+/* Recalls a saved history into a fresh engine, stopped (the Session load). */
+static le_engine* peel_recall_history(const peel_saved_history* h) {
+  le_engine* e = make_configured_engine();
+  for (int32_t o = 0; o < h->image_count; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 0, o, h->images[o], LOOP_N) == LE_OK);
+  }
+  CHECK(le_engine_finalize_history(e, 0, h->kinds, h->skipped, h->count,
+                                   h->undo_count) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
+  drain(e);
+  return e;
+}
+
+/* Review finding 2 of #1180: a redo-side PEEL marker and a PROCESSED entry
+ * survive save and recall. The marker takes no image (so the lane is not torn)
+ * and every kind comes back as it was (nothing flattens to LAYER), so the
+ * recalled track answers Undo, Redo and Peel exactly as the live one did. */
+static void test_peel_history_session_round_trip(void) {
+  printf("test_peel_history_session_round_trip\n");
+  le_engine* live = make_configured_engine();
+  record_base_loop(live, 1.0f);
+  peel_pass(live, .5f); /* [L0(1.0)], live 1.5 */
+  static float restored_pcm[LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) restored_pcm[i] = .125f;
+  float* restored[LE_MAX_LANES] = {restored_pcm};
+  CHECK(le_restore_commit_layer(live, 0, 0x1u,
+                                atomic_load(&live->tracks[0].a_audio_rev),
+                                LOOP_N, restored) == LE_OK);
+  peel_pass(live, .5f);                    /* [L0, R(1.5), L2(.125)], .625 */
+  CHECK(le_engine_peel(live, 0) == LE_OK); /* [L0, R, P(.625)], .125 */
+  CHECK(le_engine_undo(live, 0) == LE_OK); /* [L0, R, L2], .625, redo [M] */
+  check_content(live, .625f);
+  peel_expect_depths(live, 0, 1, 3, 1);
+
+  static peel_saved_history h;
+  peel_save_history(live, &h);
+  CHECK(h.count == 4 && h.undo_count == 3 && h.image_count == 4);
+  CHECK(h.kinds[0] == LE_HIST_LAYER && h.kinds[1] == LE_HIST_PROCESSED &&
+        h.kinds[2] == LE_HIST_LAYER && h.kinds[3] == LE_HIST_PEEL);
+  le_engine_destroy(live);
+
+  le_engine* e = peel_recall_history(&h);
+  le_track* t = &e->tracks[0];
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  check_content(e, .625f);
+  const int32_t lrl[] = {LE_HIST_LAYER, LE_HIST_PROCESSED, LE_HIST_LAYER};
+  peel_expect_stack(e, lrl, 3);
+  CHECK(t->redo_count == 1 && t->redo_stack[0].kind == LE_HIST_PEEL &&
+        t->redo_stack[0].slot == -1);
+  peel_expect_depths(e, 0, 1, 3, 1);
+  CHECK(peel_slots_unique(t));
+
+  /* Redo re-peels the overdub above the restoration ... */
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  check_content(e, .125f);
+  const int32_t lrp[] = {LE_HIST_LAYER, LE_HIST_PROCESSED, LE_HIST_PEEL};
+  peel_expect_stack(e, lrp, 3);
+  peel_expect_depths(e, 0, 0, 3, 0);
+  /* ... and the restoration beneath still blocks Peel. */
+  CHECK(le_engine_peel(e, 0) == LE_ERR_INVALID);
+  /* Undo restores the peeled layer, then walks every saved image back. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, .625f);
+  peel_expect_depths(e, 0, 1, 3, 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, .125f);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.5f);
+  peel_expect_depths(e, 0, 1, 1, 3);
+  /* The restoration redoes as PROCESSED, not as a peelable layer. */
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  check_content(e, .125f);
+  const int32_t lr[] = {LE_HIST_LAYER, LE_HIST_PROCESSED};
+  peel_expect_stack(e, lr, 2);
+  peel_expect_depths(e, 0, 0, 2, 2);
+  CHECK(peel_slots_unique(t));
+  le_engine_destroy(e);
+}
+
+/* le_engine_finalize_history is strict: every malformed history is refused
+ * before anything is published, and the track stays EMPTY and importable. A
+ * redo-side CLEAR point is accepted and redoes as a re-clear. */
+static void test_peel_finalize_history_strict(void) {
+  printf("test_peel_finalize_history_strict\n");
+  le_engine* e = make_configured_engine();
+  le_track* t = &e->tracks[0];
+  le_snapshot s;
+  float pcm[LOOP_N] = {.5f, .5f, .5f, .5f};
+  for (int32_t o = 0; o < 3; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 0, o, pcm, LOOP_N) == LE_OK);
+  }
+  int32_t kinds[4] = {LE_HIST_LAYER, LE_HIST_PEEL, LE_HIST_LAYER, LE_HIST_PEEL};
+  int32_t skipped[4] = {0, 0, 0, 0};
+  /* Shape: handle, channel, counts and arrays. */
+  CHECK(le_engine_finalize_history(NULL, 0, kinds, skipped, 2, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_finalize_history(e, LE_MAX_TRACKS, kinds, skipped, 2, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 1, 2) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, -1, 0) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 2, -1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_finalize_history(e, 0, NULL, skipped, 2, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_finalize_history(e, 0, kinds, NULL, 2, 1) == LE_ERR_INVALID);
+  /* Kinds and payloads. */
+  kinds[0] = 7;
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 2, 2) ==
+        LE_ERR_INVALID);
+  kinds[0] = LE_HIST_LAYER;
+  skipped[1] = -1; /* a negative peel payload */
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 2, 2) ==
+        LE_ERR_INVALID);
+  skipped[1] = 0;
+  skipped[0] = 1; /* a payload on a kind that has none */
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 2, 2) ==
+        LE_ERR_INVALID);
+  skipped[0] = 0;
+  kinds[0] = LE_HIST_CLEAR; /* a restore point beneath the live image */
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 2, 2) ==
+        LE_ERR_INVALID);
+  kinds[0] = LE_HIST_LAYER;
+  /* Images: [L, P] under live is 3 staged images; a redo LAYER above them
+   * would be a fourth, never staged, so the reconstruction is torn. */
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 3, 2) ==
+        LE_ERR_INVALID);
+  /* Capacity: an undo stack as deep as the pool, a redo side past it. */
+  static int32_t many_kinds[LE_POOL_SLOTS + 1];
+  static int32_t many_skipped[LE_POOL_SLOTS + 1];
+  for (int i = 0; i <= LE_POOL_SLOTS; ++i) many_kinds[i] = LE_HIST_PEEL;
+  CHECK(le_engine_finalize_history(e, 0, many_kinds, many_skipped,
+                                   LE_POOL_SLOTS, LE_POOL_SLOTS) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_finalize_history(e, 0, many_kinds, many_skipped,
+                                   LE_POOL_SLOTS + 1, 0) == LE_ERR_INVALID);
+  /* Lanes at different lengths are torn. */
+  CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK);
+  for (int32_t o = 0; o < 3; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 1, o, pcm, LOOP_N - 1) == LE_OK);
+  }
+  kinds[2] = LE_HIST_PEEL;
+  skipped[2] = 1;
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 3, 2) ==
+        LE_ERR_INVALID);
+  for (int32_t o = 0; o < 3; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 1, o, pcm, LOOP_N) == LE_OK);
+  }
+  /* Nothing was published by any refusal. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(t->undo_count == 0 && t->redo_count == 0);
+  CHECK(s.tracks[0].undo_depth == 0 && s.tracks[0].redo_depth == 0);
+  /* [L, P] under live and a redo marker: 3 images, both lanes. */
+  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 3, 2) == LE_OK);
+  CHECK(t->undo_count == 2 && t->undo_stack[0].slot == 0 &&
+        t->undo_stack[1].kind == LE_HIST_PEEL && t->undo_stack[1].slot == 1);
+  CHECK(t->redo_count == 1 && t->redo_stack[0].slot == -1 &&
+        t->redo_stack[0].skipped == 1);
+  CHECK(load_i32(&t->lanes[0].a_live) == 2 &&
+        load_i32(&t->lanes[1].a_live) == 2);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 2 && s.tracks[0].redo_depth == 1 &&
+        s.tracks[0].peel_depth == 1);
+  le_engine_destroy(e);
+
+  /* A redo-side CLEAR point is an image-bearing entry that re-clears. */
+  e = make_configured_engine();
+  t = &e->tracks[0];
+  const float values[3] = {1.0f, 1.5f, 1.5f};
+  for (int32_t o = 0; o < 3; ++o) {
+    float v[LOOP_N];
+    for (int i = 0; i < LOOP_N; ++i) v[i] = values[o];
+    CHECK(le_engine_import_layer(e, 0, 0, o, v, LOOP_N) == LE_OK);
+  }
+  const int32_t lc[2] = {LE_HIST_LAYER, LE_HIST_CLEAR};
+  const int32_t zero[2] = {0, 0};
+  CHECK(le_engine_finalize_history(e, 0, lc, zero, 2, 1) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
+  drain(e);
+  check_content(e, 1.5f);
+  CHECK(t->redo_count == 1 && t->redo_stack[0].kind == LE_HIST_CLEAR &&
+        t->redo_stack[0].slot == 2);
+  CHECK(le_engine_redo_reclears(e, 0) == 1);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY && s.tracks[0].clear_restore == 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  check_content(e, 1.5f);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.0f);
+  le_engine_destroy(e);
+}
+
+/* Review finding 3 of PR #1194: finalize refuses the histories the live
+ * engine cannot produce, each before anything is published — a CLEAR point
+ * that is not the deepest redo entry, a redo marker with no layer to peel when
+ * Redo reaches it, and an oversized skipped count — and accepts the shapes it
+ * can produce, including the one pool eviction leaves behind. */
+static int32_t peel_finalize_shape(const int32_t* kinds, const int32_t* skipped,
+                                   int32_t count, int32_t undo_count,
+                                   int32_t images) {
+  le_engine* e = make_configured_engine();
+  float pcm[LOOP_N] = {.5f, .5f, .5f, .5f};
+  for (int32_t o = 0; o < images; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 0, o, pcm, LOOP_N) == LE_OK);
+  }
+  const int32_t result =
+      le_engine_finalize_history(e, 0, kinds, skipped, count, undo_count);
+  const le_track* t = &e->tracks[0];
+  if (result != LE_OK) {
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+    CHECK(t->undo_count == 0 && t->redo_count == 0);
+  }
+  le_engine_destroy(e);
+  return result;
+}
+
+static void test_peel_finalize_history_shapes(void) {
+  printf("test_peel_finalize_history_shapes\n");
+  const int32_t z[4] = {0, 0, 0, 0};
+  /* A CLEAR above a redo LAYER: its Redo would re-clear and discard it. */
+  const int32_t clear_mid[3] = {LE_HIST_LAYER, LE_HIST_CLEAR, LE_HIST_LAYER};
+  CHECK(peel_finalize_shape(clear_mid, z, 3, 1, 4) == LE_ERR_INVALID);
+  const int32_t two_clears[2] = {LE_HIST_CLEAR, LE_HIST_CLEAR};
+  CHECK(peel_finalize_shape(two_clears, z, 2, 0, 3) == LE_ERR_INVALID);
+  const int32_t clear_last[3] = {LE_HIST_LAYER, LE_HIST_LAYER, LE_HIST_CLEAR};
+  CHECK(peel_finalize_shape(clear_last, z, 3, 1, 4) == LE_OK);
+  /* A marker under a restoration, or with nothing beneath the original:
+   * Redo would refuse forever and strand the layer below it. */
+  const int32_t blocked[3] = {LE_HIST_PROCESSED, LE_HIST_PEEL, LE_HIST_LAYER};
+  CHECK(peel_finalize_shape(blocked, z, 3, 1, 3) == LE_ERR_INVALID);
+  const int32_t bare[1] = {LE_HIST_PEEL};
+  CHECK(peel_finalize_shape(bare, z, 1, 0, 1) == LE_ERR_INVALID);
+  /* A redo LAYER re-filed first makes the marker beneath it reachable. */
+  const int32_t reached[3] = {LE_HIST_PROCESSED, LE_HIST_LAYER, LE_HIST_PEEL};
+  CHECK(peel_finalize_shape(reached, z, 3, 1, 3) == LE_OK);
+  /* An undo-side PEEL claiming a skipped PEEL that is not beneath it. */
+  const int32_t llp[3] = {LE_HIST_LAYER, LE_HIST_LAYER, LE_HIST_PEEL};
+  const int32_t skip1[3] = {0, 0, 1};
+  CHECK(peel_finalize_shape(llp, skip1, 3, 3, 4) == LE_ERR_INVALID);
+  CHECK(peel_finalize_shape(llp, z, 3, 3, 4) == LE_OK);
+  /* No stack holds LE_POOL_SLOTS entries above a layer. */
+  const int32_t lone[1] = {LE_HIST_PEEL};
+  const int32_t huge[1] = {LE_POOL_SLOTS};
+  CHECK(peel_finalize_shape(lone, huge, 1, 1, 2) == LE_ERR_INVALID);
+  /* Eviction: a PEEL run that reaches the bottom may be shorter than the
+   * skipped count above it (Undo clamps the re-insertion there). */
+  const int32_t pp[2] = {LE_HIST_PEEL, LE_HIST_PEEL};
+  const int32_t skip3[2] = {0, 3};
+  CHECK(peel_finalize_shape(pp, skip3, 2, 2, 3) == LE_OK);
+}
+
+/* Review finding 1 of PR #1194: the published undo depth reads 0 after an
+ * Undo restores a Clear until the control side drains, while the stacks
+ * already hold the restored layers. export_history reports the raw split, so
+ * a capture taken in that window still finds the live image's ordinal. */
+static void test_peel_export_history_raw_split(void) {
+  printf("test_peel_export_history_raw_split\n");
+  le_engine* e = make_configured_engine();
+  le_track* t = &e->tracks[0];
+  record_base_loop(e, 1.0f);
+  peel_pass(e, .5f);
+  peel_pass(e, .5f); /* [L0(1.0), L1(1.5)], live 2.0 */
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* the restore is posted */
+  drain(e); /* the callback applies it; no control-side drain follows */
+  CHECK(load_i32(&t->a_state) != LE_TRACK_EMPTY);
+  CHECK(load_i32(&t->a_undo_depth) == 0); /* gated, not yet republished */
+  int32_t kinds[4], skipped[4], undo_count = -1;
+  CHECK(le_engine_export_history(e, 0, kinds, skipped, 4, &undo_count) == 3);
+  CHECK(undo_count == 2);
+  CHECK(kinds[0] == LE_HIST_LAYER && kinds[1] == LE_HIST_LAYER &&
+        kinds[2] == LE_HIST_CLEAR);
+  /* Ordinal undo_count is the live image, the one that plays. */
+  float pcm[LOOP_N];
+  CHECK(le_engine_export_layer(e, 0, 0, undo_count, pcm, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 2.0f) < 1e-6f);
+  le_engine_destroy(e);
+}
+
 static void run_peel_tests(void) {
   test_peel_late_retire_race();
   test_peel_worked_example();
@@ -911,4 +1238,8 @@ static void run_peel_tests(void) {
   test_peel_keeps_fade();
   test_peel_perf_fact();
   test_peel_stem_parity();
+  test_peel_history_session_round_trip();
+  test_peel_finalize_history_strict();
+  test_peel_finalize_history_shapes();
+  test_peel_export_history_raw_split();
 }

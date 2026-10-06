@@ -8,12 +8,16 @@ import 'package:looper_repository/looper_repository.dart'
     show EngineReopened, EngineStatus, ReopenOutcome;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/library/application/removable_volumes.dart';
+import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:session_repository/session_repository.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -24,6 +28,8 @@ class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
 
 class _MockPedalRepository extends Mock implements PedalRepository {}
+
+class _MockSessionRepository extends Mock implements SessionRepository {}
 
 /// The device-lost coverage (#453), written against the persistent surface
 /// that replaces the D1 lost-toast. Only the AUDIO interface has a standing
@@ -101,7 +107,7 @@ void main() {
     );
 
     testWidgets(
-      'holds a standing banner naming both rates with the Sessions action',
+      'holds a standing banner naming both rates with the Library action',
       (tester) async {
         whenListen(
           audioSetup,
@@ -116,7 +122,7 @@ void main() {
           find.text(l10n.deviceRestoredClearedBanner(44100, 48000)),
           findsOneWidget,
         );
-        expect(find.text(l10n.sessionManage), findsOneWidget);
+        expect(find.text(l10n.stageLibrary), findsOneWidget);
         await tester.pump(const Duration(seconds: 30));
         expect(find.byKey(materialKey), findsOneWidget);
         expect(find.byType(Dialog), findsNothing);
@@ -146,8 +152,14 @@ void main() {
     });
 
     testWidgets(
-      'its action ends the notice and opens the Sessions manager',
+      'its action ends the notice and opens the Library',
       (tester) async {
+        tester.view
+          ..physicalSize = const Size(1920, 1080)
+          ..devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(resetSegnoNavigatorForTest);
         whenListen(
           audioSetup,
           const Stream<AudioSetupState>.empty(),
@@ -165,16 +177,32 @@ void main() {
         when(
           () => pedal.events,
         ).thenAnswer((_) => const Stream<PedalEvent>.empty());
-        await tester.pumpApp(
-          RepositoryProvider<PedalRepository>.value(
-            value: pedal,
+        final sessions = _MockSessionRepository();
+        when(sessions.listFolders).thenAnswer((_) async => const []);
+        // The Library is a root-navigator route, so the providers sit above
+        // the app, as they do in `App`.
+        await tester.pumpWidget(
+          MultiRepositoryProvider(
+            providers: [
+              RepositoryProvider<PedalRepository>.value(value: pedal),
+              RepositoryProvider<SessionRepository>.value(value: sessions),
+              RepositoryProvider<RemovableVolumes>.value(
+                value: const InternalOnlyVolumes(),
+              ),
+            ],
             child: MultiBlocProvider(
               providers: [
                 BlocProvider<AudioSetupCubit>.value(value: audioSetup),
                 BlocProvider<SettingsTrayCubit>.value(value: tray),
                 BlocProvider<SessionCubit>.value(value: session),
               ],
-              child: const Scaffold(body: ConnectivityBanners()),
+              child: MaterialApp(
+                navigatorKey: segnoNavigatorKey,
+                theme: AppTheme.neon,
+                localizationsDelegates: AppLocalizations.localizationsDelegates,
+                supportedLocales: AppLocalizations.supportedLocales,
+                home: const Scaffold(body: ConnectivityBanners()),
+              ),
             ),
           ),
         );
@@ -186,7 +214,7 @@ void main() {
 
         verify(audioSetup.dismissReopenNotice).called(1);
         verify(session.refreshSessions).called(1);
-        expect(find.byType(SessionsManagerView), findsOneWidget);
+        expect(find.byType(LibraryPage), findsOneWidget);
       },
     );
 
