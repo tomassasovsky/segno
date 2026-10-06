@@ -1,6 +1,6 @@
 # Backing player: prepared list, transport, routing, foot Backing and the Mixer strip
 
-<!-- cspell:ignore subformat ADPCM RIFX fseek isfinite -->
+<!-- cspell:ignore subformat ADPCM RIFX fseek isfinite finalizer Finalizer -->
 
 Tracking: #1200 (gap inventory E7-8, E6-8, E3-3, E5-6 and the backing and
 click targets of E6-12), `stage:plan`, `autonomy:merge-gate` (a new native
@@ -432,8 +432,11 @@ performance and the player never holds a removable volume.
   skip directories without `performance.json`; Part 4 adds a test that a
   `Backing tracks` directory is never listed as a capture.
 - **Dedupe:** importing identical bytes again reuses the existing copy (the
-  study's "reuses its copy"); two files with the same name and different
-  bytes coexist. A failed copy, a refused probe or a full disk leaves nothing
+  study's "reuses its copy") only while that copy's own bytes still match
+  its digest; a damaged copy is replaced from the source, so adding the
+  original again, or #1198's "Find audio", repairs it (review of P4, M1).
+  Imports of the same bytes run one after the other (L4). Two files with
+  the same name and different bytes coexist. A failed copy, a refused probe or a full disk leaves nothing
   behind. A USB source is held for the copy's duration by a read hold (D8).
 - **Delete:** there is no Delete for audio in the accepted design, so no
   reference check is needed yet (Library D6's note); when E7-7 adds one, it
@@ -493,6 +496,14 @@ built). The repository sees the epoch change and:
   (review L3);
 - leaves an item that fails to decode listed and unloaded with its reason
   (rule 2).
+
+The repository sees the restart when the engine restarts, not at the next
+press: a restart moves the looper's lifetime, the backing mix owner retires
+its held value by re-applying the durable mix through the repository, and
+each of those setters refreshes it. A Play pressed before any refresh handles
+the restart first and waits for the reload instead of being spent on it. The
+player follows whichever file the repository holds, and no state during the
+reload reads as "nothing loaded" (review of P5, M1).
 
 ### D11 The appliance memory budget (review M1)
 
@@ -805,12 +816,20 @@ level, pan, mask, End; `ClickPanFamily`), new
 `lib/looper/application/backing_settings.dart` (owners, beside
 `TempoSettings`), `packages/settings_repository` (checkpoint keys),
 `packages/session_repository/lib/src/models/session.dart` (`SessionBacking`
-{`prepared: [{digest, name}]`, `loaded` (a digest), `endMode`, `level`, `pan`, `outputMask`}
-and `clickPan`; the next free version at landing, assigned in landing order
-by the main session's ledger (Peel 12 and Reverse 13 are taken; #1198 also
-bumps, so the number is not known until merge), plus its migration step
-into #1196's chain defaulting an empty prepared list, nothing loaded, End Stop, level 1,
-pan 0, mask 0 and click pan 0, recorded as defaulted fields),
+{`prepared: [{digest, name}]`, `loaded` (`{digest, name}`, so a missing
+loaded file can still be named), `endMode`, `level`, `pan`, `outputMask`}
+and `clickPan`, strict at the current schema; the next free version at
+landing, assigned in landing order by the main session's ledger, with its
+step in #1196's `sessionMigrationSteps`). **The step keeps the live setup**
+(rules 1 and 3): a session written before the backing existed says nothing
+about it, and opening it on a build without one changed nothing, so the
+conversion fills `backing` (the prepared list, the loaded item, End, level,
+pan and outputs) and `clickPan` from the player's live values at open, the
+way schema 8 kept the former global preferences, and notes each as "taken
+from the live setting". A converted session is written back, so the setup
+live at its first open becomes its own and later opens recall it like any
+other. Without a live player (a bare decode) the values are an empty,
+silent backing and a centred click.
 `lib/session/session_mapping.dart` (`settingsFromLooper` `:103-170` and the
 bundle mapper `:300-330`),
 `lib/session/application/session_settings_coordinator.dart:61-96` (capture),
@@ -1327,10 +1346,11 @@ than estimated). Departures from the Part 5 text:
   in the conversion notes.
 - **The loaded item is `{digest, name}`, not a bare digest,** so a loaded
   file that is no longer prepared can still be named when it is missing.
-- **The step is keyed 12 in `sessionMigrationSteps` and the schema is 13 on
-  this branch;** Reverse Part 2 also wants 13, so whichever lands second
+- **The step is keyed 13 in `sessionMigrationSteps` (`_v13ToV14`) and the
+  schema is 14 on this branch,** after Reverse Part 2 landed at 13; M/D
+  Part 2 also wants 14, so whichever lands second
   renumbers the key, the step and `Session.formatVersion` (the
-  `v13_backing_p5` fixture is regenerated from its generator).
+  `v14_backing_p5` fixture is regenerated from its generator).
 - **`BackingMixFamily` is one record with a field per address**
   (`BackingMixField`), like Fade, so a level controller is never
   superseded by a pan edit; `ClickPanFamily` is a scalar like click
@@ -1353,8 +1373,8 @@ Tests: `test/backing/application/backing_player_test.dart` (15),
 `test/looper/application/backing_settings_test.dart` (10, including the
 `BackingMix` record), a session cubit test that Open stops the backing and
 installs the session setup stopped at 0, the Session block's strict
-round trip, defaults and refusals, the 12 to 13 step against the v12
-fixture, a v13 fixture that opens with no conversion, the settings
+round trip, defaults and refusals, the 13 to 14 step against the v13
+fixture, a v14 fixture that opens with no conversion, the settings
 checkpoints, the internal copier. Mutations reverted one at a time (18),
 each caught: duplicates on Add, the selection on Remove, the Pause toggle,
 releasing the staged Next before a Play selected decode, staging outside
@@ -1369,6 +1389,49 @@ packages` clean; `bloc lint lib test packages` 0 issues; formatting
 unchanged; the app suite (3529), `session_repository` (241),
 `settings_repository` (203) and `backing_repository` (38) pass against a
 freshly built test library.
+
+### Second review round (P1 to P5), rebased on trunk `890f04936`
+
+The whole stack was rebased onto `890f04936`; the conflicts were neighbouring
+edits (#1198's `LE_ERR_NOT_FOUND` -18 and `LE_ERR_TRUNCATED` -19 beside
+`LE_ERR_TOO_LONG` -12, the tuner's block in `engine_private.h`, the
+bindings, regenerated at each head), and P5 adapts to the trunk's guards and
+`FileDigest`. Fixes:
+
+- **P1 L5:** the transit check reads the applied count before the fade flag.
+- **P2 L5:** a bounded read that starts past the last output frame returns
+  an empty buffer (`LE_OK`, not truncated), and the voice refuses to load or
+  stage an empty buffer.
+- **P3 L1:** the mock takes backing calls while configured but stopped, and a
+  retained reopen keeps its buffers stopped at 0 with a new epoch. **L2:** a
+  `NativeFinalizer` over `le_backing_buffer_free` guards a native decode
+  until the engine takes it or it is disposed.
+- **P4 M1:** a damaged managed copy is replaced on re-import (D7). **L1:**
+  NOT_READY is retried up to eight times, 10 ms apart. **L2:** a hand-over
+  refusal is busy, never damaged. **L3:** the rate is read from a snapshot
+  only on a restart. **L4:** imports of the same bytes run one after the other.
+- **P5 M1:** no state during a reload reads "nothing loaded", the player
+  follows the repository's file, Play after an unseen restart waits for the
+  reload, and the reload starts on the restart itself (D10). **L1:** a
+  recalled loaded item that cannot load stays named and is saved.
+  **L2 / plan D4:** Part 5's text states the live-keeping migration.
+- The schema is 14 on P5 (`13: _v13ToV14`), after Reverse Part 2 took 13; M/D
+  Part 2 also wants 14, so the second to land renumbers.
+
+Verified on the new heads: the native suite plain, ASan (with the fuzz driver
+under UBSan, 20,000 inputs) and telemetry-off, and the races-only pass under
+ThreadSanitizer, each in its own `TMPDIR`, on P1 and on P2; bindings
+regenerated with no diff; `segno_engine` (409), `backing_repository` (41,
+98.6% line coverage), `session_repository` (250), `settings_repository`
+(204), `looper_repository` (814), `performance_repository` (136) and the app (3499)
+suite pass against a freshly built test library; `dart analyze --fatal-infos
+lib test packages` clean; `bloc lint` 0 issues; formatting unchanged.
+Mutations reverted one at a time, each caught: P3 the reopen release, the
+running gate, both finalizer detaches; P4 the unchecked reuse, the
+import run concurrently, a single retry, the damaged hand-over, the snapshot per
+refresh; P5 the separate clear emit, adopting the repository's file, Play
+not waiting for the reload, dropping the missing loaded item, the restart
+refresh.
 
 ### Verification (Parts 1 and 2, on their pushed heads)
 
