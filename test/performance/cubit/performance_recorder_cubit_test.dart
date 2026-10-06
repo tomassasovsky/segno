@@ -1778,6 +1778,7 @@ void main() {
       destination = const StorageDestination.removable(1);
       client = FakeUsbStorageClient(initial: [usb(1)]);
       storage = StorageRepository(
+        guards: GuardRegistry(),
         client: client,
         exportsRoot: () async => '${tempDir.path}/exports',
         volumeSpace: (_) => null,

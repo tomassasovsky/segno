@@ -70,7 +70,10 @@ class _StoragePageState extends State<StoragePage> {
           ),
           if (state.ejectFailed == volume.generation)
             StorageNotice(
-              context.l10n.storageEjectFailed,
+              switch (state.ejectBlockedBy) {
+                final kind? => context.l10n.operationBusy(kind.name),
+                null => context.l10n.storageEjectFailed,
+              },
               key: const Key('storage_eject_failed'),
             ),
           if (state.ejectStuck == volume.generation)

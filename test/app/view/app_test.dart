@@ -3734,6 +3734,7 @@ void main() {
         ],
       );
       final storage = StorageRepository(
+        guards: GuardRegistry(),
         client: usb,
         exportsRoot: () async => '/segno-app-test/exports',
         volumeSpace: (_) => null,

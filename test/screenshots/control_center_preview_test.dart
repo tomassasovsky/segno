@@ -562,6 +562,7 @@ void main() {
       ],
     );
     final storageRepository = StorageRepository(
+      guards: GuardRegistry(),
       client: usb,
       // Absent on purpose: Internal is measured at the nearest parent, `/`.
       exportsRoot: () async => '/segno-preview-absent/exports',

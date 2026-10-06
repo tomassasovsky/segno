@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:operation_guards/operation_guards.dart';
 
 /// Why a write to a destination did not happen. Every variant guarantees the
 /// same thing: existing content was left intact, and no partial file is left
@@ -22,6 +23,10 @@ sealed class StorageFailure extends Equatable implements Exception {
   /// The destination cannot be written at all (no filesystem, one the image
   /// cannot drive, or a mount that failed).
   const factory StorageFailure.unsupported() = StorageUnsupported;
+
+  /// Another operation the guard table says must not overlap this write is
+  /// in flight on that destination (a take on the drive, a shutdown).
+  const factory StorageFailure.busy(GuardKind kind) = StorageBusy;
 
   /// Any other I/O failure, with the OS's own words.
   const factory StorageFailure.io(String reason, {String? writtenTo}) =
@@ -71,6 +76,21 @@ final class StorageUnsupported extends StorageFailure {
 
   @override
   String toString() => 'the destination is not supported';
+}
+
+/// Refused by the guard table: [kind] is in flight and must finish first.
+final class StorageBusy extends StorageFailure {
+  /// Creates a [StorageBusy] naming what holds the destination.
+  const StorageBusy(this.kind);
+
+  /// What holds it.
+  final GuardKind kind;
+
+  @override
+  List<Object?> get props => [kind];
+
+  @override
+  String toString() => 'busy: ${kind.name} is in flight';
 }
 
 /// Any other I/O failure.

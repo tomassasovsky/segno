@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:segno/storage/view/storage_page.dart';
@@ -26,13 +27,14 @@ void main() {
       List<RemovableVolumeRecord> volumes = const [],
       void Function(StorageRig rig)? arrange,
       bool page = true,
+      GuardRegistry? guards,
     }) async {
       tester.view
         ..physicalSize = const Size(1920, 1080)
         ..devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      rig = StorageRig(volumes: volumes);
+      rig = StorageRig(volumes: volumes, guards: guards);
       for (final record in volumes) {
         rig.spaces[mountPoint(record.generation)] = const VolumeSpace(
           totalBytes: usbTotal,
@@ -240,6 +242,24 @@ void main() {
       expect(inCard(1, find.text('SEGNO USB')), findsOneWidget);
       expect(find.byKey(const Key('storage_eject')), findsOneWidget);
       expect(find.byKey(const Key('storage_eject_failed')), findsNothing);
+    });
+
+    testWidgets('an eject the guard table refuses says what holds the drive '
+        'in its own words', (tester) async {
+      final guards = GuardRegistry();
+      final shutdown = guards.enter(
+        GuardKind.restart,
+        const GuardScope.internal(),
+        purpose: 'power off',
+      );
+      addTearDown(shutdown.release);
+      final l10n = await pump(tester, volumes: [usbRecord(1)], guards: guards);
+
+      await tester.tap(find.byKey(const Key('storage_eject')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.operationBusy('restart')), findsOneWidget);
+      expect(find.text(l10n.storageEjectFailed), findsNothing);
     });
 
     testWidgets('an eject the helper took and never answered says how to '

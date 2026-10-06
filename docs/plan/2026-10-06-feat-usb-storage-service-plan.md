@@ -741,15 +741,32 @@ As built (branch `claude/usb-storage-1177-p6`, on #1221's guard table):
   disk (`_stopEarly`, which replaces `_stopForLowDisk`). The completion
   banner says the drive was disconnected; the pen's held-take copy (`HWH3p`)
   comes with #1198 Parts 9 and 10. A drive that went between the choice and
-  the press refuses the arm with its own toast. A pedal arm reaches the
-  repository directly and records to Internal.
+  the press refuses the arm with its own toast. An arm that throws on the
+  drive gives the lease back and says so.
+- **Follow-up for #1198 Part 13 (pedal):** a pedal arm reaches
+  `PerformanceRepository.arm` directly (`ControlCubit`), so it records to
+  Internal whatever Save to says, with no lease. Before Part 13 mounts
+  `RecordingSaveTo`, the pedal must arm through the same path as the
+  recorder (the recorder cubit's arm, or one shared arm that reads the
+  destination and takes the lease); until then no one can choose USB, so
+  nothing is ignored.
+- Only a drive whose write probe has landed at twice the recording rate or
+  more is chosen (Connect USB, Save to); a drive being measured reads
+  "checking the drive" and waits. The chosen drive going says "<label> was
+  removed. Save to is Internal." once (no pen tile: a write-back).
+- A take on a drive keeps its `capture` guard through the finalize, which
+  writes its WAVs there.
 - Guards (#1221): `StorageRepository` is an `ActiveOperationSource`
   (leases as `transfer`, the eject in flight or unanswered as `eject`) and
   checks the table in `acquire` and `eject`, throwing `GuardRefused`. A
   `recording` lease is neither checked nor reported: the take's `capture`
   guard, scoped to the drive, is its commit, and reporting both would make
-  the take refuse itself. `run_segno` builds the table with the storage
-  service as a late-bound source.
+  the take refuse itself. `guards` is required, and the repository
+  registers itself with the table (`GuardRegistry.addSource`), so every
+  flavor's table sees it. A refusal reaches a copy as
+  `StorageFailure.busy(kind)`; a refused eject is shown in the table's
+  `operationBusy` words. Eject against eject refuses only on the same
+  volume, so an unanswered eject of one drive holds no other.
 
 ## 6. Order and dependencies
 

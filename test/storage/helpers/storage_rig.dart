@@ -25,7 +25,7 @@ class StorageRig {
       client: client,
       ejectTimeout: ejectTimeout,
       ejectServedTimeout: ejectServedTimeout,
-      guards: guards,
+      guards: guards ?? GuardRegistry(),
       exportsRoot: () async => exportsRoot,
       volumeSpace: (path) {
         reads++;

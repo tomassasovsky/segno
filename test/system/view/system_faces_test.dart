@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
@@ -219,6 +220,7 @@ void main() {
       settings: settings,
     );
     final storageRepository = StorageRepository(
+      guards: GuardRegistry(),
       client: FakeUsbStorageClient(),
       exportsRoot: () async => '/data/exports',
       volumeSpace: (_) => null,
