@@ -761,9 +761,19 @@ void main() {
     test('an open is refused at its commit while an audio change is in '
         'flight, before anything changes (#1198)', () async {
       stubCatalog();
-      when(() => repository.read(any())).thenAnswer(
-        (_) async =>
-            (session: _session, laneStems: <(int, int), List<Float32List>>{}),
+      when(
+        () => repository.bundlePathOf(any()),
+      ).thenAnswer((_) async => '/root/A');
+      when(
+        () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
+      ).thenAnswer(
+        (_) async => (
+          bundle: (
+            session: _session,
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+          conversion: null,
+        ),
       );
       final guards = GuardRegistry()
         ..enter(
@@ -797,9 +807,19 @@ void main() {
     test('an open holds the apply guard from its commit to its end '
         '(#1198)', () async {
       stubCatalog();
-      when(() => repository.read(any())).thenAnswer(
-        (_) async =>
-            (session: _session, laneStems: <(int, int), List<Float32List>>{}),
+      when(
+        () => repository.bundlePathOf(any()),
+      ).thenAnswer((_) async => '/root/A');
+      when(
+        () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
+      ).thenAnswer(
+        (_) async => (
+          bundle: (
+            session: _session,
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+          conversion: null,
+        ),
       );
       final guards = GuardRegistry();
       final seenAtFinalize = <GuardKind>[];
