@@ -317,8 +317,8 @@ only differences are:
   is scaled by the same gain.
 - **Mix FX** (All tracks chain, optional, default Off). One heap state over
   the stereo sum of all sources. Live, `:6311` runs one state per output bus
-  over that bus's contribution; a render has one destination. Bounce's use of
-  Mix FX is the open question in §11.
+  over that bus's contribution; a render has one destination. Save audio
+  only: Bounce never includes it (owner, §11).
 - **Excluded:** live inputs and monitors, click, backing (#1200), output FX,
   master. Nothing from `output_bus_frame`/`master_bus_frame` runs.
 - **Plugins.** Hosted plugin slots render as dry passthrough. A plugin
@@ -1048,10 +1048,11 @@ L6).
 - **Gestures.** Holding Undo invokes only Redo, and every gesture resolves
   once (`_armGesture` as Fade, `control_foot_fade.dart:11-37`). Capturing
   tracks are unavailable in both steps.
-- **Render controls.** The Length and Mix FX rows and the plan readout on
-  `meZ1X` sit in the route panel on the sources step. They are touch/encoder
-  controls, and Tails stays on the Clear pedal. They share the
-  `SelectedRender` model with Save audio. The route diagram is not an encoder
+- **Render controls.** The Length row and the plan readout on `meZ1X` sit in
+  the route panel on the sources step. They are touch/encoder controls, and
+  Tails stays on the Clear pedal. They share the `SelectedRender` model with
+  Save audio. The Mix FX row is not shown, and Bounce always renders without
+  Mix FX (owner, §11; pen deviation, §8 item 2). The route diagram is not an encoder
   focus target (bounce UX doc).
 - **LEDs.** Selected sources, then the destination, are lit in the track
   colour. The slot-less pedals follow accepted contact like Fade
@@ -1083,9 +1084,10 @@ built:
    The prototype commits instantly; a real render of up to 1024 beats does not.
 
 The "Saved audio" location is drawn (18/03's folder line, and 18/01 is a folder
-browser), so it is not a deviation. If §11's question is answered with (a),
-Bounce's Mix FX row (`meZ1X`) is removed, and that becomes a second write-back
-item.
+browser), so it is not a deviation.
+
+2. Bounce has no Mix FX row: remove "Mix FX / Off / All tracks effects" from
+   `meZ1X`'s route panel (owner, §11). Save audio (`op31E`) keeps its row.
 
 ## 9. Parts
 
@@ -1542,7 +1544,7 @@ VERIFICATION COMMAND: (cd packages/looper_repository && /Users/Tomas/development
 GOAL: The accepted foot Bounce flow selects sources across banks, then a destination, then commits Bounce or Replace & bounce with visible Keep/Clear sources and Wrap/Cut tails, shows progress, and undoes or redoes the whole operation by foot.
 SUCCESS CRITERIA:
 - Pedal roles and captions per step match the accepted table and the pen; selection alone changes nothing; Exit before commit changes nothing; holds resolve once. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
-- LEDs and the face are truthful; goldens match pen 17/01-06 and 49 Bounce in English and Spanish. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
+- LEDs and the face are truthful; goldens match pen 17/01-06 and 49 Bounce (without its Mix FX row, §8 item 2) in English and Spanish. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
 - Static gates and the whole suite pass. | verify: dart analyze --fatal-infos lib test packages && bloc lint lib test packages && /Users/Tomas/development/flutter/bin/flutter test
 - On the appliance, by foot only: bounce three tracks across banks into an occupied track with Clear sources while playing, with no audible gap, doubling or doubled tail, then Undo and Redo, with LEDs correct per step; repeat with Keep sources (the destination stays stopped) and with Cut tails on a delay; overdub on the bounced track with a mono mic and hear it centred. | verify: manual appliance session per docs/PROGRESS.md hardware evidence rules (HARDWARE)
 NON-GOALS:
@@ -1640,29 +1642,23 @@ gate. Stop for review on any of these:
   - held unused: 115 and 333-335;
   - the events.log version is the next free number at landing.
 
-## 11. Product-direction question (default stands until the owner answers)
+## 11. Owner decisions
 
-**Mix FX in Bounce (review M3).** With Mix FX On, the All tracks chain is
-baked into the destination, and the live All tracks chain then processes the
-destination again. The sound changes, and AB §3.11's "not printed twice" is
-broken. With Mix FX Off, the destination plays through the live chain exactly
-once, as its sources did, so what the player heard is kept.
+**Mix FX in Bounce (review M3; owner, 2026-10-06).** Bounce renders without
+Mix FX and does not show the row. Save audio keeps it.
 
-Both pen and policy offer Mix FX in Bounce (`meZ1X`). The options that keep
-what the player heard are:
+- With Mix FX on, a bounce would bake the All tracks chain into the
+  destination, and the live chain would then process the destination again,
+  breaking AB §3.11's "not printed twice".
+- With Mix FX off, the destination plays through the live chain once, as its
+  sources did.
+- A file has no live chain after it, so Save audio offers the choice.
+- This is a pen deviation for `meZ1X` (§8 item 2) and adds no engine state.
+  The native request keeps `mix_fx`; Bounce always passes 0, and Part 5's
+  `BounceRequest` has no Mix FX field.
 
-- **(a) Recommended default.** Bounce renders without Mix FX and does not show
-  the row. Save audio keeps it, since a file has no live chain after it. This
-  is a pen deviation for `meZ1X` and adds no engine state.
-- **(b)** Keep the row. With Mix FX On, the destination is marked to bypass the
-  live All tracks chain (a new per-track flag, included in the reset and Undo
-  snapshot, and persisted, which needs a session schema bump and a #1196
-  migration step).
-
-Until the owner answers, Part 6 builds (a).
-
-Fade, plugins and the mono destination were answered by the owner on
-2026-10-06 (4.2, 5.5 and 10 B5).
+Fade, plugins and the mono destination were answered by the owner on the same
+day (4.2, 5.5 and 10 B5).
 
 ## Build record
 
