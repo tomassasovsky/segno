@@ -168,7 +168,10 @@ enum TrackOperation {
   fade('fade'),
 
   /// Turn the track's playback direction around at its current position.
-  reverse('reverse');
+  reverse('reverse'),
+
+  /// Remove the track's newest overdub layer; Undo puts it back.
+  peel('peel');
 
   const TrackOperation(this.token);
 
@@ -187,8 +190,10 @@ enum TrackOperation {
   ///
   /// Clear may not: erasing the whole rig is [ControlCommand.clearAll], ONE
   /// grouped edit with one undo, and eight separate clears would leave eight
-  /// undo steps behind a single stomp.
-  bool get allowsAllTracks => this != TrackOperation.clear;
+  /// undo steps behind a single stomp. Peel may not for the same reason:
+  /// eight edits with eight undo steps behind one stomp.
+  bool get allowsAllTracks =>
+      this != TrackOperation.clear && this != TrackOperation.peel;
 }
 
 /// The whole-rig commands a control can drive.
@@ -351,6 +356,7 @@ final class ModeAction extends ControlAction {
     InteractionMode.mixer => 'mixer',
     InteractionMode.fade => 'fade',
     InteractionMode.reverse => 'reverse',
+    InteractionMode.peel => 'peel',
   };
 
   @override
