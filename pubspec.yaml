@@ -41,6 +41,8 @@ dependencies:
   lucide_icons_flutter: ^3.1.17
   midi_device_repository:
     path: packages/midi_device_repository
+  operation_guards:
+    path: packages/operation_guards
   path_provider: ^2.1.6
   pedal_repository:
     path: packages/pedal_repository

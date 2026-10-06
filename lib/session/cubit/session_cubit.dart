@@ -1,6 +1,7 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
@@ -52,7 +53,9 @@ class SessionCubit extends Cubit<SessionState> {
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
     void Function() releaseHeldBindings = _noRelease,
+    GuardRegistry? guards,
   }) : _repository = repository,
+       _guards = guards ?? GuardRegistry(),
        _looper = looper,
        _performance = performance,
        _mixSettings = mixSettings,
@@ -90,6 +93,15 @@ class SessionCubit extends Cubit<SessionState> {
   final String Function() _currentPedalBindings;
   final void Function(String encoded) _onPedalBindings;
   final void Function() _releaseHeldBindings;
+
+  /// The app's one guard table (accepted behaviour 6.12). Applying a session
+  /// holds a `sessionApply` guard from its commit to the end of its boot, so
+  /// a take, a device change or a calibration cannot start under it, and it
+  /// is refused while one of those (or a shutdown) is in flight.
+  final GuardRegistry _guards;
+
+  /// What a refusal names a session apply by.
+  static const String applyPurpose = 'opening a session';
   String? _pendingLoadedBindings;
   String? _pendingLoadedName;
   List<SessionSummary>? _pendingLoadedSessions;
@@ -231,6 +243,7 @@ class SessionCubit extends Cubit<SessionState> {
   Future<void> loadNamed(String name) => _run(
     () async {
       var applied = false;
+      OperationGuard? applying;
       try {
         return await _captureSettings.runExclusive(() async {
           final bundle = await _repository.read(
@@ -251,6 +264,14 @@ class SessionCubit extends Cubit<SessionState> {
           }
           final candidate = MixSettingsSnapshot.fromRig(rig);
           if (!candidate.isValid) throw StateError('session mix is invalid');
+          // The commit point: nothing has changed yet, and from here the rig
+          // is being replaced. A running take is finished first, as before,
+          // which the guard table allows.
+          applying = _guards.enter(
+            GuardKind.sessionApply,
+            const GuardScope.internal(),
+            purpose: applyPurpose,
+          );
           final disarmed = await _performance.disarmAndFinalize();
           if (!disarmed.isOk) {
             throw StateError(
@@ -378,6 +399,8 @@ class SessionCubit extends Cubit<SessionState> {
       } on Object {
         if (!applied) _fxPersistence.cancelSessionLoad();
         rethrow;
+      } finally {
+        applying?.release();
       }
     },
     reserveSessionLoad: true,

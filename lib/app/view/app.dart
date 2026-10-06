@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_toasts.dart';
@@ -83,6 +84,7 @@ class App extends StatefulWidget {
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.powerKeySource,
     this.powerOff,
+    this.guards,
     super.key,
   });
 
@@ -111,6 +113,11 @@ class App extends StatefulWidget {
 
   /// Injected halt. Null (the default) runs `segno-update-ctl poweroff`.
   final Future<void> Function()? powerOff;
+
+  /// The app's one guard table (accepted behaviour 6.12), shared with the
+  /// session and performance repositories it was built with. Null gives the
+  /// runtime its own, which is what a test that injects nothing wants.
+  final GuardRegistry? guards;
 
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
@@ -201,6 +208,7 @@ class _AppState extends State<App> {
       sessions: widget.sessionRepository,
       exportDirectory: widget.exportDirectory,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
+      guards: widget.guards,
     );
     _powerNoticeSubscription = _runtime.power.stream.listen(
       _syncControlNoticesWithPower,

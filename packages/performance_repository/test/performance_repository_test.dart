@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:wav_codec/wav_codec.dart';
@@ -2772,5 +2773,88 @@ void main() {
         );
       },
     );
+  });
+
+  group('capture guard (#1198)', () {
+    late GuardRegistry guards;
+    late PerformanceRepository guarded;
+
+    setUp(() {
+      guards = GuardRegistry();
+      guarded = PerformanceRepository(
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        guards: guards,
+      );
+    });
+
+    tearDown(() => guarded.dispose());
+
+    List<GuardKind> blockingDeviceChange() => [
+      for (final op in guards.blockers(
+        GuardKind.deviceChange,
+        const GuardScope.internal(),
+      ))
+        op.kind,
+    ];
+
+    test('arm is refused at its commit while a device change is in '
+        'flight, and says so', () async {
+      final change = guards.enter(
+        GuardKind.deviceChange,
+        const GuardScope.internal(),
+        purpose: 'audio apply',
+      );
+      final refusals = <GuardRefused>[];
+      final sub = guarded.armRefusals.listen(refusals.add);
+      addTearDown(sub.cancel);
+
+      expect(await guarded.arm(), EngineResult.ok);
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.perfArmCalls, 0);
+      expect(guarded.armedDirectory, isNull);
+      expect(
+        Directory('${tempDir.path}/exports/perf-20260706-143015').existsSync(),
+        isFalse,
+      );
+      expect(refusals.single.wants, GuardKind.capture);
+      expect(refusals.single.blockers.single.purpose, 'audio apply');
+
+      change.release();
+      expect(await guarded.arm(), EngineResult.ok);
+      expect(engine.perfArmCalls, 1);
+    });
+
+    test('a take holds the guard until it is finalized', () async {
+      expect(await guarded.arm(), EngineResult.ok);
+      expect(blockingDeviceChange(), [GuardKind.capture]);
+      expect(
+        guards.active.single.purpose,
+        PerformanceRepository.capturePurpose,
+      );
+
+      engine.perfDisarmResult = EngineResult.device;
+      expect(await guarded.disarmAndFinalize(), EngineResult.device);
+      expect(blockingDeviceChange(), [GuardKind.capture]);
+
+      engine.perfDisarmResult = EngineResult.ok;
+      expect(await guarded.disarmAndFinalize(), EngineResult.ok);
+      expect(blockingDeviceChange(), isEmpty);
+    });
+
+    test('an arm the engine refuses releases the guard', () async {
+      engine.perfArmResult = EngineResult.device;
+      expect(await guarded.arm(), EngineResult.device);
+      expect(guards.active, isEmpty);
+    });
+
+    test('an arm that never acknowledges releases the guard once '
+        'cancelled', () async {
+      engine.perfArmQueues = true;
+      expect(await guarded.arm(), EngineResult.device);
+      expect(guarded.armedDirectory, isNull);
+      expect(guards.active, isEmpty);
+    });
   });
 }
