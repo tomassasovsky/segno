@@ -170,12 +170,16 @@ static int32_t le_backing_post_buffer(le_engine* e, int32_t code,
     return LE_ERR_INVALID;
   }
   /* Read before collecting: a buffer the callback hands back after these
-   * reads is collected below, so "nothing in transit" is never stale. */
-  const int in_transit =
-      atomic_load_explicit(&e->a_backing_fade_owns, memory_order_acquire) !=
-          0 ||
-      atomic_load_explicit(&e->a_backing_applied, memory_order_acquire) !=
-          e->backing_posted;
+   * reads is collected below, so "nothing in transit" is never stale.
+   * `applied` first: the callback sets `fade_owns` before its release
+   * increment of `applied`, so a count that shows the post applied also
+   * shows the fade that the post started (review of #1222, L5). */
+  const int applied_all =
+      atomic_load_explicit(&e->a_backing_applied, memory_order_acquire) ==
+      e->backing_posted;
+  const int fading =
+      atomic_load_explicit(&e->a_backing_fade_owns, memory_order_acquire) != 0;
+  const int in_transit = !applied_all || fading;
   le_backing_collect(e);
   int slot = -1;
   if (buffer != NULL) {
