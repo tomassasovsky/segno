@@ -3,6 +3,8 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
@@ -88,6 +90,8 @@ SessionPreview _previewOf(String id) => switch (id) {
 /// Author-side images of the Library against pen 19/01 to 19/05 and 18/06;
 /// CI does not claim visual proof.
 void main() {
+  setUpAll(() => registerFallbackValue(_track(0, 1)));
+
   final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
   final hasScreenshotFonts =
       fontDir != null && File('$fontDir/Roboto-Regular.ttf').existsSync();
@@ -148,6 +152,34 @@ void main() {
     when(() => repository.readPreview(any())).thenAnswer(
       (call) async => _previewOf(call.positionalArguments.first as String),
     );
+    // A recorded take's shape, different per track.
+    when(
+      () => repository.readPeaks(
+        any(),
+        any(),
+      ),
+    ).thenAnswer((call) async {
+      final channel =
+          (call.positionalArguments[1] as SessionPreviewTrack).channel;
+      return Float32List.fromList([
+        for (var i = 0; i < 256; i++)
+          0.15 +
+              0.6 *
+                  (0.5 + 0.5 * math.sin(i / (6.0 + channel))).abs() *
+                  (1 - (i % 32) / 48),
+      ]);
+    });
+    when(() => repository.startAudition(any())).thenAnswer(
+      (_) async => const AuditionStart(
+        result: EngineResult.ok,
+        frames: 48000 * 120,
+        truncated: true,
+      ),
+    );
+    when(repository.auditionState).thenReturn(
+      const AuditionState(frames: 48000 * 120, position: 48000 * 12, bus: 0),
+    );
+    when(repository.stopAudition).thenReturn(EngineResult.ok);
     final pedal = _MockPedalRepository();
     when(() => pedal.events).thenAnswer((_) => const Stream.empty());
     // The live rig holds the current session's three tracks.
@@ -244,6 +276,14 @@ void main() {
     await tester.tap(find.byKey(const Key('library_new_loop')));
     await tester.pumpAndSettle();
     await shot('new_loop');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Listen on the selected session', (tester) async {
+    await pump(tester, current: 's-1');
+    await tester.tap(find.byKey(const Key('library_listen')));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await shot('listen');
   }, skip: !hasScreenshotFonts);
 
   testWidgets('19/05 a failed save', (tester) async {

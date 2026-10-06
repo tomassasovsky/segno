@@ -135,6 +135,26 @@ void main() {
     skip: skip,
   );
 
+  test('reads a file as peaks at its own rate, or nothing', () async {
+    start();
+    final peaks = await engine.filePeaks(
+      wav('p.wav', 4000),
+      buckets: 8,
+    );
+    expect(peaks, hasLength(8));
+    // The ramp tops out at 99 * 100 / 32768 in every bucket.
+    for (final peak in peaks!) {
+      expect(peak, closeTo(9900 / 32768, 1e-6));
+    }
+    expect(
+      await engine.filePeaks(
+        '${dir.path}/absent.wav',
+        buckets: 8,
+      ),
+      isNull,
+    );
+  }, skip: skip);
+
   test('an unreadable file is refused', () async {
     start();
     final started = await engine.auditionStartFile('${dir.path}/absent.wav');

@@ -15,6 +15,10 @@ class FakeAudioEngine implements AudioEngine {
   @override
   AuditionState auditionState() => const AuditionState();
 
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async =>
+      null;
+
   /// Snapshot returned by [snapshot] (mutate between ticks in tests).
   EngineSnapshot _nextSnapshot = const EngineSnapshot.initial().copyWith(
     tracks: List.generate(8, (_) => const TrackSnapshot.empty()),

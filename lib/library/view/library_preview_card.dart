@@ -193,20 +193,27 @@ class LibraryPreviewBody extends StatelessWidget {
         SizedBox(
           height: 64,
           child: Row(
-            key: const Key('library_preview_facts'),
             children: [
-              for (final (i, fact) in facts.indexed) ...[
-                if (i > 0) const SizedBox(width: 20),
-                AppText(
-                  fact,
-                  style: TextStyle(
-                    color: surface.textSecondary,
-                    fontFamily: SurfaceTheme.monoFont,
-                    fontSize: 21,
-                    height: 1,
-                  ),
+              Expanded(
+                child: Row(
+                  key: const Key('library_preview_facts'),
+                  children: [
+                    for (final (i, fact) in facts.indexed) ...[
+                      if (i > 0) const SizedBox(width: 20),
+                      AppText(
+                        fact,
+                        style: TextStyle(
+                          color: surface.textSecondary,
+                          fontFamily: SurfaceTheme.monoFont,
+                          fontSize: 21,
+                          height: 1,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
+              ),
+              LibraryListenControl(preview: preview),
             ],
           ),
         ),
@@ -257,6 +264,17 @@ class LibraryPreviewTracks extends StatelessWidget {
           };
     final tracks = preview.tracks;
     final longest = tracks.fold(0, (m, t) => math.max(m, t.lengthFrames));
+    final library = context.watch<LibraryCubit>().state;
+    final listenRefusal = switch (library.listenRefusal) {
+      LibraryListenRefusal.unplayable => l10n.libraryListenFailed,
+      LibraryListenRefusal.noDevice => l10n.libraryListenNoDevice,
+      LibraryListenRefusal.performanceArmed => l10n.libraryListenRecording,
+      LibraryListenRefusal.busy => l10n.libraryListenBusy,
+      null => null,
+    };
+    final truncated =
+        library.listen?.id == preview.summary.id &&
+        (library.listen?.truncated ?? false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -265,6 +283,26 @@ class LibraryPreviewTracks extends StatelessWidget {
             key: const Key('library_open_refused'),
             message: refusal,
             tone: ConsoleBannerTone.failure,
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (listenRefusal != null) ...[
+          ConsoleBanner(
+            key: const Key('library_listen_refused'),
+            message: listenRefusal,
+            tone: ConsoleBannerTone.failure,
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (truncated) ...[
+          AppText(
+            l10n.libraryListenTruncated,
+            key: const Key('library_listen_truncated'),
+            style: TextStyle(
+              color: context.surface.textSecondary,
+              fontSize: 20,
+              height: 1.2,
+            ),
           ),
           const SizedBox(height: 12),
         ],
@@ -289,6 +327,7 @@ class LibraryPreviewTracks extends StatelessWidget {
                         first: i == 0,
                         share: longest == 0 ? 0 : track.lengthFrames / longest,
                         sampleRate: preview.sampleRate,
+                        peaks: library.peaks[track.channel],
                       ),
                   ],
                 ),
@@ -300,7 +339,8 @@ class LibraryPreviewTracks extends StatelessWidget {
 
 /// One recorded track: `Track N`, its bars (or seconds without a tempo),
 /// layers and effect count, and a lane whose clip is the track's share of
-/// the longest track. No waveform until the peaks read exists (plan D11).
+/// the longest track, drawing its live layer's peaks when they were read
+/// and its length only when they were not (plan D11).
 class LibraryPreviewTrackRow extends StatelessWidget {
   /// Creates the row for [track].
   const LibraryPreviewTrackRow({
@@ -308,8 +348,12 @@ class LibraryPreviewTrackRow extends StatelessWidget {
     required this.first,
     required this.share,
     required this.sampleRate,
+    this.peaks,
     super.key,
   });
+
+  /// The live layer's peaks across the clip, or null to draw length only.
+  final List<double>? peaks;
 
   /// The track's facts.
   final SessionPreviewTrack track;
@@ -370,7 +414,7 @@ class LibraryPreviewTrackRow extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
-            _Lane(share: share),
+            _Lane(share: share, peaks: peaks),
           ],
         ),
       ),
@@ -443,11 +487,13 @@ class _FxChip extends StatelessWidget {
   }
 }
 
-/// The 74-tall lane with the track's clip at its length share.
+/// The 74-tall lane with the track's clip at its length share, and the
+/// clip's waveform when its peaks were read.
 class _Lane extends StatelessWidget {
-  const _Lane({required this.share});
+  const _Lane({required this.share, required this.peaks});
 
   final double share;
+  final List<double>? peaks;
 
   @override
   Widget build(BuildContext context) {
@@ -468,6 +514,15 @@ class _Lane extends StatelessWidget {
             color: surface.accentSurface,
             border: Border.all(color: surface.accent),
           ),
+          child: peaks == null
+              ? null
+              : CustomPaint(
+                  key: const Key('library_track_peaks'),
+                  painter: LibraryPeaksPainter(
+                    peaks: peaks!,
+                    color: surface.accent,
+                  ),
+                ),
         ),
       ),
     );
@@ -553,6 +608,7 @@ Future<void> openWithConfirm(
   SessionSummary summary,
 ) async {
   final session = context.read<SessionCubit>();
+  final library = context.read<LibraryCubit>();
   final l10n = context.l10n;
   final interrupts = context.read<LooperBloc>().state.tracks.any(
     (t) => t.state == TrackState.playing || t.isCapturing,
@@ -566,5 +622,93 @@ Future<void> openWithConfirm(
     );
     if (!confirmed) return;
   }
+  // An Open ends Listen (plan D10).
+  library.stopListening();
   await session.open(summary.id);
+}
+
+/// `Listen` (pen 19/01 `session:listen`, 160 x 64) for the previewed session,
+/// `Stop` while its preview plays, with how far it has played beside it.
+class LibraryListenControl extends StatelessWidget {
+  /// Creates the control for [preview].
+  const LibraryListenControl({required this.preview, super.key});
+
+  /// The selected session's facts.
+  final SessionPreview preview;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final listen = context.select<LibraryCubit, LibraryListen?>(
+      (c) => c.state.listen,
+    );
+    final playing = listen != null && listen.id == preview.summary.id;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (playing) ...[
+          AppText(
+            l10n.libraryListenProgress(
+              _clock(listen.position, listen.sampleRate),
+              _clock(listen.frames, listen.sampleRate),
+            ),
+            key: const Key('library_listen_progress'),
+            style: TextStyle(
+              color: surface.textSecondary,
+              fontFamily: SurfaceTheme.monoFont,
+              fontSize: 21,
+              height: 1,
+            ),
+          ),
+          const SizedBox(width: 20),
+        ],
+        LoopOutlinedButton(
+          key: const Key('library_listen'),
+          width: 160,
+          label: playing ? l10n.libraryListenStop : l10n.libraryListen,
+          onTap: () => unawaited(context.read<LibraryCubit>().listen()),
+        ),
+      ],
+    );
+  }
+
+  /// `m:ss` of [frames] at [sampleRate].
+  static String _clock(int frames, int sampleRate) {
+    final seconds = sampleRate > 0 ? frames ~/ sampleRate : 0;
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  }
+}
+
+/// A recorded clip's waveform: one bar per peak, mirrored about the centre,
+/// filled in [color] (pen `Recorded audio waveform`).
+class LibraryPeaksPainter extends CustomPainter {
+  /// Creates the painter for [peaks] (0..1) in [color].
+  const LibraryPeaksPainter({required this.peaks, required this.color});
+
+  /// Absolute peaks across the clip, left to right.
+  final List<double> peaks;
+
+  /// The fill.
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (peaks.isEmpty || size.isEmpty) return;
+    final paint = Paint()..color = color;
+    final step = size.width / peaks.length;
+    final mid = size.height / 2;
+    for (var i = 0; i < peaks.length; i++) {
+      final half = peaks[i].clamp(0.0, 1.0) * mid;
+      if (half <= 0) continue;
+      canvas.drawRect(
+        Rect.fromLTRB(i * step, mid - half, (i + 1) * step, mid + half),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(LibraryPeaksPainter oldDelegate) =>
+      !identical(oldDelegate.peaks, peaks) || oldDelegate.color != color;
 }

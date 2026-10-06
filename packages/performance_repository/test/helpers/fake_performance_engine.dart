@@ -38,6 +38,10 @@ class FakePerformanceEngine implements AudioEngine {
   @override
   AuditionState auditionState() => const AuditionState();
 
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async =>
+      null;
+
   final int sampleRate;
 
   final List<_FakeTrack> _tracks = List.generate(4, (_) => _FakeTrack());

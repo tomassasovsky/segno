@@ -1558,6 +1558,12 @@ abstract interface class EngineAudition {
   /// The voice as of the last processed block. Also the point where the
   /// engine frees the previews the audio thread has finished with.
   AuditionState auditionState();
+
+  /// [buckets] absolute peaks (the louder side of each bucket) over the whole
+  /// audio file at [path], streamed through the same decoder off the calling
+  /// isolate with no PCM kept (`le_backing_probe_file`); null when the file
+  /// does not decode. For the Library's preview lanes.
+  Future<Float32List?> filePeaks(String path, {required int buckets});
 }
 
 /// The data-layer boundary over the native audio engine, composed from the

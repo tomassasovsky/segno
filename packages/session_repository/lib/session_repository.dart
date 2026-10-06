@@ -3,6 +3,9 @@
 /// bundle.
 library;
 
+// The Library's Listen answers in the engine's audition types (#1178).
+export 'package:segno_engine/segno_engine.dart'
+    show AuditionStart, AuditionState, EngineResult, kAuditionMaxSeconds;
 export 'src/models/session.dart';
 export 'src/models/session_preview.dart';
 export 'src/models/session_summary.dart';
