@@ -75,13 +75,32 @@ void main() {
       addTearDown(fake.dispose);
       final id = await fake.requestEject(1);
 
-      await fake.cancelEject(id);
+      expect(await fake.cancelEject(id), isTrue);
+      expect(await fake.cancelEject(id), isFalse, reason: 'nothing left');
       fake
         ..settleEject(id, ok: true)
         ..settleEject('never-filed', ok: true);
 
       expect(fake.pendingRequests, isEmpty);
       expect((await fake.volumes.first).single.eject, isNull);
+    });
+
+    test('a request the helper has taken cannot be withdrawn, and its answer '
+        'still lands', () async {
+      final fake = FakeUsbStorageClient(initial: [volume(1)]);
+      addTearDown(fake.dispose);
+      final id = await fake.requestEject(1);
+
+      fake.take(id);
+      expect(fake.pendingRequests, isEmpty);
+      expect(await fake.cancelEject(id), isFalse);
+
+      fake
+        ..take('never-filed')
+        ..settleEject(id, ok: true);
+      final record = (await fake.volumes.first).single;
+      expect(record.status, RemovableVolumeRecordStatus.ejected);
+      expect(record.eject, EjectOutcomeRecord(request: id, ok: true));
     });
 
     test(
