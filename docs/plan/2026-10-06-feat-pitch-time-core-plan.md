@@ -1159,7 +1159,31 @@ events.log version 11):
   `pitch_effective_cents` (1200 log2 of the sounding source's length over
   the span; 0 at its own span or once the render plays).
 - **Tolerance.** A render within 0.5 % of the span serves it (about 9
-  cents, reported); a tempo move past that renders again, dry meanwhile.
+  cents, reported); a tempo move past that renders again, dry meanwhile. A
+  span within 0.5 % of the take itself wants no stretch (review M1): a
+  transposed track stays on its plain transpose render and an untransposed
+  one on its dry take, the head absorbing the residual, so a small tempo
+  move (a MIDI clock's 0.05 BPM steps, #1228) neither drops a transposed
+  track to its true pitch nor re-renders every follower.
+- **Memory and CPU for retimes (review M2), an owner-visible gate like
+  3a's.** With Pitch Unchanged the default and Follow On from Part 4b, every
+  tempo change past 0.5 % on a populated rig asks for a stretch render per
+  following lane, and slowing down makes them longer. The joint table gains
+  the retime rows (96 kHz, 30 s takes, 120 to 90 BPM, so 40 s renders of
+  15.4 MiB each):
+
+  | Rig | Stretch renders | Worker time at the 20x Pi floor |
+  |---|---|---|
+  | 8 followers x 1 lane | 123 MiB (fits the 128 MiB beside the prints) | 16 s |
+  | 8 followers x 8 lanes | 983 MiB (most refused, those tracks stay at the varispeed pitch, reported) | 128 s |
+
+  The Pi 5 measurement list (Part 1's `render` scenario, E11) adds the case:
+  eight followers x 8 lanes retimed 120 to 90, renders landed, peak RSS and
+  late periods while the worker runs. On those numbers the owner decides
+  whether Unchanged renders get their own share of the cap or a per-retime
+  priority (sounding tracks first, then by lane count); until then a
+  refused render is reported (`pitch_effective_cents` stays the ratio's)
+  and Part 6b shows it as refused, not pending.
 - **Setting.** The default (0 Unchanged, the plan's) and per-track
   overrides through `le_engine_set_pitch_mode` with a receipt; a change only
   re-selects the source (an equal-power swap), the head is untouched.

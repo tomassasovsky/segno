@@ -164,6 +164,47 @@ static void test_pitch_tolerance(void) {
   le_engine_destroy(e);
 }
 
+/* 4a-ii M1: a retime inside the tolerance (120 -> 120.3 BPM, 15960 frames,
+ * 0.25 % off) moves no source. A track at +5 st keeps sounding its plain
+ * transpose render every block, and an untransposed follower stays on its
+ * dry take; neither renders, the residual reported (+4 cents). */
+static void test_pitch_small_retime_keeps_sources(void) {
+  printf("test_pitch_small_retime_keeps_sources\n");
+  static float out[256];
+  le_engine* e = pk_fixture(2);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  uint64_t id = 0;
+  CHECK(le_engine_install_transpose(e, 0, 5, &id) == LE_OK);
+  tf_process(e, out, 64, 0.0f);
+  fade_result(e, id, LE_OK);
+  le_track_snapshot snap;
+  for (int k = 0; k < 4000; ++k) {
+    le_engine_get_track(e, 0, &snap);
+    if (snap.transpose_effective_st == 5) break;
+    (void)pk_renders(e, 0);
+    test_sleep_ms(1);
+    tf_process(e, out, 256, 0.0f);
+  }
+  CHECK(snap.transpose_effective_st == 5 && pk_renders(e, 0) == 1);
+  CHECK(le_engine_set_tempo(e, 120.3f) == LE_OK);
+  int dropped = 0;
+  for (int k = 0; k < 60; ++k) {
+    tf_process(e, out, 256, 0.0f);
+    le_engine_get_track(e, 0, &snap);
+    dropped += snap.transpose_effective_st != 5;
+    (void)pk_renders(e, 0);
+    (void)pk_renders(e, 1);
+    test_sleep_ms(1);
+  }
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 15960);
+  CHECK(dropped == 0);
+  CHECK(pk_renders(e, 0) == 1 && pk_renders(e, 1) == 0);
+  CHECK(pk_cents(e, 0) == 4 && pk_cents(e, 1) == 4);
+  le_engine_destroy(e);
+}
+
 /* Transpose and the stretch are one render: +7 st kept across the retime
  * peaks at 220 x 2^(7/12) = 329.6 Hz. */
 static void test_pitch_unchanged_with_transpose(void) {
@@ -254,6 +295,7 @@ static void run_pitch_keep_tests(void) {
   test_pitch_unchanged_across_retime();
   test_pitch_follows_speed_and_switch();
   test_pitch_tolerance();
+  test_pitch_small_retime_keeps_sources();
   test_pitch_unchanged_with_transpose();
   test_pitch_render_parity();
 }
