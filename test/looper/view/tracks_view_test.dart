@@ -39,6 +39,8 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
+import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:toastification/toastification.dart';
@@ -286,6 +288,12 @@ void main() {
               // The device-lost banner and the not-running gate read the
               // audio setup cubit (#453).
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+              BlocProvider<TunerCubit>(
+                create: (_) => TunerCubit(
+                  repository: repository,
+                  settings: TunerSettings(settings: settings),
+                ),
+              ),
             ],
             child: onAncestorKey == null
                 ? const TracksView()
@@ -791,6 +799,40 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
     });
   }
+
+  testWidgets('the foot Tuner shows its face, and an arm the engine '
+      'refuses says so (#1229)', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        status: EngineStatus(inputChannels: 2),
+        tracks: [Track()],
+      ),
+    );
+    when(
+      () => repository.setTunerInput(input: any(named: 'input')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTunerMute(any()),
+    ).thenReturn(EngineResult.invalid);
+    await pump(tester);
+    control.setMode(InteractionMode.tuner);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('foot_tuner_view')), findsOneWidget);
+    expect(
+      find.text('The tuner could not start. Try again.').hitTestable(),
+      findsOneWidget,
+    );
+    control.setMode(InteractionMode.record);
+    await tester.pumpAndSettle();
+    verify(() => repository.setTunerInput(input: -1)).called(1);
+    dismissAppToast(AppToastId.footTunerRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
 
   testWidgets('the layer badge drops by one when a Peel removes a layer', (
     tester,

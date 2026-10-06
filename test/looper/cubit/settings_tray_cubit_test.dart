@@ -65,12 +65,12 @@ void main() {
       build: buildCubit,
       seed: () => const SettingsTrayState(dragProgress: 1),
       act: (cubit) => cubit
-        ..showDestination(SettingsTrayDestination.tuner)
+        ..showDestination(SettingsTrayDestination.network)
         ..showDestination(SettingsTrayDestination.system),
       expect: () => [
         const SettingsTrayState(
           dragProgress: 1,
-          destination: SettingsTrayDestination.tuner,
+          destination: SettingsTrayDestination.network,
         ),
         const SettingsTrayState(
           dragProgress: 1,

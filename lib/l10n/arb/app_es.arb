@@ -845,29 +845,9 @@
     "@a11yTrayRail": {
         "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
     },
-    "tunerCentsAndHz": "{cents} centésimas · {hz} Hz",
-    "@tunerCentsAndHz": {
-        "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
-        "placeholders": {
-            "cents": {
-                "type": "String"
-            },
-            "hz": {
-                "type": "String"
-            }
-        }
-    },
-    "tunerListening": "Toca una nota",
-    "@tunerListening": {
-        "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
-    },
     "tunerNoTunableInput": "Sin entrada para afinar",
     "@tunerNoTunableInput": {
         "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
-    },
-    "tunerNoDevice": "Sin dispositivo de audio",
-    "@tunerNoDevice": {
-        "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
     },
     "trayTunerLabel": "Afinador",
     "@trayTunerLabel": {
@@ -2392,6 +2372,28 @@
     "footFadeHoldTime": "Mantener · Tiempo",
     "footFadeFailure": "No se pudo iniciar el Fade. Inténtalo de nuevo.",
     "actionModePeel": "Peel",
+    "actionModeTuner": "Afinador",
+    "footTunerReference": "Referencia A4",
+    "footTunerHzUnit": "Hz",
+    "footTunerInputMuted": "Entrada silenciada",
+    "footTunerInputAudible": "Entrada audible",
+    "footTunerMuteInput": "Silenciar entrada",
+    "footTunerUnmuteInput": "Activar entrada",
+    "footTunerReferenceDown": "Referencia −",
+    "footTunerReferenceUp": "Referencia +",
+    "footTunerHoldReset": "Mantener · {hz} Hz",
+    "footTunerInputs": "Entradas {first}–{last}",
+    "footTunerInputsOne": "Entrada {number}",
+    "footTunerNextInputs": "Siguientes entradas",
+    "footTunerFlat": "Bajo",
+    "footTunerInTune": "Afinado",
+    "footTunerSharp": "Alto",
+    "footTunerCents": "{cents} centésimas",
+    "footTunerPlayOneNote": "Toca una nota",
+    "footTunerSaveFailed": "No se pudieron guardar los ajustes del afinador. Inténtalo de nuevo.",
+    "footTunerStartFailed": "El afinador no pudo iniciarse. Inténtalo de nuevo.",
+    "footTunerAtLimit": "La referencia A4 está en su límite.",
+    "footTunerSeeded": "El afinador está en Personalizado: mantén MODE y luego mantén el pedal 2.",
     "actionOperationPeel": "Peel",
     "footPeelLayers": "Capas",
     "footPeelOriginalOnly": "Solo la original",

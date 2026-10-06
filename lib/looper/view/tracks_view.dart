@@ -9,6 +9,7 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_peel.dart';
+import 'package:segno/control/model/foot_tuner.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -32,6 +33,7 @@ import 'package:segno/looper/view/wave_track_row.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/view/foot_tuner_view.dart';
 import 'package:toastification/toastification.dart';
 
 /// The main display's Tracks view (the accepted stage): the top bar, then
@@ -59,6 +61,7 @@ class _TracksViewState extends State<TracksView> {
     dismissAppToast(AppToastId.footFadeFailure);
     dismissAppToast(AppToastId.footReverseFailure);
     dismissAppToast(AppToastId.footPeelRefused);
+    dismissAppToast(AppToastId.footTunerRefused);
     super.dispose();
   }
 
@@ -178,6 +181,21 @@ class _TracksViewState extends State<TracksView> {
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),
+          BlocListener<ControlCubit, ControlState>(
+            // Every refused foot Tuner press says why (#1229).
+            listenWhen: (before, after) =>
+                before.footTunerFailure != after.footTunerFailure,
+            listener: (context, state) => showAppToast(
+              id: AppToastId.footTunerRefused,
+              type: state.footTunerRefusal == FootTunerRefusal.limit
+                  ? ToastificationType.warning
+                  : ToastificationType.error,
+              title: Text(
+                footTunerRefusalText(context.l10n, state.footTunerRefusal),
+              ),
+              autoCloseDuration: const Duration(seconds: 5),
+            ),
+          ),
           BlocListener<SessionCubit, SessionState>(
             // React to a settled action — a save or load that finished or
             // failed — never the transient `working` tick.
@@ -247,6 +265,8 @@ class _TracksViewState extends State<TracksView> {
                             ? const FootReverseView()
                             : mode == InteractionMode.peel
                             ? const FootPeelView()
+                            : mode == InteractionMode.tuner
+                            ? const FootTunerView()
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [

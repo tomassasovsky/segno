@@ -27,6 +27,8 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/cubit/tuner_cubit.dart';
+import 'package:segno/tuner/pitch.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -47,6 +49,10 @@ class _MockTransportClockCubit extends MockCubit<TransportClockState>
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
+
+class _MockTunerCubit extends MockCubit<TunerState> implements TunerCubit {}
+
+class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit {}
 
 /// Manual generator for the console main-window decal (the artwork on the 16"
 /// panel in the Fusion "Segno console (populated)" doc). Renders [TracksView]
@@ -118,7 +124,14 @@ void main() {
   late AudioSetupCubit audioSetup;
   late FadeSettings fade;
 
+  // The reading the Tuner face draws, and input names for its scenes; reset
+  // for every test in setUp.
+  var tunerReading = const TunerState();
+  Map<int, String>? inputNames;
+
   setUp(() {
+    tunerReading = const TunerState();
+    inputNames = null;
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
     // Nothing lost by default; the device-lost scene below re-stubs audio.
@@ -235,6 +248,21 @@ void main() {
   }
 
   Future<void> pump(WidgetTester tester, {Locale? locale}) async {
+    final tuner = _MockTunerCubit();
+    whenListen(
+      tuner,
+      const Stream<TunerState>.empty(),
+      initialState: tunerReading,
+    );
+    final names = inputNames;
+    final namedInputs = names == null ? null : _MockInputsCubit();
+    if (namedInputs != null) {
+      whenListen(
+        namedInputs,
+        const Stream<InputsState>.empty(),
+        initialState: InputsState(names: names!),
+      );
+    }
     // 16:9 at the panel's native 1920x1080 so the captured decal matches the
     // 344x194 (16:9) active area 1:1.
     tester.view
@@ -273,10 +301,14 @@ void main() {
               // opens on Signal — whose input cards read both of these. Absent,
               // this whole test throws `ProviderNotFound` before it can draw,
               // which is how it rotted while it was console-gated.
-              BlocProvider<InputsCubit>(
-                create: (_) =>
-                    InputsCubit(settings: settings, repository: repository),
-              ),
+              if (namedInputs != null)
+                BlocProvider<InputsCubit>.value(value: namedInputs)
+              else
+                BlocProvider<InputsCubit>(
+                  create: (_) =>
+                      InputsCubit(settings: settings, repository: repository),
+                ),
+              BlocProvider<TunerCubit>.value(value: tuner),
               BlocProvider<MonitorCubit>(
                 create: (_) => MonitorCubit(
                   fxPersistence: fxPersistence,
@@ -550,6 +582,82 @@ void main() {
       await expectLater(
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_peel_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // The foot Tuner (pen 23/1 `o9d3X`, 23/2 `lDOKf`, 23/3 `d9CLS`, 23/4
+  // `sMhKO`, 23/5 `ta3Fj`; #1229) and the Spanish probe.
+  for (final scene in [
+    'tune',
+    'in_tune',
+    'no_signal',
+    'monitoring',
+    '18_inputs',
+    'spanish',
+  ]) {
+    testWidgets('Foot Tuner $scene scene', (tester) async {
+      when(
+        () => repository.setTunerInput(input: any(named: 'input')),
+      ).thenReturn(EngineResult.ok);
+      when(() => repository.setTunerMute(any())).thenReturn(EngineResult.ok);
+      final wide = scene == '18_inputs';
+      seed(
+        LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: wide ? 18 : 4,
+            outputChannels: 2,
+          ),
+          tracks: [
+            for (var channel = 0; channel < 8; channel++)
+              Track(channel: channel),
+          ],
+        ),
+      );
+      inputNames = wide
+          ? const {
+              16: 'Ambient microphone left',
+              17: 'Ambient microphone right',
+            }
+          : const {
+              0: 'Acoustic guitar',
+              1: 'Lead vocal microphone',
+              2: 'Keyboard left',
+              3: 'Keyboard right',
+            };
+      // E2 is 82.41 Hz; 18 cents flat is the pen's −18.0.
+      const flat = 81.5539;
+      const inTune = 82.4069;
+      final hz = switch (scene) {
+        'in_tune' => inTune,
+        'no_signal' || '18_inputs' => 0.0,
+        _ => flat,
+      };
+      tunerReading = TunerState(
+        input: wide ? 16 : 0,
+        hz: hz,
+        pitch: hz > 0 ? pitchFromHz(hz) : null,
+      );
+      control.setMode(InteractionMode.tuner);
+      if (scene == 'monitoring') {
+        control.activateFootTunerPedal(PedalButton.stop);
+      }
+      if (wide) {
+        for (var page = 0; page < 4; page++) {
+          control.activateFootTunerPedal(PedalButton.bank);
+        }
+      }
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_tuner_$scene.png'),
       );
     }, skip: !hasScreenshotFonts);
   }

@@ -50,10 +50,6 @@ enum SettingsTrayDestination {
   /// itself.
   audio,
 
-  /// In-tray tuner panel. Placement only — the tuner itself is not
-  /// implemented, and this face says so.
-  tuner,
-
   /// In-tray Network domain — the Wi-Fi face.
   network,
 

@@ -1196,13 +1196,24 @@ class FakeAudioEngine implements AudioEngine {
 
   @override
   EngineResult setTunerMute({required int inputMask}) {
+    if (refuseTunerMute case final refused?) return refused;
     tunerMuteMask = inputMask;
     return EngineResult.ok;
   }
 
+  /// A refusal [setTunerMute] returns instead of applying the mask.
+  EngineResult? refuseTunerMute;
+
+  /// How many times [setTunerInput] ran.
+  int tunerInputCalls = 0;
+
   @override
   EngineResult setTunerInput({required int input}) {
+    tunerInputCalls++;
     tunerInput = input;
+    // As the native command does (#1229, D12): every arm, move or disarm
+    // clears the tuner mute.
+    tunerMuteMask = 0;
     return EngineResult.ok;
   }
 

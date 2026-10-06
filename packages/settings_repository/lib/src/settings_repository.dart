@@ -601,6 +601,18 @@ class SettingsRepository {
   Future<void> savePedalLongPressMs(int ms) =>
       _store.setInt(_pedalLongPressMsKey, ms);
 
+  static const String _tunerDefaultSeededKey = 'pedal.tuner_default_seeded';
+
+  /// Whether the one-shot `Hold · Tuner` default was already attempted on
+  /// Custom pedal 2 (#1229). Written at the first attempt, whatever its
+  /// outcome, so a player who removes it never gets it back.
+  Future<bool> loadTunerDefaultSeeded() async =>
+      await _store.getBool(_tunerDefaultSeededKey) ?? false;
+
+  /// Marks the `Hold · Tuner` default as attempted.
+  Future<void> saveTunerDefaultSeeded() =>
+      _store.setBool(_tunerDefaultSeededKey, value: true);
+
   static const String _tunerReferenceHzKey = 'tuner.reference_hz';
   static const String _tunerInputKey = 'tuner.input';
 

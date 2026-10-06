@@ -30,6 +30,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/tray/brightness_capsule.dart';
 import 'package:segno/looper/view/tray/tray.dart';
@@ -657,7 +658,6 @@ void main() {
       const drawn = {
         SettingsTrayDestination.control: PenIcon.control,
         SettingsTrayDestination.tracks: PenIcon.tracks,
-        SettingsTrayDestination.tuner: PenIcon.tuner,
       };
       const fromFont = {
         SettingsTrayDestination.audio: LucideIcons.volume2,
@@ -841,9 +841,8 @@ void main() {
       expect(rail.bottom - bright.bottom, lessThan(kTrayHandleHeight + 24));
     });
 
-    testWidgets('the tuner opens in the tray, and the rail is the way out', (
-      tester,
-    ) async {
+    testWidgets('the Tuner row closes the tray and enters the foot Tuner, '
+        'the one tuner surface (#1229)', (tester) async {
       cubit.open();
       await pump(tester);
       await tester.pumpAndSettle();
@@ -851,22 +850,11 @@ void main() {
       await tester.tap(find.byKey(const Key('settingsTrayRail_tuner')));
       await tester.pumpAndSettle();
 
-      // In the tray, not a dialog — the rail is the way between faces, and
-      // the deleted home-face group was the only thing asserting this.
-      expect(cubit.state.destination, SettingsTrayDestination.tuner);
+      expect(controlCubit.state.mode, InteractionMode.tuner);
+      expect(cubit.state.dragProgress, 0);
       expect(find.byType(AlertDialog), findsNothing);
-      expect(cubit.state.dragProgress, 1);
-
-      // No back chrome on the face. Every other domain leaves by the rail,
-      // and a Back on one of them is a second way out that only that domain
-      // has — which is what made Tuner look like a dialog in a tray.
-      expect(find.byKey(const Key('tuner_back')), findsNothing);
-
-      await tester.tap(find.byKey(const Key('settingsTrayRail_network')));
+      controlCubit.setMode(InteractionMode.record);
       await tester.pumpAndSettle();
-
-      expect(cubit.state.destination, SettingsTrayDestination.network);
-      expect(cubit.state.dragProgress, 1);
     });
 
     testWidgets('a tap that misses an item does not dismiss the tray', (

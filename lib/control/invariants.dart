@@ -157,7 +157,8 @@ final List<ControlInvariant> controlInvariants = [
       InteractionMode.mixer ||
       InteractionMode.fade ||
       InteractionMode.reverse ||
-      InteractionMode.peel => PedalMode.custom,
+      InteractionMode.peel ||
+      InteractionMode.tuner => PedalMode.custom,
     };
     if (c.frame.mode != want) {
       return 'frame mode ${c.frame.mode} != overlay mode ${c.overlay.mode}';
