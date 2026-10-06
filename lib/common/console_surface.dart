@@ -1387,10 +1387,10 @@ class ConsoleDomainPanel<T> extends StatelessWidget {
 /// surface's own controls.
 ///
 /// The domain says its name **here**, not in a chrome bar above the tab strip.
-/// The rail is always on screen, so a chrome bar would be a second navigation
-/// surface, and a per-tab control (a rescan, a power switch) belongs to the
-/// tab rather than to the domain — which puts the tabs first and the title
-/// under them.
+/// The surrounding frame has its own Back, so a chrome bar would be a second
+/// navigation surface, and a per-tab control (a rescan, a power switch)
+/// belongs to the tab rather than to the domain — which puts the tabs first
+/// and the title under them.
 class ConsoleFaceHeader extends StatelessWidget {
   /// Creates a [ConsoleFaceHeader].
   const ConsoleFaceHeader({

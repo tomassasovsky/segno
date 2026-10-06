@@ -16,6 +16,11 @@ import 'package:segno/looper/view/loop_settings/loop_track_names.dart';
 /// The most bars a fixed length preset can hold (the engine's 1..64).
 const int kMaxLengthPresetBars = 64;
 
+/// The later-track lengths the Defaults scope offers: `0` is Auto (round up
+/// to whole base loops), the rest fixed multiples of the base loop. Three,
+/// because a longer multiple is a length set on the track itself.
+const List<int> kDefaultMultiples = [0, 1, 2, 3];
+
 /// What the Length & quantize page reads off the looper for one scope.
 typedef _LengthValues = ({
   int count,
@@ -36,6 +41,11 @@ _LengthValues _lengthValues(LooperState state) {
 /// with its origin tag and a Use default when a track overrides it (the pen's
 /// `length-timing`, 1720 x 474 at (100, 349)). In Multi a track's length is
 /// the shared default; a capture in progress locks the page behind a banner.
+///
+/// The Defaults scope adds one row the pen does not draw: how long later
+/// tracks record, as a multiple of the base loop (#1199, D3). It was the
+/// settings tray's Recording tab. It sits under Record timing, compact
+/// enough that the locked layout still ends inside the frame.
 class LoopLengthPage extends StatefulWidget {
   /// Creates a [LoopLengthPage].
   const LoopLengthPage({super.key});
@@ -45,6 +55,15 @@ class LoopLengthPage extends StatefulWidget {
 }
 
 class _LoopLengthPageState extends State<LoopLengthPage> {
+  /// Where the later-tracks row starts below the section top, under the
+  /// record timing note (one 24 px line at `top + 439`): a section's gap when
+  /// there is room, and closer while a capture's banner pushes the page down.
+  static double _multipleTop({required bool locked}) => locked ? 480 : 528;
+
+  /// The later-tracks row's height. Shorter than the pen's 96 so the locked
+  /// layout (section top 441) ends at 981, inside the 984 high frame.
+  static const double _multipleHeight = 60;
+
   /// The selected channel, or `null` for the defaults.
   int? _scope;
 
@@ -321,6 +340,35 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
                 key: const Key('loop_timing_note'),
               ),
             ),
+            // ---- later tracks (defaults only)
+            if (scope == null) ...[
+              Positioned(
+                left: 100,
+                top: top + _multipleTop(locked: locked) + 13,
+                child: LoopFieldLabel(title: l10n.loopDefaultMultipleLabel),
+              ),
+              Positioned(
+                left: 100 + 328,
+                top: top + _multipleTop(locked: locked),
+                child: LoopChoiceRow<int>(
+                  key: const Key('loop_default_multiple'),
+                  values: kDefaultMultiples,
+                  labelOf: (multiple) => multiple == 0
+                      ? l10n.auto
+                      : l10n.loopMultipleLabel(multiple),
+                  keyOf: (multiple) => Key('loop_default_multiple_$multiple'),
+                  selected: record.defaultMultiple,
+                  enabled: !locked,
+                  onSelected: (multiple) => unawaited(
+                    context.read<RecordOptionsCubit>().setDefaultMultiple(
+                      multiple,
+                    ),
+                  ),
+                  width: 968,
+                  height: _multipleHeight,
+                ),
+              ),
+            ],
           ],
         ),
       ),

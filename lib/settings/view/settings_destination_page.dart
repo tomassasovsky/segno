@@ -18,11 +18,17 @@ class SettingsDestinationPage extends StatelessWidget {
   const SettingsDestinationPage({
     required this.title,
     required this.body,
+    this.crumb,
     super.key,
   });
 
-  /// The page title, also the last part of the breadcrumb.
+  /// The page title, and the last part of the default breadcrumb.
   final String title;
+
+  /// The breadcrumb, when the page is not reached from Settings: the FX page's
+  /// pedal assignments read `EFFECTS / PEDAL ASSIGNMENTS`. Null for
+  /// `SETTINGS / <title>`.
+  final String? crumb;
 
   /// What the page shows on its panel.
   final Widget body;
@@ -42,7 +48,7 @@ class SettingsDestinationPage extends StatelessWidget {
     final surface = context.surface;
     return Scaffold(
       body: LoopSettingsFrame(
-        crumb: context.l10n.settingsCrumb(title),
+        crumb: crumb ?? context.l10n.settingsCrumb(title),
         title: title,
         titleLeft: 100,
         onBack: () => Navigator.maybePop(context),

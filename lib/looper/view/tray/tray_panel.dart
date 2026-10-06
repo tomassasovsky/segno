@@ -1,25 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:segno/audio_setup/view/console/audio_tray_panel.dart';
-import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
-import 'package:segno/looper/view/tray/tray_brightness_popover.dart';
 import 'package:segno/looper/view/tray/tray_metrics.dart';
-import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
-import 'package:segno/network/network_tray_panel.dart';
-import 'package:segno/system/view/system_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/view/tuner_tray_panel.dart';
 
-/// The tray's contents once open — near-fullscreen frosted sheet, split into
-/// a persistent [TrayNavigationRail] and the face it selects.
+/// The tray's contents once open: an opaque sheet holding the tuner.
 ///
-/// The face swap is a plain switch inside the sheet, never a full-screen
-/// route: config is an overlay you drop out of with one gesture, so it never
-/// routes the performer away from the stage view. The `KeyedSubtree` on the
-/// destination is what makes the swap discard the outgoing face's state
-/// rather than let Flutter reuse its element for the incoming one.
+/// The tuner is the one face left (#1199): every other face moved to a
+/// Settings destination or the FX page, and the rail that chose between them
+/// went with them.
+///
+/// The shell never unmounts this panel; it slides it off screen. The tuner is
+/// built only while some of the sheet is showing (from the first frame of an
+/// opening drag until a close has finished sliding), so a stage that never
+/// opens the tray never builds it, and it listens only while the tray is open.
 class TrayPanel extends StatefulWidget {
   /// Creates a [TrayPanel].
   const TrayPanel({this.motion = kTrayMotion, super.key});
@@ -38,25 +33,17 @@ class TrayPanel extends StatefulWidget {
 }
 
 class _TrayPanelState extends State<TrayPanel> {
-  /// Whether the brightness popover is up. Local, not tray state: it is a
-  /// drawer on one button, not a place the console can be in — nothing else
-  /// reads it, and it must not survive a close-and-reopen.
-  bool _brightness = false;
+  /// Whether the sheet is anywhere on screen: set as soon as it starts to
+  /// open, cleared once a close has finished sliding, so the tuner does not
+  /// vanish from a sheet that is still on its way up.
+  bool _showing = false;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     final state = context.watch<SettingsTrayCubit>().state;
-    // `TrayPanel` is never unmounted — the shell translates it off-screen —
-    // so a popover left open stays open, and `closeTray` resets the
-    // destination under it. Reopening would then float it over a face it was
-    // never opened from. Cleared here rather than in a listener because this
-    // already rebuilds on every drag frame.
-    if (state.dragProgress == 0 && _brightness) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _brightness = false);
-      });
-    }
+    final open = state.dragProgress > 0;
+    if (open) _showing = true;
 
     return Material(
       color: Colors.transparent,
@@ -77,6 +64,9 @@ class _TrayPanelState extends State<TrayPanel> {
         duration: widget.motion,
         curve: kTrayMotionCurve,
         tween: Tween<double>(end: state.dragProgress.clamp(0.0, 1.0)),
+        onEnd: () {
+          if (!open && _showing) setState(() => _showing = false);
+        },
         builder: (context, lift, child) => DecoratedBox(
           // Opaque, and the CARD tone rather than the page's — measured off
           // the mockups' tray layer. It was a frosted 78% page fill behind a
@@ -109,85 +99,23 @@ class _TrayPanelState extends State<TrayPanel> {
             bottom: Radius.circular(kTraySheetRadius),
           ),
           child: Padding(
-            // Inside the hairline, so the rail's own right-hand rule stops at
-            // the seam instead of crossing it.
+            // Inside the hairline, so the face stops at the seam instead of
+            // crossing it.
             padding: const EdgeInsets.only(bottom: 1),
-            child: Stack(
-              children: [
-                SafeArea(
-                  top: false,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TrayNavigationRail(
-                        onBrightness: () =>
-                            setState(() => _brightness = !_brightness),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
-                          // The config faces keep a fixed
-                          // [_TrayFaceFrame] footprint and are centred
-                          // individually, since a WiFi list stretched across
-                          // a 1080p sheet reads worse than a centred panel.
-                          child: KeyedSubtree(
-                            key: ValueKey(state.destination),
-                            child: switch (state.destination) {
-                              SettingsTrayDestination.control =>
-                                const _TrayFaceFrame(child: ControlTrayPanel()),
-                              SettingsTrayDestination.tracks =>
-                                const _TrayFaceFrame(child: TracksTrayPanel()),
-                              SettingsTrayDestination.audio =>
-                                const _TrayFaceFrame(child: AudioTrayPanel()),
-                              SettingsTrayDestination.tuner =>
-                                const _TrayFaceFrame(child: TunerTrayPanel()),
-                              SettingsTrayDestination.network =>
-                                const _TrayFaceFrame(child: NetworkTrayPanel()),
-                              SettingsTrayDestination.system =>
-                                const _TrayFaceFrame(child: SystemTrayPanel()),
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
+                child: SizedBox.expand(
+                  child: _showing
+                      ? TunerTrayPanel(active: open)
+                      : const SizedBox.shrink(),
                 ),
-                // Over the rail and the face both, since it hangs off the
-                // rail's edge into the pane. Last in the Stack so its scrim
-                // dismisses only the popover and keeps the tray open.
-                if (_brightness)
-                  Positioned.fill(
-                    child: TrayBrightnessPopover(
-                      onDismiss: () => setState(() => _brightness = false),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
-}
-
-/// Footprint for the in-tray config faces — sizing only; no extra card
-/// chrome. Lists scroll inside the panel.
-///
-/// One variant now. The fixed 980x700 landscape box went with the pedal plate
-/// it existed for: the Control face is a list, and a list has no aspect ratio
-/// to preserve.
-class _TrayFaceFrame extends StatelessWidget {
-  /// A face that fills the sheet beside the rail.
-  ///
-  /// The default, because that is what the rail is for: the destination you
-  /// picked is the panel, so it should be the panel. These faces used to be
-  /// pinned to a fixed 520x680 box and centred, which left a list floating in
-  /// the middle of a mostly empty sheet no matter how much room was beside the
-  /// rail (#493).
-  const _TrayFaceFrame({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => SizedBox.expand(child: child);
 }

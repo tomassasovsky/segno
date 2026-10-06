@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
@@ -7,17 +5,14 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:segno/wifi/wifi_cubit.dart';
-import 'package:wifi_repository/wifi_repository.dart';
 
-/// The console's slide-down quick-access tray (Control-Center style): a small
-/// pull-tab [_TrayHandle] pinned at the top edge at all times — tap or drag
-/// it down to reveal a near-fullscreen translucent sheet. The open sheet is a
-/// [TrayPanel]: a persistent navigation rail down the left, and the
-/// destination it selects (the eight domains; brightness opens a
-/// popover instead)
-/// filling the rest. Tap or drag the handle back up to dismiss; taps on the
-/// backdrop or unused panel space leave the tray open.
+/// The console's slide-down tray: a small pull-tab [_TrayHandle] pinned at
+/// the top edge at all times — tap or drag it down to reveal a near-fullscreen
+/// sheet holding the tuner ([TrayPanel]). Tap or drag the handle back up to
+/// dismiss; taps on the backdrop leave the tray open.
+///
+/// The tray's settings faces moved to Settings and the FX page (#1199); the
+/// tray goes once the tuner has its foot function.
 ///
 /// Hand-rolled (not the `anydrawer` package's route-based drawer): the
 /// slide needs to track the drag continuously, following the finger frame
@@ -35,16 +30,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 /// than navigating away from it.
 class SettingsTray extends StatefulWidget {
   /// Creates a [SettingsTray].
-  ///
-  /// Optional [wifiRepository] overrides the [RepositoryProvider] value —
-  /// used by screenshot previews and tests.
-  const SettingsTray({
-    super.key,
-    this.wifiRepository,
-  });
-
-  /// Optional WiFi repository override.
-  final WifiRepository? wifiRepository;
+  const SettingsTray({super.key});
 
   @override
   State<SettingsTray> createState() => _SettingsTrayState();
@@ -58,33 +44,6 @@ class _SettingsTrayState extends State<SettingsTray> {
   /// animates.
   bool _dragging = false;
 
-  WifiCubit? _wifi;
-
-  WifiRepository _wifiRepository() {
-    if (widget.wifiRepository != null) return widget.wifiRepository!;
-    try {
-      return context.read<WifiRepository>();
-    } on ProviderNotFoundException {
-      return const WifiRepository(client: UnsupportedWifiClient());
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_wifi == null) {
-      final wifi = WifiCubit(repository: _wifiRepository());
-      unawaited(wifi.load());
-      _wifi = wifi;
-    }
-  }
-
-  @override
-  void dispose() {
-    unawaited(_wifi?.close() ?? Future<void>.value());
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = context.watch<SettingsTrayCubit>().state;
@@ -94,9 +53,7 @@ class _SettingsTrayState extends State<SettingsTray> {
         : kTrayMotion;
 
     // Full-height, like iOS Control Center — the tray covers the entire
-    // touchscreen with a translucent scrim (see [TrayPanel]), not a small
-    // dropdown; the tiles inside stay small and top-anchored rather than
-    // stretching to fill that space (see [TrayPanel]'s layout).
+    // touchscreen, not a small dropdown.
     final trayHeight = MediaQuery.sizeOf(context).height.clamp(340.0, 3000.0);
 
     return Stack(
@@ -135,15 +92,10 @@ class _SettingsTrayState extends State<SettingsTray> {
           // buttons with no visible extent.
           child: ExcludeSemantics(
             excluding: state.dragProgress <= 0,
-            child: MultiBlocProvider(
-              providers: [
-                BlocProvider<WifiCubit>.value(value: _wifi!),
-              ],
-              // The same duration the slide above runs on — zero mid-drag, so
-              // the sheet's shadow tracks the finger exactly and fades with
-              // the slide on a tap rather than snapping ahead of it.
-              child: TrayPanel(motion: motion),
-            ),
+            // The same duration the slide above runs on — zero mid-drag, so
+            // the sheet's shadow tracks the finger exactly and fades with the
+            // slide on a tap rather than snapping ahead of it.
+            child: TrayPanel(motion: motion),
           ),
         ),
         // The handle rides down with the drawer — resting at the very top
@@ -186,8 +138,8 @@ class _SettingsTrayState extends State<SettingsTray> {
 
 /// The always-visible pull tab pinned at the top edge. Owns ALL drag
 /// recognition for the tray — confined here (rather than spread over the
-/// full tray body) so the brightness slider inside the open panel owns its
-/// own gesture arena outright, with no competing recognizer over its hit
+/// full tray body) so the tuner's input tabs inside the open panel own their
+/// own gesture arena outright, with no competing recognizer over their hit
 /// area. If a future change widens the tray's own drag region, that
 /// isolation breaks silently — keep drag handling on this widget alone.
 class _TrayHandle extends StatelessWidget {
@@ -219,9 +171,6 @@ class _TrayHandle extends StatelessWidget {
   /// intrinsic size, since it's wrapped in an `AnimatedPositioned` with no
   /// `bottom`/`height` of its own.
   ///
-  /// Shared with the navigation rail, which pads its scroll view past this
-  /// band so no rail item can sit under the handle. Change it here and the
-  /// rail follows.
   static const double height = kTrayHandleHeight;
 
   @override

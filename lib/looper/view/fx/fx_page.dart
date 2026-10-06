@@ -8,6 +8,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
@@ -790,7 +791,7 @@ class _FxViewState extends State<FxView> {
               width: 251,
               radius: 8,
               label: l10n.fxPedalAssignments,
-              onTap: () {},
+              onTap: () => unawaited(openFxPedalAssignments()),
             ),
           ),
           Positioned(

@@ -9,9 +9,7 @@ import 'package:flutter/animation.dart';
 /// Rendered height of the tray's drag handle.
 ///
 /// `SettingsTray` positions the handle at the open panel's bottom edge, where
-/// it paints *over* the panel's own content; the navigation rail pads its
-/// scroll view past this so a rail item can never sit under a control that
-/// closes the tray. Both read this constant, so the two cannot drift.
+/// it paints *over* the panel's own content.
 const double kTrayHandleHeight = 21;
 
 /// Radius of the sheet's bottom corners, measured off the mockups' tray layer.
