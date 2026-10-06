@@ -978,6 +978,15 @@
     "unpair",
     "acks",
     "vpos",
-    "vseg"
+    "vseg",
+    "Unfiled",
+    "browsable",
+    "mixdowns",
+    "reloadable",
+    "renameable",
+    "topbar",
+    "Mogf",
+    "RKTE",
+    "jsmae"
   ]
 }
