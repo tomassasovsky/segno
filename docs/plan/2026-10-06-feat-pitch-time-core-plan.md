@@ -1064,6 +1064,37 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages
 ```
 
+As built in Part 4a (native only so far; numbers from the central ledger:
+command 120, facts 329 and 330, events.log version 10):
+
+- **What landed.** The recorded tempo (latched at a defining finalize, a
+  commit and a tempo restore; 0 with no material), the Follow tempo default
+  (0 until Part 4b's page) and per-track override (-1/0/1) through
+  `le_engine_set_follow_tempo` with a receipt, the lock relaxation for
+  `set_tempo` and tap pairs, retiming with divisor rounding and phase
+  scaling, the span model (`le_head_rate`: speed x take length / span), the
+  detached head for a track that keeps its recorded speed, the punch-in
+  guard on a take off its span (control and callback), history fit against
+  the recorded master after a retime (Clear Undo of an old take), a mode
+  switch returning the song to its recorded tempo, the snapshot fields
+  (`recorded_tempo_bpm`, `follow_tempo`, `tempo_follow` with its reason,
+  per-track `follow_override`), the facts and renderer parity.
+- **The span is per take.** A take remembers the clock it was laid down
+  against (`span_clock`, filled at the first retime), so takes recorded at
+  different tempi each read at their own ratio with no per-layer table: a
+  new take at the new tempo reads at rate 1 while the old one stretches,
+  and they swap roles when the tempo returns.
+- **Free and Song have no bar grid,** so they never retime: the snapshot
+  reports "no grid" (the plan's "Free/Song private clocks scale" has
+  nothing to apply to).
+- **Not in this part yet, proposed as its own part.** Pitch Unchanged
+  (the stretch render with `out_len = play_len` on the cache worker, the
+  dry-through-varispeed pending rule, `pitch_effective`, the 0.5 %
+  re-render tolerance, the pitch-mode command 121) and the Dart seam with
+  the settings receipts. Until then a following track's pitch follows the
+  tempo ratio, the "Follows speed" behaviour; Follow tempo stays off by
+  default, so no rig changes behaviour.
+
 ### Part 4b. Audio & tempo page and Session fields (about 300 production lines)
 
 Section 4.4: the Follow tempo default flips to On together with the page

@@ -51,9 +51,11 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
-  LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x
-                              * (#1179): capture never writes through a
-                              * fractional read head */
+  LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x,
+                              * or a punch-in on a transposed track or one
+                              * playing at another span than its take's
+                              * (#1179): capture never writes under playback
+                              * it does not hear */
   /* -11 .. -17 are assigned to other work (the numbering ledger). */
   LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
                               * exist (#1198) */
@@ -531,6 +533,10 @@ typedef enum le_command_code {
                           * raw-posted */
   LE_CMD_TRANSPOSE = 86,        /* checked internal Transpose request (#1179) */
   LE_CMD_TRANSPOSE_BYPASS = 87, /* checked internal Transpose bypass */
+  /* 88-119 are held by other plans (the central numbering ledger). */
+  LE_CMD_SET_FOLLOW_TEMPO = 120, /* checked internal Follow tempo setting
+                                  * (#1179 Part 4a); 121-123 are held for
+                                  * #1179's later parts */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -968,6 +974,10 @@ typedef struct le_track_snapshot {
    * bypassed, so a host never claims a pitch the mix is not playing. */
   int32_t transpose_st;
   int32_t transpose_effective_st;
+  /* Trailing (#1179 Part 4a): this track's Follow tempo override (-1
+   * inherits le_snapshot.follow_tempo, 0 keeps its recorded speed, 1 follows
+   * the song tempo). */
+  int32_t follow_override;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1388,7 +1398,27 @@ typedef struct le_snapshot {
   int32_t speed_denom;
   /* Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally. */
   int32_t transpose_bypass;
+  /* Trailing (#1179 Part 4a): the tempo the takes were recorded at (0 with
+   * no master), the Follow tempo default every track inherits (0 = keep the
+   * recorded speed), and what a song-tempo change does now
+   * (le_tempo_follow_state). */
+  float recorded_tempo_bpm;
+  int32_t follow_tempo;
+  int32_t tempo_follow;
 } le_snapshot;
+
+/* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part
+ * 4a). With no content the tempo is free. With content it retimes the shared
+ * clock only on a bar grid (Multi, Sync or Band with a tempo) with at least
+ * one track following, and never while a track records, overdubs, is armed
+ * or launching, or a count-in runs. */
+typedef enum le_tempo_follow_state {
+  LE_TEMPO_FOLLOW_FREE = 0,        /* no content: the tempo changes freely */
+  LE_TEMPO_FOLLOW_RETIMES = 1,     /* a change retimes the recorded tracks */
+  LE_TEMPO_FOLLOW_NO_GRID = 2,     /* locked: no bar grid to follow */
+  LE_TEMPO_FOLLOW_NO_FOLLOWER = 3, /* locked: no track follows the tempo */
+  LE_TEMPO_FOLLOW_BUSY = 4,        /* locked while capture, arm or count-in */
+} le_tempo_follow_state;
 
 /* ============================ Plugin hosting ==============================
  * Discovery of installed VST3 / CLAP audio-effect plugins. This first slice is
@@ -2061,7 +2091,10 @@ LE_EXPORT int32_t le_engine_finalize_take(le_engine* engine, int32_t channel);
  * (loop_bars > 0 or tempo_source != none), set_tempo / set_time_signature /
  * tap_tempo are accepted but IGNORED by the audio thread (the published state
  * is unchanged). Clearing every track releases the lock; the tempo VALUE and
- * its source survive the clear (a derived tempo outlives its source loop). */
+ * its source survive the clear (a derived tempo outlives its source loop).
+ * Follow tempo (#1179 Part 4a, le_engine_set_follow_tempo) lifts the lock for
+ * set_tempo and tap_tempo when a following track plays on a bar grid: the
+ * change then retimes the recorded tracks (le_snapshot.tempo_follow). */
 
 /* Sets the tempo in denominator-note beats per minute, clamped to 30..300.
  * Sets tempo_source = manual; ignored while the tempo is locked. */
@@ -3397,6 +3430,22 @@ LE_EXPORT int32_t le_engine_set_transpose_bypass(le_engine* engine,
 LE_EXPORT int32_t le_engine_get_transpose_cache(le_engine* engine,
                                                int32_t channel,
                                                le_lane_cache_info* out);
+/* Follow tempo (#1179 Part 4a). With content on a bar grid, a song-tempo
+ * change (le_engine_set_tempo, a tap pair) retimes the shared clock: the
+ * master length becomes the recorded length scaled by recorded / new tempo
+ * (rounded up to a whole number of the largest active Sync division), the
+ * position keeps its phase, bars and beats keep their count, and every track
+ * that follows reads its take at speed * take length / span, its pitch
+ * following. A track that does not follow keeps its recorded speed, its lap
+ * no longer the song lap, until the tempo returns. A take recorded at the
+ * new tempo plays at its own speed. While a track plays at another span
+ * than its take's, a punch-in on it is refused with LE_ERR_TRANSFORMED.
+ * [channel] -1 sets the default every track inherits ([value] 0 keeps the
+ * recorded speed, 1 follows; 0 until set); a track sets its override (-1
+ * inherits the default). LE_ERR_INVALID for a bad channel or value. */
+LE_EXPORT int32_t le_engine_set_follow_tempo(le_engine* engine,
+                                            int32_t channel, int32_t value,
+                                            uint64_t* request);
 /* Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
  * callback publication, INVALID for an absent/consumed/retired id; otherwise
  * OK and fills result. */

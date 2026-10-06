@@ -5977,6 +5977,49 @@ class SegnoEngineBindings {
         )
       >();
 
+  /// Follow tempo (#1179 Part 4a). With content on a bar grid, a song-tempo
+  /// change (le_engine_set_tempo, a tap pair) retimes the shared clock: the
+  /// master length becomes the recorded length scaled by recorded / new tempo
+  /// (rounded up to a whole number of the largest active Sync division), the
+  /// position keeps its phase, bars and beats keep their count, and every track
+  /// that follows reads its take at speed * take length / span, its pitch
+  /// following. A track that does not follow keeps its recorded speed, its lap
+  /// no longer the song lap, until the tempo returns. A take recorded at the
+  /// new tempo plays at its own speed. While a track plays at another span
+  /// than its take's, a punch-in on it is refused with LE_ERR_TRANSFORMED.
+  /// [channel] -1 sets the default every track inherits ([value] 0 keeps the
+  /// recorded speed, 1 follows; 0 until set); a track sets its override (-1
+  /// inherits the default). LE_ERR_INVALID for a bad channel or value.
+  int le_engine_set_follow_tempo(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int value,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_set_follow_tempo(
+      engine,
+      channel,
+      value,
+      request,
+    );
+  }
+
+  late final _le_engine_set_follow_tempoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_set_follow_tempo');
+  late final _le_engine_set_follow_tempo = _le_engine_set_follow_tempoPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
   /// Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
   /// callback publication, INVALID for an absent/consumed/retired id; otherwise
   /// OK and fills result.
@@ -6317,9 +6360,11 @@ enum le_result {
   /// is unavailable while Reverse is on
   LE_ERR_REVERSED(-9),
 
-  /// a record or overdub while Speed is not 1x
-  /// (#1179): capture never writes through a
-  /// fractional read head
+  /// a record or overdub while Speed is not 1x,
+  /// or a punch-in on a transposed track or one
+  /// playing at another span than its take's
+  /// (#1179): capture never writes under playback
+  /// it does not hear
   LE_ERR_TRANSFORMED(-10),
 
   /// the file (or a directory on its path) does not
@@ -6799,7 +6844,12 @@ enum le_command_code {
   LE_CMD_TRANSPOSE(86),
 
   /// checked internal Transpose bypass
-  LE_CMD_TRANSPOSE_BYPASS(87);
+  LE_CMD_TRANSPOSE_BYPASS(87),
+
+  /// checked internal Follow tempo setting
+  /// (#1179 Part 4a); 121-123 are held for
+  /// #1179's later parts
+  LE_CMD_SET_FOLLOW_TEMPO(120);
 
   final int value;
   const le_command_code(this.value);
@@ -6890,6 +6940,7 @@ enum le_command_code {
     85 => LE_CMD_SET_SPEED,
     86 => LE_CMD_TRANSPOSE,
     87 => LE_CMD_TRANSPOSE_BYPASS,
+    120 => LE_CMD_SET_FOLLOW_TEMPO,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -7468,6 +7519,12 @@ final class le_track_snapshot extends ffi.Struct {
 
   @ffi.Int32()
   external int transpose_effective_st;
+
+  /// Trailing (#1179 Part 4a): this track's Follow tempo override (-1
+  /// inherits le_snapshot.follow_tempo, 0 keeps its recorded speed, 1 follows
+  /// the song tempo).
+  @ffi.Int32()
+  external int follow_override;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -8027,6 +8084,19 @@ final class le_snapshot extends ffi.Struct {
   /// Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally.
   @ffi.Int32()
   external int transpose_bypass;
+
+  /// Trailing (#1179 Part 4a): the tempo the takes were recorded at (0 with
+  /// no master), the Follow tempo default every track inherits (0 = keep the
+  /// recorded speed), and what a song-tempo change does now
+  /// (le_tempo_follow_state).
+  @ffi.Float()
+  external double recorded_tempo_bpm;
+
+  @ffi.Int32()
+  external int follow_tempo;
+
+  @ffi.Int32()
+  external int tempo_follow;
 }
 
 /// The plugin format a descriptor was discovered in.

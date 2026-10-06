@@ -1369,6 +1369,19 @@ typedef struct le_track {
   /* An integral-rate step that landed inside a window, to be put on a whole
    * sample once the window ends (le_head_land). Callback-only. */
   int32_t land_whole;
+  /* Follow tempo (#1179 Part 4a): this track's override of the default
+   * (-1 inherit, 0 keeps its recorded speed, 1 follows the song tempo),
+   * callback-owned and published; and the span the perf log last named for
+   * its head (0 = its own length), so a change is logged exactly once. */
+  int32_t follow_override;
+  _Atomic int32_t a_follow_override;
+  int32_t log_play_len;
+  /* The shared-clock length the take was laid down against (0: the current
+   * one), callback-owned and published for control's punch-in guard. A
+   * retime fills it before moving the clock, so a following take reads at
+   * speed * span_clock / clock length. */
+  int32_t span_clock;
+  _Atomic int32_t a_span_clock;
   /* Control's view of direction while toggles are in flight
    * (le_effective_reversed): the number of REVERSE commands posted, the
    * direction they predict once applied, and the callback's count of REVERSE
@@ -1878,6 +1891,18 @@ struct le_engine {
    * with control's in-flight view like Speed's. */
   int32_t transpose_bypass;
   _Atomic int32_t a_transpose_bypass;
+  /* Audio & tempo follow (#1179 Part 4a): the default every track inherits
+   * (0 = keep the recorded speed), callback-owned and published; the tempo
+   * the takes were recorded at and the master length it measured, latched
+   * when a master is defined, committed or its tempo restored, cleared with
+   * the last take. A retime derives the new length from these, so a return
+   * to the recorded tempo restores the recorded length exactly. */
+  int32_t follow_tempo;
+  _Atomic int32_t a_follow_tempo;
+  _Atomic uint32_t a_recorded_tempo_bits;
+  float rec_bpm; /* kept through an all-empty reset for a Clear Undo */
+  int32_t rec_master_len;
+  _Atomic int32_t a_rec_master_len; /* published for control's history fit */
   uint32_t bypass_posted;
   int32_t bypass_pending;
   _Atomic uint32_t a_bypass_applied;
