@@ -164,6 +164,60 @@ void main() {
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
+    test('refuses an unsupported count-in at decode', () {
+      for (final bad in <Object?>[3, 5, -1, 1.5, '2', null]) {
+        expect(
+          () => Session.fromJson({...session.toJson(), 'countInBars': bad}),
+          throwsFormatException,
+          reason: '$bad',
+        );
+      }
+      for (final good in [0, 1, 2, 4]) {
+        expect(
+          Session.fromJson({
+            ...session.toJson(),
+            'countInBars': good,
+          }).countInBars,
+          good,
+        );
+      }
+    });
+
+    for (final key in [
+      'trackRecordTimingOverrides',
+      'trackOverdubDecayOverrides',
+      'trackOneShotOverrides',
+      'trackLengthPresetOverrides',
+      'trackPans',
+    ]) {
+      test('refuses a $key key outside the eight tracks at decode', () {
+        final valid = session.toJson()[key] as Map<String, dynamic>? ?? {};
+        final value = switch (key) {
+          'trackRecordTimingOverrides' => 'bar',
+          'trackOneShotOverrides' => true,
+          'trackPans' => 0.5,
+          _ => 4,
+        };
+        for (final bad in ['8', '-1']) {
+          expect(
+            () => Session.fromJson({
+              ...session.toJson(),
+              key: {...valid, bad: value},
+            }),
+            throwsFormatException,
+            reason: bad,
+          );
+        }
+        expect(
+          () => Session.fromJson({
+            ...session.toJson(),
+            key: {...valid, '7': value},
+          }),
+          returnsNormally,
+        );
+      });
+    }
+
     test(
       'Fade duration equality distinguishes Default and Custom membership',
       () {

@@ -504,7 +504,7 @@ void main() {
         clickMode: ClickMode.playRec,
         clickMask: 0x1,
         clickVolume: 0.4,
-        countInBars: 3,
+        countInBars: 2,
         recDub: true,
         defaultMultiple: 2,
       );
@@ -533,7 +533,7 @@ void main() {
       expect(session.clickMode, ClickMode.playRec);
       expect(session.clickOutputMask, 0x1);
       expect(session.clickVolume, 0.4);
-      expect(session.countInBars, 3);
+      expect(session.countInBars, 2);
       expect(session.recDub, isTrue);
       expect(session.autoRecord, isFalse);
       expect(session.defaultMultiple, 2);

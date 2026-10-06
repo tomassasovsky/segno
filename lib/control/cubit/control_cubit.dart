@@ -39,14 +39,15 @@ import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-part 'control_midi.dart';
 part 'control_foot_fade.dart';
 part 'control_foot_mixer.dart';
+part 'control_midi.dart';
 part 'control_state.dart';
 
 typedef _DecayOrigin = ({DecayLifetime lifetime, int revision});
@@ -55,7 +56,7 @@ typedef _RecordLengthOrigin = ({RecordLengthLifetime lifetime, int revision});
 typedef _RecordTimingOrigin = ({RecordTimingLifetime lifetime, int revision});
 typedef _ClickModeOrigin = ({ClickModeLifetime lifetime, int revision});
 typedef _RecordStartOrigin = ({RecordStartLifetime lifetime, int revision});
-typedef _FadeOrigin = ({int lifetime, int revision});
+typedef _FadeOrigin = ({SettingLifetime lifetime, int revision});
 typedef _ControlOrigins = ({
   Map<MixValueTarget, int> mix,
   ClickVolumeLifetime? click,
@@ -362,7 +363,7 @@ class ControlCubit extends Cubit<ControlState> {
   late RecordStartLifetime _recordStartLifetime;
   late final StreamSubscription<RecordStartSettings> _recordStartOrdinarySub;
   final FadeSettings _fade;
-  late int _fadeLifetime;
+  late SettingLifetime _fadeLifetime;
   late final StreamSubscription<({int? channel, int? milliseconds})>
   _fadeOrdinarySub;
   final ClickModeControl _clickMode;

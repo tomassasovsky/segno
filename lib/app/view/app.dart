@@ -184,7 +184,6 @@ class _AppState extends State<App> {
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
-  StreamSubscription<Object?>? _fadeFailureSubscription;
 
   @override
   void initState() {
@@ -223,7 +222,6 @@ class _AppState extends State<App> {
     _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
     _recordView = RecordOptionsCubit(settings: _runtime.record);
     _timingView = RecordTimingCubit(settings: _runtime.timing);
-    _fadeFailureSubscription = _runtime.fade.results.listen(_showFadeFailure);
     unawaited(
       _runtime.start().catchError((Object error, StackTrace stack) {
         AppLog.error('settings startup failed', error: error, stack: stack);
@@ -243,7 +241,6 @@ class _AppState extends State<App> {
       unawaited(subscription.cancel());
     }
     unawaited(_recordingInputRequiredSubscription?.cancel());
-    unawaited(_fadeFailureSubscription?.cancel());
     _controlNotices.dispose();
     unawaited(
       _closeControlOwners().catchError((Object error, StackTrace stack) {
@@ -336,6 +333,12 @@ class _AppState extends State<App> {
       refused: (context) => context.l10n.recordTimingSettingsRefusedTitle,
       body: (context) => context.l10n.recordTimingSettingsRecoveryBody,
     ),
+    OwnedSetting.fade => (
+      id: AppToastId.fadeSettings,
+      recovery: (context) => context.l10n.fadeSettingsRecoveryTitle,
+      refused: (context) => context.l10n.fadeSettingsRefusedTitle,
+      body: (context) => context.l10n.fadeSettingsRecoveryBody,
+    ),
   };
 
   void _showRecordingInputRequired(int channel) {
@@ -373,37 +376,16 @@ class _AppState extends State<App> {
               : 'Mix change was not applied',
         ),
         description: recovery
-            ? (_) => const Text('Audio was stopped to protect your settings.')
+            ? (_) => Text(
+                _runtime.mix.stoppedForRecovery
+                    ? 'Audio was stopped to protect your settings.'
+                    : 'Retry to confirm the mix.',
+              )
             : null,
         retry: recovery
             ? () async => (await _runtime.mix.recover()).isOk
             : null,
         needsRecovery: recovery ? () => _runtime.mix.recoveryRequired : null,
-      ),
-    );
-  }
-
-  void _showFadeFailure(Object? error) {
-    if (!mounted) return;
-    if (error == null) {
-      _controlNotices.dismiss(AppToastId.fadeSettings);
-      return;
-    }
-    AppLog.error('Fade duration settings: $error');
-    final recovery = _runtime.fade.needsRecovery;
-    _controlNotices.show(
-      ControlSettingsNotice(
-        id: AppToastId.fadeSettings,
-        title: (context) => Text(
-          recovery
-              ? context.l10n.fadeSettingsRecoveryTitle
-              : context.l10n.fadeSettingsRefusedTitle,
-        ),
-        description: recovery
-            ? (context) => Text(context.l10n.fadeSettingsRecoveryBody)
-            : null,
-        retry: recovery ? _runtime.fade.recover : null,
-        needsRecovery: recovery ? () => _runtime.fade.needsRecovery : null,
       ),
     );
   }

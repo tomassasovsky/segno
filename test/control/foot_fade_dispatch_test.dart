@@ -102,6 +102,7 @@ class _Rig {
       exportsRoot: () async => Directory.systemTemp.path,
     );
     fade = FadeSettings(
+      repository: looper,
       settings: settings,
       blocked: () => false,
       sessionBlocked: () => false,
