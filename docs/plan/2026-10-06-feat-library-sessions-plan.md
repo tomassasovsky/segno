@@ -141,6 +141,27 @@ a design change; this plan does not edit the pen):
 4. A `Sessions` group under Library > Audio lists each saved session's
    mixdown (E1 of the review): the pen has group headings (`Backing tracks`,
    `Performances`) but not this one.
+5. Part 2 as built (until the later parts add what is missing):
+   - The topbar draws only the `Sessions` tab, and the preview card has no
+     `Manage`, `Listen` or `Back up to USB`; the list has no `New folder`
+     and the search box keeps its 556 width beside the empty slot.
+   - The search box opens the keyboard sheet (19/04's idiom) titled
+     `Search sessions`, since the console has no keys.
+   - The empty catalog, a search with no match, nothing selected, a session
+     without audio and an unreadable session each get one line of copy that
+     the pen does not draw.
+   - The USB location without a drive uses 18/06's notice with
+     "Your internal sessions are still available." and Lucide's `usb`
+     glyph, and the preview card keeps the internal selection.
+   - The preview card sits at x 765 but is 1027 wide: the pen's 1028 runs
+     one pixel past its own 1792 layout.
+   - Saved dates read `7 Sep` (the English locale data), not the pen's `7 Sept`.
+   - `New loop`, `Return to tracks` and `Open session` use the shared accent
+     button, whose label is regular weight; the pen draws them bold.
+   - Preview lanes draw the clip without a waveform (D11, until Part 6b).
+   - The quick Save with no open session keeps its name prompt
+     (`promptSaveAs`) until Part 3's automatic names, rather than opening the
+     Library, which has no Save as yet.
 
 ## 3. Decisions
 

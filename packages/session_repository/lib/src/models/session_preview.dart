@@ -12,11 +12,16 @@ class SessionPreview {
     required this.summary,
     required this.tracks,
     required this.fxCount,
+    required this.sampleRate,
     this.backingCount = 0,
   });
 
   /// The catalog row this preview belongs to.
   final SessionSummary summary;
+
+  /// The rate the session was recorded at, so a track without a tempo can
+  /// show its length in seconds.
+  final int sampleRate;
 
   /// The populated tracks, in channel order.
   final List<SessionPreviewTrack> tracks;

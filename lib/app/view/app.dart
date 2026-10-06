@@ -27,6 +27,7 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/looper.dart';
@@ -80,6 +81,7 @@ class App extends StatefulWidget {
     ),
     this.brightness = const UnsupportedBrightnessClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
+    this.removableVolumes = const InternalOnlyVolumes(),
     this.powerKeySource,
     this.powerOff,
     super.key,
@@ -103,6 +105,11 @@ class App extends StatefulWidget {
   /// where it can export to. Defaults to the client that answers "unknown",
   /// which is what every non-appliance build gets.
   final ConsoleFactsClient consoleFacts;
+
+  /// The removable drives the Library browses and copies to. Defaults to
+  /// [InternalOnlyVolumes] (no drive, every removable write refused) until
+  /// the storage service (#1177) stands behind the port.
+  final RemovableVolumes removableVolumes;
 
   /// Injected power-button source. Null (the default) starts an evdev
   /// listener on Linux when `segno-update-ctl` exists, and nothing elsewhere.
@@ -444,6 +451,9 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.bluetooth),
         RepositoryProvider.value(value: widget.brightness),
         RepositoryProvider.value(value: widget.consoleFacts),
+        RepositoryProvider<RemovableVolumes>.value(
+          value: widget.removableVolumes,
+        ),
         if (_powerKeySource != null)
           RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),
       ],

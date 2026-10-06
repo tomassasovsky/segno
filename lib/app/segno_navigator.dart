@@ -4,6 +4,7 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
+import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
@@ -36,6 +37,29 @@ const String segnoExternalPedalsRouteName = 'segno/external-pedals';
 
 /// Route name for MIDI controls and Learn.
 const String segnoMidiControlsRouteName = 'segno/midi-controls';
+
+/// Route name for the Library.
+const String segnoLibraryRouteName = 'segno/library';
+
+bool _libraryOpen = false;
+
+/// Pushes the Library route onto the root navigator; guarded against
+/// stacking duplicates like [openLoopSettings].
+Future<void> openLibrary() async {
+  final navigator = segnoNavigatorKey.currentState;
+  if (navigator == null || _libraryOpen) return;
+  _libraryOpen = true;
+  try {
+    await navigator.push(
+      desktopPageRoute<void>(
+        (_) => const LibraryPage(),
+        settings: const RouteSettings(name: segnoLibraryRouteName),
+      ),
+    );
+  } finally {
+    _libraryOpen = false;
+  }
+}
 
 bool _loopSettingsOpen = false;
 bool _audioRoutingOpen = false;
@@ -201,6 +225,7 @@ void resetSegnoNavigatorForTest() {
   _pedalSetupOpen = false;
   _externalPedalsOpen = false;
   _midiControlsOpen = false;
+  _libraryOpen = false;
   _fxCatalogue = null;
 }
 

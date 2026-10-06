@@ -20,6 +20,7 @@ class SessionSummary {
     this.folder,
     this.modifiedAt,
     this.trackCount = 0,
+    this.populatedChannels = const [],
     this.tempoBpm = 0,
     this.tsNum = 4,
     this.tsDen = 4,
@@ -44,6 +45,10 @@ class SessionSummary {
 
   /// Tracks holding recorded audio, per the manifest's `tracks` list.
   final int trackCount;
+
+  /// The channels of those tracks, in manifest order, for the row's
+  /// eight-slot track strip.
+  final List<int> populatedChannels;
 
   /// The saved tempo in BPM; 0 when the session has none.
   final double tempoBpm;
