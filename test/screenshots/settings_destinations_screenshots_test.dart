@@ -46,7 +46,12 @@ void main() {
   setUp(resetSegnoNavigatorForTest);
 
   final pages = <String, Future<void> Function()>{
-    'home': openSegnoSettings,
+    // With Power, as the console draws it (a desktop build has none).
+    'home': () => segnoNavigatorKey.currentState!.push<void>(
+      MaterialPageRoute(
+        builder: (_) => const SettingsHomePage(powerAvailable: true),
+      ),
+    ),
     'device': openDeviceSettings,
     'network': openNetworkSettings,
     'displays': openDisplaySettings,
@@ -64,7 +69,14 @@ void main() {
       final context = tester.element(find.byType(Scaffold).last);
       await tester.runAsync(() async {
         for (final destination in SettingsDestination.values) {
-          await precacheImage(AssetImage(destination.artAsset), context);
+          await precacheImage(
+            ResizeImage(
+              AssetImage(destination.artAsset),
+              width: SettingsTile.artSize.round(),
+              height: SettingsTile.artSize.round(),
+            ),
+            context,
+          );
         }
       });
       await tester.pumpAndSettle();

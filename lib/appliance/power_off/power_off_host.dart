@@ -14,6 +14,7 @@ import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// What the power-off gate needs to know about the rig right now, read from
 /// the app-wide owners above [context].
@@ -22,6 +23,10 @@ PowerOffSnapshot currentPowerOffSnapshot(BuildContext context) =>
       looper: context.read<LooperBloc>().state,
       recorder: context.read<PerformanceRecorderCubit>().state,
       session: context.read<SessionCubit>().state,
+      // Asked of the repository at the press: a lease can be taken between
+      // two of the Storage page's reads.
+      transferInFlight:
+          _maybeRead<StorageRepository>(context)?.transferInFlight ?? false,
     );
 
 /// Asks to power off exactly as a short press of the rear power button does:
