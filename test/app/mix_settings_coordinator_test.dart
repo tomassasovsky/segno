@@ -726,6 +726,68 @@ void main() {
     },
   );
 
+  test(
+    'an edit while a vector is owed stores nothing, and Retry lands the owed '
+    'vector that storage holds',
+    () async {
+      audio
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      expect(
+        (await coordinator.setTrackPan(.4)).status,
+        MixSettingsStatus.recoveryRequired,
+      );
+      expect(persistence.durable, 'candidate 1 for rig A');
+      final edit = await coordinator.setTrackPan(.8);
+      expect(edit.status, MixSettingsStatus.recoveryRequired);
+      // Storage still holds the owed .4: no second candidate was written.
+      expect(persistence.candidates, hasLength(1));
+      expect(persistence.durable, 'candidate 1 for rig A');
+      expect(persistence.restores, 0);
+      audio
+        ..publishMixCommands = true
+        ..publishMix()
+        ..commandsAreSettled = true;
+      expect((await coordinator.recover()).isOk, isTrue);
+      // Storage, engine and repository agree on the owed value.
+      expect(persistence.candidates.single.trackPans[0], .4);
+      expect(repository.trackPan(0), .4);
+      expect(audio.lanePan[(0, 0)], .4);
+    },
+  );
+
+  test(
+    'an unconfirmed restart replay shows the Retry notice, and Retry lets '
+    'Record start again',
+    () async {
+      final errors = <MixSettingsOutcome>[];
+      final sub = coordinator.failures.listen(errors.add);
+      audio
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      repository
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      await repository.settleMixSettings(
+        attempts: 1,
+        pollInterval: Duration.zero,
+      );
+      await _turn();
+      expect(repository.mixRecoveryRequired, isTrue);
+      expect(repository.record(), EngineResult.notReady);
+      await _turn();
+      expect(errors, hasLength(1));
+      expect(errors.single.status, MixSettingsStatus.recoveryRequired);
+      audio
+        ..publishMixCommands = true
+        ..commandsAreSettled = true;
+      expect((await coordinator.recover()).isOk, isTrue);
+      expect(repository.mixRecoveryRequired, isFalse);
+      expect(repository.record(), EngineResult.ok);
+      await sub.cancel();
+    },
+  );
+
   test('failed output rollback stops audio until recovery succeeds', () async {
     persistence.refuseRestore = true;
     audio.mixResult = EngineResult.notReady;

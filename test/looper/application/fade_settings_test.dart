@@ -320,6 +320,27 @@ void main() {
         expect((owner.live.defaultMs, stored().defaultMs), (2500, 2500));
       });
 
+      test(
+        'a device restart retires a held value: the next gesture uses '
+        'Released',
+        () async {
+          expect(await write(null, 5000, released: 1000), isTrue);
+          expect(owner.live.defaultMs, 5000);
+          final lifetime = owner.lifetime;
+          expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+          await Future<void>.delayed(Duration.zero);
+          expect(owner.lifetime, isNot(lifetime));
+          expect(owner.live.defaultMs, 1000);
+          expect(owner.confirmed.defaultMs, 1000);
+          // The pedal's release from the old lifetime is refused, harmlessly.
+          expect(
+            await write(null, 1000, lifetime: lifetime, revision: 0),
+            isFalse,
+          );
+          expect(owner.live.defaultMs, 1000);
+        },
+      );
+
       test('writing an inherited track creates its override', () async {
         await owner.setDefault(8000);
         expect(owner.confirmed.overrides, isEmpty);

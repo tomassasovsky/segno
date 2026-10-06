@@ -92,6 +92,10 @@ final class ClickVolumeFamily implements SettingsFamily<double, double?> {
 
   @override
   EngineResult recover() => _repository.recoverClickVolume();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 /// Hear click: one native mode, stored as its enum code.
@@ -177,6 +181,10 @@ final class HearClickFamily implements SettingsFamily<ClickMode, int?> {
 
   @override
   EngineResult recover() => _repository.recoverClickMode();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 /// Presents the Click volume owner through ControlCubit's existing port.
@@ -381,6 +389,10 @@ final class RecordStartFamily
 
   @override
   EngineResult recover() => _repository.recoverRecordStartSettings();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 
   static RecordStartSettings _pair(({int countInBars, bool soundStart}) pair) =>
       RecordStartSettings(
@@ -628,6 +640,10 @@ final class DecayFamily implements SettingsFamily<DecaySnapshot, int?> {
 
   @override
   EngineResult recover() => EngineResult.ok;
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 const _oneShotAddresses = <Object?>[
@@ -758,6 +774,10 @@ final class OneShotFamily implements SettingsFamily<OneShotSnapshot, bool?> {
 
   @override
   EngineResult recover() => _repository.recoverOneShotSettings();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 /// Presents the Decay owner through ControlCubit's existing port.
@@ -1080,6 +1100,10 @@ final class RecordLengthFamily
 
   @override
   EngineResult recover() => _repository.recoverLengthSettings();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 /// The stored Record timing gate, one storage address of the timing family.
@@ -1298,6 +1322,10 @@ final class RecordTimingFamily
 
   @override
   EngineResult recover() => _repository.recoverRecordTimingSettings();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 /// Fade durations: one stored JSON record and no native command. The family
@@ -1409,6 +1437,11 @@ final class FadeFamily implements SettingsFamily<FadeDurations, String?> {
 
   @override
   EngineResult recover() => EngineResult.ok;
+
+  /// No restart replay retires a held value, so a new session or device
+  /// lifetime returns the next gesture to the durable durations.
+  @override
+  void retireLive() => _live = _durable;
 
   static FadeDurations _decode(String record) =>
       FadeDurations.fromJson(jsonDecode(record) as Map<String, dynamic>);

@@ -151,6 +151,9 @@ void main() {
     when(() => looper.fxRecipesSettled).thenReturn(true);
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.mixRecoveryRequired).thenReturn(false);
+    when(
+      () => looper.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => looper.allMonitors()).thenReturn(const {});
     when(() => looper.allLaneChains()).thenReturn(const {});
     when(() => looper.allTracksEffects).thenReturn(const []);

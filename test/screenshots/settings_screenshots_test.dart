@@ -177,6 +177,9 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     // The Audio section's MIDI-learn block enumerates mappable targets from
     // the live rig; the goldens capture an empty one.
     when(() => repository.allMonitors()).thenAnswer((_) => const {});

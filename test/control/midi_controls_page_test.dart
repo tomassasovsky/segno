@@ -131,6 +131,9 @@ void main() {
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.mixRecoveryRequired).thenReturn(false);
+    when(
+      () => looper.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
     when(() => looper.laneCount(any())).thenReturn(1);
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
