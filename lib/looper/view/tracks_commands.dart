@@ -377,8 +377,9 @@ void onSessionState(BuildContext context, SessionState state) {
 }
 
 /// Shows a transient SnackBar surfacing the last session action's outcome —
-/// a localized success line, or a localized, human-readable error for the
-/// known refusals (sample-rate mismatch, newer manifest version), falling
+/// a localized success line (saying so when a load converted an older
+/// session), or a localized, human-readable error for the known refusals
+/// (sample-rate mismatch, newer or unconvertible manifest version), falling
 /// back to the raw message otherwise. The content is a live region so it is
 /// announced to assistive tech as it appears (WCAG 4.1.3). Wired as the
 /// `TracksView`'s session [BlocListener].
@@ -387,7 +388,10 @@ void showSessionOutcome(BuildContext context, SessionState state) {
   final message = switch (state.status) {
     SessionStatus.success => switch (state.outcome) {
       SessionOutcome.saved => l10n.sessionSaved,
-      SessionOutcome.loaded => l10n.sessionLoaded,
+      SessionOutcome.loaded =>
+        state.convertedFrom == null
+            ? l10n.sessionLoaded
+            : l10n.sessionLoadedConverted,
       SessionOutcome.mixdownExported => l10n.mixdownExported,
       SessionOutcome.stemsExported => l10n.stemsExported,
       // The named-session outcomes surface through the Sessions manager UI (a
@@ -400,6 +404,7 @@ void showSessionOutcome(BuildContext context, SessionState state) {
     SessionStatus.failure => switch (state.error) {
       SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
       SessionError.unsupportedVersion => l10n.sessionErrorUnsupportedVersion,
+      SessionError.unconvertible => l10n.sessionErrorUnconvertible,
       // App recovery notices remain actionable above the Sessions dialog.
       SessionError.bootPersistence => null,
       // nameCollision gets a dedicated inline message in the manager UI; here

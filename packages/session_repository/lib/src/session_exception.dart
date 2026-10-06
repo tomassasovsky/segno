@@ -32,8 +32,9 @@ class SessionSampleRateMismatch extends SessionException {
       '$deviceRate Hz';
 }
 
-/// The session manifest declares schema [version], not this build's required
-/// schema [supported].
+/// The session manifest declares schema [version], newer than the schema
+/// [supported] this build reads and converts to. [Session.fromJson] alone
+/// also refuses an older schema this way; opening a bundle converts those.
 class SessionUnsupportedVersion extends SessionException {
   /// Creates a [SessionUnsupportedVersion].
   const SessionUnsupportedVersion({
@@ -50,6 +51,23 @@ class SessionUnsupportedVersion extends SessionException {
   @override
   String toString() =>
       'unsupported session version $version (requires $supported)';
+}
+
+/// The manifest was written by an older schema this build cannot convert:
+/// one older than [oldestConvertibleSessionVersion], or one whose conversion
+/// failed. The bundle is left exactly as it was.
+class SessionUnconvertible extends SessionException {
+  /// Creates a [SessionUnconvertible].
+  const SessionUnconvertible({required this.version, required this.reason});
+
+  /// The manifest's declared schema version.
+  final int version;
+
+  /// What stopped the conversion.
+  final String reason;
+
+  @override
+  String toString() => 'session schema $version cannot be converted: $reason';
 }
 
 /// A track lane's overdub-layer stack is structurally invalid — its declared

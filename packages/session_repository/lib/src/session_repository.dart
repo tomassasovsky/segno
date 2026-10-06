@@ -8,6 +8,7 @@ import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/src/models/session.dart';
 import 'package:session_repository/src/models/session_summary.dart';
 import 'package:session_repository/src/session_exception.dart';
+import 'package:session_repository/src/session_migration.dart';
 import 'package:session_repository/src/session_name.dart';
 import 'package:wav_codec/wav_codec.dart';
 
@@ -17,6 +18,14 @@ import 'package:wav_codec/wav_codec.dart';
 typedef SessionBundle = ({
   Session session,
   Map<(int, int), List<Float32List>> laneStems,
+});
+
+/// A bundle opened for loading: its decoded [SessionBundle] and, when the
+/// manifest was written by an older schema, the in-memory conversion that
+/// [SessionRepository.commitConversion] writes back once the load succeeds.
+typedef OpenedSession = ({
+  SessionBundle bundle,
+  SessionConversion? conversion,
 });
 
 /// The effect-chain data a [SessionRepository.save] persists that the engine
@@ -488,6 +497,16 @@ class SessionRepository {
       savedSettings,
       pedalBindings,
     );
+    // An older-schema manifest is an original no save may destroy: keep it
+    // as a backup first, exactly as opening it would have.
+    final previous = File('$directory/${Session.manifestName}');
+    if (previous.existsSync()) {
+      final original = await previous.readAsString();
+      final version = _versionOf(original);
+      if (version != null && version < Session.formatVersion) {
+        await _keepOriginal(directory, version, original);
+      }
+    }
     await File('$directory/${Session.manifestName}').writeAsString(
       const JsonEncoder.withIndent('  ').convert(session.toJson()),
     );
@@ -531,36 +550,50 @@ class SessionRepository {
   }
 
   /// Reads and validates the `.segno` bundle [directory]: decodes the manifest
-  /// and every lane's live-buffer WAV. Pure I/O — the engine is never driven;
-  /// the caller (the bloc layer) hands the result to the looper repository's
-  /// `applySession`, the one apply path.
+  /// and every lane's layer WAVs. Pure I/O — the engine is never driven and
+  /// nothing is written; the caller (the bloc layer) hands the result to the
+  /// looper repository's `applySession`, the one apply path. A manifest from
+  /// an older schema is converted in memory with every formerly global
+  /// setting at its default; [open] is the load path that keeps the player's.
+  Future<SessionBundle> read(String directory) async =>
+      (await open(directory)).bundle;
+
+  /// Reads and validates the `.segno` bundle [directory] for loading, as
+  /// [read] does, and converts a manifest written by an older schema in
+  /// memory (see [decodeSessionManifest]). [liveSettings] supplies the
+  /// player's current settings and is asked only for such a manifest. The
+  /// bundle on disk is never touched here: [commitConversion] writes the
+  /// conversion back once the caller has loaded it. Every refusal leaves the
+  /// bundle byte-identical.
   ///
   /// The stems are raw PCM at the saved rate; loading them on a device running
   /// a different rate would play the session back at the wrong pitch (there is
   /// no resampling), so this refuses with [SessionSampleRateMismatch] rather
   /// than decode something unusable. A session without audio can restore its
   /// settings at any device sample rate.
-  Future<SessionBundle> read(String directory) async {
-    final manifest = await File(
+  Future<OpenedSession> open(
+    String directory, {
+    FutureOr<SessionSettings> Function()? liveSettings,
+  }) async {
+    final source = await File(
       '$directory/${Session.manifestName}',
     ).readAsString();
-    final session = Session.fromJson(
-      jsonDecode(manifest) as Map<String, dynamic>,
-    );
-
-    if (session.loopBars < 0 || session.loopBars > 0x7fffffff ~/ 15) {
-      throw const FormatException('session contains an invalid bar grid');
-    }
-
-    final validTempo = switch (session.tempoSource) {
-      TempoSource.none => session.tempoBpm == 0,
-      TempoSource.manual ||
-      TempoSource.tapped ||
-      TempoSource.derived => session.tempoBpm >= 30 && session.tempoBpm <= 300,
-      TempoSource.external => false,
-    };
-    if (!validTempo) {
-      throw const FormatException('session contains an unsupported tempo pair');
+    final version = _versionOf(source);
+    final live =
+        version != null &&
+            version < Session.formatVersion &&
+            liveSettings != null
+        ? await liveSettings()
+        : const SessionSettings();
+    final (:session, :conversion) = decodeSessionManifest(source, live: live);
+    try {
+      _validateMusicalGrid(session);
+    } on FormatException catch (error) {
+      if (conversion == null) rethrow;
+      throw SessionUnconvertible(
+        version: conversion.fromVersion,
+        reason: error.message,
+      );
     }
 
     final current = _engine.snapshot();
@@ -586,7 +619,103 @@ class SessionRepository {
         laneStems[(track.channel, lane.lane)] = layers;
       }
     }
-    return (session: session, laneStems: laneStems);
+    return (
+      bundle: (session: session, laneStems: laneStems),
+      conversion: conversion,
+    );
+  }
+
+  /// Writes an opened bundle's [conversion] back to [directory]: the original
+  /// manifest is kept byte for byte beside it as `session.v<N>.json` (see
+  /// [backupName]), then the converted manifest replaces `session.json`
+  /// atomically. Does nothing when the manifest on disk is no longer the one
+  /// that was converted. The audio files are shared with the converted
+  /// manifest, not copied.
+  Future<void> commitConversion(
+    String directory,
+    SessionConversion conversion,
+  ) async {
+    final manifest = File('$directory/${Session.manifestName}');
+    if (await manifest.readAsString() != conversion.original) return;
+    await _keepOriginal(directory, conversion.fromVersion, conversion.original);
+    await _replaceManifest(
+      directory,
+      const JsonEncoder.withIndent('  ').convert(conversion.manifest),
+    );
+  }
+
+  /// The backup name for an original manifest of schema [version]: a name no
+  /// bundle file uses (`session.json`, `mixdown.wav`, the layer WAVs).
+  /// [attempt] numbers further backups when one already holds other bytes.
+  @visibleForTesting
+  static String backupName(int version, [int attempt = 1]) => attempt == 1
+      ? 'session.v$version.json'
+      : 'session.v$version.$attempt.json';
+
+  /// Keeps [original] under the first free backup name, or confirms an
+  /// existing backup already holds exactly those bytes. Never overwrites.
+  Future<void> _keepOriginal(
+    String directory,
+    int version,
+    String original,
+  ) async {
+    for (var attempt = 1; ; attempt++) {
+      final backup = File('$directory/${backupName(version, attempt)}');
+      if (backup.existsSync()) {
+        if (await backup.readAsString() == original) return;
+        continue;
+      }
+      try {
+        await backup.create(exclusive: true);
+      } on FileSystemException {
+        if (backup.existsSync()) continue;
+        rethrow;
+      }
+      await backup.writeAsString(original, flush: true);
+      return;
+    }
+  }
+
+  /// Replaces the bundle's manifest with [contents] through a temporary file
+  /// and a rename, so a crash leaves either the old or the new manifest.
+  Future<void> _replaceManifest(String directory, String contents) async {
+    final temporary = File(
+      '$directory/${Session.manifestName}.'
+      '${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    await temporary.writeAsString(contents, flush: true);
+    await temporary.rename('$directory/${Session.manifestName}');
+  }
+
+  /// The integer `version` of a manifest [source], or null when it has none.
+  static int? _versionOf(String source) {
+    try {
+      final json = jsonDecode(source);
+      if (json is Map<String, dynamic>) {
+        final version = json['version'];
+        if (version is int) return version;
+      }
+    } on FormatException {
+      return null;
+    }
+    return null;
+  }
+
+  static void _validateMusicalGrid(Session session) {
+    if (session.loopBars < 0 || session.loopBars > 0x7fffffff ~/ 15) {
+      throw const FormatException('session contains an invalid bar grid');
+    }
+
+    final validTempo = switch (session.tempoSource) {
+      TempoSource.none => session.tempoBpm == 0,
+      TempoSource.manual ||
+      TempoSource.tapped ||
+      TempoSource.derived => session.tempoBpm >= 30 && session.tempoBpm <= 300,
+      TempoSource.external => false,
+    };
+    if (!validTempo) {
+      throw const FormatException('session contains an unsupported tempo pair');
+    }
   }
 
   /// Exports a single mixed-down WAV of the current session to [path].

@@ -5,5 +5,13 @@ library;
 export 'src/models/session.dart';
 export 'src/models/session_summary.dart';
 export 'src/session_exception.dart';
+export 'src/session_migration.dart'
+    show
+        SessionConversion,
+        SessionMigrationContext,
+        SessionMigrationStep,
+        decodeSessionManifest,
+        oldestConvertibleSessionVersion,
+        sessionMigrationSteps;
 export 'src/session_name.dart';
 export 'src/session_repository.dart';

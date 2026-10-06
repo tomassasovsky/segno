@@ -50,6 +50,10 @@ enum SessionError {
   /// The session was written by a newer, incompatible version of the app.
   unsupportedVersion,
 
+  /// The session was written by an older version of the app that this one
+  /// cannot convert; the bundle was left untouched.
+  unconvertible,
+
   /// A save-as / rename targeted a name whose slug already exists.
   nameCollision,
 
@@ -81,6 +85,7 @@ class SessionState extends Equatable {
     this.currentSessionName,
     this.sessions = const [],
     this.bootRecoveryRequired = false,
+    this.convertedFrom,
   });
 
   /// The current action status.
@@ -105,9 +110,15 @@ class SessionState extends Equatable {
   /// The new rig was accepted but boot settings or bindings still need Retry.
   final bool bootRecoveryRequired;
 
+  /// The older schema the session just loaded was converted from, or null.
+  /// A per-transition result, like [outcome]: the notice that tells the
+  /// player their session was converted reads it.
+  final int? convertedFrom;
+
   /// Returns a copy for the next emit.
   ///
-  /// The **result** fields ([outcome] / [error] / [errorMessage]) are
+  /// The **result** fields ([outcome] / [error] / [errorMessage] /
+  /// [convertedFrom]) are
   /// per-transition: they default to `null` (cleared) unless passed, so a fresh
   /// status never carries a stale result. The **durable** fields
   /// ([currentSessionName] / [sessions]) are preserved unless overridden;
@@ -121,6 +132,7 @@ class SessionState extends Equatable {
     bool clearCurrentSession = false,
     List<SessionSummary>? sessions,
     bool? bootRecoveryRequired,
+    int? convertedFrom,
   }) => SessionState(
     status: status ?? this.status,
     outcome: outcome,
@@ -131,6 +143,7 @@ class SessionState extends Equatable {
         : (currentSessionName ?? this.currentSessionName),
     sessions: sessions ?? this.sessions,
     bootRecoveryRequired: bootRecoveryRequired ?? this.bootRecoveryRequired,
+    convertedFrom: convertedFrom,
   );
 
   @override
@@ -142,5 +155,6 @@ class SessionState extends Equatable {
     currentSessionName,
     sessions,
     bootRecoveryRequired,
+    convertedFrom,
   ];
 }
