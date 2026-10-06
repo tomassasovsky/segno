@@ -242,6 +242,25 @@ void main() {
       expect(find.byKey(const Key('storage_eject_failed')), findsNothing);
     });
 
+    testWidgets('an eject the helper took and never answered says how to '
+        'get out: unplug the drive', (tester) async {
+      final l10n = await pump(tester, volumes: [usbRecord(1)]);
+
+      await tester.tap(find.byKey(const Key('storage_eject')));
+      await tester.pumpAndSettle();
+      rig.client.take('req-1');
+      await tester.pump(const Duration(minutes: 3));
+      await tester.pumpAndSettle();
+
+      expect(inCard(1, find.text(l10n.storageUsbEjecting)), findsOneWidget);
+      expect(find.text(l10n.storageEjectStuck), findsOneWidget);
+      expect(find.byKey(const Key('storage_eject_failed')), findsNothing);
+
+      rig.client.detach(1);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('storage_eject_stuck')), findsNothing);
+    });
+
     testWidgets('a Cancel after the helper took the eject drops Cancel and '
         'says the eject cannot be stopped', (tester) async {
       final l10n = await pump(tester, volumes: [usbRecord(1)]);

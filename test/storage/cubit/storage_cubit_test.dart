@@ -320,6 +320,12 @@ void main() {
 
       expect(cubit.state.ejectFailed, isNull);
       expect(cubit.state.volumes.single.status, RemovableVolumeStatus.ejecting);
+      // The way out is said: it may never finish if the helper died.
+      expect(cubit.state.ejectStuck, 1);
+
+      rig.client.detach(1);
+      await pumpEventQueue();
+      expect(cubit.state.ejectStuck, isNull);
     });
   });
 }

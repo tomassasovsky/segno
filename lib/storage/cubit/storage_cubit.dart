@@ -63,6 +63,12 @@ class StorageCubit extends Cubit<StorageState> {
         volumes: volumes,
         ejectFailed: failureStands ? null : () => null,
         ejectTaken: state.ejectTaken && volumes.any(_isEjecting),
+        ejectStuck:
+            volumes.any(
+              (v) => v.generation == state.ejectStuck && _isEjecting(v),
+            )
+            ? null
+            : () => null,
       ),
     );
     unawaited(refresh());
@@ -140,6 +146,13 @@ class StorageCubit extends Cubit<StorageState> {
       return;
     }
     if (isClosed) return;
+    if (outcome == const EjectOutcome.failed(StorageRepository.stillEjecting) &&
+        state.volumes.any(
+          (v) => v.generation == generation && _isEjecting(v),
+        )) {
+      emit(state.copyWith(ejectStuck: () => generation));
+      return;
+    }
     if (outcome is EjectFailed &&
         outcome.reason != StorageRepository.stillEjecting &&
         state.volumes.any((v) => v.generation == generation)) {

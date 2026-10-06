@@ -16,6 +16,7 @@ class StorageState extends Equatable {
     this.holders = const {},
     this.ejectFailed,
     this.ejectTaken = false,
+    this.ejectStuck,
   });
 
   /// Whether this build can see removable volumes at all.
@@ -55,6 +56,12 @@ class StorageState extends Equatable {
   /// place of offering Cancel again. Cleared when no drive is ejecting.
   final bool ejectTaken;
 
+  /// The generation whose eject the helper took and has not answered after
+  /// the repository's cap: it may finish, or the helper may have died with
+  /// it, and pulling the drive is the way out. Cleared when the drive
+  /// answers or goes.
+  final int? ejectStuck;
+
   /// Returns a copy with the given fields replaced. The nullable fields take
   /// a function, so null can be set rather than meaning "keep".
   StorageState copyWith({
@@ -68,6 +75,7 @@ class StorageState extends Equatable {
     Map<int, Set<WritePurpose>>? holders,
     int? Function()? ejectFailed,
     bool? ejectTaken,
+    int? Function()? ejectStuck,
   }) => StorageState(
     removableSupported: removableSupported ?? this.removableSupported,
     volumes: volumes ?? this.volumes,
@@ -79,6 +87,7 @@ class StorageState extends Equatable {
     holders: holders ?? this.holders,
     ejectFailed: ejectFailed != null ? ejectFailed() : this.ejectFailed,
     ejectTaken: ejectTaken ?? this.ejectTaken,
+    ejectStuck: ejectStuck != null ? ejectStuck() : this.ejectStuck,
   );
 
   @override
@@ -93,5 +102,6 @@ class StorageState extends Equatable {
     holders,
     ejectFailed,
     ejectTaken,
+    ejectStuck,
   ];
 }
