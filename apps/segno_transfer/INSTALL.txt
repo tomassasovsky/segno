@@ -1,0 +1,40 @@
+SEGNO TRANSFER
+
+Requirements: macOS 14 or newer, on a Mac with Apple Silicon (M1 or newer).
+
+INSTALL
+
+1. Drag Segno Transfer into Applications.
+2. Open Segno Transfer from Applications.
+
+This free release is locally signed and has not been notarized by Apple.
+If macOS blocks the first launch because it cannot verify the developer:
+
+1. Dismiss the launch warning.
+2. Open System Settings > Privacy & Security.
+3. Find the message about Segno Transfer and choose Open Anyway.
+4. Confirm opening the app when prompted.
+
+Apple's instructions:
+https://support.apple.com/en-us/102445
+
+CONNECT AND LISTEN
+
+Both devices need to be on a network where the Mac can reach the appliance.
+Enter the appliance address and click Connect. Allow local-network access
+if macOS asks. Use the Play button beside a file to stream it, and the timeline
+to seek. Select files, edit Save as, choose a folder and click Download to keep
+verified copies. The original appliance recordings are never renamed or deleted.
+
+The app uses SSH access already configured on your Mac. A new Mac/appliance
+pairing needs SSH setup first; in-app password entry is not included. Connection
+settings contains the username, recording folder and optional SSH key path.
+
+SOURCE, UPDATES AND HELP
+
+Downloads: https://github.com/tomassasovsky/segno/releases
+Source: https://github.com/tomassasovsky/segno
+Issues: https://github.com/tomassasovsky/segno/issues
+
+Each transfer-vVERSION release tag identifies its corresponding source code.
+The license is included in this disk image.
