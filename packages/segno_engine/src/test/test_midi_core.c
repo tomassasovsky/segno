@@ -590,7 +590,7 @@ static void test_clock_silent_when_gate_closed(void) {
   le_midi_clock_gen g;
   le_midi_clock_reset(&g);
   uint8_t out[32];
-  /* Transport active but the gate is closed (clock_mode off, or Song/Free
+  /* Transport active but the gate is closed (clock send off, or Song/Free
    * mode) for many blocks in a row: nothing is ever emitted, not even a
    * Start for the already-active transport. */
   for (int i = 0; i < 200; ++i) {
@@ -682,7 +682,7 @@ static void test_clock_gate_close_mid_run_stops_then_reopen_is_fresh_start(
   CHECK(n >= 1 && out[0] == LE_MIDI_CLOCK_START);
 
   /* The gate closes while the transport is still running (e.g. the user
-   * flips clock_mode to off, or switches into Song/Free) -- a Stop fires
+   * turns clock send off, or switches into Song/Free) -- a Stop fires
    * immediately, not deferred until the gate reopens. */
   n = le_midi_clock_advance(&g, 100, 120.0f, 4, 4, 48000, 1, 0, out, 32);
   CHECK(n == 1 && out[0] == LE_MIDI_CLOCK_STOP);
@@ -868,7 +868,10 @@ static void test_clock_null_and_degenerate_args_are_safe(void) {
   CHECK(n == 0);
 }
 
+#include "test_clock_follow.h"
+
 int main(void) {
+  run_clock_follow_tests();
   test_parse_control_change();
   test_parse_note_on_and_off();
   test_parse_program_change();

@@ -51,6 +51,10 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
+  LE_ERR_EXTERNAL_CLOCK = -20, /* tempo is owned by an external MIDI clock
+                                * source (#1228); select Internal first */
+  LE_ERR_SYNC_LOCKED = -21,    /* the clock source cannot change while a track
+                                * records, overdubs, is armed or counting in */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -74,7 +78,8 @@ typedef enum le_track_state {
  * (D7 precedence). MANUAL and TAPPED are last-writer-wins; DERIVED is set only
  * when a defining loop finalizes with sync on and the source was NONE (a set
  * tempo is never re-derived); EXTERNAL is reserved for the Phase E MIDI-clock
- * follower and unused here. A DERIVED tempo survives clearing the loop that
+ * follower (#1228): written once per beat while an external clock source is
+ * selected and the tempo is not locked. A DERIVED tempo survives clearing the loop that
  * produced it (the "dead tempo" lesson): only an explicit reset returns the
  * source to NONE. */
 typedef enum le_tempo_source {
@@ -82,7 +87,7 @@ typedef enum le_tempo_source {
   LE_TEMPO_SOURCE_MANUAL = 1,   /* LE_CMD_SET_TEMPO */
   LE_TEMPO_SOURCE_TAPPED = 2,   /* LE_CMD_TAP_TEMPO */
   LE_TEMPO_SOURCE_DERIVED = 3,  /* derived from a defining loop (D7) */
-  LE_TEMPO_SOURCE_EXTERNAL = 4, /* reserved: MIDI clock receive (Phase E) */
+  LE_TEMPO_SOURCE_EXTERNAL = 4, /* the selected MIDI clock source (#1228) */
 } le_tempo_source;
 
 /* Click (metronome) audibility mode, mirrored in le_snapshot.click_mode — a
@@ -146,23 +151,25 @@ typedef enum le_mode_gate {
                                * stops every playing track before switching */
 } le_mode_gate;
 
-/* MIDI clock tri-state (Phase C/E, D15), mirrored in le_snapshot.clock_mode.
- * `off` and `send` are fully implemented by this part (C1): a native 24-PPQN
- * emitter (src/midi/le_midi_clock.h) drives 0xF8/Start/Stop through the
- * grid/transport each block whenever `send` is active AND the looper mode is
- * Multi/Sync/Band (manual-verified: Song and Free stay silent regardless of
- * this field — see le_engine_set_clock_mode). `receive` is REJECTED by the
- * setter for now — the enum value exists so Phase E (clock follower) can
- * reuse this same tri-state field without a breaking rename, per the index
- * plan's "Phase 5 reuses the tri-state clock_mode introduced here". Send and
- * receive are mutually exclusive by construction (only one non-off value is
- * ever accepted at a time). */
-typedef enum le_clock_mode {
-  LE_CLOCK_OFF = 0,     /* default: no MIDI clock I/O */
-  LE_CLOCK_SEND = 1,    /* segno is MIDI clock master (C1) */
-  LE_CLOCK_RECEIVE = 2, /* segno follows an external clock (Phase E; the
-                         * setter rejects this value until then) */
-} le_clock_mode;
+/* MIDI clock sync state (#1228), mirrored in le_snapshot.clock_state.
+ * INTERNAL: Segno's own tempo; incoming clock is ignored. With an external
+ * source selected (le_engine_set_clock_sync): WAITING until six consecutive
+ * valid pulse intervals arrive, then SYNCED; LOST when a Synced clock goes
+ * silent for max(6 pulse periods, 250 ms) or its device goes away. Silence
+ * after a received Stop reads WAITING, not LOST. */
+typedef enum le_clock_state {
+  LE_CLOCK_STATE_INTERNAL = 0,
+  LE_CLOCK_STATE_WAITING = 1,
+  LE_CLOCK_STATE_SYNCED = 2,
+  LE_CLOCK_STATE_LOST = 3,
+} le_clock_state;
+
+/* What happens to the loops when an external clock is lost (#1228 D5). The
+ * setting is stored now; the engine acts on it from #1228 Part 5. */
+typedef enum le_clock_loss_policy {
+  LE_CLOCK_LOSS_KEEP_PLAYING = 0,
+  LE_CLOCK_LOSS_STOP_LOOPS = 1,
+} le_clock_loss_policy;
 
 /* Atomic recording-start edits retain their distinct transient semantics. */
 typedef enum le_record_start_edit_kind {
@@ -380,13 +387,13 @@ typedef enum le_command_code {
    * without moving the shared musical clock. See le_engine_set_one_shot. */
   LE_CMD_SET_ONE_SHOT = 47, /* arg_i = channel, arg_f = 0/1 */
 
-  /* ---- MIDI clock (Phase C/E, D15) ----
-   * The tri-state le_clock_mode. Not perf-logged, for the same reason as
-   * LE_CMD_SET_LOOPER_MODE above (clock output is a routing/sync concern,
-   * not a captured audible source — the emitter sums nothing into the mix,
-   * it only ever pushes bytes out through le_midi_out_send). */
-  LE_CMD_SET_CLOCK_MODE = 48, /* arg_i = le_clock_mode. RECEIVE (2) is
-                               * rejected — see le_engine_set_clock_mode. */
+  /* ---- MIDI clock (Phase C, D15; #1228) ----
+   * Not perf-logged, for the same reason as LE_CMD_SET_LOOPER_MODE above
+   * (clock output is a routing/sync concern, not a captured audible source).
+   * Code 48 was the tri-state clock mode; receive moved to
+   * LE_CMD_SET_CLOCK_SYNC (124), and the send switch keeps 48 until the
+   * per-output send table (#1228 Part 6) replaces it. */
+  LE_CMD_SET_CLOCK_SEND = 48, /* arg_i = 0/1 */
 
   /* ---- Track-stage chains (FX v3 part 1b) ----
    * The bus twins of the lane / monitor FX commands: type/count ride the ring
@@ -518,6 +525,10 @@ typedef enum le_command_code {
   LE_CMD_RESET_TRANSFORMS = 82, /* internal material-import transform reset
                                  * (Fade and direction); never raw-posted */
   LE_CMD_REVERSE = 83, /* checked internal Reverse request; never raw-posted */
+  /* MIDI clock sync (#1228; codes 124-131 are this epic's): one complete
+   * vector {source port or -1, follow transport, loss policy} with a receipt
+   * sequence. Rechecked by the callback (LE_ERR_SYNC_LOCKED). */
+  LE_CMD_SET_CLOCK_SYNC = 124,
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -1283,10 +1294,10 @@ typedef struct le_snapshot {
    * Sync/Band (see le_sync_quantize_active). */
   int32_t primary_track;
 
-  /* ---- MIDI clock (Phase C, D15; trailing for the same offset-stability
-   * reason as the blocks above). le_clock_mode; default 0 = OFF, so an
-   * untouched engine emits no clock bytes. See le_engine_set_clock_mode. */
-  int32_t clock_mode;
+  /* ---- MIDI clock send (Phase C, D15; trailing for the same
+   * offset-stability reason as the blocks above). 0/1; default 0, so an
+   * untouched engine emits no clock bytes. See le_engine_set_clock_send. */
+  int32_t clock_send;
 
   /* ---- input clip detector + conditioning activity (input clip, S2;
    * trailing for the same offset-stability reason as the blocks above).
@@ -1373,6 +1384,26 @@ typedef struct le_snapshot {
   uint32_t midi_in_lost;
   uint32_t midi_in_attached_mask;
   uint32_t midi_in_rebinds;
+  /* ---- MIDI clock sync (#1228 Part 2; trailing). clock_state is an
+   * le_clock_state; clock_source_port is -1 for Internal. clock_bpm is the
+   * external tempo for display (0.1 BPM steps with hysteresis, Segno's
+   * denominator-note unit; the last value is kept while LOST, 0 before the
+   * first acquisition). clock_out_of_range is 1 while a steady clock lies
+   * outside 30..300 BPM in the current signature. clock_pulses counts every
+   * pulse received or recognised as missed since the source was selected
+   * (low 32 bits). clock_receipt is the sequence of the last applied
+   * le_engine_set_clock_sync, clock_result its outcome (LE_OK or
+   * LE_ERR_SYNC_LOCKED). clock_losses counts Synced -> Lost transitions. */
+  int32_t clock_state;
+  int32_t clock_source_port;
+  int32_t clock_follow_transport;
+  int32_t clock_loss_policy;
+  float clock_bpm;
+  int32_t clock_out_of_range;
+  uint32_t clock_pulses;
+  uint32_t clock_receipt;
+  int32_t clock_result;
+  uint32_t clock_losses;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -2214,20 +2245,43 @@ LE_EXPORT int32_t le_engine_set_one_shot_mask(le_engine* engine,
                                               uint32_t channels,
                                               int32_t enabled);
 
-/* ---- MIDI clock (Phase C/E, decision D15) ----
- * The tri-state le_clock_mode (off / send / receive). This part (C1)
- * implements send: a native 24-PPQN emitter (src/midi/le_midi_clock.h) drives
- * 0xF8 clock ticks plus Start/Stop through the existing verbatim
- * le_midi_out_send transport, gated on the transport actually running
+/* ---- MIDI clock (Phase C, decision D15; #1228) ----
+ * Send: a native 24-PPQN emitter (src/midi/le_midi_clock.h) drives 0xF8 clock
+ * ticks plus Start/Stop, gated on the transport actually running
  * (recording/overdubbing/playing — manual-verified, not free-running while
- * idle) AND the looper mode being Multi/Sync/Band (Song/Free stay silent
- * regardless of this field). */
+ * idle), the looper mode being Multi/Sync/Band (Song/Free stay silent), and
+ * the Internal clock source (an external source is relayed, never
+ * regenerated).
+ *
+ * Receive (#1228 Part 2): an external source port (le_engine_attach_midi_input)
+ * owns the tempo. The follower runs on the audio thread from the port's
+ * timestamped Timing Clock bytes; while SYNCED and the tempo is not locked by
+ * recorded content, it writes the session tempo once per beat with
+ * LE_TEMPO_SOURCE_EXTERNAL, in the denominator-note unit. Meanwhile
+ * le_engine_set_tempo, le_engine_tap_tempo and a non-NONE
+ * le_engine_restore_tempo return LE_ERR_EXTERNAL_CLOCK (and the callback
+ * ignores any that were already queued). Selecting Internal again keeps the
+ * last tempo as MANUAL. */
 
-/* Sets the MIDI clock mode (le_clock_mode: 0 off, 1 send). RECEIVE (2) and
- * any value outside the enum return LE_ERR_INVALID without posting — receive
- * is Phase E's clock follower, not yet implemented; this setter stubs the
- * tri-state field now so that part can reuse it without a breaking rename. */
-LE_EXPORT int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode);
+/* Turns clock send on (1) or off (0). Returns LE_ERR_INVALID for any other
+ * value or a null engine. The setting persists across configure. */
+LE_EXPORT int32_t le_engine_set_clock_send(le_engine* engine, int32_t enabled);
+
+/* Selects the tempo source: `source_port` -1 for Internal, or an input port
+ * 0..LE_MAX_MIDI_PORTS-1 whose capture is (or will be) attached.
+ * `follow_transport` (0/1) and `loss_policy` (le_clock_loss_policy) are
+ * stored with it; Follow Play/Stop and the loss policy act from #1228 Parts
+ * 4 and 5. Each accepted call is one complete vector: the n-th accepted call
+ * carries receipt sequence n, published in le_snapshot.clock_receipt with
+ * clock_result once the audio thread has applied or refused it. Returns
+ * LE_OK, LE_ERR_INVALID (bad argument), LE_ERR_NOT_RUNNING (unconfigured),
+ * or LE_ERR_SYNC_LOCKED when changing the source while a track records,
+ * overdubs, is armed or counting in (re-selecting the same source with other
+ * settings is allowed). */
+LE_EXPORT int32_t le_engine_set_clock_sync(le_engine* engine,
+                                           int32_t source_port,
+                                           int32_t follow_transport,
+                                           int32_t loss_policy);
 
 /* ---- click + count-in (A2, decisions D5/D9) ----
  * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the

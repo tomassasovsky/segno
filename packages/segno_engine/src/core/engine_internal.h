@@ -237,6 +237,12 @@ typedef const char* (*le_channel_name_fn)(void* ctx, int channel);
 uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,
                                      int channel_count);
 
+/* Replaces the MIDI clock follower's time base (le_now_ns) with `fn(ctx)`, so
+ * pulse timestamps and loss timeouts can be driven deterministically. NULL
+ * restores le_now_ns. Not part of the FFI surface. */
+void le_engine_set_now_fn_for_test(le_engine* engine, uint64_t (*fn)(void*),
+                                   void* ctx);
+
 /* Overrides the excluded-input-channel mask without opening a device, so the
  * capture-average / monitoring / SET_INPUT_MASK exclusion paths can be tested
  * deterministically. Not part of the FFI surface. */

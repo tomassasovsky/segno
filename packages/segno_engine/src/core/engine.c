@@ -757,9 +757,16 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   /* MIDI clock send (C1): the RUNNING generator state resets per session,
    * exactly like the click/count-in state above — a fresh configure must
    * never carry a stale active-run frame count (or an unpaired Stop owed)
-   * into the next session. The SETTING (a_clock_mode) persists, seeded once
+   * into the next session. The SETTING (a_clock_send) persists, seeded once
    * in le_engine_create like a_looper_mode/a_primary_track. */
   le_midi_clock_reset(&engine->midi_clock);
+  /* MIDI clock sync (#1228): the source persists; its follower starts over
+   * (a new sample rate or session re-acquires rather than trusting a stale
+   * phase). */
+  if (engine->clock_source >= 0) {
+    le_clock_follow_reset(&engine->clock_follow, load_i32(&engine->a_ts_den));
+    store_i32(&engine->a_clock_state, LE_CLOCK_STATE_WAITING);
+  }
   /* Callback telemetry + the flat dropout tally (#722), cleared together and
    * per session. Rate 0 = INERT on purpose: the device is not open yet at
    * configure time (le_engine_start calls le_engine_configure_callback_budget
@@ -975,6 +982,13 @@ const char* le_version(void) {
  * (engine_apple.c), Linux/Windows exclude nothing for now. The mask is fetched
  * through le_platform_excluded_input_mask (engine_platform.h) at device open. */
 
+void le_engine_set_now_fn_for_test(le_engine* engine, uint64_t (*fn)(void*),
+                                   void* ctx) {
+  if (engine == NULL) return;
+  engine->now_fn = fn;
+  engine->now_ctx = ctx;
+}
+
 void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
                                                 uint32_t mask) {
   if (engine == NULL) return;
@@ -1183,11 +1197,16 @@ le_engine* le_engine_create(void) {
    * thread's le_primary_reconcile keeps that invariant afterwards). -1 is
    * NOT calloc's zero-fill, so this store is load-bearing. */
   store_i32(&engine->a_primary_track, -1);
-  /* MIDI clock mode SETTING (Phase C/E, D15): same seeded-once persistence as
-   * the looper mode / primary track above. OFF (0) is both the enum's zero
-   * value and calloc's zero-fill; kept explicit for the same legibility
-   * reason as a_looper_mode's redundant store. */
-  store_i32(&engine->a_clock_mode, LE_CLOCK_OFF);
+  /* MIDI clock send SETTING (Phase C, D15): same seeded-once persistence as
+   * the looper mode / primary track above. Off (0), kept explicit for the
+   * same legibility reason as a_looper_mode's redundant store. */
+  store_i32(&engine->a_clock_send, 0);
+  /* MIDI clock sync (#1228): Internal, the follower idle. */
+  engine->clock_source = -1;
+  store_i32(&engine->a_clock_source, -1);
+  engine->clock_source_requested = -1;
+  store_i32(&engine->a_clock_state, LE_CLOCK_STATE_INTERNAL);
+  engine->now_fn = NULL;
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
     store_f32(&engine->a_in_trim_bits[c], 1.0f); /* unity until set */
