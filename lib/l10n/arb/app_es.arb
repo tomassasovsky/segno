@@ -2422,6 +2422,8 @@
     "footFxUnavailable": "El efecto de este pedal ya no está disponible. Vuelve a asignarlo.",
     "footFxFailure": "No se pudo cambiar el efecto. Inténtalo de nuevo.",
     "footFxStopChanged": "En el modo FX, Stop ya no apaga los efectos de todas las pistas. Asigna FX de pistas apagados o FX de pistas encendidos a un pedal.",
+    "footFxModeChanged": "MODE ahora sale del modo FX. Su {press} sigue funcionando en los demás modos.",
+    "footFxModeChangedHold": "MODE ahora sale del modo FX. Su {press} y Mantener · {hold} siguen funcionando en los demás modos.",
     "footFxToggle": "Conmutar",
     "footFxTargetMissing": "Destino ausente"
 }

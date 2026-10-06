@@ -451,15 +451,73 @@ void main() {
         });
       }
 
-      test('the first FX entry says once that Stop no longer sweeps the '
-          'track chains (#1229)', () async {
-        await cubit.load();
-        expect(cubit.state.fxStopChangeNotice, isFalse);
-        cubit.setMode(InteractionMode.fx);
-        expect(cubit.state.fxStopChangeNotice, isTrue);
-        await pumpEventQueue();
-        expect(await settings.loadFxStopChangeNoticeShown(), isTrue);
-      });
+      // An install that was set up before this build: a stored pedal setup,
+      // bindings or boot default.
+      final upgrades = <String, Future<void> Function()>{
+        'pedal setup': () => settings.savePedalSetup(
+          const PedalSetup().encode(),
+        ),
+        'bindings': () => settings.savePedalBindings(
+          PedalBindingSet(const []).encode(),
+        ),
+        'boot default': () => setupStore.setString(
+          'looper.default_mode',
+          'record',
+        ),
+      };
+      for (final MapEntry(key: what, value: store) in upgrades.entries) {
+        test(
+          'the first FX entry after an upgrade with a stored $what says '
+          'once that Stop no longer sweeps the track chains (#1229)',
+          () async {
+            await store();
+            await cubit.load();
+            expect(cubit.state.fxStopChangeNotice, isFalse);
+            cubit.setMode(InteractionMode.fx);
+            expect(cubit.state.fxStopChangeNotice, isTrue);
+            await pumpEventQueue();
+            expect(await settings.loadFxStopChangeNoticeShown(), isTrue);
+          },
+        );
+      }
+
+      // A fresh install: never told, and boot writes nothing; the decision
+      // is stored before anything could make a later boot read it as an
+      // upgrade (#1229 review L1).
+      final freshStores = <String, Future<void> Function(ControlCubit)>{
+        'its first FX entry': (cubit) async =>
+            cubit.setMode(InteractionMode.fx),
+        'a pedal setup save': (cubit) => cubit.setPedalSetup(
+          const PedalSetup(modeHold: InteractionMode.mixer),
+        ),
+        'a bindings save': (cubit) => cubit.setGlobalBindings(
+          PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+              target: const FxChainTarget(
+                FxAddress(stage: FxStage.track),
+              ).canonicalString(),
+            ),
+          ]),
+        ),
+      };
+      for (final MapEntry(key: what, value: act) in freshStores.entries) {
+        test('a fresh install never hears about the old Stop, and stores '
+            'that at $what', () async {
+          await cubit.load();
+          await pumpEventQueue();
+          expect(
+            await settings.loadFxStopChangeNoticeShown(),
+            isFalse,
+            reason: 'boot writes nothing',
+          );
+          await act(cubit);
+          await pumpEventQueue();
+          expect(await settings.loadFxStopChangeNoticeShown(), isTrue);
+          cubit.setMode(InteractionMode.fx);
+          expect(cubit.state.fxStopChangeNotice, isFalse);
+        });
+      }
 
       test('an install already told hears nothing on FX entry', () async {
         await settings.saveFxStopChangeNoticeShown();

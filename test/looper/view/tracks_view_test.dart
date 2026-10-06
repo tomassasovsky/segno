@@ -974,6 +974,49 @@ void main() {
     expect(control.state.cursor, 1); // the digit still selects
   });
 
+  testWidgets('a number key runs its track switch binding in FX mode, bank '
+      'B on 5 to 8 (#1229 review L2)', (tester) async {
+    seed(
+      const LooperState(
+        tracks: [
+          Track(),
+          Track(channel: 1),
+          Track(channel: 2),
+          Track(channel: 3),
+          Track(channel: 4),
+          Track(channel: 5),
+        ],
+      ),
+    );
+    // Track switch 2 on bank B is bound to an input that is gone: running
+    // it is refused with the face's notice, which is how the test sees it.
+    await control.setGlobalBindings(
+      PedalBindingSet([
+        PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.track2, bank: 1),
+          target: const FxChainTarget(
+            FxAddress(stage: FxStage.input, index: 9),
+          ).canonicalString(),
+        ),
+      ]),
+    );
+    control.setMode(InteractionMode.fx);
+    await pump(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit6);
+    await tester.pumpAndSettle();
+    expect(control.state.footFxFailure, 1);
+    verifyNever(() => bloc.add(const LooperTrackChainToggled(5)));
+    expect(control.state.cursor, 5);
+    // Switch 2 on bank A is unbound: its key toggles the track's own chain.
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.pump();
+    verify(() => bloc.add(const LooperTrackChainToggled(1))).called(1);
+    expect(control.state.footFxFailure, 1);
+    dismissAppToast(AppToastId.footFxFailure);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
   testWidgets('M cycles the mode chip through every mode, announcing each '
       'landed one', (tester) async {
     // Assert the DELIVERED announcement text, not the getter: a getter-only

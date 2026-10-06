@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,6 +10,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_fx.dart';
 import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
+import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/foot_fx_view.dart';
 import 'package:segno/looper/view/performance_pedal.dart';
@@ -332,6 +335,103 @@ void main() {
     verifyNever(() => control.footFxReleased(PedalButton.track1, any()));
   });
 
+  testWidgets('a chain of one rack reads as the rack; a slot target as its '
+      'effect; a chain of several racks as the pedal slot', (tester) async {
+    const funk = FxRack(id: 'r1', name: 'Funk Wah');
+    const ballad = FxRack(id: 'r2', name: 'Ballad');
+    const slot = FxSlotTarget(
+      address: FxAddress(stage: FxStage.input, index: 1),
+      slotId: 'drive',
+    );
+    when(() => repository.monitorEffects(1)).thenReturn([
+      BuiltInEffect(type: TrackEffectType.filter, rack: funk),
+      BuiltInEffect(type: TrackEffectType.drive, rack: funk, slotId: 'drive'),
+    ]);
+    when(() => repository.outputEffects(0)).thenReturn([
+      BuiltInEffect(type: TrackEffectType.filter, rack: funk),
+      BuiltInEffect(type: TrackEffectType.reverb, rack: ballad),
+    ]);
+    given(
+      ControlState(
+        mode: InteractionMode.fx,
+        globalBindings: PedalBindingSet([
+          bind(PedalButton.track1, input2),
+          bind(PedalButton.track2, slot),
+          bind(PedalButton.track3, master),
+          bind(PedalButton.clear, master),
+        ]),
+      ),
+    );
+    await pump(tester);
+    expect(within(PedalButton.track1, 'Funk Wah'), findsOneWidget);
+    expect(within(PedalButton.track2, 'Drive'), findsOneWidget);
+    expect(within(PedalButton.track3, 'FX A3'), findsOneWidget);
+    // Clear has no slot of its own: the binding's label.
+    expect(
+      within(
+        PedalButton.clear,
+        bindingTargetLabel(
+          lookupAppLocalizations(const Locale('en')),
+          const [],
+          master,
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('meter ticks do not redraw the pedals', (tester) async {
+    final states = StreamController<LooperState>();
+    addTearDown(states.close);
+    const base = LooperState(
+      tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+    );
+    whenListen(looper, states.stream, initialState: base);
+    given(const ControlState(mode: InteractionMode.fx));
+    await pump(tester);
+    int builds() => tester
+        .widgetList<PerformancePedal>(find.byType(PerformancePedal))
+        .length;
+    expect(builds(), 10);
+    final before = tester.widget<PerformancePedal>(
+      performancePedal(PedalButton.track1),
+    );
+    // Only a meter moves.
+    states.add(
+      const LooperState(
+        tracks: [
+          Track(
+            state: TrackState.playing,
+            lengthFrames: 48000,
+            peak: 0.5,
+            peakL: 0.25,
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(
+      identical(
+        tester.widget<PerformancePedal>(performancePedal(PedalButton.track1)),
+        before,
+      ),
+      isTrue,
+      reason: 'the pedal was rebuilt for a meter tick',
+    );
+    // A chain change does redraw it.
+    states.add(const LooperState(tracks: [Track(chainEnabled: false)]));
+    await tester.pump();
+    await tester.pump();
+    expect(
+      identical(
+        tester.widget<PerformancePedal>(performancePedal(PedalButton.track1)),
+        before,
+      ),
+      isFalse,
+    );
+  });
+
   test('the projection reads the published switch values', () {
     final pedals = projectFootFx(
       ControlState(
@@ -340,13 +440,14 @@ void main() {
         fxSwitches: const {PedalButton.clear: (lit: true, stale: false)},
       ),
       const LooperState(),
+      chainAt: (_) => null,
     );
-    expect(pedals[PedalButton.clear]!.role, FootFxRole.binding);
-    expect(pedals[PedalButton.clear]!.lit, isTrue);
-    expect(pedals[PedalButton.stop]!.role, FootFxRole.inert);
-    expect(pedals[PedalButton.stop]!.available, isFalse);
-    expect(pedals[PedalButton.mode]!.role, FootFxRole.exit);
+    expect(pedals[PedalButton.clear].role, FootFxRole.binding);
+    expect(pedals[PedalButton.clear].lit, isTrue);
+    expect(pedals[PedalButton.stop].role, FootFxRole.inert);
+    expect(pedals[PedalButton.stop].available, isFalse);
+    expect(pedals[PedalButton.mode].role, FootFxRole.exit);
     // A track the engine does not expose has nothing behind its switch.
-    expect(pedals[PedalButton.track1]!.available, isFalse);
+    expect(pedals[PedalButton.track1].available, isFalse);
   });
 }

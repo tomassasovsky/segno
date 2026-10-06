@@ -1111,6 +1111,12 @@ class ControlCubit extends Cubit<ControlState> {
   // entry cannot know, and says nothing.
   bool _fxStopNoticeShown = true;
 
+  // Whether [_fxStopNoticeShown] is already stored. A fresh install decides
+  // it is told in memory at boot and stores that before anything could make
+  // a later boot read it as an upgrade: its first FX entry, pedal setup or
+  // bindings save. Boot itself writes nothing.
+  bool _fxStopNoticeStored = true;
+
   // Stop's own press/hold gesture on the performance surfaces that give it a
   // hold.
   final _stopGesture = _HoldGesture();
@@ -1187,11 +1193,10 @@ class ControlCubit extends Cubit<ControlState> {
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
-    _fxStopNoticeShown = await _settings.loadFxStopChangeNoticeShown();
+    var fxStopNoticeShown = await _settings.loadFxStopChangeNoticeShown();
     _longPress = Duration(milliseconds: await _settings.loadPedalLongPressMs());
-    final storedBindings = PedalBindingSet.decode(
-      await _settings.loadPedalBindings() ?? '',
-    );
+    final encodedBindings = await _settings.loadPedalBindings();
+    final storedBindings = PedalBindingSet.decode(encodedBindings ?? '');
     // Mute was the only mode a stored default ever booted into besides
     // Record: anything else was coerced to Record already, so only a Mute
     // install has a behaviour change to be told about.
@@ -1201,8 +1206,19 @@ class ControlCubit extends Cubit<ControlState> {
         : null;
     var setup = state.pedalSetup;
     var setupUnavailable = false;
+    final encodedSetup = await _settings.loadPedalSetup();
+    // An install with no stored pedal setup, bindings or boot default has
+    // never been set up, so it never had the old FX-mode Stop: nothing to
+    // tell it (#1229 review L1).
+    _fxStopNoticeStored = fxStopNoticeShown;
+    if (!fxStopNoticeShown &&
+        encodedSetup == null &&
+        encodedBindings == null &&
+        retired == null) {
+      fxStopNoticeShown = true;
+    }
+    _fxStopNoticeShown = fxStopNoticeShown;
     try {
-      final encodedSetup = await _settings.loadPedalSetup();
       setup = encodedSetup == null
           ? const PedalSetup()
           : PedalSetup.decode(encodedSetup);
@@ -1372,6 +1388,7 @@ class ControlCubit extends Cubit<ControlState> {
         !state.pedalSetupRuntimeUnsaved) {
       return;
     }
+    _storeFxStopNotice();
     try {
       await _settings.savePedalSetup(setup.encode());
     } on PedalSetupSaveException catch (error) {
@@ -1537,10 +1554,8 @@ class ControlCubit extends Cubit<ControlState> {
           }
         }
         final notice = !_fxStopNoticeShown;
-        if (notice) {
-          _fxStopNoticeShown = true;
-          unawaited(_settings.saveFxStopChangeNoticeShown());
-        }
+        _fxStopNoticeShown = true;
+        _storeFxStopNotice();
         emit(
           state.copyWith(
             mode: InteractionMode.fx,
@@ -3000,7 +3015,16 @@ class ControlCubit extends Cubit<ControlState> {
     if (next == state.globalBindings) return;
     _invalidateGestures();
     emit(state.copyWith(globalBindings: next));
+    _storeFxStopNotice();
     await _settings.savePedalBindings(next.encode());
+  }
+
+  /// Stores the FX notice decision once it is known to be shown, so a later
+  /// boot cannot mistake this install for one that never heard it.
+  void _storeFxStopNotice() {
+    if (!_fxStopNoticeShown || _fxStopNoticeStored) return;
+    _fxStopNoticeStored = true;
+    unawaited(_settings.saveFxStopChangeNoticeShown());
   }
 
   /// Applies the remap carried by a loaded session (or clears it when the

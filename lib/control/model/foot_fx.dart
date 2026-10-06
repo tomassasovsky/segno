@@ -47,6 +47,8 @@ class FootFxPedal extends Equatable {
     this.target,
     this.channel,
     this.effects = const [],
+    this.targetEntries,
+    this.holdEntries,
     this.lit = false,
     this.stale = false,
     this.available = true,
@@ -71,6 +73,13 @@ class FootFxPedal extends Equatable {
   /// That channel's Track-stage chain, in signal order; empty otherwise.
   final List<TrackEffect> effects;
 
+  /// The chain the binding's target reaches, in signal order, or null when
+  /// that chain does not exist. The face names the pedal from it.
+  final List<TrackEffect>? targetEntries;
+
+  /// The chain the binding's Hold target reaches, or null.
+  final List<TrackEffect>? holdEntries;
+
   /// Whether its LED is lit; the face's selection bar mirrors it.
   final bool lit;
 
@@ -90,28 +99,55 @@ class FootFxPedal extends Equatable {
     target,
     channel,
     effects,
+    targetEntries,
+    holdEntries,
     lit,
     stale,
     available,
   ];
 }
 
+/// Every switch of the FX face. Equatable, so the face rebuilds only when
+/// what it draws changes, not on every meter tick.
+class FootFxProjection extends Equatable {
+  /// Creates a complete projection.
+  const FootFxProjection(this.pedals);
+
+  /// All ten switches.
+  final Map<PedalButton, FootFxPedal> pedals;
+
+  /// The read of [button].
+  FootFxPedal operator [](PedalButton button) => pedals[button]!;
+
+  @override
+  List<Object?> get props => [pedals];
+}
+
+/// Reads one FX chain's entries, or null when the chain does not exist.
+typedef FxChainLookup = List<TrackEffect>? Function(FxAddress address);
+
 /// Projects every switch of the FX face from Control's state and the rig.
 ///
 /// Bound switches read [ControlState.fxSwitches], the same values the LEDs
 /// project, so the face and the plate cannot disagree. Pure.
-Map<PedalButton, FootFxPedal> projectFootFx(
+/// [chainAt] reads the chains a binding reaches (`LooperRepository`'s
+/// `chainEntriesAt`), so the face can name them.
+FootFxProjection projectFootFx(
   ControlState control,
-  LooperState looper,
-) => {
-  for (final button in PedalButton.values)
-    button: _project(control, looper, button),
-};
+  LooperState looper, {
+  required FxChainLookup chainAt,
+}) => FootFxProjection(
+  Map.unmodifiable({
+    for (final button in PedalButton.values)
+      button: _project(control, looper, button, chainAt),
+  }),
+);
 
 FootFxPedal _project(
   ControlState control,
   LooperState looper,
   PedalButton button,
+  FxChainLookup chainAt,
 ) {
   switch (button) {
     case PedalButton.mode:
@@ -136,13 +172,17 @@ FootFxPedal _project(
   if (binding != null) {
     final reading = control.fxSwitches[button];
     final decoded = binding.decodeTarget();
+    final target = decoded == null
+        ? null
+        : _scoped(decoded, binding.scope, control.cursor);
+    final hold = binding.decodeHoldTarget();
     return FootFxPedal(
       button: button,
       role: FootFxRole.binding,
       binding: binding,
-      target: decoded == null
-          ? null
-          : _scoped(decoded, binding.scope, control.cursor),
+      target: target,
+      targetEntries: target == null ? null : chainAt(target.address),
+      holdEntries: hold == null ? null : chainAt(hold.address),
       lit: reading?.lit ?? false,
       stale: reading?.stale ?? decoded == null,
     );
