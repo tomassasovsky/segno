@@ -5560,7 +5560,50 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
       >();
 
-  /// Consumes one completed Fade or Reverse result. Returns NOT_READY before
+  /// Speed (#1179): plays every recorded track at numer/denom of its speed —
+  /// 1/2, 1/1, 2/1, 4/1 or 8/1 (anything else is LE_ERR_INVALID) — through one
+  /// fractional read head per track, click-free (each sounding track mixes its
+  /// old head out over ~10 ms); pitch follows the speed. The song clock, click,
+  /// quantize and capture are untouched. A request equal to the factor in force
+  /// is accepted and changes nothing. Admission returns a nonzero request id
+  /// only on LE_OK; the receipt below carries the callback's verdict.
+  /// Refusals: LE_ERR_NOT_READY while any track reads RECORDING or OVERDUBBING,
+  /// an arm or Count-in launch is pending, a count-in runs, or no receipt slot
+  /// is free (the callback refuses the same states with receipt
+  /// LE_ERR_NOT_READY, plus a punch-out tail still writing); LE_ERR_NOT_RUNNING
+  /// when not configured. While Speed is not 1x le_engine_record refuses a
+  /// record or punch-in with LE_ERR_TRANSFORMED.
+  int le_engine_set_speed(
+    ffi.Pointer<le_engine> engine,
+    int numer,
+    int denom,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_set_speed(
+      engine,
+      numer,
+      denom,
+      request,
+    );
+  }
+
+  late final _le_engine_set_speedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_set_speed');
+  late final _le_engine_set_speed = _le_engine_set_speedPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  /// Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
   /// callback publication, INVALID for an absent/consumed/retired id; otherwise
   /// OK and fills result.
   int le_engine_read_request_result(
@@ -5898,7 +5941,12 @@ enum le_result {
 
   /// a punch-in on a reversed track (#1162): overdub
   /// is unavailable while Reverse is on
-  LE_ERR_REVERSED(-9);
+  LE_ERR_REVERSED(-9),
+
+  /// a record or overdub while Speed is not 1x
+  /// (#1179): capture never writes through a
+  /// fractional read head
+  LE_ERR_TRANSFORMED(-10);
 
   final int value;
   const le_result(this.value);
@@ -5914,6 +5962,7 @@ enum le_result {
     -7 => LE_ERR_MODE_MISMATCH,
     -8 => LE_ERR_NOT_READY,
     -9 => LE_ERR_REVERSED,
+    -10 => LE_ERR_TRANSFORMED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -6356,7 +6405,11 @@ enum le_command_code {
   LE_CMD_RESET_TRANSFORMS(82),
 
   /// checked internal Reverse request; never raw-posted
-  LE_CMD_REVERSE(83);
+  LE_CMD_REVERSE(83),
+
+  /// checked internal Speed request (#1179); never
+  /// raw-posted
+  LE_CMD_SET_SPEED(85);
 
   final int value;
   const le_command_code(this.value);
@@ -6444,6 +6497,7 @@ enum le_command_code {
     81 => LE_CMD_FADE,
     82 => LE_CMD_RESET_TRANSFORMS,
     83 => LE_CMD_REVERSE,
+    85 => LE_CMD_SET_SPEED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -7006,6 +7060,13 @@ final class le_track_snapshot extends ffi.Struct {
   /// entries keep undo_depth constant while a layer disappears.
   @ffi.Int32()
   external int peel_depth;
+
+  /// Trailing (#1179): the track's effective read rate x1000 (source frames
+  /// per song frame; 500 at 1/2x Speed, 8000 at 8x), so the host shows the
+  /// derived pitch and progress without re-deriving them. position_frames
+  /// moves at this rate.
+  @ffi.Int32()
+  external int head_rate_milli;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -7553,6 +7614,14 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Array.multi([8])
   external ffi.Array<ffi.Int32> record_timing_overrides;
+
+  /// Trailing (#1179): the global Speed the callback applies, as
+  /// numer/denom (1/2, 1/1, 2/1, 4/1 or 8/1; 1/1 before any request).
+  @ffi.Int32()
+  external int speed_numer;
+
+  @ffi.Int32()
+  external int speed_denom;
 }
 
 /// The plugin format a descriptor was discovered in.

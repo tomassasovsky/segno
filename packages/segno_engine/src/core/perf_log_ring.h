@@ -186,6 +186,11 @@ typedef enum le_perf_log_code {
                           * reset logs forward with read_index -1; a reversed
                           * track also logs its index at PERF_ARM. 325 is
                           * reserved for Peel; do not take it. */
+  /* 326 is held by Multiply/Divide's LE_PLOG_LENGTH (#1168 plan). */
+  LE_PLOG_SPEED = 327, /* speed_log: a track's head rate (#1179, events.log
+                        * version 8) with the exact index in Q32.32 — at every
+                        * accepted Speed change, at PERF_ARM for a track not
+                        * at 1x and at every material reset of such a track. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
@@ -218,6 +223,12 @@ typedef struct le_log_command {
     struct { int32_t channel, take_id; } take;
     struct { int32_t channel; float amount, target, seconds; } fade_log;
     struct { int32_t channel, reversed, read_index, turn_frames; } reverse_log;
+    struct {
+      int32_t channel;
+      uint8_t numer, denom;
+      uint16_t turn_frames;
+      uint32_t index_lo, index_hi;
+    } speed_log;
     struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
     struct { int32_t channel, slot, previous; uint32_t generation; } peel_log;
     struct { int32_t position, master_len, iteration; } perf_arm;
@@ -230,7 +241,8 @@ typedef struct le_log_command {
  * never assume a le_command payload starts four bytes after its code. */
 static inline int le_log_extract(const le_command* command, le_log_command* out) {
   if (command->code == LE_CMD_RESET_TRANSFORMS || command->code == LE_CMD_FADE ||
-      command->code == LE_CMD_REVERSE || command->code == LE_CMD_SET_MIX ||
+      command->code == LE_CMD_REVERSE || command->code == LE_CMD_SET_SPEED ||
+      command->code == LE_CMD_SET_MIX ||
       command->code == LE_CMD_RECORD_IMAGE ||
       command->code == LE_CMD_SET_LENGTH_PRESETS) return 0;
   out->code = command->code;

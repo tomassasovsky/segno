@@ -415,7 +415,7 @@ static stats scenario_head(const bench_opts* o, int total_lanes, double rate,
         const double idx = le_head_index(&heads[t], pos, len);
         for (int l = 0; l < lanes_per_track; ++l) {
           const float* buf = lane_bufs[t * lanes_per_track + l];
-          sum += decimate ? le_head_sample_decimated(buf, len, idx, rate)
+          sum += decimate ? le_head_sample_decimated(buf, len, idx, rate, 0)
                           : le_head_sample(buf, len, idx);
         }
       }

@@ -120,6 +120,19 @@ static inline int le_effective_reversed(le_track* t) {
   return atomic_load_explicit(&t->a_reversed, memory_order_acquire) != 0;
 }
 
+/* The control thread's view of the global Speed (#1179), as for direction
+ * above: whether the factor the posted-but-unapplied SET_SPEED commands
+ * predict, or the published one once all are processed, is 1x. The Record
+ * guard refuses a capture while it is not. */
+static inline int le_effective_speed_one(le_engine* e) {
+  if (e->speed_posted >
+      atomic_load_explicit(&e->a_speed_applied, memory_order_acquire)) {
+    return e->speed_pending_one;
+  }
+  return atomic_load_explicit(&e->a_speed_numer, memory_order_acquire) ==
+         atomic_load_explicit(&e->a_speed_denom, memory_order_acquire);
+}
+
 /* Publishes pool slot [slot] as every active lane's live buffer AND bumps the
  * track's content revision in the same motion — the STRUCTURAL half of the
  * a_audio_rev bump-site table (engine_private.h): every control-side history

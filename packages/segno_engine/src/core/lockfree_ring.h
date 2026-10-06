@@ -110,6 +110,18 @@ typedef struct le_command {
               * turn window the old head is still mixed over (0 = none). */
       int32_t channel, reversed, read_index, turn_frames;
     } reverse_log;
+    struct { /* LE_CMD_SET_SPEED (#1179): the factor numer/denom. */
+      int32_t slot, numer, denom;
+    } speed;
+    struct { /* LE_PLOG_SPEED: a track's head rate as numer/denom, the
+              * equal-gain turn window the old head is still mixed over, and
+              * the exact index the callback reads at this frame in Q32.32
+              * (two words, so the payload stays 16 bytes and 4-aligned). */
+      int32_t channel;
+      uint8_t numer, denom;
+      uint16_t turn_frames;
+      uint32_t index_lo, index_hi;
+    } speed_log;
     le_mix_settings mix;
     struct le_prepared_fx* recipe;
     struct {

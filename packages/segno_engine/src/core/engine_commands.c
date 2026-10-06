@@ -1726,6 +1726,17 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
       !load_i32(&t->a_pending_launch)) {
     return LE_ERR_REVERSED;
   }
+  /* Capture is unavailable while Speed is not 1x (#1179): a record or
+   * punch-in that would start now, or once the posted Speed requests land,
+   * is refused before any preparation. Finishing a capture or cancelling an
+   * arm or launch is not a capture start and passes. */
+  if ((st == LE_TRACK_EMPTY || st == LE_TRACK_PLAYING ||
+       st == LE_TRACK_STOPPED) &&
+      !le_effective_speed_one(engine) &&
+      !(engine->armed[channel] && load_i32(&t->a_pending)) &&
+      !load_i32(&t->a_pending_launch)) {
+    return LE_ERR_TRANSFORMED;
+  }
   /* The track's length (k * base) — all lanes share it, so lane 0 is canonical.
    * Kept coherent with the effective state: the undo-to-empty / redo-from-empty
    * paths store it control-side when they post. */
@@ -2823,6 +2834,34 @@ int32_t le_engine_toggle_reverse(le_engine* e, int32_t channel,
 int32_t le_engine_install_reverse(le_engine* e, int32_t channel,
                                   int32_t reversed, uint64_t* request) {
   return le_reverse_admit(e, channel, 1, reversed, request);
+}
+
+/* Speed admission (#1179): see le_engine_set_speed's contract. Refused while
+ * any track captures, is armed or launching, or a count-in runs, by the
+ * effective state, so a request never races a capture into existence; the
+ * callback rechecks (le_speed_change_safe). */
+int32_t le_engine_set_speed(le_engine* e, int32_t numer, int32_t denom,
+                            uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request) return LE_ERR_INVALID;
+  const int valid = (numer == 1 && denom == 2) ||
+      (denom == 1 && (numer == 1 || numer == 2 || numer == 4 || numer == 8));
+  if (!valid) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  if (load_i32(&e->a_counting_in)) return LE_ERR_NOT_READY;
+  for (int c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    const int32_t st = le_effective_state(t);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+        load_i32(&t->a_pending) || e->armed[c] ||
+        load_i32(&t->a_pending_launch)) return LE_ERR_NOT_READY;
+  }
+  le_command cmd = {.code = LE_CMD_SET_SPEED, .speed = {0, numer, denom}};
+  const int32_t result = le_request_admit(e, &cmd, &cmd.speed.slot, request);
+  if (result != LE_OK) return result;
+  e->speed_pending_one = numer == denom;
+  e->speed_posted++;
+  return LE_OK;
 }
 
 int32_t le_engine_toggle_fade(le_engine* e, int32_t channel, float seconds,

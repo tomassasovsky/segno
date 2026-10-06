@@ -350,6 +350,12 @@ control-side pool free or slot reuse (undo slot recycling, lane shrink,
 import) that would hit a track's turn source snaps that track's window
 (`turn_left = 0`) before the free, through the existing quiescent handshake. A
 Part 2a ASAN test steps a rate, retracts and frees inside the window.
+As built in Part 2a: a rate step and a direction turn read the SAME lane's
+live buffer through both heads, so the window has no previous source to
+pin; `a_turn_source` and the collector's deferral arrive with Part 3a's
+source swaps, the first window whose old head reads another buffer. The
+Part 2a test steps the rate on a printed track and retracts and frees the
+print inside the window under ASAN.
 
 Lap edges follow the head: Once's lap end (`:4486-4510`) and Free/Song's
 (`:4454-4463`) use `le_head_wrapped` on the track's consecutive indices instead
@@ -441,6 +447,12 @@ by construction).
   322/323 integer and exact under Part 4a, where a source-space phase could
   exceed the image length and fail `perf_render.c:924`. A Part 2a test asserts
   zero 323 facts over a two-lap ½× run and an 8× run.
+  As built in Part 2a: the phase stays in SOURCE-index space (`floor` of
+  the head's index, which is always inside the image, so `perf_render.c:924`
+  cannot fail on it), and the tracker's expected next phase is the integral
+  index the head reads on the next song frame. Song space would have changed
+  the phases Reverse already logs at rate 1 (they step -1); the renderer
+  keeps its own exact fraction where a logged integral index agrees with it.
 - Material resets (`le_fade_reset` sites, `:184-199` and callers; Reverse's
   `le_transform_reset`, whose import-time command is `LE_CMD_RESET_TRANSFORMS`
   at the value of today's `LE_CMD_RESET_FADE` 82) reset the head to identity.
