@@ -6300,5 +6300,45 @@
                 "type": "String"
             }
         }
+    },
+    "actionModeReverse": "Reverse",
+    "@actionModeReverse": {
+        "description": "Foot Reverse performance surface."
+    },
+    "actionOperationReverse": "Reverse",
+    "@actionOperationReverse": {
+        "description": "Foot Reverse performance surface."
+    },
+    "footReversePlaybackDirection": "Playback direction",
+    "@footReversePlaybackDirection": {
+        "description": "Foot Reverse overview heading."
+    },
+    "footReverseForward": "Forward",
+    "@footReverseForward": {
+        "description": "Foot Reverse: the track plays forward."
+    },
+    "footReverseReversed": "Reverse",
+    "@footReverseReversed": {
+        "description": "Foot Reverse: the track plays reversed."
+    },
+    "footReverseSwitchBank": "Switch bank",
+    "@footReverseSwitchBank": {
+        "description": "Foot Reverse: what the Bank pedal does."
+    },
+    "footReverseFailure": "The track could not be turned around. Try again.",
+    "@footReverseFailure": {
+        "description": "Foot Reverse: a direction toggle was refused."
+    },
+    "footReverseOverdubRefused": "Overdub is unavailable while the track is reversed",
+    "@footReverseOverdubRefused": {
+        "description": "Foot Reverse: Record / Play refused an overdub on a reversed track."
+    },
+    "stageReverseMarker": "REV",
+    "@stageReverseMarker": {
+        "description": "Tracks meta row marker: the track plays reversed."
+    },
+    "a11yStageReversed": "Track plays reversed",
+    "@a11yStageReversed": {
+        "description": "Screen-reader label for the Tracks reverse marker."
     }
 }

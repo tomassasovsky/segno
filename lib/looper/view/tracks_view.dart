@@ -16,6 +16,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
+import 'package:segno/looper/view/foot_reverse_view.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
@@ -54,6 +55,7 @@ class _TracksViewState extends State<TracksView> {
     dismissAppToast(AppToastId.undoClearAll);
     dismissAppToast(AppToastId.footMixerFailure);
     dismissAppToast(AppToastId.footFadeFailure);
+    dismissAppToast(AppToastId.footReverseFailure);
     super.dispose();
   }
 
@@ -146,6 +148,17 @@ class _TracksViewState extends State<TracksView> {
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),
+          BlocListener<ControlCubit, ControlState>(
+            listenWhen: (before, after) =>
+                before.footReverseFailure != after.footReverseFailure &&
+                after.mode == InteractionMode.reverse,
+            listener: (context, _) => showAppToast(
+              id: AppToastId.footReverseFailure,
+              type: ToastificationType.error,
+              title: Text(context.l10n.footReverseFailure),
+              autoCloseDuration: const Duration(seconds: 5),
+            ),
+          ),
           BlocListener<SessionCubit, SessionState>(
             // React to a settled action — a save or load that finished or
             // failed — never the transient `working` tick.
@@ -207,6 +220,8 @@ class _TracksViewState extends State<TracksView> {
                             ? const FootMixerView()
                             : mode == InteractionMode.fade
                             ? const FootFadeView()
+                            : mode == InteractionMode.reverse
+                            ? const FootReverseView()
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
