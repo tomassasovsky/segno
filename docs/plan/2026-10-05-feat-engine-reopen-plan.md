@@ -6,10 +6,10 @@ Owner decisions (2026-10-05, recorded on #1140) are binding and repeated inline.
 Base: `origin/codex/fade-clear-history` (top of the Fade stack, PR #1145).
 
 This document was written against the native tree before the work and edited
-afterwards to describe what Part 1 actually built, including the two review
-findings on PR #1158 (a second complete pass lost; the whole-rig
-CLEARED_PENDING blast radius). Part 2 (repository and app wiring) is unchanged
-from the original plan and remains to do.
+afterwards to describe what was actually built: Part 1 (PR #1158), including
+the two review findings on it (a second complete pass lost; the whole-rig
+CLEARED_PENDING blast radius), and Part 2 (the repository and app wiring, with
+its deviations and decisions recorded in its own section).
 
 ## Current behaviour (verified, pre-change)
 
@@ -266,68 +266,129 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
-## Part 2 (to do). Repository and app wiring
+## Part 2 (built). Repository and app wiring
 
-1. Extract the post-start replay in `startEngine` into `_replayRig(config,
-   {required bool replayedPriorEngine})`. `startEngine` keeps `_engine.start`;
-   new `_reopenEngine(config)` runs the same admission predicate,
-   `_retireEngineLifetime()`, `_engine.reopen`, then `_replayRig`. Retired fade
-   waiters complete `notReady` as today, `_mixGeneration++` once,
-   `_sessionRevision` untouched (only a Session load bumps it),
-   `fxReplayConfirmed` fires after confirmation so FX chain persistence behaves
-   as for any restart.
-2. Outcome handling: on `retained`, skip `_foldHistoryFxAtQuiescence()` and
-   `_importTracks` clearing; native history survived, so `_historyFx`,
-   `_clearRestore`, `_pendingClearUndo*` and `_waveforms` stay valid and
-   `_drainHistoryFx` republishes pending history recipes after the replay. On
-   `retainedPartial`, do the same but fold/clear the Dart-side history and
-   waveform state of exactly the tracks in `droppedTracks`. On any
-   `cleared*`, fold exactly as today. Publish `Stream<EngineReopened>`
-   (`outcome`, `droppedTracks`, `previousSampleRate`, `newSampleRate`) next
-   to `fxReplayConfirmed`.
-3. Supervisor fix (`_attemptReconnect`): return early without touching
-   `_lastAttemptSignature` when the admission predicate refuses (this folds in
-   the `_sessionBootStartBlocked` bug); record the signature only after
-   `_engine.reopen` was actually invoked. Replace `_engine.stop();
-   _retireEngineLifetime(); startEngine(config)` with `_engine.stop();
-   _reopenEngine(config)`.
-4. Fade: no Dart image replay. The Part-2 "reconnect image" intent is satisfied
-   natively; remove nothing else, add no owner. Session load keeps installing
-   its own stationary image.
-5. Notice: `AudioSetupCubit._detectConnectivity` already raises one
-   `DeviceConnectivity.lost/restored` banner. Subscribe to `EngineReopened`;
-   on `cleared*`, raise `restoredMaterialCleared` with both rates instead of
-   plain `restored` (one banner for one cause, #860) with a Reload Session
-   action, reusing the `sessionErrorSampleRate` phrasing family with a new EN/ES
-   key; on `retainedPartial`, a variant naming the dropped tracks (the notice
-   rule 5 requires). Fully retained reopens keep today's banner.
+1. `startEngine`'s post-open replay is `_replayRig(config, {replayedPriorEngine,
+   foldedHistory})`, shared with the new `_reopenEngine(config)`. Both sit
+   behind one `_startRefused` predicate (the former inline list in
+   `startEngine`). `_reopenEngine` reads the stopped engine's sample rate
+   (the rate the loops were recorded at), retires the lifetime — settings
+   waiters complete `notReady`, `_mixGeneration++` once — calls
+   `_engine.reopen`, records the verdict, folds Dart-side history per the
+   outcome, clears a staged import the engine dropped, replays the rig, and
+   on a retained outcome runs `_drainHistoryFx` so the surviving tracks'
+   queued Clear/Undo recipes republish on top of the replayed chains.
+   `_sessionRevision` is untouched; `fxReplayConfirmed` fires after the
+   replayed recipes confirm, as after any restart.
+2. Outcome handling: `retained` folds nothing; `retainedPartial` folds only
+   the dropped channels through the new `_foldHistoryFxForChannels` (the
+   per-key fold is now `_foldHistoryFxKey`, shared with
+   `_foldHistoryFxAtQuiescence`); `cleared*` folds exactly as a start does.
+3. Supervisor fix: `_attemptReconnect` checks `_startRefused` BEFORE
+   enumerating, never touches `_lastAttemptSignature` or raw-stops the engine
+   on a refusal, and records the signature only when `_reopenEngine` is
+   actually invoked; `_engine.stop(); _retireEngineLifetime(); startEngine`
+   became `_engine.stop(); _reopenEngine(config)`.
+4. Fade: no Dart image replay, no new owner (unchanged from the plan).
+5. Notice: `AudioSetupCubit._detectConnectivity` keeps raising one notice per
+   return. `DeviceConnectivity` gains `restoredPartial` and `restoredCleared`;
+   the restored transition picks among `restored` / `restoredPartial` /
+   `restoredCleared` from the verdict, so the plain restored snack is replaced,
+   never doubled (#860). `restoredCleared` is a standing banner in
+   `ConnectivityBanners` (`connectivity_banner_material`) naming both rates
+   (or the loop-cap case), with the **Sessions…** action (`sessionManage`),
+   which opens the Sessions manager and ends the notice through the new
+   `AudioSetupCubit.dismissReopenNotice`; a re-apply of the audio settings
+   ends it too. `restoredPartial` is one transient warning toast
+   (`AppToastId.deviceRestoredPartial`, 10 s) titled with the reconnected
+   device and naming the dropped tracks (1-based), shown by
+   `_showDeviceRestoredToast` in place of the snack. New EN/ES keys:
+   `deviceRestoredClearedBanner`, `deviceRestoredClearedCapBanner`,
+   `deviceRestoredPartialToastBody`.
 6. Tests: `packages/looper_repository/test/reopen_native_test.dart`
-   (actual-native with `PumpedNativeEngine.simulateDeviceLoss` and a
-   ticker-driven supervisor; a pinned-device enumeration hook on
-   `PumpedNativeEngine` may be needed so the supervisor's device-list signature
-   can be driven): loops come back stopped with content and depth; one
-   `mixGeneration` step; `fxReplayConfirmed` with unchanged `sessionRevision`;
-   pending `toggleFade` future completes `notReady`; fade image preserved; lane
-   mute/FX replayed; fewer-channel replay admitted; cleared outcome emits the
-   event and folds history FX. `FakeAudioEngine` test for the suppression fix.
-   `audio_setup_cubit_test`: cleared event → `restoredMaterialCleared` with
-   rates; widget test for the banner text.
+   (actual-native, ticker-driven supervisor through `simulatedDevices` and
+   `simulateDeviceLoss`): loops back stopped with content and depth, PCM
+   byte-exact, Fade frozen at 0.75 with the new lifetime, lane mute replayed,
+   one `mixGeneration` step, `fxReplayConfirmed` under the unchanged
+   `sessionRevision`, a pending `toggleFade` completing `notReady`, the
+   supervisor standing down; an Undo pressed while away → `retainedPartial`
+   naming track 1 with track 0 byte-exact; `simulatedSampleRate = 44100` →
+   `clearedRate` naming both rates, recording works on the new clock; a device
+   still absent reopens nothing. `looper_repository_test`: the reconnect
+   group now asserts `reopen` (not a second `start`); new tests for the
+   suppression fix (a boot-fenced attempt neither reopens, raw-stops nor
+   consumes the device list; the same list reopens once the fence lifts), the
+   verdict riding `EngineStatus.reopen` until the next deliberate start, a
+   refused reopen leaving no verdict, the stale-notice repro (a reopen-less
+   return after a partial reconnect carries no verdict), and a rolled-back
+   reopen's verdict carried through exactly one start. `audio_setup_cubit_test`: retained →
+   `restored`, partial → `restoredPartial` with no `restored` in between,
+   cleared → standing `restoredCleared` until `dismissReopenNotice`, which
+   leaves a `lost` condition alone; a later verdict-less return after a
+   partial reconnect is plain `restored`; a re-apply after a rolled-back
+   reopen raises the carried verdict, an ordinary re-apply none.
+   `connectivity_banners_test`: the cleared banner's text (both rates / the
+   cap variant), Sessions action and record-red tokens; tapping the action
+   dismisses the notice and opens the Sessions manager; a partial retention
+   renders no bar. `app_test`: a reconnect that dropped a track registers the
+   partial warning toast, not the restored snack, and raises no bar; a later
+   reopen-less return re-raises neither the stale toast nor a bar.
+
+### Deviations from the plan, and decisions taken under the standing rules
+
+- **The verdict rides `EngineStatus.reopen`, not a separate
+  `Stream<EngineReopened>`.** Every consumer of a device transition already
+  reads `looperState.status`, and the restored transition is the one moment
+  the notice is decided; a second stream would have had to be stubbed in every
+  mock-repository test and read in lockstep with the status anyway. Its
+  lifetime (review of PR #1167): set by the reconnect; `null` from a deliberate
+  start on AND from the moment a new device loss is observed
+  (`_startReconnectPolling`), so a return the backend produces on its own — a
+  reroute, an interruption ending, which miniaudio absorbs without any reopen
+  — reads as a plain restore and never re-raises a stale "tracks dropped" or
+  "loops cleared" notice over an intact rig. A reopen whose rig replay is
+  refused rolls back through `stopEngine`, so no return follows; its verdict is
+  carried through the NEXT successful `startEngine` (one start only) and the
+  audio setup's re-apply raises the matching notice itself in place of its
+  usual "no connectivity condition" reset — rule 3, no silent changes.
+- **`clearedCap` is unreachable through the supervisor** (it reopens with the
+  last config, so the cap never changes) but is handled with its own banner
+  text rather than mislabelling it a rate change.
+- **Partial retention is a toast, cleared is a banner** (popup-severity
+  principle): a dropped track is an event the player should know about but
+  cannot act on — the rig plays on — while a cleared rig has one action worth
+  taking (reload the Session) and stands until it is taken.
+- **The cleared banner has a single action** (the pen's banner shape):
+  **Sessions…** opens the manager and ends the notice. There is no separate
+  dismiss; re-applying the audio settings also ends it, as it ends every
+  connectivity condition.
+- **No pinned-device hook beyond the pump.** `PumpedNativeEngine.simulatedDevices`
+  (what its `enumerateDevices` override reports) and `simulatedSampleRate`
+  (what the simulated device negotiates on `start`/`reopen`) are the two seams
+  the actual-native supervisor test needed, both on the pumped engine only;
+  nothing was added to the repository or the production engine.
+- **A refused reconnect does not raw-stop the dead device.** The old order
+  stopped first and refused second, leaving the engine stopped with
+  `_intendRunning` still true; the new order leaves the running-but-lost
+  engine alone until an admissible tick.
+- Found while writing the app test: a snapshot fixture with no tracks makes
+  the startup one-shot replay time out against the fake and sets a recovery
+  intent, which the admission predicate honours. The pre-existing banner test
+  never reconnected for that reason either; the new test gives the fixture
+  its eight tracks.
 
 ```success-criteria
-GOAL: A reconnected pinned device brings back the recorded loops stopped, with settings, FX and Fade coherent, and the player is told plainly when a rate change cleared them.
+GOAL: A reconnected pinned device brings back the recorded loops stopped, with settings, FX and Fade coherent, and the player is told plainly when a rate change cleared them or a pending press dropped a track.
 SUCCESS CRITERIA:
 - Through the real supervisor and a real native engine, loops return stopped with history, fades and remembered rig; waiters retire once and FX replay confirms under the unchanged session revision. | verify: (cd packages/looper_repository && SEGNO_ENGINE_LIB=<built lib> /Users/Tomas/development/flutter/bin/flutter test)
 - A boot-blocked or otherwise refused attempt neither reopens nor consumes the device-list signature; the next admissible tick reopens. | verify: (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test test/looper_repository_test.dart)
-- A cleared reopen surfaces one banner naming both rates and the Session reload path; a retained reopen shows only the existing restored banner. | verify: /Users/Tomas/development/flutter/bin/flutter test test/audio_setup
+- A cleared reopen surfaces one banner naming both rates with the Sessions action; a partial reopen one toast naming the dropped tracks; a retained reopen only the existing restored snack. | verify: /Users/Tomas/development/flutter/bin/flutter test test/audio_setup test/looper/view/connectivity_banners_test.dart test/app/view/app_test.dart
 - Analyzer, Bloc lint and formatting stay clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 - Appliance: unplug/replug the pinned interface mid-performance; switch its rate and replug. | verify: manual 1. Loops present and stopped after replug, Play resumes from the head. 2. A mid-fade track continues from its frozen level. 3. Rate switch shows the cleared banner and Session reload restores the take.
 NON-GOALS:
 - New Fade owner, resampling, resuming recording, Session schema, generic recovery framework.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
-
-The supervisor fix (step 3) is a candidate for its own small PR ahead of the
-rest of Part 2; it is independently testable with `FakeAudioEngine`.
 
 ## Hardware-only
 

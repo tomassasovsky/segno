@@ -37,7 +37,13 @@ import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno_engine/segno_engine.dart'
     as le
-    show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot, TrackState;
+    show
+        AudioDevice,
+        EngineSnapshot,
+        LaneSnapshot,
+        LatencyState,
+        TrackSnapshot,
+        TrackState;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
@@ -3487,6 +3493,135 @@ void main() {
         // Let the snack's auto-close and removal animations run out so no
         // timer outlives the test.
         await tester.pump(const Duration(seconds: 10));
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
+      },
+    );
+
+    testWidgets(
+      'a reconnect that dropped a track is one warning toast naming it — '
+      'not the restored snack, and never a bar (#1140)',
+      (tester) async {
+        const deviceBanner = Key('connectivity_banner_device');
+        const materialBanner = Key('connectivity_banner_material');
+        le.EngineSnapshot snapshot({required bool devicePresent}) =>
+            le.EngineSnapshot(
+              isRunning: true,
+              sampleRate: 48000,
+              bufferFrames: 128,
+              framesProcessed: 0,
+              xrunCount: 0,
+              inputRms: 0,
+              inputPeak: 0,
+              outputRms: 0,
+              latencyState: le.LatencyState.idle,
+              measuredLatencyMs: -1,
+              devicePresent: devicePresent,
+              // Every track present, so the startup replays (one-shot, length
+              // presets) can confirm against the fake and the supervisor's
+              // admission predicate holds the engine open for a reopen.
+              tracks: List.generate(8, (_) => const le.TrackSnapshot.empty()),
+            );
+        final ticker = StreamController<void>.broadcast();
+        addTearDown(() => unawaited(ticker.close()));
+        final reconnectTicker = StreamController<void>.broadcast();
+        addTearDown(() => unawaited(reconnectTicker.close()));
+        final pinned = LooperRepository(
+          engine: engine,
+          ticker: ticker.stream,
+          reconnectTicker: reconnectTicker.stream,
+        );
+        addTearDown(pinned.dispose);
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        pinned.startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+
+        await tester.pumpWidget(
+          App(
+            mixSettings: testMixSettings(pinned),
+            repository: pinned,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: NoopWaveformWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            exportDirectory: () async => '.',
+          ),
+        );
+        await tester.pumpAndSettle();
+        ticker.add(null);
+        await tester.pump();
+
+        // Unplug: the standing banner.
+        engine.nextSnapshot = snapshot(devicePresent: false);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(find.byKey(deviceBanner), findsOneWidget);
+
+        // The device reappears and the engine reopens, keeping every loop but
+        // track 3's (an edit on it was still pending at the loss).
+        engine
+          ..devices = const [
+            le.AudioDevice(
+              id: 'out-1',
+              name: 'Scarlett 2i2',
+              isDefault: false,
+              isInput: false,
+            ),
+          ]
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retainedPartial,
+            droppedTracks: 1 << 2,
+          );
+        reconnectTicker.add(null);
+        await tester.pump();
+        expect(engine.reopenCalls, 1);
+        expect(pinned.state.status.reopen?.droppedChannels, [2]);
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+
+        final audioSetup = tester
+            .element(find.byType(TracksView))
+            .read<AudioSetupCubit>();
+        expect(
+          audioSetup.state.deviceConnectivity,
+          DeviceConnectivity.restoredPartial,
+        );
+        expect(find.byKey(deviceBanner), findsNothing);
+        expect(find.byKey(materialBanner), findsNothing);
+        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isTrue);
+        expect(debugAppToastActive(AppToastId.deviceRestored), isFalse);
+        // Retire the warning toast before the next episode (its auto-close
+        // runs on the overlay the harness does not render), so a re-raise
+        // below would register anew.
+        dismissAppToast(AppToastId.deviceRestoredPartial, animate: false);
+        await tester.pump(const Duration(seconds: 12));
+        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isFalse);
+
+        // A later return the backend produces on its own (present 0 then 1,
+        // no reconnect tick, nothing reopened) is a plain restore: the stale
+        // "tracks dropped" toast must not come back, and no bar appears
+        // (#1167).
+        engine.nextSnapshot = snapshot(devicePresent: false);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(find.byKey(deviceBanner), findsOneWidget);
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(engine.reopenCalls, 1);
+        expect(find.byKey(deviceBanner), findsNothing);
+        expect(find.byKey(materialBanner), findsNothing);
+        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isFalse);
+        expect(debugAppToastActive(AppToastId.deviceRestored), isTrue);
+
+        await tester.pump(const Duration(seconds: 12));
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(milliseconds: 100));
       },
