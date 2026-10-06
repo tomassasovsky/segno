@@ -3,7 +3,8 @@
 <!-- cspell:ignore Eukr Gtjy RKTE dged slotless memmove -->
 
 Tracking: #1229, `autonomy:merge-gate`, human merge gate.
-Status: plan. Nothing built.
+Status: plan, revised after the PR #1237 review (findings H1-H2, M1-M6,
+L1-L11 applied; §9 maps each). Parts 1 and 4 in build.
 Base: `origin/claude/segno-integration` at `097e1ef68` (Reverse P3 merged). Unless a branch is
 named, every `file:line` below is on that head. Branch-qualified references:
 `origin/claude/peel-1164-p3` (PR #1233, "PeelP3", in review), `origin/claude/library-1178-p5`
@@ -157,12 +158,19 @@ disarms through `PerformanceRepository` directly.
   releases held momentaries (`:476`), and applies the empty rig through
   `_applyRig`, whose first step is `PerformanceRepository.disarmAndFinalize()`
   (`:570`). The Library plan names it "the one method a foot binding (E6-9)
-  will call" (`docs/plan/2026-10-06-feat-library-sessions-plan.md:251-252`, D14
-  `:491-495`). `ControlActionGroup.sessions` is empty
+  will call" (LibP5 `docs/plan/2026-10-06-feat-library-sessions-plan.md:251-252`;
+  D14 is `:424-428` on the trunk). The LibP4/LibP5 review's Finding 2 (Open or
+  New loop during a track capture drops the take or fails as a save) is not yet
+  fixed on either branch; Part 7 depends on that fix. `ControlActionGroup.sessions` is empty
   (`lib/control/binding/control_action.dart:70-71`).
 - Held takes, `saveHeld()` and the recorder's `saveRecovered()` are Recording
   plan Parts 8 and 9 (`docs/plan/2026-10-06-feat-recording-recovery-plan.md`
-  `:1000-1092`, D9 `:635-660`). Nothing on the trunk retries a failed save.
+  at `57a5324b8`: Part 8 `:1011`, Part 9 `:1068-1103`, D9 `:643`). A held take
+  holds no guard (`:592-595`), so arming a new take while one is held is
+  admitted. `Held(saveFailed: true)` is set inside the recorder cubit's
+  `saveRecovered` (`:1095`). Nothing on the trunk retries a failed save.
+- Finishing a capture opens the completion sheet whatever stopped it
+  (`onPerformanceRecorderState`, `lib/looper/view/tracks_commands.dart:436-466`).
 
 ## 2. Pen screens each part must match
 
@@ -189,24 +197,36 @@ being fixed to):
 1. **An empty track's pedal is dimmed and silent.** Where a pedal stands for a
    track, `hasContent == false` draws it at the unavailable opacities and a
    press does nothing and says nothing.
-2. **A busy or refused press on a recorded track gets a notice.** A recorded
+2. **A busy or refused press on recorded material gets a notice.** A recorded
    track that is capturing, pending or refused by the engine keeps its real
-   words (never "Empty"), stays enabled, and a press shows the face's failure
-   toast.
+   words (never "Empty"), **stays enabled**, and a press shows the face's
+   failure toast. The same holds for any switch that has an action but cannot
+   run it now (a stale binding, an unavailable assigned target, a recording
+   that is saving): it is drawn with its real words, the caption may be dimmed
+   where the pen dims it, but the pedal stays enabled. `PerformancePedal`
+   drops a contact when `enabled` is false (`performance_pedal.dart:93`), so
+   only an enabled pedal lets an on-screen tap reach the dispatcher and give
+   the same notice a physical press gives (merged Reverse:
+   `foot_reverse_view.dart:337-340`). On-screen and physical contacts always
+   behave the same.
 3. **Assigned-action refusals always get a notice.** A Custom, External or
-   MIDI assignment that is refused for any reason, an empty target track
-   included, shows a toast. Rule 1 does not apply to assignments: an
-   assignment is not the track's own pedal.
+   MIDI assignment that is refused for any reason, an empty target track or an
+   unavailable action included, shows a toast from any mode. Rule 1 does not
+   apply to assignments: an assignment is not the track's own pedal.
+
+Only a switch with **no action at all** in the current mode is dimmed and
+silent (`enabled: false`): an empty track's own pedal, a Tuner position past
+the last input, an unbound switch the pen dims, Bank with one input page.
 
 How each part applies it:
 
-| Part | Pedals that stand for a track | Other refusals |
+| Part | Dimmed and silent | Enabled with a notice when refused |
 |---|---|---|
-| 2 FX face | none: track switches drive chains, which exist on empty tracks, so no switch dims for content | stale binding and failed write: notice (rule 3 for bindings); Rec/Play, Undo and Clear have no action in FX and stay dimmed and silent, as today |
-| 3 Custom face | none: every switch is an assignment | every refused assignment: notice (rule 3), empty target track included |
-| 6 Tuner | none: track switches are inputs; positions past the last input read `—` and are dimmed and silent, as an absent input is not a refusal; Rec/Play has no action and is dimmed and silent | reference at its 420 or 460 limit, failed save, failed arm or mute: notice |
-| 7 New Loop | none | refused while a track records or is pending: notice (rule 3) |
-| 8 Recording retry | none | press while the take is saving: the caption is dimmed (`Saving recording`) and a physical press still gets a notice; failed retry: notice |
+| 2 FX face | unbound Rec/Play, Stop, Undo and Clear (the pen dims them, `noDGu`) | any bound switch whose binding is stale or whose write is refused |
+| 3 Custom face | unassigned switches | every assigned switch, including an unavailable action or an empty or busy target track |
+| 6 Tuner | positions past the last input (`—`), Rec/Play, Bank with one page | reference at its 420 or 460 limit, failed save, failed arm or mute |
+| 7 New Loop | – | whatever `SessionCubit.newLoop` refuses, with its own notice |
+| 8 Recording retry | – | a press while the take is saving (caption `Saving recording` dimmed, pedal enabled); a failed retry |
 
 Lessons from the Reverse P3 review (PR #1209), which this policy settles:
 
@@ -217,8 +237,8 @@ Lessons from the Reverse P3 review (PR #1209), which this policy settles:
   two text boxes intersect (the probe matrix the review asked for).
 - **Busy tracks never read "Empty".** No face derives a word from
   availability. Content words come from content (`hasContent`); whether a
-  switch can act now is a separate `enabled`, as the merged Reverse model now
-  splits `recorded` from `busy` (`lib/control/model/foot_reverse.dart:44-57`).
+  switch can act now is a separate fact, as the merged Reverse model splits
+  `recorded` from `busy` (`lib/control/model/foot_reverse.dart:44-57`).
 - **Silent only where the policy says so.** Presses dropped under
   `takeLocked` also stay silent, as on every face today (§1.1), because the
   power dialog or the session load already owns the screen.
@@ -229,92 +249,122 @@ Lessons from the Reverse P3 review (PR #1209), which this policy settles:
 
 ## 4. Parts
 
-### Part 1: the Pending Hold cue (about 220 production lines; no dependencies)
+### Part 1: the Pending Hold cue (about 200 production lines; no dependencies)
 
-**Model.** `ControlState` gains `pendingHolds: Map<PedalButton, DateTime>`
-(start instant of each pending hold) and `holdThreshold: Duration` (the loaded
-`_longPress`). `_armGesture` gains a `PedalButton? cue` argument; when non-null
-it records `now()` for that button and emits; the entry is removed when the
-hold fires, the release lands, or the gesture is cancelled (`_HoldGesture`
-reports each through one `onSettled` callback added to `press`). Every
-`_armGesture` call site that arms a pedal passes its button; the external jack
-site (`:467`) passes null, since no surface draws CTRL jacks. `now` is injected
-into `ControlCubit` for tests (default `DateTime.now`).
-`_invalidateGestures` and `_cancelSurfaceHolds` clear the map.
+**Model.** `ControlState` gains `pendingHolds: Set<PedalButton>` (the pedals
+whose hold is armed and not yet settled) and `holdThreshold: Duration` (the
+loaded `_longPress`). It publishes only the fact, never an instant (review
+L2): the Pi has no RTC and NTP steps the wall clock after boot, so the widget
+times the bar from its own ticker. `_armGesture` gains a `PedalButton? cue`
+argument; when non-null the button is added and the state emitted; it is
+removed when the hold fires, the release lands, or the gesture is cancelled
+(`_HoldGesture` reports each through one `onSettled` callback added to
+`press`). `onSettled` never emits after `close()` (`isClosed` guard): `close`
+cancels every gesture. Every `_armGesture` call site that arms a pedal passes
+its button; the external jack site (`:467`) passes null, since no surface
+draws CTRL jacks. `_invalidateGestures` and `_cancelSurfaceHolds` clear the
+set.
 
-**View.** `PerformancePedal` gains `holdStartedAt` and `holdThreshold`. It
-always lays out the 3 px bar slot under the face (opacity 0 when idle) and,
-while a hold is pending, animates the fill from `(now - start) / threshold` to
-1 with an `AnimationController` (no per-frame cubit emits), and brightens the
-hint (`#d2e3ff`, a new `SurfaceTheme` token beside the hint colour). Every face
-passes `state.pendingHolds[button]`; Mixer and Fade get the cue at once
-(Reverse arms no holds, so it never shows one).
+**View.** `PerformancePedal` gains `holdPending` and `holdThreshold`. It
+always lays out the 3 px bar slot under the face (opacity 0 when idle). When
+`holdPending` turns true it runs an `AnimationController` of `holdThreshold`
+from 0 (the ticker is monotonic, and no per-frame cubit emits are needed);
+when it turns false the bar hides. While pending the hint text brightens
+(`#d2e3ff`, a new `SurfaceTheme` token beside the hint colour). Every face
+passes `state.pendingHolds.contains(button)`; Mixer and Fade get the cue at
+once (Reverse arms no holds, so it never shows one). The bar slot moves every
+face's layout by 3 px, so the Mixer, Fade and Reverse goldens are regenerated
+in this part.
 
 **Refusals.** None new: the cue only shows a gesture the cubit already armed.
 
-**Tests.** Cubit: arming a Fade track hold publishes the button with the
-injected instant; release before the threshold, the hold firing, a mode
-change, a session change (`_cancelSurfaceHolds`) and close each remove it.
-Widget: with a pending start 400 ms ago and an 800 ms threshold the fill is
-half the 159 px track (pump 0), full at 800 ms, gone after release; the bar
-slot height is identical with and without a pending hold; `es` geometry probe.
-Golden: `foot_fade_pending_hold.png` matching `PRSrG`'s bar and hint colour.
+**Tests.** Cubit: arming a Fade track hold and a Mixer Undo hold publishes the
+button; release before the threshold, the hold firing, a mode change, a
+session change (`_cancelSurfaceHolds`) and close each remove it, and close
+emits nothing afterwards. Widget: 400 ms after `holdPending` turns true with
+an 800 ms threshold the fill is half the 159 px track, full at 800 ms, gone
+after release; the bar slot height is identical with and without a pending
+hold; `es` geometry probe. Golden: `foot_mixer_pending_hold.png` matching
+`PRSrG`'s bar and hint colour, plus the regenerated face goldens.
 
 ```success-criteria
 GOAL: Every on-screen pedal whose hold is pending shows the pen's progress bar and brightened hint, and nothing reflows when it appears.
 SUCCESS CRITERIA:
-- pendingHolds is set on arm and cleared on release, hold, mode change, session change and close. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
-- The bar fills linearly to the threshold, and its slot takes the same space idle and pending. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
+- pendingHolds gains the button on arm and loses it on release, hold, mode change, session change and close; nothing is emitted after close. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
+- The bar fills linearly to the threshold from the widget's own ticker, and its slot takes the same space idle and pending. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
+- The Mixer, Fade and Reverse goldens are regenerated and compared on the author's machine. | verify: /Users/Tomas/development/flutter/bin/flutter test test/screenshots
 - Analyzer and Bloc lint are clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: on the appliance, hold MODE on the foot Mixer: the bar fills over 800 ms and the hold fires as it completes; a short press shows the bar briefly and fires the press. | verify: manual on device
+- HARDWARE: on the appliance, hold Undo on the foot Mixer: the bar fills over 800 ms and the level resets to unity as it completes; a short press shows the bar briefly and steps the level down. | verify: manual on device
 NON-GOALS:
-- A cue in Tracks and Mute modes, which draw no pedals (question Q1); an LED cue.
+- A cue in Tracks and Mute modes, which draw no pedals (owner decision O1); an LED cue.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 2: the FX face with Toggle/Hold per pedal (about 620 production lines added, about 250 removed; no dependencies)
+### Part 2: the FX face with Toggle/Hold per pedal (about 640 production lines added, about 300 removed; no dependencies)
 
 **Decision D1.** FX mode gets a pedal-map face (10/03) like Mixer and Fade, and
 the #692 Candidate A re-dress of the Tracks columns is removed:
 `TrackColumn.fxTarget`, `inputNames`, `_FxChainDressing` and
 `_stageFxTargetLabel` (`track_column.dart:129-175`, `:256-300`, `:445`,
-`:895-902`, `:926-`), and the `fxSurface` background branch
-(`tracks_view.dart:215-217`). The pen draws FX as this face, and the approved
-FX Toggle/Hold proposal is drawn on it; there is nowhere else to put a
-per-pedal Toggle/Hold line. This closes #884 and #873 by construction: the
-caption reads the binding, and the stage words come from the shared
-`fxStageLabel`/`bindingTargetLabel`.
+`:895-902`, `:926-`), the `fxSurface` background branch
+(`tracks_view.dart:215-217`), and the tests that exercise those fields
+(`test/looper/view/tracks_view_test.dart:1003-1187`). The pen draws FX as this
+face (`noDGu`), and the approved FX Toggle/Hold proposal is drawn on it; the
+Candidate A notes all sit in `02 EARLIER APPLICATION`. This closes #884 and
+#873 by construction: the caption reads the binding, and the stage words come
+from the shared `fxStageLabel`/`bindingTargetLabel`. The PR quotes the #692
+history for the owner: on 2026-08-26 the owner asked to keep the track
+waveform visible behind FX cells; pen 10/03 supersedes that, and this face
+removes the waveforms that ruling kept.
 
 **Model** `lib/control/model/foot_fx.dart`: `FootFxPedal` roles for all ten
-switches and `projectFootFx(ControlState, LooperState, FxChainLookup)`:
-- Track switch with a binding for the current bank: title = the target's chain
-  or effect name from `FxChainLookup` (the #884 data source), falling back to
+switches and a pure `projectFootFx(ControlState, LooperState, FxNames)`, where
+`FxNames` is a small resolver built from `LooperRepository` in the view
+(`FxChainLookup` is an extension on the repository,
+`packages/looper_repository/lib/src/fx_chain_lookup.dart:6`, not a type a
+projection can take):
+- **Every bindable switch** (Rec/Play, Stop, Undo, Clear and the four track
+  switches; only MODE and Bank are unbindable, `pedal_binding.dart:68-71`)
+  with a binding for the current bank: title = the target's chain or effect
+  name from `FxNames` (the #884 data source), falling back to
   `bindingTargetLabel`; detail = `Toggle` for `BindingBehavior.toggle`, `Hold`
   for `momentary` (pen `ri60q`); hint = `Hold · <hold target label>` when the
-  binding has a `holdTarget`; semantics add `fxStageLabel`. A stale binding
-  (`decodeTarget() == null`) reads the assignment screen's broken-row wording,
-  disabled.
+  binding has a `holdTarget`; semantics add `fxStageLabel`; drawn active and
+  enabled. FX `_onPress` already runs these bindings for every bindable button
+  (`control_cubit.dart:2378-2397`), so the face now shows pedals that act.
+  A stale binding (`decodeTarget() == null`) reads the assignment screen's
+  broken-row wording with its caption dimmed, and stays enabled (§3 rule 2).
 - Unbound track switch: title = the track's chain name or `Track N`, detail
   `Toggle` (it toggles the track chain, `:1802-1803`).
-- Stop: `All FX off`, hint `Hold · Restore FX` (existing panic and restore);
-  Bank: `Bank A/B`, `Switch bank`, hint `Hold · Record performance` (existing
-  `_armBank`); MODE: `Exit`; Rec/Play, Undo, Clear: unavailable (inert today).
+- Unbound Rec/Play, Stop, Undo and Clear: dimmed and inert, as the pen draws
+  them (`noDGu`, opacity 0.3). This removes the unbound-Stop panic and its
+  restore hold (decision D3, question Q3).
+- Bank: `Bank A/B`, `Switch bank`, as the pen draws it. Its hold keeps
+  Record performance (`_armBank` `:2861-2867`), which the pen's slice-4c note
+  documents (`po4RZ`: "Bank Hold retains performance-recording access");
+  10/03 draws no hint, so none is drawn.
+- MODE: `Exit`, lit.
 - `selected` mirrors the physical LED, which already lights a momentary only
-  while held and a toggle while its target is enabled (`_boundChains`). The
-  held pedal's detail line brightens while its contact is held (`ri60q`,
-  Light FX 1) through `PerformancePedal.detailHighlighted`, which Reverse
-  added (`performance_pedal.dart:74`).
+  while held and a toggle while its target is enabled (`_boundChains`
+  `:3210-3246`, extended here to the four non-track bindable switches through
+  the physical mask). The held pedal's detail line brightens while its contact
+  is held (`ri60q`, Light FX 1) through `PerformancePedal.detailHighlighted`
+  (`performance_pedal.dart:74`).
 
 **Cubit.** `footFxPressed/Released/Cancelled` and `activateFootFxPedal` admit
 on-screen contacts into `_handleEvent` the way `footFadePressed` does
-(`:2089-2108`); FX dispatch itself stays where it is (`_onPress`
-`:2374-2437`). No new state.
+(`:2089-2108`). FX dispatch stays in `_onPress` (`:2374-2437`) minus the
+unbound-Stop panic and the bound-Stop restore hold (`_armStop`,
+`_armStopRestore`, `_sweepTrackChains` `:1916-1923` when nothing else uses
+it). The Rec/Play, Undo and Clear mask rule (`control_projection.dart`) lights
+them only when bound.
 
 **Refusals** (§3). A stomp on a stale binding: toast `footFxUnavailable`
 ("This pedal's effect is no longer available. Reassign it in Pedal
 assignments."). A refused enable write: the new `footFxFailure` counter and
-toast ("The effect could not be switched. Try again."). No FX switch dims for
-an empty track: chains exist and toggle on empty tracks.
+toast ("The effect could not be switched. Try again."). Both are reached from
+the face and from the foot alike, because the pedal stays enabled. No FX
+switch dims for an empty track: chains exist and toggle on empty tracks.
 
 **#601.** Closed as obsolete with the evidence in §1.3. The face reads each
 target's own `enabled` flag (a slot target its slot, a chain target its
@@ -322,29 +372,35 @@ chain), so a bypassed effect never reads as active here.
 
 **Tests.** Projection: bound chain on another stage (the #884 repro: pedal 1
 bound to Input 2's chain, track 0 without effects) names the chain and its
-stage; a loop-lane target names `Track 2 · lane 1` (the #873 repro, 1-based);
-momentary reads `Hold`, toggle `Toggle`, hold target adds the hint; stale is
-disabled with the broken-row text; bank B shows B bindings. Widget: momentary
-LED and highlighted detail only while the contact is held; toggle stays lit
-after release; Exit returns to Record. Goldens `foot_fx.png` (`noDGu`) and
-`foot_fx_held.png` (`ri60q`), `es` geometry probe. Removal:
-`! grep -rn "fxTarget\|_FxChainDressing\|_stageFxTargetLabel" lib`.
+stage; a loop-lane target names `Track 2 lane 1`, or the track's own name in
+its place when it has one (`pedalAssignStageLoop`, `app_en.arb:1558`; the
+#873 repro, 1-based); momentary reads `Hold`, toggle `Toggle`, hold target
+adds the hint; stale stays enabled with the broken-row text and its tap
+toasts; a bound Rec/Play and a bound Stop show their binding and run it from
+an on-screen tap; unbound Stop is dimmed and its press changes no chain; bank
+B shows B bindings. Widget: momentary LED and highlighted detail only while
+the contact is held; toggle stays lit after release; Exit returns to Record.
+Goldens `foot_fx.png` (`noDGu`) and `foot_fx_held.png` (`ri60q`), `es`
+geometry probe. Removal:
+`! grep -rn "fxTarget\|_FxChainDressing\|_stageFxTargetLabel" lib test`.
 
 ```success-criteria
-GOAL: FX mode shows the pen's pedal-map face, each track switch names what its binding drives with a Toggle or Hold line, and a held momentary lights only while held.
+GOAL: FX mode shows the pen's pedal-map face, every bindable switch names what its binding drives with a Toggle or Hold line, and a held momentary lights only while held.
 SUCCESS CRITERIA:
 - A pedal bound to a chain on another stage names that chain and stage; a lane target is 1-based and names its track. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
+- Bound Rec/Play, Stop, Undo and Clear show and run their bindings on screen and by foot; unbound ones are dimmed and inert. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
 - Toggle and Hold lines follow BindingBehavior; the momentary LED and highlight last exactly as long as the contact. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
-- The Tracks-column FX re-dress is gone. | verify: ! grep -rnE "fxTarget|_FxChainDressing|_stageFxTargetLabel" lib
+- A stale binding stays enabled and its press shows one toast on screen and by foot. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
+- The Tracks-column FX re-dress is gone. | verify: ! grep -rnE "fxTarget|_FxChainDressing|_stageFxTargetLabel" lib test
 - Goldens match noDGu and ri60q on the author's machine. | verify: /Users/Tomas/development/flutter/bin/flutter test test/screenshots
 - Analyzer and Bloc lint are clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 - HARDWARE: a momentary FX pedal's LED is lit only while the foot is down; a toggle stays lit. | verify: manual on device
 NON-GOALS:
-- New binding semantics; FX activation editing; the Mute and Tracks faces.
+- New binding semantics. Pen 04 models activation per rack (On/Off latched, Held foot down, Released foot up) with several racks per pedal, which is why 10/03 titles pedal 1 `FX A1`; the trunk binding is one target per key with toggle or momentary. `Released` and multi-rack titles wait for the E5-8 activation redesign. FX activation editing; the Mute and Tracks faces.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 3: the Custom face (about 560 production lines; no dependencies)
+### Part 3: the Custom face (about 560 production lines; depends on PR #1233)
 
 **Model** `lib/control/model/foot_custom.dart`: `projectFootCustom(PedalSetup,
 ControlState, …)` for all ten switches, following `role()` in
@@ -352,14 +408,19 @@ ControlState, …)` for all ten switches, following `role()` in
 - MODE: `Exit`, lit. Bank: `Bank A/B`, `Switch bank`.
 - Every other switch: title = `controlActionLabel` of its Press, or the
   hardware name (`Record / Play`, `Stop`, `Undo`, `Clear`, `Track N`) when
-  Press is None; hint = `Hold · <label>` when it has a Hold; enabled when
-  Press or Hold is assigned and available. Unassigned is drawn at the pen's
-  unavailable opacities (`MV9wz`: "an unassigned one does nothing").
+  Press is None; hint = `Hold · <label>` when it has a Hold. A switch with a
+  Press or a Hold is **enabled**, available or not (§3 rule 2): an
+  unavailable action reads its broken-assignment words with the caption
+  dimmed and its press gives the notice. Only an unassigned switch is dimmed
+  and inert (`MV9wz`: "an unassigned one does nothing").
 - A switch whose Press is `recordPerformance`: `Record performance`, or
   `Stop recording` (lit) while `_performanceArmed` (20/03 `E7kQV`, where the
   Stop switch carries it). Part 8 adds the saving and held captions.
-- `selected` = `_physicalCustomStates` for that switch, so the face and the
-  LED cannot disagree.
+- `selected` = the published `ControlState.customLit: Map<PedalButton, bool>`
+  (review L8). `_physicalCustomStates` (`:3352-3366`) reads private cubit
+  fields, so the cubit computes the map once and stores it next to
+  `_pushProjected` (`:3305-3324`); the LED frame and the face read the same
+  value, so they cannot disagree.
 
 **View** `lib/looper/view/foot_custom_view.dart` (header with Exit, the
 recording indicator from `StageTopBar` when armed, as 20/03 draws `01:23`, and
@@ -371,38 +432,44 @@ into the existing `_onPress` custom route (`:2362-2373`). Tile taps keep
 selection-only (`track_column.dart:401-406`), which no longer matters on this
 face.
 
-**Refusals** (§3 rule 3). Every assigned action the dispatcher refuses (an
-unavailable target, an empty or busy target track, a refused engine result)
-gets one notice, from any mode, since Custom, External and MIDI share
-`_runAction` (`control_cubit.dart:2560`). Operations that already report their
-own refusal keep their toast and add nothing: Fade (`footFadeFailure`),
-Reverse (`footReverseFailure`) and Peel (`footPeelFailure`, PeelP3, which
-already notifies an assigned Peel from any mode). Everything else bumps a new
-`assignedActionFailure` counter with the action's label; its listener sits
-beside PeelP3's in `tracks_view.dart`, not gated on the mode, and shows "<action>
-is unavailable right now." (one cause, one notice). Before this part those
-refusals were silent. Rule 1 does not dim a Custom switch whose target track
-is empty: it is an assignment, so it stays enabled and its press gives the
-notice.
+**Refusals** (§3 rule 3; review H1 and L9). Every refused assigned action gets
+one notice, from any mode. PR #1233 (PeelP3) is fixing assigned Fade, Reverse
+and Peel refusals to report from any mode through their own reporters inside
+`_runTrackOperation`, with listeners no longer gated on the mode; this part
+depends on #1233 and reuses that path rather than adding a second one. For
+every other action it adds one `assignedActionFailure` counter carrying the
+action's label, bumped in two places: where `_runAction` (`:2560`) returns a
+refusal for an action with no reporter of its own, and at the early return
+for an `UnavailableAction` in `_fireCustomAction` (`:2473`), which never
+reaches `_runAction`; the External (`_fireExternal`) and MIDI paths get the
+same early-return bump. The listener sits beside #1233's in `tracks_view.dart`,
+not gated on the mode, and shows "<action> is unavailable right now." (one
+cause, one notice). An empty or busy target track is refused with this notice
+too: an assignment is never dimmed for its target's content.
 
-**Pen write-back (owner).** `uEukr` dims Record/Play, Stop and Undo although
-two carry assignments; the build dims only unassigned switches, per `MV9wz`.
-The departure is recorded in the PR for the owner to write into the pen (this
-plan does not edit the pen).
+**Pen write-back.** `uEukr` dims Record/Play (Hold · Peel), Stop and Undo
+(Hold · Redo) although they carry assignments; the build dims only unassigned
+switches, per `MV9wz`. The note is owed in pen section 10 beside `uEukr`
+(§6, write-back list W2); builders do not edit the pen, so the coordinator
+writes it when this part merges.
 
 **Tests.** Projection over a setup with bank A/B track assignments, a Hold-only
 switch, an unavailable instrument action and `recordPerformance` on Stop;
-Bank flips the track captions; widget contacts reach `_armCustom`; LED
-parity with `_physicalCustomStates`; the guards in §3. Goldens
-`foot_custom.png` (`uEukr` with the departure) and `foot_custom_recording.png`
-(`E7kQV`).
+Bank flips the track captions; widget contacts reach `_armCustom`, including
+an on-screen tap on an unavailable action, which toasts; LED parity through
+`customLit`; the guards in §3. Refusal cases: Custom Press = Fade on an empty
+Track 3 and on a Track 3 whose fade write is refused, Custom Press = Reverse
+on a capturing track, each one toast through #1233's reporter and none from
+`assignedActionFailure`; an unavailable action from Custom, External and MIDI,
+one toast each. Goldens `foot_custom.png` (`uEukr` with the departure) and
+`foot_custom_recording.png` (`E7kQV`).
 
 ```success-criteria
-GOAL: Custom mode has its own pedal-map face that names each switch's assignment for the current bank and lights exactly what the LEDs light.
+GOAL: Custom mode has its own pedal-map face that names each switch's assignment for the current bank and lights exactly what the LEDs light, and every refused assignment says so once.
 SUCCESS CRITERIA:
-- Captions, hints and availability follow PedalSetup.customFor for banks A and B; unassigned switches are dimmed and inert. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
+- Captions, hints and availability follow PedalSetup.customFor for banks A and B; unassigned switches are dimmed and inert; assigned ones stay enabled. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
 - Record performance reads Stop recording and is lit while armed. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
-- Each refused assigned action shows exactly one toast, from Custom and from Tracks mode through External and MIDI; Fade, Reverse and Peel keep their own toast and add none. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
+- Each refused assigned action shows exactly one toast, from Custom and from Tracks mode through External and MIDI, including Fade and Reverse on #1233's path and an unavailable action at the early return. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
 - Goldens match uEukr and E7kQV on the author's machine. | verify: /Users/Tomas/development/flutter/bin/flutter test test/screenshots
 - Analyzer and Bloc lint are clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 - HARDWARE: enter Custom with MODE Hold; each assigned switch acts and the face matches the LEDs. | verify: manual on device
@@ -411,75 +478,90 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 4: native tuner mute (about 160 production lines: about 90 C, 70 Dart; no dependencies)
+### Part 4: native tuner mute (about 160 production lines: about 70 C, 90 Dart; builds on the trunk port of PR #912)
+
+**Base (review M5).** PR #912 (#909: the tuner's per-frame `memmove` and
+whole-callback YIN pass) is based on `master` and conflicts with the trunk in
+`engine_private.h`, in the same tuner block this part edits. Another agent is
+porting it onto the trunk as `claude/tuner-latency-909-trunk`; this part is
+built on that branch (rebased onto it once it is pushed), so the conflict is
+resolved once. The port is a merge gate for Part 6, not only a hardware note:
+the foot Tuner stays armed while loops play, which is the load #909 measures.
 
 **Decision D2.** The Tuner's temporary mute is a native mask owned by the tuner
 arm, not the persistent monitor mute. Monitor mute is saved, Session-captured,
 replayed and perf-logged (§1.5); a Tuner that borrowed it would need restore
 logic on Exit, teardown and session replacement, and any unrelated save during
-tuning could persist it. The native mask cannot outlive the tuner: disarming
-clears it in the same command.
+tuning could persist it. The native mask cannot outlive the tuner.
 
 **Contract** (`segno_engine_api.h`, after `le_engine_set_tuner_input`):
-`LE_CMD_SET_TUNER_MUTE = 132` (ledger range 132-135; 133-135 stay free) and
-`LE_EXPORT int32_t le_engine_set_tuner_mute(le_engine* engine, uint32_t input_mask);`
+`LE_CMD_SET_TUNER_MUTE = 132` (ledger range 132-135; 133-135 stay reserved)
+and `LE_EXPORT int32_t le_engine_set_tuner_mute(le_engine* engine, uint32_t input_mask);`
 posted through the ring like `le_engine_set_tuner_input`
 (`engine_commands.c:3459-3465`). Returns `LE_ERR_INVALID` for a null engine,
 `LE_OK` otherwise. Snapshot gains `uint32_t tuner_mute_mask` next to
 `tuner_input`.
 
 **Audio side.** `engine_private.h`: `_Atomic uint32_t a_tuner_mute_mask` beside
-`a_tuner_input` (`:1521`). Handler: store `mask & ((1u << in_channels) - 1)`,
-or 0 while `a_tuner_input < 0` (a mask without an armed tuner is refused by
-storing 0). `LE_CMD_SET_TUNER_INPUT` stores 0 whenever it disarms
-(`engine_process.c:3509-3525`). Boot and every configure store 0
-(`engine.c:796-799`). The monitor block reads the mask once per block where it
+`a_tuner_input` (`:1521`). Handler: 0 while `a_tuner_input < 0` (a mask without
+an armed tuner is refused), otherwise the mask with bits for absent inputs
+dropped, guarded at 32 inputs like `engine_process.c:3555-3557` (`1u << 32` is
+undefined; review L3). **Every** `LE_CMD_SET_TUNER_INPUT` (arm, move or
+disarm, `engine_process.c:3509-3525`) stores 0: the mask belonged to the
+tuning that just ended and the caller re-sends it for the new input, so a
+moved tuner never keeps silencing the previous pair. `le_engine_reset_runtime`
+(`engine.c:500-884`, run by configure and by a retained reopen) already
+disarms the tuner and resets every monitor (`:799`, `:805`); it stores 0 for
+the mask beside them. The monitor block reads the mask once per block where it
 builds `mon_mut[]` (`engine_process.c:4950`) and ORs bit `c`, so the existing
 mute path (`:4974`, `:5408-5410`) does the rest. Track lanes record from `in_c`
 untouched (`:6422-6434`) and the detector keeps tapping before the mute
 (`:6803-6805`). Not perf-logged: it changes no musical record; a captured
 monitor stem gets silence for the muted input, exactly what was audible, as
-with a monitor mute.
+with a monitor mute. The format doc says so beside the other unlogged
+commands.
 
 **Dart.** Regenerate bindings (then `dart format`, per the ffigen note in
-`docs/PROGRESS.md`); `AudioEngine.setTunerMute(int mask)` in the engine, the
-native and the mock engines; `EngineSnapshot.tunerMuteMask`;
-`LooperRepository.setTunerMute(Set<int> inputs)` that remembers the mask next
-to `_tunerInput` (`looper_repository.dart:360-364`) and re-sends it after the
-input re-arm on restart (`:2536-2540`); `LooperState.tuner` carries
-`muteMask`.
+`docs/PROGRESS.md`); `AudioEngine.setTunerMute({required int inputMask})` in
+the engine, the native and the mock engines (the mock follows the native rules);
+`EngineSnapshot.tunerMuteMask`; `LooperRepository.setTunerMute(Set<int>
+inputs)` that remembers the mask next to `_tunerInput`
+(`looper_repository.dart:360-364`) and re-sends it after the input re-arm on
+restart (`:2536-2540`); `setTunerInput` clears the remembered mask on every
+call, as the engine does (review L4), so the Dart image never goes stale;
+`TunerReading` carries `muteMask`.
 
 **Native tests** (new `packages/segno_engine/src/test/test_engine_tuner.h`,
-included like `test_engine_fade.h`; fixture as `test_monitor_mute`,
-`test_engine_core.c:8517-8553`):
-- `test_tuner_mute_literal`: 48 kHz, 4 in, 2 out; monitors 0-3 on, all to
-  out 0, inputs constant 0.1, 0.2, 0.3, 0.4. Out 0 is 1.0 (±1e-6). Arm input
-  2, mask `0b1100`: out 0 is 0.3; snapshot `tuner_mute_mask == 0xC`. Mask 0:
-  1.0.
-- `test_tuner_mute_keeps_monitor_mute`: monitor mute on input 0, tuner mask
-  `0b0010`: out 0 is 0.7; tuner mask 0: 0.9 (input 0 still muted, its
-  `a_muted` unchanged).
-- `test_tuner_mute_cleared_by_disarm_and_configure`: mask set, then
-  `le_engine_set_tuner_input(e, -1)`: out 0 is 1.0 and the snapshot mask 0;
-  a mask posted while disarmed stays 0; reconfigure clears it.
+included after `test_engine_peel.h`; fixture as `test_monitor_mute`,
+`test_engine_core.c:8517-8553`; four inputs at 0.1, 0.2, 0.3, 0.4, every
+monitor clean to output 0, so output 0 is the sum of what is heard):
+- `test_tuner_mute_literal`: out 0 is 1.0; arm input 2, mask `0xC`: 0.3,
+  snapshot `0xC`; mask `0xFFFFFFFF`: 0.0, snapshot `0xF`; mask 0: 1.0; null
+  engine refused.
+- `test_tuner_mute_keeps_monitor_mute`: monitor mute on input 0, arm input 1,
+  mask `0x2`: 0.7; mask 0: 0.9; a monitor mute set on input 1 under the mask
+  survives the mask ending (0.7) and `a_muted` is 1 there and 0 elsewhere.
+- `test_tuner_mute_owned_by_arm`: a mask while disarmed stays 0; disarm
+  clears it; a move to another input clears it; an out-of-range arm (a
+  disarm) clears it; configure disarms and clears both.
 - `test_tuner_mute_detector_and_capture_independent`: a 220 Hz sine of
-  amplitude 0.5 on input 2, armed and muted; after 0.5 s `tuner_hz` is within
-  1 Hz of 220 and confidence >= 0.5; track 0 recording input 2 over the same
-  frames holds the input samples exactly (literal compare of 4800 frames).
-- `test_tuner_mute_not_logged`: with a performance capture armed, a mask
-  change adds no events.log record and the input's monitor stem is zero for
-  the muted frames.
+  amplitude 0.5 on input 2, armed and muted; output 0 is silent while track 0
+  records input 2, and the exported 4096 frames equal the input sample for
+  sample; then `tuner_hz` is within 1 Hz of 220 with confidence >= 0.5.
+- `test_tuner_mute_not_logged`: with a performance capture armed, no
+  events.log record carries 132, 53 or the monitor-mute code, and the input's
+  monitor stem is zero for the muted frames.
 
 ```success-criteria
 GOAL: The engine can silence the monitors of chosen inputs for exactly as long as the tuner is armed, without touching monitor mute, track capture or the detector.
 SUCCESS CRITERIA:
-- Literal monitor sums with and without the mask, with a persistent monitor mute alongside, and after disarm and configure. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Literal monitor sums with and without the mask, with a persistent monitor mute alongside, and after disarm, move and configure. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - The detector reads a muted input and a track records it sample-exactly; no events.log record is written. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- Sanitizer and telemetry-off builds pass. | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh
-- Repository re-sends the mask after a restart and the mock engine records it. | verify: (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test)
-- Analyzer is clean. | verify: dart analyze --fatal-infos
+- Sanitizer and telemetry-off builds pass. | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh
+- The repository re-sends the mask after a restart, clears it on any tuner input change, and the mock engine follows the native rules. | verify: (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test)
+- Analyzer is clean. | verify: dart analyze --fatal-infos lib test packages
 NON-GOALS:
-- Any UI; the #909 callback cost (PR #912).
+- Any UI; the #909 callback cost itself (the trunk port of PR #912).
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
@@ -498,9 +580,13 @@ and returns false.
 
 **Reading.** `TunerCubit` becomes the reading owner only: it takes
 `TunerSettings`, computes `pitchFromHz(hz, reference: settings.live.referenceHz)`,
-drops `arm`, `disarm` and `selectInput` (arming moves to Control in Part 6),
-and starts the stale hold on an input mismatch too (fixes `:148-151`). It keeps
-the 1.2 s dimmed hold, then clears to no reading (decision D5).
+and keeps thin `arm`/`disarm`/`selectInput` until Part 6 moves arming to
+Control (review L5): the tray face, or Settings Part 5's tuner handle
+(Settings plan `:541`, "arms TunerCubit"), still arms through the cubit, never
+a widget calling the repository. A reading whose input differs from the armed
+one is cleared at once (review L6; fixes `:148-151`): it belongs to another
+input, it is not "no signal". Silence keeps the 1.2 s dimmed hold, then
+clears (decision D5).
 
 **Foot model** `lib/control/model/foot_tuner.dart`, from
 `tuner-performance-study.js`:
@@ -512,7 +598,7 @@ the 1.2 s dimmed hold, then clears to no reading (decision D5).
   muted. Roles: tracks 1-4 = `Tuner input` (title = input name from the view,
   detail `Input N`, lit when it is the source, `—` and unavailable past the
   last input, 23/5); Stop = `Mute input`/`Unmute input`, detail
-  `Input muted`/`Input audible`/`Not monitored` (lit while muted); Undo =
+  `Input muted`/`Input audible` (pen 23/1, 23/4; lit while muted); Undo =
   `Reference −`, Clear = `Reference +`, both hint `Hold · 440 Hz`; Bank =
   `Inputs a–b`, hint `Next inputs` when there are two or more pages, lit on
   pages after the first, unavailable with one page; MODE = `Exit`; Rec/Play
@@ -524,7 +610,8 @@ the 1.2 s dimmed hold, then clears to no reading (decision D5).
   `nextPage()` (wraps, and selects the page's first input, as the study does).
 
 **Tests.** Settings round trip, clamping and failed-write restore; reading at
-A4 = 432 names 432 Hz as A in tune; mismatch starts the hold; projection with
+A4 = 432 names 432 Hz as A in tune; a mismatch clears the reading in the
+same emit; projection with
 2, 4, 6 and 18 inputs (`Inputs 17–18`, two `—` pedals), a loopback-excluded
 input, a pair (muting input 4 mutes 3 and 4), an empty device; actions order
 `setTunerInput` before `setTunerMute`.
@@ -533,15 +620,15 @@ input, a pair (muting input 4 mutes 3 and 4), an empty device; actions order
 GOAL: Tuner reference and input persist as appliance preferences, the reading uses the reference, and the foot Tuner's paging, pair muting and actions exist as tested pure code.
 SUCCESS CRITERIA:
 - Reference clamps to 420-460, resets to 440 and survives a restart; a failed write keeps the previous value. | verify: (cd packages/settings_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/tuner
-- Readings use the stored reference; an input mismatch clears after the hold. | verify: /Users/Tomas/development/flutter/bin/flutter test test/tuner
+- Readings use the stored reference; an input mismatch clears at once; silence clears after the hold. | verify: /Users/Tomas/development/flutter/bin/flutter test test/tuner
 - Paging, pair muting and source fallback match the study for 2, 4, 6 and 18 inputs. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
 - Analyzer and Bloc lint are clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 NON-GOALS:
-- The mode and face (Part 6). The tray face keeps working: until Part 6 it arms through LooperRepository.setTunerInput directly, as TunerCubit did.
+- The mode and face (Part 6). The tray face keeps working through TunerCubit.arm/disarm, which Part 6 removes.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 6: the foot Tuner mode and face (about 650 production lines; depends on Part 5; PR #912 on the trunk before its hardware criterion)
+### Part 6: the foot Tuner mode and face (about 660 production lines; depends on Part 5; merge gated on the trunk port of PR #912)
 
 **Mode.** `InteractionMode.tuner` (not in `bootDefaults`), with every
 exhaustive `InteractionMode` site: `ModeAction.token`
@@ -577,9 +664,24 @@ direction `Play one note` (23/3); the face's Settings button calls
 `openSegnoSettings`.
 
 **Tray.** `TunerTrayPanel` and `test/tuner/view/tuner_tray_panel_test.dart` are
-deleted. The tray's Tuner entry (the rail entry on the trunk, or Settings Part
-5's handle if it landed first) calls `setMode(InteractionMode.tuner)` instead,
-so there is one tuner surface (rule 4).
+deleted, and `TunerCubit` loses `arm`/`disarm`/`selectInput`. The tray's Tuner
+entry (the rail entry on the trunk, or Settings Part 5's handle if it landed
+first) calls `setMode(InteractionMode.tuner)` instead, so there is one tuner
+surface (rule 4).
+
+**Default route (review M3, decision D11).** Once Settings Part 6 deletes the
+tray, the Tuner must stay reachable on a default install (rule 1). The trunk's
+default `PedalSetup` has MODE Press Mute and Hold Custom with an empty Custom
+map (`pedal_setup.dart:143-152`), so no switch carries Tuner. The design gives
+the default: the pedal study's initial setup (`docs/design/pedal-ux-study.js:8`)
+puts `FX` / `Hold · Tuner` on Track 2 in the Custom map, which the pen draws on
+`uEukr` (Pedal 2 `FX`, `Hold · Tuner`). This part makes `Hold · Tuner` on
+Custom Track 2 bank A part of the default setup: a fresh install gets it, and
+an existing install gets it only where that Hold is empty (a stored setup with
+anything there keeps it, rule 1). The seeding is written to `pedal.setup`
+once and announced once with a toast (rule 3): "Tuner is on Custom: hold MODE,
+then hold pedal 2." The rest of the study's default map is not seeded: most
+of its actions (Transpose, Speed, Multiply) do not exist yet.
 
 **Refusals and notices** (§3), all through `footTunerFailure`:
 - a failed reference or input save: `Tuner settings could not be saved. Try
@@ -621,86 +723,120 @@ SUCCESS CRITERIA:
 - The five 23/x screens render from real state; goldens match on the author's machine. | verify: /Users/Tomas/development/flutter/bin/flutter test test/tuner test/screenshots
 - No TrayPanel class remains under lib/tuner or test/tuner, and the tray's Tuner entry enters the mode. | verify: ! grep -rn "TrayPanel" lib/tuner test/tuner && /Users/Tomas/development/flutter/bin/flutter test test/looper/view
 - Analyzer, Bloc lint and coverage. | verify: /Users/Tomas/development/flutter/bin/flutter test --coverage && dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: guitar on input 1: MODE Hold → Tuner, the string reads, the monitor is silent while a track records it; Exit restores monitoring. | verify: manual on device
-- HARDWARE: with the tuner up and four tracks playing on the Pi 5, callback p99 stays under budget (needs PR #912 on the trunk). | verify: manual on device
+- A default setup, and a stored setup with an empty Custom Track 2 Hold, carry Hold · Tuner there; a stored setup with that Hold assigned keeps it; the one-time notice shows once. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
+- The trunk port of PR #912 is in the trunk before this part merges. | verify: git merge-base --is-ancestor origin/claude/tuner-latency-909-trunk HEAD
+- HARDWARE: default pedal setup, guitar on input 1: hold MODE (Custom), then hold pedal 2 (Tuner); the string reads, the monitor is silent while a track records it; MODE (Exit) restores monitoring. | verify: manual on device
+- HARDWARE: with the tuner up and four tracks playing on the Pi 5, callback p99 stays under budget. | verify: manual on device
 NON-GOALS:
 - Secondary-display Tuner feedback (E6-11); instruments in the input list (E8-14).
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 7: New Loop by foot (about 210 production lines; depends on PR #1216, Library Part 5)
+### Part 7: New Loop by foot (about 230 production lines; depends on PR #1216 with the LibP4/LibP5 review's Finding 2 fixed)
 
 **Action.** `ControlCommand.newLoop('command:new-loop')` in
 `ControlActionGroup.sessions` (`control_action.dart:70-71`, the group's first
 entry), label `New loop` (pen 19/01). Assignable to Custom, External and MIDI
 like every command.
 
-**Dispatch.** `_runCommand(newLoop)` refuses while any track is capturing or
-has a pending arm (toast `Finish recording first.`, the study's
-`Finish recording` reason), and otherwise bumps `ControlState.newLoopRequest`
-(a monotonic counter, the `clearAllPulse` pattern, `tracks_view.dart:185-193`)
-and is accepted (contact LED). `takeLocked` already gates it. An app-level
-`BlocListener<ControlCubit>` in `app.dart` calls `SessionCubit.newLoop()` once
-per bump; Control never depends on `SessionCubit` (rule 4: one New Loop
-method, the Library's). A press while the Library is open returns to Tracks
-first (Library D14).
+**One path (review M2).** The foot runs exactly the method the Library button
+runs, `SessionCubit.newLoop`, with no rule of its own in Control:
+`_runCommand(newLoop)` only bumps `ControlState.newLoopRequest` (a monotonic
+counter, the `clearAllPulse` pattern, `tracks_view.dart:185-193`) and is
+accepted (contact LED); `takeLocked` already gates it. An app-level
+`BlocListener<ControlCubit>` in `app.dart` calls
+`SessionCubit.newLoop(request: <the counter value>)` once per bump; Control
+never depends on `SessionCubit`. What New loop does while a track captures or
+has a pending arm is decided once, inside `newLoop` under `runExclusive`, by
+the fix for the LibP4/LibP5 review's Finding 2 (end the take first, or refuse
+with a typed refusal); the foot inherits it whichever way it goes. A refusal
+or failure reaches the player through the existing session failure toast
+(`onSessionState`, the `tracks_view.dart` SessionCubit listener), the same
+words the Library button gets. A press while the Library is open returns to
+Tracks first (Library D14).
 
 **Notice.** By foot there is no confirm sheet (accepted §4: "work directly by
-foot"); preservation is what makes that safe (rule 2). So the outcome is never
-silent (rule 3): on `SessionOutcome.newLoop` the listener shows the 19/02
-sentence as a toast, `<name> stays in your Library.`, naming the preserved
-session. `SessionState` gains `preservedName`, set by `_preserveOutgoing`
-(LibP5 `:286`) and null when nothing was preserved (an untouched rig), in
-which case no toast is shown. A refused or failed New Loop shows the existing
-session failure toast (`onSessionState`).
+foot"); preservation is what makes that safe (rule 2), and the outcome is
+never silent (rule 3). `newLoop` takes an optional `request` and echoes it in
+`SessionState.newLoopRequest` with the `SessionOutcome.newLoop` it emits, plus
+`preservedName` (set by `_preserveOutgoing`, LibP5 `:286`, null when nothing
+was preserved). The app listener shows `<name> stays in your Library.` (the
+19/02 sentence) only for an outcome whose request it issued, so the Library
+button's New loop, which already asked with its sheet, gets no second notice.
+No toast when nothing was preserved.
 
-**Decision D6.** A running performance recording is finished and saved first,
-because the shared apply path calls `disarmAndFinalize` (LibP5 `:570`). The
-recorder's completion flow then shows as it does for the Library's New loop
-(rule 1, one path). See question Q2.
+**Performance recording (owner decision O2).** A running performance
+recording is finished and saved first: the shared apply path calls
+`disarmAndFinalize` (LibP5 `:570`), as the Recording plan's guard row for
+`sessionApply` says (`:601`). What appears on stage: the new empty loop
+(19/06, `New loop N`), the recording indicator turns off, and a toast says
+`Recording saved. Find it in Library > Audio.` The completion sheet that
+`onPerformanceRecorderState` opens today (`tracks_commands.dart:436-466`) does
+not open over the new loop: `PerformanceRepository.disarmAndFinalize` records
+the stop cause `sessionApply` on the capture status, the recorder state
+carries it, and the listener shows the toast instead of the sheet for that
+cause. This applies to every session apply (Open and both New loop paths),
+one rule (rule 4); the take stays in Library > Audio. Recording plan Part 13,
+which replaces the sheet's saved face, keeps this cause.
 
-**Tests.** Refusal while capturing and while pending (toast, no bump); bump
-calls `newLoop` once; preserved-name toast and no toast for an untouched rig;
-takeLocked; the catalogue round-trips `command:new-loop`.
+**Tests.** The command round-trips; a bump calls `newLoop` exactly once with
+its request; a foot New loop and a Library New loop on the same fake
+`SessionCubit` produce the same refusal while a track captures (whatever
+#1216 decides); the preserved-name toast shows for the foot request only, and
+not when nothing was preserved; takeLocked; a New loop while a performance
+take is armed finishes it and shows the saved toast, not the sheet.
 
 ```success-criteria
-GOAL: A pedal, CTRL switch or MIDI control assigned New loop runs the Library's New loop directly, refuses while a track records, and says which session it kept.
+GOAL: A pedal, CTRL switch or MIDI control assigned New loop runs the Library's New loop through the same method and rules, says which session it kept, and finishes a running performance recording without covering the new loop.
 SUCCESS CRITERIA:
-- The command round-trips, is refused with a toast while capturing or pending, and otherwise calls SessionCubit.newLoop exactly once. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/app
-- The toast names the preserved session; none appears when nothing was preserved. | verify: /Users/Tomas/development/flutter/bin/flutter test test/app test/session
+- The command round-trips and calls SessionCubit.newLoop exactly once per press, with no capture rule of its own in Control. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/app
+- The foot and the Library button get the same refusal and failure toasts. | verify: /Users/Tomas/development/flutter/bin/flutter test test/app test/session
+- The kept-session toast shows only for the foot's request and only when something was preserved. | verify: /Users/Tomas/development/flutter/bin/flutter test test/app test/session
+- A session apply that finishes a performance take shows the saved toast and no completion sheet. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view test/performance
 - Analyzer and Bloc lint are clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
-- HARDWARE: assign New loop to a Custom switch, record two tracks, press it: the stage reads New loop N and the old session opens from the Library with both tracks. | verify: manual on device
+- HARDWARE: assign New loop to a Custom switch, record two tracks while recording the performance, press it: the stage reads New loop N with the toasts above, the old session opens from the Library with both tracks, and the take is in Library > Audio. | verify: manual on device
 NON-GOALS:
-- Any change to what New loop keeps or resets (Library plan D9).
+- Any change to what New loop keeps or resets (Library plan D9) or to its capture rule (#1216).
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 8: Record performance retry by foot (about 160 production lines; depends on Recording plan Parts 8 and 9, and Part 3)
+### Part 8: Record performance retry by foot (about 170 production lines; depends on Recording plan Parts 8 and 9, and Part 3)
 
 **Dispatch.** `_togglePerformanceRecordAccepted` (`control_cubit.dart:2818-2825`)
 reads the repository's capture status: armed → `disarm()`; finalizing or
-saving → refused with toast `The recording is still saving.` (the caption is
-dimmed, but a physical press still arrives and gets the notice, §3 rule 3); held with Save
-available → `saveHeld()` (the retry); held without an available Save (USB drive
-absent) or idle → `arm()`. Every caller gets the retry: Custom, External,
-MIDI, the FX Bank hold and the MODE hold path, since they all reach this
-method (rule 4).
+saving → refused with toast `The recording is still saving.`; held with Save
+available → `saveHeld()` (the retry); held without an available Save (USB
+drive absent) or idle → `arm()`. Arming while a take is held is admitted: a
+held take holds no guard (Recording plan D9, `:592-595`), and the held take is
+left alone. Every caller gets the retry: Custom, External, MIDI, the Bank hold
+and the MODE hold path, since they all reach this method (rule 4).
 
-**Captions** (Custom face, FX Bank hint): `Record performance`, `Stop
-recording` (lit), `Saving recording` (unavailable), `Save recording` (held),
-from `pedal-performance-study.js` `role()`. A held take's failure copy stays on
-the Record performance page (20/05, 20/06); a failed retry by foot shows the
-20/06 sentence as a toast: `Could not save the recording. It is kept here for
+**One failed-save fact (review L11).** Control cannot call the recorder cubit,
+and the Recording plan sets `Held(saveFailed: true)` inside the cubit's own
+`saveRecovered` catch (`:1095`), so a failed foot retry would leave the Record
+performance page without its 20/06 line. Instead the repository's held status
+carries `saveFailed`, set by `saveHeld()` when it throws and cleared when it
+starts; the recorder cubit's `Held` reads it rather than keeping its own. Both
+the page (20/06) and the foot read one fact. §6 asks the Recording plan to
+adopt this in its Parts 8 and 9.
+
+**Captions** (Custom face): `Record performance`, `Stop recording` (lit),
+`Saving recording` (caption dimmed, pedal enabled so a tap or a stomp gives
+the notice, §3 rule 2), `Save recording` (held), from
+`pedal-performance-study.js` `role()`. A failed retry by foot shows the 20/06
+sentence as a toast: `Could not save the recording. It is kept here for
 another try.`
 
-**Tests.** Each status row of the table above; a throwing `saveHeld` keeps the
-take held and toasts; a second press retries and completes; an absent drive
-arms a new take and leaves the held one alone.
+**Tests.** Each status row of the table above, from an on-screen tap and a
+physical press alike; a throwing `saveHeld` sets `saveFailed`, keeps the take
+held, toasts, and the page shows the 20/06 line; a second press retries and
+completes; an absent drive arms a new take and leaves the held one alone.
 
 ```success-criteria
 GOAL: The Record performance switch starts, stops and, when a take is held, retries its save by foot, with captions that say which it will do.
 SUCCESS CRITERIA:
-- Status-to-action table holds for idle, armed, saving, held with Save available and held without it; a failed retry keeps the take and toasts the 20/06 sentence. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
+- Status-to-action table holds for idle, armed, saving, held with Save available and held without it, on screen and by foot. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/looper/view
+- A failed retry keeps the take, sets the repository's saveFailed, toasts the 20/06 sentence, and the Record performance page shows its 20/06 line. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/performance
 - Captions follow the four phases on the Custom face. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
 - Analyzer and Bloc lint are clean. | verify: dart analyze --fatal-infos && bloc lint lib test packages
 - HARDWARE: pull the USB drive while recording, reconnect it, press the switch: the take saves. | verify: manual on device
@@ -711,85 +847,171 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
 
 ### Order and dependencies
 
-Parts 1, 2, 3 and 4 are independent of each other and of other epics. Part 3
-excludes Peel from its generic notice only if PeelP3 has landed; if Part 3
-lands first, PeelP3 adds that exclusion when it rebases. Part 5
-follows Part 4; Part 6 follows Part 5 and unblocks Settings Part 6. Part 7
-waits for PR #1216; Part 8 waits for Recording Parts 8 and 9 and this Part 3.
-Faces landed before Part 1 pick up the cue when it lands, because the cue lives
-in `PerformancePedal`.
+- Part 1 is independent.
+- Part 2 is independent.
+- Part 3 depends on PR #1233 (assigned Fade, Reverse and Peel refusals from
+  any mode).
+- Part 4 builds on `claude/tuner-latency-909-trunk`, the trunk port of PR #912.
+- Part 5 follows Part 4. Part 6 follows Part 5, merges only after the #912
+  port is on the trunk, and unblocks Settings Part 6.
+- Part 7 waits for PR #1216 with Finding 2 fixed.
+- Part 8 waits for Recording Parts 8 and 9 and this Part 3.
+- Faces landed before Part 1 pick up the cue when it lands, because the cue
+  lives in `PerformancePedal`.
 
 | Part | Production lines | Native | Depends on |
 |---|---|---|---|
-| 1 Pending Hold | ~220 | – | – |
-| 2 FX face | ~620 (+~250 removed) | – | – |
-| 3 Custom face | ~560 | – | – |
-| 4 Tuner mute | ~160 | command 132 | – |
+| 1 Pending Hold | ~200 | – | – |
+| 2 FX face | ~640 (+~300 removed) | – | – |
+| 3 Custom face | ~560 | – | #1233 |
+| 4 Tuner mute | ~160 | command 132 | #912 trunk port |
 | 5 Tuner owner | ~520 | – | 4 |
-| 6 Tuner mode and face | ~650 | – | 5 (PR #912 for hardware) |
-| 7 New Loop by foot | ~210 | – | #1216 |
-| 8 Recording retry | ~160 | – | #1198 P8, P9; 3 |
+| 6 Tuner mode and face | ~660 | – | 5; #912 port merged |
+| 7 New Loop by foot | ~230 | – | #1216 with Finding 2 fixed |
+| 8 Recording retry | ~170 | – | #1198 P8, P9; 3 |
 
 ## 5. Decisions under the owner rules
+
+Owner decisions (2026-10-06, answering the planner's questions):
+
+- **O1.** No pedal strip on Tracks or Mute: the Pending Hold cue shows on the
+  faces that draw pedals (Mixer, Fade, Reverse, FX, Custom, Tuner, and Peel
+  when it lands). Building pen 10/01 as a Tracks pedal face is separate work.
+- **O2.** New Loop by foot finishes a running performance recording, as the
+  Library's New loop does (Part 7 says what the stage shows).
+
+Decisions taken under the standing rules:
 
 - **D1 (pen authority, rule 4).** FX mode gets the pen's pedal-map face and the
   Tracks-column re-dress (#692 Candidate A) is removed; #884 and #873 close
   with it, #601 closes as obsolete (§1.3).
 - **D2 (rule 2).** The Tuner mute is a native mask tied to the tuner arm, never
   the persistent monitor mute (Part 4).
-- **D3 (rule 1).** FX keeps Stop panic/restore and the Bank hold for Record
-  performance, captioned on the face, though 10/03 dims Stop; accepted §4's
-  "clear current actions" is the panic. Recorded for pen write-back.
+- **D3 (pen authority, review M1).** The FX face follows 10/03 for Stop and
+  Bank: an unbound Stop is dimmed and inert, so the track-chain panic and its
+  restore hold leave FX mode; Bank reads `Switch bank` and keeps its Record
+  performance hold, which pen note `po4RZ` documents. Where the panic goes is
+  question Q3.
 - **D4 (rule 4).** Tuner arming moves from `TunerCubit` to Control's foot
-  actions; `TunerCubit` keeps the reading. One surface, one arm owner.
-- **D5 (rule 1).** The tuner keeps its 1.2 s dimmed hold and then clears ("no
-  signal clears the old reading"); confidence stays 0.5. Both are measured
-  baselines to confirm on hardware (accepted §4.12).
-- **D6 (rule 1).** New Loop by foot finishes a running performance recording,
-  as the shared Library path does (Q2).
-- **D7 (rule 3).** New Loop by foot toasts the preserved session's name; the
-  Library's own button keeps its sheet.
+  actions in Part 6; `TunerCubit` keeps the reading. One surface, one arm
+  owner.
+- **D5 (rule 1).** The tuner keeps its 1.2 s dimmed hold on silence and then
+  clears ("no signal clears the old reading"); confidence stays 0.5. Both are
+  measured baselines to confirm on hardware (accepted §4.12). A reading from
+  another input clears at once.
+- **D6 (owner decision O2).** New Loop by foot finishes a running performance
+  recording through the shared path, and a session apply that finishes a take
+  shows a toast, not the completion sheet.
+- **D7 (rule 3).** New Loop by foot toasts the preserved session's name, scoped
+  to its own request; the Library's button keeps its sheet and gets no toast.
 - **D8.** Engine numbers: command 132 only; facts 352-355 and commands 133-135
   are unused and returned to the ledger. No events.log or Session schema bump.
 - **D9 (rule 3).** Presses dropped under `takeLocked` stay silent on every new
   face, as on the existing ones (§3).
-- **D10 (shared notice policy).** Every part follows §3: empty track pedals
-  dimmed and silent, busy or refused presses on recorded material and every
-  refused assignment notified, one notice per cause. Part 3 adds the one
-  generic notice for assigned actions that have none of their own.
+- **D10 (shared notice policy).** Every part follows §3: only a switch with no
+  action is dimmed and silent; every switch with an action stays enabled and
+  notifies its refusal, on screen and by foot alike.
+- **D11 (rule 1, review M3).** The default pedal setup carries `Hold · Tuner`
+  on Custom Track 2 bank A, from the design's default map; existing installs
+  get it only where that Hold is empty, with a one-time notice (Part 6).
+- **D12 (Part 4 build).** Every `LE_CMD_SET_TUNER_INPUT` clears the mask, not
+  only a disarm, so a moved tuner never keeps silencing its previous input;
+  configure and reopen clear it beside the tuner disarm they already do.
 
-## 6. Findings for other plans
+## 6. Findings for other plans, and the pen write-back list
 
-- Recording plan Part 13 (`:1227-1230`, `:1244`) asserts `Stop recording` on
-  the **Record/Play** pedal label. Pen 20/03 `E7kQV` is the Custom face with
-  Record performance assigned to **Stop**; this plan's Part 3 owns that
-  caption. Part 13's criterion should point at Part 3's test instead.
+Findings for other plans:
+
+- Recording plan Part 13 (`:1227-1230`, `:1244` at `57a5324b8`) asserts
+  `Stop recording` on the **Record/Play** pedal label. Pen 20/03 `E7kQV` is
+  the Custom face with Record performance assigned to **Stop**; this plan's
+  Part 3 owns that caption. Part 13's criterion should point at Part 3's test
+  instead, and keep Part 7's `sessionApply` stop cause when it replaces the
+  completion sheet's saved face.
+- Recording plan Parts 8 and 9: carry `saveFailed` in the repository's held
+  status (set by `saveHeld()`), and let the recorder cubit's `Held` read it,
+  so a foot retry and the page share one fact (Part 8, review L11).
 - The Settings plan's §5 names `foot_fade_view.dart:135` and
   `foot_mixer_view.dart:123` (`:43`) but not `foot_reverse_view.dart:85`,
   which Reverse P3 added after it was written; its Part 2 should reroute that
-  button too. This plan adds no tray users.
-- PR #912 (#909) targets `master`; it needs a rebase onto this trunk before the
-  foot Tuner can be left armed during performance.
+  button too. This plan adds no tray users. Settings Part 5's "arms
+  TunerCubit" (`:541`) stays true until this plan's Part 6, which keeps the
+  cubit's thin arm until then (Part 5, review L5).
+- Library: the LibP4/LibP5 review's Finding 2 decides the capture rule for
+  both New loop paths; Part 7 adds no rule of its own (review M2).
+- PR #912 (#909) is being ported onto the trunk as
+  `claude/tuner-latency-909-trunk`. Part 4 builds on it; Part 6's merge is
+  gated on it (review M5).
+
+Pen write-back list (shipped departures and additions; builders do not edit
+the pen, the coordinator writes each `c/` note when its part merges):
+
+- **W1, section 10 beside `PRSrG` (Part 1).** The cue ships on the pedal-map
+  faces only; Tracks and Mute draw no pedals, so it does not appear there
+  (owner decision O1). The bar is timed from the widget's ticker.
+- **W2, section 10 beside `uEukr` (Part 3).** Only unassigned switches are
+  dimmed; Record/Play (Hold · Peel), Stop and Undo (Hold · Redo) draw as
+  assigned. Assigned switches whose action is unavailable stay enabled with
+  dimmed captions.
+- **W3, section 10 beside `noDGu` (Part 2).** Bound Rec/Play, Stop, Undo and
+  Clear draw active with their binding; unbound ones stay dimmed as drawn. A
+  stale binding stays enabled with its broken-row words. Bank's hold keeps
+  Record performance without a hint, as `po4RZ` documents.
+- **W4, section 23 (Part 6).** The default entry is Custom Track 2
+  `Hold · Tuner` (D11); the face's Settings button opens Settings.
+- **W5, section 08 beside `OgLiI` (Part 6).** The default Custom map carries
+  `Hold · Tuner` on Track 2 bank A, seeded only where empty.
+- **W6, section 20 beside `E7kQV` (Part 7).** A session apply that finishes a
+  take shows `Recording saved. Find it in Library > Audio.`, not the
+  completion sheet.
 
 ## 7. Questions for the owner
 
-- **Q1.** The pen draws the Pending Hold cue on the Tracks pedal map (10/04),
-  but Tracks and Mute modes in the app show track columns with no on-screen
-  pedals. The plan draws the cue on every face that shows pedals (Mixer, Fade,
-  Reverse, FX, Custom, Tuner) and nowhere in Tracks or Mute. Should Tracks and
-  Mute gain an on-screen pedal strip to carry it?
-- **Q2.** New Loop by foot during a performance recording finishes and saves
-  the recording (D6), because the Library's New loop does. Should a foot New
-  Loop keep the performance recording running instead? That would need the
-  shared apply path to skip `disarmAndFinalize` when the device configuration
-  is unchanged.
+The planner's Q1 and Q2 are answered (O1, O2 in §5). One question remains:
+
+- **Q3 (review M1).** Following pen 10/03 removes the FX-mode Stop panic (tap:
+  every track chain off; hold: every track chain on) and its restore hold, and
+  nothing else in the pen gives it a home. Accepted §4's FX row ("clear current
+  actions") reads as clearing what the pedals made active, which the panic
+  does not do (it never touches Master, Input or Output chains). Recommended
+  default, built in Part 2 unless the owner says otherwise: drop the panic
+  from FX mode and offer it as two assignable commands in the empty
+  `ControlActionGroup.fx` (`Track FX off`, `Track FX on`), so a player who
+  used it can put it on Stop through the Custom, External or MIDI setup. The
+  release note names the change (rule 3).
 
 ## 8. Budget and review ceiling
 
-Every part stays at or under about 650 production lines added; tests,
+Every part stays at or under about 660 production lines added; tests,
 generated bindings, goldens and l10n are counted separately. Stop for review
 on any further engine command, a Session schema change, a second tuner arm
 owner, or a second New Loop path. Each part runs the Dart suite, `dart analyze
---fatal-infos` and `bloc lint lib test packages`; Part 4 also runs the native
-suite normal, ASAN and telemetry-off. Independent architecture, test and
-adversarial reviews precede each publication; the human merge gate stays.
+--fatal-infos lib test packages` and `bloc lint lib test packages`; Part 4 also
+runs the native suite normal, ASAN and telemetry-off. Independent
+architecture, test and adversarial reviews precede each publication; the
+human merge gate stays.
+
+## 9. PR #1237 review findings, applied
+
+| Finding | Where it is applied |
+|---|---|
+| H1 assigned Fade and Reverse refusals silent outside their mode | Part 3 depends on #1233 and reuses its reporters; generic notice for the rest |
+| H2 FX face hides bound Rec/Play, Stop, Undo, Clear | Part 2 projects every bindable switch |
+| M1 D3 departure | D3 follows the pen; Q3 for the panic's home |
+| M2 New Loop guard in the wrong layer; Library toast | Part 7: one `newLoop` path, request-scoped toast, depends on Finding 2's fix |
+| M3 Tuner unreachable after the tray | Part 6 default route, D11, W4, W5; hardware criterion with its setup |
+| M4 notice policy inconsistencies | §3 rule 2 rewritten; Parts 2, 3, 8 keep switches with actions enabled |
+| M5 PR #912 conflict | Part 4 builds on the trunk port; Part 6 merge gate |
+| M6 pen write-back | §6 write-back list W1-W6 |
+| L1 Part 1 hardware criterion | Undo on the foot Mixer |
+| L2 wall clock; emit after close | Part 1 publishes a set, widget ticker times the bar; `isClosed` guard |
+| L3 `1u << 32`; unarmed test | Part 4 guard; the test arms first |
+| L4 stale Dart mask | `setTunerInput` clears the remembered mask |
+| L5 interim tray arming | `TunerCubit` keeps thin arm until Part 6 |
+| L6 old pitch under new name | mismatch clears at once |
+| L7 #873 expected text | `Track 2 lane 1`; old tests deleted |
+| L8 LED state not in `ControlState` | `customLit` published |
+| L9 `UnavailableAction` early return | notice at `:2473` and the External and MIDI returns |
+| L10 citations | §1.6 re-anchored to LibP5, trunk and `57a5324b8` |
+| L11 recorder failed-save state | repository's held status carries `saveFailed` |
+| Notes | #692 history quoted in Part 2; pen 04 multi-rack as a non-goal; `FxNames` resolver; goldens regenerated in Part 1; `Not monitored` dropped |
