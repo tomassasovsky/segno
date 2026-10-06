@@ -52,23 +52,67 @@ void main() {
       final io = NativeStorageIo();
       final file = File('${dir.path}/range.bin')
         ..writeAsBytesSync(ascii('xyzabcdef'));
-      expect(io.digestFile(file.path, offset: 3, length: 3), _abc);
-      expect(io.digestFile(file.path), io.digestBytes(ascii('xyzabcdef')));
-      expect(io.digestFile(file.path, offset: 6), io.digestBytes(ascii('def')));
-      expect(io.digestFile(file.path, offset: 9, length: 0), _empty);
+      expect(
+        io.digestFile(file.path, offset: 3, length: 3),
+        const FileDigested(_abc),
+      );
+      expect(
+        io.digestFile(file.path),
+        FileDigested(io.digestBytes(ascii('xyzabcdef'))),
+      );
+      expect(
+        io.digestFile(file.path, offset: 6),
+        FileDigested(io.digestBytes(ascii('def'))),
+      );
+      expect(
+        io.digestFile(file.path, offset: 9, length: 0),
+        const FileDigested(_empty),
+      );
     }, skip: skip);
 
-    test('digestFile refuses a short, missing or non-file path', () {
+    test('digestFile tells missing from damaged from unreadable', () {
       final io = NativeStorageIo();
       final file = File('${dir.path}/short.bin')
         ..writeAsBytesSync(ascii('xyzabcdef'));
-      expect(io.digestFile(file.path, offset: 3, length: 7), isNull);
-      expect(io.digestFile(file.path, offset: 10), isNull);
-      expect(io.digestFile('${dir.path}/missing.bin'), isNull);
-      expect(io.digestFile(dir.path), isNull);
-      expect(io.digestFile(''), isNull);
-      expect(io.digestFile(file.path, offset: -1), isNull);
-      expect(io.digestFile(file.path, length: -1), isNull);
+      expect(
+        io.digestFile(file.path, offset: 3, length: 7),
+        isA<FileTruncated>(),
+      );
+      expect(io.digestFile(file.path, offset: 10), isA<FileTruncated>());
+      expect(io.digestFile('${dir.path}/missing.bin'), isA<FileMissing>());
+      expect(
+        io.digestFile('${dir.path}/missing/deeper.bin'),
+        isA<FileMissing>(),
+      );
+      expect(io.digestFile(dir.path), isA<FileUnreadable>());
+      expect(() => io.digestFile(''), throwsArgumentError);
+      expect(() => io.digestFile(file.path, offset: -1), throwsArgumentError);
+      expect(() => io.digestFile(file.path, length: -1), throwsArgumentError);
+    }, skip: skip);
+
+    test('digestBytes crosses its native window without changing the '
+        'digest', () {
+      final io = NativeStorageIo();
+      // Two and a half windows of a byte pattern, against the digest of the
+      // same bytes read from a file (one native pass, no window).
+      const n = NativeStorageIo.windowBytes * 5 ~/ 2;
+      final bytes = Uint8List(n);
+      for (var i = 0; i < n; i++) {
+        bytes[i] = (i * 31 + 7) & 255;
+      }
+      final file = File('${dir.path}/window.bin')..writeAsBytesSync(bytes);
+      expect(FileDigested(io.digestBytes(bytes)), io.digestFile(file.path));
+      // And a window-sized buffer exactly.
+      final exact = Uint8List.sublistView(
+        bytes,
+        0,
+        NativeStorageIo.windowBytes,
+      );
+      File('${dir.path}/exact.bin').writeAsBytesSync(exact);
+      expect(
+        FileDigested(io.digestBytes(exact)),
+        io.digestFile('${dir.path}/exact.bin'),
+      );
     }, skip: skip);
 
     test('digestFile runs in a background isolate', () async {
@@ -79,7 +123,7 @@ void main() {
       final digest = await Isolate.run(
         () => NativeStorageIo().digestFile(path),
       );
-      expect(digest, _millionA);
+      expect(digest, const FileDigested(_millionA));
     }, skip: skip);
 
     test('syncDirectory syncs an existing directory and throws otherwise', () {

@@ -267,19 +267,29 @@ channel survives a save.
 
 ## Versioning
 
-Writing is always the current version (v12). Decode accepts the current
-version only: any other `version` fails with `SessionUnsupportedVersion`, and a
-non-integer `version` with a `FormatException`. Inside the current schema,
-fields that `toJson` omits at their defaults (`pan`, `balance`, the optional
-maps) read as those defaults. The project does not keep compatibility paths
-(AGENTS.md); bringing older bundles forward is a separate, explicit migration
-step (#1196), not a branch in this decoder.
+Writing is always the current version (v12). `Session.fromJson` accepts the
+current version only: any other `version` fails with
+`SessionUnsupportedVersion`, and a non-integer `version` with a
+`FormatException`. Inside the current schema, fields that `toJson` omits at
+their defaults (`pan`, `balance`, the optional maps) read as those defaults.
+
+Opening a bundle goes through `decodeSessionManifest` (#1196,
+`session_migration.dart`). A manifest from v1 to v11 is converted in memory,
+one step per schema bump, and must then pass the strict decoder; a newer one
+fails with `SessionUnsupportedVersion` and one that cannot be converted with
+`SessionUnconvertible`, leaving the bundle untouched. Once the converted
+session has loaded, the original manifest is kept byte for byte as
+`session.v<N>.json` beside the converted `session.json`, sharing the audio.
+The next save moves it, with the layer files it names, into a `session.v<N>/`
+folder inside the bundle, which opens as a bundle of its own. The plan
+(`docs/plan/2026-10-06-fix-session-schema-migration-plan.md`) lists what each
+step fills in.
 
 ### Historical: presence-keyed decode (v1 to v9)
 
 Until v10, `Session.fromJson` was **presence-keyed**: it branched on which
 fields existed, not on a version `switch`. That decoder is gone; the table
-records what each rung added, for a migration that has to read them.
+records what each rung added, and the conversion steps read them.
 
 | Bundle | Detected by | Loaded as |
 |--------|-------------|-----------|

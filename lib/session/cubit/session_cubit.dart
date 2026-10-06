@@ -1,9 +1,11 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/logging/app_log.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
@@ -45,10 +47,12 @@ class SessionCubit extends Cubit<SessionState> {
     required SettingsRepository settings,
     required MixSettingsPersistence mixPersistence,
     required SessionSettingsCoordinator captureSettings,
+    required GuardRegistry guards,
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
     void Function() releaseHeldBindings = _noRelease,
   }) : _repository = repository,
+       _guards = guards,
        _looper = looper,
        _performance = performance,
        _mixSettings = mixSettings,
@@ -84,11 +88,21 @@ class SessionCubit extends Cubit<SessionState> {
   final String Function() _currentPedalBindings;
   final void Function(String encoded) _onPedalBindings;
   final void Function() _releaseHeldBindings;
+
+  /// The app's one guard table (accepted behaviour 6.12). Applying a session
+  /// holds a `sessionApply` guard from its commit to the end of its boot, so
+  /// a take, a device change or a calibration cannot start under it, and it
+  /// is refused while one of those (or a shutdown) is in flight.
+  final GuardRegistry _guards;
+
+  /// What a refusal names a session apply by.
+  static const String applyPurpose = 'opening a session';
   String? _pendingLoadedBindings;
   SessionId? _pendingLoadedId;
   String? _pendingLoadedName;
   List<SessionSummary>? _pendingLoadedSessions;
   FadeDurations? _pendingLoadedFade;
+  SessionConversionNotice? _pendingConversion;
   final _activeOperations = <Future<void>>{};
   Future<void>? _closingFuture;
   bool _closing = false;
@@ -251,6 +265,12 @@ class SessionCubit extends Cubit<SessionState> {
   /// Opens the session [id] into the engine through the looper repository
   /// (the one apply path), makes it current, and refreshes the catalog.
   ///
+  /// A session saved by an older schema is converted on open, keeping the
+  /// settings it never carried at the player's current values. Once the rig
+  /// is applied, the conversion is written back with the original manifest
+  /// kept beside it, and the outcome carries [SessionState.conversion] so
+  /// the player is told. A refused open leaves the bundle untouched.
+  ///
   /// Auto-disarms and finalizes an in-progress performance-recording capture
   /// first — applying a loaded session mid-capture would otherwise pull the
   /// rug out from under it. The finalize + render run through the same path a
@@ -261,10 +281,13 @@ class SessionCubit extends Cubit<SessionState> {
     subject: id,
     () async {
       var applied = false;
+      OperationGuard? applying;
       try {
         return await _captureSettings.runExclusive(() async {
-          final bundle = await _repository.read(
-            await _repository.bundlePathOf(id),
+          final path = await _repository.bundlePathOf(id);
+          final (:bundle, :conversion) = await _repository.open(
+            path,
+            liveSettings: _captureSettings.current,
           );
           final fade = FadeDurations(
             defaultMs: bundle.session.defaultFadeDurationMs,
@@ -281,6 +304,14 @@ class SessionCubit extends Cubit<SessionState> {
           }
           final candidate = MixSettingsSnapshot.fromRig(rig);
           if (!candidate.isValid) throw StateError('session mix is invalid');
+          // The commit point: nothing has changed yet, and from here the rig
+          // is being replaced. A running take is finished first, as before,
+          // which the guard table allows.
+          applying = _guards.enter(
+            GuardKind.sessionApply,
+            const GuardScope.internal(),
+            purpose: applyPurpose,
+          );
           final disarmed = await _performance.disarmAndFinalize();
           if (!disarmed.isOk) {
             throw StateError(
@@ -367,11 +398,15 @@ class SessionCubit extends Cubit<SessionState> {
               rethrow;
             }
             applied = true;
+            final notice = conversion == null
+                ? null
+                : await _commitConversion(path, conversion);
             _pendingLoadedId = id;
             _pendingLoadedName = loadedName;
             _pendingLoadedBindings = bundle.session.pedalBindings;
             _pendingLoadedSessions = sessions;
             _pendingLoadedFade = fade;
+            _pendingConversion = notice;
             // The live rig is the new session, even if boot keys fail later.
             // Do not publish loaded or enable its bindings until persistence
             // and readback of the full image have finished.
@@ -395,11 +430,13 @@ class SessionCubit extends Cubit<SessionState> {
             _pendingLoadedBindings = null;
             _pendingLoadedSessions = null;
             _pendingLoadedFade = null;
+            _pendingConversion = null;
             return _ActionResult(
               SessionOutcome.loaded,
               currentId: id,
               currentName: loadedName,
               sessions: sessions,
+              conversion: notice,
             );
           } on Object catch (error) {
             if (!applied) {
@@ -414,12 +451,43 @@ class SessionCubit extends Cubit<SessionState> {
       } on Object {
         if (!applied) _fxPersistence.cancelSessionLoad();
         rethrow;
+      } finally {
+        applying?.release();
       }
     },
     reserveSessionLoad: true,
   );
 
+  /// Writes an applied [conversion] back to the bundle at [path] and returns
+  /// what the player is told. A failure is not raised: the converted rig is
+  /// already live and the original manifest is still on disk, untouched; the
+  /// notice then says so instead of claiming a backup, and the next save
+  /// keeps the original as the backup.
+  Future<SessionConversionNotice> _commitConversion(
+    String path,
+    SessionConversion conversion,
+  ) async {
+    var written = false;
+    try {
+      written = await _repository.commitConversion(path, conversion);
+      AppLog.info(
+        'session converted from schema ${conversion.fromVersion}: $path; '
+        '${conversion.notes.join('; ')}',
+      );
+    } on Object catch (error) {
+      AppLog.warn('session conversion not written back: $path: $error');
+    }
+    return SessionConversionNotice(
+      fromVersion: conversion.fromVersion,
+      written: written,
+      changes: conversion.changes,
+    );
+  }
+
   /// Retries the stopped loaded rig's exact retained boot image and bindings.
+  ///
+  /// Takes no `sessionApply` guard: it re-persists settings for a rig that is
+  /// already applied and stopped, and never re-applies audio to the engine.
   Future<void> retryLoadedSession() => _run(
     () => _captureSettings.runExclusive(() async {
       final id = _pendingLoadedId;
@@ -427,6 +495,7 @@ class SessionCubit extends Cubit<SessionState> {
       final bindings = _pendingLoadedBindings;
       final sessions = _pendingLoadedSessions;
       final fade = _pendingLoadedFade;
+      final conversion = _pendingConversion;
       if (id == null ||
           name == null ||
           bindings == null ||
@@ -446,11 +515,13 @@ class SessionCubit extends Cubit<SessionState> {
         _pendingLoadedBindings = null;
         _pendingLoadedSessions = null;
         _pendingLoadedFade = null;
+        _pendingConversion = null;
         return _ActionResult(
           SessionOutcome.loaded,
           currentId: id,
           currentName: name,
           sessions: sessions,
+          conversion: conversion,
         );
       } on Object catch (error) {
         throw _SessionBootException(error);
@@ -646,6 +717,7 @@ class SessionCubit extends Cubit<SessionState> {
           sessions: result.sessions,
           folders: folders,
           bootRecoveryRequired: false,
+          conversion: result.conversion,
         ),
       );
     } on _SessionRefusal catch (refusal) {
@@ -666,6 +738,18 @@ class SessionCubit extends Cubit<SessionState> {
           error: SessionError.bootPersistence,
           errorMessage: '${error.cause}',
           bootRecoveryRequired: true,
+        ),
+      );
+    } on GuardRefused catch (error) {
+      // Refused at its commit by an operation in flight (#1198): nothing
+      // changed, and the player is told what to wait for.
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          status: SessionStatus.failure,
+          error: SessionError.busy,
+          errorMessage: '$error',
+          refusedBy: error.blockers.first.kind,
         ),
       );
     } on SessionException catch (error) {
@@ -706,6 +790,7 @@ class SessionCubit extends Cubit<SessionState> {
   static SessionError _classify(SessionException error) => switch (error) {
     SessionSampleRateMismatch() => SessionError.sampleRateMismatch,
     SessionUnsupportedVersion() => SessionError.unsupportedVersion,
+    SessionUnconvertible() => SessionError.unconvertible,
     SessionNameCollision() => SessionError.nameCollision,
     SessionCorruptLayers() => SessionError.corruptLayers,
     SessionFolderNotEmpty() => SessionError.folderNotEmpty,
@@ -735,10 +820,12 @@ class _ActionResult {
     this.currentId,
     this.currentName,
     this.sessions,
+    this.conversion,
   });
 
   final SessionOutcome outcome;
   final SessionId? currentId;
   final String? currentName;
   final List<SessionSummary>? sessions;
+  final SessionConversionNotice? conversion;
 }

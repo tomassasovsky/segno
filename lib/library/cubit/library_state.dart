@@ -62,6 +62,9 @@ enum LibraryPreviewError {
   /// Saved by a newer build.
   unsupportedVersion,
 
+  /// Saved by an older build in a form this one cannot convert.
+  unconvertible,
+
   /// The manifest or its layers do not decode.
   unreadable,
 }

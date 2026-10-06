@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -20,6 +21,7 @@ void main() {
 
   SessionRepository repo({bool withRoot = true, AudioEngine? engine}) =>
       SessionRepository(
+        guards: GuardRegistry(),
         engine: engine ?? FakeSessionEngine(),
         sessionsRoot: withRoot ? () async => root.path : null,
         now: () => clock,
@@ -221,6 +223,7 @@ void main() {
 
     test('is empty when the root does not exist yet', () async {
       final missing = SessionRepository(
+        guards: GuardRegistry(),
         engine: FakeSessionEngine(),
         sessionsRoot: () async => '${root.path}/never-created',
       );
@@ -246,6 +249,7 @@ void main() {
 
     test('is empty when the root does not exist yet', () async {
       final missing = SessionRepository(
+        guards: GuardRegistry(),
         engine: FakeSessionEngine(),
         sessionsRoot: () async => '${root.path}/never-created',
       );
@@ -936,6 +940,30 @@ void main() {
       final dir = await repo().bundlePathOf('s-a');
       await repo(engine: engine).save(dir, settings: const SessionSettings());
       expect((await repo().readPreview('s-a')).tracks.single.bars, 0);
+    });
+
+    test('reads a schema-7 bundle from master through its conversion, and '
+        'lists its Master chain in the effect count', () async {
+      final dir = '${root.path}/s-old';
+      Directory(dir).createSync();
+      for (final file in Directory(
+        'test/fixtures/sessions/v7_master_full',
+      ).listSync()) {
+        (file as File).copySync('$dir/${file.uri.pathSegments.last}');
+      }
+      final manifest = File('$dir/${Session.manifestName}').readAsBytesSync();
+
+      final preview = await repo().readPreview('s-old');
+
+      expect(preview.tracks.map((t) => t.channel), [0, 1, 2]);
+      expect(preview.tracks.first.layers, 3);
+      // Lane 2, lane 1, track 1, Master and monitor 0: one entry each but
+      // lane 0's two.
+      expect(preview.fxCount, 6);
+      expect(
+        File('$dir/${Session.manifestName}').readAsBytesSync(),
+        manifest,
+      );
     });
 
     test('throws the typed refusal for a newer schema and StateError for a '

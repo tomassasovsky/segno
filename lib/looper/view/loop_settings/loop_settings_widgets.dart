@@ -14,8 +14,12 @@ class LoopFocusable extends StatelessWidget {
     required this.onActivate,
     this.enabled = true,
     this.radius = 8,
+    this.autofocus = false,
     super.key,
   });
+
+  /// Whether this stop takes focus when its page opens.
+  final bool autofocus;
 
   /// The visual control.
   final Widget child;
@@ -32,6 +36,7 @@ class LoopFocusable extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Focus(
     canRequestFocus: enabled,
+    autofocus: autofocus,
     onKeyEvent: (_, event) {
       if (!enabled || event is! KeyDownEvent) return KeyEventResult.ignored;
       if (event.logicalKey == LogicalKeyboardKey.enter ||
@@ -49,7 +54,7 @@ class LoopFocusable extends StatelessWidget {
           borderRadius: BorderRadius.circular(radius),
           border: Border.all(
             color: Focus.of(context).hasFocus
-                ? context.surface.warning
+                ? context.surface.encoderFocus
                 : Colors.transparent,
             width: 3,
           ),
@@ -399,8 +404,13 @@ class LoopOutlinedButton extends StatelessWidget {
     this.height = 64,
     this.fontSize = 24,
     this.radius = 7,
+    this.borderColor,
     super.key,
   });
+
+  /// The line around the button, when its pen node draws one other than
+  /// its tone's.
+  final Color? borderColor;
 
   /// The pen's width.
   final double width;
@@ -450,11 +460,13 @@ class LoopOutlinedButton extends StatelessWidget {
       LoopButtonTone.card => surface.card,
       LoopButtonTone.accent => surface.accent,
     };
-    final border = switch (tone) {
-      LoopButtonTone.card => surface.borderSubtle,
-      LoopButtonTone.accent => surface.accent,
-      _ => surface.borderStrong,
-    };
+    final border =
+        borderColor ??
+        switch (tone) {
+          LoopButtonTone.card => surface.borderSubtle,
+          LoopButtonTone.accent => surface.accent,
+          _ => surface.borderStrong,
+        };
     final foreground = tone == LoopButtonTone.accent
         ? surface.onAccent
         : surface.textPrimary;
@@ -839,7 +851,7 @@ class _LoopStepperState extends State<LoopStepper> {
                     decoration: BoxDecoration(
                       border: Border.all(
                         color: Focus.of(context).hasFocus
-                            ? surface.warning
+                            ? surface.encoderFocus
                             : Colors.transparent,
                         width: 3,
                       ),
@@ -1024,6 +1036,19 @@ class _LoopSliderState extends State<LoopSlider> {
     return KeyEventResult.handled;
   }
 
+  /// A screen reader's increase or decrease: one keyboard step, committed at
+  /// once, since an assistive adjustment has no draft to confirm.
+  void _semanticStep(int direction) {
+    if (!widget.enabled) return;
+    if (_keyboardDraft != null) _cancelEdit();
+    final next = (widget.value + direction * widget.keyboardStep).clamp(
+      0.0,
+      widget.max,
+    );
+    widget.onChanged(next);
+    widget.onChangeEnd?.call(next);
+  }
+
   void _touchSet(double dx) {
     if (!widget.enabled) return;
     if (_keyboardDraft != null) _cancelEdit();
@@ -1037,6 +1062,9 @@ class _LoopSliderState extends State<LoopSlider> {
     _touchPreview = null;
     widget.onChangeEnd?.call(value);
   }
+
+  String _semanticValue(double value) =>
+      widget.semanticValueBuilder?.call(value) ?? '${(value * 100).round()}';
 
   @override
   void dispose() {
@@ -1065,10 +1093,18 @@ class _LoopSliderState extends State<LoopSlider> {
           return Semantics(
             slider: true,
             label: widget.semanticLabel,
-            value:
-                widget.semanticValueBuilder?.call(clamped) ??
-                '${(clamped * 100).round()}',
+            value: _semanticValue(clamped),
+            increasedValue: _semanticValue(
+              (clamped + widget.keyboardStep).clamp(0.0, widget.max),
+            ),
+            decreasedValue: _semanticValue(
+              (clamped - widget.keyboardStep).clamp(0.0, widget.max),
+            ),
             enabled: enabled,
+            onIncrease: enabled && clamped < widget.max
+                ? () => _semanticStep(1)
+                : null,
+            onDecrease: enabled && clamped > 0 ? () => _semanticStep(-1) : null,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapUp: enabled
@@ -1105,7 +1141,9 @@ class _LoopSliderState extends State<LoopSlider> {
                     color: surface.surface,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: focused ? surface.warning : surface.borderHairline,
+                      color: focused
+                          ? surface.encoderFocus
+                          : surface.borderHairline,
                       width: focused ? 3 : 1,
                     ),
                   ),

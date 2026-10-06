@@ -9,11 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 /// decision, not a way to silence the test — each one needs a reason that
 /// survives being read out loud in review.
 const _allowed = <String, String>{
-  // Gate decision on #499: virtual hardware. The plate's LEDs, silkscreen and
-  // proportions mirror the physical pedal, so restyling it would desync the
-  // simulator from the thing it simulates.
-  'lib/pedal/view/pedal_plate.dart': 'pedal faceplate — hardware replica',
-
   // Accepted Layout A reproduces the Fusion pedal's metal body, rubber pad
   // and nameplate. These are artwork materials; surrounding controls, text,
   // LEDs and encoder focus continue to use the app's theme tokens.
@@ -70,12 +65,7 @@ final _harmless = RegExp(r'Colors\.transparent');
 final _stateWash = RegExp(r'\.(accent|rec|success|fx)\.withValues\(\s*alpha:');
 
 /// Files that may still wash a state colour inline, and why.
-const _allowedWash = <String, String>{
-  // Not a fill: it tints the accent as TEXT (a selected option's sub-label),
-  // and the DS has no "accent at reading weight" token to reach for. The
-  // fill tokens would be wrong here — they are backgrounds.
-  'lib/setup/setup_surface.dart': 'accent as dimmed label text, not a fill',
-};
+const _allowedWash = <String, String>{};
 
 void main() {
   test('the view layer resolves colour from the theme, not from literals', () {

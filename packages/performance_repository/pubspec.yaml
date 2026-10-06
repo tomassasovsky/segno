@@ -16,6 +16,8 @@ dependencies:
   flutter:
     sdk: flutter
   meta: ^1.16.0
+  operation_guards:
+    path: ../operation_guards
   segno_engine:
     path: ../segno_engine
   wav_codec:
