@@ -681,6 +681,45 @@ Built as planned, with these departures:
   unreachable from here until Part 3 deletes it.
 - New golden `settings_home.png`, checked by eye against `v7Ekz`.
 
+### Part 3 (branch `claude/settings-1199-p3`, `13b483025`, on Part 2)
+
+The owner confirmed D4 (2026-10-06): retire the boot-default mode. Built as
+planned, with these details:
+
+- The P3 rows of §5 are deleted, plus `lib/audio_setup/view/audio_device_picker.dart`
+  (its one user was the deleted audio section) and the screenshot suite that
+  drew the old page (`settings_screenshots_test.dart`, goldens
+  `settings_view_tracks.png`, `settings_audio_recording.png`). The
+  token-adoption allowlist loses the two entries for deleted files.
+- `InteractionMode.fromToken`, `bootDefaults` and `bootDefaultFromToken` are
+  removed with their only caller; `token` stays (the readout uses it).
+- The notice fires only for a stored `mute`, the one stored value that ever
+  booted anything but Record (`fx`, `custom` and the legacy `play` were
+  already coerced to Record), so no install is told about a change it never
+  had. The toast reads "Segno now always starts in Record mode. Press Mode to
+  switch to Mute."
+- 107 strings whose last reader was deleted are removed from both ARB files,
+  line by line so the files keep their layout.
+
+### Part 4 (branch `claude/settings-1199-p4`, `95216f7bd`, on Part 1)
+
+Built as planned, with these details:
+
+- Removing the Bluetooth tab also removes `NetworkTab`, the tray state's
+  `networkTab` and `showNetworkTab`: the Network face is the Wi-Fi face
+  alone. Five `control_center_network_wifi*` goldens regenerated (no tab
+  strip) and the two Bluetooth goldens deleted, all checked by eye.
+- The pairing count lives on `ConsoleFactsClient.retiredBluetoothPairings()`
+  (`/data/bluetooth`, `kRetiredBluetoothState`), counting
+  `<adapter address>/<device address>/info` records only. The toast is a
+  plural ("The device … will not reconnect" / "The {count} devices …").
+- `bluez` and `bluetoothctl` stay in `.github/cspell.json`: older plan and
+  brainstorm documents still use them.
+- Merging with Part 3: both parts delete `bluetooth_page.dart` and edit
+  `host_page_chrome.dart` (Part 3 deletes it), and both append to
+  `app_toasts.dart`, the ARB files and `app_test.dart`. Every conflict is
+  additive or delete-both.
+
 ### Pen write-back list (for the owner; this build did not edit the pen)
 
 - Section 05: a `c/ Interim · Settings destinations` note listing the five
