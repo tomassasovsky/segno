@@ -19,13 +19,14 @@ const int kMaxLanes = LE_MAX_LANES;
 /// [EngineSnapshot], which are sized to the open device, not to this.
 const int kMaxChannels = LE_MAX_CHANNELS;
 
-/// The number of hardware inputs the live-monitor path covers, mirroring the
-/// native `LE_MAX_MONITORED_INPUTS`. Referenced (not re-typed) so it can never
-/// drift from the C.
+/// The number of sources the live-monitor path covers, mirroring the native
+/// `LE_MAX_MONITORED_INPUTS`. Referenced (not re-typed) so it can never drift
+/// from the C.
 ///
 /// Every input the engine can open can be monitored (accepted design, slice
-/// 3), so this equals [kMaxChannels]. It stays a distinct name from
-/// [kMaxLanes], which bounds a different thing (lanes per track). The old
+/// 3), and so can every instrument source (#1197: [kMaxChannels] + slot), so
+/// this is [kMaxChannels] plus the instrument slots. It stays a distinct name
+/// from [kMaxLanes], which bounds a different thing (lanes per track). The old
 /// name for this (`kMaxInputs`) was misread at least once (#558) as a cap on
 /// what a socket could be NAMED.
 const int kMaxMonitoredInputs = LE_MAX_MONITORED_INPUTS;

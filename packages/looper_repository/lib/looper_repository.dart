@@ -125,8 +125,8 @@ export 'src/plugin_catalog.dart'
 /// is default-on (only explicitly-disabled outputs are persisted), so no exact
 /// bound is needed for correctness. This is only how far the bootstrap reapply
 /// scans the `output_enabled.$out` keys. It is its own number: the monitor
-/// reapply scans `[0, kMaxMonitoredInputs)`, which is every hardware input
-/// (32) since slice 3, and outputs have nothing to do with what the monitor
+/// reapply scans every hardware input (32, `kMaxChannels`) since slice 3, and
+/// outputs have nothing to do with what the monitor
 /// path covers. A stored off-state for an output beyond the current device's
 /// channel count is ignored by the engine and never corrupts routing.
 const int kMaxOutputs = 8;

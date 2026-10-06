@@ -2733,8 +2733,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         }
         le_publish_lane_mix(e, ch, l, frame, 1, 1);
       }
-      for (int i = 0; i < LE_MAX_CHANNELS; ++i) {
-        if (mix->monitor_mask & (1u << i)) {
+      for (int i = 0; i < LE_MAX_SOURCES; ++i) {
+        if (mix->monitor_mask & (UINT64_C(1) << i)) {
           le_command c = {.code = LE_CMD_SET_MONITOR_INPUT_VOLUME,
                           .arg_i = i, .arg_f = mix->monitor_gain[i]};
           apply_command(e, &c, frame);
@@ -2742,7 +2742,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                            .lanef = {i, 0, mix->monitor_pan[i]}};
           apply_command(e, &c, frame);
         }
-        if (mix->trim_mask & (1u << i)) store_f32(&e->a_in_trim_bits[i], mix->input_trim[i]);
+        if (i < LE_MAX_CHANNELS && (mix->trim_mask & (1u << i))) {
+          store_f32(&e->a_in_trim_bits[i], mix->input_trim[i]);
+        }
       }
       for (int i = 0; i < e->track_count; ++i) {
         if (!(mix->solo_mask & (1u << i))) continue;
@@ -3637,9 +3639,12 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       const uint32_t excluded = atomic_load_explicit(
           &e->a_excluded_input_mask, memory_order_relaxed);
       /* Reject an out-of-range or loopback-excluded channel by recording
-       * nothing, so a lane never captures our own output. */
-      if (in_ch < 0 || in_ch >= e->in_channels ||
-          (excluded & (1u << in_ch))) {
+       * nothing, so a lane never captures our own output. An instrument
+       * source is accepted whatever its slot holds: an empty slot records
+       * silence (#1197). */
+      if (!le_source_is_instrument(in_ch) &&
+          (in_ch < 0 || in_ch >= e->in_channels ||
+           (excluded & (1u << in_ch)))) {
         in_ch = -1;
       }
       store_i32(&e->tracks[ch].lanes[lane].a_input_channel, in_ch);
@@ -3705,8 +3710,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       const uint32_t excluded = atomic_load_explicit(
           &e->a_excluded_input_mask, memory_order_relaxed);
-      /* A loopback-excluded input is never monitored (it carries our output). */
-      const int on = (excluded & (1u << input)) ? 0 : (cmd->arg_f != 0.0f);
+      /* A loopback-excluded input is never monitored (it carries our output);
+       * instrument sources (#1197) have no loopback bit. */
+      const int on = (input < LE_MAX_CHANNELS && (excluded & (1u << input)))
+                         ? 0
+                         : (cmd->arg_f != 0.0f);
       store_i32(&e->monitors[input].a_enabled, on);
       break;
     }
@@ -3744,7 +3752,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
      * recorded PCM already embodies the conditioning; nothing replays it). */
     case LE_CMD_SET_INPUT_COND: {
       const int32_t input = cmd->arg_i;
-      if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
+      if (input < 0 || input >= LE_MAX_CHANNELS) break;
       le_input_cond* c = &e->cond[input];
       const int on = cmd->arg_f != 0.0f ? 1 : 0;
       const int was = load_i32(&c->a_enabled);
@@ -3756,7 +3764,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     }
     case LE_CMD_SET_INPUT_COND_PARAM: {
       const int32_t input = cmd->lanef.channel;
-      if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
+      if (input < 0 || input >= LE_MAX_CHANNELS) break;
       le_cond_update_param(&e->cond[input], cmd->lanef.lane, cmd->lanef.value,
                            e->sample_rate);
       break;
@@ -4947,9 +4955,12 @@ static inline void snapshot_monitor_fx(
     float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
     int32_t mon_fx_enabled[][LE_FX_MAX], int* mon_has_fx, float* mon_gl,
     float* mon_gr) {
-  for (int c = 0; c < ch_in && c < LE_MAX_MONITORED_INPUTS; ++c) {
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    /* the device's channels, then every instrument source (#1197) */
+    if (c < LE_MAX_CHANNELS && c >= ch_in) continue;
     le_monitor_input* m = &e->monitors[c];
-    mon_on[c] = load_i32(&m->a_enabled) && !(excluded & (1u << c));
+    mon_on[c] = load_i32(&m->a_enabled) &&
+                !(c < LE_MAX_CHANNELS && (excluded & (1u << c)));
     mon_out[c] = atomic_load_explicit(&m->a_output_mask, memory_order_relaxed);
     mon_vol[c] = load_f32(&m->a_vol_bits);
     mon_gl[c] = load_f32(&m->a_pan_gl_bits);
@@ -5330,9 +5341,15 @@ static inline int process_input_frame(le_engine* e, const float* in,
     float magnitude = 0.0f;
     for (int l = 0; l < le_lanes_active(t); ++l) {
       const int source = load_i32(&t->lanes[l].a_input_channel);
-      if (source < 0 || source >= ch_in || source >= 32 ||
-          (excluded & (1u << source))) continue;
-      const float value = in_c ? fabsf(in_c[f * ch_in + source]) : 0.0f;
+      float value;
+      if (le_source_is_instrument(source)) {
+        /* An instrument arms the take like a jack (#1197). */
+        value = fabsf(le_instrument_source_sample(e, source, f));
+      } else {
+        if (source < 0 || source >= ch_in || source >= LE_MAX_CHANNELS ||
+            (excluded & (1u << source))) continue;
+        value = in_c ? fabsf(in_c[f * ch_in + source]) : 0.0f;
+      }
       if (value > magnitude) magnitude = value;
     }
     if (magnitude > LE_AUTO_RECORD_THRESHOLD) {
@@ -5408,15 +5425,20 @@ static inline void mix_monitors_frame(
     int32_t mon_fx_enabled[][LE_FX_MAX], const float* mon_vol,
     const uint32_t* mon_out, const float* mon_gl, const float* mon_gr,
     float* mon_peak) {
-  if (in) {
-    for (int c = 0; c < ch_in && c < LE_MAX_MONITORED_INPUTS; ++c) {
+  {
+    /* The device's channels (when there is input), then every instrument
+     * source (#1197), whose bus stands in for the input. */
+    for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+      const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
+      if (!instrument && (in == NULL || c >= ch_in)) continue;
       const int captured =
-          e->perf.armed && (e->perf.input_mask & (1u << c)) != 0;
+          e->perf.armed && (e->perf.input_mask & (UINT64_C(1) << c)) != 0;
       if (!mon_on[c] || mon_mut[c]) {
         if (captured) perf_tap_monitor_frame(e, c, 0.0f, 0.0f);
         continue;
       }
-      const float clean = in[f * ch_in + c];
+      const float clean = instrument ? le_instrument_source_sample(e, c, f)
+                                     : in[f * ch_in + c];
       float ml = clean;
       float mr = clean;
       if (mon_has_fx[c]) {
@@ -5996,6 +6018,9 @@ static inline void mix_tracks_frame(
         /* The capture trim (slice 3) scales only what records: the monitor
          * path, the meters and the trigger read the untrimmed input. */
         insample = in[f * ch_in + ic] * in_trim[ic];
+      } else if (le_source_is_instrument(ic)) {
+        /* An instrument source (#1197): its bus, no trim. */
+        insample = le_instrument_source_sample(e, ic, f);
       }
 
       /* Real-time null-guard: a lane whose buffer is not yet allocated (the
@@ -6442,14 +6467,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * — the harness's round-trip correlation cannot be shaved by the HPF.
    * Zero added buffering latency by construction (IIR + no-lookahead
    * envelope; see engine_cond.c). Dormant cost: at most
-   * LE_MAX_MONITORED_INPUTS relaxed loads per block. A block larger than the
+   * LE_MAX_CHANNELS relaxed loads per block. A block larger than the
    * scratch (only the native tests' synthetic mega-blocks) falls back to the
    * raw path for that block rather than allocating on the audio thread. */
   const float* in_c = in;
   if (in != NULL) {
     uint32_t cond_mask = 0u;
-    const int cond_ch =
-        ch_in < LE_MAX_MONITORED_INPUTS ? ch_in : LE_MAX_MONITORED_INPUTS;
+    const int cond_ch = ch_in < LE_MAX_CHANNELS ? ch_in : LE_MAX_CHANNELS;
     for (int c = 0; c < cond_ch; ++c) {
       if (load_i32(&e->cond[c].a_enabled) && !(excluded & (1u << c))) {
         cond_mask |= 1u << c;
@@ -6494,8 +6518,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     const uint64_t clip_now =
         atomic_load_explicit(&e->a_frames, memory_order_relaxed);
     const uint64_t clip_hold = (uint64_t)sr * LE_CLIP_HOLD_MS / 1000u;
-    const int clip_ch =
-        ch_in < LE_MAX_MONITORED_INPUTS ? ch_in : LE_MAX_MONITORED_INPUTS;
+    const int clip_ch = ch_in < LE_MAX_CHANNELS ? ch_in : LE_MAX_CHANNELS;
     uint32_t clip_mask = 0u;
     for (int c = 0; c < clip_ch; ++c) {
       if (excluded & (1u << c)) {
@@ -6803,6 +6826,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * zeroed every entry, so nothing stale survives a smaller device. */
   for (int c = 0; c < ch_in && c < LE_MAX_CHANNELS; ++c) {
     store_f32(&e->a_in_peak_ch_bits[c], in_peak_ch[c]);
+    store_f32(&e->monitors[c].a_peak_bits, mon_peak[c]);
+  }
+  for (int c = LE_INSTRUMENT_SOURCE_BASE; c < LE_MAX_SOURCES; ++c) {
     store_f32(&e->monitors[c].a_peak_bits, mon_peak[c]);
   }
   for (int c = 0; c < ch_out && c < LE_MAX_CHANNELS; ++c) {

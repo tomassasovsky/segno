@@ -80,7 +80,8 @@ static void le_timing_track_fields(le_track_snapshot* out, int code) {
  * when lane 0 records no input). */
 static uint32_t le_lane_input_bits(le_lane* ln) {
   const int32_t ic = load_i32(&ln->a_input_channel);
-  return ic >= 0 ? (1u << ic) : 0u;
+  /* An instrument source (#1197) has no bit in this legacy 32-bit mask. */
+  return ic >= 0 && ic < LE_MAX_CHANNELS ? (1u << ic) : 0u;
 }
 
 /* Fills a track snapshot from the track's transport plus lane 0's content (the
@@ -458,7 +459,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->input_clip_mask =
       atomic_load_explicit(&engine->a_input_clip_mask, memory_order_relaxed);
   uint32_t cond_mask = 0u;
-  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+  for (int32_t c = 0; c < LE_MAX_CHANNELS; ++c) {
     if (load_i32(&engine->cond[c].a_enabled) &&
         !(out->excluded_input_mask & (1u << c))) {
       cond_mask |= 1u << c;
@@ -506,9 +507,15 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     out->input_peaks[c] = load_f32(&engine->a_in_peak_ch_bits[c]);
     out->output_peaks[c] = load_f32(&engine->a_out_peak_ch_bits[c]);
     out->input_trim[c] = load_f32(&engine->a_in_trim_bits[c]);
-    out->monitor_peaks[c] =
-        c < LE_MAX_MONITORED_INPUTS ? load_f32(&engine->monitors[c].a_peak_bits)
-                                    : 0.0f;
+  }
+  for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
+    out->monitor_peaks[c] = load_f32(&engine->monitors[c].a_peak_bits);
+  }
+  /* Instrument sources (#1197): the bus's block peak, trim 1. */
+  for (int32_t k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+    out->input_peaks[LE_INSTRUMENT_SOURCE_BASE + k] =
+        load_f32(&engine->a_inst_peak_bits[k]);
+    out->input_trim[LE_INSTRUMENT_SOURCE_BASE + k] = 1.0f;
   }
   /* The audio-callback telemetry (#722) is deliberately NOT read here — it has
    * its own entry point below. Anything on this struct is projected into the

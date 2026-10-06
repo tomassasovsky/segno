@@ -399,6 +399,245 @@ static void test_instrument_reset_drops_queued_events(void) {
   le_engine_destroy(e);
 }
 
+/* ---- Part 2b: instruments as sources 32-39 ---- */
+
+/* Processes `frames` with silent input in blocks of `block`, writing the
+ * interleaved stereo output to `out` (NULL: discarded). */
+static void ins_pump(le_engine* e, int32_t frames, int32_t block, float* out) {
+  static float in[2 * 512], o[2 * 512];
+  memset(in, 0, sizeof(in));
+  int32_t done = 0;
+  while (done < frames) {
+    int32_t n = frames - done;
+    if (n > block) n = block;
+    if (n > 512) n = 512;
+    le_engine_process(e, o, in, (uint32_t)n);
+    if (out != NULL) memcpy(out + 2 * done, o, sizeof(float) * 2 * (size_t)n);
+    done += n;
+  }
+}
+
+static void ins_drain(le_engine* e) {
+  float z[2] = {0.0f, 0.0f};
+  le_engine_process(e, z, z, 0);
+}
+
+/* A lane routed to source 32 records the instrument's bus sample for sample,
+ * with Hear live Off (nothing reaches the outputs). */
+static void test_source_capture_records_the_bus(void) {
+  printf("test_source_capture_records_the_bus\n");
+  const int32_t n = 9600;
+  float* ref = (float*)calloc((size_t)(n + 64), sizeof(float));
+  ins_offline(&g_syn_a, INS_SR);
+  le_synth_set_instrument(&g_syn_a, 0, syn_patch("pad"));
+  le_synth_note_on(&g_syn_a, 0, 1, 60, 100);
+  float* r[1] = {ref};
+  syn_render(&g_syn_a, r, 1, n + 64, 64);
+
+  le_engine* e = ins_engine(INS_SR);
+  CHECK(le_engine_set_lane_input(e, 0, 0, 32) == LE_OK);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 0, 1, 60, 100) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  float* out = (float*)calloc((size_t)2 * n, sizeof(float));
+  ins_pump(e, n, 64, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize */
+  ins_pump(e, 64, 64, NULL);
+  int silent = 1;
+  for (int32_t i = 0; i < 2 * n; ++i) silent &= out[i] == 0.0f;
+  CHECK(silent); /* Hear live Off: monitor 32 never enabled */
+  float* lane = (float*)calloc((size_t)n, sizeof(float));
+  const int32_t len = le_engine_export_track_lane(e, 0, 0, lane, n);
+  CHECK(len >= n - 64 && len <= n);
+  /* away from the seam crossfade, the take is the bus */
+  int same = 1;
+  for (int32_t i = 1000; i < len - 1000; ++i) same &= lane[i] == ref[i];
+  CHECK(same);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tracks[0].input_mask == 0u); /* no legacy bit for a source */
+  le_engine_destroy(e);
+  free(ref);
+  free(out);
+  free(lane);
+}
+
+/* Monitor 32 plays the bus at its volume and pan, and its peak and the
+ * source's input peak are published. */
+static void test_source_monitor_gains(void) {
+  printf("test_source_monitor_gains\n");
+  const int32_t n = 4800;
+  float* ref = (float*)calloc((size_t)n, sizeof(float));
+  ins_offline(&g_syn_a, INS_SR);
+  le_synth_set_instrument(&g_syn_a, 3, syn_patch("sub"));
+  le_synth_note_on(&g_syn_a, 3, 1, 48, 60);
+  float* r[4] = {NULL, NULL, NULL, ref};
+  syn_render(&g_syn_a, r, 4, n, 64);
+
+  le_engine* e = ins_engine(INS_SR);
+  CHECK(le_engine_set_monitor_input(e, 35, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_volume(e, 35, 0.5f) == LE_OK);
+  CHECK(le_engine_set_instrument(e, 3, syn_patch("sub"), NULL) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 3, 1, 48, 60) == LE_OK);
+  float* out = (float*)calloc((size_t)2 * n, sizeof(float));
+  ins_pump(e, n, 64, out);
+  float worst = 0.0f;
+  for (int32_t i = 0; i < n; ++i) {
+    const float dl = fabsf(out[2 * i] - 0.5f * ref[i]);
+    const float dr = fabsf(out[2 * i + 1] - 0.5f * ref[i]);
+    if (dl > worst) worst = dl;
+    if (dr > worst) worst = dr;
+  }
+  CHECK(worst < 1e-6f);
+  CHECK(syn_peak(ref, n) > 0.05f);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.monitor_peaks[35] > 0.0f);
+  CHECK(snap.input_peaks[35] == snap.instrument_peaks[3]);
+  CHECK(snap.input_peaks[35] > 0.0f);
+  CHECK(snap.input_trim[35] == 1.0f);
+  /* an oversized block: the sources read silence, never past the bus (slot
+   * 7 is the last bus: reading frame 8192 on would leave the allocation) */
+  CHECK(le_engine_set_instrument(e, 7, syn_patch("organ"), NULL) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 39, 1) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 7, 2, 60, 100) == LE_OK);
+  ins_pump(e, 64, 64, NULL);
+  float big[2 * 9000], bin[2 * 9000];
+  memset(bin, 0, sizeof(bin));
+  le_engine_process(e, big, bin, 9000);
+  int silent = 1;
+  for (int i = 0; i < 2 * 9000; ++i) silent &= big[i] == 0.0f;
+  CHECK(silent);
+  le_engine_destroy(e);
+  free(ref);
+  free(out);
+}
+
+/* A track armed to start on sound starts at the first frame the instrument's
+ * bus passes the threshold, with the note struck in an earlier block. */
+static void test_source_sound_start_is_frame_exact(void) {
+  printf("test_source_sound_start_is_frame_exact\n");
+  const int32_t n = 9600;
+  float* ref = (float*)calloc((size_t)n, sizeof(float));
+  ins_offline(&g_syn_a, INS_SR);
+  le_synth_set_instrument(&g_syn_a, 0, syn_patch("organ"));
+  le_synth_note_on(&g_syn_a, 0, 1, 64, 40);
+  float* r[1] = {ref};
+  syn_render(&g_syn_a, r, 1, n, 64);
+  int32_t f0 = -1;
+  for (int32_t i = 0; i < n && f0 < 0; ++i) {
+    if (fabsf(ref[i]) > LE_AUTO_RECORD_THRESHOLD) f0 = i;
+  }
+  CHECK(f0 > 64); /* the threshold falls in a later block than the strike */
+
+  le_engine* e = ins_engine(INS_SR);
+  CHECK(le_engine_set_lane_input(e, 0, 0, 32) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  ins_drain(e);
+  /* a sound start needs a usable source: an empty slot is not one */
+  CHECK(le_engine_record(e, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("organ"), NULL) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* armed: waits for sound */
+  ins_pump(e, 64, 64, NULL);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(le_engine_instrument_note_on(e, 0, 1, 64, 40) == LE_OK);
+  ins_pump(e, f0, 64, NULL); /* up to, not including, the crossing frame */
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tracks[0].state == LE_TRACK_EMPTY);
+  ins_pump(e, 1, 1, NULL);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tracks[0].state == LE_TRACK_RECORDING);
+  ins_pump(e, 4000, 64, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ins_pump(e, 64, 64, NULL);
+  float lane[4100];
+  const int32_t len = le_engine_export_track_lane(e, 0, 0, lane, 4100);
+  CHECK(len > 3000);
+  int same = 1;
+  for (int32_t i = 600; i < len - 600; ++i) same &= lane[i] == ref[f0 + i];
+  CHECK(same);
+  le_engine_destroy(e);
+  free(ref);
+}
+
+/* The mix transaction takes sources 32-39 whole: an empty slot is silence,
+ * never a refused batch; 40 is out of range; a stray physical route beyond
+ * the device's inputs is still accepted as before. */
+static void test_source_mix_transaction(void) {
+  printf("test_source_mix_transaction\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_mix_settings mix;
+  memset(&mix, 0, sizeof(mix));
+  mix.revision = 7;
+  mix.routing_input_mask = (UINT64_C(1) << 0) | (UINT64_C(1) << 8);
+  mix.lane_input[0] = 33;   /* track 0 lane 0: an empty slot */
+  mix.lane_input[8] = 5;    /* track 1 lane 0: a stray jack on a 2-in device */
+  mix.monitor_mask = (UINT64_C(1) << 39) | (UINT64_C(1) << 1);
+  mix.monitor_gain[39] = 0.25f;
+  mix.monitor_pan[39] = -1.0f;
+  mix.monitor_gain[1] = 1.0f;
+  CHECK(le_engine_set_mix(e, &mix) == LE_OK);
+  ins_pump(e, 64, 64, NULL);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.mix_revision == 7);
+  CHECK(load_i32(&e->tracks[0].lanes[0].a_input_channel) == 33);
+  CHECK(load_i32(&e->tracks[1].lanes[0].a_input_channel) == 5);
+  CHECK(load_f32(&e->monitors[39].a_vol_bits) == 0.25f);
+  CHECK(load_f32(&e->monitors[39].a_pan_bits) == -1.0f);
+  le_mix_settings bad = mix;
+  bad.revision = 8;
+  bad.lane_input[0] = 40;
+  CHECK(le_engine_set_mix(e, &bad) == LE_ERR_INVALID);
+  bad = mix;
+  bad.revision = 9;
+  bad.monitor_mask = UINT64_C(1) << 40;
+  CHECK(le_engine_set_mix(e, &bad) == LE_ERR_INVALID);
+  /* single commands: 39 accepted with an empty slot, the tuner and
+   * conditioning stay physical */
+  CHECK(le_engine_set_lane_input(e, 2, 0, 39) == LE_OK);
+  CHECK(le_engine_set_tuner_input(e, 32) == LE_OK);
+  CHECK(le_engine_set_input_conditioning(e, 32, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_input_trim(e, 32, 0.5f) == LE_ERR_INVALID);
+  ins_pump(e, 64, 64, NULL);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(load_i32(&e->tracks[2].lanes[0].a_input_channel) == 39);
+  CHECK(snap.tuner_input == -1);
+  CHECK(snap.input_cond_mask == 0u && snap.input_clip_mask == 0u);
+  le_engine_destroy(e);
+}
+
+/* The performance capture taps a monitored instrument source like an input. */
+static void test_source_perf_tap(void) {
+  printf("test_source_perf_tap\n");
+  const int32_t n = 960;
+  le_engine* e = ins_engine(INS_SR);
+  CHECK(le_engine_set_instrument(e, 1, syn_patch("sub"), NULL) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 33, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 34, 1) == LE_OK); /* empty slot: not captured */
+  CHECK(le_engine_set_monitor_input_volume(e, 33, 0.5f) == LE_OK);
+  ins_pump(e, 64, 64, NULL);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(e->perf.input_mask == (UINT64_C(1) << 33));
+  ins_drain(e);
+  CHECK(le_engine_instrument_note_on(e, 1, 1, 52, 80) == LE_OK);
+  float* out = (float*)calloc((size_t)2 * n, sizeof(float));
+  ins_pump(e, n, 64, out);
+  float captured[2 * 960];
+  const int32_t got = le_engine_perf_monitor_pop_for_test(e, 33, captured, n);
+  CHECK(got > 0);
+  int same = 1;
+  for (int32_t i = 0; i < got; ++i) same &= captured[2 * i] == out[2 * (n - got + i)];
+  CHECK(same);
+  CHECK(syn_peak(out, 2 * n) > 0.01f);
+  CHECK(le_engine_perf_monitor_pop_for_test(e, 34, captured, n) == 0);
+  le_perf_disarm(e);
+  le_engine_destroy(e);
+  free(out);
+}
+
 static void run_instrument_tests(void) {
   test_instrument_bus_matches_offline_render();
   test_instrument_params_reach_first_note();
@@ -411,4 +650,9 @@ static void run_instrument_tests(void) {
   test_instrument_release_before_note_keeps_it();
   test_instrument_params_stay_with_their_patch();
   test_instrument_reset_drops_queued_events();
+  test_source_capture_records_the_bus();
+  test_source_monitor_gains();
+  test_source_sound_start_is_frame_exact();
+  test_source_mix_transaction();
+  test_source_perf_tap();
 }

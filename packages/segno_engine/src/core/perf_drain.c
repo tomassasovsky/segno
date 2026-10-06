@@ -1211,7 +1211,7 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
 
   int first = 1;
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(d->engine->perf.input_mask & (1u << c))) continue;
+    if (!(d->engine->perf.input_mask & (UINT64_C(1) << c))) continue;
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "%s%d",
                     first ? "" : ", ", c);
     first = 0;
@@ -1372,7 +1372,7 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
     ok = 0;
   }
   for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(e->perf.input_mask & (1u << c))) continue;
+    if (!(e->perf.input_mask & (UINT64_C(1) << c))) continue;
     if (!le_pd_drain_ring(&d->monitor_file[c], &e->perf.monitor_ring[c], 2,
                          scratch, LE_PD_SCRATCH_SAMPLES)) {
       ok = 0;
@@ -1396,7 +1396,7 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
       ok = 0;
     }
     for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
-      if (!(e->perf.input_mask & (1u << c))) continue;
+      if (!(e->perf.input_mask & (UINT64_C(1) << c))) continue;
       if (!le_pd_catch_up(d, &d->monitor_file[c], 2, elapsed)) ok = 0;
     }
   }
@@ -1433,7 +1433,7 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
    * ~250 ms cadence documented in perf_drain.h refers to. */
   if (ok && !le_pd_flush(d->master_file.f)) ok = 0;
   for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(e->perf.input_mask & (1u << c))) continue;
+    if (!(e->perf.input_mask & (UINT64_C(1) << c))) continue;
     if (!le_pd_flush(d->monitor_file[c].f)) ok = 0;
   }
   if (ok && !le_pd_flush(d->events_file)) ok = 0;
@@ -1549,7 +1549,7 @@ le_perf_drain* le_perf_drain_start(le_engine* engine, const char* capture_dir) {
   }
 
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(engine->perf.input_mask & (1u << c))) continue;
+    if (!(engine->perf.input_mask & (UINT64_C(1) << c))) continue;
     snprintf(path, sizeof(path), "%s/input-%d.pcm", d->capture_dir, c);
     d->monitor_file[c].f = fopen(path, "wb");
     if (d->monitor_file[c].f == NULL) {
