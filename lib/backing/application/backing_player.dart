@@ -134,7 +134,9 @@ class BackingPlayer {
   Future<void> play() async {
     final selected = _state.selectedItem;
     if (selected == null) return;
-    if (_state.selectionIsLoaded) {
+    final held =
+        _repository.state.loaded != null || _repository.state.loading != null;
+    if (_state.selectionIsLoaded && held) {
       if (_repository.state.playing) {
         _repository.pause();
       } else {
@@ -237,7 +239,20 @@ class BackingPlayer {
     final ended = player.endCount != _endCount;
     _endCount = player.endCount;
     var next = _state.copyWith(player: player);
-    if (player.loaded == null && _state.loaded != null && !_loadPending) {
+    final loaded = _state.loaded;
+    if (player.loaded != null && player.loaded != loaded?.digest) {
+      // The repository's loaded file is the truth: a reload after an
+      // interface change, or a load this owner did not start (review of
+      // P5, M1).
+      final item = _itemOf(player.loaded);
+      next = next.copyWith(loaded: item);
+      if (item != null && item.name.isEmpty) unawaited(_nameLoaded(item));
+    } else if (player.loaded == null &&
+        loaded != null &&
+        !_loadPending &&
+        !_state.missing.contains(loaded.digest)) {
+      // A loaded item that could not be loaded (a Missing one) stays named
+      // until the performer clears it or loads another (review of P5, L1).
       next = next.copyWith(clearLoaded: true);
     }
     if (ended && player.lastEnd == BackingEndEvent.advanced) {
@@ -342,11 +357,38 @@ class BackingPlayer {
       _emit(_state.copyWith(loaded: loaded));
       await _restage();
     } else if (!await _load(loaded, play: false)) {
-      clear();
+      // Keep the session's reference to it, as a Missing one, so the next
+      // Save still names it (D9: never dropped silently; review of P5, L1).
+      _repository.clear();
+      _emit(
+        _state.copyWith(
+          loaded: loaded,
+          missing: {..._state.missing, loaded.digest},
+        ),
+      );
     }
   }
 
   // ---- helpers ----
+
+  /// Names a loaded file this owner did not load, from the store.
+  Future<void> _nameLoaded(BackingItem item) async {
+    try {
+      for (final asset in await _repository.store.list()) {
+        if (asset.digest != item.digest) continue;
+        if (_state.loaded == item) {
+          _emit(
+            _state.copyWith(
+              loaded: BackingItem(digest: item.digest, name: asset.name),
+            ),
+          );
+        }
+        return;
+      }
+    } on Object {
+      // An unreadable store leaves it unnamed.
+    }
+  }
 
   int _indexOf(String digest) =>
       _state.prepared.indexWhere((item) => item.digest == digest);

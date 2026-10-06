@@ -120,10 +120,10 @@ class BackingRepository {
       () => generation == _loadGeneration,
       (audio, token) => _engine.backingLoad(audio, item: token, play: play),
     );
-    if (generation == _loadGeneration) {
-      _emit(_state.copyWith(clearLoading: true));
-    }
-    refresh();
+    // The engine's answer and the end of the load in one state: a state
+    // with neither the file loaded nor loading would read as "nothing
+    // loaded" (review of P5, M1).
+    _refresh(clearLoading: generation == _loadGeneration);
     return ok;
   }
 
@@ -235,7 +235,26 @@ class BackingRepository {
   }
 
   /// Plays the loaded file (a resume after a pause).
-  void play() => _transport(BackingTransportOp.play);
+  ///
+  /// An engine restart not yet seen is handled first; while its reload of the
+  /// loaded file is still decoding, Play waits for it, so the press is never
+  /// spent on the reload (review of P5, M1).
+  void play() {
+    refresh();
+    final reload = _reload;
+    if (reload == null) {
+      _transport(BackingTransportOp.play);
+      return;
+    }
+    unawaited(
+      reload.then((ok) {
+        if (ok && !_disposed) _transport(BackingTransportOp.play);
+      }),
+    );
+  }
+
+  /// The reload a restart started, while it decodes.
+  Future<bool>? _reload;
 
   /// Pauses, keeping the position.
   void pause() => _transport(BackingTransportOp.pause);
@@ -308,17 +327,21 @@ class BackingRepository {
   /// Reads the engine's voice now: maps its tokens back to digests, replays
   /// the settings and reloads after an engine restart, and keeps polling
   /// while anything is playing or loading.
-  void refresh() {
+  void refresh() => _refresh();
+
+  void _refresh({bool clearLoading = false}) {
     if (_disposed) return;
     final s = _engine.backingState();
     if (s.epoch != _epoch) {
       _epoch = s.epoch;
       _cachedRate = _metering.snapshot().sampleRate;
+      if (clearLoading) _emit(_state.copyWith(clearLoading: true));
       _restarted(s);
       return;
     }
     _emit(
       _state.copyWith(
+        clearLoading: clearLoading,
         loaded: _tokens[s.item],
         clearLoaded: !_tokens.containsKey(s.item),
         staged: _tokens[s.nextItem],
@@ -363,7 +386,14 @@ class BackingRepository {
     if (wasPlaying) _notices.add(BackingNotice.interfaceChanged);
     final kept = s.item >= 0 && _tokens.containsKey(s.item);
     _emit(_state.copyWith(transport: BackingTransport.stopped, position: 0));
-    if (!kept && loaded != null) unawaited(load(loaded));
+    if (!kept && loaded != null) {
+      final reload = _reload = load(loaded);
+      unawaited(
+        reload.whenComplete(() {
+          if (identical(_reload, reload)) _reload = null;
+        }),
+      );
+    }
     if (s.nextItem < 0 && staged != null) unawaited(stageNext(staged));
     refresh();
   }
