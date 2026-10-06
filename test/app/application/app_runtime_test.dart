@@ -132,6 +132,7 @@ void main() {
       pedal: pedal,
       performance: performance,
       sessions: sessions,
+      backing: testBackingRepository(),
       powerOff: () async => halts++,
     );
     addTearDown(() async {

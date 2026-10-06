@@ -903,6 +903,45 @@ class SettingsRepository {
         );
       });
 
+  static const String _clickPanKey = 'tempo.click_pan';
+
+  /// Reads the exact click pan scalar (#1200), preserving absence.
+  Future<double?> readClickPanCheckpoint() async {
+    await _serializedWrite;
+    return _store.getDouble(_clickPanKey);
+  }
+
+  /// Writes and verifies the exact click pan, including an absent one.
+  Future<void> restoreClickPanCheckpoint(double? checkpoint) =>
+      _serialize(() async {
+        await _writeDoubleScalar(
+          _clickPanKey,
+          checkpoint,
+          'Click pan checkpoint was not restored',
+        );
+      });
+
+  static const String _backingMixKey = 'backing.mix';
+
+  /// Exact stored bytes or absence of the backing's level, pan, outputs and
+  /// End (#1200), ordered after preceding settings writes. The application
+  /// owns the record's shape.
+  Future<String?> readBackingMixCheckpoint() =>
+      _serialize(() => _store.getString(_backingMixKey));
+
+  /// Restores exact bytes or absence and verifies them.
+  Future<void> restoreBackingMixCheckpoint(String? record) =>
+      _serialize(() async {
+        if (record == null) {
+          await _store.remove(_backingMixKey);
+        } else {
+          await _store.setString(_backingMixKey, record);
+        }
+        if (await _store.getString(_backingMixKey) != record) {
+          throw StateError('Backing mix persistence was not confirmed');
+        }
+      });
+
   static const String _countInBarsKey = 'tempo.count_in_bars';
 
   /// Reads both exact scalar memberships under the shared storage barrier.
