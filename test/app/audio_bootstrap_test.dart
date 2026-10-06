@@ -260,7 +260,7 @@ void main() {
               ),
             );
           }
-          const badMix = '{"monitorLevels":{"0":0.5,"1":1.5}}';
+          const badMix = '{"monitorLevels":{"0":0.5,"1":2.5}}';
           store.values['mix_settings'] = badMix;
           final result = await tryAutoStartEngine(
             repository: repository,

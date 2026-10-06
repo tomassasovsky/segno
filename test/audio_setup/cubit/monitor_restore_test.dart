@@ -131,6 +131,34 @@ void main() {
     fxPersistence: fx,
   );
 
+  test(
+    'Retry after a failed restore still saves minted legacy slot ids',
+    () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      await settings.saveMonitorMute(0, muted: true);
+      await settings.saveMonitorEffects(
+        0,
+        encodeFxChain(
+          FxChainEnvelope(
+            entries: [BuiltInEffect(type: TrackEffectType.drive)], // no id
+          ),
+        ),
+      );
+      engine.refuseMute = true;
+      await cubit.load();
+      expect(cubit.state.restoreFailed, isTrue);
+      engine.refuseMute = false;
+      await cubit.load();
+      expect(cubit.state.restoreFailed, isFalse);
+      final minted = cubit.state.forInput(0).effects.single.slotId;
+      expect(minted, isNotNull);
+      await fx.flush();
+      final stored = decodeFxChain(await settings.loadMonitorEffects(0));
+      expect(stored.entries.single.slotId, minted);
+    },
+  );
+
   for (final (muted, initiallyMuted) in [
     (true, false),
     (false, true),

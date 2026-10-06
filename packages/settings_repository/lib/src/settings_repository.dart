@@ -1480,11 +1480,21 @@ class SettingsRepository {
         balance: values(setup['balance']),
       );
     }
-    final monitors = values(json['monitorLevels']);
+    // Live-input gain was 0–2 before it narrowed to 0–1. A finite stored gain
+    // in (1, 2] reads as unity (owner decision, 2026-10-05) instead of making
+    // the whole mix unreadable; anything else malformed still fails closed.
+    bool legacy(double gain) => gain.isFinite && gain > 1 && gain <= 2;
+    final stored = values(json['monitorLevels']);
+    final legacyMonitorGain = stored.values.any(legacy);
+    final monitors = {
+      for (final entry in stored.entries)
+        entry.key: legacy(entry.value) ? 1.0 : entry.value,
+    };
     if (!_validMonitorLevels(monitors)) {
       throw const FormatException('invalid saved monitor levels');
     }
     return _SavedMixSettings(
+      legacyMonitorGain: legacyMonitorGain,
       trackLevels: values(json['trackLevels']),
       pans: values(json['pans']),
       levels: levels,
@@ -1576,6 +1586,19 @@ class SettingsRepository {
   Future<StoredMixSettings> loadMixSettings(String device) async {
     await _serializedWrite;
     final saved = await _readMixSettings();
+    if (saved.legacyMonitorGain) {
+      // Persist the repaired unity gain once, so storage stops carrying it.
+      // Best effort: the repaired value is already what every reader sees,
+      // and a failing store must not abort startup; a later mix write
+      // repairs it.
+      try {
+        await _serialize(
+          () async => _writeMixSettings(await _readMixSettings()),
+        );
+      } on Object {
+        // Retried implicitly by the next mix write.
+      }
+    }
     return (
       trackLevels: saved.trackLevels,
       trackPans: saved.pans,
@@ -2179,6 +2202,7 @@ class _SavedMixSettings {
     Map<int, int>? laneCounts,
     Map<String, StoredInputSetup>? inputSetups,
     Map<String, StoredOutputSetup>? outputSetups,
+    this.legacyMonitorGain = false,
   }) : trackLevels = trackLevels ?? {},
        pans = pans ?? {},
        levels = levels ?? {},
@@ -2198,4 +2222,7 @@ class _SavedMixSettings {
   final Map<int, int> laneCounts;
   final Map<String, StoredInputSetup> inputSetups;
   final Map<String, StoredOutputSetup> outputSetups;
+
+  /// A pre-range live-input gain was read as unity and should be written back.
+  final bool legacyMonitorGain;
 }

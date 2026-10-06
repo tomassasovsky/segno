@@ -760,12 +760,45 @@ void main() {
     fxPersistDebounce: Duration.zero,
   );
 
+  test('after a failed restore, envelope edits are refused and saved '
+      'settings stay intact', () async {
+    final store = FakeKeyValueStore();
+    store.values.addAll({
+      'mix_settings': '{"monitorLevels":{"0":0.5,"1":2.5}}',
+      'monitor_input_mode.0': 'on',
+      'monitor_output.0': 3,
+    });
+    settings = SettingsRepository(store: store);
+    final cubit = build();
+    await cubit.load();
+    expect(cubit.state.restoreFailed, isTrue);
+    final saved = Map<String, Object>.of(store.values);
+    await cubit.setMode(0, MonitorMode.off);
+    await cubit.setOutputMask(0, 1);
+    cubit.addEffect(0);
+    await cubit.flushPersistence();
+    expect(store.values, saved);
+    verifyNever(
+      () => repository.setMonitorInputMode(
+        input: any(named: 'input'),
+        mode: any(named: 'mode'),
+      ),
+    );
+    verifyNever(
+      () => repository.setMonitorOutput(
+        input: any(named: 'input'),
+        mask: any(named: 'mask'),
+      ),
+    );
+    await cubit.close();
+  });
+
   blocTest<MonitorCubit, MonitorState>(
     'invalid saved gain reports load error before any monitor mutation',
     setUp: () {
       final store = FakeKeyValueStore();
       store.values.addAll({
-        'mix_settings': '{"monitorLevels":{"0":0.5,"1":1.5}}',
+        'mix_settings': '{"monitorLevels":{"0":0.5,"1":2.5}}',
         'monitor_input_mode.0': 'on',
         'monitor_output.0': 3,
       });

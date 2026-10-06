@@ -154,6 +154,48 @@ void main() {
     },
   );
 
+  for (final failed in [false, true]) {
+    test('a live input edit ${failed ? 'is refused' : 'reaches the engine'} '
+        'when its restore ${failed ? 'has failed' : 'succeeded'}', () async {
+      when(() => persistence.inputRestoreFailed).thenReturn(failed);
+      when(() => repository.monitorEffects(0)).thenReturn(const []);
+      when(() => repository.monitorChainEnabled(0)).thenReturn(true);
+      when(
+        () => repository.setMonitorEffects(
+          input: 0,
+          effects: any(named: 'effects'),
+          chainEnabled: any(named: 'chainEnabled'),
+          allowUnavailable: any(named: 'allowUnavailable'),
+        ),
+      ).thenReturn(EngineResult.ok);
+      final input = FxCubit(
+        repository: repository,
+        settings: settings,
+        persistence: persistence,
+        initial: const FxDestination.liveInput(0),
+      );
+      addTearDown(input.close);
+      final result = await input.appendChoice(
+        const FxDestination.liveInput(0),
+        const FxSingleChoice(TrackEffectType.reverb),
+      );
+      void write() => repository.setMonitorEffects(
+        input: 0,
+        effects: any(named: 'effects'),
+        chainEnabled: any(named: 'chainEnabled'),
+        allowUnavailable: any(named: 'allowUnavailable'),
+      );
+      if (failed) {
+        expect(result.status, FxEditStatus.refused);
+        verifyNever(write);
+      } else {
+        expect(result.status, isNot(FxEditStatus.refused));
+        expect(result.status, isNot(FxEditStatus.stale));
+        verify(write).called(greaterThan(0));
+      }
+    });
+  }
+
   test('native refusal leaves the change unsaved', () async {
     when(
       () => repository.settleFxRecipes(
