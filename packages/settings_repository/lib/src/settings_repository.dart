@@ -1943,6 +1943,78 @@ class SettingsRepository {
 
   String _trackRecordTimingKey(int channel) => 'track_record_timing.$channel';
 
+  /// The stored Record timing gate alone, so one unreadable timing key can
+  /// be repaired without the others.
+  Future<bool?> readRecordTimingGateCheckpoint() async {
+    await _serializedWrite;
+    return _store.getBool(_quantizeKey);
+  }
+
+  /// The stored Record timing division alone; see
+  /// [readRecordTimingGateCheckpoint].
+  Future<int?> readRecordTimingDivisionCheckpoint() async {
+    await _serializedWrite;
+    final division = await _store.getInt(_quantizeDivKey);
+    if (division != null && (division < 0 || division > 5)) {
+      throw FormatException('Invalid Record timing division', division);
+    }
+    return division;
+  }
+
+  /// One track's stored Record timing override alone; see
+  /// [readRecordTimingGateCheckpoint].
+  Future<int?> readRecordTimingOverrideCheckpoint(int channel) async {
+    await _serializedWrite;
+    final timing = await _store.getInt(_trackRecordTimingKey(channel));
+    if (timing != null && (timing < 0 || timing > 6)) {
+      throw FormatException('Invalid Record timing override', timing);
+    }
+    return timing;
+  }
+
+  /// Writes and verifies the gate alone, including absence.
+  Future<void> restoreRecordTimingGateCheckpoint({required bool? quantize}) =>
+      _serialize(
+        () => _writeBoolScalar(
+          _quantizeKey,
+          quantize,
+          'Record timing gate was not confirmed',
+        ),
+      );
+
+  /// Writes and verifies the division alone, including absence.
+  Future<void> restoreRecordTimingDivisionCheckpoint(int? division) {
+    if (division != null && (division < 0 || division > 5)) {
+      throw FormatException('Invalid Record timing division', division);
+    }
+    return _serialize(
+      () => _writeIntScalar(
+        _quantizeDivKey,
+        division,
+        'Record timing scalar was not confirmed',
+      ),
+    );
+  }
+
+  /// Writes and verifies one track's override alone, including absence.
+  Future<void> restoreRecordTimingOverrideCheckpoint({
+    required int channel,
+    required int? timing,
+  }) {
+    if (channel < 0 ||
+        channel >= 8 ||
+        (timing != null && (timing < 0 || timing > 6))) {
+      throw FormatException('Invalid Record timing override', timing);
+    }
+    return _serialize(
+      () => _writeIntScalar(
+        _trackRecordTimingKey(channel),
+        timing,
+        'Record timing scalar was not confirmed',
+      ),
+    );
+  }
+
   static const String _overdubDecayKey = 'looper.overdub_decay';
   String _trackOverdubDecayKey(int channel) => 'track_overdub_decay.$channel';
 

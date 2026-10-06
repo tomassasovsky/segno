@@ -28,8 +28,15 @@ abstract interface class SettingsFamily<V extends Object, C> {
   /// Writes and verifies [address]'s [checkpoint], including absence.
   Future<void> writeCheckpoint(Object? address, C checkpoint);
 
-  /// [address]'s checkpoint for the [durable] value.
-  C checkpointOf(V durable, Object? address);
+  /// [address]'s checkpoint for the [durable] value. [stored] is the
+  /// checkpoint read before the write, for a family whose checkpoint also
+  /// holds other addresses.
+  C checkpointOf(V durable, Object? address, C stored);
+
+  /// The other addresses an ordinary write to [address] settles, moving the
+  /// value from [before] to [after]. Their revisions advance and each is
+  /// reported as superseded; most families return none.
+  List<Object?> supersededBy(Object? address, V before, V after);
 
   /// The durable value after a write to [address]: [durable] with [address]
   /// taken from [written]. A unit family returns [written].
@@ -113,9 +120,10 @@ class SettingsOwner<V extends Object, C> {
   final SettingsFamily<V, C> _family;
   late final StreamSubscription<LooperState> _stateSubscription;
   late final StreamSubscription<EngineResult> _failureSubscription;
-  final _ordinary = StreamController<({Object? address, V value})>.broadcast(
-    sync: true,
-  );
+  final _ordinary =
+      StreamController<({Object? address, V value, bool superseded})>.broadcast(
+        sync: true,
+      );
   final _failures = StreamController<SettingOutcome>.broadcast(sync: true);
   final _changes = StreamController<void>.broadcast(sync: true);
   final _recovered = StreamController<void>.broadcast(sync: true);
@@ -173,7 +181,10 @@ class SettingsOwner<V extends Object, C> {
   bool get captureLocked => _family.captureLocked;
 
   /// Accepted ordinary values, with the address each one wrote.
-  Stream<({Object? address, V value})> get ordinaryChanges => _ordinary.stream;
+  /// A superseded address had no choice of its own: another address's
+  /// write settled it.
+  Stream<({Object? address, V value, bool superseded})> get ordinaryChanges =>
+      _ordinary.stream;
 
   /// Every refusal and recovery obligation, reported once.
   Stream<SettingOutcome> get failures => _failures.stream;
@@ -415,8 +426,9 @@ class SettingsOwner<V extends Object, C> {
       // The value is computed from what the engine accepted last.
       final V value;
       final V durable;
+      final before = _family.live;
       try {
-        value = write.change(_family.live);
+        value = write.change(before);
         durable = _family.durableAfter(
           _family.durable,
           write.released?.call(value) ?? value,
@@ -451,6 +463,8 @@ class SettingsOwner<V extends Object, C> {
       try {
         checkpoint = await _family.readCheckpoint(write.address);
       } on Object catch (error) {
+        // A read that fails after the lifetime moved on reports nothing.
+        if (!current()) return const SettingOutcome(SettingStatus.superseded);
         return _report(
           SettingOutcome(SettingStatus.rejected, error: error),
         );
@@ -459,7 +473,7 @@ class SettingsOwner<V extends Object, C> {
       try {
         await _family.writeCheckpoint(
           write.address,
-          _family.checkpointOf(durable, write.address),
+          _family.checkpointOf(durable, write.address, checkpoint),
         );
       } on Object catch (error) {
         // A write may land and then throw: restore the exact checkpoint.
@@ -493,8 +507,19 @@ class SettingsOwner<V extends Object, C> {
         // even when the lifetime moved on before this resumed.
         if (write.ordinary) {
           _revisions[write.address] = revisionOf(write.address) + 1;
+          final superseded = _family.supersededBy(write.address, before, value);
+          for (final address in superseded) {
+            _revisions[address] = revisionOf(address) + 1;
+          }
           if (!_ordinary.isClosed) {
-            _ordinary.add((address: write.address, value: value));
+            _ordinary.add((
+              address: write.address,
+              value: value,
+              superseded: false,
+            ));
+            for (final address in superseded) {
+              _ordinary.add((address: address, value: value, superseded: true));
+            }
           }
         }
         return _report(

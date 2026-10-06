@@ -46,7 +46,7 @@ void main() {
     late List<String> log;
 
     setUpAll(() {
-      registerFallbackValue(const LooperPersistFlush());
+      registerFallbackValue(const LooperCutSoundPressed());
     });
 
     setUp(() {

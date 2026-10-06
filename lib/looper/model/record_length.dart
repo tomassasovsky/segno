@@ -13,6 +13,70 @@ final class RecordLengthAddress extends Equatable {
   List<Object?> get props => [channel];
 }
 
+/// The looper mode, stored beside the length presets it couples with.
+final class LooperModeAddress extends Equatable {
+  const LooperModeAddress();
+
+  @override
+  List<Object?> get props => const [];
+}
+
+/// The length default, every track override and the looper mode: the value
+/// the Record length owner holds.
+final class RecordLengthVector extends Equatable {
+  /// Copies overrides so a caller cannot change an accepted vector.
+  RecordLengthVector({
+    required this.defaultBars,
+    required Map<int, int> trackOverrides,
+    required this.mode,
+  }) : trackOverrides = Map.unmodifiable(trackOverrides);
+
+  final int defaultBars;
+
+  /// Explicit presets, including zero (Auto); absent tracks inherit.
+  final Map<int, int> trackOverrides;
+  final LooperMode mode;
+
+  /// The bars [address] holds; null for a track that inherits.
+  int? at(RecordLengthAddress address) => switch (address.channel) {
+    null => defaultBars,
+    final channel => trackOverrides[channel],
+  };
+
+  /// This vector with [address] set to [bars]; null removes a track's
+  /// override.
+  RecordLengthVector withBars(RecordLengthAddress address, int? bars) {
+    final channel = address.channel;
+    if (!address.isValid ||
+        (channel == null && bars == null) ||
+        (bars != null && (bars < 0 || bars > 64))) {
+      throw ArgumentError('Invalid record length at $address');
+    }
+    return RecordLengthVector(
+      defaultBars: channel == null ? bars! : defaultBars,
+      trackOverrides: channel == null
+          ? trackOverrides
+          : {
+              for (final entry in trackOverrides.entries)
+                if (entry.key != channel) entry.key: entry.value,
+              channel: ?bars,
+            },
+      mode: mode,
+    );
+  }
+
+  /// This vector in [next] mode with [overrides] in place of its own.
+  RecordLengthVector withMode(LooperMode next, {Map<int, int>? overrides}) =>
+      RecordLengthVector(
+        defaultBars: defaultBars,
+        trackOverrides: overrides ?? trackOverrides,
+        mode: next,
+      );
+
+  @override
+  List<Object?> get props => [defaultBars, trackOverrides, mode];
+}
+
 /// Confirmed presets and their current edit eligibility.
 final class RecordLengthSnapshot extends Equatable {
   RecordLengthSnapshot({

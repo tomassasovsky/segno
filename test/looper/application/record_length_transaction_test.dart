@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno_engine/segno_engine.dart'
     show EngineSnapshot, TrackSnapshot;
@@ -159,7 +160,8 @@ void main() {
       },
     );
     test(
-      'malformed last slot prevents every length and mode restore',
+      'malformed last slot prevents every length and mode restore until '
+      'Retry repairs it',
       () async {
         store.values.addAll({
           'looper.default_length_bars': 8,
@@ -170,21 +172,25 @@ void main() {
         expect(repository.sessionTransport.defaultLengthPresetBars, 0);
         expect(repository.sessionTransport.looperMode, LooperMode.multi);
         expect(store.values['tempo.length_preset.7'], 65);
-        expect((await owner.recoverRecordLength()).isOk, isFalse);
+        // Retry removes the unreadable key and restores the rest.
+        expect((await owner.owner.recover()).isOk, isTrue);
+        expect(store.values.containsKey('tempo.length_preset.7'), isFalse);
+        expect(owner.recordLengthSnapshot!.defaultBars, 8);
+        expect(owner.recordLengthSnapshot!.mode, LooperMode.free);
       },
     );
     test(
       'failed startup exposes persistent Retry and revalidates on recovery',
       () async {
-        final failures = <RecordLengthOutcome>[];
-        final subscription = owner.recordLengthFailures.listen(failures.add);
+        final failures = <SettingOutcome>[];
+        final subscription = owner.owner.failures.listen(failures.add);
         store.readFailure = true;
         await owner.load();
         expect(owner.recordLengthSnapshot, isNull);
-        expect(failures.single.status, RecordLengthStatus.recoveryRequired);
-        expect((await owner.flushRecordLength()).isOk, isFalse);
+        expect(failures.single.status, SettingStatus.recoveryRequired);
+        expect((await owner.owner.flush()).isOk, isFalse);
         store.readFailure = false;
-        expect((await owner.recoverRecordLength()).isOk, isTrue);
+        expect((await owner.owner.recover()).isOk, isTrue);
         expect(owner.recordLengthSnapshot!.defaultBars, 0);
         await subscription.cancel();
       },
@@ -288,23 +294,28 @@ void main() {
         expect(repository.state.status.isConnected, isTrue);
         expect(store.values.containsKey('tempo.length_preset.0'), isFalse);
         engine.publishLengthCommands = true;
-        expect((await owner.recoverRecordLength()).isOk, isTrue);
+        expect((await owner.owner.recover()).isOk, isTrue);
         expect((await hold()).isOk, isTrue);
       },
     );
     test(
-      'unknown vector stops, blocks restart, and explicit Retry '
-      'preserves prior',
+      'an unknown vector is owed without a stop, and Retry lands the '
+      'Released value',
       () async {
         await start();
         engine
           ..publishLengthCommands = false
           ..corruptLength = true;
         expect((await hold()).status, RecordLengthStatus.recoveryRequired);
-        expect(repository.state.status.isConnected, isFalse);
-        expect(repository.startEngine(const EngineConfig()).isOk, isFalse);
-        expect((await owner.recoverRecordLength()).isOk, isTrue);
-        expect(owner.recordLengthSnapshot!.trackOverrides, isEmpty);
+        expect(repository.sessionTransport.isRunning, isTrue);
+        expect(engine.stopCalls, 0);
+        // Storage keeps the Released value the receipt owes.
+        expect(store.values['tempo.length_preset.0'], 4);
+        engine
+          ..publishLengthCommands = true
+          ..corruptLength = false;
+        expect((await owner.owner.recover()).isOk, isTrue);
+        expect(owner.recordLengthSnapshot!.trackOverrides, {0: 4});
       },
     );
     test(
@@ -361,7 +372,7 @@ void main() {
         store.failures = 2;
         expect((await hold()).status, RecordLengthStatus.recoveryRequired);
         expect((await hold()).isOk, isFalse);
-        expect((await owner.recoverRecordLength()).isOk, isTrue);
+        expect((await owner.owner.recover()).isOk, isTrue);
         expect(store.values['tempo.length_preset.0'], 0);
         expect((await hold()).isOk, isTrue);
       },
@@ -379,13 +390,14 @@ void main() {
         )).isOk,
         isFalse,
       );
-      final saved = await owner.runRecordExclusive(
+      final saved = await owner.owner.runExclusive(
         () async => owner.durableRecordLengthSnapshot,
       );
       expect(saved.trackOverrides, {0: 4});
       expect(owner.recordLengthSnapshot!.trackOverrides, {0: 16});
       expect(repository.state.status.isConnected, isTrue);
-      expect((await owner.flushRecordLength()).isOk, isFalse);
+      // The refused release owes nothing: the flush is clean.
+      expect((await owner.owner.flush()).isOk, isTrue);
     });
     test('reconnect during initial reads resumes validated startup', () async {
       store.readGate = Completer<void>();
@@ -425,21 +437,22 @@ void main() {
         store.readFailure = true;
         store.readGate!.complete();
         expect((await writing).status, RecordLengthStatus.superseded);
-        expect((await owner.flushRecordLength()).isOk, isTrue);
+        expect((await owner.owner.flush()).isOk, isTrue);
         expect(owner.recordLengthSnapshot!.trackOverrides, isEmpty);
       },
     );
     test(
-      'receipt timeout restores scalar and requires explicit owner Retry',
+      'a receipt timeout keeps the owed Released value and Retry lands it',
       () async {
         await start();
         engine.commandsAreSettled = false;
         expect((await hold()).status, RecordLengthStatus.recoveryRequired);
-        expect(store.values.containsKey('tempo.length_preset.0'), isFalse);
-        expect((await owner.flushRecordLength()).isOk, isFalse);
+        expect(store.values['tempo.length_preset.0'], 4);
+        expect((await owner.owner.flush()).isOk, isFalse);
+        expect(engine.stopCalls, 0);
         engine.commandsAreSettled = true;
-        expect((await owner.recoverRecordLength()).isOk, isTrue);
-        expect(owner.recordLengthSnapshot!.trackOverrides, isEmpty);
+        expect((await owner.owner.recover()).isOk, isTrue);
+        expect(owner.recordLengthSnapshot!.trackOverrides, {0: 4});
       },
     );
     test(

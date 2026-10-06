@@ -110,7 +110,8 @@ void main() {
     },
   );
   test(
-    'successful receipt with wrong vector is recovery, not acceptance',
+    'successful receipt with wrong vector is owed, not accepted, and Retry '
+    'lands it without a stop',
     () async {
       await start();
       engine.corrupt = true;
@@ -120,15 +121,33 @@ void main() {
         EngineResult.invalid,
       );
       expect(repository.recordTimingRecoveryRequired, isTrue);
-      expect(
-        repository.startEngine(const EngineConfig()),
-        EngineResult.notReady,
-      );
-      expect(repository.recoverRecordTimingSettings(), EngineResult.ok);
       expect(repository.defaultRecordTiming, RecordTiming.immediately);
+      expect(
+        repository.recordTimingRestartIntent.defaultTiming,
+        RecordTiming.quarter,
+      );
+      expect(engine.calls.where((c) => c == 'stop'), isEmpty);
+      engine.corrupt = false;
+      expect(repository.recoverRecordTimingSettings(), EngineResult.ok);
+      expect(await repository.settleRecordTimingSettings(), EngineResult.ok);
+      expect(repository.recordTimingRecoveryRequired, isFalse);
+      expect(repository.defaultRecordTiming, RecordTiming.quarter);
     },
   );
-  test('autonomous startup receipt deadline blocks unsafe restart', () async {
+  test('an owed timing vector does not refuse a Mixer edit', () async {
+    await start();
+    engine.corrupt = true;
+    repository.setRecordTiming(RecordTiming.quarter);
+    expect(
+      await repository.settleRecordTimingSettings(),
+      EngineResult.invalid,
+    );
+    expect(repository.recordTimingRecoveryRequired, isTrue);
+    expect(repository.setVolume(.5, channel: 1), EngineResult.ok);
+    expect(await repository.settleMixSettings(), EngineResult.ok);
+  });
+  test('autonomous startup receipt deadline owes the vector without blocking '
+      'a restart', () async {
     repository.setRecordTimingSettings(
       defaultTiming: RecordTiming.quarter,
       rememberedDivision: GridDivision.quarter,
@@ -142,9 +161,9 @@ void main() {
       EngineResult.notReady,
     );
     expect(repository.recordTimingRecoveryRequired, isTrue);
-    expect(repository.startEngine(const EngineConfig()), EngineResult.notReady);
+    expect(engine.calls.where((c) => c == 'stop'), isEmpty);
+    // A restart replays the owed vector instead of being refused.
     engine.commandsAreSettled = true;
-    expect(repository.recoverRecordTimingSettings(), EngineResult.ok);
     expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
     expect(await repository.settleRecordTimingSettings(), EngineResult.ok);
     expect(repository.defaultRecordTiming, RecordTiming.quarter);

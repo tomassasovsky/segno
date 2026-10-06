@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -54,7 +54,7 @@ Map<LooperMode, ({String label, String sub})> looperModeLabels(
 /// chooser on the way through and leave it open when the confirm was declined
 /// or the change was refused.
 ///
-/// Needs [LooperBloc] and [LooperRepository] on [context].
+/// Needs [RecordOptionsCubit] and [LooperRepository] on [context].
 Future<bool> requestLooperModeChange(
   BuildContext context, {
   required LooperMode current,
@@ -62,7 +62,7 @@ Future<bool> requestLooperModeChange(
 }) async {
   if (next == current) return false;
   final l10n = context.l10n;
-  final bloc = context.read<LooperBloc>();
+  final record = context.read<RecordOptionsCubit>();
   final repository = context.read<LooperRepository>();
   var gate = repository.looperModeGate(next);
   if (gate == LooperModeGate.playing) {
@@ -77,7 +77,7 @@ Future<bool> requestLooperModeChange(
     _showRefusal(context, reason);
     return false;
   }
-  bloc.add(LooperModeChanged(next));
+  unawaited(record.setLooperMode(next));
   return true;
 }
 

@@ -62,20 +62,25 @@ void main() {
       expect(repository.trackLengthPresetOverrides, isEmpty);
     });
     test(
-      'partial vector stops and blocks restart until explicit recovery',
+      'a partial vector is owed without a stop, and Retry lands it',
       () async {
         await start();
         engine.corrupt = true;
         repository.setTrackLengthPreset(channel: 0, bars: 8);
         expect(await repository.settleLengthSettings(), EngineResult.invalid);
         expect(repository.lengthRecoveryRequired, isTrue);
-        expect(repository.startEngine(const EngineConfig()).isOk, isFalse);
+        expect(repository.lengthRestartIntent.trackOverrides, {0: 8});
+        expect(engine.calls.where((c) => c == 'stop'), isEmpty);
+        engine.corrupt = false;
         expect(repository.recoverLengthSettings().isOk, isTrue);
-        expect(repository.trackLengthPresetOverrides, isEmpty);
+        expect((await repository.settleLengthSettings()).isOk, isTrue);
+        expect(repository.lengthRecoveryRequired, isFalse);
+        expect(repository.trackLengthPresetOverrides, {0: 8});
+        expect(engine.publishedLengths[0], 8);
       },
     );
     test(
-      'first replay deadline stops a globally withheld startup',
+      'a globally withheld startup owes each replay and keeps audio running',
       () async {
         repository.setLengthSettings(
           defaultBars: 4,
@@ -83,21 +88,26 @@ void main() {
           mode: LooperMode.free,
         );
         engine.commandsAreSettled = false;
-        // The global callback fence is withheld for every family. Timing's
-        // earlier replay deadline stops the device and cancels later pending
-        // families; only that first failing family reports recovery.
-        final failure = repository.recordTimingFailures.first;
-        repository.startEngine(const EngineConfig());
+        // The global callback fence is withheld for every family. Each
+        // replay's deadline owes its own vector; none stops the device.
+        final timing = repository.recordTimingFailures.first;
+        final length = repository.lengthSettingsFailures.first;
+        expect(repository.startEngine(const EngineConfig()).isOk, isTrue);
         expect(
-          await failure.timeout(const Duration(seconds: 2)),
+          await timing.timeout(const Duration(seconds: 2)),
+          EngineResult.notReady,
+        );
+        expect(
+          await length.timeout(const Duration(seconds: 2)),
           EngineResult.notReady,
         );
         expect(repository.recordTimingRecoveryRequired, isTrue);
-        expect(repository.lengthRecoveryRequired, isFalse);
-        expect(repository.startEngine(const EngineConfig()).isOk, isFalse);
+        expect(repository.lengthRecoveryRequired, isTrue);
+        expect(engine.calls.where((c) => c == 'stop'), isEmpty);
         engine.commandsAreSettled = true;
         expect(repository.recoverRecordTimingSettings().isOk, isTrue);
-        repository.startEngine(const EngineConfig());
+        expect(repository.recoverLengthSettings().isOk, isTrue);
+        expect((await repository.settleRecordTimingSettings()).isOk, isTrue);
         expect((await repository.settleLengthSettings()).isOk, isTrue);
         expect(engine.publishedLengths, {
           for (var c = 0; c < 7; c++) c: 4,
@@ -117,12 +127,13 @@ void main() {
           EngineResult.notReady,
         );
         expect(repository.lengthRecoveryRequired, isTrue);
-        expect(repository.startEngine(const EngineConfig()).isOk, isFalse);
+        expect(engine.calls.where((c) => c == 'stop'), isEmpty);
+        // A restart is not refused; it replays the owed vector.
         engine.commandsAreSettled = true;
-        expect(repository.recoverLengthSettings().isOk, isTrue);
-        repository.startEngine(const EngineConfig());
+        expect(repository.startEngine(const EngineConfig()).isOk, isTrue);
         expect((await repository.settleLengthSettings()).isOk, isTrue);
-        expect(engine.publishedLengths, {for (var c = 0; c < 8; c++) c: 0});
+        expect(repository.lengthRecoveryRequired, isFalse);
+        expect(engine.publishedLengths, {for (var c = 0; c < 8; c++) c: 4});
       },
     );
     test(
@@ -137,6 +148,57 @@ void main() {
         expect(repository.lengthRecoveryRequired, isTrue);
       },
     );
+    TrackSnapshot recording() => const TrackSnapshot(
+      state: TrackState.recording,
+      volume: 1,
+      muted: false,
+      lengthFrames: 0,
+      undoDepth: 0,
+      rms: 0,
+      peak: 0,
+    );
+
+    test(
+      'a take that starts after the vector lands is accepted with no stop',
+      () async {
+        await start();
+        engine.commandsAreSettled = false;
+        expect(
+          repository.setTrackLengthPreset(channel: 0, bars: 8).isOk,
+          isTrue,
+        );
+        // The vector has landed; a take begins before the receipt is read.
+        engine.nextSnapshot = engine.nextSnapshot.copyWith(
+          looperMode: LooperMode.free,
+          tracks: [recording(), ...engine.nextSnapshot.tracks.skip(1)],
+        );
+        engine.commandsAreSettled = true;
+        expect((await repository.settleLengthSettings()).isOk, isTrue);
+        expect(repository.lengthRecoveryRequired, isFalse);
+        expect(repository.trackLengthPresetOverrides, {0: 8});
+        expect(engine.calls.where((c) => c == 'stop'), isEmpty);
+      },
+    );
+
+    test('one capture lock, and a stopped engine never holds it', () async {
+      await start();
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        tracks: [recording(), ...engine.nextSnapshot.tracks.skip(1)],
+      );
+      expect(repository.captureLocked, isTrue);
+      expect(repository.recordLengthCaptureLocked, isTrue);
+      expect(repository.recordTimingCaptureLocked, isTrue);
+      expect(repository.clickModeCaptureLocked, isTrue);
+      expect(repository.recordStartCaptureLocked, isTrue);
+      repository.stopEngine();
+      // The last snapshot still shows the take; the engine is stopped.
+      expect(engine.snapshot().tracks.first.state, TrackState.recording);
+      expect(repository.captureLocked, isFalse);
+      expect(repository.recordLengthCaptureLocked, isFalse);
+      expect(repository.recordTimingCaptureLocked, isFalse);
+      expect(repository.setDefaultLengthPreset(8), EngineResult.ok);
+    });
+
     test(
       'receipt installs durable Released before immediate restart',
       () async {

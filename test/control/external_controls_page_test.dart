@@ -129,6 +129,8 @@ void main() {
         defaultTiming: any(named: 'defaultTiming'),
         rememberedDivision: any(named: 'rememberedDivision'),
         trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
+        editMask: any(named: 'editMask'),
       ),
     ).thenAnswer((call) {
       confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
@@ -152,6 +154,7 @@ void main() {
       () => looper.setLengthSettings(
         defaultBars: any(named: 'defaultBars'),
         overrides: any(named: 'overrides'),
+        released: any(named: 'released'),
         mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
