@@ -2,8 +2,6 @@
     "@@locale": "en",
     "appMenuLabel": "Segno",
     "settingsMenuItem": "Settings…",
-    "settingsSectionUpdates": "Updates",
-    "updatesIntro": "Keep Segno current. Checking is read-only — downloading and installing an update is always your choice.",
     "updatesInstalledVersionLabel": "Installed version",
     "updatesChannelLabel": "Channel",
     "updatesVersionValue": "v{version}",
@@ -30,33 +28,7 @@
             }
         }
     },
-    "updatesAvailableTitle": "Update available: v{version}",
-    "@updatesAvailableTitle": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesNotesFallback": "A new version is available.",
     "updatesDownloadTitle": "Download & install",
-    "updatesDownloadSubtitle": "Stage v{version} to the standby system. Nothing restarts until you choose to.",
-    "@updatesDownloadSubtitle": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesDownloadingLabel": "Downloading… {percent}%",
-    "@updatesDownloadingLabel": {
-        "placeholders": {
-            "percent": {
-                "type": "int"
-            }
-        }
-    },
-    "updatesStagedTitle": "Restart to apply",
     "updatesStagedSubtitle": "v{version} is installed and ready. Restart when you're not mid-session.",
     "@updatesStagedSubtitle": {
         "placeholders": {
@@ -67,14 +39,6 @@
     },
     "updatesRestartBusySubtitle": "Stop recording and clear your session before restarting.",
     "updatesErrorTitle": "Update check failed",
-    "updatesSizeMb": "{mb} MB",
-    "@updatesSizeMb": {
-        "placeholders": {
-            "mb": {
-                "type": "String"
-            }
-        }
-    },
     "updateBannerTitle": "Update available — v{version}",
     "@updateBannerTitle": {
         "placeholders": {
@@ -470,7 +434,6 @@
         }
     },
     "trackSettingsTooltip": "Track settings",
-    "quantizeRecording": "Quantize recording",
     "done": "Done",
     "defaultWithState": "Default ({state})",
     "@defaultWithState": {
@@ -483,24 +446,11 @@
     "toggleOn": "On",
     "toggleOff": "Off",
     "auto": "Auto",
-    "settingsSectionView": "View",
-    "settingsSectionAudio": "Audio",
-    "settingsSectionTracks": "Tracks",
-    "settingsKicker": "SETTINGS",
-    "settingsTitle": "Segno",
-    "settingsViewIntro": "Switch layouts, tune looper defaults, and toggle the selected-track display.",
     "viewGroupLabel": "VIEW",
     "waveformWindowTitle": "Selected-track display",
     "waveformWindowSubtitle": "Open a second window showing the selected track and its waveform",
     "highContrastTitle": "High contrast",
     "highContrastSubtitle": "Force a brighter, higher-contrast palette. On desktop the OS contrast setting is not applied automatically.",
-    "looperGroupLabel": "LOOPER",
-    "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Mute mode they mute / unmute. FX mode (where track presses toggle FX chains) is not offered here — it is switched into live, never booted into.",
-    "recordModeLabel": "Record",
-    "recordModeSub": "Arm & capture",
-    "muteModeLabel": "Mute",
-    "muteModeSub": "Mute / unmute",
-    "refreshRateIntro": "UI refresh rate — how often the waveforms and meters update. Higher is smoother but uses more CPU.",
     "refreshRateHz": "{hz} Hz",
     "@refreshRateHz": {
         "placeholders": {
@@ -509,11 +459,6 @@
             }
         }
     },
-    "refreshRateLowCpu": "Low CPU",
-    "refreshRateSmoothest": "Smoothest",
-    "defaultLabel": "Default",
-    "tracksIntro": "Rename tracks.",
-    "tracksGroupLabel": "TRACKS",
     "lengthPresetBars": "{bars, plural, one{1 bar} other{{bars} bars}}",
     "@lengthPresetBars": {
         "placeholders": {
@@ -885,30 +830,8 @@
         }
     },
     "startEngine": "Start engine",
-    "sampleRateGroup": "Sample rate",
-    "bufferSizeGroup": "Buffer size",
-    "asioDriverGroup": "ASIO driver",
-    "asioChannelCounts": "{inputs} in / {outputs} out",
-    "@asioChannelCounts": {
-        "placeholders": {
-            "inputs": {
-                "type": "int"
-            },
-            "outputs": {
-                "type": "int"
-            }
-        }
-    },
-    "noAsioDriverTitle": "No ASIO driver found",
-    "noAsioDriverMessage": "Segno uses ASIO on Windows. Install your interface's ASIO driver, or get a generic one from ASIO4ALL, then reopen settings.",
-    "downloadAsio4all": "Get ASIO4ALL",
-    "sampleRateLabel": "Sample rate",
-    "bufferLabel": "Buffer",
     "roundTripLatencyLabel": "Round-trip latency",
-    "recordOffsetLabel": "Record offset",
-    "applyLabel": "Set",
     "measuringEllipsis": "Measuring…",
-    "measureRoundTripLatency": "Measure round-trip latency",
     "stopEngine": "Stop engine",
     "setupBlurbEngine": "Pick the resolution and the latency / stability trade-off.",
     "setupBlurbInput": "Choose how your incoming signal is monitored and routed.",
@@ -946,14 +869,6 @@
             }
         }
     },
-    "sampleRateHz": "{rate} Hz",
-    "@sampleRateHz": {
-        "placeholders": {
-            "rate": {
-                "type": "int"
-            }
-        }
-    },
     "loopbackDetectedNote": "Loopback detected{deviceClause} — latency is auto-measured on start as a digital-path estimate. Use a cable for the true analog figure.",
     "@loopbackDetectedNote": {
         "placeholders": {
@@ -984,11 +899,7 @@
             }
         }
     },
-    "audioSettingsIntro": "Choose the audio device and check the measured round-trip latency.",
-    "outputDeviceGroupUpper": "OUTPUT DEVICE",
-    "inputDeviceGroupUpper": "INPUT DEVICE",
     "recordingGroupLabel": "RECORDING",
-    "maxLoopLengthIntro": "Maximum loop length per track. A higher cap reserves more memory per track. Changing it reopens the device.",
     "maxLoopDefault30s": "Default (30 s)",
     "maxLoopMinutes": "{minutes} min",
     "@maxLoopMinutes": {
@@ -998,25 +909,8 @@
             }
         }
     },
-    "quantizeRecordingSubtitle": "Snap record start/stop to the loop grid. The default for all tracks; override per track from its routing dialog.",
-    "overdubOnSecondPressTitle": "Overdub on second press",
-    "overdubOnSecondPressSubtitle": "A second record press keeps layering (rec/dub) instead of stopping and playing back.",
-    "soundActivatedRecordingTitle": "Sound-activated recording",
-    "soundActivatedRecordingSubtitle": "After pressing record, capture starts when the input signal begins, instead of immediately.",
-    "defaultLoopLengthIntro": "Default loop length for new recordings. Auto rounds up to whole base loops; a fixed length records exactly that many. Override it per track from its routing dialog.",
-    "statusGroupLabel": "STATUS",
     "deviceLabel": "Device",
-    "notRunning": "Not running",
-    "measureLatencySubtitle": "Re-run the loopback latency measurement",
     "systemDefault": "System default",
-    "systemDefaultNamed": "System default ({deviceName})",
-    "@systemDefaultNamed": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
     "effectNone": "None",
     "effectDrive": "Drive",
     "effectFilter": "Filter",
@@ -1142,51 +1036,6 @@
     "pedalSimPanelTitle": "Pedal",
     "pedalSimExpandTooltip": "Show the on-screen pedal",
     "pedalSimCollapseTooltip": "Hide the on-screen pedal",
-    "pedalSimFootswitchSemantics": "{control} footswitch",
-    "@pedalSimFootswitchSemantics": {
-        "description": "Accessibility label for an on-screen pedal footswitch.",
-        "placeholders": {
-            "control": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalSimTrackSemantics": "{trackName}, {state}",
-    "@pedalSimTrackSemantics": {
-        "description": "Accessibility label for an on-screen pedal track LED and its lit state.",
-        "placeholders": {
-            "trackName": {
-                "type": "String"
-            },
-            "state": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalSimLedOff": "off",
-    "pedalSimLedArmed": "armed",
-    "pedalSimLedRecording": "recording",
-    "pedalSimLedChainEnabled": "FX chain enabled",
-    "pedalSimLedActive": "action active",
-    "@pedalSimLedActive": {
-        "description": "A Custom pedal's mapped function is active, or its momentary action is being held."
-    },
-    "pedalSimLedInactive": "action inactive",
-    "@pedalSimLedInactive": {
-        "description": "A Custom pedal's mapped function is inactive, unavailable, or unassigned."
-    },
-    "pedalSimLedChainDisabled": "FX chain bypassed",
-    "@pedalSimLedChainDisabled": {
-        "description": "Accessibility reading of a dark track LED while the pedal is in FX mode: that track's FX chain is switched off."
-    },
-    "pedalSimHoldHint": "hold for its second action, or press Shift+Space or Shift+Enter",
-    "@pedalSimHoldHint": {
-        "description": "Accessibility hint on every on-screen pedal footswitch, naming the keyboard chord for a long press. The shortcuts legend cannot document it: it lives on the tracks view, which the pedal faceplate replaces while the on-screen pedal is bound."
-    },
-    "pedalSimStopFxSemantics": "STOP footswitch, FX panic — press to bypass every FX chain, hold to restore them",
-    "@pedalSimStopFxSemantics": {
-        "description": "Accessibility label for the on-screen pedal STOP footswitch while in FX mode, where it is the FX panic control."
-    },
     "pedalSimBankSemantics": "Bank {bank}",
     "@pedalSimBankSemantics": {
         "description": "Accessibility label for the on-screen pedal active bank.",
@@ -1205,7 +1054,6 @@
             }
         }
     },
-    "pedalSimEncoderSemantics": "Encoder, master volume",
     "pedalSimNoLoop": "—",
     "perfArm": "Arm performance recording",
     "perfDisarm": "Disarm performance recording",
@@ -1347,7 +1195,6 @@
         "description": "Error message shown when re-export fails."
     },
     "timeSignatureNoteValueLabel": "Note value",
-    "clickGroupLabel": "CLICK",
     "clickModeOffLabel": "Off",
     "clickModeRecLabel": "Recording",
     "clickModeRecFirstLabel": "First take",
@@ -1492,18 +1339,7 @@
     "@trayBrightnessLabel": {
         "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
     },
-    "pedalAssignTitle": "Pedal assignments",
-    "pedalLinkGroup": "CONSOLE PEDAL",
     "pedalStatusDisconnected": "Console board not connected.",
-    "pedalStatusConnected": "Console board connected · firmware {firmwareVersion}",
-    "@pedalStatusConnected": {
-        "description": "Pedal link status line once the console board has said hello; {firmwareVersion} is the version it announced, e.g. 1.0.",
-        "placeholders": {
-            "firmwareVersion": {
-                "type": "String"
-            }
-        }
-    },
     "pedalStatusIncompatible": "Console board firmware {firmwareVersion} speaks a different link protocol than this build. Update the board firmware.",
     "@pedalStatusIncompatible": {
         "placeholders": {
@@ -1512,38 +1348,6 @@
             }
         }
     },
-    "@pedalAssignTitle": {
-        "description": "Title of the screen where footswitches are remapped to FX targets (FX v3 part 6b)."
-    },
-    "pedalAssignIntro": "Pick a footswitch on the plate, then choose what it acts on in FX mode. Unassigned switches keep their normal FX behaviour.",
-    "pedalAssignSelectPrompt": "Select a footswitch to assign it.",
-    "pedalAssignUnbindable": "MODE and BANK cannot be reassigned — they are the only way out of FX mode and to the other bank.",
-    "@pedalAssignUnbindable": {
-        "description": "Shown when the user selects the MODE or BANK footswitch, which are never remappable (B12)."
-    },
-    "pedalAssignBankLabel": "Bank {bank}",
-    "@pedalAssignBankLabel": {
-        "description": "Names which bank a track-button assignment applies to; track buttons are bound per bank (A3).",
-        "placeholders": {
-            "bank": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalAssignTarget": "Acts on",
-    "pedalAssignBehavior": "Behaviour",
-    "pedalAssignToggle": "Toggle",
-    "pedalAssignMomentary": "Momentary",
-    "pedalAssignToggleHint": "Press flips it and it stays flipped.",
-    "pedalAssignMomentaryHint": "On while held, back to how it was on release.",
-    "pedalAssignRebind": "Rebind",
-    "pedalAssignClear": "Clear",
-    "pedalAssignUnassigned": "Not assigned",
-    "pedalAssignStale": "Target missing",
-    "@pedalAssignStale": {
-        "description": "Title for an assignment whose chain or effect no longer exists (R25)."
-    },
-    "pedalAssignStaleDetail": "The chain or effect this switch pointed at is gone. Stomping it does nothing until you rebind or clear it.",
     "pedalAssignNoTargets": "No FX chains to assign yet. Add an effect first.",
     "pedalAssignChainTarget": "{stage} chain",
     "@pedalAssignChainTarget": {
@@ -1589,26 +1393,6 @@
         "placeholders": {
             "number": {
                 "type": "int"
-            }
-        }
-    },
-    "a11yPedalAssignRow": "{button}: {target}",
-    "@a11yPedalAssignRow": {
-        "description": "Semantics label for one assignment row.",
-        "placeholders": {
-            "button": {
-                "type": "String"
-            },
-            "target": {
-                "type": "String"
-            }
-        }
-    },
-    "a11yPedalAssignSelected": "{button} selected",
-    "@a11yPedalAssignSelected": {
-        "placeholders": {
-            "button": {
-                "type": "String"
             }
         }
     },
@@ -1808,10 +1592,6 @@
             }
         }
     },
-    "trayBackLabel": "Back",
-    "@trayBackLabel": {
-        "description": "Back control on an in-tray WiFi/Bluetooth expand panel — returns to the Control Center tiles without dismissing the tray."
-    },
     "wifiUnsupportedBody": "WiFi is only available on the Segno console appliance.",
     "@wifiUnsupportedBody": {
         "description": "Shown on the WiFi page when segno-wifi-ctl is not present (desktop builds)."
@@ -1819,22 +1599,6 @@
     "wifiStatusLabel": "Status",
     "@wifiStatusLabel": {
         "description": "WiFi status table label."
-    },
-    "wifiStatusConnected": "Connected",
-    "@wifiStatusConnected": {
-        "description": "WiFi connected status value."
-    },
-    "wifiStatusDisconnected": "Not connected",
-    "@wifiStatusDisconnected": {
-        "description": "WiFi disconnected status value."
-    },
-    "wifiStatusDisconnecting": "Disconnecting…",
-    "@wifiStatusDisconnecting": {
-        "description": "WiFi status while dropping the current association."
-    },
-    "wifiConnectingLabel": "Connecting…",
-    "@wifiConnectingLabel": {
-        "description": "Shown while joining a WiFi network (status strip and row)."
     },
     "wifiConnectFailedPassword": "Couldn’t join — check the password and try again.",
     "@wifiConnectFailedPassword": {
@@ -1868,10 +1632,6 @@
     "@wifiDisconnectSubtitle": {
         "description": "WiFi disconnect action subtitle."
     },
-    "wifiForgetTitle": "Forget network",
-    "@wifiForgetTitle": {
-        "description": "WiFi forget action title."
-    },
     "wifiForgetSubtitle": "Remove saved credentials for {ssid}",
     "@wifiForgetSubtitle": {
         "description": "WiFi forget action subtitle.",
@@ -1881,19 +1641,6 @@
             }
         }
     },
-    "wifiForgetConfirm": "Forget “{ssid}” and remove its saved password?",
-    "@wifiForgetConfirm": {
-        "description": "WiFi forget confirmation dialog body.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiScanTitle": "Scan for networks",
-    "@wifiScanTitle": {
-        "description": "WiFi scan action title."
-    },
     "wifiScanSubtitle": "Refresh the list of nearby networks",
     "@wifiScanSubtitle": {
         "description": "WiFi scan action subtitle when idle."
@@ -1902,42 +1649,9 @@
     "@wifiScanningSubtitle": {
         "description": "WiFi scan action subtitle while scanning."
     },
-    "wifiNetworksGroup": "Networks",
-    "@wifiNetworksGroup": {
-        "description": "Group label above the WiFi scan results list."
-    },
     "wifiEmptyNetworks": "No networks found. Tap scan to try again.",
     "@wifiEmptyNetworks": {
         "description": "Empty state when a WiFi scan returns no SSIDs."
-    },
-    "wifiSavedLabel": "Saved",
-    "@wifiSavedLabel": {
-        "description": "Marks a network whose password the console already has stored."
-    },
-    "wifiSavedOutOfRange": "Saved · not in range",
-    "@wifiSavedOutOfRange": {
-        "description": "Marks a saved network the last scan did not see."
-    },
-    "wifiSecuredLabel": "Secured",
-    "@wifiSecuredLabel": {
-        "description": "Subtitle fragment for a password-protected WiFi network."
-    },
-    "wifiOpenLabel": "Open",
-    "@wifiOpenLabel": {
-        "description": "Subtitle fragment for an open WiFi network."
-    },
-    "wifiPasswordTitle": "Password for {ssid}",
-    "@wifiPasswordTitle": {
-        "description": "WiFi password dialog title.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiPasswordHint": "Network password",
-    "@wifiPasswordHint": {
-        "description": "Hint for the WiFi password field."
     },
     "wifiJoinAction": "Join",
     "@wifiJoinAction": {
@@ -1958,14 +1672,6 @@
     "bluetoothPoweredLabel": "Adapter",
     "@bluetoothPoweredLabel": {
         "description": "Bluetooth powered table label."
-    },
-    "bluetoothOn": "On",
-    "@bluetoothOn": {
-        "description": "Bluetooth adapter on value."
-    },
-    "bluetoothOff": "Off",
-    "@bluetoothOff": {
-        "description": "Bluetooth adapter off value."
     },
     "bluetoothDiscoverableTitle": "Discoverable",
     "@bluetoothDiscoverableTitle": {
@@ -1994,10 +1700,6 @@
     "bluetoothScanningSubtitle": "Scanning…",
     "@bluetoothScanningSubtitle": {
         "description": "Bluetooth scan action subtitle while scanning."
-    },
-    "bluetoothDevicesGroup": "Nearby devices",
-    "@bluetoothDevicesGroup": {
-        "description": "Group label above Bluetooth scan results."
     },
     "bluetoothEmptyDevices": "No devices found yet. Tap scan to search.",
     "@bluetoothEmptyDevices": {
@@ -3730,10 +3432,6 @@
     "@loopAudioUnavailable": {
         "description": "Readout note on the Audio & tempo page."
     },
-    "settingsSectionLoop": "Loop settings",
-    "@settingsSectionLoop": {
-        "description": "Settings rail entry that opens the Loop settings pages."
-    },
     "loopSettingsRefused": "Could not apply this change. Try a shorter length or stop recording, then retry.",
     "@loopSettingsRefused": {
         "description": "Feedback when the engine refuses a Loop settings change."
@@ -3848,10 +3546,6 @@
     "routingLockedFormat": "Finish recording to change mono or stereo.",
     "@routingLockedFormat": {
             "description": "Why the recording format cannot change right now."
-    },
-    "settingsSectionRouting": "Routing",
-    "@settingsSectionRouting": {
-            "description": "Settings rail row that opens Audio routing."
     },
     "routingRecordFrom": "Record from",
     "@routingRecordFrom": {
@@ -6089,5 +5783,9 @@
     "settingsPower": "Power",
     "@settingsPower": {
         "description": "Accessible name of the Settings page's power button."
+    },
+    "bootModeRetiredNotice": "Segno now always starts in Record mode. Press Mode to switch to Mute.",
+    "@bootModeRetiredNotice": {
+        "description": "Shown once to an install that used to start in Mute mode, after the start-up mode setting was removed."
     }
 }

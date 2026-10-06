@@ -42,7 +42,7 @@ enum SettingsTrayDestination {
   /// One destination, not three: all three tabs answer the same question three
   /// ways — what the rig plays through, what pressing record does, and what it
   /// is actually doing right now (#528). They had been one group of the
-  /// Settings scroll, `SettingsSection.audio`.
+  /// earlier Settings scroll.
   ///
   /// Status is the tab that makes the split worth having: everything on it is
   /// read-only, because the settings that decide those figures live on Device,
@@ -66,7 +66,7 @@ enum SettingsTrayDestination {
   ///
   /// One destination, not four: all four answer the same question — *what is
   /// this console, and how does it behave?* Two of them were groups of the
-  /// Settings scroll (`SettingsSection.view` and `.updates`); the other two
+  /// earlier Settings scroll (its View and Updates sections); the other two
   /// had nowhere to live at all, because nothing in the app knew what the
   /// disk held or what the box was called (#530).
   system,

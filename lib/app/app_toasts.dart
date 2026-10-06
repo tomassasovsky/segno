@@ -26,6 +26,7 @@ abstract final class AppToastId {
   static const updateAction = 'app_update_banner_update';
   static const waveformFailed = 'app_waveformWindowFailed_banner';
   static const singleDisplay = 'app_singleDisplay_banner';
+  static const bootModeRetired = 'app_bootModeRetired_toast';
   static const recoveryRefused = 'app_recoveryRefused_toast';
   static const undoClearAll = 'app_undoClearAll_snackbar';
   static const undoClearAllAction = 'app_undoClearAll_snackbar_action';
