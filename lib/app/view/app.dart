@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
@@ -10,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_toasts.dart';
@@ -67,6 +67,7 @@ class App extends StatefulWidget {
     required this.waveformWindow,
     required this.sessionRepository,
     required this.performanceRepository,
+    required this.guards,
     this.pedalRepository,
     this.displayCount,
     this.waveformWindowOpenDelay = Duration.zero,
@@ -76,9 +77,6 @@ class App extends StatefulWidget {
       backend: UnsupportedPlatformBackend(),
     ),
     this.wifi = const WifiRepository(client: UnsupportedWifiClient()),
-    this.bluetooth = const BluetoothRepository(
-      client: UnsupportedBluetoothClient(),
-    ),
     this.brightness = const UnsupportedBrightnessClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.removableVolumes = const InternalOnlyVolumes(),
@@ -94,9 +92,6 @@ class App extends StatefulWidget {
 
   /// Appliance WiFi repository (Control Center). Defaults unsupported.
   final WifiRepository wifi;
-
-  /// Appliance Bluetooth repository (Control Center). Defaults unsupported.
-  final BluetoothRepository bluetooth;
 
   /// Appliance brightness client (Control Center slider). Defaults unsupported.
   final BrightnessClient brightness;
@@ -117,6 +112,11 @@ class App extends StatefulWidget {
 
   /// Injected halt. Null (the default) runs `segno-update-ctl poweroff`.
   final Future<void> Function()? powerOff;
+
+  /// The app's one guard table (accepted behaviour 6.12), shared with the
+  /// session and performance repositories it was built with. Required: an
+  /// owner checking a private table would refuse nothing.
+  final GuardRegistry guards;
 
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
@@ -204,6 +204,7 @@ class _AppState extends State<App> {
       performance: widget.performanceRepository,
       sessions: widget.sessionRepository,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
+      guards: widget.guards,
     );
     _powerNoticeSubscription = _runtime.power.stream.listen(
       _syncControlNoticesWithPower,
@@ -459,7 +460,6 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: _pedal),
         RepositoryProvider.value(value: widget.updates),
         RepositoryProvider.value(value: widget.wifi),
-        RepositoryProvider.value(value: widget.bluetooth),
         RepositoryProvider.value(value: widget.brightness),
         RepositoryProvider.value(value: widget.consoleFacts),
         RepositoryProvider<RemovableVolumes>.value(
@@ -792,7 +792,26 @@ class _AppViewState extends State<_AppView> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_bootstrapWindow());
+      if (mounted) unawaited(_noticeRetiredBluetooth());
     });
+  }
+
+  /// Tells an install that had paired Bluetooth devices, once, that they will
+  /// not reconnect: Bluetooth is retired and the image no longer runs BlueZ.
+  /// The pairings themselves stay on the data volume, so a fallback to the
+  /// previous system still has them.
+  Future<void> _noticeRetiredBluetooth() async {
+    final settings = context.read<SettingsRepository>();
+    final facts = context.read<ConsoleFactsClient>();
+    if (await settings.loadBluetoothRetiredNoticeShown()) return;
+    final count = await facts.retiredBluetoothPairings();
+    if (count == 0 || !mounted) return;
+    showAppToast(
+      id: AppToastId.bluetoothRetired,
+      title: AppText(_l10n.bluetoothRetiredNotice(count)),
+      icon: const Icon(Icons.bluetooth_disabled),
+    );
+    await settings.saveBluetoothRetiredNoticeShown();
   }
 
   void _reconcileRestoreNotices() {
@@ -1018,16 +1037,16 @@ class _AppViewState extends State<_AppView> {
       icon: const Icon(Icons.usb_off_outlined),
       actions: [
         TextButton(
-          onPressed: () => unawaited(openSegnoSettings()),
+          onPressed: () => unawaited(openDeviceSettings()),
           child: AppText(l10n.settingsMenuItem),
         ),
       ],
     );
   }
 
-  /// Startup notice that a newer build is available. Skipped when Settings →
-  /// Updates is already open. "Not now" dismisses that version; "Update…"
-  /// opens the Updates section.
+  /// Startup notice that a newer build is available. Skipped when Updates is
+  /// already open. "Not now" dismisses that version; "Update…" opens the
+  /// Updates settings page.
   void _showUpdateBanner(BuildContext context, UpdateState state) {
     final manifest = state.available;
     if (!state.shouldNotify || manifest == null) {
@@ -1057,7 +1076,7 @@ class _AppViewState extends State<_AppView> {
           key: const Key(AppToastId.updateAction),
           onPressed: () {
             dismissAppToast(AppToastId.update);
-            unawaited(openSegnoSettings(section: SettingsSection.updates));
+            unawaited(openUpdateSettings());
           },
           child: AppText(l10n.updateBannerUpdateAction),
         ),
@@ -1073,6 +1092,17 @@ class _AppViewState extends State<_AppView> {
       type: ToastificationType.error,
       title: AppText(l10n.waveformWindowFailedBanner),
       icon: const Icon(Icons.desktop_access_disabled_outlined),
+    );
+  }
+
+  /// The console now always starts in Record; said once to an install whose
+  /// retired boot default was Mute. Low stakes, nothing to act on: a toast.
+  void _showBootModeRetiredNotice() {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.bootModeRetired,
+      title: AppText(l10n.bootModeRetiredNotice),
+      icon: const Icon(Icons.info_outline),
     );
   }
 
@@ -1195,6 +1225,12 @@ class _AppViewState extends State<_AppView> {
         ),
         BlocListener<ControlCubit, ControlState>(
           listener: (_, _) => _updateDisplayContext(),
+        ),
+        BlocListener<ControlCubit, ControlState>(
+          listenWhen: (previous, current) =>
+              previous.retiredBootMode == null &&
+              current.retiredBootMode != null,
+          listener: (_, _) => _showBootModeRetiredNotice(),
         ),
         BlocListener<TracksCubit, TracksState>(
           listener: (_, _) => _updateDisplayContext(),

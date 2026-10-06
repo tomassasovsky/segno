@@ -54,9 +54,14 @@ class LibraryPreviewCard extends StatelessWidget {
               Expanded(
                 child: switch (library) {
                   LibraryState(:final previewError?) => _PreviewNotice(
-                    previewError == LibraryPreviewError.unsupportedVersion
-                        ? _PreviewNoticeKind.unsupportedVersion
-                        : _PreviewNoticeKind.unreadable,
+                    switch (previewError) {
+                      LibraryPreviewError.unsupportedVersion =>
+                        _PreviewNoticeKind.unsupportedVersion,
+                      LibraryPreviewError.unconvertible =>
+                        _PreviewNoticeKind.unconvertible,
+                      LibraryPreviewError.unreadable =>
+                        _PreviewNoticeKind.unreadable,
+                    },
                   ),
                   LibraryState(:final preview?) => LibraryPreviewBody(
                     preview: preview,
@@ -125,7 +130,12 @@ class LibraryPreviewHeading extends StatelessWidget {
   }
 }
 
-enum _PreviewNoticeKind { nothingSelected, unsupportedVersion, unreadable }
+enum _PreviewNoticeKind {
+  nothingSelected,
+  unsupportedVersion,
+  unconvertible,
+  unreadable,
+}
 
 /// The card's single line when there is nothing to preview.
 class _PreviewNotice extends StatelessWidget {
@@ -142,6 +152,7 @@ class _PreviewNotice extends StatelessWidget {
           _PreviewNoticeKind.nothingSelected => l10n.libraryNoSelection,
           _PreviewNoticeKind.unsupportedVersion =>
             l10n.sessionErrorUnsupportedVersion,
+          _PreviewNoticeKind.unconvertible => l10n.sessionErrorUnconvertible,
           _PreviewNoticeKind.unreadable => l10n.libraryPreviewUnreadable,
         },
         key: Key('library_preview_${kind.name}'),
@@ -235,6 +246,7 @@ class LibraryPreviewTracks extends StatelessWidget {
             SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
             SessionError.unsupportedVersion =>
               l10n.sessionErrorUnsupportedVersion,
+            SessionError.unconvertible => l10n.sessionErrorUnconvertible,
             SessionError.bootPersistence => null,
             _ => l10n.sessionErrorGeneric(session.errorMessage ?? ''),
           };

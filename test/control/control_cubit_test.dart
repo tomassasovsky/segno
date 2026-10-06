@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -62,7 +63,7 @@ class _RecordingPerformanceRepository extends PerformanceRepository {
     required this.log,
     required super.engine,
     required super.exportsRoot,
-  });
+  }) : super(guards: GuardRegistry());
 
   final List<String> log;
 
@@ -337,6 +338,7 @@ void main() {
       tempDir = Directory.systemTemp.createTempSync('segno_control_cubit');
       clock = DateTime(2026, 7, 6, 14, 30, 15);
       performance = PerformanceRepository(
+        guards: GuardRegistry(),
         engine: FakeAudioEngine(),
         exportsRoot: () async => tempDir.path,
         now: () => clock,
@@ -428,35 +430,30 @@ void main() {
         expect(cubit.state.mode, InteractionMode.record);
       });
 
-      test('setDefaultMode persists the token and applies the mode', () async {
-        await cubit.setDefaultMode(InteractionMode.mute);
-        expect(cubit.state.defaultMode, InteractionMode.mute);
-        expect(cubit.state.mode, InteractionMode.mute);
-        expect(
-          await settings.loadDefaultInteractionMode(),
-          InteractionMode.mute.token,
-        );
-      });
-
-      test('load boots the live mode into the persisted default', () async {
-        await settings.saveDefaultInteractionMode(InteractionMode.mute.token);
+      test('a stored Mute default boots Record and is marked once', () async {
+        await setupStore.setString('looper.default_mode', 'mute');
+        cubit.setMode(InteractionMode.mute);
         await cubit.load();
-        expect(cubit.state.defaultMode, InteractionMode.mute);
-        expect(cubit.state.mode, InteractionMode.mute);
-      });
-
-      test('unknown boot mode falls back to Tracks', () async {
-        await settings.saveDefaultInteractionMode('play');
-        await cubit.load();
-        expect(cubit.state.defaultMode, InteractionMode.record);
         expect(cubit.state.mode, InteractionMode.record);
+        expect(cubit.state.retiredBootMode, InteractionMode.mute);
+        // Read once: the key is gone, so the next start has nothing to say.
+        expect(await settings.takeRetiredDefaultInteractionMode(), isNull);
       });
 
-      test('toggleMode does not change the persisted default mode', () async {
-        cubit.toggleMode();
-        expect(cubit.state.mode, InteractionMode.mute);
-        expect(cubit.state.defaultMode, InteractionMode.record);
-        expect(await settings.loadDefaultInteractionMode(), isNull);
+      for (final token in ['record', 'play', 'fx', 'custom']) {
+        test('a stored "$token" default boots Record with no notice', () async {
+          await setupStore.setString('looper.default_mode', token);
+          await cubit.load();
+          expect(cubit.state.mode, InteractionMode.record);
+          expect(cubit.state.retiredBootMode, isNull);
+          expect(await settings.takeRetiredDefaultInteractionMode(), isNull);
+        });
+      }
+
+      test('no stored default boots Record with no notice', () async {
+        await cubit.load();
+        expect(cubit.state.mode, InteractionMode.record);
+        expect(cubit.state.retiredBootMode, isNull);
       });
 
       test('entering FX mode FINALIZES a live capture at the entry gesture '
@@ -713,29 +710,6 @@ void main() {
         expect(cubit.state.parkedResume, isEmpty);
         expect(cubit.state.excluded, isEmpty);
       });
-
-      test('a stored "fx" boot default falls back to record (R12)', () async {
-        await settings.saveDefaultInteractionMode(InteractionMode.fx.token);
-        await cubit.load();
-        expect(cubit.state.defaultMode, InteractionMode.record);
-        expect(cubit.state.mode, InteractionMode.record);
-      });
-
-      test(
-        'setDefaultMode refuses FX — it is never a boot mode (R12)',
-        () async {
-          // Debug builds fail loudly — a caller offering FX here has a bug...
-          await expectLater(
-            cubit.setDefaultMode(InteractionMode.fx),
-            throwsA(isA<AssertionError>()),
-          );
-          // ...and nothing is applied or persisted either way, which is what
-          // keeps a release build off the dead boot surface.
-          expect(cubit.state.defaultMode, InteractionMode.record);
-          expect(cubit.state.mode, InteractionMode.record);
-          expect(await settings.loadDefaultInteractionMode(), isNull);
-        },
-      );
     });
 
     group('Pedal setup Press and Hold', () {

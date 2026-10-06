@@ -27,4 +27,7 @@ class UnsupportedConsoleFactsClient implements ConsoleFactsClient {
 
   @override
   Future<void> exportEverything(String destination) async {}
+
+  @override
+  Future<int> retiredBluetoothPairings() async => 0;
 }

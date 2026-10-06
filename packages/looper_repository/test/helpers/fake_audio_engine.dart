@@ -198,11 +198,26 @@ class FakeAudioEngine implements AudioEngine {
   RequestAdmission toggleReverse({required int channel}) =>
       (result: EngineResult.invalid, request: 0);
 
+  /// Directions accepted by [installReverse], keyed by channel; the next
+  /// [commitSession] publishes them, and a clear drops them with the material.
+  final Map<int, bool> installedReverses = {};
+
+  /// Result [installReverse] admits with; `ok` posts and settles a receipt.
+  EngineResult installReverseResult = EngineResult.ok;
+
   @override
   RequestAdmission installReverse({
     required int channel,
     required bool reversed,
-  }) => (result: EngineResult.invalid, request: 0);
+  }) {
+    if (!installReverseResult.isOk) {
+      return (result: installReverseResult, request: 0);
+    }
+    installedReverses[channel] = reversed;
+    final request = ++_fadeRequest;
+    _fadeResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
 
   @override
   EngineResult? readRequestResult(int request) => _fadeResults.remove(request);
@@ -298,6 +313,7 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult clear({int channel = 0}) {
     lastChannel = channel;
     calls.add('clear');
+    installedReverses.remove(channel);
     if (importedTracks.remove(channel) != null) {
       importedLanes.removeWhere((key, _) => key.$1 == channel);
       importedLayers.removeWhere((key, _) => key.$1 == channel);
@@ -1537,6 +1553,7 @@ class FakeAudioEngine implements AudioEngine {
       tracks[entry.key] = TrackSnapshot(
         state: TrackState.stopped,
         fade: installedFades[entry.key] ?? const FadeImage(),
+        reversed: installedReverses[entry.key] ?? false,
         volume: 1,
         muted: false,
         lengthFrames: entry.value.length,

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -14,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_toasts.dart';
@@ -76,51 +76,6 @@ class _ToggleWifiClient implements WifiClient {
   }
 }
 
-class _ToggleBluetoothClient implements BluetoothClient {
-  bool powered = true;
-  bool connected = false;
-  String device = '';
-
-  @override
-  bool get isSupported => true;
-
-  @override
-  Future<BluetoothStatus> status() async => BluetoothStatus(
-    supported: true,
-    powered: powered,
-    discoverable: false,
-    advertising: false,
-    connected: connected,
-    device: device,
-  );
-
-  @override
-  Future<List<BluetoothDevice>> scan() async => const [];
-
-  @override
-  Future<void> setPowered({required bool enabled}) async {
-    powered = enabled;
-  }
-
-  @override
-  Future<void> setDiscoverable({required bool enabled}) async {}
-
-  @override
-  Future<void> setAdvertising({required bool enabled}) async {}
-
-  @override
-  Future<void> pair(String address) async {}
-
-  @override
-  Future<void> connect(String address) async {}
-
-  @override
-  Future<void> disconnect(String address) async {}
-
-  @override
-  Future<void> forget(String address) async {}
-}
-
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
@@ -146,7 +101,6 @@ void main() {
   late _BrightnessStore store;
   late _MockLooperBloc looperBloc;
   late _ToggleWifiClient wifiClient;
-  late _ToggleBluetoothClient bluetoothClient;
   late LooperRepository looper;
   late TunerCubit tunerCubit;
   late InputsCubit inputsCubit;
@@ -170,7 +124,6 @@ void main() {
     cubit = SettingsTrayCubit();
     displayBrightness = DisplayBrightnessCubit(settings: settings);
     wifiClient = _ToggleWifiClient();
-    bluetoothClient = _ToggleBluetoothClient();
     looper = LooperRepository(engine: FakeAudioEngine());
     tunerCubit = TunerCubit(repository: looper);
     inputsCubit = InputsCubit(settings: settings, repository: looper);
@@ -178,6 +131,7 @@ void main() {
     // `closeTray` returns there — so the SHELL's tests mount that face's
     // dependencies whether or not they ever look at it.
     performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
     );
@@ -234,9 +188,6 @@ void main() {
           providers: [
             RepositoryProvider<WifiRepository>.value(
               value: WifiRepository(client: wifiClient),
-            ),
-            RepositoryProvider<BluetoothRepository>.value(
-              value: BluetoothRepository(client: bluetoothClient),
             ),
             RepositoryProvider<LooperRepository>.value(value: looper),
           ],

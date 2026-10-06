@@ -8,5 +8,14 @@ export 'src/models/session_preview.dart';
 export 'src/models/session_summary.dart';
 export 'src/session_exception.dart';
 export 'src/session_id.dart';
+export 'src/session_migration.dart'
+    show
+        SessionConversion,
+        SessionConversionChange,
+        SessionMigrationContext,
+        SessionMigrationStep,
+        decodeSessionManifest,
+        oldestConvertibleSessionVersion,
+        sessionMigrationSteps;
 export 'src/session_name.dart';
 export 'src/session_repository.dart';

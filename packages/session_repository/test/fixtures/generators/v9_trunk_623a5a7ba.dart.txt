@@ -1,0 +1,120 @@
+// Fixture generator for #1196 (not part of this commit's tree). Chain and
+// binding strings are the ones master's own encoders wrote into the v7
+// fixture, so every fixture carries the same real envelopes.
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:segno_engine/segno_engine.dart';
+import 'package:session_repository/session_repository.dart';
+
+import 'helpers/fake_session_engine.dart';
+
+const laneChain0 = "{\"chainEnabled\":true,\"entries\":[{\"type\":3,\"params\":[0.3,0.4,0.5,0.0],\"slotId\":\"204f9ee7-0\"},{\"type\":7,\"params\":[0.5,0.5,0.35,0.0],\"slotId\":\"204f9ee7-1\"}]}";
+const laneChain1 = "{\"chainEnabled\":false,\"entries\":[{\"type\":1,\"params\":[0.5,0.8,0.0,0.0],\"slotId\":\"204f9ee7-2\"}]}";
+const monitorChain0 = "{\"chainEnabled\":true,\"entries\":[{\"type\":6,\"params\":[0.45,0.5,0.35,0.0],\"slotId\":\"204f9ee7-5\"}]}";
+const monitorChain1 = "{\"chainEnabled\":true,\"entries\":[]}";
+const trackChain1 = "{\"chainEnabled\":true,\"entries\":[{\"type\":4,\"params\":[0.3,0.7,0.0,0.0],\"slotId\":\"204f9ee7-3\"}]}";
+const busChain = "{\"chainEnabled\":true,\"entries\":[{\"type\":2,\"params\":[0.5,0.2,0.0,0.0],\"slotId\":\"204f9ee7-4\"}]}";
+const bindings = "[{\"button\":\"track1\",\"bank\":0,\"target\":\"{\\\"stage\\\":\\\"loop\\\",\\\"index\\\":0,\\\"lane\\\":0}\",\"behavior\":\"toggle\"},{\"button\":\"track2\",\"bank\":0,\"target\":\"{\\\"stage\\\":\\\"master\\\",\\\"index\\\":0}\",\"behavior\":\"momentary\"}]";
+
+Float32List pcm(int frames, double value) =>
+    Float32List.fromList(List.filled(frames, value));
+
+FakeSessionEngine seededEngine() {
+  final engine = FakeSessionEngine()
+    ..seedLayers(
+      0,
+      [pcm(2400, 0.25), pcm(2400, 0.375), pcm(2400, 0.5)],
+      undoDepth: 2,
+    )
+    ..seedTrack(1, pcm(4800, 0.5), multiple: 2, volume: 0.5, muted: true)
+    ..seedLane(1, 1, pcm(4800, 0.125), volume: 1.5, outputMask: 0x1)
+    ..seedLayers(2, [pcm(2400, 0.75), pcm(2400, 0.8125)], redoDepth: 1)
+    ..tempoBpm = 100
+    ..tempoSource = TempoSource.manual
+    ..tsNum = 3
+    ..quantizeDiv = GridDivision.bar
+    ..clickMode = ClickMode.rec
+    ..clickMask = 0x2
+    ..clickVolume = 0.8
+    ..countInBars = 2
+    ..looperMode = LooperMode.sync
+    ..primaryTrack = 0;
+  return engine;
+}
+
+String get out => Platform.environment['FIXTURE_OUT']!;
+
+SessionRepository repoFor(AudioEngine engine) => SessionRepository(
+  engine: engine,
+  clearPollInterval: Duration.zero,
+  clearPollAttempts: 4,
+);
+
+void main() {
+  test('generate v9_trunk_623a5a7ba', () async {
+    await repoFor(seededEngine()).save(
+      '$out/v9_trunk_623a5a7ba',
+      chains: SessionChains(
+        laneChains: const [
+        SessionLaneChain(channel: 0, lane: 0, encoded: laneChain0),
+        SessionLaneChain(channel: 3, lane: 1, encoded: laneChain1),
+      ],
+      trackChains: const [SessionTrackChain(channel: 1, encoded: trackChain1)],
+        monitors: const [
+          SessionMonitor(
+            input: 0,
+            mode: 'auto',
+            outputMask: 3,
+            volume: 0.9,
+            muted: false,
+            encoded: monitorChain0,
+          ),
+          SessionMonitor(
+            input: 1,
+            mode: 'on',
+            outputMask: 2,
+            volume: 0.75,
+            muted: true,
+            encoded: monitorChain1,
+          ),
+        ],
+        outputChains: const [SessionOutputChain(bus: 1, encoded: busChain)],
+        allTracksChain: laneChain1,
+      ),
+      pedalBindings: bindings,
+      settings: const SessionSettings(
+        tempoBpm: 100,
+        tempoSource: TempoSource.manual,
+        tsNum: 3,
+        syncTempo: false,
+        quantizeDiv: GridDivision.bar,
+        recordTiming: RecordTiming.bar,
+        overdubDecay: 20,
+        defaultLengthPresetBars: 4,
+        trackRecordTimingOverrides: {2: RecordTiming.immediately},
+        trackOverdubDecayOverrides: {1: 50},
+        trackOneShotOverrides: {2: true, 5: true},
+        trackLengthPresetOverrides: {1: 2},
+        clickMode: ClickMode.rec,
+        clickMask: 0x2,
+        clickVolume: 0.8,
+        countInBars: 2,
+        recDub: true,
+        autoRecord: true,
+        defaultMultiple: 2,
+        looperMode: LooperMode.sync,
+        primaryTrack: 0,
+        trackPans: {1: -0.25},
+        laneMix: {(1, 1): (level: 1.5, imagePan: 0.5, balance: 0.75)},
+        laneInputs: {(3, 0): 1},
+        laneOutputs: {(3, 0): 2},
+        laneCounts: {3: 2},
+        inputSetup: SessionInputSetup(trimDb: {0: -3}, pairs: {0: 0.2}),
+        outputSetup: SessionOutputSetup(level: {0: 0.8}, mono: {1: true}),
+        trackLevels: {1: 0.7},
+      ),
+    );
+  });
+}
