@@ -231,6 +231,27 @@ void main() {
     expect(rig.control.state.mode, InteractionMode.record);
   });
 
+  for (final mode in [InteractionMode.record, InteractionMode.mute]) {
+    test('a ${mode.name}-mode stomp publishes no cue: those modes draw no '
+        'pedals, so the Tracks screen does not rebuild for it', () async {
+      final rig = await enter(mode);
+      addTearDown(rig.close);
+      final emitted = <ControlState>[];
+      final sub = rig.control.stream.listen(emitted.add);
+      addTearDown(sub.cancel);
+      // Undo and Bank arm holds in every mode (Undo's Redo, Bank's
+      // performance recording).
+      for (final button in [PedalButton.undo, PedalButton.bank]) {
+        rig.link.press(button, down: true);
+        await _pump();
+        expect(rig.pending, isEmpty);
+        rig.link.press(button, down: false);
+        await _pump();
+      }
+      expect(emitted.where((s) => s.pendingHolds.isNotEmpty), isEmpty);
+    });
+  }
+
   test('closing retires a pending hold and emits nothing after', () async {
     final rig = await enter(InteractionMode.fade);
     final emitted = <ControlState>[];

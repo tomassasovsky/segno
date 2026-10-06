@@ -304,7 +304,7 @@ class _PerformancePedalState extends State<PerformancePedal>
   }
 }
 
-/// The 3 px Pending Hold bar: [SurfaceTheme.controlStrong] track and a
+/// The 3 px Pending Hold bar: a [SurfaceTheme.holdTrack] track and a
 /// [SurfaceTheme.holdProgress] fill at [progress], invisible while no hold
 /// is pending.
 class _HoldProgress extends StatelessWidget {
@@ -332,7 +332,7 @@ class _HoldProgress extends StatelessWidget {
         width: width,
         height: height,
         child: ColoredBox(
-          color: surface.controlStrong,
+          color: surface.holdTrack,
           child: Align(
             alignment: AlignmentDirectional.centerStart,
             child: AnimatedBuilder(
