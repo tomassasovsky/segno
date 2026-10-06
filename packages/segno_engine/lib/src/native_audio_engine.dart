@@ -2326,7 +2326,9 @@ class NativeAudioEngine implements AudioEngine {
         ..live_sidecar_dir = sidecarPtr.cast()
         ..volume_generation = target.volumeGeneration
         ..part_bytes = target.partBytes
-        ..ring_seconds = target.ringSeconds;
+        ..ring_seconds = target.ringSeconds
+        // UINT64_MAX (all ones) is the native "no budget".
+        ..reserve_bytes = target.reserveBytes ?? -1;
       for (var i = 0; i < PerfTarget.takeIdBytes; i++) {
         native.ref.take_id[i] = target.takeId[i];
       }

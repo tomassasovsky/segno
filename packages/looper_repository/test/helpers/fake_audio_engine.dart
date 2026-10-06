@@ -1964,6 +1964,8 @@ class _LengthSnapshot extends EngineSnapshot {
         perfOverruns: source.perfOverruns,
         perfZeroFilledFrames: source.perfZeroFilledFrames,
         perfStopped: source.perfStopped,
+        perfStopReason: source.perfStopReason,
+        perfOvers: source.perfOvers,
         tempoBpm: source.tempoBpm,
         tempoSource: source.tempoSource,
         tsNum: source.tsNum,

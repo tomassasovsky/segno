@@ -156,6 +156,45 @@ void main() {
     },
   );
 
+  testWidgets('a take stopped at the reserve says the recorded part is kept '
+      '(#1198)', (tester) async {
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordStoppedEarly(
+          '/exports/perf-5',
+          PerformanceStopReason.reserveReached,
+        ),
+      ),
+    );
+    final strings = await l10n();
+
+    expect(
+      find.text(
+        'Storage reserve reached. The recorded part of this take is kept.',
+      ),
+      findsOneWidget,
+    );
+    expect(strings.perfStoppedReserve, isNot(strings.perfStoppedSlowStorage));
+  });
+
+  testWidgets('a take the storage could not keep up with says so (#1198)', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordStoppedEarly(
+          '/exports/perf-6',
+          PerformanceStopReason.slowStorage,
+        ),
+      ),
+    );
+    final strings = await l10n();
+
+    expect(find.text(strings.perfStoppedSlowStorage), findsOneWidget);
+  });
+
   testWidgets('the reveal button is present with a non-empty label', (
     tester,
   ) async {

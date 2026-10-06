@@ -1362,6 +1362,18 @@ typedef struct le_snapshot {
   /* Seconds each capture ring of the most recent take was granted
    * (le_perf_target.ring_seconds after the memory cap); 0 before any arm. */
   int32_t perf_ring_seconds;
+  /* ---- performance take accounting (#1198; trailing) ---- */
+  /* Why the most recent take stopped: an le_perf_stop_reason, NONE while it
+   * runs. Survives disarm; reset by the next arm. */
+  int32_t perf_stop_reason;
+  /* Bytes the drain has written for the take: part headers and samples,
+   * events.log and layer files. */
+  uint64_t perf_bytes_written;
+  /* The first capture frame a ring could not take, or UINT64_MAX. A take
+   * that drops a frame ends there (LE_PERF_STOP_SLOW_STORAGE). */
+  uint64_t perf_first_drop_frame;
+  /* Samples above full scale (|x| > 1.0) across every stream so far. */
+  uint64_t perf_overs;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -2963,7 +2975,21 @@ LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output
  * recorded. Samples are written as captured, never clamped; samples whose
  * magnitude exceeds 1.0 are counted per part (`overs`). A `performance.json`
  * sidecar listing the parts is rewritten every ~250 ms in `live_sidecar_dir`.
- * Finalize therefore copies nothing: the parts are the take. */
+ * Finalize therefore copies nothing: the parts are the take.
+ *
+ * Every stream ends at the same frame, and a take stops on its own in three
+ * cases (le_snapshot.perf_stop_reason, the sidecar's `stopped_early`):
+ *   - the destination reaches its reserve: the drain re-reads the volume's
+ *     free bytes every ~5 s and, between readings, subtracts every byte it
+ *     writes; it writes the whole frames every stream can still take
+ *     together above `reserve_bytes` plus LE_PERF_ALLOWANCE_BYTES, then stops
+ *     (`reserve_reached`). A volume whose free space cannot be read has no
+ *     budget and stops only on a failed write;
+ *   - the storage falls behind: the first frame the audio thread could not
+ *     queue ends the take there, with no padding and nothing after it
+ *     (`slow_storage`). Frames counted but never tapped (#710) are not a
+ *     storage fault: they are still filled with silence and the take goes on;
+ *   - a write fails (`disk_full`, kept for every bundle already on disk). */
 
 /* Where and how one take is written (#1198). */
 typedef struct le_perf_target {
@@ -2993,6 +3019,11 @@ typedef struct le_perf_target {
    * `ring_seconds` and le_snapshot.perf_ring_seconds report what was
    * granted. */
   int32_t ring_seconds;
+  /* Bytes the take must leave free on its destination, on top of
+   * LE_PERF_ALLOWANCE_BYTES: Internal keeps its storage reserve, a removable
+   * volume a small floor. UINT64_MAX means no budget: the take stops only on
+   * a failed write. */
+  uint64_t reserve_bytes;
 } le_perf_target;
 
 /* 2,000,000,000 bytes: under FAT32's 4 GiB file limit, RIFF's 32-bit size
@@ -3002,6 +3033,20 @@ typedef struct le_perf_target {
 #define LE_PERF_RING_SECONDS_DEFAULT 2
 #define LE_PERF_RING_SECONDS_MAX 8
 #define LE_PERF_RING_BYTES_MAX (64u * 1024u * 1024u)
+/* Room kept above `reserve_bytes` for the files rewritten in place while a
+ * take runs (the sidecar), which the budget does not count write by write. */
+#define LE_PERF_ALLOWANCE_BYTES 1048576
+
+/* Why the most recent take stopped (le_snapshot.perf_stop_reason). NONE while
+ * a take runs; the first reason to happen is kept until the next arm. */
+typedef enum le_perf_stop_reason {
+  LE_PERF_STOP_NONE = 0,
+  LE_PERF_STOP_DISARM = 1,          /* le_perf_disarm */
+  LE_PERF_STOP_DEVICE_CHANGED = 2,  /* the engine reconfigured while armed */
+  LE_PERF_STOP_WRITE_FAILED = 3,    /* a write failed; sidecar `disk_full` */
+  LE_PERF_STOP_RESERVE_REACHED = 4, /* the destination reached its reserve */
+  LE_PERF_STOP_SLOW_STORAGE = 5,    /* a capture ring overflowed */
+} le_perf_stop_reason;
 
 /* Arms performance-recording capture: allocates the master + per-monitor
  * rings, freezes the captured input set from whichever inputs are currently

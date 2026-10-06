@@ -709,7 +709,12 @@ void main() {
       // wait needed.
       expect(engine.perfDisarm(), EngineResult.ok);
       engine.pump(frames: 0); // drain the disarm command (no device: no wait)
-      expect(engine.snapshot().isPerfArmed, isFalse);
+      s = engine.snapshot();
+      expect(s.isPerfArmed, isFalse);
+      // The trailing take-accounting fields (#1198) read where the header
+      // puts them: a disarmed take with no reserve and silent input.
+      expect(s.perfStopReason, PerfStopReason.disarm);
+      expect(s.perfOvers, 0);
 
       final sidecar = File(
         '${captureDir.path}/live/performance.json',
@@ -735,6 +740,50 @@ void main() {
         File('${captureDir.path}/master-004.wav').existsSync(),
         isFalse,
       );
+    },
+    skip: skip,
+  );
+
+  test(
+    'a reserve larger than the volume stops the take at once, as '
+    'reserve_reached (#1198)',
+    () {
+      final engine = PumpedNativeEngine();
+      addTearDown(engine.dispose);
+      engine.start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 48000,
+        ),
+      );
+      final captureDir = Directory.systemTemp.createTempSync(
+        'segno_perf_reserve_test_',
+      );
+      addTearDown(() => captureDir.deleteSync(recursive: true));
+
+      expect(
+        engine.perfArm(
+          PerfTarget(
+            captureDir: captureDir.path,
+            takeId: Uint8List(16),
+            reserveBytes: 1 << 62, // more than any volume holds
+          ),
+        ),
+        EngineResult.ok,
+      );
+      engine
+        ..pump(frames: 0)
+        ..pump(frames: 256);
+      expect(engine.perfDisarm(), EngineResult.ok);
+
+      expect(engine.snapshot().perfStopReason, PerfStopReason.reserveReached);
+      expect(
+        File('${captureDir.path}/performance.json').readAsStringSync(),
+        contains('"stopped_early": "reserve_reached"'),
+      );
+      expect(File('${captureDir.path}/master-001.wav').lengthSync(), 84);
     },
     skip: skip,
   );

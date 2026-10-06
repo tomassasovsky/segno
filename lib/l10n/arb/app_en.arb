@@ -1283,6 +1283,14 @@
     "perfPartial": "Some tracks failed to render, but the rest of the capture is intact.",
     "perfStoppedDiskFull": "Capture stopped early — the disk could not be written.",
     "perfStoppedDeviceChange": "Capture stopped early — the audio device changed.",
+    "perfStoppedReserve": "Storage reserve reached. The recorded part of this take is kept.",
+    "@perfStoppedReserve": {
+        "description": "Completion banner when a capture stopped at the storage reserve (pen yzmtU copy)."
+    },
+    "perfStoppedSlowStorage": "Recording stopped because the storage could not keep up. The recorded part of this take is kept.",
+    "@perfStoppedSlowStorage": {
+        "description": "Completion banner when a capture stopped because the storage fell behind and a capture buffer overflowed."
+    },
     "perfCaptureGlitch": "Dropped audio frames detected during capture.",
     "perfDiscarded": "Capture was too short to keep — discarded.",
     "perfLowDisk": "Low disk space — the capture may run out of room.",

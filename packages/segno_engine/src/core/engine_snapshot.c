@@ -394,6 +394,14 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       engine->perf.drain ? le_perf_drain_self_stopped(engine->perf.drain) : 0;
   out->perf_ring_seconds = atomic_load_explicit(&engine->a_perf_ring_seconds,
                                                 memory_order_relaxed);
+  out->perf_stop_reason = atomic_load_explicit(&engine->a_perf_stop_reason,
+                                               memory_order_relaxed);
+  out->perf_bytes_written = atomic_load_explicit(
+      &engine->a_perf_bytes_written, memory_order_relaxed);
+  out->perf_first_drop_frame = atomic_load_explicit(
+      &engine->a_perf_first_drop_frame, memory_order_relaxed);
+  out->perf_overs =
+      atomic_load_explicit(&engine->a_perf_overs, memory_order_relaxed);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(engine, t, t < engine->track_count,
