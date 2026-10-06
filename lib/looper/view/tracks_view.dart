@@ -8,6 +8,7 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -16,6 +17,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
+import 'package:segno/looper/view/foot_peel_view.dart';
 import 'package:segno/looper/view/foot_reverse_view.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
@@ -56,6 +58,7 @@ class _TracksViewState extends State<TracksView> {
     dismissAppToast(AppToastId.footMixerFailure);
     dismissAppToast(AppToastId.footFadeFailure);
     dismissAppToast(AppToastId.footReverseFailure);
+    dismissAppToast(AppToastId.footPeelRefused);
     super.dispose();
   }
 
@@ -138,9 +141,9 @@ class _TracksViewState extends State<TracksView> {
             ),
           ),
           BlocListener<ControlCubit, ControlState>(
+            // The Fade surface and an assigned Fade in any mode.
             listenWhen: (before, after) =>
-                before.footFadeFailure != after.footFadeFailure &&
-                after.mode == InteractionMode.fade,
+                before.footFadeFailure != after.footFadeFailure,
             listener: (context, _) => showAppToast(
               id: AppToastId.footFadeFailure,
               type: ToastificationType.error,
@@ -149,13 +152,29 @@ class _TracksViewState extends State<TracksView> {
             ),
           ),
           BlocListener<ControlCubit, ControlState>(
+            // The Reverse surface and an assigned Reverse in any mode.
             listenWhen: (before, after) =>
-                before.footReverseFailure != after.footReverseFailure &&
-                after.mode == InteractionMode.reverse,
+                before.footReverseFailure != after.footReverseFailure,
             listener: (context, _) => showAppToast(
               id: AppToastId.footReverseFailure,
               type: ToastificationType.error,
               title: Text(context.l10n.footReverseFailure),
+              autoCloseDuration: const Duration(seconds: 5),
+            ),
+          ),
+          BlocListener<ControlCubit, ControlState>(
+            // Every refused Peel says why, whether the press came from the
+            // Peel surface or from an assigned Peel in another mode.
+            listenWhen: (before, after) =>
+                before.footPeelFailure != after.footPeelFailure,
+            listener: (context, state) => showAppToast(
+              id: AppToastId.footPeelRefused,
+              type: state.footPeelRefusal == FootPeelRefusal.failed
+                  ? ToastificationType.error
+                  : ToastificationType.warning,
+              title: Text(
+                footPeelRefusalText(context.l10n, state.footPeelRefusal),
+              ),
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),
@@ -175,11 +194,15 @@ class _TracksViewState extends State<TracksView> {
             // different result, which must not reopen the dialog — and the
             // show function refuses to double-open while it is already up).
             // Percent ticks are Rendering-to-Rendering and do not re-fire.
+            // Every refused arm fires too: each one is a new idle state
+            // (PerformanceRecorderIdle.refusal), so each press gets a toast.
             listenWhen: (previous, current) =>
                 (current is PerformanceRecorderRendering &&
                     previous is! PerformanceRecorderRendering) ||
                 (current is PerformanceRecorderCompleted &&
-                    previous is! PerformanceRecorderCompleted),
+                    previous is! PerformanceRecorderCompleted) ||
+                (current is PerformanceRecorderIdle &&
+                    (current.lowDiskBlocked || current.refusedBy != null)),
             listener: onPerformanceRecorderState,
           ),
           BlocListener<ControlCubit, ControlState>(
@@ -222,6 +245,8 @@ class _TracksViewState extends State<TracksView> {
                             ? const FootFadeView()
                             : mode == InteractionMode.reverse
                             ? const FootReverseView()
+                            : mode == InteractionMode.peel
+                            ? const FootPeelView()
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [

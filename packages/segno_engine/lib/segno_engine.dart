@@ -95,7 +95,15 @@ export 'src/selected_render.dart'
         RenderTails,
         RenderTarget,
         renderTracksOfMask;
-export 'src/storage_io.dart' show NativeStorageIo, StorageIo;
+export 'src/storage_io.dart'
+    show
+        FileDigest,
+        FileDigested,
+        FileMissing,
+        FileTruncated,
+        FileUnreadable,
+        NativeStorageIo,
+        StorageIo;
 export 'src/track_effect.dart'
     show
         BuiltInEffect,

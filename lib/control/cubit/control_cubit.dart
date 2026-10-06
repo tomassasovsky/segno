@@ -31,9 +31,11 @@ import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/control_projection.dart';
 import 'package:segno/control/foot_fade_actions.dart';
 import 'package:segno/control/foot_mixer_actions.dart';
+import 'package:segno/control/foot_peel_actions.dart';
 import 'package:segno/control/foot_reverse_actions.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/control/model/foot_reverse.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/fade_settings.dart';
@@ -43,6 +45,7 @@ import 'package:settings_repository/settings_repository.dart';
 part 'control_foot_fade.dart';
 part 'control_foot_reverse.dart';
 part 'control_foot_mixer.dart';
+part 'control_foot_peel.dart';
 part 'control_midi.dart';
 part 'control_state.dart';
 
@@ -191,6 +194,7 @@ class ControlCubit extends Cubit<ControlState> {
        _fxPersistence = fxPersistence,
        _owned = ownedValues,
        _footReverseActions = FootReverseActions(repository: looper),
+       _footPeelActions = FootPeelActions(repository: looper),
        _footFadeActions = FootFadeActions(
          repository: looper,
          settings: fadeSettings,
@@ -1052,6 +1056,7 @@ class ControlCubit extends Cubit<ControlState> {
   (int, int)? _footMixerSource;
   final FootFadeActions _footFadeActions;
   final FootReverseActions _footReverseActions;
+  final FootPeelActions _footPeelActions;
   int _footFadeSession = 0;
   late final _footMixerActions = FootMixerActions(
     repository: _looper,
@@ -1168,9 +1173,11 @@ class ControlCubit extends Cubit<ControlState> {
         t.channel,
   };
 
-  /// Restores the persisted boot-default mode (applying it — a `mute`
-  /// default runs the same entry side effects as a live toggle) and the
-  /// undo long-press threshold.
+  /// Restores the pedal setup, the global bindings and the undo long-press
+  /// threshold, and enters Record: the console always starts there.
+  ///
+  /// An install whose retired boot default was Mute is marked once in
+  /// [ControlState.retiredBootMode], so the change is not silent.
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
@@ -1178,12 +1185,13 @@ class ControlCubit extends Cubit<ControlState> {
     final storedBindings = PedalBindingSet.decode(
       await _settings.loadPedalBindings() ?? '',
     );
-    // bootDefaultFromToken, not fromToken: a stored `'fx'` (hand-edited or
-    // corrupted — no build writes it) falls back to record rather than booting
-    // the dead FX surface (R12).
-    final defaultMode = InteractionMode.bootDefaultFromToken(
-      await _settings.loadDefaultInteractionMode(),
-    );
+    // Mute was the only mode a stored default ever booted into besides
+    // Record: anything else was coerced to Record already, so only a Mute
+    // install has a behaviour change to be told about.
+    final retired = await _settings.takeRetiredDefaultInteractionMode();
+    final retiredBootMode = retired == InteractionMode.mute.token
+        ? InteractionMode.mute
+        : null;
     var setup = state.pedalSetup;
     var setupUnavailable = false;
     try {
@@ -1199,7 +1207,7 @@ class ControlCubit extends Cubit<ControlState> {
     if (_inputRetired || _closing || isClosed) return;
     emit(
       state.copyWith(
-        defaultMode: defaultMode,
+        retiredBootMode: retiredBootMode,
         pedalSetup: setup,
         pedalSetupUnavailable: setupUnavailable,
         globalBindings: storedBindings,
@@ -1207,7 +1215,7 @@ class ControlCubit extends Cubit<ControlState> {
     );
     await _loadMidiConfiguration();
     if (_inputRetired || _closing || isClosed) return;
-    setMode(defaultMode);
+    setMode(InteractionMode.record);
   }
 
   // ---------------------------------------------------------------------------
@@ -1312,7 +1320,8 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.custom ||
     InteractionMode.mixer ||
     InteractionMode.fade ||
-    InteractionMode.reverse => InteractionMode.record,
+    InteractionMode.reverse ||
+    InteractionMode.peel => InteractionMode.record,
   });
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
@@ -1453,6 +1462,7 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
       case InteractionMode.reverse:
+      case InteractionMode.peel:
         emit(
           state.copyWith(
             mode: next,
@@ -1529,25 +1539,6 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
-  /// Sets and persists the default [mode] the system boots into, applying it
-  /// to the live mode now.
-  ///
-  /// Ignores a mode outside [InteractionMode.bootDefaults] (R12): the settings
-  /// picker never offers FX, and a boot into FX with no chains configured is a
-  /// dead surface.
-  Future<void> setDefaultMode(InteractionMode mode) async {
-    // Loud in debug, defensive in release: a caller offering FX here has a
-    // bug, but shipping a dead boot surface is the worse outcome.
-    assert(
-      InteractionMode.bootDefaults.contains(mode),
-      '$mode is not a boot-eligible default mode',
-    );
-    if (!InteractionMode.bootDefaults.contains(mode)) return;
-    emit(state.copyWith(defaultMode: mode));
-    setMode(mode);
-    await _settings.saveDefaultInteractionMode(mode.token);
-  }
-
   // ---------------------------------------------------------------------------
   // Cursor / bank
   // ---------------------------------------------------------------------------
@@ -1592,8 +1583,8 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.record:
       case InteractionMode.mixer:
       case InteractionMode.fade:
-        _recAdvance(state.cursor);
       case InteractionMode.reverse:
+      case InteractionMode.peel:
         _recAdvance(state.cursor);
       case InteractionMode.mute:
         _muteRecPlay();
@@ -1737,6 +1728,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.mixer:
       case InteractionMode.fade:
       case InteractionMode.reverse:
+      case InteractionMode.peel:
         parkAll();
       case InteractionMode.fx:
         panicTrackChains();
@@ -1804,6 +1796,9 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.mixer:
       case InteractionMode.fade:
       case InteractionMode.reverse:
+      case InteractionMode.peel:
+        // Inert: the performance surfaces replace the Tracks columns, and
+        // their track pedals act through their own roles.
         break;
       case InteractionMode.custom:
         // Inert here: the switch runs its assignment at the press. Note the
@@ -2148,6 +2143,38 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  /// Admits a screen contact on the Peel surface into the shared ledger.
+  void footPeelPressed(PedalButton button, Object contact) {
+    if (state.mode != InteractionMode.peel || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the admitted screen contact may complete its Peel contact.
+  void footPeelReleased(PedalButton button, Object contact) =>
+      footMixerReleased(button, contact);
+
+  /// Cancels an abandoned Peel contact.
+  void footPeelCancelled(PedalButton button, Object contact) =>
+      footMixerCancelled(button, contact);
+
+  /// Accessible semantic activation uses the same Peel role as contacts.
+  void activateFootPeelPedal(PedalButton button) {
+    final role = FootPeelProjection.pedalRoles[button]!;
+    if (role.press != FootPeelAction.exit && !_peelEditable) return;
+    _dispatchPeelAction(role.press, role.slot);
+  }
+
+  /// Removes the newest overdub layer of the track in visible [slot] of the
+  /// current bank. An empty track has nothing to peel and stays silent, as
+  /// on Fade and Reverse; a recorded track that removes nothing says why.
+  void peelFootPeelTrack(int slot) {
+    if (!_peelEditable || slot < 0 || slot >= 4) return;
+    final refusal = _footPeelActions.peel(state.activeBank * 4 + slot);
+    if (refusal != null && refusal != FootPeelRefusal.empty) {
+      _reportPeelRefusal(refusal);
+    }
+  }
+
   /// Fades the recorded track in visible [slot] of the current bank.
   Future<void> toggleFootFadeTrack(int slot) async {
     final fade = _footFadeActions;
@@ -2359,6 +2386,10 @@ class ControlCubit extends Cubit<ControlState> {
       _onReversePress(button);
       return;
     }
+    if (state.mode == InteractionMode.peel) {
+      _onPeelPress(button);
+      return;
+    }
     if (state.mode == InteractionMode.custom) {
       // These two physical exits cannot be assigned. They act on contact,
       // without a second action waiting on the release.
@@ -2411,7 +2442,8 @@ class ControlCubit extends Cubit<ControlState> {
           InteractionMode.custom ||
           InteractionMode.mixer ||
           InteractionMode.fade ||
-          InteractionMode.reverse => false,
+          InteractionMode.reverse ||
+          InteractionMode.peel => false,
         };
         if (accepted) _acceptedContacts.add(button);
         _armRecordHold();
@@ -2577,15 +2609,21 @@ class ControlCubit extends Cubit<ControlState> {
         selectTrack(channels.single);
         return true;
       case TrackOperationAction(:final operation):
-        if ((operation == TrackOperation.fade ||
-                operation == TrackOperation.reverse) &&
-            channels.length > 1) {
+        if (operation == TrackOperation.fade ||
+            operation == TrackOperation.reverse) {
           // Each recorded track fades or turns around independently; one
-          // stomp, every one.
+          // stomp, every one. A stomp that reaches no track says so, in any
+          // mode: the control is away from the track, so silence would read
+          // as a dead pedal.
+          final session = _looper.sessionRevision;
           return Future.wait([
             for (final channel in channels)
               Future.value(_runTrackOperation(operation, channel)),
-          ]).then((results) => results.any((accepted) => accepted));
+          ]).then((results) {
+            final accepted = results.any((accepted) => accepted);
+            if (!accepted) _reportAssignedRefusal(operation, session);
+            return accepted;
+          });
         }
         if (operation == TrackOperation.solo && channels.length > 1) {
           return _mixSettings
@@ -2602,6 +2640,18 @@ class ControlCubit extends Cubit<ControlState> {
         }
         return accepted;
     }
+  }
+
+  /// Reports an assigned Fade or Reverse that reached no track, unless the
+  /// Session it was fired in has since been replaced.
+  void _reportAssignedRefusal(TrackOperation operation, int session) {
+    if (isClosed || _looper.sessionRevision != session) return;
+    emit(switch (operation) {
+      TrackOperation.fade => state.copyWith(
+        footFadeFailure: state.footFadeFailure + 1,
+      ),
+      _ => state.copyWith(footReverseFailure: state.footReverseFailure + 1),
+    });
   }
 
   FutureOr<bool> _runCommand(ControlCommand command, int selectedChannel) {
@@ -2659,6 +2709,11 @@ class ControlCubit extends Cubit<ControlState> {
         return _footReverseActions
             .toggle(channel)
             .then((result) => result.isOk);
+      case TrackOperation.peel:
+        // An assigned Peel says why it removed nothing, from any mode.
+        final refusal = _footPeelActions.peel(channel);
+        if (refusal != null) _reportPeelRefusal(refusal);
+        return refusal == null;
     }
   }
 

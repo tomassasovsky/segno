@@ -37,6 +37,9 @@ class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
 class _RecordingFactsClient implements ConsoleFactsClient {
   _RecordingFactsClient({this.failExport = false});
 
+  @override
+  Future<int> retiredBluetoothPairings() async => 0;
+
   final bool failExport;
   final _inner = FakeConsoleFactsClient(latency: Duration.zero);
   final exportedTo = <String>[];
@@ -66,6 +69,9 @@ class _RecordingFactsClient implements ConsoleFactsClient {
 
 /// A client whose reads hang until [release] is called.
 class _SlowFactsClient implements ConsoleFactsClient {
+  @override
+  Future<int> retiredBluetoothPairings() async => 0;
+
   final _gate = Completer<void>();
   final _inner = FakeConsoleFactsClient(latency: Duration.zero);
 
@@ -101,6 +107,9 @@ class _SlowFactsClient implements ConsoleFactsClient {
 
 /// A client that throws every read, for the "cannot read the disk" face.
 class _FailingFactsClient implements ConsoleFactsClient {
+  @override
+  Future<int> retiredBluetoothPairings() async => 0;
+
   @override
   bool get isSupported => true;
 

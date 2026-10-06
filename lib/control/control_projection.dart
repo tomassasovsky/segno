@@ -15,6 +15,7 @@ import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/invariants.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/control/model/foot_reverse.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -107,6 +108,10 @@ PedalTrackLed projectTrackLed(
       return (track != null && track.hasContent && track.reversed)
           ? PedalTrackLed.blue
           : PedalTrackLed.off;
+    case InteractionMode.peel:
+      // Lit while a press would remove a layer, so "none remain" and a busy
+      // track are visible by foot.
+      return (track?.canPeel ?? false) ? PedalTrackLed.blue : PedalTrackLed.off;
     case InteractionMode.custom:
       return customFunctions[channel] ?? false
           ? PedalTrackLed.blue
@@ -209,7 +214,8 @@ PedalStateFrame projectFrame(
       InteractionMode.custom ||
       InteractionMode.mixer ||
       InteractionMode.fade ||
-      InteractionMode.reverse => PedalMode.custom,
+      InteractionMode.reverse ||
+      InteractionMode.peel => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -240,11 +246,13 @@ PedalStateFrame projectFrame(
   return frame;
 }
 
-/// Whether [button] is a slot-less pedal on a Fade or Reverse surface.
+/// Whether [button] is a slot-less pedal on a hold-less performance surface
+/// (Fade, Reverse, Peel).
 bool _slotless(InteractionMode mode, PedalButton button) => switch (mode) {
   InteractionMode.fade => FootFadeProjection.pedalRoles[button]!.slot == null,
   InteractionMode.reverse =>
     FootReverseProjection.pedalRoles[button]!.slot == null,
+  InteractionMode.peel => FootPeelProjection.pedalRoles[button]!.slot == null,
   _ => false,
 };
 
