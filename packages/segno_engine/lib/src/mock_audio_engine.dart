@@ -237,6 +237,10 @@ class MockAudioEngine implements AudioEngine {
     _measuredLatencyMs = -1;
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
     _perfArmed = false; // disarmed on every fresh start/reconfigure
+    // The Transpose bypass resets with the material at configure; receipts
+    // die with it.
+    _transposeBypass = false;
+    _requestResults.clear();
     _perfFrames = 0;
     // The output destinations go back to their defaults on a fresh start,
     // like the native engine's configure. The capture policy deliberately
@@ -314,6 +318,7 @@ class MockAudioEngine implements AudioEngine {
     final inputs = _running ? _negotiatedInputs : 0;
     final outputs = _running ? _negotiatedOutputs : 0;
     return EngineSnapshot(
+      transposeBypass: _transposeBypass,
       mixRevision: _mixRevision,
       isRunning: _running,
       devicePresent: _running,
@@ -670,8 +675,39 @@ class MockAudioEngine implements AudioEngine {
     request: 0,
   );
 
+  // Transpose refuses empty material the same way; its bypass is global,
+  // admitted whenever configured, so the mock models it with a receipt.
   @override
-  EngineResult? readRequestResult(int request) => EngineResult.invalid;
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      (
+        result: _running ? EngineResult.invalid : EngineResult.notRunning,
+        request: 0,
+      );
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  bool _transposeBypass = false;
+  int _nextRequest = 0;
+  final _requestResults = <int, EngineResult>{};
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) {
+    final result = _requireRunning();
+    if (!result.isOk) return (result: result, request: 0);
+    _transposeBypass = bypassed;
+    final request = ++_nextRequest;
+    _requestResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  EngineResult? readRequestResult(int request) =>
+      _requestResults.remove(request) ?? EngineResult.invalid;
 
   @override
   EngineResult setMix(EngineMixSettings settings) {

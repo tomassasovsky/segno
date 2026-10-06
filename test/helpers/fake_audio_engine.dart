@@ -292,6 +292,44 @@ class FakeAudioEngine implements AudioEngine {
     return (result: EngineResult.ok, request: request);
   }
 
+  /// What the Transpose requests admit and the receipt they answer later
+  /// (#1179).
+  EngineResult transposeAdmission = EngineResult.ok;
+  EngineResult transposeResult = EngineResult.ok;
+
+  /// The last Transpose step, install and bypass admitted.
+  ({int channel, int delta})? lastTransposeStep;
+  ({int channel, int semitones})? lastTransposeInstall;
+  bool? lastTransposeBypass;
+
+  RequestAdmission _admitTranspose(void Function() record) {
+    if (!transposeAdmission.isOk) {
+      return (result: transposeAdmission, request: 0);
+    }
+    record();
+    final request = ++_fadeRequest;
+    _fadeResults[request] = transposeResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      _admitTranspose(
+        () => lastTransposeStep = (channel: channel, delta: delta),
+      );
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => _admitTranspose(
+    () => lastTransposeInstall = (channel: channel, semitones: semitones),
+  );
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      _admitTranspose(() => lastTransposeBypass = bypassed);
+
   @override
   EngineResult? readRequestResult(int request) => _fadeResults.remove(request);
 
@@ -1838,6 +1876,7 @@ class _LengthSnapshot extends EngineSnapshot {
          looperMode: mode ?? source.looperMode,
          primaryTrack: source.primaryTrack,
          speed: source.speed,
+         transposeBypass: source.transposeBypass,
          quantize: engine.lastQuantize ?? source.quantize,
          recordTimingRevision: engine.recordTimingRevision,
          recordTimingResult: 0,
@@ -1882,6 +1921,8 @@ class _LengthTrack extends TrackSnapshot {
          state: source.state,
          fade: source.fade,
          reversed: source.reversed,
+         headRate: source.headRate,
+         transpose: source.transpose,
          volume: source.volume,
          muted: source.muted,
          lengthFrames: source.lengthFrames,

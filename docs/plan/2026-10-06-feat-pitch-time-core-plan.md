@@ -1008,6 +1008,18 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
+As built in Part 3b:
+
+- `TrackSnapshot.transpose` and `Track.transpose` are one value,
+  `TransposePitch = ({int stored, int effective})`, so the pair is compared
+  and carried together and never published half-updated.
+- The record refusal is the return value of `record`
+  (`EngineResult.transformed`), as it is for Speed.
+- The projection does not distinguish a pending render from one the cap
+  refused (`LE_CACHE_REASON_BUDGET`): both read `effective` 0.
+  `le_engine_get_transpose_cache` carries the difference; Part 6b, which
+  draws the face, decides whether it shows it and adds the Dart query then.
+
 ### Part 4a. Native Audio & tempo follow (about 450 production lines)
 
 Sections 4.1–4.3 complete with Follow tempo DEFAULT OFF (E15, today's

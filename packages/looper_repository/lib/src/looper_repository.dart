@@ -2028,6 +2028,32 @@ class LooperRepository {
   Future<EngineResult> setSpeed(SpeedFactor factor) =>
       _requestReceipt(() => _engine.setSpeed(factor));
 
+  /// Steps track [channel]'s Transpose by [delta] semitones (+1 or -1,
+  /// #1179). Completes with the exact callback outcome: [EngineResult.capacity]
+  /// at +-12 (nothing changes), refusals as [toggleReverse]'s. The pitch is
+  /// heard once the track's render lands; `Track.transpose` projects both the
+  /// stored pitch and the one sounding, so the wait is visible.
+  Future<EngineResult> transposeTrack({
+    required int channel,
+    required int delta,
+  }) => _requestReceipt(
+    () => _engine.transposeStep(channel: channel, delta: delta),
+  );
+
+  /// Installs an explicit pitch, -12..12 semitones (Session recall, before
+  /// the commit).
+  Future<EngineResult> installTranspose({
+    required int channel,
+    required int semitones,
+  }) => _requestReceipt(
+    () => _engine.installTranspose(channel: channel, semitones: semitones),
+  );
+
+  /// Bypasses every track's Transpose, stored pitches kept, or restores it.
+  /// [LooperState.transposeBypass] follows the published flag.
+  Future<EngineResult> setTransposeBypass({required bool bypassed}) =>
+      _requestReceipt(() => _engine.setTransposeBypass(bypassed: bypassed));
+
   void _watchReceipt(
     ReceiptObservation observation, {
     required bool Function() settle,
@@ -2278,6 +2304,7 @@ class LooperRepository {
               state: s.tracks[i].state,
               fade: s.tracks[i].fade,
               reversed: s.tracks[i].reversed,
+              transpose: s.tracks[i].transpose,
               // An untouched live fader is unity. Native volume already
               // includes
               // source balance, which must never become a second saved level.
@@ -2347,6 +2374,7 @@ class LooperRepository {
           ch,
     }),
     speed: s.speed,
+    transposeBypass: s.transposeBypass,
     outputBusCount: s.outputBusCount,
     tailResetRev: s.tailResetRev,
     // Sized by the engine to the channels the device has.

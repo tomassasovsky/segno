@@ -432,6 +432,13 @@ enum SpeedFactor {
   }
 }
 
+/// A track's Transpose (#1179): the pitch the player set (`stored`, -12..12
+/// semitones) and the pitch actually sounding (`effective`). `effective` is 0
+/// while the track's pitch-shifted render is pending or refused, and while
+/// Transpose is bypassed, so a reader never claims a pitch the mix is not
+/// playing.
+typedef TransposePitch = ({int stored, int effective});
+
 /// What a looper-mode change would do right now — the engine's answer to
 /// `LooperModeControl.looperModeGate` (accepted design, slice 2).
 enum LooperModeGate {
@@ -678,6 +685,7 @@ class TrackSnapshot {
     this.peakR = 0,
     this.reversed = false,
     this.headRate = 1,
+    this.transpose = (stored: 0, effective: 0),
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -717,6 +725,7 @@ class TrackSnapshot {
       peakR = 0,
       reversed = false,
       headRate = 1,
+      transpose = (stored: 0, effective: 0),
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -771,6 +780,10 @@ class TrackSnapshot {
     solo: native.solo != 0,
     reversed: native.reversed != 0,
     headRate: native.head_rate_milli / 1000,
+    transpose: (
+      stored: native.transpose_st,
+      effective: native.transpose_effective_st,
+    ),
     imageRevision: native.image_revision,
     peakL: native.peak_l,
     peakR: native.peak_r,
@@ -789,6 +802,11 @@ class TrackSnapshot {
   /// #1179): 0.5 at 1/2x, 8 at 8x. Its position moves at this rate, and its
   /// pitch follows it.
   final double headRate;
+
+  /// The track's Transpose, stored and sounding (#1179). Callback-owned like
+  /// [reversed]: published with every accepted step or install, reset to 0
+  /// with the material.
+  final TransposePitch transpose;
 
   /// Sequence of the coherent native tuple publication.
   final int fadeRevision;
@@ -974,6 +992,7 @@ class TrackSnapshot {
           peakR == other.peakR &&
           reversed == other.reversed &&
           headRate == other.headRate &&
+          transpose == other.transpose &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -1009,6 +1028,7 @@ class TrackSnapshot {
     peakR,
     reversed,
     headRate,
+    transpose,
     Object.hashAll(lanes),
   ]);
 }
@@ -1340,6 +1360,7 @@ class EngineSnapshot {
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
     this.speed = SpeedFactor.normal,
+    this.transposeBypass = false,
     this.quantize = false,
     this.recordTimingRevision = 0,
     this.recordTimingResult = 0,
@@ -1419,6 +1440,7 @@ class EngineSnapshot {
       looperMode = LooperMode.multi,
       primaryTrack = -1,
       speed = SpeedFactor.normal,
+      transposeBypass = false,
       quantize = false,
       recordTimingRevision = 0,
       recordTimingResult = 0,
@@ -1513,6 +1535,7 @@ class EngineSnapshot {
       looperMode: LooperMode.fromCode(native.looper_mode),
       primaryTrack: native.primary_track,
       speed: SpeedFactor.fromRatio(native.speed_numer, native.speed_denom),
+      transposeBypass: native.transpose_bypass != 0,
       quantize: native.quantize != 0,
       recordTimingRevision: native.record_timing_revision,
       recordTimingResult: native.record_timing_result,
@@ -1600,6 +1623,7 @@ class EngineSnapshot {
     LooperMode? looperMode,
     int? primaryTrack,
     SpeedFactor? speed,
+    bool? transposeBypass,
     bool? quantize,
     int? recordTimingRevision,
     int? recordTimingResult,
@@ -1676,6 +1700,7 @@ class EngineSnapshot {
     looperMode: looperMode ?? this.looperMode,
     primaryTrack: primaryTrack ?? this.primaryTrack,
     speed: speed ?? this.speed,
+    transposeBypass: transposeBypass ?? this.transposeBypass,
     quantize: quantize ?? this.quantize,
     recordTimingRevision: recordTimingRevision ?? this.recordTimingRevision,
     recordTimingResult: recordTimingResult ?? this.recordTimingResult,
@@ -1946,6 +1971,10 @@ class EngineSnapshot {
   /// [SpeedFactor.normal] until a request lands.
   final SpeedFactor speed;
 
+  /// Whether Transpose is bypassed globally (#1179): every track plays dry,
+  /// its stored pitch kept ([TrackSnapshot.transpose]).
+  final bool transposeBypass;
+
   /// The global loop-grid record quantize gate the engine holds (slice 2b):
   /// what a record press over a master waits for, together with
   /// [quantizeDiv]. Published so the effective record timing is read from
@@ -2121,6 +2150,7 @@ class EngineSnapshot {
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
           speed == other.speed &&
+          transposeBypass == other.transposeBypass &&
           quantize == other.quantize &&
           recordTimingRevision == other.recordTimingRevision &&
           recordTimingResult == other.recordTimingResult &&
@@ -2199,6 +2229,7 @@ class EngineSnapshot {
     looperMode,
     primaryTrack,
     speed,
+    transposeBypass,
     quantize,
     recordTimingRevision,
     recordTimingResult,
