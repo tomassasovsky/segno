@@ -892,9 +892,9 @@ decision 1. A fourth item was added: one flush rule for every owner.
 - Power off anyway. `PowerOffState.retryFailed` is set when a Retry's flush
   also fails. `PowerOffCubit.powerOffAnyway` acts only in that state and
   through the take gate. It runs goodbye and the power-off without the
-  flush. The flush-failed body then reads "Segno is still on. Retry again,
-  or power off anyway: the last unsaved change is lost." and shows the third
-  button (en and es copy).
+  flush. The flush-failed body then reads "Segno could not confirm your
+  last change was saved. Retry again, or power off anyway." and shows the
+  third button (en and es copy; decision 47).
 - One flush rule. `SettingsOwner.flush` fails only when storage does not
   hold the value a start replays: not initialized, unreadable, or a failed
   rollback. An owed receipt reports applied with `deferred`.
@@ -908,9 +908,15 @@ decision 1. A fourth item was added: one flush rule for every owner.
 - Volume law. `ControlValueTarget.mappingTop` is unity travel for Track and
   Lane volume and full travel elsewhere. New MIDI parameter controls and
   new expression mappings default their top to it.
-  `ControlValueTarget.decodeEndpoint` reads a stored literal 1.0 on those
-  targets as unity, for MIDI mappings at load and for expression mappings at
-  decode. The law is unchanged; every other endpoint keeps its value.
+  `ControlValueTarget.decodeEndpoint` reads a literal 1.0 on those targets
+  as unity wherever a mapping is built: the MIDI draft (so a slider at full
+  travel, a double-tap reset and a repoint all read unity at once), the MIDI
+  save and load, and the `ExpressionMapping` constructor (authoring,
+  repointing and decode). The law is unchanged; every other endpoint keeps
+  its value (decision 48).
+- Encoder. Master gain (and the foot Mixer gain step) runs behind the
+  power-off dialog and stops when the flush suspends input
+  (`_inputLocked() || _controlInputSuspended`; decision 49).
 - Tests flipped by the decisions (assertions changed, not scenarios):
   - the Hear click startup matrix (config=false, no key);
   - "power confirmation blocks new values" in `click_dispatch_test`;
@@ -928,8 +934,7 @@ Decisions taken under the owner rules (2026-10-06):
     MIDI actions and External switch contacts stay locked because they can
     start a take. Rules 2 and 4.
 43. Power off anyway is offered only after the first Retry fails, and still
-    refuses during a take. Rule 3: the copy says the last unsaved change is
-    lost.
+    refuses during a take. Rule 3: the copy states what is known (see 47).
 44. An owed value never blocks power-off on its own, for the owners and the
     Mixer alike; Session Save already follows the same rule (decision 30).
     Rules 2 and 4.
@@ -941,10 +946,22 @@ Decisions taken under the owner rules (2026-10-06):
     as the top is no longer possible through a literal 1.0. External switch
     parameters keep their values, since they start from the current value,
     not a default top. Rule 1, owner call.
+47. The Power off anyway copy does not promise which value survives: most
+    paths to it are a failed rollback or unreadable storage, where storage
+    may hold the refused value. It reads "Segno could not confirm your last
+    change was saved. Retry again, or power off anyway." Rule 3.
+48. A literal 1.0 on Track or Lane volume is unity at authoring as well as
+    at load, so a +6 dB top is never played in session and then silently
+    lost at restart. The MIDI high double-tap reset writes `mappingTop`.
+    Values between unity and full travel stay reachable by slider, as
+    before. Rule 3, owner call.
+49. The encoder is a continuous value and runs behind the power-off dialog,
+    as decision 42 states; it stops when the flush suspends input. Rule 4.
 
 Deviations: the plan's `flushFailedRetried` phase is a `retryFailed` flag on
 the `flushFailed` phase, so the host's phase switches stay as they are.
-Production change: +172 / -34 against the +130 / -30 estimate.
+Production change: +172 / -34 against the +130 / -30 estimate, then
++37 / -15 for the review fixes (decisions 47-49).
 
 ## 4. Test migration
 

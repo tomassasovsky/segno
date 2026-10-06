@@ -423,7 +423,10 @@ class _Card extends StatelessWidget {
                       ? 1 / 6
                       : 0.01,
                   onChanged: (value) => onRange(key, high: canonical(value)),
-                  onDoubleTap: () => onRange(key, high: 1),
+                  onDoubleTap: () => onRange(
+                    key,
+                    high: ControlValueTarget.tryParse(key)?.mappingTop ?? 1,
+                  ),
                   onEditCancel: (value) => onRange(key, high: value),
                 ),
               ],

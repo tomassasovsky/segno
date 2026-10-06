@@ -5752,7 +5752,7 @@
     "@powerOffSettingsFailedBody": {"description": "Click settings and safe shutdown recovery message."},
     "powerOffRetry": "Retry",
     "@powerOffRetry": {"description": "Click settings and safe shutdown recovery message."},
-    "powerOffSettingsRetryFailedBody": "Segno is still on. Retry again, or power off anyway: the last unsaved change is lost.",
+    "powerOffSettingsRetryFailedBody": "Segno could not confirm your last change was saved. Retry again, or power off anyway.",
     "@powerOffSettingsRetryFailedBody": {"description": "Shown after a Retry of the power-off settings flush also failed."},
     "powerOffAnyway": "Power off anyway",
     "@powerOffAnyway": {"description": "Powers off without confirming the last settings change, after a failed Retry."},

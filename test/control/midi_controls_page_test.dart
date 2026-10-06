@@ -830,7 +830,11 @@ void main() {
         control.state.midiMappings.byId('m1')!.controls.single
             as MidiParameterControl;
     expect(repaired.key, const TrackVolumeTarget(2).canonicalString());
-    expect((repaired.low, repaired.high), (1, 0));
+    // A literal 1.0 on a level fader is unity (decision 46).
+    expect(
+      (repaired.low, repaired.high),
+      (const TrackVolumeTarget(2).mappingTop, 0),
+    );
   });
 
   testWidgets('Add chooses an explicit format before Learn begins', (
@@ -1656,7 +1660,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(high);
     await tester.pumpAndSettle();
-    expect(tester.widget<LoopSlider>(high).value, 1);
+    // The level fader's default top is unity, not +6 dB.
+    final top = const TrackVolumeTarget(0).mappingTop;
+    expect(tester.widget<LoopSlider>(high).value, top);
     expect(
       (control.state.midiMappings.byId('m1')!.controls.single
               as MidiParameterControl)
@@ -1668,7 +1674,7 @@ void main() {
     final saved =
         control.state.midiMappings.byId('m1')!.controls.single
             as MidiParameterControl;
-    expect((saved.low, saved.high), (0, 1));
+    expect((saved.low, saved.high), (0, top));
   });
 
   testWidgets('Escape and focus loss restore unfinished range preview', (

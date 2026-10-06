@@ -559,6 +559,11 @@ void main() {
         target is MonitorVolumeTarget;
     final low = gain || target is OutputLevelTarget ? 0.0 : -1.0;
     final high = gain && target is! MonitorVolumeTarget ? 2.0 : 1.0;
+    // A MIDI mapping on a level fader tops at unity (decision 46); an
+    // External switch value keeps its authored +6 dB.
+    final midiHigh = target is TrackVolumeTarget || target is LaneVolumeTarget
+        ? 1.0
+        : high;
     check(
       'MIDI and External ${target.canonicalString()} '
       'share full range and durable low',
@@ -599,7 +604,7 @@ void main() {
           ..midiValue(127);
         expect(
           physical(looper.mixSettingsSnapshot, target),
-          closeTo(high, 1e-6),
+          closeTo(midiHigh, 1e-6),
         );
         expect(physical(r.mix.durableSnapshot, target), closeTo(low, 1e-6));
         r.midiValue(0);
@@ -2228,5 +2233,78 @@ void main() {
         ).toJson(),
       ],
     }),
+  );
+
+  check(
+    'a literal 1.0 top authored on Track volume plays, shows and stores '
+    'unity',
+    ExternalJackSetup.empty,
+    (r) {
+      const volume = TrackVolumeTarget(0);
+      r
+        ..bindMidi(
+          controls: [
+            MidiParameterControl(
+              key: volume.canonicalString(),
+              low: 0,
+              high: 1,
+            ),
+          ],
+          behavior: MidiBehavior.continuous,
+        )
+        ..midiValue(127);
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(1.0, 1e-6));
+      final control =
+          r.cubit.state.midiMappings.mappings.single.controls.single
+              as MidiParameterControl;
+      expect(control.high, volume.mappingTop);
+      final stored = MidiMappingSet.fromJson(
+        (jsonDecode(r.store.values['midi.configuration']! as String)
+            as Map<String, dynamic>)['mappings'],
+      );
+      expect(
+        (stored.mappings.single.controls.single as MidiParameterControl).high,
+        volume.mappingTop,
+      );
+    },
+  );
+
+  check(
+    'with the power-off dialog open, a held External value survives looper '
+    'state, and the encoder still moves master gain until the flush',
+    button(
+      [],
+      parameters: [
+        ExternalParameter(
+          target: _param,
+          active: .8,
+          inactive: .2,
+          condition: ExternalValueCondition.heldReleased,
+        ),
+      ],
+    ),
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..sample(255)
+        ..settle();
+      expect(drive(), closeTo(.8, .0001));
+      r.powerOffUp = true;
+      // A looper state change while the dialog is up.
+      unawaited(r.mix.setTrackPan(.3));
+      r.settle();
+      expect(looper.mixSettingsSnapshot.trackPans[0], closeTo(.3, 1e-6));
+      expect(drive(), closeTo(.8, .0001), reason: 'the hold is kept');
+      final before = looper.masterGain;
+      r.cubit.encoderTurned(-8);
+      expect(looper.masterGain, lessThan(before));
+      final turned = looper.masterGain;
+      unawaited(r.cubit.flushMidiConfiguration(retireControls: true));
+      r
+        ..settle()
+        ..cubit.encoderTurned(-8);
+      expect(looper.masterGain, turned, reason: 'the flush suspends input');
+    },
   );
 }

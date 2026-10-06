@@ -116,11 +116,13 @@ extension MidiControlEditing on ControlCubit {
   }
 
   Future<MidiSaveResult> _saveMidiConfiguration(
-    MidiMappingSet mappings,
+    MidiMappingSet authored,
     bool enabled, {
     String? mappingId,
     bool resume = false,
   }) async {
+    // What is saved, played and shown is what a reload reads.
+    final mappings = _decodeEndpoints(authored);
     try {
       await _settings.saveMidiConfiguration(
         jsonEncode({

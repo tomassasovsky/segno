@@ -146,7 +146,10 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.byKey(const Key('power_off_anyway')), findsOneWidget);
-      expect(find.textContaining('the last unsaved change is lost'), findsOne);
+      expect(
+        find.textContaining('could not confirm your last change was saved'),
+        findsOne,
+      );
       await tester.tap(find.byKey(const Key('power_off_anyway')));
       await tester.pump();
       await tester.pump();
