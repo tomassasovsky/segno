@@ -37,12 +37,12 @@ class PerformanceRepository {
   PerformanceRepository({
     required AudioEngine engine,
     required Future<String> Function() exportsRoot,
+    required GuardRegistry guards,
     DateTime Function() now = DateTime.now,
     Duration bootRecoveryPollInterval = const Duration(milliseconds: 200),
     Duration bootRecoveryRenderTimeout = defaultBootRecoveryRenderTimeout,
-    GuardRegistry? guards,
   }) : _engine = engine,
-       _guards = guards ?? GuardRegistry(),
+       _guards = guards,
        _exportsRoot = exportsRoot,
        _now = now,
        _bootRecoveryPollInterval = bootRecoveryPollInterval,
@@ -601,6 +601,10 @@ class PerformanceRepository {
       _setStatus(PerformanceCaptureStatus.armed);
       return result;
     }
+    // Nothing is capturing from here on: the finalize below is file work
+    // that _finalizesInFlight fences. Released now, so a finalize that throws
+    // cannot leave a device change or a calibration refused behind it.
+    _releaseCaptureGuard();
 
     await _finalize(
       dir,
@@ -611,7 +615,6 @@ class PerformanceRepository {
     _armedDir = null;
     _armSnapshot = null;
     _armedAt = null;
-    _releaseCaptureGuard();
     _setStatus(PerformanceCaptureStatus.done);
     return EngineResult.ok;
   }

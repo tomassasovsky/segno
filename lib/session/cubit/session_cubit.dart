@@ -50,12 +50,12 @@ class SessionCubit extends Cubit<SessionState> {
     required MixSettingsPersistence mixPersistence,
     required SessionSettingsCoordinator captureSettings,
     required Future<String> Function() exportDirectory,
+    required GuardRegistry guards,
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
     void Function() releaseHeldBindings = _noRelease,
-    GuardRegistry? guards,
   }) : _repository = repository,
-       _guards = guards ?? GuardRegistry(),
+       _guards = guards,
        _looper = looper,
        _performance = performance,
        _mixSettings = mixSettings,
@@ -407,6 +407,9 @@ class SessionCubit extends Cubit<SessionState> {
   );
 
   /// Retries the stopped loaded rig's exact retained boot image and bindings.
+  ///
+  /// Takes no `sessionApply` guard: it re-persists settings for a rig that is
+  /// already applied and stopped, and never re-applies audio to the engine.
   Future<void> retryLoadedSession() => _run(
     () => _captureSettings.runExclusive(() async {
       final name = _pendingLoadedName;
@@ -579,6 +582,18 @@ class SessionCubit extends Cubit<SessionState> {
           error: SessionError.bootPersistence,
           errorMessage: '${error.cause}',
           bootRecoveryRequired: true,
+        ),
+      );
+    } on GuardRefused catch (error) {
+      // Refused at its commit by an operation in flight (#1198): nothing
+      // changed, and the player is told what to wait for.
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          status: SessionStatus.failure,
+          error: SessionError.busy,
+          errorMessage: '$error',
+          refusedBy: error.blockers.first.kind,
         ),
       );
     } on SessionException catch (error) {

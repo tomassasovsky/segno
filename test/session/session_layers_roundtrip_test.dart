@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
@@ -69,7 +70,7 @@ void main() {
     expect(looper.record(), EngineResult.notReady);
     engine.pump(frames: 0);
     expect(await looper.settleMixSettings(), EngineResult.ok);
-    session = SessionRepository(engine: engine);
+    session = SessionRepository(guards: GuardRegistry(), engine: engine);
     tempDir = Directory.systemTemp.createTempSync('segno_layers_session');
     pumpDriver = Timer.periodic(poll, (_) => engine.pump(frames: 0));
   });

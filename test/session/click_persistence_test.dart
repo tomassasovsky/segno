@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
@@ -112,14 +113,17 @@ void main() {
         device: () => looper.state.status.deviceName,
       );
       sessions = SessionRepository(
+        guards: GuardRegistry(),
         engine: engine,
         sessionsRoot: () async => directory.path,
       );
       performance = PerformanceRepository(
+        guards: GuardRegistry(),
         engine: engine,
         exportsRoot: () async => directory.path,
       );
       session = SessionCubit(
+        guards: GuardRegistry(),
         settings: settings,
         repository: sessions,
         looper: looper,

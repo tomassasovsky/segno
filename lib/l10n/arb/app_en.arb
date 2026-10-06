@@ -1297,6 +1297,24 @@
     "@perfLowDiskBlocked": {
         "description": "Snackbar shown when arming a performance capture is refused because the export volume is already below the free-space floor."
     },
+    "operationBusy": "{kind, select, capture{A recording is running. Stop it first.} sessionApply{A session is opening. Try again when it has opened.} sessionWrite{A session is being saved. Try again in a moment.} transfer{A USB transfer is running. Try again when it finishes.} eject{A drive is being ejected. Try again when it finishes.} deviceChange{The audio interface is changing. Try again in a moment.} calibration{Latency is being measured. Try again when it finishes.} restart{The console is shutting down.} other{Something else is running. Try again in a moment.}}",
+    "@operationBusy": {
+        "description": "Why an action was refused at its commit: another operation it must not overlap is in flight (the guard table, #1198). kind is the GuardKind name of the blocking operation.",
+        "placeholders": {
+            "kind": {
+                "type": "String"
+            }
+        }
+    },
+    "perfArmRefused": "Recording didn't start. {reason}",
+    "@perfArmRefused": {
+        "description": "Snackbar shown when starting a performance recording is refused because another operation is in flight. reason is operationBusy.",
+        "placeholders": {
+            "reason": {
+                "type": "String"
+            }
+        }
+    },
     "perfStoppedLowDisk": "Capture stopped — the disk was running out of space. What was recorded has been saved.",
     "@perfStoppedLowDisk": {
         "description": "Shown when a running capture stopped itself on the free-space floor and finalized what it had."

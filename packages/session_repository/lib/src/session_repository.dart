@@ -285,12 +285,12 @@ class SessionRepository {
   /// these.
   SessionRepository({
     required AudioEngine engine,
+    required GuardRegistry guards,
     Future<String> Function()? sessionsRoot,
     Duration clearPollInterval = const Duration(milliseconds: 8),
     int clearPollAttempts = 64,
-    GuardRegistry? guards,
   }) : _engine = engine,
-       _guards = guards ?? GuardRegistry(),
+       _guards = guards,
        _sessionsRoot = sessionsRoot,
        _clearPollInterval = clearPollInterval,
        _clearPollAttempts = clearPollAttempts;

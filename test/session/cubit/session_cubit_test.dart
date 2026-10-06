@@ -277,6 +277,7 @@ void main() {
   });
 
   SessionCubit build() => SessionCubit(
+    guards: GuardRegistry(),
     captureSettings: captureSettings,
     fxPersistence: fxPersistence,
     settings: settings,
@@ -755,7 +756,8 @@ void main() {
 
       await cubit.loadNamed('A');
       expect(cubit.state.status, SessionStatus.failure);
-      expect(cubit.state.errorMessage, contains('audio apply'));
+      expect(cubit.state.error, SessionError.busy);
+      expect(cubit.state.refusedBy, GuardKind.deviceChange);
       verifyNever(performance.disarmAndFinalize);
       verifyNever(() => looper.applySession(any()));
       expect(fxPersistence.sessionTransitionActive, isFalse);
@@ -1550,6 +1552,7 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
+          guards: GuardRegistry(),
           captureSettings: captureSettings,
           fxPersistence: fxPersistence,
           settings: settings,
@@ -1600,6 +1603,7 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
+          guards: GuardRegistry(),
           captureSettings: captureSettings,
           fxPersistence: fxPersistence,
           settings: settings,
@@ -1636,6 +1640,7 @@ void main() {
       ).thenAnswer((_) async => _session);
 
       final cubit = SessionCubit(
+        guards: GuardRegistry(),
         captureSettings: captureSettings,
         fxPersistence: fxPersistence,
         settings: settings,

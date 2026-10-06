@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/owned_value_port.dart';
@@ -232,6 +233,7 @@ void main() {
     // persisted default the View section edits.
     pedalRepo = PedalRepository(NoopPedalLink());
     performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
     );

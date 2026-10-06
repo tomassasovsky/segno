@@ -19,6 +19,7 @@ void main() {
   tearDown(() => tempDir.deleteSync(recursive: true));
 
   SessionRepository repoFor(AudioEngine engine) => SessionRepository(
+    guards: GuardRegistry(),
     engine: engine,
     clearPollInterval: Duration.zero,
     clearPollAttempts: 4,

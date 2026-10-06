@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
@@ -117,7 +118,7 @@ void main() {
       final live = looper.state.tracks.first.lanes.single;
       expect(live.volume, 1);
       expect(live.balance, closeTo(0.5, 1e-6));
-      final files = SessionRepository(engine: engine);
+      final files = SessionRepository(guards: GuardRegistry(), engine: engine);
       await files.save(
         directory.path,
         chains: chainsFromLooper(
@@ -306,7 +307,10 @@ void main() {
             trackOverrides: looper.trackOneShotOverrides,
           ),
         );
-        final repository = SessionRepository(engine: engine);
+        final repository = SessionRepository(
+          guards: GuardRegistry(),
+          engine: engine,
+        );
         await repository.save(directory.path, settings: settings);
         final rig = rigFromBundle(await repository.read(directory.path));
         expect(rig.tracks, isEmpty);

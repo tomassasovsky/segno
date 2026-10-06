@@ -7,6 +7,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -150,6 +151,7 @@ class _Rig {
       sources: [ConsoleCtrlSource(pedal)],
     );
     performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: engine,
       exportsRoot: () async => Directory.systemTemp.path,
     );

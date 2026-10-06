@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -260,6 +261,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
     );
