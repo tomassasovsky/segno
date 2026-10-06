@@ -592,7 +592,89 @@ static void test_transpose_stopped_render_kept_and_configure(void) {
   le_engine_destroy(e);
 }
 
+/* 3a L-D1 (K8): a bypassed overdub of two passes files the pre-session key
+ * on the first pass's backup only. Undo of the second pass brings back
+ * content that never sounded settled (the take plus the first pass): it has
+ * no render, so it plays dry and renders afresh, never the pre-session
+ * render over different PCM. The render that lands is the fresh one: a lap
+ * of it differs from the pre-session lap. */
+static void test_transpose_two_pass_undo_renders_afresh(void) {
+  printf("test_transpose_two_pass_undo_renders_afresh\n");
+  static float out[8 * TP_LEN], first[TP_LEN], lap[TP_LEN];
+  int first_at, at;
+  le_engine* e = tp_engine(1);
+  uint64_t id = tp_install(e, 0, 5);
+  CHECK(tp_until(e, 0, 5, out, 4 * TP_LEN) >= 0);
+  fade_result(e, id, LE_OK);
+  tp_lap(e, first, &first_at);
+  CHECK(le_engine_set_transpose_bypass(e, 1, &id) == LE_OK);
+  rev_process(e, out, 64, 64);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* bypassed: punch-in allowed */
+  /* Two whole passes and a little: the loop wraps twice while dubbing. */
+  for (int k = 0; k < (2 * TP_LEN + 2048) / 64; ++k) {
+    process_const(e, 0.1f, 64, out);
+  }
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  settle_layers(e);
+  le_track_snapshot snap;
+  le_engine_get_track(e, 0, &snap);
+  CHECK(snap.undo_depth >= 2);
+  CHECK(le_engine_set_transpose_bypass(e, 0, &id) == LE_OK);
+  CHECK(tp_until(e, 0, 5, out, 4 * TP_LEN) >= 0);
+  fade_result(e, id, LE_OK);
+  le_lane_cache_info info;
+  le_engine_get_transpose_cache(e, 0, &info);
+  const int renders = info.renders;
+  /* Undo the second pass: the first pass's result, never rendered. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  rev_process(e, out, 64, 64);
+  CHECK(tp_effective(e, 0) == 0); /* dry, not a stale render */
+  CHECK(tp_until(e, 0, 5, out, 4 * TP_LEN) >= 0);
+  le_engine_get_transpose_cache(e, 0, &info);
+  CHECK(info.renders == renders + 1);
+  tp_lap(e, lap, &at);
+  int same = 0;
+  for (int k = 0; k < TP_LEN; ++k) {
+    same += lap[k] == first[((at - first_at + k) % TP_LEN + TP_LEN) % TP_LEN];
+  }
+  CHECK(same < TP_LEN / 2); /* the first pass is in it */
+  le_engine_destroy(e);
+}
+
+/* 3a L-D1 (K3): a slot handed out for new PCM carries no content key. An
+ * Undo files the outgoing overdub's key on its slot (now on the redo side);
+ * a new overdub drops that redo entry and hands the freed slot out as a
+ * shadow, which must come out keyless: a key left on it would name content
+ * the slot no longer holds the moment the shadow is written. */
+static void test_transpose_handed_out_slot_has_no_key(void) {
+  printf("test_transpose_handed_out_slot_has_no_key\n");
+  static float out[TP_LEN];
+  le_engine* e = tp_engine(1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  for (int k = 0; k < 64; ++k) process_const(e, 0.1f, 64, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  settle_layers(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  rev_process(e, out, 64, 64);
+  le_track* t = &e->tracks[0];
+  CHECK(t->redo_count == 1);
+  const int32_t freed = t->redo_stack[0].slot;
+  CHECK(freed >= 0 && freed < LE_POOL_SLOTS);
+  CHECK(atomic_load(&t->a_slot_key[freed]) != 0u); /* filed on the way out */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* drops the redo, posts shadows */
+  rev_process(e, out, 64, 64);
+  CHECK(t->redo_count == 0);
+  CHECK(t->dub_slot == freed || t->dub_spare == freed);
+  CHECK(atomic_load(&t->a_slot_key[freed]) == 0u);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  settle_layers(e);
+  le_engine_destroy(e);
+}
+
 static void run_transpose_tests(void) {
+  test_transpose_two_pass_undo_renders_afresh();
+  test_transpose_handed_out_slot_has_no_key();
   test_transpose_render_pitch_loop_identity();
   test_transpose_dry_until_ready_then_swap();
   test_transpose_rekey_and_key_independence();
