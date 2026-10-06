@@ -29,8 +29,11 @@ class FakePerformanceEngine implements AudioEngine {
 
   // The audition voice (#1178): inert here.
   @override
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async =>
-      const AuditionStart(result: EngineResult.ok);
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async => const AuditionStart(result: EngineResult.ok);
 
   @override
   EngineResult auditionStop() => EngineResult.ok;

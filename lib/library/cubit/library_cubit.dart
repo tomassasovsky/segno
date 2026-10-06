@@ -119,8 +119,14 @@ class LibraryCubit extends Cubit<LibraryState> {
     emit(state.copyWith(peaks: peaks));
   }
 
-  /// Plays the selected session's saved preview, or stops it when it plays.
-  /// A refusal is kept in [LibraryState.listenRefusal].
+  /// Plays the selected session's saved preview, or stops it when it plays
+  /// or is still starting. A refusal is kept in
+  /// [LibraryState.listenRefusal].
+  ///
+  /// Each press is one request: a start the player withdrew, or that a later
+  /// selection superseded, while its file decoded is dropped before it
+  /// reaches the voice (the `stillWanted` check), so it can never replace the
+  /// preview that superseded it.
   Future<void> listen() async {
     final id = state.selectedId;
     if (id == null || state.preview == null) return;
@@ -129,23 +135,40 @@ class LibraryCubit extends Cubit<LibraryState> {
       return;
     }
     final request = ++_listenRequest;
-    emit(state.copyWith(clearListenRefusal: true));
+    bool wanted() => !isClosed && request == _listenRequest;
+    emit(
+      state.copyWith(
+        clearListenRefusal: true,
+        listen: LibraryListen(id: id, frames: 0, starting: true),
+      ),
+    );
     final AuditionStart started;
     try {
-      started = await _sessions.startAudition(id);
+      started = await _sessions.startAudition(id, stillWanted: wanted);
     } on Object {
-      if (!isClosed && request == _listenRequest) {
-        emit(state.copyWith(listenRefusal: LibraryListenRefusal.unplayable));
+      if (wanted()) {
+        emit(
+          state.copyWith(
+            clearListen: true,
+            listenRefusal: LibraryListenRefusal.unplayable,
+          ),
+        );
       }
       return;
     }
-    if (isClosed || request != _listenRequest) {
-      // Stopped, or another selection, while it decoded.
+    if (!wanted()) {
+      // Stopped, or another selection, after the voice took it: the engine
+      // checks only up to the start itself.
       if (started.result == EngineResult.ok) _sessions.stopAudition();
       return;
     }
     if (started.result != EngineResult.ok) {
-      emit(state.copyWith(listenRefusal: _refusalOf(started.result)));
+      emit(
+        state.copyWith(
+          clearListen: true,
+          listenRefusal: _refusalOf(started.result),
+        ),
+      );
       return;
     }
     _listenSeenPlaying = false;
@@ -156,7 +179,7 @@ class LibraryCubit extends Cubit<LibraryState> {
           id: id,
           frames: started.frames,
           truncated: started.truncated,
-          sampleRate: state.preview?.sampleRate ?? 0,
+          sampleRate: started.rate,
         ),
       ),
     );
@@ -184,6 +207,9 @@ class LibraryCubit extends Cubit<LibraryState> {
     // device reopen). Before it was ever seen playing, give the start a few
     // polls to land.
     if (!_listenSeenPlaying && ++_listenPollsBeforePlaying < 5) return;
+    // A start that never reported playing may still sit in the engine's
+    // queue: withdraw it, so it cannot sound later with no Stop on screen.
+    if (!_listenSeenPlaying) _sessions.stopAudition();
     _endListen();
   }
 
@@ -197,11 +223,12 @@ class LibraryCubit extends Cubit<LibraryState> {
       );
 
   /// Stops the preview, if one plays, and forgets it; a start still
-  /// decoding stops itself when it lands.
+  /// decoding is withdrawn before it reaches the voice.
   void stopListening() {
     _listenRequest++;
-    if (state.listen == null) return;
-    _sessions.stopAudition();
+    final listen = state.listen;
+    if (listen == null) return;
+    if (!listen.starting) _sessions.stopAudition();
     _endListen();
   }
 
@@ -212,9 +239,11 @@ class LibraryCubit extends Cubit<LibraryState> {
   }
 
   /// Drops the selection and its preview: the selected session is gone and
-  /// no session is open to fall back to.
+  /// no session is open to fall back to. Listen ends with it: its control
+  /// lives on the preview.
   void clearSelection() {
     _previewRequest++;
+    stopListening();
     emit(
       LibraryState(
         location: state.location,
@@ -222,7 +251,6 @@ class LibraryCubit extends Cubit<LibraryState> {
         folderFilter: state.folderFilter,
         volumes: state.volumes,
         dismissalRequested: state.dismissalRequested,
-        listen: state.listen,
       ),
     );
   }

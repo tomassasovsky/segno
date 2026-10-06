@@ -78,6 +78,7 @@ class LibraryListen extends Equatable {
     this.position = 0,
     this.truncated = false,
     this.sampleRate = 0,
+    this.starting = false,
   });
 
   /// The session whose preview plays.
@@ -92,11 +93,23 @@ class LibraryListen extends Equatable {
   /// Whether only the first [kAuditionMaxSeconds] of a longer preview play.
   final bool truncated;
 
-  /// The rate [frames] and [position] count at.
+  /// The engine's rate, which [frames] and [position] count at (the decoder
+  /// converts the session's own rate to it).
   final int sampleRate;
 
+  /// Whether the preview is still decoding: Listen was pressed and the start
+  /// has not landed. Pressing again withdraws it.
+  final bool starting;
+
   @override
-  List<Object?> get props => [id, frames, position, truncated, sampleRate];
+  List<Object?> get props => [
+    id,
+    frames,
+    position,
+    truncated,
+    sampleRate,
+    starting,
+  ];
 }
 
 /// Why Listen did not start.
@@ -169,6 +182,10 @@ class LibraryState extends Equatable {
   /// The selected session's lane peaks by channel, for the tracks whose live
   /// layer read (plan D11); a track missing here draws its length only.
   final Map<int, List<double>> peaks;
+
+  /// This state without Listen, for a view that does not draw its progress:
+  /// selecting it keeps the 100 ms progress ticks from rebuilding that view.
+  LibraryState get withoutListen => copyWith(clearListen: true);
 
   /// Whether a drive is mounted and readable.
   bool get hasReadableVolume => volumes.any((v) => v.readable);

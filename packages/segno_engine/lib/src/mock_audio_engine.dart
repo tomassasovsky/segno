@@ -1006,7 +1006,11 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async {
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async {
     final running = _requireRunning();
     if (!running.isOk) return AuditionStart(result: running);
     if (!File(path).existsSync() || bus < 0 || 2 * bus >= _negotiatedOutputs) {
@@ -1016,6 +1020,9 @@ class MockAudioEngine implements AudioEngine {
     if (_perfArmed) {
       return const AuditionStart(result: EngineResult.alreadyRunning);
     }
+    if (stillWanted != null && !stillWanted()) {
+      return const AuditionStart(result: EngineResult.invalid, cancelled: true);
+    }
     final rate = _activeConfig?.sampleRate ?? 48000;
     _auditionFrames = rate;
     _auditionPosition = 0;
@@ -1023,6 +1030,7 @@ class MockAudioEngine implements AudioEngine {
     return AuditionStart(
       result: EngineResult.ok,
       frames: rate,
+      rate: rate,
       sourceRate: rate,
     );
   }

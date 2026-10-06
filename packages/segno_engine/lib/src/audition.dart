@@ -13,8 +13,10 @@ class AuditionStart {
   const AuditionStart({
     required this.result,
     this.frames = 0,
+    this.rate = 0,
     this.sourceRate = 0,
     this.truncated = false,
+    this.cancelled = false,
   });
 
   /// [EngineResult.ok] when the preview starts at the next block. Otherwise
@@ -28,6 +30,10 @@ class AuditionStart {
   /// The preview's length in frames at the engine's rate; 0 on a refusal.
   final int frames;
 
+  /// The engine's rate, which [frames] and [AuditionState.position] count
+  /// at; 0 on a refusal. Not [sourceRate]: the decoder converts.
+  final int rate;
+
   /// The file's own sample rate (the decoder converts it); 0 when unread.
   final int sourceRate;
 
@@ -35,16 +41,24 @@ class AuditionStart {
   /// first [kAuditionMaxSeconds] play.
   final bool truncated;
 
+  /// Whether the caller withdrew the start while it decoded (the
+  /// `stillWanted` check said no), so it never reached the voice. The
+  /// [result] is then [EngineResult.invalid].
+  final bool cancelled;
+
   @override
   bool operator ==(Object other) =>
       other is AuditionStart &&
       other.result == result &&
       other.frames == frames &&
+      other.rate == rate &&
       other.sourceRate == sourceRate &&
-      other.truncated == truncated;
+      other.truncated == truncated &&
+      other.cancelled == cancelled;
 
   @override
-  int get hashCode => Object.hash(result, frames, sourceRate, truncated);
+  int get hashCode =>
+      Object.hash(result, frames, rate, sourceRate, truncated, cancelled);
 }
 
 /// The audition voice as of the last processed block

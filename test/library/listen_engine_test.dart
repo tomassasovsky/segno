@@ -128,6 +128,7 @@ void main() {
       expect(started.result, EngineResult.ok);
       expect(started.frames, loopFrames);
       expect(started.sourceRate, 48000);
+      expect(started.rate, 48000);
       expect(started.truncated, isFalse);
       engine
         ..pump(frames: 0)

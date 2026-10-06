@@ -359,6 +359,19 @@ a design change; this plan does not edit the pen):
      refusal banners (no preview, no device, a performance armed, still
      stopping) are ours. The waveform is one filled bar per peak in the
      accent token, where the pen draws a smooth path in `#9eb9dc`.
+   - Review fixes (#1264): the clock counts at the engine's rate, which the
+     start now reports (`AuditionStart.rate`), not the session's saved
+     rate. Each press is one request: `startAudition` hands the engine a
+     `stillWanted` check that it asks after the decode and before each
+     start, so a start the player withdrew, or that a later selection
+     superseded, never reaches the voice; the button reads `Stop` while the
+     preview decodes, and a second press withdraws it. A start never seen
+     playing is withdrawn from the engine when the cubit gives up on it.
+     Dropping the selection ends Listen. Any track entering recording ends
+     it, not only the first. A session without a mixdown (an empty or
+     all-muted mix) shows no `Listen` (`SessionPreview.hasMixdown`). The
+     button carries a leading play glyph (`Stop` a square), standing for
+     the pen's 28-point icon, whose path the pen MCP does not expose.
 
 ## 3. Decisions
 

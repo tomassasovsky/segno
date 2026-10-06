@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
@@ -78,12 +79,14 @@ SessionPreview _previewOf(String id) => switch (id) {
     ],
     fxCount: 15,
     sampleRate: 48000,
+    hasMixdown: true,
   ),
   's-gig' => SessionPreview(
     summary: _catalog[1],
     tracks: [_track(4, 72000)],
     fxCount: 2,
     sampleRate: 48000,
+    hasMixdown: true,
   ),
   _ => SessionPreview(
     summary: _catalog[2],
@@ -113,8 +116,17 @@ void main() {
     when(() => repository.readPreview(any())).thenAnswer(
       (call) async => _previewOf(call.positionalArguments.first as String),
     );
-    when(() => repository.startAudition(any())).thenAnswer(
-      (_) async => const AuditionStart(result: EngineResult.ok, frames: 480000),
+    when(
+      () => repository.startAudition(
+        any(),
+        stillWanted: any(named: 'stillWanted'),
+      ),
+    ).thenAnswer(
+      (_) async => const AuditionStart(
+        result: EngineResult.ok,
+        frames: 480000,
+        rate: 48000,
+      ),
     );
     when(() => repository.stopAudition()).thenReturn(EngineResult.ok);
     when(() => repository.auditionState()).thenReturn(
@@ -1644,7 +1656,12 @@ void main() {
 
       await listen(tester);
 
-      verify(() => repository.startAudition('s-cur')).called(1);
+      verify(
+        () => repository.startAudition(
+          's-cur',
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).called(1);
       expect(labelOf(tester), l10n.libraryListenStop);
       expect(find.text(l10n.libraryListenProgress('0:02', '0:10')), findsOne);
       expect(find.byKey(const Key('library_listen_truncated')), findsNothing);
@@ -1657,10 +1674,16 @@ void main() {
 
     testWidgets('a preview longer than two minutes says it plays the first '
         'two', (tester) async {
-      when(() => repository.startAudition(any())).thenAnswer(
+      when(
+        () => repository.startAudition(
+          any(),
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).thenAnswer(
         (_) async => const AuditionStart(
           result: EngineResult.ok,
           frames: 5760000,
+          rate: 48000,
           truncated: true,
         ),
       );
@@ -1671,7 +1694,12 @@ void main() {
     });
 
     testWidgets('a refusal says why', (tester) async {
-      when(() => repository.startAudition(any())).thenAnswer(
+      when(
+        () => repository.startAudition(
+          any(),
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).thenAnswer(
         (_) async => const AuditionStart(result: EngineResult.notRunning),
       );
       await openLibrary(tester);
@@ -1728,6 +1756,68 @@ void main() {
 
       verify(() => repository.stopAudition()).called(1);
       expect(labelOf(tester), l10n.libraryListen);
+    });
+
+    testWidgets('a second track entering recording stops it too', (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      LooperState rig({required bool second}) => LooperState(
+        tracks: [
+          const Track(state: TrackState.recording),
+          Track(
+            channel: 1,
+            state: second ? TrackState.recording : TrackState.empty,
+          ),
+          for (var c = 2; c < 8; c++) Track(channel: c),
+        ],
+      );
+      await openLibrary(
+        tester,
+        looperState: rig(second: false),
+        looperStates: states.stream,
+      );
+      await listen(tester);
+
+      states.add(rig(second: true));
+      await tester.pump();
+      await tester.pump();
+
+      verify(() => repository.stopAudition()).called(1);
+    });
+
+    testWidgets("Listen carries the pen's glyph, and a session without a "
+        'mixdown offers none', (tester) async {
+      await openLibrary(tester);
+      expect(
+        find.descendant(
+          of: listenButton(),
+          matching: find.byIcon(LucideIcons.play),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('library_row_s-new')));
+      await tester.pumpAndSettle();
+      expect(listenButton(), findsNothing);
+    });
+  });
+
+  group('trackStartedCapturing', () {
+    test('fires for any track that starts capturing, and only then', () {
+      LooperState rig(List<TrackState> states) => LooperState(
+        tracks: [
+          for (final (c, s) in states.indexed) Track(channel: c, state: s),
+        ],
+      );
+      const rec = TrackState.recording;
+      const empty = TrackState.empty;
+      expect(trackStartedCapturing(rig([empty]), rig([rec])), isTrue);
+      expect(trackStartedCapturing(rig([rec, empty]), rig([rec, rec])), isTrue);
+      expect(trackStartedCapturing(rig([rec]), rig([rec])), isFalse);
+      expect(trackStartedCapturing(rig([rec]), rig([empty])), isFalse);
+      expect(trackStartedCapturing(rig([]), rig([rec])), isTrue);
     });
   });
 

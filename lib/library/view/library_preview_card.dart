@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
@@ -28,7 +29,9 @@ class LibraryPreviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final library = context.watch<LibraryCubit>().state;
+    final library = context.select<LibraryCubit, LibraryState>(
+      (c) => c.state.withoutListen,
+    );
     final sessions = context.select<SessionCubit, List<SessionSummary>>(
       (c) => c.state.sessions,
     );
@@ -213,7 +216,7 @@ class LibraryPreviewBody extends StatelessWidget {
                   ],
                 ),
               ),
-              LibraryListenControl(preview: preview),
+              if (preview.hasMixdown) LibraryListenControl(preview: preview),
             ],
           ),
         ),
@@ -264,17 +267,27 @@ class LibraryPreviewTracks extends StatelessWidget {
           };
     final tracks = preview.tracks;
     final longest = tracks.fold(0, (m, t) => math.max(m, t.lengthFrames));
-    final library = context.watch<LibraryCubit>().state;
-    final listenRefusal = switch (library.listenRefusal) {
+    // Only the fields drawn here: Listen's 100 ms progress must not rebuild
+    // the lanes.
+    final listenRefusalKind = context
+        .select<LibraryCubit, LibraryListenRefusal?>(
+          (c) => c.state.listenRefusal,
+        );
+    final peaksByChannel = context.select<LibraryCubit, Map<int, List<double>>>(
+      (c) => c.state.peaks,
+    );
+    final truncated = context.select<LibraryCubit, bool>(
+      (c) =>
+          c.state.listen?.id == preview.summary.id &&
+          (c.state.listen?.truncated ?? false),
+    );
+    final listenRefusal = switch (listenRefusalKind) {
       LibraryListenRefusal.unplayable => l10n.libraryListenFailed,
       LibraryListenRefusal.noDevice => l10n.libraryListenNoDevice,
       LibraryListenRefusal.performanceArmed => l10n.libraryListenRecording,
       LibraryListenRefusal.busy => l10n.libraryListenBusy,
       null => null,
     };
-    final truncated =
-        library.listen?.id == preview.summary.id &&
-        (library.listen?.truncated ?? false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -327,7 +340,7 @@ class LibraryPreviewTracks extends StatelessWidget {
                         first: i == 0,
                         share: longest == 0 ? 0 : track.lengthFrames / longest,
                         sampleRate: preview.sampleRate,
-                        peaks: library.peaks[track.channel],
+                        peaks: peaksByChannel[track.channel],
                       ),
                   ],
                 ),
@@ -647,7 +660,7 @@ class LibraryListenControl extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (playing) ...[
+        if (playing && !listen.starting) ...[
           AppText(
             l10n.libraryListenProgress(
               _clock(listen.position, listen.sampleRate),
@@ -666,6 +679,7 @@ class LibraryListenControl extends StatelessWidget {
         LoopOutlinedButton(
           key: const Key('library_listen'),
           width: 160,
+          leadingIcon: playing ? LucideIcons.square : LucideIcons.play,
           label: playing ? l10n.libraryListenStop : l10n.libraryListen,
           onTap: () => unawaited(context.read<LibraryCubit>().listen()),
         ),

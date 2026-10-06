@@ -677,6 +677,7 @@ class SessionRepository {
       tracks: tracks,
       fxCount: summary.fxCount,
       sampleRate: session.sampleRate,
+      hasMixdown: File('$path/$mixdownName').existsSync(),
     );
   }
 
@@ -686,8 +687,13 @@ class SessionRepository {
   /// [kAuditionMaxSeconds] of it ([AuditionStart.truncated] says when the
   /// file is longer). A session with no mixdown is refused with
   /// [EngineResult.invalid] and nothing reaches the engine. Never loads the
-  /// session.
-  Future<AuditionStart> startAudition(SessionId id) async {
+  /// session. [stillWanted] is handed to the engine: a start the caller
+  /// withdrew while it decoded never reaches the voice
+  /// ([AuditionStart.cancelled]).
+  Future<AuditionStart> startAudition(
+    SessionId id, {
+    bool Function()? stillWanted,
+  }) async {
     _requireId(id);
     final path = _locate(await _rootPath(), id);
     if (path == null) {
@@ -697,7 +703,7 @@ class SessionRepository {
     if (!File(mixdown).existsSync()) {
       return const AuditionStart(result: EngineResult.invalid);
     }
-    return _engine.auditionStartFile(mixdown);
+    return _engine.auditionStartFile(mixdown, stillWanted: stillWanted);
   }
 
   /// Silences the Library's preview at the next block.
