@@ -1764,6 +1764,37 @@ class SegnoEngineBindings {
   late final _le_engine_redo = _le_engine_redoPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Removes the newest overdub layer as one history entry (#1164): the pre-pass
+  /// image becomes live, the removed image is kept for le_engine_undo, and the
+  /// Redo branch is dropped. Never touches the original take: Peel consumes the
+  /// topmost overdub layer reachable through earlier peels only, so the deepest
+  /// layer (the pre-first-overdub image) is swapped in but never consumed, and
+  /// any non-overdub history above the layers (a clear, a loop-close restoration)
+  /// blocks it. Undo of a Peel restores the layer; Redo re-peels. A synchronous
+  /// control-thread swap like the in-track undo: no command, no receipt.
+  /// LE_ERR_INVALID when no overdub layer can be peeled (none remain, the track
+  /// is empty or cleared, or the newest edit is not an overdub); LE_ERR_NOT_READY
+  /// while the track captures, drains a layer, or has a pending state command,
+  /// cancel, Clear report or Count-in launch — never queued, nothing mutated.
+  int le_engine_peel(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_peel(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_peelPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_peel');
+  late final _le_engine_peel = _le_engine_peelPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   int le_engine_set_track_volume(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -5306,6 +5337,55 @@ class SegnoEngineBindings {
   late final _le_engine_finalize_layers = _le_engine_finalize_layersPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
+  /// Lists track `channel`'s history entries in image-ordinal order (#1164):
+  /// the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the
+  /// entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 3 loop-close
+  /// restoration) and `skipped[i]` its peel payload (0 for every other kind). A
+  /// redo-side peel entry is a marker without an image: le_engine_export_layer's
+  /// ordinals count image-bearing entries only, so a track's image count is
+  /// `undo_count + 1 + (redo entries that are not peel markers)`. Writes at most
+  /// `max` entries and returns the track's TOTAL entry count (which may exceed
+  /// `max`), or LE_ERR_INVALID for a bad handle, channel, NULL array or negative
+  /// `max`. Control thread.
+  int le_engine_export_history(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<ffi.Int32> kinds,
+    ffi.Pointer<ffi.Int32> skipped,
+    int max,
+  ) {
+    return _le_engine_export_history(
+      engine,
+      channel,
+      kinds,
+      skipped,
+      max,
+    );
+  }
+
+  late final _le_engine_export_historyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_export_history');
+  late final _le_engine_export_history = _le_engine_export_historyPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+          int,
+        )
+      >();
+
   /// Establishes the master loop at `base_frames` and parks every imported track
   /// (EMPTY with a loaded length) STOPPED at its whole-loop multiple
   /// (length / base_frames). Restores exactly `loop_bars` musical bars over that
@@ -6828,6 +6908,14 @@ final class le_track_snapshot extends ffi.Struct {
   /// This is cancellation authority, not pending membership or fresh admission.
   @ffi.Int32()
   external int count_in_cancel_grace;
+
+  /// Trailing (#1164): how many overdub layers le_engine_peel can still remove
+  /// — the LAYER entries above the newest history entry that is neither an
+  /// overdub nor a peel. Published under undo_depth's gates, so an EMPTY track
+  /// reads 0 here too. The host derives its layer count from this: PEEL
+  /// entries keep undo_depth constant while a layer disappears.
+  @ffi.Int32()
+  external int peel_depth;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct

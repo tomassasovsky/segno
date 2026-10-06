@@ -150,6 +150,11 @@ typedef enum le_perf_log_code {
                                    * image, or is being written): the stem is
                                    * not reconstructible. */
   LE_PLOG_FADE = 321, /* fade_log: exact callback image, including arm/reset */
+  LE_PLOG_PEEL = 325, /* peel_log: a Peel succeeded (#1164) — {channel, slot
+                       * now live, previous slot filed as PEEL, dub_generation},
+                       * the control-side admission record like 304/305; the
+                       * callback's 322 names the staged image it mixes. 324 is
+                       * Reverse's. */
   LE_PLOG_PERF_ARMED = 315,   /* LE_CMD_PERF_ARM applied: the master loop phase
                                * at capture frame 0. `perf_arm` arm: {position,
                                * master_len, iteration}. The offline renderer's
@@ -205,6 +210,7 @@ typedef struct le_log_command {
     struct { int32_t channel, take_id; } take;
     struct { int32_t channel; float amount, target, seconds; } fade_log;
     struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
+    struct { int32_t channel, slot, previous; uint32_t generation; } peel_log;
     struct { int32_t position, master_len, iteration; } perf_arm;
     struct { int32_t value; uint32_t sequence; } clock;
     struct { int32_t base_frames, loop_bars; } session;

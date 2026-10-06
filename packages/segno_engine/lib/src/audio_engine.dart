@@ -349,6 +349,17 @@ abstract interface class LooperTransport {
   /// Re-applies the most recently undone overdub layer on track [channel].
   EngineResult redo({int channel = 0});
 
+  /// Removes the newest overdub layer on track [channel] as one history
+  /// entry: the pre-pass image becomes live, the removed image is kept for
+  /// [undo], and the redo branch is dropped. Never touches the original take.
+  ///
+  /// Synchronous like [undo]. [EngineResult.invalid] when no overdub layer
+  /// can be peeled (none remain, the track is empty or cleared, or the newest
+  /// edit is not an overdub); [EngineResult.notReady] while the track
+  /// captures, drains a layer, or has a pending state command, cancel, Clear
+  /// report or Count-in launch. Nothing is queued or mutated on refusal.
+  EngineResult peel({int channel = 0});
+
   /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
   EngineResult setRecordOffset(int frames);
 
