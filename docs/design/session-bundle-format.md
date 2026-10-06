@@ -2,7 +2,8 @@
 
 A saved session is a directory (a `.segno` **bundle**) holding a JSON manifest,
 one WAV per audio layer, and a flattened mixdown. This document describes the
-**v7** schema and how legacy bundles migrate.
+current **v12** schema. Decode accepts the current schema only (see
+[Versioning](#versioning)).
 
 Related: the performance-capture path stores retiring layers with its own
 numbered files + sidecar (see [performance-manifest-format](performance-manifest-format.md)
@@ -55,32 +56,43 @@ buffer:    undo snapshots       live (playing)   redo snapshots (newest last)
   skipped). On load, `le_engine_import_layer` + `le_engine_finalize_history`
   rebuild the pool and both stacks with their kinds, so Undo, Redo and Peel
   behave exactly as they did before the save.
-- Decode is strict: the counts must match the entries, every lane of a track
-  must carry the same history, a `clear` may not sit on the undo side, and the
-  layer count must match the history, or the read fails with
-  `SessionCorruptLayers` before any audio is decoded.
+- Decode is strict and mirrors `le_engine_finalize_history`
+  (`TrackHistory.malformation`). The read fails with `SessionCorruptLayers`
+  before any audio is decoded when:
+  - `redoCount` disagrees with the entries and `undoCount`, or `undoCount` lies
+    outside them;
+  - lanes of one track carry different histories;
+  - a `clear` is anywhere but the last (deepest redo) entry;
+  - `skipped` is negative, 256 or more, or set on a kind other than `peel`;
+  - an undo-side `peel` skipped more `peel` entries than sit directly beneath
+    it, unless that run reaches the bottom of the stack (pool eviction removes
+    the oldest entries, and Undo clamps its re-insertion there);
+  - a redo-side `peel` marker would find no `layer` to peel when Redo reaches
+    it (the check walks the redo side as Redo would);
+  - the layer count does not match the history, or exceeds 256.
 - The history is **track-wide** (the stacks are shared across lanes in
   lockstep), so every lane of a track carries the same layer count.
 - Capacity: a track cannot exceed `LE_POOL_SLOTS` (256) images; the engine
   rejects an over-cap import.
 
-## The four FX stages
+## The FX stages
 
-Since v5 the manifest persists all four stages of the FX v3 signal path
-(#351), in signal order:
+The manifest persists every stage of the FX signal path (#351, slices 3e and
+3f), in signal order:
 
 | Stage | Manifest field | Keyed by | Notes |
 |---|---|---|---|
 | **Input** | `monitors[].encoded` | hardware input | The live-monitor chain, pre-record. Rides the monitor record that also carries its routing/mix. |
 | **Loop** | `laneChains[]` | `(channel, lane)` | A lane's record-route chain. |
 | **Track** | `trackChains[]` | track channel | The per-track stereo-bus insert, downstream of that track's lanes. |
-| **Master** | `masterChain` | — | The single insert on the summed mix, before gain/limiter. A bare string, not a list; `""` when the rig has no Master state at all. |
+| **All tracks** | `allTracksChain` | — | The recorded-mix chain after every track's own chain (v8). A bare string; `""` when the session defines none. |
+| **Output** | `outputChains[]` | output destination (`bus`) | One chain per destination after its own sum (v9, replacing v5's single `masterChain`). |
 
 The Input and Loop fields keep the key names v2 gave them (`monitors`,
 `laneChains`); renaming them to match the stage vocabulary would be churn with
 no compatibility payoff.
 
-Every chain — all four stages — is stored as **one opaque encoded string**, so
+Every chain, at every stage, is stored as **one opaque encoded string**, so
 this data package never depends on the effect model. It is the same string
 settings persist, which is what makes a chain round-trip byte-for-byte between
 the two.
@@ -124,11 +136,11 @@ Note what is *not* here: there are no per-flag manifest fields, and no per-flag
 settings keys either. Every enable bit and every slot id lives inside the one
 string per chain.
 
-## Manifest schema (v7)
+## Manifest schema (v12)
 
 ```jsonc
 {
-  "version": 7,
+  "version": 12,
   "sampleRate": 48000,
   "channels": 1,
   "baseLengthFrames": 96000,
@@ -137,8 +149,7 @@ string per chain.
       "channel": 0,
       "multiple": 1,
       "lengthFrames": 96000,
-      "lengthPresetBars": 0,        // v4: 0 = AUTO
-      "oneShot": false,             // v4
+      "fadeAmount": 1.0,            // v11: the stationary Fade level, 0..1
       "lanes": [
         {
           "lane": 0,
@@ -146,55 +157,70 @@ string per chain.
           "muted": false,
           "outputMask": 3,
           "inputChannel": 0,
+          "layers": [
+            { "file": "track0_lane0_L0.wav" },
+            { "file": "track0_lane0_L1.wav" },
+            { "file": "track0_lane0_L2.wav" }
+          ],
+          // "pan" and "balance" are written only off their defaults (0, 1).
           "history": [                // v12: one entry per undo/redo step
             { "kind": "layer", "skipped": 0 },
             { "kind": "layer", "skipped": 0 }
           ],
           "undoCount": 1,
-          "redoCount": 1,
-          "layers": [
-            { "file": "track0_lane0_L0.wav" },
-            { "file": "track0_lane0_L1.wav" },
-            { "file": "track0_lane0_L2.wav" }
-          ]
+          "redoCount": 1
         }
       ]
     }
   ],
 
-  // --- FX: the four stages, each an opaque envelope string ---
-  "monitors": [                     // Input stage (+ routing/mix), v2+
-    // `mode` is the gate by name (v7+): off | auto | on. `enabled` is the
-    // coarse boolean every rung has carried, and what a v6-or-earlier bundle
-    // is read by.
-    { "input": 0, "enabled": true, "mode": "auto", "outputMask": 3, "volume": 1.0, "muted": false, "encoded": "{…}" }
-  ],
-  "laneChains": [                   // Loop stage, v2+
+  // --- FX: each chain an opaque envelope string ---
+  "laneChains": [                   // Loop stage
     { "channel": 0, "lane": 0, "encoded": "{…}" }
   ],
-  "trackChains": [                  // Track stage, v5
+  "monitors": [                     // Input stage (+ routing/mix)
+    { "input": 0, "mode": "auto", "outputMask": 3, "volume": 1.0, "muted": false, "encoded": "{…}" }
+  ],
+  "trackChains": [                  // Track stage
     { "channel": 0, "encoded": "{…}" }
   ],
-  "masterChain": "{…}",             // Master insert, v5; "" = none
+  "outputChains": [                 // v9: one chain per output destination
+    { "bus": 0, "encoded": "{…}" }
+  ],
+  "allTracksChain": "{…}",          // v8: the recorded-mix chain; "" = none
 
-  // --- this session's pedal remap (v6) ---
-  "pedalBindings": "{…}",           // opaque, app-side model; "" = use the global remap
-
-  // --- tempo grid / click / count-in (v4) ---
+  // --- tempo grid, timing, click, count-in ---
   "tempoBpm": 0.0,
   "tempoSource": "none",
   "tsNum": 4,
   "tsDen": 4,
   "quantizeDiv": "off",
+  "loopBars": 0,
+  "recordTiming": "immediately",
+  "overdubDecay": 0,
   "clickMode": "off",
   "clickOutputMask": 0,
   "clickVolume": 1.0,
   "countInBars": 0,
 
-  // --- looper mode / crown / One Shot (v4, B5c) ---
+  // --- looper mode, crown, per-track settings ---
   "looperMode": "multi",
   "primaryTrack": -1,
-  "oneShotChannels": []
+  "defaultOneShot": false,
+  "defaultLengthPresetBars": 0,
+  "defaultFadeDurationMs": 4000,    // v10
+  "trackFadeDurationOverrides": {}, // v10
+  "trackRecordTimingOverrides": {},
+  "trackOverdubDecayOverrides": {},
+  "trackOneShotOverrides": {},
+  "trackLengthPresetOverrides": {},
+  // "trackPans", "trackLevels", "laneInputs", "laneOutputs", "laneCounts",
+  // "inputSetup" and "outputSetup" are written only when non-empty.
+  "syncTempo": false,
+  "recDub": false,
+  "autoRecord": false,
+  "defaultMultiple": 1,
+  "pedalBindings": "{…}"            // opaque, app-side model; "" = the global remap
 }
 ```
 
@@ -206,13 +232,24 @@ same holds in reverse for state that has no audio to hang on —
 `oneShotChannels` is session-level precisely so a flag armed on an empty
 channel survives a save.
 
-## Backward compatibility
+## Versioning
 
-`Session.fromJson` is **presence-keyed** (it branches on which fields exist, not
-on a version `switch`), the way every rung since v1→v2 was handled:
+Writing is always the current version (v12). Decode accepts the current
+version only: any other `version` fails with `SessionUnsupportedVersion`, and a
+non-integer `version` with a `FormatException`. Inside the current schema,
+fields that `toJson` omits at their defaults (`pan`, `balance`, the optional
+maps) read as those defaults. The project does not keep compatibility paths
+(AGENTS.md); bringing older bundles forward is a separate, explicit migration
+step (#1196), not a branch in this decoder.
 
-| Bundle | Detected by | Loads as |
-|--------|-------------|----------|
+### Historical: presence-keyed decode (v1 to v9)
+
+Until v10, `Session.fromJson` was **presence-keyed**: it branched on which
+fields existed, not on a version `switch`. That decoder is gone; the table
+records what each rung added, for a migration that has to read them.
+
+| Bundle | Detected by | Loaded as |
+|--------|-------------|-----------|
 | **v1** | no `laneChains` / `monitors`, `stem` per track | one lane-0 live layer, empty chains |
 | **v2** | `laneChains` / `monitors` present, `stem` per track | one lane-0 live layer + chains |
 | **v3** | `lanes` per track | full multi-lane, multi-layer |
@@ -220,22 +257,21 @@ on a version `switch`), the way every rung since v1→v2 was handled:
 | **v5** | `trackChains` / `masterChain` present, envelope chain strings | + the two bus stages, per-chain + per-slot enable, slot ids, inheritance provenance |
 | **v6** | `pedalBindings` present | + this session's pedal remap |
 | **v7** | `monitors[].mode` present | + the monitor gate's third state (`auto`) survives a reload |
-| **> v7** | `version` greater than supported | `SessionUnsupportedVersion` |
 
-A legacy `stem` migrates to a single `SessionLane`(lane 0) holding one live
+A legacy `stem` migrated to a single `SessionLane`(lane 0) holding one live
 `SessionLayer`, with the old track-level `volume`/`muted` mapped onto lane 0 and
-`inputChannel = -1` (unbound). Every field a newer rung added defaults to the
-value that reproduces the older behavior exactly: grid-off for the tempo
+`inputChannel = -1` (unbound). Every field a newer rung added defaulted to the
+value that reproduced the older behavior exactly: grid-off for the tempo
 fields, `multi`/no-crown for B5c, for v5 **both bus stages empty and every
 enable flag true**, for v6 an empty remap (the global one applies), and for v7
 the gate the boolean already said — `on` when it was true, never `auto`, since
-`on` is what the bundle was heard as. Writing is always the current version
-(v7); this code never writes an older schema.
+`on` is what the bundle was heard as.
 
-### Migration invariants
+### Chain invariants
 
 Three properties are pinned by tests, because a regression in any of them is
-silent:
+silent (1 and 2 date from the v5 chain migration and still hold for the chain
+envelope):
 
 1. **A v4 load is fingerprint-identical.** `fxChainFingerprint` folds params
    plus the real enable bits and deliberately excludes `slotId`, so a v4
@@ -251,10 +287,9 @@ silent:
    a session resets every remembered chain and chain-enabled flag of all four
    stages that the loaded rig leaves undefined, in the engine *and* the
    repository caches, so a previous session's leftovers can never sound under
-   the loaded one (R17). The Master insert therefore has no "absent" state on a
-   v5 write: the field is always present, empty (`""`) when the rig has no
-   Master chain, and an empty Master is applied — i.e. it wipes a leftover —
-   exactly like a populated one.
+   the loaded one (R17). Since v9 the output stage is one chain per
+   destination (`outputChains`), and a destination the manifest does not name
+   is reset the same way.
 
 ## History
 
@@ -284,3 +319,15 @@ silent:
   a session saved with an input on `auto` used to reload monitoring
   unconditionally. A v6 bundle loads with what its boolean said: `on` when it
   was true, never `auto`, since `on` is what that bundle was heard as.
+- **v8** — the All tracks recorded-mix chain (`allTracksChain`, slice 3e).
+- **v9** — one output chain per destination (`outputChains`, slice 3f),
+  replacing the single `masterChain`, which v9 no longer reads.
+- **v10** — Fade durations (`defaultFadeDurationMs`,
+  `trackFadeDurationOverrides`). From here decode accepts the current schema
+  only.
+- **v11** — each track's stationary Fade level (`tracks[].fadeAmount`).
+- **v12** — the audio history's kinds (`lanes[].history`, #1164), so a Peel, a
+  loop-close restoration and a Clear restore point survive save and recall
+  with the same Undo, Redo and Peel behavior. `undoCount` and `redoCount`
+  count entries, and `layers` holds one image per entry except a redo-side
+  Peel marker, plus the live image.
