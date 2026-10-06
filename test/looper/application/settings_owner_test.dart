@@ -4,6 +4,8 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/settings_families.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/application/settings_owners.dart';
@@ -11,7 +13,9 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/owned_setting.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno_engine/segno_engine.dart' as le;
 import 'package:settings_repository/settings_repository.dart';
 
@@ -28,7 +32,28 @@ class _Engine extends FakeAudioEngine {
   bool refuseClick = false;
   bool refuseMode = false;
   bool refuseOnce = false;
+  bool refuseLength = false;
+  bool refuseTiming = false;
   final clickWrites = <double>[];
+
+  @override
+  EngineResult setTrackLengthPresets(List<int> bars) =>
+      refuseLength ? EngineResult.notReady : super.setTrackLengthPresets(bars);
+
+  @override
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
+  }) => refuseTiming
+      ? EngineResult.invalid
+      : super.setRecordTimingSettings(
+          defaultTiming: defaultTiming,
+          rememberedDivision: rememberedDivision,
+          trackOverrides: trackOverrides,
+          editMask: editMask,
+        );
 
   /// Runs once, from the first snapshot read after it is armed and returns
   /// true; the repository reads a snapshot while it publishes a receipt.
@@ -92,8 +117,13 @@ class _Store extends FakeKeyValueStore {
   };
   static bool _owned(String key) =>
       keys.contains(key) ||
+      key == 'looper.default_length_bars' ||
+      key == 'looper.quantize' ||
+      key == 'tempo.quantize_div' ||
       key.startsWith('track_overdub_decay.') ||
-      key.startsWith('track_one_shot.');
+      key.startsWith('track_one_shot.') ||
+      key.startsWith('tempo.length_preset.') ||
+      key.startsWith('track_record_timing.');
   final writes = <String, int>{};
   int failingWrites = 0;
 
@@ -161,8 +191,12 @@ final class _Case<V extends Object> {
     required this.recalled,
     required this.recalledValue,
     this.write,
+    this.setup = const {},
   });
   final String name;
+
+  /// Stored values the case needs before load, such as a looper mode.
+  final Map<String, Object> setup;
   final List<String> keys;
 
   /// What the store holds before each case, in [read]'s shape.
@@ -358,6 +392,149 @@ final _decay = _Case<DecaySnapshot>(
   recalledValue: DecaySnapshot(defaultPercent: 35, trackOverrides: const {}),
 );
 
+/// The engine's eight published presets and mode as a vector: the most
+/// common preset is the default.
+RecordLengthVector _audibleLength(_Engine engine) {
+  final bars = [
+    for (var c = 0; c < 8; c++) engine.snapshot().tracks[c].lengthPresetBars,
+  ];
+  final counts = <int, int>{};
+  for (final value in bars) {
+    counts[value] = (counts[value] ?? 0) + 1;
+  }
+  final base = counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+  return RecordLengthVector(
+    defaultBars: base,
+    trackOverrides: {
+      for (var c = 0; c < 8; c++)
+        if (bars[c] != base) c: bars[c],
+    },
+    mode: engine.snapshot().looperMode,
+  );
+}
+
+String _lengthKey(RecordLengthAddress address) => switch (address.channel) {
+  null => 'looper.default_length_bars',
+  final channel => 'tempo.length_preset.$channel',
+};
+
+/// Record length at [address]; a track address runs in Free mode, where
+/// track presets are editable.
+_Case<RecordLengthVector> _length(RecordLengthAddress address) {
+  final mode = address.channel == null ? LooperMode.multi : LooperMode.free;
+  return _Case(
+    name: 'Record length at ${address.channel ?? 'default'}',
+    keys: [_lengthKey(address)],
+    stored: null,
+    setup: {if (mode != LooperMode.multi) 'looper.mode': mode.code},
+    next: RecordLengthVector(
+      defaultBars: 0,
+      trackOverrides: const {},
+      mode: mode,
+    ).withBars(address, 4),
+    owner: (r) => r.record.owner,
+    write: (owner, value) => owner.update(
+      (live) => live.withBars(address, value.at(address)),
+      address: address,
+      edit: address,
+    ),
+    encode: (value) => value.at(address),
+    withhold: (engine) => engine.commandsAreSettled = false,
+    deliver: (engine) => engine.commandsAreSettled = true,
+    audible: _audibleLength,
+    restart: (repository) => RecordLengthVector(
+      defaultBars: repository.lengthRestartIntent.defaultBars,
+      trackOverrides: repository.lengthRestartIntent.trackOverrides,
+      mode: repository.lengthRestartIntent.mode,
+    ),
+    invalid: {_lengthKey(address): 65},
+    repaired: null,
+    repairedValue: RecordLengthVector(
+      defaultBars: 0,
+      trackOverrides: const {},
+      mode: mode,
+    ),
+    recalled: const SessionRig(defaultLengthPresetBars: 4),
+    recalledValue: RecordLengthVector(
+      defaultBars: 4,
+      trackOverrides: const {},
+      mode: LooperMode.multi,
+    ),
+  );
+}
+
+/// The engine's Record timing as a vector.
+RecordTimingVector _audibleTiming(_Engine engine) {
+  final division = engine.lastQuantizeDiv ?? GridDivision.off;
+  return RecordTimingVector(
+    defaultTiming: RecordTiming.of(
+      quantize: engine.lastQuantize ?? false,
+      division: division,
+    ),
+    rememberedDivision: division,
+    trackOverrides: {
+      for (var c = 0; c < 8; c++)
+        if (engine.trackQuantize[c] case final quantize?)
+          c: RecordTiming.of(
+            quantize: quantize,
+            division: engine.trackQuantizeDiv[c] ?? GridDivision.off,
+          ),
+    },
+  );
+}
+
+final _noTiming = RecordTimingVector(
+  defaultTiming: RecordTiming.immediately,
+  rememberedDivision: GridDivision.off,
+  trackOverrides: const {},
+);
+
+/// Record timing at [address]: the default writes the gate and division.
+_Case<RecordTimingVector> _timing(RecordTimingAddress address) {
+  final defaults = address.channel == null;
+  final timing = defaults ? RecordTiming.quarter : RecordTiming.bar;
+  return _Case(
+    name: 'Record timing at ${address.channel ?? 'default'}',
+    keys: defaults
+        ? ['tempo.quantize_div', 'looper.quantize']
+        : ['track_record_timing.${address.channel}'],
+    stored: defaults ? [null, null] : null,
+    next: _noTiming.withValue(address, timing),
+    owner: (r) => r.timing.owner,
+    write: (owner, value) => owner.update(
+      (live) => live.withValue(address, value.at(address)),
+      address: address,
+      edit: address,
+    ),
+    encode: (value) => defaults
+        ? [value.defaultTiming.division.code, value.defaultTiming.quantize]
+        : value.at(address)?.code,
+    withhold: (engine) => engine.commandsAreSettled = false,
+    deliver: (engine) => engine.commandsAreSettled = true,
+    audible: _audibleTiming,
+    restart: (repository) => RecordTimingVector(
+      defaultTiming: repository.recordTimingRestartIntent.defaultTiming,
+      rememberedDivision:
+          repository.recordTimingRestartIntent.rememberedDivision,
+      trackOverrides: repository.recordTimingRestartIntent.trackOverrides,
+    ),
+    invalid: defaults
+        ? {'tempo.quantize_div': 9}
+        : {'track_record_timing.${address.channel}': 99},
+    repaired: defaults ? [null, null] : null,
+    repairedValue: _noTiming,
+    recalled: const SessionRig(
+      recordTiming: RecordTiming.bar,
+      quantizeDiv: GridDivision.bar,
+    ),
+    recalledValue: RecordTimingVector(
+      defaultTiming: RecordTiming.bar,
+      rememberedDivision: GridDivision.bar,
+      trackOverrides: const {},
+    ),
+  );
+}
+
 const _defaults = <String, Object>{
   'tempo.click_volume': .5,
   'tempo.click_mode': 0,
@@ -393,8 +570,12 @@ class _Rig {
     final settings = SettingsRepository(store: store);
     tempo = TempoSettings(repository: looper, settings: settings);
     playback = PlaybackSettings(repository: looper, settings: settings);
+    record = RecordSettings(repository: looper, settings: settings);
+    timing = RecordTimingSettings(repository: looper, settings: settings);
     unawaited(tempo.load());
     unawaited(playback.load());
+    unawaited(record.load());
+    unawaited(timing.load());
     pump();
   }
 
@@ -407,11 +588,15 @@ class _Rig {
   late final StreamSubscription<LooperState> subscription;
   late final TempoSettings tempo;
   late final PlaybackSettings playback;
+  late final RecordSettings record;
+  late final RecordTimingSettings timing;
 
   /// Every owner this rig carries, in registry order.
   SettingsOwners get owners => SettingsOwners([
     ...tempo.owners,
     ...playback.owners,
+    ...record.owners,
+    ...timing.owners,
   ]);
 
   void pump() {
@@ -442,6 +627,8 @@ class _Rig {
       ..commandsAreSettled = true;
     unawaited(tempo.close());
     unawaited(playback.close());
+    unawaited(record.close());
+    unawaited(timing.close());
     clock.elapse(const Duration(seconds: 1));
     unawaited(subscription.cancel());
     unawaited(looper.dispose());
@@ -452,7 +639,7 @@ class _Rig {
 }
 
 void main() {
-  void check(
+  void rigCheck(
     String name,
     void Function(_Rig) body, {
     Map<String, Object?> stored = const {},
@@ -472,7 +659,17 @@ void main() {
     );
   }
 
+  void check(
+    String name,
+    void Function(_Rig) body, {
+    Map<String, Object?> stored = const {},
+    void Function(_Store)? prepare,
+    void Function(_Engine)? arm,
+  }) => rigCheck(name, body, stored: stored, prepare: prepare, arm: arm);
+
   void contract<V extends Object>(_Case<V> c) {
+    void check(String name, void Function(_Rig) body) =>
+        rigCheck(name, body, stored: c.setup);
     group('${c.name} owner', () {
       check('device absent: the write owes its value, audio keeps running, '
           'and reconnect lands it', (r) {
@@ -562,6 +759,8 @@ void main() {
           ..refuseClick = true
           ..refuseMode = true
           ..refuseOnce = true
+          ..refuseLength = true
+          ..refuseTiming = true
           ..recordStartResult = EngineResult.invalid;
         expect(r.run(c.put(owner, c.next))?.status, SettingStatus.rejected);
         expect(c.read(r.store), c.stored);
@@ -652,6 +851,10 @@ void main() {
   contract(_recordStart);
   contract(_once(const OneShotAddress.defaults()));
   contract(_once(const OneShotAddress.track(3)));
+  contract(_length(const RecordLengthAddress.defaults()));
+  contract(_length(const RecordLengthAddress.track(3)));
+  contract(_timing(const RecordTimingAddress.defaults()));
+  contract(_timing(const RecordTimingAddress.track(3)));
 
   void unreadable<V extends Object>(_Case<V> c) {
     check(
@@ -682,7 +885,7 @@ void main() {
         expect(owner.ready, isTrue);
         expect(owner.value, c.repairedValue);
       },
-      stored: c.invalid,
+      stored: {...c.setup, ...c.invalid},
     );
 
     check('${c.name}: unreadable data, Session load, then Retry', (r) {
@@ -702,7 +905,7 @@ void main() {
       unawaited(r.owners.runExclusive(() async => captured = owner.durable));
       r.pump();
       expect(captured, c.recalledValue);
-    }, stored: c.invalid);
+    }, stored: {...c.setup, ...c.invalid});
   }
 
   group('unreadable storage', () {
@@ -712,6 +915,10 @@ void main() {
     unreadable(_decay);
     unreadable(_once(const OneShotAddress.defaults()));
     unreadable(_once(const OneShotAddress.track(3)));
+    unreadable(_length(const RecordLengthAddress.defaults()));
+    unreadable(_length(const RecordLengthAddress.track(3)));
+    unreadable(_timing(const RecordTimingAddress.defaults()));
+    unreadable(_timing(const RecordTimingAddress.track(3)));
   });
 
   group('Decay family', () {
