@@ -49,10 +49,12 @@ ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
 
 echo "== building the stretch shim ==" >&2
 $CXX -std=c++17 -O2 -DNDEBUG -c src/stretch/le_stretch.cpp -o "$OUT_DIR/le_stretch.o"
+# The counting global operator new the memory scenario reads (bench only).
+$CXX -std=c++17 -O2 -DNDEBUG -c src/test/bench/bench_alloc.cpp -o "$OUT_DIR/bench_alloc.o"
 echo "== building bench_pitch_time ==" >&2
 # shellcheck disable=SC2086
-$CC $STD src/test/bench/bench_pitch_time.c $ENGINE_SRC "$OUT_DIR/le_stretch.o" $LIBS \
-  -o "$OUT_DIR/bench_pitch_time"
+$CC $STD src/test/bench/bench_pitch_time.c $ENGINE_SRC "$OUT_DIR/le_stretch.o" \
+  "$OUT_DIR/bench_alloc.o" $LIBS -o "$OUT_DIR/bench_pitch_time"
 echo "binary: $(pwd)/$OUT_DIR/bench_pitch_time" >&2
 
 "./$OUT_DIR/bench_pitch_time" "$@"

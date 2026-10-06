@@ -32,6 +32,16 @@ static void test_stretch_lifecycle_and_latency(void) {
   printf("test_stretch_lifecycle_and_latency\n");
   CHECK(le_stretch_create(0, 48000, 1, 1) == NULL);
   CHECK(le_stretch_create(1, 0, 1, 1) == NULL);
+  /* absurd sizes are refused, not thrown across the C boundary (an uncaught
+   * std::length_error out of the library's vectors aborted the process) */
+  CHECK(le_stretch_create(INT32_MAX, 48000, 1, 1) == NULL);
+  CHECK(le_stretch_create(LE_STRETCH_MAX_CHANNELS + 1, 48000, 1, 1) == NULL);
+  CHECK(le_stretch_create(1, INT32_MAX, 1, 1) == NULL);
+  {
+    le_stretch* widest = le_stretch_create(LE_STRETCH_MAX_CHANNELS, 48000, 1, 1);
+    CHECK(widest != NULL);
+    le_stretch_destroy(widest);
+  }
   le_stretch* cheap = le_stretch_create(1, 48000, 1, 7);
   le_stretch* full = le_stretch_create(2, 48000, 0, 7);
   CHECK(cheap != NULL && full != NULL);
@@ -175,12 +185,171 @@ static void test_stretch_offline_deterministic_and_guards(void) {
   CHECK(le_stretch_render_offline(in, 0, 1, sr, 1.0, 0.0f, 0.0f, 1, 1u, 1, oa, n) == LE_STRETCH_ERR_INVALID);
   CHECK(le_stretch_render_offline(in, n, 1, sr, 0.0, 0.0f, 0.0f, 1, 1u, 1, oa, n) == LE_STRETCH_ERR_INVALID);
   CHECK(le_stretch_render_offline(in, n, 1, sr, -1.0, 0.0f, 0.0f, 1, 1u, 1, oa, n) == LE_STRETCH_ERR_INVALID);
+  /* ratios outside [1/16, 16] are refused before any frame count is derived */
+  CHECK(le_stretch_render_offline(in, n, 1, sr, 1e-12, 0.0f, 0.0f, 1, 1u, 1, oa, 1) == LE_STRETCH_ERR_INVALID);
+  CHECK(le_stretch_render_offline(in, n, 1, sr, 1e12, 0.0f, 0.0f, 1, 1u, 1, oa, n) == LE_STRETCH_ERR_INVALID);
+  CHECK(le_stretch_render_offline(in, n, 1, sr, LE_STRETCH_MAX_RATIO * 1.01, 0.0f, 0.0f, 1, 1u, 1, oa, n) == LE_STRETCH_ERR_INVALID);
+  /* both ends of the range render the exact length (the chunking keeps each
+   * process() call's output near 512 frames even at 16x) */
+  {
+    const double ends[] = {1.0 / LE_STRETCH_MAX_RATIO, LE_STRETCH_MAX_RATIO};
+    for (int e = 0; e < 2; ++e) {
+      const int32_t m = (int32_t)llround((double)n * ends[e]);
+      float* y = (float*)calloc((size_t)m, sizeof(float));
+      float* oy[1] = {y};
+      CHECK(le_stretch_render_offline(in, n, 1, sr, ends[e], 0.0f, 0.0f, 1, 1u,
+                                      1, oy, m) == LE_STRETCH_OK);
+      CHECK(stretch_all_finite(y, m));
+      free(y);
+    }
+  }
   CHECK(le_stretch_render_offline(in, n, 1, sr, 1.0, 0.0f, 0.0f, 1, 1u, 1, oa, 0) == LE_STRETCH_ERR_INVALID);
   CHECK(le_stretch_render_offline(in, n, 0, sr, 1.0, 0.0f, 0.0f, 1, 1u, 1, oa, n) == LE_STRETCH_ERR_INVALID);
+  CHECK(le_stretch_render_offline(in, n, INT32_MAX, sr, 1.0, 0.0f, 0.0f, 1, 1u, 1, oa, n) == LE_STRETCH_ERR_INVALID);
+  CHECK(le_stretch_render_offline(in, n, 1, INT32_MAX, 1.0, 0.0f, 0.0f, 1, 1u, 1, oa, n) == LE_STRETCH_ERR_INVALID);
   /* an output far longer than the ratio allows is refused, not truncated */
   CHECK(le_stretch_render_offline(in, n, 1, sr, 1.0, 0.0f, 0.0f, 1, 1u, 1, oa, 3 * n) == LE_STRETCH_ERR_INVALID);
   free(a);
   free(b);
   free(c);
   free(src);
+}
+
+/* Index of the largest |x[i]| over the circular window [centre - half,
+ * centre + half] of a buffer of n frames (wrapping, so a click near a lap's
+ * edge is found on whichever side of the seam it landed). */
+static int64_t stretch_peak_near(const float* x, int64_t n, int64_t centre,
+                                 int64_t half) {
+  int64_t best = -1;
+  float best_v = -1.0f;
+  for (int64_t k = centre - half; k <= centre + half; ++k) {
+    int64_t i = k % n;
+    if (i < 0) i += n;
+    if (fabsf(x[i]) > best_v) {
+      best_v = fabsf(x[i]);
+      best = i;
+    }
+  }
+  return best;
+}
+
+/* Circular distance between two frame indices of an n-frame loop. */
+static int64_t stretch_circ_dist(int64_t a, int64_t b, int64_t n) {
+  int64_t d = (a - b) % n;
+  if (d < 0) d += n;
+  return d < n - d ? d : n - d;
+}
+
+/* A quiet 220 Hz bed (so the stretcher never takes its silence shortcut)
+ * with unit clicks at `clicks`. */
+static float* stretch_clicks(int32_t frames, int32_t sr, const int32_t* clicks,
+                             int n_clicks) {
+  float* x = (float*)malloc(sizeof(float) * (size_t)frames);
+  for (int32_t i = 0; i < frames; ++i) {
+    x[i] = 0.02f * (float)sin(2.0 * M_PI * 220.0 * (double)i / (double)sr);
+  }
+  for (int k = 0; k < n_clicks; ++k) x[clicks[k]] = 1.0f;
+  return x;
+}
+
+/* Alignment: a click at input frame c comes out within 2 ms of c * ratio, at
+ * every ratio a lap is rendered at and in both modes, over the plan's 30 s
+ * input. This is the latency compensation (`discard`) that lets a rendered
+ * lap tile the clock: without it every click lands a stretcher block late
+ * (100 ms at 48 kHz). The search window (250 ms) is wider than that shift,
+ * so a wrong compensation is measured, not missed. */
+static void test_stretch_offline_click_alignment(void) {
+  printf("test_stretch_offline_click_alignment\n");
+  const int32_t sr = 48000;
+  const int32_t in_frames = 30 * sr;
+  const int32_t clicks[] = {sr + 123, 15 * sr + 7, 29 * sr - 311};
+  float* src = stretch_clicks(in_frames, sr, clicks, 3);
+  const float* in[1] = {src};
+  const double ratios[] = {1.0, 0.75, 4.0 / 3.0};
+  const int64_t tol = 2 * sr / 1000; /* 2 ms */
+  for (int r = 0; r < 3; ++r) {
+    const int32_t out_frames = (int32_t)llround((double)in_frames * ratios[r]);
+    float* y = (float*)calloc((size_t)out_frames, sizeof(float));
+    float* outs[1] = {y};
+    for (int cyclic = 0; cyclic < 2; ++cyclic) {
+      memset(y, 0, sizeof(float) * (size_t)out_frames);
+      CHECK(le_stretch_render_offline(in, in_frames, 1, sr, ratios[r], 0.0f,
+                                      0.0f, 1, 42u, cyclic, outs,
+                                      out_frames) == LE_STRETCH_OK);
+      for (int k = 0; k < 3; ++k) {
+        const int64_t want = llround((double)clicks[k] * ratios[r]);
+        const int64_t got = stretch_peak_near(y, out_frames, want, sr / 4);
+        if (stretch_circ_dist(got, want, out_frames) > tol) {
+          printf("  click %d at ratio %.4f cyclic %d: want %lld got %lld\n", k,
+                 ratios[r], cyclic, (long long)want, (long long)got);
+        }
+        CHECK(stretch_circ_dist(got, want, out_frames) <= tol);
+      }
+    }
+    free(y);
+  }
+  free(src);
+}
+
+/* The cyclic seam: a cyclic render loops. (1) Continuity: a lap of a sine
+ * with a whole number of cycles at every ratio (660 cycles in 3 s at 220 Hz;
+ * 495 at 0.75, 880 at 4/3) renders a loop whose wrap step out[n-1] -> out[0]
+ * is no larger than the render's own largest step between neighbours (with
+ * 25 % headroom), so the loop point is inaudible. (2) The material on each side of the loop point is
+ * the lap's own: a click 20 ms before the lap's end and one 20 ms after its
+ * start come out 20 ms * ratio either side of the seam, not shifted across
+ * it by the stretcher's latency. */
+static void test_stretch_offline_cyclic_seam(void) {
+  printf("test_stretch_offline_cyclic_seam\n");
+  const int32_t sr = 48000;
+  const int32_t in_frames = 3 * sr;
+  float* sine = stretch_sine(in_frames, 220.0, sr);
+  const int32_t edge = sr / 50; /* 20 ms */
+  const int32_t clicks[] = {in_frames - edge, edge};
+  float* marks[2] = {stretch_clicks(in_frames, sr, &clicks[0], 1),
+                     stretch_clicks(in_frames, sr, &clicks[1], 1)};
+  const double ratios[] = {1.0, 0.75, 4.0 / 3.0};
+  const int64_t tol = 2 * sr / 1000; /* 2 ms */
+  for (int r = 0; r < 3; ++r) {
+    const int32_t n = (int32_t)llround((double)in_frames * ratios[r]);
+    float* y = (float*)calloc((size_t)n, sizeof(float));
+    float* outs[1] = {y};
+    const float* in_sine[1] = {sine};
+    CHECK(le_stretch_render_offline(in_sine, in_frames, 1, sr, ratios[r], 0.0f,
+                                    0.0f, 1, 42u, 1, outs, n) == LE_STRETCH_OK);
+    float max_step = 0.0f;
+    for (int32_t i = 0; i + 1 < n; ++i) {
+      const float d = fabsf(y[i + 1] - y[i]);
+      if (d > max_step) max_step = d;
+    }
+    /* 25 % of headroom over the largest neighbour step: at ratio 1 the wrap
+     * step IS an ordinary sine step (equal to the largest to 1e-6), while a
+     * discontinuity at the seam is tens of times larger */
+    const float seam = fabsf(y[0] - y[n - 1]);
+    if (!(max_step > 0.0f && seam <= 1.25f * max_step)) {
+      printf("  seam at ratio %.4f: step %g, largest interior step %g\n",
+             ratios[r], (double)seam, (double)max_step);
+    }
+    CHECK(max_step > 0.0f && seam <= 1.25f * max_step);
+
+    /* one click per render: the two sit 40 ms apart across the seam, closer
+     * than the search window */
+    for (int k = 0; k < 2; ++k) {
+      const float* in_marks[1] = {marks[k]};
+      CHECK(le_stretch_render_offline(in_marks, in_frames, 1, sr, ratios[r],
+                                      0.0f, 0.0f, 1, 42u, 1, outs,
+                                      n) == LE_STRETCH_OK);
+      const int64_t want = llround((double)clicks[k] * ratios[r]);
+      const int64_t got = stretch_peak_near(y, n, want, sr / 4);
+      if (stretch_circ_dist(got, want, n) > tol) {
+        printf("  seam click %d at ratio %.4f: want %lld got %lld\n", k,
+               ratios[r], (long long)want, (long long)got);
+      }
+      CHECK(stretch_circ_dist(got, want, n) <= tol);
+    }
+    free(y);
+  }
+  free(marks[0]);
+  free(marks[1]);
+  free(sine);
 }

@@ -34358,6 +34358,8 @@ int main(void) {
   test_stretch_lifecycle_and_latency();
   test_stretch_offline_exact_length_and_pitch();
   test_stretch_offline_deterministic_and_guards();
+  test_stretch_offline_click_alignment();
+  test_stretch_offline_cyclic_seam();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

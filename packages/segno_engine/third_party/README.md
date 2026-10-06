@@ -108,10 +108,11 @@ replace the folder with a newer SDK release and update the version above.
   (`../../third_party/signalsmith-stretch/signalsmith-stretch.h`), so no
   include path is added to CMake, the podspec, `Package.swift` or
   `run_native_tests.sh`; those list the shim TU (CMake, compiled as C++17) or
-  compile it with `$CXX` and link the C++ runtime. Determinism contract worth
-  knowing: construct with a fixed seed; the native tests assert the two preset
-  geometries (cheaper: block 0.1 s / interval 0.04 s; default: 0.12 s / 0.03 s)
-  so an upgrade cannot change them silently.
+  compile it with `$CXX` and link the C++ runtime. On Linux CMake compiles the
+  shim with `-fvisibility=hidden`, for the RNNoise reason above. Determinism
+  contract worth knowing: construct with a fixed seed; the native tests assert
+  the two preset geometries (cheaper: block 0.1 s / interval 0.04 s; default:
+  0.12 s / 0.03 s) so an upgrade cannot change them silently.
 
 ## `clap/` — CLAP plugin ABI (header-only)
 
@@ -148,6 +149,19 @@ Do not edit the vendored sources in place — they are upstream drops (plus, for
 `rnnoise/`, the one documented patch above). To upgrade, replace the folder(s)
 with a newer release, re-apply any still-needed documented patches, and update
 the version(s) above.
+
+## License notices in the app
+
+Flutter's license collector only reads Dart packages' `LICENSE` files, so none
+of the code above reaches the app's open source notices on its own. The
+engine package declares each license file as an asset (`pubspec.yaml`) and
+`registerVendoredLicenses` (`lib/src/vendored_licenses.dart`) adds them to
+`LicenseRegistry`; `runSegno` calls it once at startup. Vendoring a new
+library means adding its license file to both lists; the app test
+`test/app/vendored_licenses_test.dart` compares every registered entry with
+the file on disk. The ASIO SDK is not listed: it is compiled only into the
+Windows build, and what its agreement asks of a distribution is a separate
+question (follow-up on #1179).
 
 ## Vendored code that does **not** live here: `src/miniaudio/`
 

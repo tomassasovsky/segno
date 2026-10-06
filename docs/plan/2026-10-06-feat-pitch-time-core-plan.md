@@ -698,8 +698,10 @@ reads, before any mixer edit.
    `src/test/bench/third_party/signalsmith-stretch/` to
    `packages/segno_engine/third_party/signalsmith-stretch/` beside `rnnoise/`
    with `README.upstream.md` (tag 1.1.0, commit `44c8f865`, MIT, the stripped
-   `web/`, `cmd/` noted) and add the MIT notice where RNNoise's lives in the
-   About license notices. Add `src/stretch/le_stretch.h` (plain C: opaque
+   `web/`, `cmd/` noted) and add its MIT notice to the app's open source
+   notices. (No vendored native license was registered there, RNNoise's
+   included; Part 1 registers them all from `segno_engine`,
+   `registerVendoredLicenses`.) Add `src/stretch/le_stretch.h` (plain C: opaque
    `le_stretch`, `le_stretch_create(channels, sample_rate, cheaper, seed)`,
    `le_stretch_destroy`, `le_stretch_render_offline` as in §5, and the
    streaming `le_stretch_process(in, n_in, out, n_out)` / `_seek` / `_flush` /
