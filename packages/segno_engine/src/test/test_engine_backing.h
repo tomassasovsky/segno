@@ -516,6 +516,80 @@ static void test_backing_lifetimes(void) {
   le_engine_destroy(e);
 }
 
+
+/* The byte budget (M1): two maximal buffers fit, a third is refused with
+ * CAPACITY while nothing is in transit, NOT_READY while one is. */
+static void test_backing_byte_budget(void) {
+  printf("test_backing_byte_budget\n");
+  le_engine* e = bk_engine(2);
+  /* Fake sizes: the registry counts bytes from frames; three 600 MB
+   * buffers' worth of frames without allocating them. */
+  const int32_t big = (int32_t)(600ll * 1024 * 1024 / 8);
+  le_backing_buffer* b[3];
+  for (int i = 0; i < 3; ++i) {
+    b[i] = bk_buffer(4, 0.0f);
+    b[i]->frames = big; /* never read: the voice stays stopped */
+  }
+  CHECK(le_engine_backing_load(e, b[0], 1, 0) == LE_OK);
+  CHECK(le_engine_backing_stage_next(e, b[1], 2) == LE_OK);
+  drain(e);
+  const int32_t third = le_engine_backing_load(e, b[2], 3, 0);
+  CHECK(third == LE_ERR_CAPACITY);
+  le_backing_state s = bk_state(e);
+  CHECK(s.owned == 2 && s.owned_bytes == 2ll * big * 8);
+  drain(e); /* a wrongly accepted third would be loaded, never played */
+  for (int i = 0; i < 3; ++i) b[i]->frames = 4; /* real sizes for teardown */
+  if (third != LE_OK) le_backing_buffer_free(b[2]);
+  le_engine_destroy(e);
+}
+
+/* The End = Next advance never drops a buffer: with every return slot taken
+ * (forced here; the registry bound makes it unreachable otherwise) the
+ * callback stops instead of advancing. */
+static void test_backing_advance_refused_when_returns_full(void) {
+  printf("test_backing_advance_refused_when_returns_full\n");
+  static float out[600 * 2];
+  le_engine* e = bk_engine(2);
+  CHECK(le_engine_backing_set_output(e, 0x3) == LE_OK);
+  CHECK(le_engine_backing_set_end(e, LE_BACKING_END_NEXT) == LE_OK);
+  CHECK(le_engine_backing_load(e, bk_buffer(300, 0.0f), 1, 1) == LE_OK);
+  CHECK(le_engine_backing_stage_next(e, bk_buffer(300, 0.5f), 2) == LE_OK);
+  drain(e);
+  for (int i = 0; i < LE_BACKING_MAX_BUFFERS; ++i) {
+    atomic_store_explicit(&e->a_backing_dead[i], bk_buffer(1, 0.0f),
+                          memory_order_relaxed);
+  }
+  bk_run(e, out, 400, 2, 64);
+  for (int i = 300; i < 400; ++i) CHECK(out[2 * i] == 0.0f);
+  /* Collecting frees the four placeholders; the loaded and staged stay. */
+  le_backing_state s = bk_state(e);
+  CHECK(s.item == 1 && s.next_item == 2);
+  CHECK(s.transport == LE_BACKING_STOPPED);
+  CHECK(s.last_end == LE_BACKING_EV_NEXT_MISSING && s.owned == 2);
+  le_engine_destroy(e);
+}
+
+/* A performance with the backing on the captured bus says so in its
+ * sidecar (L8); one without it does not. */
+static void test_backing_marks_capture(void) {
+  printf("test_backing_marks_capture\n");
+  for (int routed = 0; routed < 2; ++routed) {
+    le_engine* e = bk_engine(2);
+    CHECK(le_engine_backing_set_output(e, routed ? 0x3 : 0x0) == LE_OK);
+    CHECK(le_engine_backing_load(e, bk_buffer(4096, 0.0f), 1, 1) == LE_OK);
+    drain(e);
+    const char* dir = render_test_dir(routed ? "backing-mark-1" : "backing-mark-0");
+    CHECK(le_perf_arm(e, dir) == LE_OK);
+    drain(e);
+    static float out[512 * 2];
+    bk_run(e, out, 512, 2, 128);
+    CHECK(le_perf_disarm(e) == LE_OK);
+    CHECK(history_manifest_count(dir, "\"backing_in_master\": true") ==
+          routed);
+    le_engine_destroy(e);
+  }
+}
+
 static void test_click_pan(void) {
   printf("test_click_pan\n");
   le_engine* e = ck_make_engine(2);
@@ -556,5 +630,8 @@ static void run_backing_tests(void) {
   test_backing_in_master_capture();
   test_backing_excluded_from_stems();
   test_backing_lifetimes();
+  test_backing_byte_budget();
+  test_backing_advance_refused_when_returns_full();
+  test_backing_marks_capture();
   test_click_pan();
 }

@@ -101,6 +101,18 @@ static int le_backing_owned_count(const le_engine* e) {
   return n;
 }
 
+static int64_t le_backing_bytes(const le_backing_buffer* b) {
+  return b == NULL ? 0 : (int64_t)b->frames * 2 * (int64_t)sizeof(float);
+}
+
+static int64_t le_backing_owned_bytes(const le_engine* e) {
+  int64_t n = 0;
+  for (int i = 0; i < LE_BACKING_MAX_BUFFERS; ++i) {
+    n += le_backing_bytes(e->backing_owned[i]);
+  }
+  return n;
+}
+
 /* Frees every buffer the callback has returned. Control thread. */
 static void le_backing_collect(le_engine* e) {
   for (int i = 0; i < LE_BACKING_MAX_BUFFERS; ++i) {
@@ -153,7 +165,13 @@ static int32_t le_backing_post_buffer(le_engine* e, int32_t code,
   int slot = -1;
   if (buffer != NULL) {
     slot = le_backing_owned_index(e, NULL);
-    if (slot < 0) return LE_ERR_NOT_READY;
+    const int over_budget = le_backing_owned_bytes(e) + le_backing_bytes(buffer) >
+                            LE_BACKING_BUDGET_BYTES;
+    if (slot < 0 || over_budget) {
+      /* More than a loaded and a staged buffer means one is in transit. */
+      return le_backing_owned_count(e) > 2 ? LE_ERR_NOT_READY
+                                           : LE_ERR_CAPACITY;
+    }
     e->backing_owned[slot] = buffer;
   }
   const int32_t rc = le_push_cmd(
@@ -250,5 +268,6 @@ int32_t le_engine_backing_state(le_engine* engine, le_backing_state* out) {
   out->pan = load_f32(&engine->a_backing_pan_bits);
   out->click_pan = load_f32(&engine->a_click_pan_bits);
   out->owned = le_backing_owned_count(engine);
+  out->owned_bytes = le_backing_owned_bytes(engine);
   return LE_OK;
 }

@@ -1910,6 +1910,9 @@ struct le_engine {
    * unpersisted instead of queued for the drain thread. Same rationale as
    * the two atomics above: not surfaced via le_snapshot yet. */
   _Atomic uint32_t a_perf_layer_overruns;
+  /* Blocks in which the backing (#1200) reached the captured bus while
+   * armed: the master holds backing audio no stem reproduces. Reset at arm. */
+  _Atomic uint32_t a_perf_backing_blocks;
   le_perf_capture perf;
 
   /* Tracks. */

@@ -2217,7 +2217,22 @@ static inline int32_t le_backing_ramp_frames(const le_engine* e) {
   return n > 0 ? n : 1;
 }
 
-/* Returns [b] to the control thread. Never full (see engine_private.h). */
+/* Returns [b] to the control thread. Never full: every buffer in a slot is
+ * engine-owned and distinct, and the engine owns at most
+ * LE_BACKING_MAX_BUFFERS (engine_backing.c's registry), so a slot is free for
+ * any buffer not already returned. le_backing_can_return lets the one path
+ * that could otherwise have to drop a buffer (the End = Next advance) refuse
+ * instead; the test hook fills the slots to prove it. */
+static int le_backing_can_return(le_engine* e) {
+  for (int i = 0; i < LE_BACKING_MAX_BUFFERS; ++i) {
+    if (atomic_load_explicit(&e->a_backing_dead[i], memory_order_relaxed) ==
+        NULL) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 static void le_backing_return(le_engine* e, le_backing_buffer* b) {
   if (b == NULL) return;
   for (int i = 0; i < LE_BACKING_MAX_BUFFERS; ++i) {
@@ -4695,7 +4710,8 @@ static inline void backing_frame(le_engine* e, float* out, uint32_t f,
       if (end_mode == LE_BACKING_END_REPEAT) {
         c->pos = 0;
         e->backing_last_end = LE_BACKING_EV_REPEATED;
-      } else if (end_mode == LE_BACKING_END_NEXT && e->backing_next != NULL) {
+      } else if (end_mode == LE_BACKING_END_NEXT && e->backing_next != NULL &&
+                 (e->backing_fade.buf == c->buf || le_backing_can_return(e))) {
         le_backing_drop_cur(e);
         e->backing_cur = (le_backing_voice){.buf = e->backing_next};
         e->backing_item = e->backing_next_item;
@@ -7192,7 +7208,16 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     advance_transport_frame(e, tc, st, perf_frame_base + f);
   }
 
-  if (backing_ran) le_backing_publish(e);
+  if (backing_ran) {
+    le_backing_publish(e);
+    /* The DAW package says when the master holds backing audio the stems
+     * cannot (#1200 L8): count the blocks it reached the captured pair. */
+    if (perf_bus >= 0 &&
+        (backing_mask & out_enabled & (3u << (2 * perf_bus))) != 0u) {
+      atomic_fetch_add_explicit(&e->a_perf_backing_blocks, 1u,
+                                memory_order_relaxed);
+    }
+  }
 
   /* Input RMS is normalised by the active (non-loopback) channel count only. */
   const uint32_t total_in = frames * (uint32_t)active_in;

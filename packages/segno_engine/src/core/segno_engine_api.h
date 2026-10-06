@@ -2280,9 +2280,22 @@ LE_EXPORT int32_t le_engine_set_click_pan(le_engine* engine, float pan);
  * engine; on any refusal the caller still owns it. The engine frees buffers
  * only on the control thread: in le_engine_backing_state (the collect point),
  * before every load or stage, at configure, at reopen and at destroy, never
- * on the audio thread. At most LE_BACKING_MAX_BUFFERS are engine-owned at
- * once; a load or stage past that reads LE_ERR_NOT_READY until the audio
- * thread has returned a finished buffer (retry after one block).
+ * on the audio thread. At most LE_BACKING_MAX_BUFFERS buffers and
+ * LE_BACKING_BUDGET_BYTES of PCM are engine-owned at once. A load or stage
+ * past either bound reads LE_ERR_NOT_READY while a buffer is in transit (more
+ * than two owned: a replaced or finished one the audio thread has not handed
+ * back yet; retry after one block), else LE_ERR_CAPACITY.
+ *
+ * Handoff protocol. Only the audio thread changes which buffer is loaded or
+ * staged: loads, stages and clears travel the command ring in posting order,
+ * and an End = Next advance happens inside the callback, so no control-side
+ * swap can race it. The callback hands a buffer it will never read again back
+ * through one of LE_BACKING_MAX_BUFFERS return slots (release store); the
+ * control thread exchanges the slot empty (acquire) before freeing. A return
+ * slot always exists for every engine-owned buffer, so a return never fails;
+ * should one ever find no free slot, the callback refuses the End = Next
+ * advance (stops with LE_BACKING_EV_NEXT_MISSING) rather than lose or
+ * overwrite a buffer.
  *
  * Declick: Pause, Stop, a seek while playing, a replace while playing and
  * Clear while playing fade the outgoing sound out over LE_BACKING_RAMP_MS on
@@ -2296,6 +2309,9 @@ LE_EXPORT int32_t le_engine_set_click_pan(le_engine* engine, float pan);
  * direct stores seeded once at create and persist across configure, like the
  * click settings. */
 #define LE_BACKING_MAX_BUFFERS 4
+/* 1.5 GiB: two 15-minute 96 kHz stereo buffers (691 MB each) plus headroom,
+ * the backing's share of the appliance memory budget (#1200 plan, M1). */
+#define LE_BACKING_BUDGET_BYTES (1536ll * 1024 * 1024)
 #define LE_BACKING_RAMP_MS 5
 
 typedef struct le_backing_buffer le_backing_buffer;
@@ -2391,6 +2407,7 @@ typedef struct le_backing_state {
   float pan;
   float click_pan;
   int32_t owned;       /* buffers the engine owns after this collect */
+  int64_t owned_bytes; /* their PCM bytes */
 } le_backing_state;
 
 /* Reads the published state (as of the last processed block) and frees every

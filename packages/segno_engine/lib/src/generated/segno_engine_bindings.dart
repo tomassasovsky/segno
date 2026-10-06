@@ -8386,6 +8386,10 @@ final class le_backing_state extends ffi.Struct {
   /// buffers the engine owns after this collect
   @ffi.Int32()
   external int owned;
+
+  /// their PCM bytes
+  @ffi.Int64()
+  external int owned_bytes;
 }
 
 /// Per-lane cache telemetry states (le_lane_cache_info.state).
@@ -8551,6 +8555,8 @@ const int LE_CB_BUCKETS = 8;
 const int LE_XRUN_KINDS = 4;
 
 const int LE_BACKING_MAX_BUFFERS = 4;
+
+const int LE_BACKING_BUDGET_BYTES = 1610612736;
 
 const int LE_BACKING_RAMP_MS = 5;
 
