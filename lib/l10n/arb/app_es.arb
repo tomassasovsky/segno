@@ -2731,5 +2731,15 @@
     "mixerFading": "En Fade",
     "mixerFadeLevel": "Fade {value}%",
     "fadeDurationLabel": "Duración de Fade",
-    "fadeDurationReadout": "{value} s"
+    "fadeDurationReadout": "{value} s",
+    "actionModeReverse": "Reversa",
+    "actionOperationReverse": "Reversa",
+    "footReversePlaybackDirection": "Sentido de reproducción",
+    "footReverseForward": "Normal",
+    "footReverseReversed": "Reversa",
+    "footReverseSwitchBank": "Cambiar banco",
+    "footReverseFailure": "No se pudo cambiar el sentido de la pista. Inténtalo de nuevo.",
+    "footReverseOverdubRefused": "No se puede sobregrabar mientras la pista suena al revés",
+    "stageReverseMarker": "REV",
+    "a11yStageReversed": "La pista se reproduce al revés"
 }

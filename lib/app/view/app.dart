@@ -186,6 +186,7 @@ class _AppState extends State<App> {
   final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   StreamSubscription<int>? _recordRefusedSubscription;
+  StreamSubscription<int>? _overdubRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
 
@@ -223,7 +224,12 @@ class _AppState extends State<App> {
         .recordingInputRequired
         .listen(_showRecordingInputRequired);
     _recordRefusedSubscription = widget.repository.recordRefusals.listen(
-      _showRecordRefused,
+      (channel) =>
+          _showRecordRefused(channel, (l10n) => l10n.recordRefusedTitle),
+    );
+    _overdubRefusedSubscription = widget.repository.overdubRefusals.listen(
+      (channel) =>
+          _showRecordRefused(channel, (l10n) => l10n.footReverseOverdubRefused),
     );
     _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
     _recordView = RecordOptionsCubit(settings: _runtime.record);
@@ -248,6 +254,7 @@ class _AppState extends State<App> {
     }
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_recordRefusedSubscription?.cancel());
+    unawaited(_overdubRefusedSubscription?.cancel());
     _controlNotices.dispose();
     unawaited(
       _closeControlOwners().catchError((Object error, StackTrace stack) {
@@ -368,16 +375,20 @@ class _AppState extends State<App> {
     );
   }
 
-  /// A fresh-capture Record press the engine refused twice (#1146): the press
-  /// is lost, so say so. Low stakes — a toast, like the input notice above.
-  void _showRecordRefused(int channel) {
+  /// A Record press the engine refused: a fresh capture refused twice
+  /// (#1146), or an overdub on a reversed track. The press is lost, so say
+  /// why. Low stakes — a toast, like the input notice above.
+  void _showRecordRefused(
+    int channel,
+    String Function(AppLocalizations l10n) title,
+  ) {
     if (!mounted || _runtime.power.state.isUiUp) return;
     showAppToast(
       id: AppToastId.recordRefused,
       type: ToastificationType.warning,
       autoCloseDuration: const Duration(seconds: 5),
       title: Builder(
-        builder: (context) => Text(context.l10n.recordRefusedTitle),
+        builder: (context) => Text(title(context.l10n)),
       ),
       description: Builder(
         builder: (context) => Text(

@@ -405,6 +405,12 @@ class _ClickModeStore extends FakeKeyValueStore {
   }
 }
 
+/// Refuses every punch-in as the engine refuses one on a reversed track.
+class _ReversedEngine extends FakeAudioEngine {
+  @override
+  EngineResult record({int channel = 0}) => EngineResult.reversed;
+}
+
 class _RefusingClickModeEngine extends FakeAudioEngine {
   bool refuseMode = false;
 
@@ -1697,6 +1703,43 @@ void main() {
         },
       );
     }
+
+    testWidgets('a Record press on a reversed track says overdub is '
+        'unavailable', (tester) async {
+      engine = _ReversedEngine();
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        tracks: [
+          const le.TrackSnapshot(
+            state: le.TrackState.overdubbing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 48000,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+            reversed: true,
+          ),
+          for (var channel = 1; channel < 8; channel++)
+            const le.TrackSnapshot.empty(),
+        ],
+      );
+      repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      );
+      addTearDown(repository.dispose);
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(repository.record(), EngineResult.reversed);
+      await tester.pumpAndSettle();
+      expect(debugAppToastActive(AppToastId.recordRefused), isTrue);
+      expect(
+        find.text('Overdub is unavailable while the track is reversed'),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
 
     for (final blockedKey in ['tempo.count_in_bars', 'looper.auto_record']) {
       testWidgets('power off waits for complete start pair: $blockedKey', (
