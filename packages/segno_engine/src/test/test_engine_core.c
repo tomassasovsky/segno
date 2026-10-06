@@ -32,6 +32,9 @@
 #include <string.h>
 #include <time.h> /* clock (conditioning CPU smoke) */
 #include <wchar.h>
+#if !defined(_WIN32)
+#include <sys/statvfs.h> /* the oracle for test_volume_space */
+#endif
 #if defined(__linux__)
 #include <dirent.h>     /* /proc/self/fd walk (probe FD leak, #721) */
 #include <dlfcn.h>      /* dlopen — is libpulse even here? */
@@ -49,6 +52,7 @@
 #include "engine_internal.h"
 #include "engine_restore.h" /* le_restore_commit_layer (#697 S9 restore tests) */
 #include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
+#include "engine_read_head.h"  /* the fractional read coordinate (#1179) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
 #include "fft.h"              /* le_fft, le_rfft_fwd, le_rfft_inv, le_hann_init */
@@ -59,6 +63,7 @@
 #include "restore_halfband.h" /* 2:1 half-band resampler (#697 S8) */
 #include "rnnoise.h" /* vendored third_party/rnnoise (#697 S7 smoke test) */
 #include "segno_engine_api.h"
+#include "../stretch/le_stretch.h" /* C shim over Signalsmith Stretch (#1179) */
 #include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
 
 /* Ordinary musical setup awaits the pair's zero-frame publication. Tests of
@@ -9276,24 +9281,41 @@ static int nth_layer_filename_for_test(const char* json, int n, char* out,
  * `df` subprocess, and fork() on the appliance costs the real-time audio thread
  * milliseconds. This is the replacement — a plain question about a directory,
  * with no engine and no child process. */
-static void test_perf_volume_free_bytes(void) {
-  printf("test_perf_volume_free_bytes\n");
-  uint64_t bytes = 12345;
+static void test_volume_space(void) {
+  printf("test_volume_space\n");
+  uint64_t total = 12345;
+  uint64_t free_bytes = 12345;
 
-  CHECK(le_perf_volume_free_bytes(NULL, &bytes) == LE_ERR_INVALID);
-  CHECK(le_perf_volume_free_bytes("", &bytes) == LE_ERR_INVALID);
-  CHECK(le_perf_volume_free_bytes(".", NULL) == LE_ERR_INVALID);
+  CHECK(le_volume_space(NULL, &total, &free_bytes) == LE_ERR_INVALID);
+  CHECK(le_volume_space("", &total, &free_bytes) == LE_ERR_INVALID);
+  CHECK(le_volume_space(".", NULL, &free_bytes) == LE_ERR_INVALID);
+  CHECK(le_volume_space(".", &total, NULL) == LE_ERR_INVALID);
 
   /* A path the filesystem cannot answer for is LE_ERR_DEVICE, not a zero that
    * the caller would read as "full" and refuse to arm on. */
-  bytes = 12345;
-  CHECK(le_perf_volume_free_bytes("/no/such/directory/for/segno",
-                                  &bytes) == LE_ERR_DEVICE);
-  CHECK(bytes == 0); /* cleared even on failure, so a stale read cannot leak */
+  total = 12345;
+  free_bytes = 12345;
+  CHECK(le_volume_space("/no/such/directory/for/segno", &total,
+                        &free_bytes) == LE_ERR_DEVICE);
+  CHECK(total == 0); /* cleared even on failure, so a stale read cannot leak */
+  CHECK(free_bytes == 0);
 
-  bytes = 0;
-  CHECK(le_perf_volume_free_bytes(".", &bytes) == LE_OK);
-  CHECK(bytes > 0); /* the volume the tests build on is not full */
+  CHECK(le_volume_space(".", &total, &free_bytes) == LE_OK);
+  CHECK(total > 0);           /* the volume the tests build on has a size */
+  CHECK(total >= free_bytes); /* and is not emptier than it is large */
+#if !defined(_WIN32)
+  /* The oracle: the same statvfs, taken here. Total is exact (a volume does
+   * not change size between two calls); free may move by whatever the build
+   * wrote in between, so it gets 64 MiB of slack rather than an equality that
+   * would be flaky on a busy CI disk. */
+  struct statvfs st;
+  CHECK(statvfs(".", &st) == 0);
+  CHECK(total == (uint64_t)st.f_blocks * (uint64_t)st.f_frsize);
+  const uint64_t expected_free = (uint64_t)st.f_bavail * (uint64_t)st.f_frsize;
+  const uint64_t slack = 64u * 1024u * 1024u;
+  CHECK(free_bytes + slack >= expected_free);
+  CHECK(expected_free + slack >= free_bytes);
+#endif
 }
 
 static void test_perf_arm_requires_configure(void) {
@@ -33540,6 +33562,8 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_fade.h"
 #include "test_engine_reopen.h"
 #include "test_engine_history_replay.h"
+#include "test_engine_read_head.h"
+#include "test_engine_stretch.h"
 #include "test_engine_reverse.h"
 #include "test_engine_peel.h"
 
@@ -33732,7 +33756,7 @@ int main(void) {
   test_two_monitored_inputs_dont_interfere();
   test_monitor_disable_and_excluded();
   test_monitor_and_playback_sum();
-  test_perf_volume_free_bytes();
+  test_volume_space();
   test_perf_arm_requires_configure();
   test_perf_reconfigure_while_armed_resets_cleanly();
   test_perf_arm_rejects_no_enabled_output();
@@ -34353,6 +34377,15 @@ int main(void) {
   test_restore_noop_when_disabled();
   test_restore_cancel_and_single_job();
   test_restore_denoise_completes_finite();
+  test_read_head_identity_is_exact();
+  test_read_head_fractional_rates();
+  test_read_head_reorigin_and_wrap();
+  test_read_head_turn_mix_and_q32();
+  test_stretch_lifecycle_and_latency();
+  test_stretch_offline_exact_length_and_pitch();
+  test_stretch_offline_deterministic_and_guards();
+  test_stretch_offline_click_alignment();
+  test_stretch_offline_cyclic_seam();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

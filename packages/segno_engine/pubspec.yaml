@@ -23,6 +23,15 @@ dev_dependencies:
   very_good_analysis: ^10.2.0
 
 flutter:
+  # The vendored native code's license texts, verbatim, for the app's
+  # open source notices (registerVendoredLicenses).
+  assets:
+    - third_party/clap/LICENSE
+    - src/miniaudio/LICENSE
+    - third_party/rnnoise/COPYING
+    - third_party/signalsmith-stretch/dsp/LICENSE.txt
+    - third_party/signalsmith-stretch/LICENSE.txt
+    - third_party/vst3sdk/base/LICENSE.txt
   plugin:
     platforms:
       macos:
