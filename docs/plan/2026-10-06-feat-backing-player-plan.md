@@ -866,7 +866,7 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 6: routing, the Mixer `Backing & click` dialog and the value targets (about 470 lines)
+### Part 6: routing, the Mixer `Backing & click` dialog and the value targets (built: `claude/backing-1200-p6`, about 760 lines)
 
 Files: `output_routing_tab.dart:326-336` (21/04: the `players` kind becomes
 the pen's `Backing track` / `Click` choice; `_mask` `:123-124` and `_send`
@@ -1078,7 +1078,8 @@ the idle-dimming owner lands it must read `BackingPlayerState.playing`.
   indexing a 7-entry table with a file byte. #1235 (the update, then FLAC)
   re-checks all of them, re-applies every `SEGNO PATCH` and re-runs the
   fuzzer.
-- **A non-finite guard on the output buses (proposed, review of #1223, H3).**
+- **A non-finite guard on the output buses (proposed, review of #1223, H3;
+  filed as #1254).**
   The backing can no longer carry a NaN or Inf (D2a), but any source can
   still put one on a bus (a hosted plugin, a future instrument), and the
   bus FX keep it for good: the review measured a reverb and a filter staying
@@ -1432,6 +1433,54 @@ import run concurrently, a single retry, the damaged hand-over, the snapshot per
 refresh; P5 the separate clear emit, adopting the repository's file, Play
 not waiting for the reload, dropping the missing loaded item, the restart
 refresh.
+
+### Part 6 (`claude/backing-1200-p6`, stacked on Part 5)
+
+About 760 production lines (the estimate left out the view cubit and the
+port's origin plumbing). Departures from the Part 6 text and from the pen:
+
+- **A `BackingMixCubit` draws the mix and the click pan** from
+  `BackingSettings` (held controller values included), so the dialog and
+  21/04 do not read the families directly. `controlAvailability` reads it
+  where a host provides it and leaves the three targets out otherwise.
+- **The Backing row's subtitle is the loaded file's name,** or
+  "Nothing loaded" when there is none; the pen's placeholder reads
+  "Prepared audio".
+- **The Volume bar is on the Mixer gain axis,** so unity sits at 91% of the
+  travel; the pen draws 0 dB as a full bar. The slider is the shared
+  `LoopSlider` (56 px tall, the pen's track is 64), and the top-bar gap
+  before Reset mixer is the bar's 24 px, not the pen's 14.
+- **In the 800 px compact window the button narrows the session name** to
+  its first letter (`tracks_mixer_compact_window.png`); the 1920 px layout
+  matches the pen.
+- **The catalogue places the backing targets under a `Backing` destination**
+  (after the click) and the click pan under `Click`, beside click volume.
+- **Tests are named for what they cover:** `audio_routing_test.dart` (the
+  player selector), `backing_click_dialog_test.dart` (5),
+  `tracks_view_test.dart` (the button is in the Mixer only),
+  `owned_value_port_backing_test.dart` (8: resolve and read, controller
+  writes with release, ordinary changes with their field origin, no owner
+  leaves them unresolved, readouts and labels, picker destinations,
+  byte-stable keys and malformed ones, the gain axis) and
+  `control_availability_view_test.dart` (3). The dialog and routing tests
+  use mocked cubits: a real backing fixture inside `testWidgets` crosses
+  zones and hangs.
+
+Mutations reverted one at a time (15), each caught: the backing mask sent
+to, and read from, the click; the double-tap volume reset to 0 and the pan
+reset dropped; a linear level commit; a commit on every drag step; the
+level origin on the pan field; the click pan write; the release dropped;
+ordinary changes dropped; the backing targets under Click; availability
+without the backing, ignoring either owner's readiness; the button outside
+the Mixer.
+
+Verified on the pushed head: `dart analyze --fatal-infos lib test
+packages` clean; `bloc lint lib test packages` 0 issues; formatting
+unchanged; the app suite (3517), `backing_repository` (41) and
+`segno_engine` (409) pass against a freshly built test library. The Mixer
+goldens were regenerated for the new button and checked by eye. Still owed
+on the console: the Part 6 [HARDWARE] criterion (Monitor-only routing on
+outputs 3-4, hard-left pan, Output FX on Main).
 
 ### Verification (Parts 1 and 2, on their pushed heads)
 
