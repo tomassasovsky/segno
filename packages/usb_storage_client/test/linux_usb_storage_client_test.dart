@@ -209,13 +209,20 @@ void main() {
       // queue (IN_Q_OVERFLOW) as an error after dropping events.
       late List<StreamController<FileSystemEvent>> watches;
 
-      LinuxUsbStorageClient buildWatched() => LinuxUsbStorageClient(
+      LinuxUsbStorageClient buildWatched({
+        Duration restartDelay = Duration.zero,
+        bool endAtOnce = false,
+      }) => LinuxUsbStorageClient(
         runDir: root.path,
         log: logged.add,
+        restartDelay: restartDelay,
+        maxRestartDelay: const Duration(seconds: 2),
         watchDirectory: (path) {
           expect(path, volumes);
           final watch = StreamController<FileSystemEvent>();
           watches.add(watch);
+          // An exhausted inotify limit: every watch ends as soon as it starts.
+          if (endAtOnce) unawaited(watch.close());
           return watch.stream;
         },
       );
@@ -257,13 +264,57 @@ void main() {
         await _until(() => events.length == 2, timeout);
         expect(generations(events[1]), [1, 2]);
         expect(logged.single, contains('ended'));
-        expect(watches, hasLength(2));
+        await _until(() => watches.length == 2, timeout);
 
         // The new watch is the one that delivers now.
         place('3.json', record(3));
         watches.last.add(FileSystemCreateEvent('$volumes/3.json', false));
         await _until(() => events.length == 3, timeout);
         expect(generations(events[2]), [1, 2, 3]);
+      });
+
+      test('a watch that keeps ending at once is restarted with a doubling '
+          'delay, not in a tight loop; a cancel stops the restarts', () async {
+        write('1.json', record(1));
+        final client = buildWatched(
+          restartDelay: const Duration(milliseconds: 50),
+          endAtOnce: true,
+        );
+        final sub = client.volumes.listen((_) {});
+
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        // 50, 100, 200 ms apart: the first watch and at most three more.
+        expect(watches.length, inInclusiveRange(2, 4));
+        expect(logged.last, contains('watching again in'));
+
+        await sub.cancel();
+        final settled = watches.length;
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        expect(watches, hasLength(settled), reason: 'no restart after cancel');
+      });
+
+      test('a watch that delivers resets the backoff', () async {
+        write('1.json', record(1));
+        final client = buildWatched(
+          restartDelay: const Duration(milliseconds: 40),
+        );
+        final events = <List<RemovableVolumeRecord>>[];
+        final sub = client.volumes.listen(events.add);
+        addTearDown(sub.cancel);
+        await _until(() => events.length == 1, timeout);
+
+        await watches.last.close();
+        await _until(() => watches.length == 2, timeout);
+        await watches.last.close();
+        await _until(() => watches.length == 3, timeout);
+        expect(logged.last, contains('in 80 ms'), reason: 'doubled');
+
+        place('2.json', record(2));
+        watches.last.add(FileSystemCreateEvent('$volumes/2.json', false));
+        await _until(() => events.length == 2, timeout);
+        await watches.last.close();
+        await _until(() => watches.length == 4, timeout);
+        expect(logged.last, contains('in 40 ms'), reason: 'back to the start');
       });
 
       test('a watch that ends because the directory is gone is not started '
@@ -333,10 +384,11 @@ void main() {
       final client = build();
       final id = await client.requestEject(1);
 
-      await client.cancelEject(id);
+      expect(await client.cancelEject(id), isTrue);
       expect(Directory(requests).listSync(), isEmpty);
 
-      await client.cancelEject(id); // already gone: nothing to withdraw
+      // Already gone (the helper took it): nothing withdrawn, and it says so.
+      expect(await client.cancelEject(id), isFalse);
       expect(Directory(requests).listSync(), isEmpty);
     });
 
@@ -384,7 +436,7 @@ void main() {
       const client = UnsupportedUsbStorageClient();
       expect(client.isSupported, isFalse);
       expect(await client.volumes.toList(), [<RemovableVolumeRecord>[]]);
-      await client.cancelEject('x');
+      expect(await client.cancelEject('x'), isFalse);
       expect(() => client.requestEject(1), throwsUnsupportedError);
     });
   });

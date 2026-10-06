@@ -30,5 +30,6 @@ export 'src/models/storage_failure.dart'
         StorageReadOnly,
         StorageUnsupported,
         StorageVolumeLost;
-export 'src/storage_repository.dart' show CopyBytes, StorageRepository;
-export 'src/write_lease.dart' show WriteLease;
+export 'src/storage_repository.dart'
+    show CopyBytes, SourceReadFailure, StorageRepository;
+export 'src/write_lease.dart' show HeldLease, WriteLease;

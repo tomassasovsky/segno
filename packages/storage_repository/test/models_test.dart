@@ -61,4 +61,56 @@ void main() {
       [0, 1, 2, 2, 3],
     );
   });
+
+  test('a volume is readable when it is mounted, read-write or read-only, '
+      'and has a mount point', () {
+    RemovableVolume volume(RemovableVolumeStatus status, {String? at = '/m'}) =>
+        RemovableVolume(
+          generation: 1,
+          fingerprint: 'f',
+          label: 'L',
+          fsType: 'vfat',
+          sizeBytes: 1,
+          status: status,
+          mountPoint: at,
+        );
+    expect(volume(RemovableVolumeStatus.mounted).readable, isTrue);
+    expect(volume(RemovableVolumeStatus.readOnly).readable, isTrue);
+    expect(volume(RemovableVolumeStatus.ejecting).readable, isFalse);
+    expect(volume(RemovableVolumeStatus.ejected).readable, isFalse);
+    expect(volume(RemovableVolumeStatus.mounted, at: null).readable, isFalse);
+  });
+
+  test('failures and conflicts say what happened, in the words the Library '
+      'prints', () {
+    expect('${const StorageFailure.full()}', 'the destination is full');
+    expect(
+      '${const StorageFailure.readOnly()}',
+      'the destination is read-only',
+    );
+    expect('${const StorageFailure.volumeLost(3)}', 'drive 3 was removed');
+    expect(
+      '${const StorageFailure.unsupported()}',
+      'the destination is not supported',
+    );
+    expect('${const StorageFailure.io('EIO')}', 'storage I/O failed: EIO');
+    expect(
+      '${const NameConflict('/m/a.wav')}',
+      'a file already exists at /m/a.wav',
+    );
+  });
+
+  test('a write lease is a const value: target and purpose', () {
+    const a = WriteLease(target: StorageDestination.internal(), purpose: 'x');
+    expect(
+      a,
+      const WriteLease(target: StorageDestination.internal(), purpose: 'x'),
+    );
+    expect(
+      a,
+      isNot(
+        const WriteLease(target: StorageDestination.removable(1), purpose: 'x'),
+      ),
+    );
+  });
 }

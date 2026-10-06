@@ -6,8 +6,11 @@ enum ConflictPolicy {
   /// Keep both: write beside it as `name (2).ext`, then `name (3).ext`, ...
   keepBoth,
 
-  /// Write over it. The old file stays whole until the new one is complete:
-  /// the replacement is a rename over it.
+  /// Write over it. The replacement is a rename over the old file, so on a
+  /// journaled filesystem (Internal's ext4) the old file stays whole until
+  /// the new one is complete. On FAT and exFAT, which have no journal, that
+  /// holds only while nothing crashes: a drive pulled during the rename can
+  /// lose the old file as well. Eject before pulling.
   replace,
 }
 
@@ -21,5 +24,5 @@ class NameConflict implements Exception {
   final String existingPath;
 
   @override
-  String toString() => 'NameConflict($existingPath)';
+  String toString() => 'a file already exists at $existingPath';
 }

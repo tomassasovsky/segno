@@ -103,6 +103,13 @@ class RemovableVolume extends Equatable {
   /// mount's first stderr line for a failed or read-only-fallback mount.
   final String? failureReason;
 
+  /// Whether its files can be read right now: mounted, read-write or
+  /// read-only.
+  bool get readable =>
+      (status == RemovableVolumeStatus.mounted ||
+          status == RemovableVolumeStatus.readOnly) &&
+      mountPoint != null;
+
   @override
   List<Object?> get props => [
     generation,

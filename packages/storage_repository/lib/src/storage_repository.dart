@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:meta/meta.dart';
 import 'package:segno_engine/segno_engine.dart' show VolumeSpace;
@@ -13,14 +14,30 @@ import 'package:usb_storage_client/usb_storage_client.dart';
 
 /// Copies [source] into [part] (created or truncated) and fsyncs it, so the
 /// bytes are on the device before the rename publishes the file. Polls
-/// [shouldAbort] between writes and throws a [FileSystemException] when it
-/// returns true. Injected by tests to fail a copy midway.
+/// [shouldAbort] before every write and throws a [FileSystemException] when it
+/// returns true. A failure to open or read the SOURCE is thrown as a
+/// [SourceReadFailure], so it is never blamed on the destination. The default
+/// is [StorageRepository.copyChunks]; tests inject failures through it.
 typedef CopyBytes =
     Future<void> Function(
       File source,
       File part,
       bool Function() shouldAbort,
     );
+
+/// The source of a copy could not be opened or read. Nothing about the
+/// destination is implied: the copy reports it as `StorageFailure.io` at
+/// once, without waiting to see whether a drive went away.
+class SourceReadFailure implements Exception {
+  /// Creates a [SourceReadFailure] for [cause].
+  const SourceReadFailure(this.cause);
+
+  /// What the read met.
+  final FileSystemException cause;
+
+  @override
+  String toString() => 'cannot read the source: ${cause.message}';
+}
 
 /// The one owner of where a write may go: Internal and removable volumes,
 /// their capacity, who is writing, whether a drive may be ejected, and a copy
@@ -35,18 +52,23 @@ class StorageRepository {
   /// [exportsRoot] is the resolver the performance repository is wired with:
   /// Internal is measured there and Internal copies land under it.
   /// [volumeSpace] is the engine's `statvfs` (synchronous, microseconds on a
-  /// local volume; null when the path cannot be measured).
+  /// local volume; null when the path cannot be measured). [syncDirectory]
+  /// is the engine's directory fsync: Dart cannot open a directory, and
+  /// without it a copy's rename is not durable (see [copyFile]).
   StorageRepository({
     required UsbStorageClient client,
     required Future<String> Function() exportsRoot,
     required VolumeSpace? Function(String path) volumeSpace,
+    required bool Function(String directory) syncDirectory,
     this.ejectTimeout = const Duration(seconds: 20),
-    this.volumeLossGrace = const Duration(seconds: 2),
+    this.ejectServedTimeout = const Duration(minutes: 2),
+    this.volumeLossGrace = const Duration(seconds: 10),
     @visibleForTesting CopyBytes? copyBytes,
   }) : _client = client,
        _exportsRoot = exportsRoot,
        _volumeSpace = volumeSpace,
-       _copyBytes = copyBytes ?? _copyChunks {
+       _syncDirectory = syncDirectory,
+       _copyBytes = copyBytes ?? copyChunks {
     _subscription = _client.volumes.listen(_onRecords);
   }
 
@@ -58,25 +80,36 @@ class StorageRepository {
   /// 60 hr 45 min at 48 kHz 24-bit stereo.
   static const int internalReserveBytes = 1000000000;
 
-  /// How long an eject request may go unanswered before it is withdrawn and
-  /// reported as `EjectOutcome.failed('timeout')`.
+  /// How long an eject request may wait for the helper to take it. If it is
+  /// still waiting then, it is withdrawn and the eject fails with `timeout`.
   final Duration ejectTimeout;
 
+  /// How long an eject the helper has already taken may take to answer. The
+  /// helper syncs and unmounts after it takes a request, and on a slow stick,
+  /// or behind another drive's work, that can outlast [ejectTimeout]; the
+  /// eject stays in flight (the volume reads `ejecting`) rather than being
+  /// reported failed while the drive is about to be ejected anyway.
+  final Duration ejectServedTimeout;
+
   /// How long a copy that failed the way a pulled drive fails (EIO, ENOENT,
-  /// ENODEV, ENXIO) waits for the drive's record to disappear before calling
-  /// it an I/O error rather than a lost volume. The write fails the moment
-  /// the drive goes; the helper's record goes a moment later.
+  /// ENODEV, ENXIO on the destination) waits for the drive's record to go
+  /// before calling it an I/O error rather than a lost volume. The write
+  /// fails the moment the drive goes; the helper removes the record when its
+  /// detach runs, which can queue behind another drive's attach.
   final Duration volumeLossGrace;
 
   final UsbStorageClient _client;
   final Future<String> Function() _exportsRoot;
   final VolumeSpace? Function(String path) _volumeSpace;
+  final bool Function(String directory) _syncDirectory;
   final CopyBytes _copyBytes;
 
   late final StreamSubscription<List<RemovableVolumeRecord>> _subscription;
   final _volumeListeners = <StreamController<List<RemovableVolume>>>{};
   final _phaseListeners = <StreamController<EjectPhase>>{};
-  final _leases = <WriteLease>[];
+  final _leases = <HeldLease>[];
+  final _liveParts = <String>{};
+  final _random = Random.secure();
   Map<int, RemovableVolumeRecord> _records = const {};
   _Eject? _eject;
 
@@ -130,11 +163,15 @@ class StorageRepository {
 
   void _onRecords(List<RemovableVolumeRecord> records) {
     final next = {for (final record in records) record.generation: record};
-    for (final lease in List.of(_leases)) {
-      final target = lease.target;
+    // A lease holds only a volume that can take its writes: one that is gone,
+    // and one that has been ejected (its mount point is then a bare directory
+    // on the tmpfs until the drive is pulled), both fail it.
+    for (final held in List.of(_leases)) {
+      final target = held.target;
       if (target is RemovableDestination &&
-          !next.containsKey(target.generation)) {
-        lease.markLost(StorageFailure.volumeLost(target.generation));
+          next[target.generation]?.status !=
+              RemovableVolumeRecordStatus.mounted) {
+        held.markLost(StorageFailure.volumeLost(target.generation));
       }
     }
     _records = next;
@@ -159,12 +196,12 @@ class StorageRepository {
   // ---- leases --------------------------------------------------------------
 
   /// The leases currently held, in the order they were taken.
-  List<WriteLease> get leases => List.unmodifiable(_leases);
+  List<WriteLease> get leases => [for (final held in _leases) held.lease];
 
   /// The leases held on [destination].
   List<WriteLease> leasesOn(StorageDestination destination) => [
-    for (final lease in _leases)
-      if (lease.target == destination) lease,
+    for (final held in _leases)
+      if (held.target == destination) held.lease,
   ];
 
   /// Whether a write or an eject is in progress (shutdown's guard, §7.8).
@@ -174,38 +211,38 @@ class StorageRepository {
   /// [StorageFailure] a write there would meet: `readOnly`, `unsupported`, or
   /// `volumeLost` for a generation that is not present, is being ejected or
   /// has been ejected.
-  WriteLease acquire(StorageDestination destination, String purpose) {
+  HeldLease acquire(StorageDestination destination, String purpose) {
     if (destination is RemovableDestination) {
       _checkWritable(destination.generation);
     }
-    final lease = WriteLease(
-      target: destination,
-      purpose: purpose,
+    final held = HeldLease(
+      WriteLease(target: destination, purpose: purpose),
       onRelease: _leases.remove,
     );
-    _leases.add(lease);
-    return lease;
+    _leases.add(held);
+    return held;
   }
 
   /// Runs [body] under a lease on [target] for [purpose], with the
   /// destination's root (the exports root for Internal, the mount point for a
   /// volume), and releases the lease afterwards. Completes with
   /// [StorageFailure.volumeLost] as soon as the volume goes away, even if
-  /// [body] is still running; [body]'s own writes then fail on their own.
+  /// [body] is still running; [body]'s own writes then fail on their own, so
+  /// a body must stop at its first failure rather than recreate directories.
   Future<T> withWriteLease<T>(
     StorageDestination target,
     String purpose,
     Future<T> Function(String root) body,
   ) async {
-    final lease = acquire(target, purpose);
+    final held = acquire(target, purpose);
     try {
       final root = await _writeRoot(target);
       return await Future.any([
         body(root),
-        lease.lost.then<T>((failure) => throw failure),
+        held.lost.then<T>((failure) => throw failure),
       ]);
     } finally {
-      lease.release();
+      held.release();
     }
   }
 
@@ -228,6 +265,15 @@ class StorageRepository {
     }
   }
 
+  bool _writable(int generation) {
+    try {
+      _checkWritable(generation);
+      return true;
+    } on StorageFailure {
+      return false;
+    }
+  }
+
   /// Where writes to [destination] go; only called once a lease holds it.
   Future<String> _writeRoot(StorageDestination destination) async {
     return switch (destination) {
@@ -246,9 +292,14 @@ class StorageRepository {
   /// flight. Otherwise files the request, reports [EjectPhase.ejecting], and
   /// completes with the outcome: safe to remove once the helper reports the
   /// volume ejected; failed with the helper's reason (`busy`, `error`), with
-  /// `removed` if the drive is pulled first, or with `timeout` after
-  /// [ejectTimeout], in which case the request is withdrawn; cancelled
-  /// through [cancelEject].
+  /// `removed` if the drive is pulled first, with `error` if the request
+  /// could not be filed, or with `timeout`; cancelled through [cancelEject].
+  ///
+  /// `timeout` is reported only when nothing is ejecting the drive: after
+  /// [ejectTimeout] a request the helper has not taken is withdrawn and the
+  /// eject fails. One the helper has taken cannot be withdrawn (it is already
+  /// syncing and unmounting), so the eject stays in flight until the helper
+  /// answers, or for [ejectServedTimeout] at most.
   Future<EjectOutcome> eject(int generation) async {
     final holders = leasesOn(StorageDestination.removable(generation));
     if (holders.isNotEmpty) throw EjectRefused(holders);
@@ -261,13 +312,26 @@ class StorageRepository {
     _publishPhase();
     _publishVolumes();
     try {
-      eject.requestId = await eject.request;
+      try {
+        eject.requestId = await eject.request;
+      } on FileSystemException {
+        return const EjectOutcome.failed('error');
+      }
       _settleEject();
-      return await eject.outcome.future.timeout(
+      final answer = eject.outcome.future;
+      return await answer.timeout(
         ejectTimeout,
         onTimeout: () async {
-          await _client.cancelEject(eject.requestId!);
-          return const EjectOutcome.failed('timeout');
+          if (await _client.cancelEject(eject.requestId!)) {
+            return const EjectOutcome.failed('timeout');
+          }
+          // Taken: the helper is syncing and unmounting, and its answer is
+          // coming. Saying "failed" now would be followed by the drive being
+          // ejected anyway.
+          return answer.timeout(
+            ejectServedTimeout,
+            onTimeout: () => const EjectOutcome.failed('timeout'),
+          );
         },
       );
     } finally {
@@ -277,15 +341,22 @@ class StorageRepository {
     }
   }
 
-  /// Withdraws the eject in flight if the helper has not served it yet; the
+  /// Withdraws the eject in flight if the helper has not taken it yet; the
   /// eject then completes cancelled. A no-op when nothing is in flight. A
-  /// request the helper already served cannot be withdrawn: the volume's
-  /// status then says what happened.
+  /// request the helper has already taken cannot be withdrawn: the eject
+  /// carries on and completes with the helper's answer, which the volume's
+  /// status also shows.
   Future<void> cancelEject() async {
     final eject = _eject;
     if (eject == null) return;
-    await _client.cancelEject(await eject.request);
-    if (!eject.outcome.isCompleted) {
+    final String requestId;
+    try {
+      requestId = await eject.request;
+    } on FileSystemException {
+      return; // never filed: eject() reports that itself
+    }
+    final withdrawn = await _client.cancelEject(requestId);
+    if (withdrawn && !eject.outcome.isCompleted) {
       eject.outcome.complete(const EjectOutcome.cancelled());
     }
   }
@@ -312,8 +383,14 @@ class StorageRepository {
 
   /// Total and free bytes of [destination]'s volume, or null when it cannot
   /// be measured: a removable volume that is not mounted (absent, ejected,
-  /// unsupported) or a path the engine cannot answer for. No reserve is
-  /// applied here.
+  /// unsupported) or a path the engine cannot answer for.
+  ///
+  /// `freeBytes` is the filesystem's available figure, with NO reserve taken
+  /// off: the Internal reserve ([internalReserveBytes]) applies only to
+  /// [recordingTimeRemaining] and [lowInternalSpace]. (The Library's
+  /// `RemovableVolumes` port documents free as "after any reserve the
+  /// service keeps"; for a removable volume that is the same figure, and the
+  /// port never asks about Internal.)
   Future<VolumeSpace?> space(StorageDestination destination) async {
     final path = switch (destination) {
       InternalDestination() => _nearestExisting(await _exportsRoot()),
@@ -324,14 +401,20 @@ class StorageRepository {
 
   /// How long a recording at [bytesPerSecond] fits on [destination]: free
   /// space less [internalReserveBytes] on Internal, free space as is on a
-  /// removable volume, never below zero. Null when the space is unknown:
-  /// unknown capacity cannot claim available time (§6.7).
+  /// removable volume, never below zero. Null when the space is unknown
+  /// (unknown capacity cannot claim available time, §6.7), and null for a
+  /// removable volume that cannot take a recording (read-only, being
+  /// ejected, ejected, unsupported): it has no recording time to offer.
   Future<Duration?> recordingTimeRemaining(
     StorageDestination destination,
     int bytesPerSecond,
   ) async {
     if (bytesPerSecond <= 0) {
       throw ArgumentError.value(bytesPerSecond, 'bytesPerSecond');
+    }
+    if (destination is RemovableDestination &&
+        !_writable(destination.generation)) {
+      return null;
     }
     final measured = await space(destination);
     if (measured == null) return null;
@@ -374,17 +457,27 @@ class StorageRepository {
   /// [destination], where the root is the exports root for Internal and the
   /// mount point for a removable volume, and returns the path written.
   ///
-  /// The bytes go to `<name>.part`, are fsynced, and only then renamed to the
-  /// final name, so the destination never holds a half-written file under
-  /// that name; on any failure the part is deleted and the source is not
-  /// touched. A name already there is handled per [onConflict]: `ask` throws
-  /// [NameConflict] before writing anything, `keepBoth` writes `name (2).ext`
-  /// (then ` (3)`, ...), `replace` renames over it. Failures are typed
-  /// [StorageFailure]s: `full` (ENOSPC), `readOnly` (EROFS, or a read-only
-  /// volume), `volumeLost` when the volume goes away before or during the
-  /// copy, `unsupported` for a volume that cannot be written, `io` for the
-  /// rest. A lease with purpose `copy` is held throughout, so eject and
-  /// shutdown wait for it.
+  /// The bytes go to a part file of the copy's own (`.<name>.<random>.part`,
+  /// hidden, so neither the Library nor a computer lists it, and never shared
+  /// with another copy in flight), are fsynced, and are renamed to the final
+  /// name; then the directory is synced so the rename itself is durable. The
+  /// destination never holds a half-written file under its final name, and
+  /// on any failure the part is deleted and the source is not touched. Parts
+  /// a crash left behind in the directory are swept by the next copy into it.
+  ///
+  /// A name already there (a file or a directory) is handled per
+  /// [onConflict]: `ask` throws [NameConflict] before writing anything,
+  /// `keepBoth` writes `name (2).ext` (then ` (3)`, ...), `replace` renames
+  /// over it. For `ask` and `keepBoth` the final name is claimed atomically
+  /// (an exclusive create) just before the rename, so a file that appears
+  /// under it while the bytes are copied is never overwritten: `ask` then
+  /// throws [NameConflict] after all, and `keepBoth` takes the next suffix.
+  ///
+  /// Failures are typed [StorageFailure]s: `full` (ENOSPC), `readOnly` (EROFS,
+  /// or a read-only volume), `volumeLost` when the volume goes away before or
+  /// during the copy, `unsupported` for a volume that cannot be written, `io`
+  /// for the rest, a source that cannot be read included. A lease with
+  /// purpose `copy` is held throughout, so eject and shutdown wait for it.
   ///
   /// [relativePath] must stay inside the root: not empty, not absolute, and
   /// with no empty, `.` or `..` segment.
@@ -402,46 +495,120 @@ class StorageRepository {
         'must be a relative path inside the destination',
       );
     }
-    final lease = acquire(destination, 'copy');
+    final held = acquire(destination, 'copy');
     try {
-      final target = _resolveTarget(
-        '${await _writeRoot(destination)}/$relativePath',
-        onConflict,
+      final wanted = '${await _writeRoot(destination)}/$relativePath';
+      if (onConflict == ConflictPolicy.ask && _taken(wanted)) {
+        throw NameConflict(wanted);
+      }
+      final directory = File(wanted).parent;
+      final part = File(
+        '${directory.path}/.${segments.last}.${_partId()}.part',
       );
-      final part = File('$target.part');
+      _liveParts.add(part.path);
       try {
-        part.parent.createSync(recursive: true);
-        await _copyBytes(File(sourcePath), part, () => lease.isLost);
-        if (lease.isLost) throw const FileSystemException('volume lost');
-        part.renameSync(target);
+        directory.createSync(recursive: true);
+        _sweepStaleParts(directory);
+        await _copyBytes(File(sourcePath), part, () => held.isLost);
+        if (held.isLost) throw const FileSystemException('volume lost');
+        final target = _publish(part, wanted, onConflict);
+        _syncDirectory(directory.path);
         return target;
+      } on SourceReadFailure catch (e) {
+        _discard(part);
+        throw StorageFailure.io(e.cause.osError?.message ?? e.cause.message);
+      } on NameConflict {
+        _discard(part);
+        rethrow;
       } on FileSystemException catch (e) {
         _discard(part);
-        throw await _classify(e, destination, lease);
+        throw await _classify(e, destination, held);
+      } finally {
+        _liveParts.remove(part.path);
       }
     } finally {
-      lease.release();
+      held.release();
     }
   }
 
-  static String _resolveTarget(String path, ConflictPolicy onConflict) {
-    if (!File(path).existsSync()) return path;
+  /// Whether anything (a file, a directory, a link) is at [path].
+  static bool _taken(String path) =>
+      FileSystemEntity.typeSync(path, followLinks: false) !=
+      FileSystemEntityType.notFound;
+
+  // 64 random bits: two copies in flight never share a part.
+  String _partId() => [
+    for (var i = 0; i < 8; i++)
+      _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+  ].join();
+
+  static final _partName = RegExp(r'^\..+\.[0-9a-f]{16}\.part$');
+
+  /// Deletes the part files a crash left in [directory]; never one a copy in
+  /// flight is writing.
+  void _sweepStaleParts(Directory directory) {
+    for (final entity in directory.listSync(followLinks: false)) {
+      final name = entity.path.substring(entity.path.lastIndexOf('/') + 1);
+      if (entity is File &&
+          _partName.hasMatch(name) &&
+          !_liveParts.contains(entity.path)) {
+        _discard(entity);
+      }
+    }
+  }
+
+  /// Renames [part] to its final name under [onConflict] and returns it.
+  static String _publish(File part, String wanted, ConflictPolicy onConflict) {
     switch (onConflict) {
-      case ConflictPolicy.ask:
-        throw NameConflict(path);
       case ConflictPolicy.replace:
-        return path;
+        part.renameSync(wanted);
+        return wanted;
+      case ConflictPolicy.ask:
+        if (!_claim(wanted)) throw NameConflict(wanted);
+        _renameOntoClaim(part, wanted);
+        return wanted;
       case ConflictPolicy.keepBoth:
-        final slash = path.lastIndexOf('/');
-        final dot = path.lastIndexOf('.');
+        final slash = wanted.lastIndexOf('/');
+        final dot = wanted.lastIndexOf('.');
         // `.hidden` and `name` have no extension; `take.wav` does.
-        final split = dot > slash + 1 ? dot : path.length;
-        final stem = path.substring(0, split);
-        final extension = path.substring(split);
-        for (var n = 2; ; n++) {
-          final candidate = '$stem ($n)$extension';
-          if (!File(candidate).existsSync()) return candidate;
+        final split = dot > slash + 1 ? dot : wanted.length;
+        final stem = wanted.substring(0, split);
+        final extension = wanted.substring(split);
+        for (var n = 1; ; n++) {
+          final candidate = n == 1 ? wanted : '$stem ($n)$extension';
+          if (_claim(candidate)) {
+            _renameOntoClaim(part, candidate);
+            return candidate;
+          }
         }
+    }
+  }
+
+  /// Takes [path] for this copy by creating it exclusively (O_EXCL), so no
+  /// other writer can get it between this check and the rename onto it.
+  /// False when something (a file, a directory, a link) is already there:
+  /// O_EXCL refuses all three with EEXIST.
+  static bool _claim(String path) {
+    try {
+      File(path).createSync(exclusive: true);
+      return true;
+    } on FileSystemException catch (e) {
+      if (e.osError?.errorCode == _eexist) return false;
+      rethrow;
+    }
+  }
+
+  static const _eexist = 17;
+
+  /// Renames [part] over the empty file [_claim] made at [path]; if the
+  /// rename fails, the claim goes too, so no empty file is left under the
+  /// final name.
+  static void _renameOntoClaim(File part, String path) {
+    try {
+      part.renameSync(path);
+    } on FileSystemException {
+      _discard(File(path));
+      rethrow;
     }
   }
 
@@ -456,12 +623,12 @@ class StorageRepository {
   Future<StorageFailure> _classify(
     FileSystemException e,
     StorageDestination destination,
-    WriteLease lease,
+    HeldLease held,
   ) async {
     final code = e.osError?.errorCode;
     if (destination is RemovableDestination &&
-        (lease.isLost ||
-            (_pulledDriveErrors.contains(code) && await _lostSoon(lease)))) {
+        (held.isLost ||
+            (_pulledDriveErrors.contains(code) && await _lostSoon(held)))) {
       return StorageFailure.volumeLost(destination.generation);
     }
     return switch (code) {
@@ -471,7 +638,10 @@ class StorageRepository {
     };
   }
 
-  Future<bool> _lostSoon(WriteLease lease) => lease.lost
+  // Waits for the lease to be failed by the volume's record going (or
+  // leaving `mounted`), up to [volumeLossGrace]: answered by the record, not
+  // by the clock, whenever the record goes in time.
+  Future<bool> _lostSoon(HeldLease held) => held.lost
       .then((_) => true)
       .timeout(volumeLossGrace, onTimeout: () => false);
 
@@ -483,20 +653,46 @@ class StorageRepository {
     }
   }
 
-  static Future<void> _copyChunks(
+  /// The default [CopyBytes]: [chunkSize] at a time from [source] into
+  /// [part], [shouldAbort] polled before every write, then [sync] (fsync(2)
+  /// through `RandomAccessFile.flush`) before the part is closed. Source
+  /// errors are thrown as [SourceReadFailure].
+  @visibleForTesting
+  static Future<void> copyChunks(
     File source,
     File part,
-    bool Function() shouldAbort,
-  ) async {
-    final out = await part.open(mode: FileMode.write);
+    bool Function() shouldAbort, {
+    int chunkSize = 1 << 20,
+    Future<void> Function(RandomAccessFile file)? sync,
+  }) async {
+    final input = await _fromSource(source.open);
     try {
-      await for (final chunk in source.openRead()) {
-        if (shouldAbort()) throw const FileSystemException('volume lost');
-        await out.writeFrom(chunk);
+      final out = await part.open(mode: FileMode.writeOnly);
+      try {
+        while (true) {
+          final chunk = await _fromSource(() => input.read(chunkSize));
+          if (chunk.isEmpty) break;
+          if (shouldAbort()) throw const FileSystemException('volume lost');
+          await out.writeFrom(chunk);
+        }
+        await (sync ?? _fsync)(out);
+      } finally {
+        await out.close();
       }
-      await out.flush();
     } finally {
-      await out.close();
+      await input.close();
+    }
+  }
+
+  static Future<void> _fsync(RandomAccessFile file) => file.flush();
+
+  // Every operation on the source goes through here, so a source failure is
+  // never mistaken for the destination's.
+  static Future<T> _fromSource<T>(Future<T> Function() operation) async {
+    try {
+      return await operation();
+    } on FileSystemException catch (e) {
+      throw SourceReadFailure(e);
     }
   }
 
