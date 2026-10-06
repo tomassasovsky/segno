@@ -1331,13 +1331,24 @@ its own, so the part is two.
   (24; 100 % line coverage; 17 mutations, all caught); a CI job
   `instrument-repository` with a 100 % floor.
 
-**3b-2, next.** The note dispatch (computer keys on desktop builds, touch
-keys, action tokens with latch state and origin tokens), the
-pending-release queue, the overload policy (late periods lower the voice
-limit to three quarters, not below 8, with the toast), the voice limit in
-the epoch replay, the `instruments` family and its `SettingsOwner` with
-the `SettingsRepository` checkpoint, the app wiring (the snapshot stream,
-ports), the removal sequence's guard, and the native-library case.
+**3b-2, built (`claude/instruments-1197-p3b-2`, about 180 lines).**
+`NoteDispatcher`: computer keys (every instrument that maps the key; a
+repeat of a held key is ignored; a key-up ends its notes whatever the
+mappings say by then; focus loss lets go of every key), touch keys and
+action tokens with one origin token per press, chords through the
+engine's chord note-on, latches and sustain contributors; releases and
+sustain-offs the lane refuses are kept and retried on every snapshot. The
+overload policy (a new late period while an instrument sounds lowers the
+limit to three quarters, not below 8, reported for the toast; Restore),
+and the epoch also drops keys, latches and owed releases and sends the
+default limit again. A native-library case plays a chord through the
+repository; CI's fuzz job runs it. 39 package tests, 100 % line coverage,
+12 mutations caught.
+
+**3b-3, next.** The app side: the `instruments` family and its
+`SettingsOwner` with the `SettingsRepository` checkpoint, the wiring (the
+engine snapshot stream, device ports, the desktop-only key handler from
+D9), and the removal sequence's guard.
 
 ### Part 3c. Dart source space, instrument-keyed targets and removal labels (about 550 production lines)
 
