@@ -1125,7 +1125,7 @@ human merge gate stays.
 
 ### Part 2 (branch `claude/foot-surfaces-1229-p2`)
 
-- Built on the trunk at `ed72e03d2` (Peel P3, Settings P3/P4 and the #912
+- Built on the trunk at `890f04936` (Peel P3, Settings P3/P4 and the #912
   port merged). `FootFxView` replaces the Tracks columns in FX mode; the
   #692 re-dress, its l10n strings and its golden (`tracks_fx_window.png`)
   are gone, and so are the twelve strings only it used.
@@ -1150,3 +1150,7 @@ human merge gate stays.
     a no-op there, as for a foot that lifts at once.
   - The Pending Hold cue (Part 1) is not wired into this face yet: whichever
     of #1247 and this part lands second passes `holdPending` here too.
+- Verification: app suite 3469 passed, 56 skipped; settings_repository 204;
+  analyze, Bloc lint and format clean. Mutations: 15 run, 14 killed; the
+  survivor (not latching the notice flag in memory) only repeats a write of a
+  flag already set, since the state field and its listener fire once.
