@@ -689,32 +689,40 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
-### Part 3: the Dart engine seam (about 420 lines)
+### Part 3: the Dart engine seam (built: `claude/backing-1200-p3`, about 840 code lines)
 
-Files: `packages/segno_engine/lib/src/audio_engine.dart` (`BackingControl`
-role, composed into `AudioEngine`), `native_audio_engine.dart` (FFI calls;
-`decodeAudioFile(path, sampleRate, {startFrame, maxFrames})` and
-`probeAudioFile(path)` run `Isolate.run` around
-`SegnoEngineBindings(_openLibrary())` and returns a `BackingBuffer`; the
-`notReady` retry once after one block period), `mock_audio_engine.dart`
-(an in-memory voice with the same transport and End rules, counting frees),
-new `backing_state.dart`, exports.
+Files: `packages/segno_engine/lib/src/audio_engine.dart` (`BackingControl`,
+composed into `AudioEngine`; `EngineResult.tooLong`), new `backing.dart`
+(`BackingState`, the transport, End and end-event enums, `AudioFileInfo`,
+`AudioProbe`, `DecodedAudio` and its ownership, the `AudioDecoder`
+interface), new `native_audio_decoder.dart` (`NativeAudioDecoder`), new
+`mock_audio_decoder.dart` (`MockAudioDecoder`), `native_audio_engine.dart`
+(the FFI calls; `PumpedNativeEngine.pump(output:)`), `mock_audio_engine.dart`
+(an in-memory voice), exports, and the four `AudioEngine` test fakes
+(`test/helpers`, looper, session and performance repositories), which accept
+the new role and load nothing.
 
-Tests: `packages/segno_engine/test` (mock: every transport and End rule, the
-free count after replace and clear); `pumped_native_engine_test.dart`
-against the built library (decode a test-written WAV, load, play, pump,
-state position and `EV_ADVANCED`, the `notReady` retry, the decode refusal
-codes as typed `BackingDecodeFailure` values).
+Tests: `test/backing_test.dart` (enum codes, the state value, the mock
+decoder's length rule, truncation, refusals and free count, `DecodedAudio`
+ownership, every mock-engine rule: transfer, End = Stop/Repeat/Next, pause,
+seek clamp, replace/restage/clear freeing, a fresh start freeing and bumping
+the epoch, the byte budget, NaN refusals) and `test/native_backing_test.dart`
+against the built library (decode through the runner, exact samples, a
+bounded read, rate conversion length, the probe's peaks, refusals as typed
+exceptions; through the pump: the decoded samples on the routed outputs, End
+= Next continuing into the staged file and freeing the finished one,
+refusals keeping the audio the caller's, settings and transport through the
+state).
 
 ```success-criteria
-GOAL: Dart reaches the backing voice and decoder through one role interface, decoding off the UI isolate, with a faithful mock.
+GOAL: Dart reaches the backing voice through one engine role and files through one engine-free decoder that decodes off the calling isolate, with a mock that keeps the same rules and ownership.
 SUCCESS CRITERIA:
-- The native seam decodes in a background isolate, loads, plays, stages, seeks, reports state and retries once on notReady through the real FFI. | verify: SEGNO_ENGINE_LIB=$(bash packages/segno_engine/tool/build_test_lib.sh) /Users/Tomas/development/flutter/bin/flutter test packages/segno_engine/test/pumped_native_engine_test.dart
-- The mock obeys the same rules and every superseded buffer is freed exactly once. | verify: (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test)
-- Analyzer clean. | verify: dart analyze --fatal-infos packages/segno_engine
+- The native seam decodes through the runner, loads, plays, stages, seeks, clears and reports state through the real FFI, and the samples it plays are the samples it decoded. | verify: SEGNO_ENGINE_LIB=$(bash packages/segno_engine/tool/build_test_lib.sh) /Users/Tomas/development/flutter/bin/flutter test packages/segno_engine/test/native_backing_test.dart
+- The mock obeys the same rules, and every decoded buffer is freed exactly once, by the engine that took it or by dispose. | verify: (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test test/backing_test.dart)
+- The package suites that fake the engine still pass; analyzer and Bloc lint are clean. | verify: (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 NON-GOALS:
-- Repository, files, UI.
-VERIFICATION COMMAND: (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos packages/segno_engine
+- Repository, files on disk beyond test fixtures, UI, the NOT_READY retry (Part 4).
+VERIFICATION COMMAND: (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos lib test packages
 ```
 
 ### Part 4: `backing_repository`: the asset store and the player (about 620 lines)
@@ -1061,8 +1069,8 @@ the idle-dimming owner lands it must read `BackingPlayerState.playing`.
 
 ## 10. Budget and review ceiling
 
-Estimates: 850 and 600 (Parts 1 and 2, as built, comments included; Part 1 over
-the 700 ceiling, see section 12), then 420, 620, 640, 470, 640, 680, 400.
+Estimates: 850, 600 and 840 (Parts 1 to 3, as built; Parts 1 and 3 over the
+700 ceiling, see section 12), then 620, 640, 470, 640, 680, 400.
 Stop for review on any change to the output-bus order, a perf-log code, a
 second decoder, a second lease registry or a second selection owner. Each
 part gets independent architecture, test-quality and adversarial review
@@ -1147,7 +1155,37 @@ stated-length cap (observable through the memory floor), the phase offset,
 the rate range, the file-size bound, both length-match checks, the memory
 floor, the truncation flag, the bounded length, and FLAC back on.
 
-### Verification (both parts, on their pushed heads)
+### Part 3 (`claude/backing-1200-p3`, stacked on Part 2)
+
+About 840 lines of Dart code (1,180 with doc comments) in `segno_engine`,
+over the 700 ceiling: the mock voice and mock decoder are about 330 of it and
+cannot leave the part, since `MockAudioEngine` must implement the role the
+moment it joins `AudioEngine`. Departures from the first text:
+
+- **The decoder is its own engine-free interface,** `AudioDecoder`
+  (`NativeAudioDecoder`, `MockAudioDecoder`), not part of `BackingControl`,
+  following `StorageIo`: the Library preview and #1198 use it with no engine
+  (review M3), and a repository holds one beside its engine. Names:
+  `decode` and `probe`, not `decodeAudioFile`/`probeAudioFile`.
+- **`DecodedAudio` makes ownership explicit** (`owned`, `transferred`,
+  `disposed`): an accepted load or stage transfers it, `dispose` frees it
+  otherwise, both idempotent; the native engine refuses audio it does not
+  own or that a different decoder made.
+- **The `NOT_READY` retry moved to Part 4.** Every engine call is
+  synchronous; waiting a block belongs to the repository that owns the load.
+- **`PumpedNativeEngine.pump` can return the block's output** (`output:`),
+  so a test reads what the engine played.
+- Mutations reverted one at a time, each caught by its intended test: the
+  native transfer, the foreign-audio refusal, the state mapping, the decoder
+  refusal, the mock's advance, restage, budget and fresh-start freeing,
+  double dispose, and the `tooLong` mapping.
+
+Verified on the pushed head: `dart analyze --fatal-infos lib test packages`
+clean; `bloc lint` 0 issues; `segno_engine` (404), looper (3416),
+session (189), performance (806) and app (3469) suites pass against a
+freshly built test library; formatting unchanged. No native change.
+
+### Verification (Parts 1 and 2, on their pushed heads)
 
 Recorded in the PR bodies and the main session's report: the native suite
 plain, ASan and telemetry-off, each in its own `TMPDIR`; the races-only pass
