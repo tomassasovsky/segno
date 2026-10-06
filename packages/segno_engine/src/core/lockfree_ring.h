@@ -126,8 +126,6 @@ typedef struct le_command {
               * base, exactly as LE_CMD_REDO_FROM_EMPTY does. */
       int32_t channel, len, state, master_len;
       float fade_amount;
-      int32_t source_slot;
-      uint32_t image_id;
     } restore;
   };
 } le_command;

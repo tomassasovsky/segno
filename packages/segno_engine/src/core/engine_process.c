@@ -178,16 +178,23 @@ static void le_fade_log(le_engine* e, int ch, uint64_t frame) {
       .fade_log = {ch, (float)fade->amount, fade->target, fade->seconds}});
 }
 
-/* End only the captured restored-image lifetime; musical state is unchanged. */
-static void le_perf_restore_end(le_engine* e, le_track* t, uint64_t frame) {
-  if (t->perf_restore_active && e->perf.armed)
-    le_plog_push(e, frame, (le_command){.code = LE_PLOG_RESTORE_TRANSPORT,
-        .restore_log = {(int32_t)(t - e->tracks), 0, LE_TRACK_EMPTY, 0}});
-  t->perf_restore_active = 0;
+/* The capture lost exact provenance for this track's live slot (#1143): a slot
+ * became live without a staged image, or an image-sourced slot is being
+ * written. Logs 323/0 so the derived stem fails instead of replaying PCM the
+ * capture cannot name; musical state is unchanged. */
+static void le_perf_source_lost(le_engine* e, le_track* t, uint64_t frame) {
+  le_plog_push(e, frame, (le_command){.code = LE_PLOG_SOURCE_TRANSPORT,
+      .restore_log = {(int32_t)(t - e->tracks), 0, LE_TRACK_EMPTY, 0}});
+  t->perf_source_id = 0;
 }
 
+/* Every material reset. Also runs for LE_CMD_RESET_FADE (82), which is safe
+ * for the provenance fields only because 82 is pushed solely on EMPTY tracks
+ * (engine_session.c import paths); a future non-EMPTY caller must not reset
+ * provenance here (#1143 plan, E8). */
 static void le_fade_reset(le_engine* e, le_track* t, uint64_t frame) {
-  t->perf_restore_active = 0;
+  t->perf_source_slot = -1; /* the next live slot is looked up afresh */
+  t->perf_source_id = 0;
   t->fade = (le_fade){1, 1, 0};
   t->fade_sample = 1;
   if (t->fade_generation != UINT64_MAX) ++t->fade_generation;
@@ -1853,7 +1860,6 @@ static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
   }
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
-  le_perf_restore_end(e, t, frame);
   le_fade_reset(e, t, frame);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
@@ -1870,6 +1876,11 @@ static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
    * same semantic code so a downstream consumer never needs to know which
    * internal path fired). */
   le_plog_push(e, frame, (le_command){.code = LE_PLOG_UNDO, .arg_i = ch});
+  /* And the raw command at its exact apply frame (events.log version 6,
+   * #1143): emptying is exact silence from here, not lost provenance — the
+   * offline renderer appends a silence segment, as it does for LE_CMD_CLEAR.
+   * Also logged for a cancelled take, which empties through this same body. */
+  le_plog_push(e, frame, (le_command){.code = LE_CMD_UNDO_TO_EMPTY, .arg_i = ch});
   le_primary_reconcile(e); /* undoing the last take uncrowns */
 }
 
@@ -2890,12 +2901,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         t->start_iter = 0;
         t->fade = (le_fade){cmd->restore.fade_amount, cmd->restore.fade_amount, 0};
         t->fade_sample = cmd->restore.fade_amount;
-        t->perf_restore_id = cmd->restore.image_id;
-        t->perf_restore_slot = cmd->restore.source_slot;
-        t->perf_restore_active = e->perf.armed;
-        t->perf_restore_state = -1;
-        if (e->perf.armed && !cmd->restore.image_id)
-          atomic_fetch_add_explicit(&e->a_perf_layer_overruns, 1u, memory_order_relaxed);
+        /* Capture provenance needs nothing here (#1143): the restored slot's
+         * staged image is in perf.slot_image, and mix_tracks_frame logs it at
+         * the first frame it mixes the slot PLAYING or STOPPED. */
         if (t->fade_generation != UINT64_MAX) t->fade_generation++;
         le_fade_log(e, ch, frame);
         store_i32(&t->a_state, cmd->restore.state);
@@ -3640,7 +3648,15 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         e->perf.output_muted = load_i32(&e->outputs[bus].a_muted);
         e->perf.output_enabled_mask = atomic_load_explicit(&e->a_output_enabled_mask, memory_order_relaxed);
       }
-      for (int t = 0; t < e->track_count; ++t) e->tracks[t].perf_restore_active = 0;
+      /* Provenance at arm (#1143): whatever is live now is the arm snapshot's
+       * (image 0); anything that becomes live later goes through
+       * perf.slot_image. An EMPTY track has no source until a slot is mixed. */
+      for (int t = 0; t < e->track_count; ++t) {
+        le_track* tr = &e->tracks[t];
+        tr->perf_source_slot = load_i32(&tr->a_state) == LE_TRACK_EMPTY
+                                   ? -1 : load_i32(&tr->lanes[0].a_live);
+        tr->perf_source_id = 0;
+      }
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
       /* Transport fact (#262): the master loop phase at THIS frame — capture
@@ -5248,6 +5264,7 @@ static inline void mix_tracks_frame(
    *    skippable, so a stale read can hold a track OUT of the skip but never
    *    let a writing one in. */
   int idle[LE_MAX_TRACKS];
+  int32_t live_idx[LE_MAX_TRACKS];
   for (int t = 0; t < tc; ++t) {
     st[t] = load_i32(&e->tracks[t].a_state);
     /* The edge out of sounding, wherever it came from — a stop press, a
@@ -5283,10 +5300,19 @@ static inline void mix_tracks_frame(
     idle[t] = (st[t] == LE_TRACK_EMPTY || st[t] == LE_TRACK_STOPPED) &&
               !lane_fx_any[t] && !trk_has_fx[t] &&
               e->tracks[t].seam_capture == 0 && e->tracks[t].od_gain == 0.0f;
+    /* Lane 0's live slot, loaded ONCE for this frame and shared by the mixer
+     * below and the capture-provenance tracker further down (#1143): the fact
+     * must name the slot this very frame mixes, never a swap published between
+     * two loads. Acquire pairs with le_track_publish_live's release so the
+     * perf.slot_image entry stored before the publish is visible. Loaded for
+     * idle (STOPPED) tracks too: a swap under STOPPED is logged as a silent
+     * source change, then followed through Play by 323. */
+    live_idx[t] = atomic_load_explicit(&e->tracks[t].lanes[0].a_live,
+                                       memory_order_acquire);
     if (idle[t]) continue;
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];
-      const int32_t live = load_i32(&ln->a_live);
+      const int32_t live = l == 0 ? live_idx[t] : load_i32(&ln->a_live);
       buf[t][l] = ln->pool[live];
       cap[t][l] = ln->pool_cap[live];
       vol[t][l] = load_f32(&ln->a_vol_bits);
@@ -5366,27 +5392,50 @@ static inline void mix_tracks_frame(
     if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) {
       e->trk_play_pos[t] = seg_base[t] + trk_pos[t];
     } /* a stopped track HOLDS its last read index; an empty one publishes 0 */
+    /* Capture provenance (#1143): which PCM this frame's mix of track [t]
+     * comes from, as a callback-applied fact. The mixer's own live slot for
+     * this frame (live_idx) is the application boundary. */
     le_track* tr = &e->tracks[t];
-    if (tr->perf_restore_active && e->perf.armed) {
+    if (!e->perf.armed) continue;
+    const int32_t live0 = live_idx[t];
+    const uint64_t frame = perf_frame_base + f;
+    if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_STOPPED) {
       const int32_t len = load_i32(&tr->lanes[0].a_len);
       const int32_t phase = len > 0 ? e->trk_play_pos[t] % len : 0;
-      if (st[t] != LE_TRACK_PLAYING && st[t] != LE_TRACK_STOPPED) {
-        le_perf_restore_end(e, tr, perf_frame_base + f);
-      } else if (!idle[t] && buf[t][0] != tr->lanes[0].pool[tr->perf_restore_slot]) {
-        /* A same-span history swap has no exact image in this capture. End
-         * the restored source explicitly: never render its old PCM as new. */
-        le_perf_restore_end(e, tr, perf_frame_base + f);
-      } else {
-        if (tr->perf_restore_state != st[t] ||
-            (st[t] == LE_TRACK_PLAYING && tr->perf_restore_next_pos != phase)) {
-          le_plog_push(e, perf_frame_base + f, (le_command){
-              .code = tr->perf_restore_state < 0 ? LE_PLOG_CLEAR_RESTORE : LE_PLOG_RESTORE_TRANSPORT,
-              .restore_log = {t, tr->perf_restore_id, st[t], phase}});
-        }
-        tr->perf_restore_state = st[t];
-        tr->perf_restore_next_pos = len > 0 ? (phase + 1) % len : 0;
+      if (live0 != tr->perf_source_slot) {
+        /* A slot became live: its staged image is the source from this frame
+         * (322 below). No image means provenance is lost whether the previous
+         * source was an image or the arm snapshot: 323/0, unconditionally. */
+        tr->perf_source_slot = live0;
+        tr->perf_source_id = atomic_load_explicit(
+            &e->perf.slot_image[t][live0], memory_order_relaxed);
+        if (tr->perf_source_id == 0) le_perf_source_lost(e, tr, frame);
+        tr->perf_source_state = -1;
       }
-    }
+      if (tr->perf_source_id != 0 &&
+          (tr->perf_source_state != st[t] ||
+           (st[t] == LE_TRACK_PLAYING && tr->perf_source_next_pos != phase))) {
+        le_plog_push(e, frame, (le_command){
+            .code = tr->perf_source_state < 0 ? LE_PLOG_SOURCE_APPLIED
+                                              : LE_PLOG_SOURCE_TRANSPORT,
+            .restore_log = {t, tr->perf_source_id, st[t], phase}});
+      }
+      tr->perf_source_state = st[t];
+      tr->perf_source_next_pos = len > 0 ? (phase + 1) % len : 0;
+    } else if (st[t] == LE_TRACK_RECORDING || st[t] == LE_TRACK_OVERDUBBING) {
+      /* The written slot is uncaptured material: an image source ends here
+       * (D4), and so does a staged image that is overwritten before it was
+       * ever mixed PLAYING or STOPPED (restore, then record in one block).
+       * The slot itself becomes the snapshot-provenance source, so RECORD_END
+       * and the retired-layer facts take over with no table lookup. */
+      if (tr->perf_source_id != 0 ||
+          (live0 != tr->perf_source_slot &&
+           atomic_load_explicit(&e->perf.slot_image[t][live0],
+                                memory_order_relaxed) != 0)) {
+        le_perf_source_lost(e, tr, frame);
+      }
+      tr->perf_source_slot = live0;
+    } /* EMPTY: no fact; le_fade_reset already dropped the source */
   }
 
   /* The looper mix is additive: clear this output frame, then sum every active
