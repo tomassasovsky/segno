@@ -856,7 +856,8 @@ class Session {
     );
   }
 
-  /// The current manifest schema stores per-track settings and all FX stages.
+  /// The current manifest schema stores per-track settings (including each
+  /// track's playback direction since 13) and all FX stages.
   static const int formatVersion = 13;
 
   /// The manifest filename within a session bundle.

@@ -845,6 +845,39 @@ static void test_reverse_reopen_keeps_direction(void) {
   rev_process(e, out, 5, 512);
   for (int i = 0; i < 5; ++i) CHECK(out[i] == (float)(len - 1 - i));
   le_engine_destroy(e);
+
+  /* The dropped half: a later take reversed while its trailing seam fold
+   * (#728) is still capturing is dropped by the reopen, and comes back EMPTY
+   * and forward; the retained master keeps its own (forward) direction. */
+  e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 4000) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  pump_frames(e, 1.0f, 1000);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  pump_frames(e, 1.0f, 600);
+  reopen_align_head(e); /* the fold arms only on a whole, head-aligned take */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  pump_frames(e, 0.5f, 1000);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  CHECK(e->tracks[1].seam_capture > 0);
+  CHECK(le_engine_toggle_reverse(e, 1, &id) == LE_OK);
+  pump_frames(e, 0.5f, 16);
+  fade_result(e, id, LE_OK);
+  CHECK(e->tracks[1].seam_capture > 0); /* still inside the fold */
+  le_engine_get_track(e, 1, &snap);
+  CHECK(snap.state == LE_TRACK_PLAYING && snap.reversed == 1);
+  CHECK(le_engine_reopen_configured(e, 48000, 1, 1, 4000, &outcome, NULL) ==
+        LE_OK);
+  CHECK(outcome == LE_REOPEN_RETAINED);
+  le_engine_get_track(e, 1, &snap);
+  CHECK(snap.state == LE_TRACK_EMPTY && snap.length_frames == 0);
+  CHECK(snap.reversed == 0);
+  CHECK(e->tracks[1].reversed == 0);
+  le_engine_get_track(e, 0, &snap);
+  CHECK(snap.state == LE_TRACK_STOPPED && snap.reversed == 0);
+  le_engine_destroy(e);
 }
 
 static void run_reverse_tests(void) {
