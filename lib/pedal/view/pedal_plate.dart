@@ -623,7 +623,8 @@ class _FootswitchState extends State<_Footswitch> {
         widget.l10n.trackName(widget.trackNames, channel),
         (widget.mode == InteractionMode.custom ||
                 widget.mode == InteractionMode.mixer ||
-                widget.mode == InteractionMode.fade)
+                widget.mode == InteractionMode.fade ||
+                widget.mode == InteractionMode.reverse)
             ? widget.active
                   ? widget.l10n.pedalSimLedActive
                   : widget.l10n.pedalSimLedInactive
@@ -1048,7 +1049,10 @@ String _ledStateLabel(
         ? l10n.pedalSimLedChainDisabled
         : l10n.pedalSimLedChainEnabled,
   // Custom feedback follows the function's state or active contact.
-  InteractionMode.custom || InteractionMode.mixer || InteractionMode.fade =>
+  InteractionMode.custom ||
+  InteractionMode.mixer ||
+  InteractionMode.fade ||
+  InteractionMode.reverse =>
     led == PedalTrackLed.off
         ? l10n.pedalSimLedInactive
         : l10n.pedalSimLedActive,

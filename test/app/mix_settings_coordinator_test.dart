@@ -757,6 +757,22 @@ void main() {
   );
 
   test(
+    'flush waits for a draining edit that becomes owed and lets it through: '
+    'storage holds the owed vector',
+    () async {
+      audio
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      final edit = coordinator.setTrackPan(.4);
+      final flushed = await coordinator.flush();
+      expect(flushed.isOk, isTrue);
+      expect((await edit).status, MixSettingsStatus.recoveryRequired);
+      expect(persistence.durable, 'candidate 1 for rig A');
+      expect(persistence.candidates.single.trackPans[0], .4);
+    },
+  );
+
+  test(
     'an unconfirmed restart replay shows the Retry notice, and Retry lets '
     'Record start again',
     () async {

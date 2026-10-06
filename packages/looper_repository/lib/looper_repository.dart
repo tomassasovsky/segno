@@ -29,6 +29,7 @@ export 'package:segno_engine/segno_engine.dart'
         RecordTiming,
         ReopenOutcome,
         TempoSource,
+        TrackHistory,
         TrackState,
         inputTrimGainOfDb,
         kInputTrimStepDb,
@@ -37,9 +38,13 @@ export 'package:segno_engine/segno_engine.dart'
         kMaxLanes,
         kMaxMonitoredInputs,
         kMaxOutputBuses,
+        kMaxTracks,
         kMinInputTrimDb,
         kTrackEffectMax,
-        kTrackEffectParams;
+        kTrackEffectParams,
+        // The engine ships vendored native code whose licences Flutter cannot
+        // see; the app registers them once at startup.
+        registerVendoredLicenses;
 
 // Domain audio-config models replace the engine's raw config/device types in
 // the UI. The engine-typed boundary mappers stay package-internal (not shown).

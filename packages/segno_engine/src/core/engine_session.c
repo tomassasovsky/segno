@@ -187,12 +187,18 @@ static int32_t le_layer_slot_for_ordinal(const le_track* t, int32_t ordinal,
 
 int32_t le_engine_export_history(le_engine* engine, int32_t channel,
                                  int32_t* kinds, int32_t* skipped,
-                                 int32_t max) {
-  if (engine == NULL || kinds == NULL || skipped == NULL || max < 0) {
+                                 int32_t max, int32_t* undo_count) {
+  if (engine == NULL || kinds == NULL || skipped == NULL ||
+      undo_count == NULL || max < 0) {
     return LE_ERR_INVALID;
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   const le_track* t = &engine->tracks[channel];
+  /* The raw stack split, read with the entries: the published a_undo_depth is
+   * gated (0 while a content-giving command is in flight, until the next
+   * drain republishes it), so a caller that split these entries by it could
+   * misread the live image's ordinal (#1164 review finding 1). */
+  *undo_count = t->undo_count;
   int32_t n = 0;
   for (int32_t i = 0; i < t->undo_count; ++i, ++n) {
     if (n >= max) continue;
@@ -301,9 +307,8 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
   }
   /* Strict (#1164): every entry must be one the live engine can hold where it
    * sits. A PEEL on the redo side is a marker without an image; everywhere
-   * else every entry names one image. A CLEAR restore point is only ever
-   * captured on the redo side (on the undo side it empties the track), and its
-   * redo needs no payload: it re-clears from the live state (le_clear_track). */
+   * else every entry names one image. Mirrored by Dart's
+   * TrackHistory.malformation, which refuses the same Sessions at decode. */
   int32_t images = undo_count + 1;
   for (int32_t i = 0; i < count; ++i) {
     const int32_t kind = kinds[i];
@@ -312,12 +317,47 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
         kind != LE_HIST_PEEL && kind != LE_HIST_PROCESSED) {
       return LE_ERR_INVALID;
     }
-    if (skipped[i] < 0) return LE_ERR_INVALID;
+    /* No stack holds LE_POOL_SLOTS entries above a layer. */
+    if (skipped[i] < 0 || skipped[i] >= LE_POOL_SLOTS) return LE_ERR_INVALID;
     if (kind != LE_HIST_PEEL && skipped[i] != 0) return LE_ERR_INVALID;
-    if (kind == LE_HIST_CLEAR && !redo) return LE_ERR_INVALID;
+    /* A CLEAR restore point is only ever the deepest redo entry: on the undo
+     * side it empties the track (never captured), and le_restore_clear moves
+     * it to an empty redo stack while le_clear_track drops the redo branch.
+     * Its redo needs no payload: it re-clears from the live state. */
+    if (kind == LE_HIST_CLEAR && (!redo || i != count - 1)) {
+      return LE_ERR_INVALID;
+    }
+    /* An undo-side PEEL skipped at most the PEEL run directly beneath it —
+     * those entries sat above the layer it consumed — unless the run reaches
+     * the bottom: pool eviction removes the oldest entries, and Undo clamps
+     * its re-insertion there (le_undo_swap). */
+    if (kind == LE_HIST_PEEL && !redo) {
+      int32_t run = 0;
+      while (run < i && kinds[i - 1 - run] == LE_HIST_PEEL) ++run;
+      if (skipped[i] > run && run < i) return LE_ERR_INVALID;
+    }
     if (redo && kind != LE_HIST_PEEL) ++images;
   }
   if (images > LE_POOL_SLOTS) return LE_ERR_INVALID; /* R1 cap */
+  /* Walk the redo side as Redo would: a PEEL marker re-peels, so a layer must
+   * be reachable through PEEL entries when Redo reaches it — otherwise Redo
+   * refuses forever and strands every image beneath the marker. */
+  {
+    int32_t sim[2 * LE_POOL_SLOTS];
+    int32_t depth = 0;
+    for (int32_t i = 0; i < undo_count; ++i) sim[depth++] = kinds[i];
+    for (int32_t i = undo_count; i < count; ++i) {
+      if (kinds[i] != LE_HIST_PEEL) {
+        sim[depth++] = kinds[i];
+        continue;
+      }
+      int32_t target = depth - 1;
+      while (target >= 0 && sim[target] == LE_HIST_PEEL) --target;
+      if (target < 0 || sim[target] != LE_HIST_LAYER) return LE_ERR_INVALID;
+      for (int32_t k = target + 1; k < depth; ++k) sim[k - 1] = sim[k];
+      sim[depth - 1] = LE_HIST_PEEL;
+    }
+  }
   /* A queued shrink still owns its old buffers until the callback finishes
    * the complete block. EMPTY alone cannot release that lifetime. */
   if (engine->lane_growth_command > atomic_load_explicit(

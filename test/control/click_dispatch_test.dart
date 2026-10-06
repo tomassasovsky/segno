@@ -466,7 +466,8 @@ void main() {
       expect(r.live, 0);
     },
   );
-  check('power confirmation blocks new values but admits held release', (r) {
+  check('power confirmation blocks only takes: new values and the held '
+      'release land', (r) {
     r
       ..bind()
       ..note(127)
@@ -474,7 +475,7 @@ void main() {
       ..note(0);
     expect(r.live, .25);
     r.note(127);
-    expect(r.live, .25);
+    expect(r.live, 1.5);
     r
       ..powerUp = false
       ..note(0)

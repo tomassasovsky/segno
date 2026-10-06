@@ -108,8 +108,12 @@ void main() {
     link.hello();
     await pumpEventQueue();
     sessions = _Sessions();
-    when(() => sessions.bundlePath(any())).thenAnswer((_) async => '/test');
+    when(() => sessions.bundlePathOf(any())).thenAnswer((_) async => '/test');
     when(sessions.listSessions).thenAnswer((_) async => []);
+    when(sessions.newSessionId).thenAnswer((_) async => 'new');
+    when(
+      () => sessions.releaseSessionId(any()),
+    ).thenAnswer((_) async {});
     exportsDirectory = '.';
     performance = PerformanceRepository(
       engine: engine,
@@ -125,7 +129,6 @@ void main() {
       pedal: pedal,
       performance: performance,
       sessions: sessions,
-      exportDirectory: () async => '.',
       powerOff: () async => halts++,
     );
     addTearDown(() async {
@@ -148,7 +151,7 @@ void main() {
       entered.complete();
       return read.future;
     });
-    final loading = runtime.session.loadNamed('Incoming');
+    final loading = runtime.session.open('Incoming');
     await entered.future;
     return (loading, read);
   }
@@ -195,6 +198,7 @@ void main() {
                       outputMask: 1,
                       inputChannel: 0,
                       layers: [SessionLayer(file: 'track0.wav')],
+                      history: TrackHistory.none,
                     ),
                   ],
                 ),
@@ -211,6 +215,7 @@ void main() {
                       outputMask: 1,
                       inputChannel: 0,
                       layers: [SessionLayer(file: 'track1.wav')],
+                      history: TrackHistory.none,
                     ),
                   ],
                 ),
@@ -224,7 +229,7 @@ void main() {
           ),
         );
         store.refuseFade = true;
-        await runtime.session.loadNamed('Incoming');
+        await runtime.session.open('Incoming');
         expect(runtime.session.state.bootRecoveryRequired, isTrue);
         expect(repository.sessionBootRecoveryRequired, isTrue);
         // This fake's snapshot is scripted independently of stop(). Publish the
@@ -278,6 +283,7 @@ void main() {
             chains: any(named: 'chains'),
             settings: any(named: 'settings'),
             pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
             captureStillValid: any(named: 'captureStillValid'),
           ),
         ).thenAnswer((call) async {
@@ -303,7 +309,7 @@ void main() {
         store.fadeWrite!.complete();
         await edit;
         await save;
-        expect(runtime.session.state.outcome, SessionOutcome.saved);
+        expect(runtime.session.state.outcome, SessionOutcome.savedAs);
         expect(saved!.defaultFadeDurationMs, 4000);
         expect(saved!.trackFadeDurationOverrides, {7: 4000});
       },
@@ -350,7 +356,7 @@ void main() {
               laneStems: <(int, int), List<Float32List>>{},
             ),
           );
-          await runtime.session.loadNamed('invalid');
+          await runtime.session.open('invalid');
           expect(runtime.session.state.status, SessionStatus.failure);
           expect(repository.sessionRevision, oldRevision);
           expect(engine.perfDisarmCalls, disarms);
@@ -395,6 +401,7 @@ void main() {
                   outputMask: 1,
                   inputChannel: 0,
                   layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                  history: TrackHistory.none,
                 ),
               ],
             ),
@@ -405,7 +412,7 @@ void main() {
         },
       ),
     );
-    final loading = runtime.session.loadNamed('Incoming');
+    final loading = runtime.session.open('Incoming');
     await store.bootWriteEntered.future;
     expect(repository.state.tracks[0].state, TrackState.stopped);
     final before = (
@@ -709,6 +716,67 @@ void main() {
       expect((await mode.flush()).status, SettingStatus.applied);
       await runtime.prepareShutdown(retry: false);
       expect(engine.stopCalls, 1);
+    });
+
+    test('an owed Click volume and an owed Mixer vector do not block '
+        'power-off: storage holds both, and the halt fires', () async {
+      await runtime.start();
+      engine
+        ..publishClickCommands = false
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      expect(
+        (await runtime.tempo.clickVolumeOwner.set(1.5)).status,
+        SettingStatus.recoveryRequired,
+      );
+      expect(
+        (await runtime.mix.setTrackPan(.4)).status,
+        MixSettingsStatus.recoveryRequired,
+      );
+      expect(repository.mixRecoveryRequired, isTrue);
+      expect(runtime.tempo.clickVolumeOwner.ready, isFalse);
+      runtime.power.press(const PowerOffSnapshot());
+      for (var i = 0; i < 200 && halts == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(runtime.power.state.phase, PowerOffPhase.goodbye);
+      expect(halts, 1);
+      // The next start replays what storage holds.
+      expect(store.values['tempo.click_volume'], 1.5);
+      final device = repository.state.status.deviceName;
+      expect((await settings.loadMixSettings(device)).trackPans[0], .4);
+      expect(engine.stopCalls, 0);
+    });
+
+    test('a Retry that cannot land an owed setting still lets power-off go '
+        'ahead', () async {
+      await runtime.start();
+      engine
+        ..publishClickCommands = false
+        ..commandsAreSettled = false;
+      expect(
+        (await runtime.tempo.clickVolumeOwner.set(1.5)).status,
+        SettingStatus.recoveryRequired,
+      );
+      await runtime.prepareShutdown(retry: true);
+      expect(runtime.tempo.clickVolumeOwner.ready, isFalse);
+      expect(store.values['tempo.click_volume'], 1.5);
+      expect(engine.stopCalls, 0);
+    });
+
+    test('a Retry that cannot land an owed vector still lets power-off go '
+        'ahead', () async {
+      await runtime.start();
+      engine
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      expect(
+        (await runtime.mix.setTrackPan(.4)).status,
+        MixSettingsStatus.recoveryRequired,
+      );
+      await runtime.prepareShutdown(retry: true);
+      expect(repository.mixRecoveryRequired, isTrue);
+      expect(engine.stopCalls, 0);
     });
 
     test('an unreadable Count-in pair keeps audio running and the registry '

@@ -10,7 +10,10 @@ otherwise hold. Read it before upgrading.
   top of [`miniaudio.h`](miniaudio.h)), from
   [mackron/miniaudio](https://github.com/mackron/miniaudio).
 - **License:** dual **Unlicense (public domain)** / **MIT No Attribution**, at
-  your option. The full text is kept intact at the bottom of `miniaudio.h`. Both
+  your option. The full text is kept intact at the bottom of `miniaudio.h`, and
+  copied verbatim to [`LICENSE`](LICENSE), the file the app shows in its
+  open source notices (`registerVendoredLicenses`, #1179; a Dart test checks
+  the copy still matches the header). Both
   are GPLv3-compatible, so this changes nothing about the repository's
   GPL-3.0-or-later posture.
 - **Files:** `miniaudio.h` (the single-header library, patched — see below) and

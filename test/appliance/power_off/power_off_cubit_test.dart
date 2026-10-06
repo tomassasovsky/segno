@@ -104,6 +104,53 @@ void main() {
       await cubit.close();
     });
 
+    test('Power off anyway is offered only after a Retry fails too, and '
+        'halts without a flush', () async {
+      final attempts = <bool>[];
+      final cubit = PowerOffCubit(
+        flush: ({required retry}) async {
+          attempts.add(retry);
+          throw StateError('settings unconfirmed');
+        },
+        pedalGoodbye: () => log.add('pedal'),
+        powerOff: () async => log.add('powerOff'),
+        markHold: Duration.zero,
+      )..press(empty);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        cubit.state,
+        const PowerOffState(phase: PowerOffPhase.flushFailed),
+      );
+      // Not offered before the first Retry.
+      cubit.powerOffAnyway(empty);
+      await Future<void>.delayed(Duration.zero);
+      expect(log, isEmpty);
+      cubit.retryPowerOff(empty);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        cubit.state,
+        const PowerOffState(
+          phase: PowerOffPhase.flushFailed,
+          retryFailed: true,
+        ),
+      );
+      // The take gate still applies.
+      cubit.powerOffAnyway(inFlight);
+      expect(cubit.state.phase, PowerOffPhase.refuse);
+      cubit
+        ..keepPlaying()
+        ..press(empty);
+      await Future<void>.delayed(Duration.zero);
+      cubit.retryPowerOff(empty);
+      await Future<void>.delayed(Duration.zero);
+      cubit.powerOffAnyway(empty);
+      await Future<void>.delayed(Duration.zero);
+      expect(attempts, [false, true, false, true]);
+      expect(log, ['pedal', 'powerOff']);
+      expect(cubit.state.phase, PowerOffPhase.goodbye);
+      await cubit.close();
+    });
+
     test(
       'Retry rechecks recording and Keep playing dismisses failure',
       () async {

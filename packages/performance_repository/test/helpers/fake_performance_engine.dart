@@ -211,14 +211,11 @@ class FakePerformanceEngine implements AudioEngine {
   ) => EngineResult.ok;
 
   @override
-  List<HistoryEntry> exportHistory(int channel) => const [];
+  TrackHistory exportHistory(int channel) => TrackHistory.none;
 
   @override
-  EngineResult finalizeHistory(
-    int channel,
-    List<HistoryEntry> history,
-    int undoCount,
-  ) => EngineResult.ok;
+  EngineResult finalizeHistory(int channel, TrackHistory history) =>
+      EngineResult.ok;
 
   @override
   EngineResult commitSession(int baseFrames, {required int loopBars}) =>
@@ -276,11 +273,19 @@ class FakePerformanceEngine implements AudioEngine {
   }
 
   @override
-  int? volumeFreeBytes(String path) => freeBytes;
+  bool syncDirectory(String path) => path.isNotEmpty;
 
-  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
-  /// answer.
+  @override
+  VolumeSpace? volumeSpace(String path) => freeBytes == null
+      ? null
+      : VolumeSpace(totalBytes: totalBytes, freeBytes: freeBytes!);
+
+  /// What [volumeSpace] reports as free; `null` models a platform that
+  /// cannot answer.
   int? freeBytes = 1 << 40;
+
+  /// What [volumeSpace] reports as the volume's size.
+  int totalBytes = 2 << 40;
 
   int renderBeginCalls = 0;
   String? lastRenderCaptureDir;

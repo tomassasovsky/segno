@@ -23,6 +23,7 @@ void main() {
             outputMask: 0x3,
             inputChannel: 0,
             layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+            history: TrackHistory.none,
           ),
           SessionLane(
             lane: 1,
@@ -31,6 +32,7 @@ void main() {
             outputMask: 0x2,
             inputChannel: 1,
             layers: [SessionLayer(file: 'track0_lane1_L0.wav')],
+            history: TrackHistory.none,
           ),
         ],
       ),
@@ -47,6 +49,7 @@ void main() {
             outputMask: 0x3,
             inputChannel: 0,
             layers: [SessionLayer(file: 'track1_lane0_L0.wav')],
+            history: TrackHistory.none,
           ),
         ],
       ),
@@ -769,8 +772,11 @@ void main() {
         muted: false,
         outputMask: 0x3,
         inputChannel: 0,
-        undoCount: 2,
-        redoCount: 1,
+        history: TrackHistory([
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.layer),
+        ], undoCount: 2),
         layers: [
           SessionLayer(file: 'u0.wav'),
           SessionLayer(file: 'u1.wav'),
@@ -904,27 +910,28 @@ void main() {
     });
 
     group('history (#1164)', () {
+      // Undo side: a restoration, an overdub and a Peel above it. Redo side:
+      // the marker of an undone Peel (it re-peels the overdub), a layer, and
+      // the Clear point as the deepest entry, so 3 + 1 + 2 images.
       const peelHistory = [
-        {'kind': 'layer', 'skipped': 0},
         {'kind': 'processed', 'skipped': 0},
-        {'kind': 'peel', 'skipped': 2},
-        {'kind': 'peel', 'skipped': 1},
-        {'kind': 'clear', 'skipped': 0},
         {'kind': 'layer', 'skipped': 0},
+        {'kind': 'peel', 'skipped': 0},
+        {'kind': 'peel', 'skipped': 1},
+        {'kind': 'layer', 'skipped': 0},
+        {'kind': 'clear', 'skipped': 0},
       ];
 
       test('round-trips every kind, skipped counts and redo markers', () {
-        // Undo side: layer, processed, peel(2). Redo side: a marker, a Clear
-        // point and a layer, so 3 + 1 + 2 images.
         final json = withHistory(peelHistory, undoCount: 3, layers: 6);
         final lane = Session.fromJson(json).tracks.first.lanes.first;
-        expect(lane.history, const [
-          HistoryEntry(HistoryKind.layer),
+        expect(lane.history.entries, const [
           HistoryEntry(HistoryKind.processed),
-          HistoryEntry(HistoryKind.peel, skipped: 2),
-          HistoryEntry(HistoryKind.peel, skipped: 1),
-          HistoryEntry(HistoryKind.clear),
           HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.peel),
+          HistoryEntry(HistoryKind.peel, skipped: 1),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.clear),
         ]);
         expect(lane.undoCount, 3);
         expect(lane.redoCount, 3);
@@ -1027,6 +1034,121 @@ void main() {
           () => Session.fromJson(json),
           throwsA(isA<SessionCorruptLayers>()),
         );
+      });
+
+      /// Expects the history to be refused with a reason containing [reason].
+      void expectRefused(
+        List<Map<String, Object>> history, {
+        required int undoCount,
+        required int layers,
+        required String reason,
+      }) {
+        expect(
+          () => Session.fromJson(
+            withHistory(history, undoCount: undoCount, layers: layers),
+          ),
+          throwsA(
+            isA<SessionCorruptLayers>().having(
+              (e) => e.reason,
+              'reason',
+              contains(reason),
+            ),
+          ),
+        );
+      }
+
+      test('refuses a Clear point that is not the deepest Redo entry', () {
+        // Clear drops the Redo branch, so nothing can sit beneath it: a Redo
+        // of this Clear would discard the layer below.
+        expectRefused(
+          const [
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'clear', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 4,
+          reason: 'not the deepest',
+        );
+        expectRefused(
+          const [
+            {'kind': 'clear', 'skipped': 0},
+            {'kind': 'clear', 'skipped': 0},
+          ],
+          undoCount: 0,
+          layers: 3,
+          reason: 'not the deepest',
+        );
+      });
+
+      test('refuses a Redo marker with nothing to peel', () {
+        // A restoration on top blocks Peel, and an empty Undo side has
+        // nothing beneath the original: Redo would refuse forever and strand
+        // the layer below the marker.
+        expectRefused(
+          const [
+            {'kind': 'processed', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 3,
+          reason: 'no layer to peel',
+        );
+        expectRefused(
+          const [
+            {'kind': 'peel', 'skipped': 0},
+          ],
+          undoCount: 0,
+          layers: 1,
+          reason: 'no layer to peel',
+        );
+        // A marker reached after an earlier Redo re-files a layer is fine.
+        final json = withHistory(
+          const [
+            {'kind': 'processed', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 3,
+        );
+        expect(Session.fromJson(json).tracks.first.lanes.first.redoCount, 2);
+      });
+
+      test('refuses an oversized skipped count', () {
+        // Only an overdub sits beneath the Peel, yet it claims to have
+        // skipped one Peel entry: Undo would re-insert out of order.
+        expectRefused(
+          const [
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 1},
+          ],
+          undoCount: 3,
+          layers: 4,
+          reason: 'only 0 sit beneath',
+        );
+        // No stack holds that many entries.
+        expectRefused(
+          const [
+            {'kind': 'peel', 'skipped': 256},
+          ],
+          undoCount: 1,
+          layers: 2,
+          reason: 'invalid skipped count 256',
+        );
+        // Pool eviction removes the oldest entries, so a run of Peel entries
+        // that reaches the bottom may be shorter than a skipped count.
+        final evicted = withHistory(
+          const [
+            {'kind': 'peel', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 3},
+          ],
+          undoCount: 2,
+          layers: 3,
+        );
+        expect(Session.fromJson(evicted).tracks.first.lanes.first.undoCount, 2);
       });
 
       test('rejects lanes of one track with different histories', () {

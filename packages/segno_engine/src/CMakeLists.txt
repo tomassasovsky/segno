@@ -9,7 +9,9 @@
 # miniaudio/ (the vendored backend). Every subdirectory with headers is on the
 # include path below, so sources keep using flat `#include "x.h"`.
 cmake_minimum_required(VERSION 3.15)
-project(segno_engine_core VERSION 0.1.0 LANGUAGES C)
+# C for the engine; C++ for the one Signalsmith Stretch shim TU (stretch/
+# le_stretch.cpp, #1179) and, when SEGNO_ENABLE_PLUGINS is on, the plugin host.
+project(segno_engine_core VERSION 0.1.0 LANGUAGES C CXX)
 
 # --- segno_dsp_core: the effects DSP, split out as its own STATIC library so a
 # second target (the future VST3 plugin builds, parts 2/3) can link engine_fx.c
@@ -67,6 +69,7 @@ add_library(segno_engine SHARED
   # ---- core/: the portable engine (S1 split into per-concern TUs) ----
   core/engine.c              # residual control-thread core + shared helpers
   core/engine_convert.c      # pure sample-format conversion
+  core/engine_digest.c       # SHA-256, file digests, directory fsync (engine-free)
   # core/engine_fx.c lives in segno_dsp_core above (linked PRIVATE below) so a
   # second target (future VST3 plugin builds) can link it too.
   core/engine_session.c      # session export / import / commit
@@ -125,12 +128,21 @@ add_library(segno_engine SHARED
   midi/le_midi_clock.c
   # ---- miniaudio/: the vendored backend ----
   miniaudio/miniaudio_impl.c
+  # ---- stretch/: the C ABI over the vendored Signalsmith Stretch (#1179) ----
+  # The only C++ TU of the portable engine; it includes the header-only
+  # library relatively from ../third_party/signalsmith-stretch, so no include
+  # path is added. Mirrored by run_native_tests.sh / tool/build_test_lib.sh
+  # (compiled with $CXX) and by the macOS forwarders — keep them in sync.
+  stretch/le_stretch.cpp
 )
 
-# C11 gives us <stdatomic.h> for the lock-free ring and snapshot publication.
+# C11 gives us <stdatomic.h> for the lock-free ring and snapshot publication;
+# C++17 is what the stretch shim (and the vendored VST3 SDK, when enabled) need.
 set_target_properties(segno_engine PROPERTIES
   C_STANDARD 11
   C_STANDARD_REQUIRED ON
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
   OUTPUT_NAME "segno_engine"
 )
 
@@ -239,6 +251,17 @@ set_source_files_properties(
   "${SEGNO_RNNOISE_DIR}/src/rnnoise_tables.c"
   PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden")
 
+# The stretch shim TU for the same reason (#1179): on Linux its out-of-line
+# Signalsmith Stretch and std::vector instantiations would otherwise be
+# default-visibility weak exports of libsegno_engine.so, and Signalsmith is a
+# common plugin dependency, so a dlopen'd plugin could interpose them (or have
+# its own copy interposed). Nothing outside the engine calls le_stretch_*; the
+# FFI surface is untouched.
+if(UNIX AND NOT APPLE)
+  set_source_files_properties(stretch/le_stretch.cpp
+    PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
+endif()
+
 # --- VST3 + CLAP plugin hosting (vendored SDK include roots) ----------------
 #
 # Plugin hosting (third_party/vst3sdk + third_party/clap, both MIT — see
@@ -273,8 +296,8 @@ if(SEGNO_ENABLE_PLUGINS)
       "${CMAKE_CURRENT_SOURCE_DIR}/../third_party (a broken or partial checkout?). "
       "Restore them. See third_party/README.md.")
   endif()
-  # The VST3 SDK is C++; CLAP is a C header API consumed from C++.
-  enable_language(CXX)
+  # The VST3 SDK is C++ (the language is enabled at project() above); CLAP is
+  # a C header API consumed from C++.
   target_include_directories(segno_engine PRIVATE
     "${SEGNO_VST3_SDK_DIR}"
     "${SEGNO_CLAP_DIR}"
@@ -299,6 +322,4 @@ if(SEGNO_ENABLE_PLUGINS)
     "${SEGNO_VST3_SDK_DIR}/public.sdk/source/common/commoniids.cpp"
     "${SEGNO_VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp"
   )
-  set_target_properties(segno_engine PROPERTIES CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON)
 endif()

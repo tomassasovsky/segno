@@ -274,14 +274,16 @@ void main() {
     expect(owner.recordTimingSnapshot, isNull);
     expect(store.values['track_record_timing.7'], 7);
   });
-  test('flush does not acknowledge an unsettled callback deadline', () async {
+  test('flush lets an owed callback deadline through, still owed', () async {
     await owner.load();
     expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
     await repository.settleRecordTimingSettings();
     engine.commandsAreSettled = false;
     expect(repository.setRecordTiming(RecordTiming.quarter), EngineResult.ok);
+    // An owed value does not block power-off: the next start replays it.
     final outcome = await owner.owner.flush();
-    expect(outcome.status, SettingStatus.recoveryRequired);
+    expect(outcome.status, SettingStatus.applied);
+    expect(outcome.deferred, isTrue);
     expect(repository.recordTimingRecoveryRequired, isTrue);
     expect(owner.recordTimingSnapshot, isNull);
   });

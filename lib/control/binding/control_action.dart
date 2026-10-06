@@ -165,7 +165,10 @@ enum TrackOperation {
   redo('redo'),
 
   /// Fade the track out, or back in, at its effective Fade duration.
-  fade('fade');
+  fade('fade'),
+
+  /// Turn the track's playback direction around at its current position.
+  reverse('reverse');
 
   const TrackOperation(this.token);
 
@@ -347,6 +350,7 @@ final class ModeAction extends ControlAction {
     InteractionMode.custom => 'custom',
     InteractionMode.mixer => 'mixer',
     InteractionMode.fade => 'fade',
+    InteractionMode.reverse => 'reverse',
   };
 
   @override

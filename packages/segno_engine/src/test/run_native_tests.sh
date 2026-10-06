@@ -42,11 +42,14 @@ EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 STD="-std=gnu11 -I src/core -I src/midi -I src/miniaudio \
   -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
+# The C++ runtime joins ENGINE_LIBS for the one C++ engine TU (src/stretch/
+# le_stretch.cpp, the Signalsmith Stretch shim, #1179), compiled separately
+# below with $CXX because the $CC line passes C-only flags.
 case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lm"; MIDI_LIBS="-lwinmm -lm" ;;
-  Darwin) ENGINE_LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lm"
+  MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lstdc++ -lm"; MIDI_LIBS="-lwinmm -lm" ;;
+  Darwin) ENGINE_LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lc++ -lm"
           MIDI_LIBS="-framework CoreMIDI -framework CoreFoundation -lm" ;;
-  *) ENGINE_LIBS="-lpthread -lm -ldl"; MIDI_LIBS="-lasound -lpthread -lm" ;;  # Linux: miniaudio dlopen()s its backends
+  *) ENGINE_LIBS="-lpthread -lstdc++ -lm -ldl"; MIDI_LIBS="-lasound -lpthread -lm" ;;  # Linux: miniaudio dlopen()s its backends
 esac
 # MIDI_LIBS gained -lm above (C1, D15): the midi test binary now also links
 # src/core/tempo_grid.c (le_midi_clock.c's PPQN math depends on
@@ -88,6 +91,19 @@ ENGINE_SRC="$ENGINE_SRC \
   third_party/rnnoise/src/rnnoise_data.c \
   third_party/rnnoise/src/rnnoise_tables.c"
 
+# --- The stretch shim object (#1179) ------------------------------------------
+# src/stretch/le_stretch.cpp is the only C++ TU in the portable engine: the C
+# ABI over the vendored Signalsmith Stretch (third_party/signalsmith-stretch,
+# included relatively from the TU, so no new -I). It cannot ride the $CC line
+# (gnu11 is a C-only standard flag), so it is compiled here once and the object
+# is linked into every engine binary below. Mirrors src/CMakeLists.txt's
+# stretch/le_stretch.cpp entry and tool/build_test_lib.sh — keep in sync.
+CXX="${CXX:-c++}"
+STRETCH_OBJ="$OUT/segno_le_stretch.o"
+echo "== building the stretch shim =="
+# shellcheck disable=SC2086
+$CXX -std=c++17 -O2 $EXTRA_CFLAGS -c src/stretch/le_stretch.cpp -o "$STRETCH_OBJ"
+
 # --- Telemetry concurrency (race) tests (#739) ------------------------------
 # Dedicated binary that races the exact thread pairs engine_telemetry.h's
 # WRITER OWNERSHIP note describes (break-raise vs callback loop, xrun tally vs
@@ -117,7 +133,7 @@ echo "== building FX recipe ownership tests =="
 RECIPE_SRC="${ENGINE_SRC/ src\/core\/plugin_disabled.c/}"
 # shellcheck disable=SC2086
 $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_fx_recipe_plugins.c \
-  $RECIPE_SRC $ENGINE_LIBS -o "$OUT/segno_fx_recipe_tests.exe"
+  $RECIPE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_recipe_tests.exe"
 "$OUT/segno_fx_recipe_tests.exe"
 
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
@@ -126,7 +142,7 @@ fi
 
 echo "== building engine tests =="
 # shellcheck disable=SC2086
-$CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
+$CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_engine_core.c $ENGINE_SRC "$STRETCH_OBJ" $ENGINE_LIBS \
   -o "$OUT/segno_core_tests.exe"
 "$OUT/segno_core_tests.exe"
 
