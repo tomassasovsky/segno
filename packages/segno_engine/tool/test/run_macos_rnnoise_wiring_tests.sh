@@ -284,6 +284,22 @@ for tu in synth_voice.c synth_patch.c; do
   done
 done
 
+# engine_instruments.c (#1197 Part 2a) rides the engine*.c glob in the test
+# scripts, so only CMake and the two macOS forwarders list it.
+if grep -q "core/engine_instruments.c" "$CMAKE"; then
+  pass "CMakeLists.txt lists core/engine_instruments.c"
+else
+  fail "CMakeLists.txt does not list core/engine_instruments.c"
+fi
+for fwd in "$SPM_SRC/engine_instruments.c" "$CLASSES/engine_instruments.c"; do
+  if [ -f "$fwd" ] && target="$(resolve_include "$fwd")" && \
+     [ "$target" -ef "$PLUGIN/src/core/engine_instruments.c" ]; then
+    pass "$(basename "$(dirname "$fwd")")/engine_instruments.c forwards to src/core/engine_instruments.c"
+  else
+    fail "forwarder $fwd missing or not resolving to src/core/engine_instruments.c"
+  fi
+done
+
 if [ "$fails" -eq 0 ]; then
   echo "ALL PASSED"
   exit 0

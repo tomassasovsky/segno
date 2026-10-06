@@ -24,6 +24,7 @@
 #include "audio_ring.h"      /* le_audio_ring_push_frame (performance capture) */
 #include "engine_core.h"     /* valid_channel, le_track_set_len, le_mask_to_channel */
 #include "engine_fx.h"       /* fx_apply_chain, le_fx_entry_reset */
+#include "engine_instruments.h" /* le_instruments_block / _cut (#1197) */
 #include "engine_internal.h" /* le_engine_process prototype */
 #include "engine_private.h"  /* le_engine + the published atomics */
 #include "le_midi_clock.h"   /* le_midi_clock_advance (C1 24-PPQN clock-send) */
@@ -2199,6 +2200,8 @@ static void le_fx_state_clear_tails_range(le_fx_state* fx,
  * take in progress finalizes as a Stop would), the count-in is cancelled,
  * and every chain's tail is cleared. Monitors keep their preferences. */
 static void handle_cut_sound(le_engine* e, uint64_t frame) {
+  /* Every instrument voice fades out over 3 ms where it is (#1197). */
+  le_instruments_cut(e);
   /* Retire the pulse already sounding. Future beats still follow the
    * existing scheduler and click preferences. */
   e->click_remaining = 0;
@@ -3862,6 +3865,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     case LE_CMD_CUT_SOUND:
       le_plog_push(e, frame, *cmd);
       handle_cut_sound(e, frame);
+      break;
+    case LE_CMD_SET_VOICE_LIMIT:
+    case LE_CMD_INSTRUMENT_RESET:
+      le_instruments_apply_command(e, cmd);
       break;
     case LE_CMD_SET_MONITOR_INPUT_OUTPUT: {
       const int32_t input = cmd->trackmask.channel;
@@ -6358,6 +6365,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     apply_command(e, &cmd, perf_frame_base);
     e->commands_applied++; /* rejected and no-op commands settle too */
   }
+
+  /* Instruments (#1197): parameter changes, the note rings in posting order,
+   * then this block of every instrument's bus, ahead of the frame loop. */
+  le_instruments_block(e, frames);
 
   /* Close the count-in cancel-race grace window (code-review fix) right
    * after this block's command drain: it is open for exactly one block's

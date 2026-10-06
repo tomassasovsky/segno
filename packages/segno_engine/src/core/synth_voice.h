@@ -31,7 +31,7 @@
 extern "C" {
 #endif
 
-#define LE_SYNTH_MAX_INSTRUMENTS 8
+#define LE_SYNTH_MAX_INSTRUMENTS LE_MAX_INSTRUMENTS
 #define LE_SYNTH_DEFAULT_VOICES 32
 #define LE_SYNTH_MAX_VOICES 64
 /* A stolen voice (or one struck again) fades over LE_SYNTH_FADE_MS in one of
