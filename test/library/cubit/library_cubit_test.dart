@@ -51,11 +51,14 @@ const _usb = RemovableVolume(
   status: RemovableVolumeStatus.mounted,
 );
 
+/// A session saved at 44.1 kHz: Listen's clock must count at the engine's
+/// rate, not this one (review M-1).
 SessionPreview _preview(String id) => SessionPreview(
   summary: SessionSummary(id: id, name: id),
   tracks: const [],
   fxCount: 0,
-  sampleRate: 48000,
+  sampleRate: 44100,
+  hasMixdown: true,
 );
 
 void main() {
@@ -297,10 +300,17 @@ void main() {
 
       setUp(() {
         reports = [];
-        when(() => sessions.startAudition(any())).thenAnswer(
+        when(
+          () => sessions.startAudition(
+            any(),
+            stillWanted: any(named: 'stillWanted'),
+          ),
+        ).thenAnswer(
           (_) async => const AuditionStart(
             result: EngineResult.ok,
             frames: 480000,
+            rate: 48000,
+            sourceRate: 44100,
             truncated: true,
           ),
         );
@@ -334,7 +344,12 @@ void main() {
           await cubit.select('s-a');
 
           await cubit.listen();
-          verify(() => sessions.startAudition('s-a')).called(1);
+          verify(
+            () => sessions.startAudition(
+              's-a',
+              stillWanted: any(named: 'stillWanted'),
+            ),
+          ).called(1);
           expect(cubit.state.listen?.id, 's-a');
           expect(cubit.state.listen?.frames, 480000);
           expect(cubit.state.listen?.truncated, isTrue);
@@ -436,7 +451,10 @@ void main() {
       test('a start that lands after a stop is stopped', () async {
         final landed = Completer<AuditionStart>();
         when(
-          () => sessions.startAudition(any()),
+          () => sessions.startAudition(
+            any(),
+            stillWanted: any(named: 'stillWanted'),
+          ),
         ).thenAnswer((_) => landed.future);
         final cubit = fast();
         addTearDown(cubit.close);
@@ -450,6 +468,118 @@ void main() {
         verify(sessions.stopAudition).called(1);
       });
 
+      test('a start still decoding shows as starting, and a second press '
+          'withdraws it before it reaches the voice', () async {
+        final landed = Completer<AuditionStart>();
+        bool Function()? wanted;
+        when(
+          () => sessions.startAudition(
+            any(),
+            stillWanted: any(named: 'stillWanted'),
+          ),
+        ).thenAnswer((call) {
+          wanted = call.namedArguments[#stillWanted] as bool Function()?;
+          return landed.future;
+        });
+        final cubit = fast();
+        addTearDown(cubit.close);
+        await cubit.select('s-a');
+
+        final listening = cubit.listen();
+        expect(cubit.state.listen?.starting, isTrue);
+        expect(wanted!(), isTrue);
+
+        await cubit.listen();
+        expect(cubit.state.listen, isNull);
+        expect(wanted!(), isFalse);
+        // Nothing reached the voice yet: no stop to send.
+        verifyNever(sessions.stopAudition);
+
+        landed.complete(
+          const AuditionStart(result: EngineResult.invalid, cancelled: true),
+        );
+        await listening;
+        expect(cubit.state.listen, isNull);
+        expect(cubit.state.listenRefusal, isNull);
+        verify(
+          () => sessions.startAudition(
+            any(),
+            stillWanted: any(named: 'stillWanted'),
+          ),
+        ).called(1);
+      });
+
+      test("A's late decode never replaces B's preview (review M-2)", () async {
+        final aLanded = Completer<AuditionStart>();
+        bool Function()? aWanted;
+        when(
+          () => sessions.startAudition(
+            's-a',
+            stillWanted: any(named: 'stillWanted'),
+          ),
+        ).thenAnswer((call) {
+          aWanted = call.namedArguments[#stillWanted] as bool Function()?;
+          return aLanded.future;
+        });
+        reports = [const AuditionState(frames: 4800, bus: 0)];
+        final cubit = fast();
+        addTearDown(cubit.close);
+        await cubit.select('s-a');
+        final aListening = cubit.listen();
+
+        await cubit.select('s-b');
+        await cubit.listen();
+        expect(cubit.state.listen?.id, 's-b');
+
+        // A's decode lands: the engine asks before starting it.
+        expect(aWanted!(), isFalse);
+        aLanded.complete(
+          const AuditionStart(result: EngineResult.invalid, cancelled: true),
+        );
+        await aListening;
+        expect(cubit.state.listen?.id, 's-b');
+        verifyNever(sessions.stopAudition);
+      });
+
+      test('a start never seen playing is withdrawn from the engine when '
+          'the cubit gives up on it', () async {
+        final cubit = fast();
+        addTearDown(cubit.close);
+        await cubit.select('s-a');
+        await cubit.listen();
+
+        await polls();
+        expect(cubit.state.listen, isNull);
+        verify(sessions.stopAudition).called(1);
+      });
+
+      test('dropping the selection ends Listen with it', () async {
+        reports = [const AuditionState(frames: 480000, bus: 0)];
+        final cubit = fast();
+        addTearDown(cubit.close);
+        await cubit.select('s-a');
+        await cubit.listen();
+
+        cubit.clearSelection();
+
+        expect(cubit.state.listen, isNull);
+        verify(sessions.stopAudition).called(1);
+      });
+
+      test('reselecting the playing session keeps Listen (a save reselects '
+          'it)', () async {
+        reports = [const AuditionState(frames: 480000, bus: 0)];
+        final cubit = fast();
+        addTearDown(cubit.close);
+        await cubit.select('s-a');
+        await cubit.listen();
+
+        await cubit.select('s-a');
+
+        expect(cubit.state.listen?.id, 's-a');
+        verifyNever(sessions.stopAudition);
+      });
+
       for (final (result, refusal) in [
         (EngineResult.invalid, LibraryListenRefusal.unplayable),
         (EngineResult.notRunning, LibraryListenRefusal.noDevice),
@@ -458,7 +588,10 @@ void main() {
       ]) {
         test('a ${result.name} start reads ${refusal.name}', () async {
           when(
-            () => sessions.startAudition(any()),
+            () => sessions.startAudition(
+              any(),
+              stillWanted: any(named: 'stillWanted'),
+            ),
           ).thenAnswer((_) async => AuditionStart(result: result));
           final cubit = fast();
           addTearDown(cubit.close);
@@ -476,7 +609,10 @@ void main() {
 
       test('a start that throws reads unplayable', () async {
         when(
-          () => sessions.startAudition(any()),
+          () => sessions.startAudition(
+            any(),
+            stillWanted: any(named: 'stillWanted'),
+          ),
         ).thenThrow(StateError('gone'));
         final cubit = fast();
         addTearDown(cubit.close);
@@ -491,7 +627,12 @@ void main() {
         addTearDown(cubit.close);
 
         await cubit.listen();
-        verifyNever(() => sessions.startAudition(any()));
+        verifyNever(
+          () => sessions.startAudition(
+            any(),
+            stillWanted: any(named: 'stillWanted'),
+          ),
+        );
       });
     });
 
@@ -552,6 +693,39 @@ void main() {
           ).called(1);
         },
       );
+
+      test("a session's peaks that land after another selection are "
+          'dropped', () async {
+        when(() => sessions.readPreview(any())).thenAnswer(
+          (call) async => SessionPreview(
+            summary: SessionSummary(
+              id: call.positionalArguments.first as String,
+              name: 'x',
+            ),
+            tracks: const [track0],
+            fxCount: 0,
+            sampleRate: 48000,
+          ),
+        );
+        final aPeaks = Completer<Float32List?>();
+        when(() => sessions.readPeaks('s-a', any())).thenAnswer(
+          (_) => aPeaks.future,
+        );
+        when(
+          () => sessions.readPeaks('s-b', any()),
+        ).thenAnswer((_) async => Float32List.fromList([0.25]));
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        final selectingA = cubit.select('s-a');
+        await pumpEventQueue();
+        await cubit.select('s-b');
+        aPeaks.complete(Float32List.fromList([1]));
+        await selectingA;
+
+        expect(cubit.state.selectedId, 's-b');
+        expect(cubit.state.peaks[0], [0.25]);
+      });
     });
 
     test('close cancels the pedal and drive subscriptions', () async {

@@ -79,10 +79,18 @@ class FakeSessionEngine implements AudioEngine {
   Float32List? peaksAnswer;
 
   @override
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async {
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async {
     auditioned.add((path: path, bus: bus));
+    stillWantedChecks.add(stillWanted);
     return auditionAnswer;
   }
+
+  /// The `stillWanted` check each start was given.
+  final List<bool Function()?> stillWantedChecks = [];
 
   @override
   EngineResult auditionStop() {

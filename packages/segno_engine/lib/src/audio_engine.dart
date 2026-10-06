@@ -1550,7 +1550,17 @@ abstract interface class EngineAudition {
   /// into output pair [bus] at the next block, replacing a preview already
   /// playing. Retries once, a block later, when the voice is still handing
   /// back the preview before last ([EngineResult.notReady]).
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0});
+  ///
+  /// [stillWanted] is asked once the decode is done and before each start:
+  /// when it answers false the decoded preview is dropped, nothing reaches
+  /// the voice, and the answer is [AuditionStart.cancelled]. A caller whose
+  /// request was superseded while the file decoded so never replaces the
+  /// preview that superseded it.
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  });
 
   /// Silences the preview at the next block; a no-op when none plays.
   EngineResult auditionStop();

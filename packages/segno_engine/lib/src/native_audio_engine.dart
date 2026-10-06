@@ -2479,7 +2479,11 @@ class NativeAudioEngine implements AudioEngine {
   OffIsolateRunner offIsolate = Isolate.run;
 
   @override
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async {
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async {
     _checkAlive();
     final rate = snapshot().sampleRate;
     if (rate <= 0) return const AuditionStart(result: EngineResult.notRunning);
@@ -2502,11 +2506,23 @@ class NativeAudioEngine implements AudioEngine {
       _bindings.le_backing_buffer_free(buffer);
       return const AuditionStart(result: EngineResult.invalid);
     }
+    bool withdrawn() => stillWanted != null && !stillWanted();
+    if (withdrawn()) {
+      _bindings.le_backing_buffer_free(buffer);
+      return const AuditionStart(result: EngineResult.invalid, cancelled: true);
+    }
     var result = EngineResult.fromCode(
       _bindings.le_engine_audition_start(_engine, buffer, bus),
     );
     if (result == EngineResult.notReady) {
       await auditionRetryWait();
+      if (!_disposed && withdrawn()) {
+        _bindings.le_backing_buffer_free(buffer);
+        return const AuditionStart(
+          result: EngineResult.invalid,
+          cancelled: true,
+        );
+      }
       result = _disposed
           ? EngineResult.invalid
           : EngineResult.fromCode(
@@ -2521,6 +2537,7 @@ class NativeAudioEngine implements AudioEngine {
     return AuditionStart(
       result: result,
       frames: decoded.frames,
+      rate: rate,
       sourceRate: decoded.sourceRate,
       truncated: decoded.truncated,
     );

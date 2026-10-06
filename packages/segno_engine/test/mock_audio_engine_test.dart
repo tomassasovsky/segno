@@ -1299,6 +1299,14 @@ void main() {
         final started = await engine.auditionStartFile(file.path, bus: 1);
         expect(started.result, EngineResult.ok);
         expect(started.frames, 48000);
+        expect(started.rate, 48000);
+        expect(
+          (await engine.auditionStartFile(
+            file.path,
+            stillWanted: () => false,
+          )).cancelled,
+          isTrue,
+        );
         expect(engine.auditionState().playing, isTrue);
         expect(engine.auditionState().bus, 1);
         expect(engine.auditionStop(), EngineResult.ok);

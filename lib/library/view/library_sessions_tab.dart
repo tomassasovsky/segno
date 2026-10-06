@@ -341,7 +341,9 @@ class LibrarySessionRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final library = context.watch<LibraryCubit>().state;
+    final library = context.select<LibraryCubit, LibraryState>(
+      (c) => c.state.withoutListen,
+    );
     final session = context.watch<SessionCubit>().state;
     final rows = library.filter(session.sessions);
     if (rows.isEmpty) {

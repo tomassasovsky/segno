@@ -133,9 +133,7 @@ class _LibraryViewState extends State<LibraryView> {
         ),
         // A track that starts recording ends Listen (plan D10).
         BlocListener<LooperBloc, LooperState>(
-          listenWhen: (previous, current) =>
-              !previous.tracks.any((t) => t.isCapturing) &&
-              current.tracks.any((t) => t.isCapturing),
+          listenWhen: trackStartedCapturing,
           listener: (context, _) =>
               context.read<LibraryCubit>().stopListening(),
         ),
@@ -193,6 +191,20 @@ class _LibraryViewState extends State<LibraryView> {
       ),
     );
   }
+}
+
+/// Whether any track of [current] is capturing that was not in [previous]:
+/// a second track entering recording while a first one records counts too
+/// (plan D10, "any track entering recording").
+bool trackStartedCapturing(LooperState previous, LooperState current) {
+  for (final track in current.tracks) {
+    if (!track.isCapturing) continue;
+    final before = previous.tracks
+        .where((t) => t.channel == track.channel)
+        .firstOrNull;
+    if (before == null || !before.isCapturing) return true;
+  }
+  return false;
 }
 
 /// The failures the Library reports on its 19/05 line.

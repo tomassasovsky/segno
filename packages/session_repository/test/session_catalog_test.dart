@@ -1027,9 +1027,16 @@ void main() {
       final dir = makeBundle('s-a', folder: 'Gigs');
       File('${dir.path}/${SessionRepository.mixdownName}').createSync();
 
-      final started = await repo(engine: engine).startAudition('s-a');
+      var wanted = true;
+      final started = await repo(
+        engine: engine,
+      ).startAudition('s-a', stillWanted: () => wanted);
 
       expect(engine.auditioned.single.path, '${dir.path}/mixdown.wav');
+      // The caller's check reaches the engine, which asks it before the
+      // start (review M-2).
+      wanted = false;
+      expect(engine.stillWantedChecks.single!(), isFalse);
       expect(engine.auditioned.single.bus, 0);
       expect(started.truncated, isTrue);
       expect(started.frames, 5760000);
@@ -1049,6 +1056,23 @@ void main() {
         EngineResult.invalid,
       );
       expect(engine.auditioned, isEmpty);
+    });
+
+    test('the preview says whether the bundle has a mixdown to play', () async {
+      final engine = FakeSessionEngine()..seedTrack(0, Float32List(4800));
+      await repo(engine: engine).save(
+        await repo().bundlePathOf('s-a'),
+        settings: const SessionSettings(),
+      );
+      // An empty rig saves no mixdown.
+      await repo().save(
+        await repo().bundlePathOf('s-b'),
+        settings: const SessionSettings(),
+      );
+      final r = repo();
+
+      expect((await r.readPreview('s-a')).hasMixdown, isTrue);
+      expect((await r.readPreview('s-b')).hasMixdown, isFalse);
     });
 
     test('stop and state go straight to the engine', () {

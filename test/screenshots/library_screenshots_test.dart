@@ -72,12 +72,14 @@ SessionPreview _previewOf(String id) => switch (id) {
     tracks: [_track(0, 2), _track(1, 4), _track(2, 1)],
     fxCount: 15,
     sampleRate: 48000,
+    hasMixdown: true,
   ),
   's-3' => SessionPreview(
     summary: _catalog[2],
     tracks: [_track(0, 4), _track(4, 4)],
     fxCount: 4,
     sampleRate: 48000,
+    hasMixdown: true,
   ),
   _ => SessionPreview(
     summary: _catalog[0],
@@ -169,10 +171,16 @@ void main() {
                   (1 - (i % 32) / 48),
       ]);
     });
-    when(() => repository.startAudition(any())).thenAnswer(
+    when(
+      () => repository.startAudition(
+        any(),
+        stillWanted: any(named: 'stillWanted'),
+      ),
+    ).thenAnswer(
       (_) async => const AuditionStart(
         result: EngineResult.ok,
         frames: 48000 * 120,
+        rate: 48000,
         truncated: true,
       ),
     );
