@@ -259,8 +259,11 @@ static void test_history_redo_from_empty_parity(void) {
 }
 
 /* Several admissions before one callback: exactly one 322, for the slot the
- * callback mixes first, with that slot's latest id. A -> B -> A within one
- * block produces no fact. Intermediate images are listed but unreferenced. */
+ * callback mixes first, with that slot's latest id. The batch's images are
+ * byte-distinct (A+B, then A), so parity proves the renderer resolved the
+ * fact's id. A -> B -> A within one block produces no fact; its images are
+ * listed but unreferenced, and deleting the one with the mixed slot's content
+ * (id 4) changes nothing: the renderer resolves exact ids, never content. */
 static void test_history_batch_before_callback(void) {
   printf("test_history_batch_before_callback\n");
   le_engine* e = history_fixture();
@@ -270,13 +273,12 @@ static void test_history_batch_before_callback(void) {
   static float live[64];
   int at = history_process(e, live, 0, 5, 1);
   CHECK(le_engine_undo(e, 0) == LE_OK); /* id 1: A+B */
-  CHECK(le_engine_undo(e, 0) == LE_OK); /* id 2: A */
-  CHECK(le_engine_redo(e, 0) == LE_OK); /* id 3: A+B again */
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* id 2: A, the slot mixed first */
   const uint64_t swap_at = (uint64_t)at;
   at = history_process(e, live, at, 5, 1);
-  CHECK(fabsf(live[swap_at] - ((float)(swap_at + 1) / 256 + .25f)) < 1e-6f);
-  CHECK(le_engine_undo(e, 0) == LE_OK); /* id 4: A */
-  CHECK(le_engine_redo(e, 0) == LE_OK); /* id 5: back to the mixed slot */
+  CHECK(fabsf(live[swap_at] - (float)(swap_at + 1) / 256) < 1e-6f);
+  CHECK(le_engine_redo(e, 0) == LE_OK); /* id 3: A+B */
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* id 4: back to the mixed slot (A) */
   at = history_process(e, live, at, 5, 1);
   CHECK(le_perf_disarm(e) == LE_OK);
   le_perf_log_entry facts[8];
@@ -284,12 +286,88 @@ static void test_history_batch_before_callback(void) {
   CHECK(n == 1);
   if (n == 1) {
     CHECK(facts[0].cmd.code == LE_PLOG_SOURCE_APPLIED && facts[0].frame == swap_at);
-    CHECK(facts[0].cmd.restore_log.image_id == 3);
+    CHECK(facts[0].cmd.restore_log.image_id == 2);
   }
-  CHECK(history_manifest_count(dir, "\"kind\": 1") == 5);
-  for (int i = 1; i <= 5; ++i) {
+  CHECK(history_manifest_count(dir, "\"kind\": 1") == 4);
+  for (int i = 1; i <= 4; ++i) {
     char name[32]; snprintf(name, sizeof(name), "restore-0-%d.pcm", i);
     CHECK(history_manifest_count(dir, name) == 1);
+  }
+  char path[700]; snprintf(path, sizeof(path), "%s/restore-0-4.pcm", dir);
+  CHECK(remove(path) == 0);
+  history_render_parity(e, dir, arm, live, at);
+  le_engine_destroy(e);
+}
+
+/* Review finding 1: a swap admitted after le_perf_arm returned and before the
+ * callback applied LE_CMD_PERF_ARM. The arm image predates the swap, so the
+ * handler must not adopt the swapped slot as snapshot provenance: the first
+ * mixed frame (capture frame 0) logs 322 for the staged image. */
+static void test_history_arm_window_swap(void) {
+  printf("test_history_arm_window_swap\n");
+  le_engine* e = history_fixture();
+  float a[HR_LEN], b[HR_LEN], c[HR_LEN];
+  history_layer_patterns(a, b, c);
+  const char* dir = render_test_dir("history-arm-window");
+  const char* arm = history_arm_image(e, dir);
+  CHECK(le_perf_arm(e, dir) == LE_OK); /* ARM queued, not yet applied */
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* id 1: A+B, published before ARM applies */
+  static float live[64];
+  const int at = history_process(e, live, 0, 8, 8);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  CHECK(fabsf(live[0] - (a[0] + b[0])) < 1e-6f);
+  le_perf_log_entry facts[4];
+  const int n = history_source_facts(dir, 0, facts, 4);
+  CHECK(n == 1);
+  if (n == 1) {
+    CHECK(facts[0].cmd.code == LE_PLOG_SOURCE_APPLIED && facts[0].frame == 0);
+    CHECK(facts[0].cmd.restore_log.image_id == 1);
+    CHECK(facts[0].cmd.restore_log.state == LE_TRACK_PLAYING);
+  }
+  history_render_parity(e, dir, arm, live, at);
+  le_engine_destroy(e);
+}
+
+/* Review finding 3: the leg that tells a per-frame application boundary from
+ * a per-block one. The swap is admitted from the stage-5 test hook, which
+ * mix_tracks_frame fires AFTER this frame's live-slot loads, at frame f of a
+ * 128-frame block: the mixer applies it, and the fact lands, at frame f + 1 of
+ * the same block. A per-block load would place both at the next block start. */
+static int history_hook_countdown;
+static void history_hook_undo_mid_block(le_engine* e, int stage) {
+  if (stage != 5 || history_hook_countdown-- > 0) return;
+  le_test_fade_hook = NULL;
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+}
+
+static void test_history_mid_block_swap_frame(void) {
+  printf("test_history_mid_block_swap_frame\n");
+  le_engine* e = history_fixture();
+  float a[HR_LEN], b[HR_LEN], c[HR_LEN];
+  history_layer_patterns(a, b, c);
+  const char* dir = render_test_dir("history-mid-block");
+  const char* arm = history_arm_image(e, dir);
+  CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+  static float live[512];
+  int at = history_process(e, live, 0, 128, 128); /* one block, no swap */
+  const int f = 37;
+  history_hook_countdown = f;
+  le_test_fade_hook = history_hook_undo_mid_block;
+  at = history_process(e, live, at, 128, 128); /* swap admitted at frame 128 + f */
+  CHECK(le_test_fade_hook == NULL);
+  at = history_process(e, live, at, 128, 128);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  const int swap_at = 128 + f + 1;
+  CHECK(fabsf(live[swap_at - 1] - (a[f] + b[f] + c[f])) < 1e-6f); /* still A+B+C */
+  CHECK(fabsf(live[swap_at] - (a[f + 1] + b[f + 1])) < 1e-6f);     /* A+B from f+1 */
+  le_perf_log_entry facts[4];
+  const int n = history_source_facts(dir, 0, facts, 4);
+  CHECK(n == 1);
+  if (n == 1) {
+    CHECK(facts[0].cmd.code == LE_PLOG_SOURCE_APPLIED);
+    CHECK(facts[0].frame == (uint64_t)swap_at);
+    CHECK(facts[0].cmd.restore_log.image_id == 1);
+    CHECK(facts[0].cmd.restore_log.phase == (f + 1) % HR_LEN);
   }
   history_render_parity(e, dir, arm, live, at);
   le_engine_destroy(e);
@@ -601,6 +679,8 @@ static void run_history_replay_tests(void) {
   test_history_undo_redo_literal_parity();
   test_history_redo_from_empty_parity();
   test_history_batch_before_callback();
+  test_history_arm_window_swap();
+  test_history_mid_block_swap_frame();
   test_history_restore_then_empty_same_block();
   test_history_stopped_swap_then_play();
   test_history_staging_refusal_fails_stem_keeps_undo();
