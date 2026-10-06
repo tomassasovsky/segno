@@ -2805,7 +2805,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// hold armed on a face and settled after the mode changed still leaves the
   /// set empty.
   ///
-  /// The closing guard is defence, not a path the cubit takes today: `close`
+  /// The closing guard is a defense, not a path the cubit takes today: `close`
   /// retires input first, which settles every gesture while the cubit is
   /// still open. It keeps a later caller from emitting into a closed cubit.
   void _setHoldPending(PedalButton button, bool pending) {
