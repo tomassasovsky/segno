@@ -4838,6 +4838,48 @@ void main() {
       skip: true,
     );
 
+    testWidgets('the audio-recovery toast opens the Device page', (
+      tester,
+    ) async {
+      // The pinned interface is absent, so recovery waits and the toast
+      // stands. Its action is the way to the interface chooser.
+      await tester.pumpWidget(
+        App(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
+          audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
+        ),
+      );
+      // pump, not pumpAndSettle: the recovery cubit holds a periodic poll.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(debugAppToastActive(AppToastId.audioRecovery), isTrue);
+      // Let the toast animate in before tapping its action.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key(AppToastId.audioRecovery)),
+          matching: find.byType(TextButton),
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byType(DeviceSettingsPage), findsOneWidget);
+
+      // Unmount so the recovery poll stops with the test.
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
     testWidgets(
       'macOS PlatformMenuBar survives MaterialApp theme rebuild and '
       'DevTools select-widget override without remounting',
