@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -16,6 +17,7 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
@@ -24,7 +26,9 @@ import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
+import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
@@ -232,9 +236,13 @@ void main() {
     WidgetTester tester, {
     KeyEventResult Function(FocusNode, KeyEvent)? onAncestorKey,
     Locale? locale,
+    GlobalKey<NavigatorState>? navigatorKey,
+    List<NavigatorObserver> navigatorObservers = const [],
   }) => tester.pumpWidget(
     ToastificationWrapper(
       child: MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: navigatorObservers,
         theme: AppTheme.neon,
         locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -1925,6 +1933,94 @@ void main() {
       verify(() => bloc.add(const LooperSoloCleared())).called(1);
     });
 
+    testWidgets('every strip carries the FX pair; its bypass switches a '
+        'chain only when the track has one', (tester) async {
+      seed(
+        LooperState(
+          tracks: [
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 1000,
+              effects: [BuiltInEffect(type: TrackEffectType.delay)],
+            ),
+            const Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 1000,
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+      await showMixer(tester);
+
+      for (final channel in [0, 1]) {
+        expect(find.byKey(Key('mixer_fx_edit_$channel')), findsOneWidget);
+        expect(find.byKey(Key('mixer_fx_$channel')), findsOneWidget);
+      }
+      // The pen's proportions: edit 97, bypass 50, beside Mute's 102.
+      final mute = tester.getSize(find.byKey(const Key('mixer_mute_0'))).width;
+      final edit = tester
+          .getSize(find.byKey(const Key('mixer_fx_edit_0')))
+          .width;
+      final bypass = tester.getSize(find.byKey(const Key('mixer_fx_0'))).width;
+      expect(edit / mute, closeTo(97 / 102, 0.02));
+      expect(bypass / mute, closeTo(50 / 102, 0.02));
+
+      await tester.tap(find.byKey(const Key('mixer_fx_0')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperTrackChainToggled(0))).called(1);
+      // Track 2 has no chain: its bypass is dimmed and switches nothing.
+      await tester.tap(find.byKey(const Key('mixer_fx_1')));
+      await tester.pump();
+      verifyNever(() => bloc.add(const LooperTrackChainToggled(1)));
+      Finder dim(String key) => find.descendant(
+        of: find.byKey(Key(key)),
+        matching: find.byType(Opacity),
+      );
+      expect(dim('mixer_fx_1'), findsOneWidget);
+      expect(dim('mixer_fx_0'), findsNothing);
+      expect(dim('mixer_fx_edit_1'), findsNothing, reason: 'edit is always on');
+    });
+
+    testWidgets('FX opens the Effects editor at that track', (tester) async {
+      setSegnoFxCatalogueForTest(FxCatalogue.empty);
+      addTearDown(() => setSegnoFxCatalogueForTest(null));
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 1000),
+          ],
+        ),
+      );
+      final pushed = <Route<dynamic>>[];
+      await pump(
+        tester,
+        navigatorKey: segnoNavigatorKey,
+        navigatorObservers: [_PushObserver(pushed.add)],
+      );
+      await showMixer(tester);
+      pushed.clear();
+
+      await tester.tap(find.byKey(const Key('mixer_fx_edit_1')));
+      expect(pushed, hasLength(1));
+      final route = pushed.single as PageRouteBuilder<void>;
+      expect(route.settings.name, segnoFxRouteName);
+      final page =
+          route.pageBuilder(
+                tester.element(find.byType(TracksView)),
+                kAlwaysCompleteAnimation,
+                kAlwaysCompleteAnimation,
+              )
+              as FxPage;
+      expect(page.initial, const FxDestination.recordedTrack(1));
+      // The editor itself is covered by its own tests; take the route down
+      // before it builds against this test's providers.
+      segnoNavigatorKey.currentState!.removeRoute(route);
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('the pan bar previews under the finger and commits once, and '
         'a double tap returns the track to the centre', (tester) async {
       seed(
@@ -3269,4 +3365,15 @@ void main() {
       expect(find.byType(AudioNotRunningBanner), findsOneWidget);
     });
   });
+}
+
+/// Records every route pushed onto the navigator it observes.
+class _PushObserver extends NavigatorObserver {
+  _PushObserver(this.onPush);
+
+  final void Function(Route<dynamic> route) onPush;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      onPush(route);
 }
