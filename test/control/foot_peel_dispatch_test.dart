@@ -324,6 +324,46 @@ void main() {
     }
   });
 
+  test('semantic Rec/Play, Stop and Bank do nothing under the power-off '
+      'dialog', () async {
+    final rig = await enter();
+    try {
+      final stops = rig.engine.stopTrackCalls;
+      final plays = rig.engine.playCalls;
+      rig.powerOffUp = true;
+      [
+        PedalButton.recPlay,
+        PedalButton.stop,
+        PedalButton.bank,
+      ].forEach(rig.control.activateFootPeelPedal);
+      await _pump(const Duration(milliseconds: 30));
+      expect(rig.engine.records, isEmpty, reason: 'no take starts');
+      expect(rig.engine.stopTrackCalls, stops);
+      expect(rig.engine.playCalls, plays);
+      expect(rig.control.state.activeBank, 0);
+      expect(rig.control.state.mode, InteractionMode.peel);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('a retired input ignores the surface', () async {
+    final rig = await enter();
+    try {
+      rig.control.retireInput();
+      rig.control
+        ..activateFootPeelPedal(PedalButton.recPlay)
+        ..activateFootPeelPedal(PedalButton.track1)
+        ..peelFootPeelTrack(0);
+      await _pump(const Duration(milliseconds: 30));
+      expect(rig.engine.records, isEmpty);
+      expect(rig.engine.peelCalls, 0);
+      expect(rig.refusals, isEmpty);
+    } finally {
+      await rig.close();
+    }
+  });
+
   test('a Peel is refused while a Session load holds control', () async {
     final rig = await enter();
     try {
@@ -371,14 +411,14 @@ void main() {
     }
   });
 
-  group('every refused press says why', () {
-    test('an empty track', () async {
+  group('a refused press on a recorded track says why', () {
+    test('an empty track is silent, as on Fade and Reverse', () async {
       final rig = await enter();
       try {
         await tap(rig, PedalButton.track3); // channel 2 is empty
-        expect(rig.engine.peels, isEmpty);
+        rig.control.activateFootPeelPedal(PedalButton.track3);
         expect(rig.engine.peelCalls, 0);
-        expect(rig.refusals, [FootPeelRefusal.empty]);
+        expect(rig.refusals, isEmpty);
       } finally {
         await rig.close();
       }
@@ -588,6 +628,14 @@ void main() {
           await stomp(PedalButton.clear);
           expect(rig.engine.peels, [1, 4]);
           expect(rig.refusals, [FootPeelRefusal.originalOnly]);
+          // An assigned Peel on an empty track says so too: the stomp came
+          // from elsewhere, so a silent refusal would read as a dead pedal.
+          rig.control.selectTrack(2);
+          await stomp(PedalButton.clear);
+          expect(rig.refusals, [
+            FootPeelRefusal.originalOnly,
+            FootPeelRefusal.empty,
+          ]);
         } finally {
           await rig.close();
         }

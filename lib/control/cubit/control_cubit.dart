@@ -2181,11 +2181,14 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   /// Removes the newest overdub layer of the track in visible [slot] of the
-  /// current bank. A press that removes nothing says why.
+  /// current bank. An empty track has nothing to peel and stays silent, as
+  /// on Fade and Reverse; a recorded track that removes nothing says why.
   void peelFootPeelTrack(int slot) {
     if (!_peelEditable || slot < 0 || slot >= 4) return;
     final refusal = _footPeelActions.peel(state.activeBank * 4 + slot);
-    if (refusal != null) _reportPeelRefusal(refusal);
+    if (refusal != null && refusal != FootPeelRefusal.empty) {
+      _reportPeelRefusal(refusal);
+    }
   }
 
   /// Fades the recorded track in visible [slot] of the current bank.

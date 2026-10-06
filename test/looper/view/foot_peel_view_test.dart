@@ -168,7 +168,8 @@ void main() {
     expect(colorOf(3, 'Empty'), surface.textMuted);
   });
 
-  testWidgets('Undo and Clear admit no contact; every track pedal does', (
+  testWidgets('Undo, Clear and empty tracks admit no contact; recorded '
+      'tracks do', (
     tester,
   ) async {
     given(const ControlState(mode: InteractionMode.peel));
@@ -179,18 +180,22 @@ void main() {
       await tester.pump();
       verifyNever(() => control.footPeelPressed(button, any()));
     }
-    // An unavailable track still takes the press, so the refusal can say
-    // why.
-    for (final button in [
-      PedalButton.track2,
-      PedalButton.track3,
-      PedalButton.track4,
-    ]) {
+    // A recorded track that cannot peel now still takes the press, so the
+    // refusal can say why.
+    for (final button in [PedalButton.track2, PedalButton.track3]) {
       expect(pedalSemantics(tester, button).properties.enabled, isTrue);
       await tester.tap(pedal(button));
       await tester.pump();
       verify(() => control.footPeelPressed(button, any())).called(1);
     }
+    // An empty track's pedal is dimmed and silent, as on Fade and Reverse.
+    expect(
+      pedalSemantics(tester, PedalButton.track4).properties.enabled,
+      isFalse,
+    );
+    await tester.tap(pedal(PedalButton.track4), warnIfMissed: false);
+    await tester.pump();
+    verifyNever(() => control.footPeelPressed(PedalButton.track4, any()));
   });
 
   testWidgets('pedals follow the shared bank', (tester) async {
@@ -268,8 +273,8 @@ void main() {
     }
     expect(
       footPeelRefusalText(es, FootPeelRefusal.busy),
-      contains('Probá'),
-      reason: 'Argentine Spanish',
+      contains('Inténtalo de nuevo'),
+      reason: 'the retry wording every Spanish notice uses',
     );
   });
 }

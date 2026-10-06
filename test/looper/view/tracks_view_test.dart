@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/app_toasts.dart';
@@ -99,6 +100,7 @@ void main() {
   late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
   late PedalRepository pedalRepo;
+  late FakePedalLink pedalLink;
 
   setUp(() {
     // The toast registry is module-level and survives between tests; a stale
@@ -163,7 +165,8 @@ void main() {
     ).thenReturn(EngineResult.ok);
     // The real control cubit: it owns the system mode/cursor/bank the view
     // reads, and the M key / mode chip / number keys drive it.
-    pedalRepo = PedalRepository(NoopPedalLink());
+    pedalLink = FakePedalLink();
+    pedalRepo = PedalRepository(pedalLink);
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),
@@ -641,6 +644,54 @@ void main() {
     );
     verifyNever(() => repository.peel(channel: any(named: 'channel')));
     expect(tester.takeException(), isNull);
+    dismissAppToast(AppToastId.footPeelRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  testWidgets('an assigned Peel says why it removed nothing, outside the '
+      'Peel surface', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+      ),
+    );
+    pedalLink.hello();
+    await tester.runAsync(
+      () => control.setPedalSetup(
+        const PedalSetup().withCustom(
+          PedalButton.clear,
+          bank: 0,
+          pair: const ControlGesturePair(
+            press: TrackOperationAction(
+              operation: TrackOperation.peel,
+              scope: SelectedTrackScope(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await pump(tester);
+    control.setMode(InteractionMode.custom);
+    await tester.pumpAndSettle();
+    pedalLink.press(PedalButton.clear, down: true);
+    await tester.pump(const Duration(milliseconds: 50));
+    pedalLink.press(PedalButton.clear, down: false);
+    // The pedal events arrive on a real stream; let them land.
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    expect(control.state.mode, InteractionMode.custom);
+    expect(
+      find
+          .text('Only the original take remains: there is no overdub to peel.')
+          .hitTestable(),
+      findsOneWidget,
+    );
+    verifyNever(() => repository.peel(channel: any(named: 'channel')));
     dismissAppToast(AppToastId.footPeelRefused);
     await tester.pump(const Duration(seconds: 10));
   });
