@@ -25,7 +25,7 @@ class RecordTimingSettings implements RecordTimingControl {
   }
 
   /// The Record timing transaction.
-  final SettingsOwner<RecordTimingVector, RecordTimingCheckpoint> owner;
+  final SettingsOwner<RecordTimingVector, Object?> owner;
 
   /// The owners in the registry's fixed order.
   List<SettingsOwner<Object, Object?>> get owners => [owner];

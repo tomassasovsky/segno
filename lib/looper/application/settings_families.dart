@@ -1080,8 +1080,22 @@ final class RecordLengthFamily
   EngineResult recover() => _repository.recoverLengthSettings();
 }
 
+/// The stored Record timing gate, one storage address of the timing family.
+final class _TimingGate {
+  const _TimingGate();
+}
+
+/// The stored Record timing division, one storage address of the family.
+final class _TimingDivision {
+  const _TimingDivision();
+}
+
+/// The default's two stored scalars, as one write checkpoint.
+typedef _DefaultTiming = ({bool? quantize, int? division});
+
 const _timingAddresses = <Object?>[
-  RecordTimingAddress.defaults(),
+  _TimingGate(),
+  _TimingDivision(),
   RecordTimingAddress.track(0),
   RecordTimingAddress.track(1),
   RecordTimingAddress.track(2),
@@ -1093,10 +1107,11 @@ const _timingAddresses = <Object?>[
 ];
 
 /// Record timing: a gate and division for the default and an override per
-/// track. Its stored checkpoint is one tuple for every address, written only
-/// where it changes.
+/// track. Each stored key is its own storage address, so Retry repairs only
+/// an unreadable key; a write addresses the default (both scalars) or one
+/// track.
 final class RecordTimingFamily
-    implements SettingsFamily<RecordTimingVector, RecordTimingCheckpoint> {
+    implements SettingsFamily<RecordTimingVector, Object?> {
   /// Binds the family to its repository receipt and its stored keys.
   const RecordTimingFamily({
     required LooperRepository repository,
@@ -1122,42 +1137,64 @@ final class RecordTimingFamily
           value.defaultTiming.division == value.rememberedDivision);
 
   @override
-  Future<RecordTimingCheckpoint> readCheckpoint(Object? address) =>
-      _settings.readRecordTimingCheckpoint();
+  Future<Object?> readCheckpoint(Object? address) async => switch (address) {
+    _TimingGate() => await _settings.readRecordTimingGateCheckpoint(),
+    _TimingDivision() => await _settings.readRecordTimingDivisionCheckpoint(),
+    RecordTimingAddress(channel: null) => (
+      quantize: await _settings.readRecordTimingGateCheckpoint(),
+      division: await _settings.readRecordTimingDivisionCheckpoint(),
+    ),
+    final address => await _settings.readRecordTimingOverrideCheckpoint(
+      (address! as RecordTimingAddress).channel!,
+    ),
+  };
 
   @override
-  Future<void> writeCheckpoint(
-    Object? address,
-    RecordTimingCheckpoint checkpoint,
-  ) => _settings.restoreRecordTimingCheckpoint(checkpoint);
+  Future<void> writeCheckpoint(Object? address, Object? checkpoint) async {
+    switch (address) {
+      case _TimingGate():
+        await _settings.restoreRecordTimingGateCheckpoint(
+          quantize: checkpoint as bool?,
+        );
+      case _TimingDivision():
+        await _settings.restoreRecordTimingDivisionCheckpoint(
+          checkpoint as int?,
+        );
+      case RecordTimingAddress(channel: null):
+        final defaults = checkpoint! as _DefaultTiming;
+        await _settings.restoreRecordTimingGateCheckpoint(
+          quantize: defaults.quantize,
+        );
+        await _settings.restoreRecordTimingDivisionCheckpoint(
+          defaults.division,
+        );
+      case RecordTimingAddress(:final channel?):
+        await _settings.restoreRecordTimingOverrideCheckpoint(
+          channel: channel,
+          timing: checkpoint as int?,
+        );
+    }
+  }
 
-  /// [stored] with only [address]'s part taken from [durable]. A default
-  /// without a gate keeps the stored division.
+  /// [address]'s part of [durable]. A default without a gate keeps the
+  /// stored division.
   @override
-  RecordTimingCheckpoint checkpointOf(
+  Object? checkpointOf(
     RecordTimingVector durable,
     Object? address,
-    RecordTimingCheckpoint stored,
+    Object? stored,
   ) {
     final channel = (address! as RecordTimingAddress).channel;
     if (channel == null) {
       final timing = durable.defaultTiming;
       return (
         quantize: timing.quantize,
-        division: timing.quantize ? timing.division.code : stored.division,
-        trackOverrides: stored.trackOverrides,
+        division: timing.quantize
+            ? timing.division.code
+            : (stored! as _DefaultTiming).division,
       );
     }
-    final timing = durable.trackOverrides[channel];
-    return (
-      quantize: stored.quantize,
-      division: stored.division,
-      trackOverrides: Map.unmodifiable({
-        for (final entry in stored.trackOverrides.entries)
-          if (entry.key != channel) entry.key: entry.value,
-        if (timing != null) channel: timing.code,
-      }),
-    );
+    return durable.trackOverrides[channel]?.code;
   }
 
   @override
@@ -1179,28 +1216,29 @@ final class RecordTimingFamily
 
   /// An absent gate is Immediately; an absent track inherits.
   @override
-  RecordTimingVector restoreValue(
-    Map<Object?, RecordTimingCheckpoint> checkpoints,
-  ) {
-    final stored = checkpoints[const RecordTimingAddress.defaults()]!;
-    final division = GridDivision.fromCode(stored.division ?? 0);
+  RecordTimingVector restoreValue(Map<Object?, Object?> checkpoints) {
+    final division = GridDivision.fromCode(
+      checkpoints[const _TimingDivision()] as int? ?? 0,
+    );
     return RecordTimingVector(
       defaultTiming: RecordTiming.of(
-        quantize: stored.quantize ?? false,
+        quantize: checkpoints[const _TimingGate()] as bool? ?? false,
         division: division,
       ),
       rememberedDivision: division,
       trackOverrides: {
-        for (final entry in stored.trackOverrides.entries)
-          entry.key: RecordTiming.fromCode(entry.value)!,
+        for (var channel = 0; channel < 8; channel++)
+          channel: ?RecordTiming.fromCode(
+            checkpoints[RecordTimingAddress.track(channel)] as int?,
+          ),
       },
     );
   }
 
-  /// Unreadable timing is replaced as a whole: every key is removed.
+  /// Removing an unreadable key restores Immediately, no remembered
+  /// division, or inheritance; every other key keeps its value.
   @override
-  RecordTimingCheckpoint repair(Object? address) =>
-      (quantize: null, division: null, trackOverrides: const <int, int>{});
+  Object? repair(Object? address) => null;
 
   @override
   RecordTimingVector get live => RecordTimingVector(
