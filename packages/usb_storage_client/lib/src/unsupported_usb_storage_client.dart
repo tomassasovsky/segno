@@ -21,5 +21,5 @@ class UnsupportedUsbStorageClient implements UsbStorageClient {
       throw UnsupportedError('no USB storage helper on this build');
 
   @override
-  Future<void> cancelEject(String requestId) async {}
+  Future<bool> cancelEject(String requestId) async => false;
 }

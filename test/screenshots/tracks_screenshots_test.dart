@@ -446,6 +446,56 @@ void main() {
     }, skip: !hasScreenshotFonts);
   }
 
+  // The accepted Reverse Pen frames (segno-ui.pen 13 Performance · Reverse):
+  // playback direction, Bank B, an empty loop, and the Spanish strings.
+  for (final scene in ['default', 'bank', 'empty', 'spanish']) {
+    testWidgets('Foot Reverse $scene accepted scene', (tester) async {
+      Track track(int channel, {bool reversed = false}) => Track(
+        channel: channel,
+        state: TrackState.playing,
+        lengthFrames: 48000,
+        reversed: reversed,
+      );
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: scene == 'empty'
+              ? [
+                  for (var channel = 0; channel < 8; channel++)
+                    Track(channel: channel),
+                ]
+              : [
+                  track(0),
+                  track(1, reversed: true),
+                  track(2),
+                  const Track(channel: 3),
+                  track(4, reversed: true),
+                  track(5),
+                  track(6),
+                  const Track(channel: 7),
+                ],
+        ),
+      );
+      control.setMode(InteractionMode.reverse);
+      if (scene == 'bank') control.browseBank(1);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_reverse_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
   // Foot Peel (the pen lists the mode, "Remove an overdub layer", but has no
   // screen of its own; it follows the Fade and Mixer layout): layer counts
   // with an overdubbing track, Bank B, an empty loop, and the Spanish
@@ -552,6 +602,98 @@ void main() {
     },
     skip: !hasScreenshotFonts,
   );
+
+  testWidgets(
+    'console main window with a reversed track: REV in the meta row gap',
+    (tester) async {
+      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
+      for (var i = 0; i < names.length; i++) {
+        await tracks.rename(i, names[i]);
+      }
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, peak: 0.9, lengthFrames: 96000),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              peak: 0.68,
+              lengthFrames: 96000,
+              reversed: true,
+            ),
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              muted: true,
+              peak: 0.55,
+              lengthFrames: 96000,
+            ),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      await pump(tester);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_reverse_marker.png'),
+      );
+    },
+    skip: !hasScreenshotFonts,
+  );
+
+  // Real fonts: REV sits clear of the layers figure and FX in English and
+  // Spanish, with long counts.
+  for (final locale in const [Locale('en'), Locale('es')]) {
+    for (final bars in [16, 128]) {
+      testWidgets(
+        'REV clears its neighbours (${locale.languageCode}, $bars bars, '
+        '12 layers)',
+        (tester) async {
+          Track track(int channel) => Track(
+            channel: channel,
+            state: TrackState.playing,
+            lengthFrames: 1000 * bars,
+            peelDepth: 11,
+            reversed: channel == 1,
+          );
+          seed(
+            LooperState(
+              status: const EngineStatus(
+                isConnected: true,
+                devicePresent: true,
+                deviceName: 'Segno',
+                sampleRate: 48000,
+                inputChannels: 2,
+                outputChannels: 2,
+              ),
+              transport: const TransportState(
+                masterLengthFrames: 1000,
+                loopBars: 1,
+              ),
+              tracks: [
+                for (var channel = 0; channel < 4; channel++) track(channel),
+              ],
+            ),
+          );
+          await pump(tester, locale: locale);
+          Rect box(String part) =>
+              tester.getRect(find.byKey(Key('tracks_${part}_1')));
+          expect(box('reverse').left, greaterThan(box('layers').right + 4));
+          expect(box('reverse').right, lessThan(box('fx').left));
+          expect(box('layers').left, greaterThan(box('bars').right));
+        },
+        skip: !hasScreenshotFonts,
+      );
+    }
+  }
 
   testWidgets(
     'the Mixer view (MAIN VIEWS / Mixer)',

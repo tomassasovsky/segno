@@ -167,6 +167,9 @@ enum TrackOperation {
   /// Fade the track out, or back in, at its effective Fade duration.
   fade('fade'),
 
+  /// Turn the track's playback direction around at its current position.
+  reverse('reverse'),
+
   /// Remove the track's newest overdub layer; Undo puts it back.
   peel('peel');
 
@@ -352,6 +355,7 @@ final class ModeAction extends ControlAction {
     InteractionMode.custom => 'custom',
     InteractionMode.mixer => 'mixer',
     InteractionMode.fade => 'fade',
+    InteractionMode.reverse => 'reverse',
     InteractionMode.peel => 'peel',
   };
 

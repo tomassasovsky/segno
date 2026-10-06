@@ -624,6 +624,7 @@ class _FootswitchState extends State<_Footswitch> {
         (widget.mode == InteractionMode.custom ||
                 widget.mode == InteractionMode.mixer ||
                 widget.mode == InteractionMode.fade ||
+                widget.mode == InteractionMode.reverse ||
                 widget.mode == InteractionMode.peel)
             ? widget.active
                   ? widget.l10n.pedalSimLedActive
@@ -1052,6 +1053,7 @@ String _ledStateLabel(
   InteractionMode.custom ||
   InteractionMode.mixer ||
   InteractionMode.fade ||
+  InteractionMode.reverse ||
   InteractionMode.peel =>
     led == PedalTrackLed.off
         ? l10n.pedalSimLedInactive

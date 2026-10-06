@@ -45,6 +45,10 @@ enum InteractionMode {
   /// Foot-controlled independent track fades and their durations.
   fade,
 
+  /// Foot-controlled per-track playback direction: each track pedal turns
+  /// its track around at the current position.
+  reverse,
+
   /// Foot-controlled Peel: each track pedal removes its track's newest
   /// overdub layer, recoverable through Undo.
   peel;

@@ -16,6 +16,7 @@ import 'package:segno/control/invariants.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/control/model/foot_peel.dart';
+import 'package:segno/control/model/foot_reverse.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 /// Whether the play transport is PARKED: content exists but none of it is
@@ -99,6 +100,12 @@ PedalTrackLed projectTrackLed(
       // Lit while fading or faded out; never a claim about audibility. Only
       // recorded tracks: Clear publishes EMPTY before its envelope reset.
       return (track != null && track.hasContent && track.fade.attenuated)
+          ? PedalTrackLed.blue
+          : PedalTrackLed.off;
+    case InteractionMode.reverse:
+      // Lit while the recorded track plays reversed. Clear publishes EMPTY
+      // with the direction reset, so an empty track never reads reversed.
+      return (track != null && track.hasContent && track.reversed)
           ? PedalTrackLed.blue
           : PedalTrackLed.off;
     case InteractionMode.peel:
@@ -207,6 +214,7 @@ PedalStateFrame projectFrame(
       InteractionMode.custom ||
       InteractionMode.mixer ||
       InteractionMode.fade ||
+      InteractionMode.reverse ||
       InteractionMode.peel => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
@@ -238,9 +246,12 @@ PedalStateFrame projectFrame(
   return frame;
 }
 
-/// Whether [button] is a slot-less pedal on a hold-less performance surface.
+/// Whether [button] is a slot-less pedal on a hold-less performance surface
+/// (Fade, Reverse, Peel).
 bool _slotless(InteractionMode mode, PedalButton button) => switch (mode) {
   InteractionMode.fade => FootFadeProjection.pedalRoles[button]!.slot == null,
+  InteractionMode.reverse =>
+    FootReverseProjection.pedalRoles[button]!.slot == null,
   InteractionMode.peel => FootPeelProjection.pedalRoles[button]!.slot == null,
   _ => false,
 };

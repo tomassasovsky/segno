@@ -238,6 +238,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
         InteractionMode.custom ||
         InteractionMode.mixer ||
         InteractionMode.fade ||
+        InteractionMode.reverse ||
         InteractionMode.peel => (outline: ledAmber, fill: cardHigh),
       };
 

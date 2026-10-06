@@ -156,6 +156,7 @@ final List<ControlInvariant> controlInvariants = [
       InteractionMode.custom ||
       InteractionMode.mixer ||
       InteractionMode.fade ||
+      InteractionMode.reverse ||
       InteractionMode.peel => PedalMode.custom,
     };
     if (c.frame.mode != want) {
