@@ -1,6 +1,7 @@
 @Tags(['screenshots'])
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -104,12 +105,23 @@ void main() {
       'assets/fonts/JetBrainsMono-Medium.ttf',
       'assets/fonts/JetBrainsMono-SemiBold.ttf',
     ]);
+    await loadScreenshotFont('MaterialIcons', [
+      '$fontDir/MaterialIcons-Regular.otf',
+    ]);
     await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
       packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
     ]);
   });
 
-  Future<void> pump(WidgetTester tester, {required String current}) async {
+  // The debug ribbon would sit in every image that frames the navigator.
+  setUp(() => WidgetsApp.debugAllowBannerOverride = false);
+  tearDown(() => WidgetsApp.debugAllowBannerOverride = true);
+
+  Future<void> pump(
+    WidgetTester tester, {
+    required String current,
+    Stream<SessionState> states = const Stream.empty(),
+  }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -119,15 +131,15 @@ void main() {
     when(session.refreshSessions).thenAnswer((_) async {});
     whenListen(
       session,
-      const Stream<SessionState>.empty(),
+      states,
       initialState: SessionState(
         currentSessionId: current,
-        currentSessionName: current,
+        currentSessionName: _catalog.firstWhere((s) => s.id == current).name,
         sessions: _catalog,
+        folders: const ['Gigs'],
       ),
     );
     final repository = _MockSessionRepository();
-    when(repository.listFolders).thenAnswer((_) async => ['Gigs']);
     when(() => repository.readPreview(any())).thenAnswer(
       (call) async => _previewOf(call.positionalArguments.first as String),
     );
@@ -151,8 +163,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  // The navigator, so a sheet or dialog over the page is in the image.
   Future<void> shot(String name) => expectLater(
-    find.byType(LibraryPage),
+    find.byType(Navigator).first,
     matchesGoldenFile('goldens/library_$name.png'),
   );
 
@@ -173,5 +186,51 @@ void main() {
     await tester.tap(find.byKey(const Key('library_location_usb')));
     await tester.pumpAndSettle();
     await shot('usb_disconnected');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Manage on the selected session', (tester) async {
+    await pump(tester, current: 's-2');
+    await tester.tap(find.byKey(const Key('library_row_s-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('library_manage')));
+    await tester.pumpAndSettle();
+    await shot('manage');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('19/04 Rename on the keyboard sheet', (tester) async {
+    await pump(tester, current: 's-1');
+    await tester.tap(find.byKey(const Key('library_manage')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('fx_option_rename')));
+    await tester.pumpAndSettle();
+    await shot('rename');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Move to folder', (tester) async {
+    await pump(tester, current: 's-1');
+    await tester.tap(find.byKey(const Key('library_manage')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('fx_option_move')));
+    await tester.pumpAndSettle();
+    await shot('move');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('19/05 a failed save', (tester) async {
+    // The line reports a save taken while the Library is open.
+    final states = StreamController<SessionState>();
+    addTearDown(states.close);
+    await pump(tester, current: 's-1', states: states.stream);
+    states.add(
+      SessionState(
+        status: SessionStatus.failure,
+        error: SessionError.saveFailed,
+        currentSessionId: 's-1',
+        currentSessionName: 'Evening loop',
+        sessions: _catalog,
+        folders: const ['Gigs'],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await shot('save_failed');
   }, skip: !hasScreenshotFonts);
 }

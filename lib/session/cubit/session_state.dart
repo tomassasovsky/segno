@@ -17,9 +17,13 @@ enum SessionStatus {
 
 /// Which session action succeeded, for localized UI messaging.
 enum SessionOutcome {
-  /// A save (a write-back via [SessionCubit.save] or a
-  /// [SessionCubit.saveAs] of a new session) succeeded.
+  /// [SessionCubit.save] wrote the live rig back to the open session.
   saved,
+
+  /// The live rig was saved under a new identity, which is now current: a
+  /// [SessionCubit.saveAs], or a [SessionCubit.save] with no open session,
+  /// which takes the next automatic name.
+  savedAs,
 
   /// A [SessionCubit.open] succeeded.
   loaded,
@@ -30,9 +34,20 @@ enum SessionOutcome {
   /// A session was deleted.
   deleted,
 
-  /// [SessionCubit.save] was called with no open session — the UI should open
-  /// the Save-As name dialog rather than the cubit silently picking a name.
-  saveAsRequested,
+  /// A saved session was copied under a new name.
+  duplicated,
+
+  /// A session was moved to another folder.
+  moved,
+
+  /// A folder was created.
+  folderCreated,
+
+  /// A folder was renamed.
+  folderRenamed,
+
+  /// An empty folder was deleted.
+  folderDeleted,
 }
 
 /// A classified failure kind, so the UI can show a localized, human-readable
@@ -55,6 +70,16 @@ enum SessionError {
 
   /// A loaded rig is stopped until its full boot-settings image is recovered.
   bootPersistence,
+
+  /// Writing the live rig failed; the catalog and the open session are as
+  /// they were (the 19/05 banner).
+  saveFailed,
+
+  /// The open session cannot be deleted (plan D6).
+  currentSessionProtected,
+
+  /// A folder that still holds sessions cannot be deleted.
+  folderNotEmpty,
 }
 
 /// State of the [SessionCubit].
@@ -77,6 +102,7 @@ class SessionState extends Equatable {
     this.currentSessionId,
     this.currentSessionName,
     this.sessions = const [],
+    this.folders = const [],
     this.bootRecoveryRequired = false,
   });
 
@@ -109,6 +135,10 @@ class SessionState extends Equatable {
   /// The saved-session catalog, for the picker.
   final List<SessionSummary> sessions;
 
+  /// The catalog's one-level folders, sorted, for the Library's chips and
+  /// Move to folder.
+  final List<String> folders;
+
   /// The new rig was accepted but boot settings or bindings still need Retry.
   final bool bootRecoveryRequired;
 
@@ -118,8 +148,7 @@ class SessionState extends Equatable {
   /// [failedSessionId]) are per-transition: they default to `null` (cleared)
   /// unless passed, so a fresh status never carries a stale result. The
   /// **durable** fields ([currentSessionId] / [currentSessionName] /
-  /// [sessions]) are preserved unless overridden; [clearCurrentSession] sets
-  /// the open-session pointer (id and name) back to `null`.
+  /// [sessions] / [folders]) are preserved unless overridden.
   SessionState copyWith({
     SessionStatus? status,
     SessionOutcome? outcome,
@@ -128,8 +157,8 @@ class SessionState extends Equatable {
     SessionId? failedSessionId,
     SessionId? currentSessionId,
     String? currentSessionName,
-    bool clearCurrentSession = false,
     List<SessionSummary>? sessions,
+    List<String>? folders,
     bool? bootRecoveryRequired,
   }) => SessionState(
     status: status ?? this.status,
@@ -137,13 +166,10 @@ class SessionState extends Equatable {
     error: error,
     errorMessage: errorMessage,
     failedSessionId: failedSessionId,
-    currentSessionId: clearCurrentSession
-        ? null
-        : (currentSessionId ?? this.currentSessionId),
-    currentSessionName: clearCurrentSession
-        ? null
-        : (currentSessionName ?? this.currentSessionName),
+    currentSessionId: currentSessionId ?? this.currentSessionId,
+    currentSessionName: currentSessionName ?? this.currentSessionName,
     sessions: sessions ?? this.sessions,
+    folders: folders ?? this.folders,
     bootRecoveryRequired: bootRecoveryRequired ?? this.bootRecoveryRequired,
   );
 
@@ -157,6 +183,7 @@ class SessionState extends Equatable {
     currentSessionId,
     currentSessionName,
     sessions,
+    folders,
     bootRecoveryRequired,
   ];
 }

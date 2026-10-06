@@ -339,6 +339,56 @@ void main() {
     });
   });
 
+  group('renameFolder', () {
+    test(
+      'renames the folder; its sessions move with it and keep their ids',
+      () async {
+        makeBundle('s-a', folder: 'Gigs', name: 'Set');
+
+        await repo().renameFolder('Gigs', 'Shows');
+
+        expect(await repo().listFolders(), ['Shows']);
+        final listed = (await repo().listSessions()).single;
+        expect(listed.id, 's-a');
+        expect(listed.folder, 'Shows');
+        expect(await repo().bundlePathOf('s-a'), '${root.path}/Shows/s-a');
+      },
+    );
+
+    test(
+      'refuses a taken name, an id-shaped name and a missing folder',
+      () async {
+        await repo().createFolder('Gigs');
+        await repo().createFolder('Shows');
+        makeBundle('s-b');
+
+        await expectLater(
+          repo().renameFolder('Gigs', 'Shows'),
+          throwsA(isA<SessionNameCollision>()),
+        );
+        await expectLater(
+          repo().renameFolder('Gigs', 's-b'),
+          throwsA(isA<SessionNameCollision>()),
+        );
+        await expectLater(
+          repo().renameFolder('Gigs', 's-20261006-120000'),
+          throwsArgumentError,
+        );
+        await expectLater(
+          repo().renameFolder('Ghost', 'X'),
+          throwsArgumentError,
+        );
+        expect(await repo().listFolders(), ['Gigs', 'Shows']);
+      },
+    );
+
+    test('renaming a folder to its own name is a no-op', () async {
+      await repo().createFolder('Gigs');
+      await expectLater(repo().renameFolder('Gigs', 'Gigs'), completes);
+      expect(await repo().listFolders(), ['Gigs']);
+    });
+  });
+
   group('moveSession', () {
     test('moves a bundle into a folder and back to Unfiled', () async {
       makeBundle('s-a');

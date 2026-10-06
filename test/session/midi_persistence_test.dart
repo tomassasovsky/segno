@@ -295,7 +295,7 @@ void main() {
           )
           ..finishPending(ticket);
         await saving;
-        expect(cubit.state.outcome, SessionOutcome.saved);
+        expect(cubit.state.outcome, SessionOutcome.savedAs);
         final bundle = await sessions.read(
           await sessions.bundlePathOf(await idOf('held MIDI')),
         );
@@ -338,7 +338,7 @@ void main() {
         );
         expect(looper.mixSettingsSnapshot.monitorLevels[0], closeTo(.2, .0001));
         await cubit.saveAs('released MIDI');
-        expect(cubit.state.outcome, SessionOutcome.saved);
+        expect(cubit.state.outcome, SessionOutcome.savedAs);
         final afterRelease = await sessions.read(
           await sessions.bundlePathOf(await idOf('released MIDI')),
         );

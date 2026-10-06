@@ -13,9 +13,9 @@ part 'library_state.dart';
 /// reports, and the footswitch's return-to-Tracks request.
 ///
 /// It never opens a session and never changes the catalog: `SessionCubit`
-/// owns the current session and every catalog mutation. This cubit only
-/// reads facts about saved bundles (folders, previews), so selecting a row
-/// can never reach the engine.
+/// owns the current session, the catalog and its folders, and every catalog
+/// mutation. This cubit only reads previews of saved bundles, so selecting a
+/// row can never reach the engine.
 class LibraryCubit extends Cubit<LibraryState> {
   /// Creates a [LibraryCubit] over [sessions], [volumes] and [pedal].
   LibraryCubit({
@@ -44,26 +44,6 @@ class LibraryCubit extends Cubit<LibraryState> {
     emit(state.copyWith(volumes: volumes));
   }
 
-  /// Reads the folder chips and selects [selected] (the current session),
-  /// when there is one.
-  Future<void> start({SessionId? selected}) async {
-    await _readFolders();
-    if (selected != null) await select(selected);
-  }
-
-  Future<void> _readFolders() async {
-    final List<String> folders;
-    try {
-      folders = await _sessions.listFolders();
-    } on Object {
-      // Unreadable folders leave the chips at All and Unfiled; the rows
-      // still list, so the Library stays usable.
-      return;
-    }
-    if (isClosed) return;
-    emit(state.copyWith(folders: folders));
-  }
-
   /// Selects [id] and reads its preview. Selecting is not opening: nothing
   /// reaches the engine.
   Future<void> select(SessionId id) async {
@@ -81,6 +61,21 @@ class LibraryCubit extends Cubit<LibraryState> {
     // A later selection superseded this read; its own result lands instead.
     if (isClosed || request != _previewRequest) return;
     emit(state.copyWith(preview: preview, previewError: error));
+  }
+
+  /// Drops the selection and its preview: the selected session is gone and
+  /// no session is open to fall back to.
+  void clearSelection() {
+    _previewRequest++;
+    emit(
+      LibraryState(
+        location: state.location,
+        query: state.query,
+        folderFilter: state.folderFilter,
+        volumes: state.volumes,
+        dismissalRequested: state.dismissalRequested,
+      ),
+    );
   }
 
   /// Filters the list by [query], a case-insensitive substring of the name.

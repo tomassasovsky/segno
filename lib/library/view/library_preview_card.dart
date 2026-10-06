@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
+import 'package:segno/library/view/library_manage.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -43,24 +44,82 @@ class LibraryPreviewCard extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.all(33),
-        child: switch (library) {
-          _ when hidden => const _PreviewNotice(
-            _PreviewNoticeKind.nothingSelected,
+        child: switch (hidden ? null : library.selectedId) {
+          null => const _PreviewNotice(_PreviewNoticeKind.nothingSelected),
+          final id => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              LibraryPreviewHeading(id: id),
+              const SizedBox(height: 24),
+              Expanded(
+                child: switch (library) {
+                  LibraryState(:final previewError?) => _PreviewNotice(
+                    previewError == LibraryPreviewError.unsupportedVersion
+                        ? _PreviewNoticeKind.unsupportedVersion
+                        : _PreviewNoticeKind.unreadable,
+                  ),
+                  LibraryState(:final preview?) => LibraryPreviewBody(
+                    preview: preview,
+                  ),
+                  // The read is in flight; it takes a few milliseconds.
+                  _ => const SizedBox.shrink(),
+                },
+              ),
+            ],
           ),
-          LibraryState(selectedId: null) => const _PreviewNotice(
-            _PreviewNoticeKind.nothingSelected,
-          ),
-          LibraryState(:final previewError?) => _PreviewNotice(
-            previewError == LibraryPreviewError.unsupportedVersion
-                ? _PreviewNoticeKind.unsupportedVersion
-                : _PreviewNoticeKind.unreadable,
-          ),
-          LibraryState(:final preview?) => LibraryPreviewBody(
-            preview: preview,
-          ),
-          // The read is in flight; it takes a few milliseconds.
-          _ => const SizedBox.shrink(),
         },
+      ),
+    );
+  }
+}
+
+/// The card's heading: the selected session's name and `Manage`. Drawn for
+/// a session whose preview cannot be read too, so it can still be renamed,
+/// moved or deleted.
+class LibraryPreviewHeading extends StatelessWidget {
+  /// Creates the heading for the session [id].
+  const LibraryPreviewHeading({required this.id, super.key});
+
+  /// The selected session.
+  final SessionId id;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    final summary = context.select<SessionCubit, SessionSummary?>(
+      (c) => c.state.sessions.where((s) => s.id == id).firstOrNull,
+    );
+    final busy = context.select<SessionCubit, bool>(
+      (c) => c.state.status == SessionStatus.working,
+    );
+    return SizedBox(
+      height: 64,
+      child: Row(
+        children: [
+          Expanded(
+            child: AppText(
+              summary?.name ?? id,
+              key: const Key('library_preview_name'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: surface.textPrimary,
+                fontSize: 34,
+                height: 1.2,
+              ),
+            ),
+          ),
+          const SizedBox(width: 24),
+          LoopOutlinedButton(
+            key: const Key('library_manage'),
+            width: 137,
+            label: l10n.libraryManage,
+            onTap: summary == null || busy
+                ? null
+                : () => unawaited(showLibraryManage(context, summary)),
+          ),
+        ],
       ),
     );
   }
@@ -97,7 +156,7 @@ class _PreviewNotice extends StatelessWidget {
   }
 }
 
-/// A read preview: heading, musical facts, track lanes and footer.
+/// A read preview under the heading: musical facts, track lanes and footer.
 class LibraryPreviewBody extends StatelessWidget {
   /// Creates the body for [preview].
   const LibraryPreviewBody({required this.preview, super.key});
@@ -118,24 +177,6 @@ class LibraryPreviewBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          height: 64,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: AppText(
-              summary.name,
-              key: const Key('library_preview_name'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: surface.textPrimary,
-                fontSize: 34,
-                height: 1.2,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
         SizedBox(
           height: 64,
           child: Row(

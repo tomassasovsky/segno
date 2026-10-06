@@ -147,16 +147,13 @@ class _TracksViewState extends State<TracksView> {
             ),
           ),
           BlocListener<SessionCubit, SessionState>(
-            // React to a settled action — a save/load/export that finished or
-            // failed — never the transient `working` tick; plus the
-            // save-with-no-session signal that asks the UI to open Save-As.
+            // React to a settled action — a save or load that finished or
+            // failed — never the transient `working` tick.
             listenWhen: (previous, current) =>
-                (current.status != previous.status &&
-                    (current.status == SessionStatus.success ||
-                        current.status == SessionStatus.failure)) ||
-                (current.outcome == SessionOutcome.saveAsRequested &&
-                    previous.outcome != SessionOutcome.saveAsRequested),
-            listener: onSessionState,
+                current.status != previous.status &&
+                (current.status == SessionStatus.success ||
+                    current.status == SessionStatus.failure),
+            listener: showSessionOutcome,
           ),
           BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
             // Fire once on entering `Rendering` (the capture dialog opens on

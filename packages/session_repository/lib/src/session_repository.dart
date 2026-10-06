@@ -322,7 +322,9 @@ class SessionRepository {
     if (resolver == null) {
       throw StateError('SessionRepository has no sessionsRoot configured');
     }
-    return resolver();
+    final root = await resolver();
+    _recoverInterruptedSwaps(Directory(root), inFlight: _staging);
+    return root;
   }
 
   static bool _isBundle(String path) =>
@@ -341,7 +343,10 @@ class SessionRepository {
   }
 
   static bool _isFolder(Directory dir) =>
-      !_isBundle(dir.path) && !_isInterruptedSave(dir) && !_isReservation(dir);
+      !_isTransient(_basename(dir.path)) &&
+      !_isBundle(dir.path) &&
+      !_isInterruptedSave(dir) &&
+      !_isReservation(dir);
 
   /// An empty directory named like a minted id is a reservation
   /// ([newSessionId]): a save in flight, or one a crash or a failed copy left
@@ -454,6 +459,7 @@ class SessionRepository {
     final out = <SessionSummary>[];
     for (final entity in root.listSync()) {
       if (entity is! Directory) continue;
+      if (_isTransient(_basename(entity.path))) continue;
       if (_isBundle(entity.path)) {
         out.add(_summaryOf(entity, folder: null));
         continue;
@@ -461,7 +467,9 @@ class SessionRepository {
       if (_isInterruptedSave(entity)) continue;
       final folder = _basename(entity.path);
       for (final child in entity.listSync()) {
-        if (child is Directory && _isBundle(child.path)) {
+        if (child is Directory &&
+            !_isTransient(_basename(child.path)) &&
+            _isBundle(child.path)) {
           out.add(_summaryOf(child, folder: folder));
         }
       }
@@ -862,6 +870,30 @@ class SessionRepository {
     Directory('$root/$slug').createSync(recursive: true);
   }
 
+  /// Renames the folder [name] to [to]; the sessions inside move with it and
+  /// keep their ids. Throws [SessionNameCollision] when a folder or bundle
+  /// already has that directory name, [ArgumentError] for an invalid name
+  /// (or one shaped like a session id) and for a missing folder. Renaming a
+  /// folder to its own name is a no-op.
+  Future<void> renameFolder(String name, String to) async {
+    final from = _requireName(name, 'name');
+    final slug = _requireName(to, 'to');
+    if (isMintedSessionId(slug)) {
+      throw ArgumentError.value(to, 'to', 'reads as a session id');
+    }
+    final root = await _rootPath();
+    final dir = Directory('$root/$from');
+    if (!dir.existsSync() || !_isFolder(dir)) {
+      throw ArgumentError.value(name, 'name', 'no such folder');
+    }
+    if (slug == from) return;
+    if (FileSystemEntity.typeSync('$root/$slug', followLinks: false) !=
+        FileSystemEntityType.notFound) {
+      throw SessionNameCollision(slug: slug);
+    }
+    dir.renameSync('$root/$slug');
+  }
+
   /// Deletes the folder [name]. Throws [SessionFolderNotEmpty] while any
   /// directory inside it holds anything: a bundle, or an interrupted save
   /// the catalog does not list but leaves in place (plan D2). A missing
@@ -966,8 +998,80 @@ class SessionRepository {
       throw StateError('session changed before save capture');
     }
     final captured = _capture(savedSettings);
-    await Directory(directory).create(recursive: true);
+    final target = Directory(directory);
+    // A save over an existing bundle never edits it in place: it writes a
+    // whole new bundle beside it and swaps the two, so a failure (a full
+    // disk, a power cut) leaves the previous save as it was. A new bundle is
+    // written where it goes; until its manifest lands it is a hidden
+    // interrupted save.
+    final rewrite = _isBundle(directory);
+    final dest = rewrite ? Directory('$directory$_stagingSuffix') : target;
+    if (rewrite && dest.existsSync()) dest.deleteSync(recursive: true);
+    await dest.create(recursive: true);
+    // A catalog read while this save writes must not take its stage for a
+    // leftover.
+    if (rewrite) _staging.add(dest.path);
+    final Session session;
+    try {
+      session = await _writeBundle(
+        dest.path,
+        captured,
+        chains,
+        savedSettings,
+        pedalBindings,
+        name,
+      );
+      if (rewrite) _carryForeignFiles(from: target, to: dest);
+    } on Object {
+      _staging.remove(dest.path);
+      if (rewrite && dest.existsSync()) dest.deleteSync(recursive: true);
+      rethrow;
+    }
+    try {
+      if (rewrite) _swapIn(staging: dest, target: target);
+    } on Object {
+      // The previous save is back in place; the stage is not needed.
+      if (dest.existsSync()) dest.deleteSync(recursive: true);
+      rethrow;
+    } finally {
+      _staging.remove(dest.path);
+    }
+    return session;
+  }
 
+  /// The stages of write-backs being written right now, by any repository
+  /// in this isolate: they all share the one sessions root.
+  static final Set<String> _staging = {};
+
+  /// The sibling a write-back is staged in before it is swapped in.
+  static const String _stagingSuffix = '.saving';
+
+  /// The name the previous save takes for the moment of the swap.
+  static const String _retiredSuffix = '.old';
+
+  /// Whether [name] is a staged or retired write-back, never a session or a
+  /// folder: neither suffix can occur in an id or a folder name, which keep
+  /// only letters, digits, spaces, hyphens and underscores.
+  static bool _isTransient(String name) =>
+      name.endsWith(_stagingSuffix) || name.endsWith(_retiredSuffix);
+
+  /// Called with each file a save has just written, in order, and with the
+  /// target before a write-back is swapped in; a test throws from it to
+  /// stand for a full disk or a failed write at that moment.
+  @visibleForTesting
+  static void Function(String path)? debugOnSaveWrite;
+
+  /// Writes the layers, the manifest and the mixdown of [captured] into the
+  /// directory [path], each flushed to the device, and prunes layer files
+  /// the manifest does not reference.
+  Future<Session> _writeBundle(
+    String path,
+    _Capture captured,
+    SessionChains chains,
+    SessionSettings settings,
+    String pedalBindings,
+    String? name,
+  ) async {
     final written = <String>{};
     for (final track in captured.tracks) {
       for (final lane in track.lanes) {
@@ -975,13 +1079,15 @@ class SessionRepository {
         for (var o = 0; o < lane.layers.length; o++) {
           final file = lane.layers[o].file;
           written.add(file);
-          await File('$directory/$file').writeAsBytes(
+          await File('$path/$file').writeAsBytes(
             WavCodec.encodeFloat32(
               samples: layerPcm[o],
               sampleRate: captured.snapshot.sampleRate,
               channels: 1,
             ),
+            flush: true,
           );
+          debugOnSaveWrite?.call('$path/$file');
         }
       }
     }
@@ -989,19 +1095,21 @@ class SessionRepository {
     final session = _sessionFrom(
       captured,
       chains,
-      savedSettings,
+      settings,
       pedalBindings,
       name,
     );
-    await File('$directory/${Session.manifestName}').writeAsString(
+    await File('$path/${Session.manifestName}').writeAsString(
       const JsonEncoder.withIndent('  ').convert(session.toJson()),
+      flush: true,
     );
+    debugOnSaveWrite?.call('$path/${Session.manifestName}');
 
     // The mixdown is the saved preview (Listen) and the mixdown export. An
-    // empty mix deletes a previous one: a re-save of an emptied rig must not
-    // leave audio the session no longer holds.
+    // empty mix leaves none: a re-save of an emptied rig must not keep audio
+    // the session no longer holds.
     final mix = _mixdown(captured);
-    final mixdownFile = File('$directory/$mixdownName');
+    final mixdownFile = File('$path/$mixdownName');
     if (mix.isNotEmpty) {
       await mixdownFile.writeAsBytes(
         WavCodec.encodeFloat32(
@@ -1009,16 +1117,98 @@ class SessionRepository {
           sampleRate: captured.snapshot.sampleRate,
           channels: 1,
         ),
+        flush: true,
       );
+      debugOnSaveWrite?.call(mixdownFile.path);
     } else if (mixdownFile.existsSync()) {
       mixdownFile.deleteSync();
     }
-    // The per-track file set is variable (lanes × layers shrink between saves),
-    // so a re-save would otherwise leave orphaned layer WAVs. The just-written
-    // manifest is the source of truth; prune every layer file it does not
-    // reference. Non-layer files (the manifest, the mixdown) are untouched.
-    await _pruneOrphanLayers(directory, written);
+    // The per-track file set is variable (lanes x layers shrink between
+    // saves), so a save over files already there would otherwise leave
+    // orphaned layer WAVs. The just-written manifest is the source of truth.
+    await _pruneOrphanLayers(path, written);
     return session;
+  }
+
+  /// Copies into the staged bundle [to] every file of the previous bundle
+  /// [from] that a save does not write itself, so a file this build does not
+  /// know is kept through a re-save.
+  static void _carryForeignFiles({
+    required Directory from,
+    required Directory to,
+  }) {
+    for (final entity in from.listSync()) {
+      if (entity is! File) continue;
+      final name = _basename(entity.path);
+      if (name == Session.manifestName ||
+          name == '${Session.manifestName}.tmp' ||
+          name == mixdownName ||
+          _layerFilePattern.hasMatch(name)) {
+        continue;
+      }
+      entity.copySync('${to.path}/$name');
+    }
+  }
+
+  /// Replaces [target] with [staging] in two renames: the previous save
+  /// steps aside as `<id>.old`, the staged one takes its name, and the old
+  /// one is deleted. A failed second rename puts the old one back. A power
+  /// cut between the two leaves `<id>.old` and no `<id>`, which
+  /// [_recoverInterruptedSwaps] puts back on the next catalog read: the
+  /// previous save, whole.
+  static void _swapIn({required Directory staging, required Directory target}) {
+    debugOnSaveWrite?.call(target.path);
+    final retired = Directory('${target.path}$_retiredSuffix');
+    if (retired.existsSync()) retired.deleteSync(recursive: true);
+    target.renameSync(retired.path);
+    try {
+      staging.renameSync(target.path);
+    } on Object {
+      retired.renameSync(target.path);
+      rethrow;
+    }
+    try {
+      retired.deleteSync(recursive: true);
+    } on FileSystemException {
+      // Left for the next catalog read to remove.
+    }
+  }
+
+  /// Finishes or undoes write-backs a power cut interrupted, under [dir]
+  /// (the root, then one folder down): a retired `<id>.old` with no `<id>`
+  /// is put back (the swap never committed), one beside its `<id>` is
+  /// deleted (it did), and a staged `<id>.saving` that is not [inFlight] is
+  /// deleted (it was never swapped in).
+  static void _recoverInterruptedSwaps(
+    Directory dir, {
+    required Set<String> inFlight,
+    bool folders = true,
+  }) {
+    if (!dir.existsSync()) return;
+    for (final entity in dir.listSync(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final path = entity.path;
+      try {
+        if (path.endsWith(_retiredSuffix)) {
+          final live = path.substring(0, path.length - _retiredSuffix.length);
+          if (Directory(live).existsSync()) {
+            entity.deleteSync(recursive: true);
+          } else {
+            entity.renameSync(live);
+          }
+        } else if (path.endsWith(_stagingSuffix)) {
+          if (!inFlight.contains(path)) entity.deleteSync(recursive: true);
+        } else if (folders && !_isBundle(path)) {
+          _recoverInterruptedSwaps(
+            Directory(path),
+            inFlight: inFlight,
+            folders: false,
+          );
+        }
+      } on FileSystemException {
+        // Tried again on the next catalog read.
+      }
+    }
   }
 
   /// The pattern of a bundle's per-layer WAV filenames

@@ -9,6 +9,7 @@ import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
+import 'package:segno/library/view/library_manage.dart';
 import 'package:segno/library/view/library_preview_card.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
@@ -66,11 +67,38 @@ class LibrarySessionList extends StatelessWidget {
   Widget build(BuildContext context) => const Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      LibrarySearchField(),
+      Row(
+        children: [
+          LibrarySearchField(),
+          SizedBox(width: 9),
+          LibraryNewFolderButton(),
+        ],
+      ),
       SizedBox(height: 84, child: LibraryFolderChips()),
       Expanded(child: LibrarySessionRows()),
     ],
   );
+}
+
+/// `New folder`, beside the search: names a folder on the keyboard sheet
+/// and creates it.
+class LibraryNewFolderButton extends StatelessWidget {
+  /// Creates the New folder button.
+  const LibraryNewFolderButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final busy = context.select<SessionCubit, bool>(
+      (c) => c.state.status == SessionStatus.working,
+    );
+    return LoopOutlinedButton(
+      key: const Key('library_new_folder'),
+      width: 144,
+      fontSize: 22,
+      label: context.l10n.libraryNewFolder,
+      onTap: busy ? null : () => unawaited(promptNewFolder(context)),
+    );
+  }
 }
 
 /// The `Search sessions` field. The console has no keys, so a tap opens the
@@ -191,7 +219,7 @@ class LibraryFolderChips extends StatelessWidget {
     final filter = context.select<LibraryCubit, LibraryFolderFilter>(
       (c) => c.state.folderFilter,
     );
-    final folders = context.select<LibraryCubit, List<String>>(
+    final folders = context.select<SessionCubit, List<String>>(
       (c) => c.state.folders,
     );
     final chips = <(Key, String, LibraryFolderFilter)>[
@@ -220,6 +248,12 @@ class LibraryFolderChips extends StatelessWidget {
               label: label,
               selected: value == filter,
               onTap: () => cubit.filterFolder(value),
+              onLongPress: switch (value) {
+                FolderSessions(:final folder) => () => unawaited(
+                  showFolderManage(context, folder),
+                ),
+                _ => null,
+              },
             ),
           ],
         ],
@@ -235,6 +269,7 @@ class LibraryChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.onLongPress,
     super.key,
   });
 
@@ -246,6 +281,9 @@ class LibraryChip extends StatelessWidget {
 
   /// Makes this chip the filter.
   final VoidCallback onTap;
+
+  /// Opens the folder's options; null for `All` and `Unfiled`.
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -269,6 +307,7 @@ class LibraryChip extends StatelessWidget {
           child: InkWell(
             canRequestFocus: false,
             onTap: onTap,
+            onLongPress: onLongPress,
             child: SizedBox(
               height: 56,
               child: Padding(
