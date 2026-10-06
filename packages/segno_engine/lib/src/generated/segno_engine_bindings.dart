@@ -7791,10 +7791,13 @@ final class le_snapshot extends ffi.Struct {
   external ffi.Array<ffi.Int32> record_timing_overrides;
 
   /// ---- native MIDI input (#1228 Part 1; trailing). Totals across all
-  /// LE_MAX_MIDI_PORTS ports since the engine was created: events drained from
-  /// the port rings under the current generation, events dropped as stale,
-  /// blocks that found an overflow flag, and attached ports that went lost.
-  /// midi_in_attached_mask has bit p set while a capture is attached to p.
+  /// LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
+  /// from the current binding, events dropped as stale (pushed by a binding
+  /// that has since ended), gaps (places where a full ring or an OS overrun
+  /// lost messages), ports that went lost, and binding changes (an attach,
+  /// detach, rebind or close, counted once per drain that sees the
+  /// generation move). midi_in_attached_mask has bit p set while a capture is
+  /// attached to p.
   @ffi.Uint32()
   external int midi_in_events;
 
@@ -7809,6 +7812,9 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Uint32()
   external int midi_in_attached_mask;
+
+  @ffi.Uint32()
+  external int midi_in_rebinds;
 }
 
 /// The plugin format a descriptor was discovered in.

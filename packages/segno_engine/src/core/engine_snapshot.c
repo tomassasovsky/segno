@@ -450,6 +450,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     }
   }
   out->midi_in_attached_mask = attached;
+  out->midi_in_rebinds =
+      atomic_load_explicit(&engine->a_midi_in_rebinds, memory_order_relaxed);
   /* Input clip + conditioning activity (input clip, S2; trailing block).
    * The clip mask is the audio thread's published verdict; the cond mask is
    * derived here from the published per-input enables intersected with the

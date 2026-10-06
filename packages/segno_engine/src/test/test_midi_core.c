@@ -415,6 +415,61 @@ static void test_sink_rebind_moves_and_evicts(void) {
   free(p1);
 }
 
+/* Drains `port` into `out` as "status:d1:d2" strings joined by spaces. */
+static void sink_dump(le_midi_port* port, char* out, size_t cap) {
+  le_midi_port_event ev;
+  size_t used = 0;
+  out[0] = '\0';
+  while (le_midi_port_pop(port, &ev, NULL) && used + 16 < cap) {
+    used += (size_t)snprintf(out + used, cap - used, "%s%02X:%02X:%02X",
+                             used ? " " : "", ev.status, ev.data1, ev.data2);
+  }
+}
+
+/* The byte splitter keeps a real-time byte that sits inside another message
+ * or a SysEx, in stream order, and drops a message cut short. */
+static void test_split_keeps_interleaved_real_time(void) {
+  printf("test_split_keeps_interleaved_real_time\n");
+  le_midi* m = le_midi_create();
+  le_midi_port* port = sink_port_new();
+  le_midi_sink_bind(le_midi_sink_of(m), port);
+  char got[256];
+  const uint8_t a[] = {0x90, 0xF8, 0x3C, 0x64};
+  le_midi_split(m, a, sizeof(a), 1);
+  sink_dump(port, got, sizeof(got));
+  CHECK(strcmp(got, "F8:00:00 90:3C:64") == 0);
+  const uint8_t b[] = {0xF0, 0x7E, 0xF8, 0x01, 0xF7, 0xB0, 0x07, 0x7F};
+  le_midi_split(m, b, sizeof(b), 2);
+  sink_dump(port, got, sizeof(got));
+  CHECK(strcmp(got, "F8:00:00 B0:07:7F") == 0);
+  /* A Note On cut short by a CC: only the CC. A SysEx ended by a status. */
+  const uint8_t c[] = {0x90, 0x3C, 0xB0, 0x07, 0x7F, 0xF0, 0x01, 0xFA};
+  le_midi_split(m, c, sizeof(c), 3);
+  sink_dump(port, got, sizeof(got));
+  CHECK(strcmp(got, "B0:07:7F FA:00:00") == 0);
+  const uint8_t d[] = {0xF2, 0x10, 0xF8, 0x00, 0x3C, 0xD0, 0x05};
+  le_midi_split(m, d, sizeof(d), 4);
+  sink_dump(port, got, sizeof(got));
+  CHECK(strcmp(got, "F8:00:00 F2:10:00 D0:05:00") == 0);
+  le_midi_destroy(m);
+  free(port);
+}
+
+/* An OS overrun marks a gap at the current position, like a full ring. */
+static void test_sink_marks_os_overrun_gap(void) {
+  printf("test_sink_marks_os_overrun_gap\n");
+  le_midi* m = le_midi_create();
+  le_midi_port* port = sink_port_new();
+  le_midi_input_gap(m); /* unbound: nothing */
+  CHECK(le_midi_port_gap(port) == 0u);
+  le_midi_sink_bind(le_midi_sink_of(m), port);
+  for (int i = 0; i < 3; ++i) le_midi_input_for_test(m, 0xF8, 0, 0, 1);
+  le_midi_input_gap(m);
+  CHECK(le_midi_port_gap(port) == 4u); /* the next message takes index 3 */
+  le_midi_destroy(m);
+  free(port);
+}
+
 static void test_priority_state_defaults(void) {
   printf("test_priority_state_defaults\n");
   le_midi* m = le_midi_create();
@@ -825,6 +880,8 @@ int main(void) {
   test_sink_unbound_and_overflow();
   test_sink_close_detaches_and_marks_lost();
   test_sink_rebind_moves_and_evicts();
+  test_split_keeps_interleaved_real_time();
+  test_sink_marks_os_overrun_gap();
   test_priority_state_defaults();
   test_drain_delivers_in_fifo_order();
   test_ring_wraps_around();
