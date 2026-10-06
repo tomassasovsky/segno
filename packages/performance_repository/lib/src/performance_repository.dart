@@ -215,11 +215,6 @@ class PerformanceRepository {
   /// reads Internal capacity through this same call (#1177).
   VolumeSpace? volumeSpace(String path) => _engine.volumeSpace(path);
 
-  /// The engine's directory sync ([AudioEngine.syncDirectory]), handed on so
-  /// the composition root can give the storage repository a durable rename
-  /// without naming the engine.
-  bool syncDirectory(String path) => _engine.syncDirectory(path);
-
   /// The repository-owned capture phase, replaying the current value to a new
   /// listener before live updates (mirrors `LooperRepository.looperState`).
   Stream<PerformanceCaptureStatus> get captureStatus async* {

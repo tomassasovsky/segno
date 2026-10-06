@@ -134,5 +134,39 @@ void main() {
       );
       expect(() => io.syncDirectory(''), throwsA(isA<FileSystemException>()));
     }, skip: skip);
+
+    test('renameWithoutReplacing moves to a free name and refuses a taken '
+        'one, leaving both files', () {
+      final io = NativeStorageIo();
+      final from = File('${dir.path}/from')..writeAsStringSync('new');
+      final to = '${dir.path}/to';
+
+      expect(io.renameWithoutReplacing(from.path, to), RenameOutcome.renamed);
+      expect(File(to).readAsStringSync(), 'new');
+      expect(from.existsSync(), isFalse);
+
+      final other = File('${dir.path}/other')..writeAsStringSync('other');
+      expect(
+        io.renameWithoutReplacing(other.path, to),
+        RenameOutcome.nameTaken,
+      );
+      expect(File(to).readAsStringSync(), 'new');
+      expect(other.readAsStringSync(), 'other');
+
+      expect(
+        () => io.renameWithoutReplacing('${dir.path}/missing', '$to-2'),
+        throwsA(
+          isA<FileSystemException>().having(
+            (e) => e.osError?.errorCode,
+            'errno',
+            2,
+          ),
+        ),
+      );
+      expect(
+        () => io.renameWithoutReplacing('', to),
+        throwsA(isA<FileSystemException>()),
+      );
+    }, skip: skip);
   });
 }

@@ -1,5 +1,6 @@
 /*
- * engine_digest.c — SHA-256, file-range digests and directory sync (#1198).
+ * engine_digest.c — SHA-256, file-range digests, directory sync (#1198) and a
+ * rename that never replaces (#1177).
  *
  * THREAD OWNERSHIP: none. Nothing here touches an engine: every function is
  * a question about bytes or about a path, so the Dart side may call the
@@ -36,6 +37,12 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif
+#endif
 #endif
 
 /* ---- SHA-256 (FIPS 180-4) ---- */
@@ -269,6 +276,52 @@ fail:
 truncated:
   fclose(f);
   return LE_ERR_TRUNCATED;
+}
+
+int32_t le_fs_rename_noreplace(const char* from, const char* to,
+                               int32_t* out_errno) {
+  if (from == NULL || from[0] == '\0' || to == NULL || to[0] == '\0' ||
+      out_errno == NULL) {
+    return LE_ERR_INVALID;
+  }
+  *out_errno = 0;
+#if defined(_WIN32)
+  WCHAR wfrom[1024];
+  WCHAR wto[1024];
+  if (!le_digest_widen(from, wfrom, (int)(sizeof(wfrom) / sizeof(wfrom[0]))) ||
+      !le_digest_widen(to, wto, (int)(sizeof(wto) / sizeof(wto[0])))) {
+    return LE_ERR_INVALID;
+  }
+  /* Without MOVEFILE_REPLACE_EXISTING, MoveFileExW refuses a taken name. */
+  if (MoveFileExW(wfrom, wto, 0)) return LE_OK;
+  const DWORD error = GetLastError();
+  *out_errno = (error == ERROR_ALREADY_EXISTS || error == ERROR_FILE_EXISTS)
+                   ? EEXIST
+                   : (error == ERROR_FILE_NOT_FOUND ||
+                      error == ERROR_PATH_NOT_FOUND)
+                         ? ENOENT
+                         : EIO;
+  return LE_ERR_DEVICE;
+#elif defined(__linux__) && defined(SYS_renameat2)
+  if (syscall(SYS_renameat2, AT_FDCWD, from, AT_FDCWD, to, RENAME_NOREPLACE) ==
+      0) {
+    return LE_OK;
+  }
+  /* EINVAL: a filesystem that does not take the flag; ENOSYS: a kernel
+   * older than 3.15. Either way the caller has to fall back. */
+  if (errno == EINVAL || errno == ENOSYS) return LE_ERR_UNSUPPORTED;
+  *out_errno = errno;
+  return LE_ERR_DEVICE;
+#elif defined(__APPLE__) && defined(RENAME_EXCL)
+  if (renamex_np(from, to, RENAME_EXCL) == 0) return LE_OK;
+  if (errno == ENOTSUP || errno == EINVAL) return LE_ERR_UNSUPPORTED;
+  *out_errno = errno;
+  return LE_ERR_DEVICE;
+#else
+  (void)from;
+  (void)to;
+  return LE_ERR_UNSUPPORTED;
+#endif
 }
 
 int32_t le_fs_sync_dir(const char* path) {
