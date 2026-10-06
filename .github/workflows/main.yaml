@@ -473,6 +473,12 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_persist_tests.sh
       - name: Run bt-ctl device-verb tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_ctl_tests.sh
+      # Twice: the appliance's /bin/sh is busybox ash, so the helper must hold
+      # under a strict POSIX shell (dash) as well as bash.
+      - name: Run usb-ctl tests (bash)
+        run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
+      - name: Run usb-ctl tests (dash)
+        run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
       - name: Run wifi-regdom tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_regdom_tests.sh
       - name: Run wifi-backend ownership tests
