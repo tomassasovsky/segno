@@ -165,8 +165,6 @@ a design change; this plan does not edit the pen):
    - The preview card sits at x 765 but is 1027 wide: the pen's 1028 runs
      one pixel past its own 1792 layout.
    - Saved dates read `7 Sep` (the English locale data), not the pen's `7 Sept`.
-   - `New loop`, `Return to tracks` and `Open session` use the shared accent
-     button, whose label is regular weight; the pen draws them bold.
    - Preview lanes draw the clip without a waveform (D11, until Part 6b).
    - The quick Save with no open session keeps its name prompt
      (`promptSaveAs`) until Part 3's automatic names, rather than opening the
