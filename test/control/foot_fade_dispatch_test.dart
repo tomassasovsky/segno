@@ -14,7 +14,7 @@ import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show FadeAdmission, TrackSnapshot;
+    show RequestAdmission, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -27,7 +27,7 @@ class _Engine extends FakeAudioEngine {
   bool refuse = false;
 
   @override
-  FadeAdmission toggleFade({required int channel, required double seconds}) {
+  RequestAdmission toggleFade({required int channel, required double seconds}) {
     if (refuse) return (result: EngineResult.invalid, request: 0);
     toggles.add((channel, seconds));
     final request = ++_request;
@@ -36,8 +36,8 @@ class _Engine extends FakeAudioEngine {
   }
 
   @override
-  EngineResult? readFadeResult(int request) =>
-      _results.remove(request) ?? super.readFadeResult(request);
+  EngineResult? readRequestResult(int request) =>
+      _results.remove(request) ?? super.readRequestResult(request);
 }
 
 const _holdThreshold = Duration(milliseconds: 820);

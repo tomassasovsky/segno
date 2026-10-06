@@ -630,6 +630,7 @@ class TrackSnapshot {
     this.imageRevision = 0,
     this.peakL = 0,
     this.peakR = 0,
+    this.reversed = false,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -666,6 +667,7 @@ class TrackSnapshot {
       imageRevision = 0,
       peakL = 0,
       peakR = 0,
+      reversed = false,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -717,6 +719,7 @@ class TrackSnapshot {
         ? null
         : native.overdub_feedback_override,
     solo: native.solo != 0,
+    reversed: native.reversed != 0,
     imageRevision: native.image_revision,
     peakL: native.peak_l,
     peakR: native.peak_r,
@@ -725,6 +728,11 @@ class TrackSnapshot {
 
   /// Complete callback-published Fade image.
   final FadeImage fade;
+
+  /// Whether the track reads its recorded material backward (Reverse,
+  /// #1162). Callback-owned like [fade]: published with every accepted
+  /// `toggleReverse`/`installReverse`, reset to forward with the material.
+  final bool reversed;
 
   /// Sequence of the coherent native tuple publication.
   final int fadeRevision;
@@ -901,6 +909,7 @@ class TrackSnapshot {
           imageRevision == other.imageRevision &&
           peakL == other.peakL &&
           peakR == other.peakR &&
+          reversed == other.reversed &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -933,6 +942,7 @@ class TrackSnapshot {
     imageRevision,
     peakL,
     peakR,
+    reversed,
     Object.hashAll(lanes),
   ]);
 }

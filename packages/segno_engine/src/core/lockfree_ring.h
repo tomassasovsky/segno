@@ -101,6 +101,15 @@ typedef struct le_command {
       le_fade_image image;
     } fade;
     struct { int32_t channel; float amount, target, seconds; } fade_log;
+    struct { /* LE_CMD_REVERSE (#1162): install == 0 toggles, 1 sets target. */
+      int32_t channel, slot, install, target;
+    } reverse;
+    struct { /* LE_PLOG_REVERSE: the direction fact. read_index is the exact
+              * dry index the callback reads at this frame (-1 on a material
+              * reset, which carries no anchor); turn_frames the equal-gain
+              * turn window the old head is still mixed over (0 = none). */
+      int32_t channel, reversed, read_index, turn_frames;
+    } reverse_log;
     le_mix_settings mix;
     struct le_prepared_fx* recipe;
     struct {
