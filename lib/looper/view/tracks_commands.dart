@@ -510,4 +510,6 @@ String sessionConversionMessage(
     l10n.sessionConvertedMasterMoved,
   if (notice.changes.contains(SessionConversionChange.monitorLevelLowered))
     l10n.sessionConvertedMonitorLowered,
+  if (notice.changes.contains(SessionConversionChange.tempoFromLoop))
+    l10n.sessionConvertedTempoFromLoop,
 ].join(' ');

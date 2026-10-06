@@ -1201,35 +1201,64 @@ class SessionRepository {
 
   /// Keeps every original of an older schema that the previous save
   /// [from] held, as a whole bundle folder inside [to] that opens on its
-  /// own: a backup folder (`session.v<N>/`) moves across as it is; a backup
-  /// manifest (`session.v<N>.json`) and, when [from] was itself never
-  /// converted, its own older manifest each become such a folder, with the
-  /// layer WAVs it names moved in beside it. Moves, never copies: [from] is
-  /// about to be deleted.
+  /// own. A backup manifest (`session.v<N>.json`) and, when [from] was
+  /// itself never converted, its own older manifest are first each
+  /// assembled into a `session.v<N>/` folder inside [from], with the layer
+  /// WAVs they name and the manifest last; then every complete folder moves
+  /// into [to] in one rename. Moves, never copies: [from] is about to be
+  /// deleted.
+  ///
+  /// Resumable: a folder without its manifest is an assembly a power cut
+  /// interrupted, and the manifest it was for is still in [from], so the
+  /// next run reuses that folder and finishes it. A folder is only ever
+  /// moved whole, so a backup never ends up split across two folders.
   static void _keepOriginals({
     required Directory from,
     required Directory to,
   }) {
-    for (final entity in from.listSync()) {
-      final name = _basename(entity.path);
-      if (entity is Directory && _backupFolderPattern.hasMatch(name)) {
-        final kept = _freeBackupStem(to, name);
-        entity.renameSync('${to.path}/$kept');
-      }
-    }
-    for (final name in _originalManifests(from)) {
+    for (final name in _originalManifests(from)..sort()) {
       final manifest = File('${from.path}/$name');
       final source = manifest.readAsStringSync();
+      // A kept backup assembles under its own name; the bundle's own older
+      // manifest under the first backup name its schema has free.
       final stem = name == Session.manifestName
-          ? backupName(_versionOf(source)!).replaceAll('.json', '')
+          ? _assemblyStem(from, _versionOf(source)!)
           : name.substring(0, name.length - '.json'.length);
-      final folder = Directory('${to.path}/${_freeBackupStem(to, stem)}')
-        ..createSync();
+      final folder = Directory('${from.path}/$stem')..createSync();
       for (final file in _layerFilesOf(source)) {
         final layer = File('${from.path}/$file');
         if (layer.existsSync()) layer.renameSync('${folder.path}/$file');
       }
+      debugOnKeepOriginal?.call(folder.path);
       manifest.renameSync('${folder.path}/${Session.manifestName}');
+    }
+    for (final entity in from.listSync()) {
+      final name = _basename(entity.path);
+      if (entity is Directory &&
+          _backupFolderPattern.hasMatch(name) &&
+          _isBundle(entity.path)) {
+        entity.renameSync('${to.path}/${_freeBackupStem(to, name)}');
+      }
+    }
+  }
+
+  /// Called with each backup folder once its layer files are in and before
+  /// its manifest is; a test throws from it to stand for a power cut there.
+  @visibleForTesting
+  static void Function(String folder)? debugOnKeepOriginal;
+
+  /// The folder in [dir] to assemble a bundle's own schema-[version]
+  /// manifest in: an unfinished one (no manifest yet) if there is one, else
+  /// the first backup name no file or folder holds.
+  static String _assemblyStem(Directory dir, int version) {
+    for (var attempt = 1; ; attempt++) {
+      final candidate = backupName(version, attempt).replaceAll('.json', '');
+      final folder = Directory('${dir.path}/$candidate');
+      if (folder.existsSync() && !_isBundle(folder.path)) return candidate;
+      if (!folder.existsSync() &&
+          !File('${dir.path}/$candidate.json').existsSync()) {
+        return candidate;
+      }
     }
   }
 
@@ -1439,17 +1468,21 @@ class SessionRepository {
   /// the converted manifest, so the backup opens by putting it back as
   /// `session.json`; that save moves the backup and the original layer files
   /// into a `session.v<N>/` folder that opens as a bundle of its own.
-  Future<void> commitConversion(
+  ///
+  /// Returns whether the conversion was written: false when the manifest had
+  /// changed, so nothing was.
+  Future<bool> commitConversion(
     String directory,
     SessionConversion conversion,
   ) async {
     final manifest = File('$directory/${Session.manifestName}');
-    if (await manifest.readAsString() != conversion.original) return;
+    if (await manifest.readAsString() != conversion.original) return false;
     await _keepOriginal(directory, conversion.fromVersion, conversion.original);
     await _replaceManifest(
       directory,
       const JsonEncoder.withIndent('  ').convert(conversion.manifest),
     );
+    return true;
   }
 
   /// The backup name for an original manifest of schema [version]: a name no
@@ -1492,12 +1525,18 @@ class SessionRepository {
     }
   }
 
+  /// Called with the written temporary manifest before it is renamed into
+  /// place; a test throws from it to stand for a failed rename.
+  @visibleForTesting
+  static void Function(String path)? debugOnReplaceManifest;
+
   /// Replaces the bundle's manifest with [contents] through a temporary file
   /// and a rename, so a crash leaves either the old or the new manifest.
   Future<void> _replaceManifest(String directory, String contents) async {
     final temporary = File('$directory/${Session.manifestName}.tmp');
     try {
       await temporary.writeAsString(contents, flush: true);
+      debugOnReplaceManifest?.call(temporary.path);
       await temporary.rename('$directory/${Session.manifestName}');
     } on Object {
       if (temporary.existsSync()) temporary.deleteSync();

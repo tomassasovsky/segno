@@ -446,8 +446,7 @@ class SessionCubit extends Cubit<SessionState> {
   ) async {
     var written = false;
     try {
-      await _repository.commitConversion(path, conversion);
-      written = true;
+      written = await _repository.commitConversion(path, conversion);
       AppLog.info(
         'session converted from schema ${conversion.fromVersion}: $path; '
         '${conversion.notes.join('; ')}',

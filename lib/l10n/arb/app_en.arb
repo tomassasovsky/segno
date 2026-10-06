@@ -160,6 +160,7 @@
     "sessionLoadedConvertedUnsaved": "Session converted from an older version of Segno for now. It couldn't be saved converted, so the original file is unchanged.",
     "sessionConvertedMasterMoved": "Its Master effects, and pedals bound to them, now run on All tracks.",
     "sessionConvertedMonitorLowered": "A live input above 100% was lowered to 100%.",
+    "sessionConvertedTempoFromLoop": "It saved no tempo, so its tempo was set from the loop length.",
     "sessionSave": "Save",
     "sessionSaveAs": "Save as…",
     "sessionRename": "Rename",

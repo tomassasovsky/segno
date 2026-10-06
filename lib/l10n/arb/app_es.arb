@@ -51,6 +51,7 @@
     "sessionLoadedConvertedUnsaved": "Sesión convertida por ahora desde una versión anterior de Segno. No se pudo guardar convertida, así que el archivo original no cambió.",
     "sessionConvertedMasterMoved": "Sus efectos Master, y los pedales asignados a ellos, ahora actúan en Todas las pistas.",
     "sessionConvertedMonitorLowered": "Una entrada en vivo por encima del 100% se bajó al 100%.",
+    "sessionConvertedTempoFromLoop": "No guardaba tempo, así que su tempo se tomó de la duración del loop.",
     "sessionSave": "Guardar",
     "sessionSaveAs": "Guardar como…",
     "sessionRename": "Renombrar",

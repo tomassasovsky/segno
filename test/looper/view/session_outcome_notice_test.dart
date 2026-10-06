@@ -39,6 +39,7 @@ void main() {
             changes: {
               SessionConversionChange.masterEffectsMoved,
               SessionConversionChange.monitorLevelLowered,
+              SessionConversionChange.tempoFromLoop,
             },
           ),
         ),
@@ -46,7 +47,8 @@ void main() {
       expect(
         find.text(
           '${l10n.sessionLoadedConverted} ${l10n.sessionConvertedMasterMoved} '
-          '${l10n.sessionConvertedMonitorLowered}',
+          '${l10n.sessionConvertedMonitorLowered} '
+          '${l10n.sessionConvertedTempoFromLoop}',
         ),
         findsOneWidget,
       );

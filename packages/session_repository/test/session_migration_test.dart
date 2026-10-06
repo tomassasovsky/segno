@@ -488,6 +488,64 @@ void main() {
       expect(File('$dir/track1.wav').existsSync(), isFalse);
     });
 
+    group('when the save is cut off after its swap', () {
+      late String root;
+      late String bundle;
+
+      setUp(() async {
+        root = '${tempDir.path}/root';
+        Directory(root).createSync();
+        bundle = '$root/s-old';
+        Directory(copyFixture('v7_master_full')).renameSync(bundle);
+        final repository = repo();
+        await repository.commitConversion(
+          bundle,
+          (await repository.open(bundle)).conversion!,
+        );
+      });
+
+      SessionRepository catalog() => SessionRepository(
+        engine: FakeSessionEngine(),
+        sessionsRoot: () async => root,
+      );
+
+      test('the next catalog read finishes keeping the original', () async {
+        // The state a power cut between the swap and the move leaves: the
+        // new save in place and the previous bundle still beside it.
+        Directory(bundle).renameSync('$bundle.old');
+        await SessionRepository(
+          engine: newTake(),
+        ).save(bundle, settings: const SessionSettings());
+
+        await catalog().listSessions();
+
+        expect(Directory('$bundle.old').existsSync(), isFalse);
+        await expectOriginalOpens('$bundle/session.v7', 'v7_master_full');
+      });
+
+      test('a move cut off part-way resumes into the same folder', () async {
+        var cut = true;
+        SessionRepository.debugOnKeepOriginal = (_) {
+          if (cut) {
+            cut = false;
+            throw const FileSystemException('power cut');
+          }
+        };
+        addTearDown(() => SessionRepository.debugOnKeepOriginal = null);
+
+        await SessionRepository(
+          engine: newTake(),
+        ).save(bundle, settings: const SessionSettings());
+        expect(Directory('$bundle.old/session.v7').existsSync(), isTrue);
+
+        await catalog().listSessions();
+
+        expect(Directory('$bundle.old').existsSync(), isFalse);
+        expect(Directory('$bundle/session.v7.2').existsSync(), isFalse);
+        await expectOriginalOpens('$bundle/session.v7', 'v7_master_full');
+      });
+    });
+
     test('a failed save leaves the original bundle as it was', () async {
       final dir = copyFixture('v7_master_full');
       final before = snapshotOf(dir);
@@ -528,6 +586,33 @@ void main() {
         expect(File('$dir/${Session.manifestName}').readAsBytesSync(), before);
       },
     );
+
+    test('a failed rename removes its temporary manifest', () async {
+      final dir = copyFixture('v7_master_full');
+      final repository = repo();
+      final conversion = (await repository.open(dir)).conversion!;
+      final before = File('$dir/${Session.manifestName}').readAsBytesSync();
+      SessionRepository.debugOnReplaceManifest = (_) =>
+          throw const FileSystemException('rename refused');
+      addTearDown(() => SessionRepository.debugOnReplaceManifest = null);
+
+      await expectLater(
+        repository.commitConversion(dir, conversion),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(File('$dir/${Session.manifestName}.tmp').existsSync(), isFalse);
+      expect(File('$dir/${Session.manifestName}').readAsBytesSync(), before);
+    });
+
+    test('reports nothing written when the manifest changed', () async {
+      final dir = copyFixture('v7_master_full');
+      final repository = repo();
+      final conversion = (await repository.open(dir)).conversion!;
+      File('$dir/${Session.manifestName}').writeAsStringSync('{}');
+
+      expect(await repository.commitConversion(dir, conversion), isFalse);
+    });
 
     test(
       'the manifest is replaced by a rename, not rewritten in place',
@@ -602,6 +687,10 @@ void main() {
         expect(session.tempoBpm, 300);
         expect(session.tempoSource, TempoSource.derived);
         expect(session.loopBars, 1);
+        expect(
+          conversion.changes,
+          contains(SessionConversionChange.tempoFromLoop),
+        );
         // Bare-array chains of these schemas are kept as written.
         expect(session.laneChains.single.encoded, startsWith('['));
         expect(session.monitors.single.mode, 'on');
