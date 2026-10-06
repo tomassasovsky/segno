@@ -364,12 +364,30 @@ static void print_header(void) {
   printf("|------------------------------------|---------|---------|---------|---------|---------|---------|\n");
 }
 
+/* The real mixer path at a Speed (#1179 Part 2a): le_engine_process with
+ * every track read through its head at numer/denom (1/1 is the baseline). */
 static stats scenario_baseline(const bench_opts* o, int lanes_per_track,
-                               const float* src, int32_t frames) {
+                               const float* src, int32_t frames, int numer,
+                               int denom) {
   rig r;
   if (!rig_create(&r, o, lanes_per_track, src, frames)) {
     fprintf(stderr, "baseline rig failed\n");
     exit(3);
+  }
+  if (numer != denom) {
+    uint64_t request = 0;
+    int32_t result = LE_ERR_NOT_READY;
+    if (le_engine_set_speed(r.e, numer, denom, &request) != LE_OK) {
+      fprintf(stderr, "set speed %d/%d refused\n", numer, denom);
+      exit(3);
+    }
+    /* past the turn window, so the timed loop is the steady head path */
+    for (int k = 0; k < 64; ++k) le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
+    if (le_engine_read_request_result(r.e, request, &result) != LE_OK ||
+        result != LE_OK) {
+      fprintf(stderr, "set speed %d/%d not applied\n", numer, denom);
+      exit(3);
+    }
   }
   const size_t periods = (size_t)(o->seconds * o->rate / o->period);
   double* t = (double*)malloc(sizeof(double) * periods);
@@ -708,10 +726,27 @@ int main(int argc, char** argv) {
   /* baseline */
   printf("## baseline (le_engine_process, 8 tracks PLAYING)\n\n");
   print_header();
-  const stats base1 = scenario_baseline(&o, 1, src, frames);
+  const stats base1 = scenario_baseline(&o, 1, src, frames, 1, 1);
   print_row("8 tracks x 1 lane", base1);
-  const stats base8 = scenario_baseline(&o, 8, src, frames);
+  const stats base8 = scenario_baseline(&o, 8, src, frames, 1, 1);
   print_row("8 tracks x 8 lanes", base8);
+  /* The same mixer at 1/2x, 4x and 8x (the Part 2a gate on the real mixer
+   * path): every read through the head, decimated at 4x and 8x. */
+  const int factors[3][2] = {{1, 2}, {4, 1}, {8, 1}};
+  stats speed_worst = base1;
+  for (int f = 0; f < 3; ++f) {
+    for (int lanes = 1; lanes <= 8; lanes += 7) {
+      const stats s = scenario_baseline(&o, lanes, src, frames, factors[f][0],
+                                        factors[f][1]);
+      char label[64];
+      snprintf(label, sizeof(label), "8 tracks x %d lane%s at %d/%d", lanes,
+               lanes > 1 ? "s" : "", factors[f][0], factors[f][1]);
+      print_row(label, s);
+      if (lanes == 1 && (o.proxy ? s.p50 > speed_worst.p50 : s.p99 > speed_worst.p99)) {
+        speed_worst = s;
+      }
+    }
+  }
   printf("\n");
 
   /* head */
@@ -839,12 +874,16 @@ int main(int argc, char** argv) {
       judge("head added p50 at 8 lanes <= 5% of period", 100.0 * worst_added_p50[0] / g_budget_us, 5.0, 1);
       judge("head added p50 at 64 lanes <= 17% of period", 100.0 * worst_added_p50[1] / g_budget_us, 17.0, 1);
       judge("render cheaper under load >= 40x real time", loaded_cheaper_min, 40.0, 0);
+      judge("mixer at 1/2x, 4x, 8x p50 (8 lanes) <= 25% of period",
+            100.0 * speed_worst.p50 / g_budget_us, 25.0, 1);
     } else {
       judge("head added p99 at 8 lanes <= 10% of period", 100.0 * worst_added_p99[0] / g_budget_us, 10.0, 1);
       judge("head added p99 at 64 lanes <= 35% of period", 100.0 * worst_added_p99[1] / g_budget_us, 35.0, 1);
       judge("baseline p99 + head added p99 (8 lanes) <= 50% of period",
             100.0 * (base1.p99 + worst_added_p99[0]) / g_budget_us, 50.0, 1);
       judge("render cheaper under load >= 20x real time", loaded_cheaper_min, 20.0, 0);
+      judge("mixer at 1/2x, 4x, 8x p99 (8 lanes) <= 50% of period",
+            100.0 * speed_worst.p99 / g_budget_us, 50.0, 1);
     }
     judge("render worker scratch under 1 MiB", scratch_max / 1048576.0, 1.0, 1);
     judge("stretcher heap per instance (cheaper) <= 4 MiB", per_cheaper / 1048576.0, 4.0, 1);

@@ -5585,7 +5585,9 @@ class SegnoEngineBindings {
   /// is free (the callback refuses the same states with receipt
   /// LE_ERR_NOT_READY, plus a punch-out tail still writing); LE_ERR_NOT_RUNNING
   /// when not configured. While Speed is not 1x le_engine_record refuses a
-  /// record or punch-in with LE_ERR_TRANSFORMED.
+  /// record or punch-in with LE_ERR_TRANSFORMED. An empty loop has no speed:
+  /// when the last track becomes empty, Speed returns to 1x (le_snapshot shows
+  /// it), so the next loop records.
   int le_engine_set_speed(
     ffi.Pointer<le_engine> engine,
     int numer,

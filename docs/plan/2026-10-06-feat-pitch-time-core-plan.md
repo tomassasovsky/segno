@@ -1186,6 +1186,24 @@ song clock's advance.
     close on the arm64 proxy (E10, E11). Rule 2: the number D2 rests on is
     measured where it matters, without making a part impossible to close.
 21. Follow tempo ships Off until its page exists (E15). Rule 1.
+22. An empty loop has no speed (Part 2a review, M2): when the last track
+    becomes empty (Clear, Undo to empty, a void take, a reopen that drops
+    every take) Speed returns to 1x, published so the host shows it, and the
+    next loop records. The pen's "04 / Speed / Empty loop" shows no factor,
+    and keeping one would refuse the first take with nothing on screen to
+    explain it (rule 3). Clear Undo of the last take therefore returns it at
+    1x; Speed is not an audio edit (decision 10).
+23. An integral rate lands on a whole sample (review H1): Normal (or 2x, 4x,
+    8x) after 1/2x on an odd song frame rounds the new head's index to the
+    nearest sample inside the turn window, so playback is bit-exact again and
+    prints re-engage; the rounded index is the one logged.
+24. A head change inside a turn window still mixing keeps that window and the
+    head it fades out (review L1); the new head is value-continuous with the
+    one it replaces, so the blend carries on instead of dropping a head
+    mid-fade. The renderer carries the window over the same way.
+25. Wherever the log's anchor is integral (322/323 phases) and the head reads
+    off whole samples, a 327 with the exact index follows at the same frame
+    (review M1, completing E3 for material that returns after a reset).
 14. `presetCheaper` with the 8 kHz tonality limit is the starting recipe; the
     listening check on the appliance may swap either without an API change.
 

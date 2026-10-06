@@ -76,6 +76,7 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame);
 static void le_primary_reconcile(le_engine* e);
 static void sync_grid_to_loop(le_engine* e, int32_t len);
 static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame);
+static void le_speed_reset_if_empty(le_engine* e, uint64_t frame);
 static void le_restore_multiple_or_divisor(le_track* t, int32_t base,
                                            int32_t len);
 
@@ -264,6 +265,13 @@ static void le_head_reset(le_engine* e, le_track* t, uint64_t frame) {
   t->turn_left = 0;
   store_i32(&t->a_reversed, 0);
   le_reverse_log(e, t, frame, -1, 0);
+  /* The re-origined head's exact index at the reset (E3); the material's
+   * return re-anchors from its own fact (the 322/323 site below). */
+  if (t->head.rate != 1.0) {
+    int32_t len;
+    const int64_t pos = le_track_song_position(e, t, &len);
+    le_speed_log(e, t, frame, le_head_index(&t->head, pos, len), 0);
+  }
 }
 
 /* Every material reset: Fade and direction (#1162) go forward together. Also
@@ -1904,6 +1912,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
       store_i32(&e->a_master_len, 0);
       store_i32(&e->a_loop_bars, 0);
       e->grid_total_beats = 0;
+      le_speed_reset_if_empty(e, 0);
     }
   }
   /* A rig that kept content keeps (or, lacking one, gains) its crown; a
@@ -2118,6 +2127,7 @@ static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_transform_reset(e, t, frame);
+  le_speed_reset_if_empty(e, frame);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
   store_i32(&t->a_sync_divisor, 0); /* B3: division state dies too */
@@ -2401,6 +2411,7 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_transform_reset(e, t, frame);
+  le_speed_reset_if_empty(e, frame);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
   /* B3, D18: the track's own division state dies with its content — a
@@ -2475,6 +2486,7 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
      * plausible-looking but meaningless TAPPED tempo). */
     e->has_tap = 0;
     e->last_tap_frame = 0;
+    le_speed_reset_if_empty(e, frame); /* an empty loop has no speed (M2) */
     /* Clear the loop waveform so a re-record starts from silence. */
     e->loop_viz_bucket = -1;
     for (int i = 0; i < LE_VIZ_POINTS; ++i) {
@@ -2729,6 +2741,23 @@ static int le_apply_routing(le_engine* e, const le_mix_settings* mix,
 static void apply_command_image(le_engine* e, const le_command* cmd,
                                 uint64_t frame, int preserve_image);
 
+/* Starts a turn's window for a head change at this frame and returns the
+ * window logged with the change (0: none). A track that is not PLAYING, or a
+ * loop shorter than two windows, snaps. A change while a window is still
+ * mixing (L1) keeps that window and the head it fades out: the new head is
+ * value-continuous with the one it replaces, so the blend carries on from
+ * the output it was producing instead of dropping the old head mid-fade. */
+static int32_t le_turn_begin(le_engine* e, le_track* t, int32_t len) {
+  if (t->turn_left > 0) return t->turn_frames;
+  const int32_t F = seam_xfade_frames(e);
+  const int32_t turn =
+      load_i32(&t->a_state) == LE_TRACK_PLAYING && len >= 2 * F ? F : 0;
+  t->prev_head = t->head;
+  t->turn_frames = turn;
+  t->turn_left = turn;
+  return turn;
+}
+
 /* Whether Speed may change now (#1179): no track is capturing, finishing a
  * punch-out tail or a seam deferral, armed, launching, or counting in. The
  * callback's recheck of control's admission, which refused the same states
@@ -2751,21 +2780,45 @@ static int le_speed_change_safe(le_engine* e) {
  * the window snaps), prints disengaged, published and logged with the exact
  * index. An empty track only takes the rate. */
 static void le_head_set_rate(le_engine* e, le_track* t, double rate,
+                             uint64_t frame);
+
+/* An empty loop has no speed (M2; the pen's "04 / Speed / Empty loop" shows
+ * none): when no track holds material any more, Speed returns to 1x, every
+ * track's head with it, published (the host sees the factor change) and
+ * logged, so the first take of the next loop is not refused. */
+static void le_speed_reset_if_empty(le_engine* e, uint64_t frame) {
+  if (e->speed_numer == e->speed_denom) return;
+  for (int c = 0; c < e->track_count; ++c) {
+    if (load_i32(&e->tracks[c].a_state) != LE_TRACK_EMPTY) return;
+  }
+  e->speed_numer = 1;
+  e->speed_denom = 1;
+  for (int c = 0; c < e->track_count; ++c) {
+    le_head_set_rate(e, &e->tracks[c], 1.0, frame);
+  }
+  store_i32(&e->a_speed_numer, 1);
+  store_i32(&e->a_speed_denom, 1);
+}
+
+static void le_head_set_rate(le_engine* e, le_track* t, double rate,
                              uint64_t frame) {
   int32_t len;
   const int64_t pos = le_track_song_position(e, t, &len);
   const double cur = le_head_index(&t->head, pos, len);
-  const int32_t F = seam_xfade_frames(e);
-  const int32_t turn =
-      load_i32(&t->a_state) == LE_TRACK_PLAYING && len >= 2 * F ? F : 0;
-  t->prev_head = t->head;
-  t->turn_frames = turn;
-  t->turn_left = turn;
+  /* An integral rate lands on a whole sample (H1): Normal after 1/2x on an
+   * odd song frame would otherwise keep a half-sample origin for good, every
+   * read a two-tap average and the print never re-engaging. The old head
+   * keeps reading `cur`; the window absorbs the half sample. */
+  const double at =
+      rate == (double)(int64_t)rate && len > 0
+          ? le_head_wrap((double)(int64_t)(cur + 0.5), len)
+          : cur;
+  const int32_t turn = le_turn_begin(e, t, len);
   t->head.rate = rate;
-  t->head.origin = le_head_origin(&t->head, cur, pos, len);
+  t->head.origin = le_head_origin(&t->head, at, pos, len);
   le_track_disengage_prints(t);
   store_i32(&t->a_head_rate_milli, (int32_t)(rate * 1000.0));
-  le_speed_log(e, t, frame, cur, turn);
+  le_speed_log(e, t, frame, at, turn);
 }
 
 static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
@@ -3355,11 +3408,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
            * the seam length (~10 ms); a loop too short to host it snaps,
            * like the punch fade. Nothing sounds on a STOPPED track, so there
            * is no old head to mix and a later Play starts clean. */
-          const int32_t F = seam_xfade_frames(e);
-          turn = st == LE_TRACK_PLAYING && len >= 2 * F ? F : 0;
-          t->prev_head = t->head;
-          t->turn_frames = turn;
-          t->turn_left = turn;
+          turn = le_turn_begin(e, t, len);
           t->head.reversed = target;
           t->head.origin = le_head_origin(&t->head, cur, pos, len);
         }
@@ -5877,6 +5926,13 @@ static inline void mix_tracks_frame(
             .code = tr->perf_source_state < 0 ? LE_PLOG_SOURCE_APPLIED
                                               : LE_PLOG_SOURCE_TRANSPORT,
             .restore_log = {t, tr->perf_source_id, st[t], phase}});
+        /* 322/323 carry the integral phase; off whole samples the exact
+         * index follows (E3, M1), so the stem re-anchors exactly. */
+        if (st[t] == LE_TRACK_PLAYING && !le_head_is_integral(&tr->head)) {
+          int32_t hl;
+          const int64_t song = le_track_song_position(e, tr, &hl);
+          le_speed_log(e, tr, frame, le_head_index(&tr->head, song, hl), 0);
+        }
       }
       tr->perf_source_state = st[t];
       /* The phase steps in the track's direction (#1162) at its rate
