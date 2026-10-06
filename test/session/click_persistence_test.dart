@@ -131,7 +131,12 @@ void main() {
           looper: looper,
           mix: mix,
           fx: projection,
-          owners: SettingsOwners([...tempo.owners, ...playback.owners]),
+          owners: SettingsOwners([
+            ...tempo.owners,
+            ...playback.owners,
+            ...record.owners,
+            ...timing.owners,
+          ]),
           tempo: tempo,
           playback: playback,
           record: record,

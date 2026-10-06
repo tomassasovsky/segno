@@ -6,8 +6,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/track_mute.dart';
-import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_timing.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
@@ -24,16 +22,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     required LooperRepository repository,
     required MixSettingsCoordinator mixSettings,
     required FxChainPersistence fxPersistence,
-    required RecordLengthControl recordLengthControl,
-    required RecordTimingControl recordTimingControl,
     SettingsRepository? settings,
     Duration fxPersistDebounce = const Duration(milliseconds: 300),
     bool Function() takeLocked = _neverLocked,
   }) : _repository = repository,
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
-       _recordLengthControl = recordLengthControl,
-       _recordTimingControl = recordTimingControl,
        _settings = settings,
        _takeLocked = takeLocked,
        _fxPersistDebounce = fxPersistDebounce,
@@ -717,30 +711,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         index: event.index,
       );
     });
-    on<LooperTrackRecordTimingChanged>((event, _) async {
-      final write = _recordTimingControl.setTrackTiming(
-        channel: event.channel,
-        timing: event.timing,
-      );
-      _recordTimingWrites.add(write);
-      try {
-        await write;
-      } finally {
-        _recordTimingWrites.remove(write);
-      }
-    });
-    on<LooperTrackLengthPresetChanged>((event, _) async {
-      final write = _recordLengthControl.setTrackRecordLength(
-        channel: event.channel,
-        bars: event.bars,
-      );
-      _recordLengthWrites.add(write);
-      try {
-        await write;
-      } finally {
-        _recordLengthWrites.remove(write);
-      }
-    });
     on<LooperTrackPanChanged>((event, _) {
       unawaited(_mixSettings.setTrackPan(event.pan, channel: event.channel));
     });
@@ -800,15 +770,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
-    on<LooperModeChanged>((event, _) async {
-      final write = _recordLengthControl.setLooperMode(event.mode);
-      _recordLengthWrites.add(write);
-      try {
-        await write;
-      } finally {
-        _recordLengthWrites.remove(write);
-      }
-    });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);
@@ -834,20 +795,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         ),
       );
     });
-    on<LooperPersistFlush>((event, _) async {
-      try {
-        await Future.wait(_recordLengthWrites.toList());
-        await Future.wait(_recordTimingWrites.toList());
-        await _fxPersistence.flush();
-        event.receipt?.complete();
-      } on Object catch (error, stackTrace) {
-        if (event.receipt case final receipt?) {
-          receipt.completeError(error, stackTrace);
-        } else {
-          addError(error, stackTrace);
-        }
-      }
-    });
 
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
@@ -867,10 +814,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   final LooperRepository _repository;
   final MixSettingsCoordinator _mixSettings;
   final FxChainPersistence _fxPersistence;
-  final RecordLengthControl _recordLengthControl;
-  final RecordTimingControl _recordTimingControl;
-  final _recordTimingWrites = <Future<RecordTimingOutcome>>{};
-  final _recordLengthWrites = <Future<RecordLengthOutcome>>{};
   final SettingsRepository? _settings;
   final bool Function() _takeLocked;
 

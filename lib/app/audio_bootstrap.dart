@@ -50,70 +50,14 @@ Future<AutoStartResult> tryAutoStartEngine({
   await _stageOrLog(DecayFamily(repository: repository, settings: settings));
   await _stageOrLog(OneShotFamily(repository: repository, settings: settings));
 
-  // Mode and all fixed-track length scalars form one startup image. Stage it
-  // before starting audio, so no pedal can record against partial defaults.
-  try {
-    final savedMode = await settings.readLooperModeCheckpoint();
-    final lengths = await Future.wait([
-      settings.readRecordLengthCheckpoint(channel: null),
-      for (var channel = 0; channel < 8; channel++)
-        settings.readRecordLengthCheckpoint(channel: channel),
-    ]);
-    final request = repository.setLengthSettings(
-      defaultBars: lengths.first ?? 0,
-      overrides: {
-        for (var channel = 0; channel < 8; channel++)
-          if (lengths[channel + 1] != null) channel: lengths[channel + 1]!,
-      },
-      mode: LooperMode.fromCode(savedMode ?? 0),
-    );
-    final result = request.isOk
-        ? await repository.settleLengthSettings()
-        : request;
-    if (!result.isOk) {
-      throw StateError('Saved record length replay refused: ${result.name}');
-    }
-  } on Object catch (error) {
-    AppLog.error('audio auto-start: saved record length failed: $error');
-    repository.stopEngine();
-    return (
-      started: false,
-      asioDrivers: const <AudioDevice>[],
-      recoveryConfig: null,
-    );
-  }
-
-  // Validate the complete timing image before audio starts. Immediately is
-  // an explicit choice; an absent track key alone means inheritance.
-  try {
-    final timing = await settings.readRecordTimingCheckpoint();
-    final division = GridDivision.fromCode(timing.division ?? 0);
-    final request = repository.setRecordTimingSettings(
-      defaultTiming: RecordTiming.of(
-        quantize: timing.quantize ?? false,
-        division: division,
-      ),
-      rememberedDivision: division,
-      trackOverrides: {
-        for (final entry in timing.trackOverrides.entries)
-          entry.key: RecordTiming.fromCode(entry.value)!,
-      },
-    );
-    final result = request.isOk
-        ? await repository.settleRecordTimingSettings()
-        : request;
-    if (!result.isOk) {
-      throw StateError('Saved record timing replay refused: ${result.name}');
-    }
-  } on Object catch (error) {
-    AppLog.error('audio auto-start: saved record timing failed: $error');
-    repository.stopEngine();
-    return (
-      started: false,
-      asioDrivers: const <AudioDevice>[],
-      recoveryConfig: null,
-    );
-  }
+  // Mode and every track length form one startup image, staged before audio
+  // opens like the families above.
+  await _stageOrLog(
+    RecordLengthFamily(repository: repository, settings: settings),
+  );
+  await _stageOrLog(
+    RecordTimingFamily(repository: repository, settings: settings),
+  );
 
   try {
     return await _tryAutoStartEngine(
@@ -285,11 +229,8 @@ Future<AutoStartResult> _tryAutoStartEngine({
   final startupLength = await repository.settleLengthSettings();
   if (!startupLength.isOk) {
     AppLog.error(
-      'audio auto-start: initial length replay refused '
-      'result=${startupLength.name}',
+      'audio auto-start: length replay unconfirmed ${startupLength.name}',
     );
-    repository.stopEngine();
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
   final startupOnce = await repository.settleOneShot();
   if (!startupOnce.isOk) {
@@ -300,10 +241,9 @@ Future<AutoStartResult> _tryAutoStartEngine({
   final startupTiming = await repository.settleRecordTimingSettings();
   if (!startupTiming.isOk) {
     AppLog.error(
-      'audio auto-start: record timing replay refused ${startupTiming.name}',
+      'audio auto-start: record timing replay unconfirmed '
+      '${startupTiming.name}',
     );
-    repository.stopEngine();
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
   if (consolePinned) {
     await settings.saveAudioConfig(
@@ -649,11 +589,8 @@ Future<bool> _firstRunAutoStart({
   final startupLength = await repository.settleLengthSettings();
   if (!startupLength.isOk) {
     AppLog.error(
-      'audio first-run: initial length replay refused '
-      'result=${startupLength.name}',
+      'audio first-run: length replay unconfirmed ${startupLength.name}',
     );
-    repository.stopEngine();
-    return false;
   }
   final startupOnce = await repository.settleOneShot();
   if (!startupOnce.isOk) {
@@ -664,10 +601,8 @@ Future<bool> _firstRunAutoStart({
   final startupTiming = await repository.settleRecordTimingSettings();
   if (!startupTiming.isOk) {
     AppLog.error(
-      'audio first-run: record timing replay refused ${startupTiming.name}',
+      'audio first-run: record timing replay unconfirmed ${startupTiming.name}',
     );
-    repository.stopEngine();
-    return false;
   }
   final status = repository.state.status;
   await settings.saveAudioConfig(

@@ -199,7 +199,7 @@ void main() {
         await edit;
         expect(cubit.state, same(closedState));
         expect(owner.state.defaultLengthBars, 8);
-        expect((await owner.flushRecordLength()).isOk, isTrue);
+        expect((await owner.owner.flush()).isOk, isTrue);
       },
     );
   });

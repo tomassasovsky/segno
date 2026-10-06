@@ -184,8 +184,6 @@ void main() {
         settings: settings,
         mixSettings: mix,
         fxPersistence: fx,
-        recordLengthControl: FakeRecordLengthControl(),
-        recordTimingControl: FakeRecordTimingControl(),
       );
       addTearDown(() async {
         await bloc.close();
@@ -548,8 +546,6 @@ void main() {
           settings: settings,
           mixSettings: mix,
           fxPersistence: fx,
-          recordLengthControl: FakeRecordLengthControl(),
-          recordTimingControl: FakeRecordTimingControl(),
         );
         addTearDown(() async {
           await bloc.close();

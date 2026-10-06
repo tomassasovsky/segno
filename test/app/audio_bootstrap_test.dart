@@ -158,6 +158,21 @@ class _ClickModeBootEngine extends FakeAudioEngine {
       refuseMode ? EngineResult.invalid : super.setClickMode(mode);
 }
 
+/// Consumes every Record timing command without applying it: the receipt
+/// arrives and the vector does not match.
+class _TimingDropEngine extends FakeAudioEngine {
+  @override
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
+  }) {
+    recordTimingRevision = (recordTimingRevision + 2) & 0xffffffff;
+    return EngineResult.ok;
+  }
+}
+
 class _OnceBootEngine extends FakeAudioEngine {
   bool refuseOnce = false;
 
@@ -533,6 +548,52 @@ void main() {
       });
     });
 
+    for (final family in ['length', 'timing']) {
+      for (final hasAudioConfig in [false, true]) {
+        test('an unconfirmed startup $family replay is owed and audio keeps '
+            'running, saved config $hasAudioConfig', () async {
+          if (hasAudioConfig) {
+            await settings.saveAudioConfig(
+              const StoredAudioConfig(sampleRate: 48000, bufferFrames: 256),
+            );
+          }
+          final unconfirmed = family == 'timing'
+              ? _TimingDropEngine()
+              : (FakeAudioEngine()..publishLengthCommands = false);
+          final looper = LooperRepository(
+            engine: unconfirmed,
+            ticker: const Stream<void>.empty(),
+          );
+          addTearDown(looper.dispose);
+          if (family == 'timing') {
+            store.values.addAll({
+              'looper.quantize': true,
+              'tempo.quantize_div': 3,
+            });
+          } else {
+            store.values['looper.default_length_bars'] = 4;
+          }
+          final result = await tryAutoStartEngine(
+            repository: looper,
+            settings: settings,
+            mixSettings: testMixSettings(looper, settings: settings),
+          );
+          expect(result.started, isTrue);
+          expect(unconfirmed.stopCalls, 0);
+          if (family == 'timing') {
+            expect(looper.recordTimingRecoveryRequired, isTrue);
+            expect(
+              looper.recordTimingRestartIntent.defaultTiming,
+              RecordTiming.quarter,
+            );
+          } else {
+            expect(looper.lengthRecoveryRequired, isTrue);
+            expect(looper.lengthRestartIntent.defaultBars, 4);
+          }
+        });
+      }
+    }
+
     group('complete Record timing startup', () {
       for (final hasAudioConfig in [false, true]) {
         test('restores explicit Immediately and remembered division; '
@@ -567,7 +628,8 @@ void main() {
 
       for (final bad in <Object>['invalid', 1.5, -1, 7]) {
         test(
-          'invalid final timing scalar $bad prevents partial startup',
+          'invalid final timing scalar $bad prevents partial startup, '
+          'and audio still opens',
           () async {
             repository.setRecordTimingSettings(
               defaultTiming: RecordTiming.half,
@@ -584,8 +646,10 @@ void main() {
               settings: settings,
               mixSettings: testMixSettings(repository, settings: settings),
             );
-            expect(result.started, isFalse);
-            expect(engine.startCalls, 0);
+            // Only Record timing is unavailable; its owner's Retry repairs it.
+            expect(result.started, isTrue);
+            expect(engine.startCalls, 1);
+            expect(engine.stopCalls, 0);
             expect(repository.defaultRecordTiming, RecordTiming.half);
             expect(repository.trackRecordTimingOverrides, {
               1: RecordTiming.immediately,
@@ -1173,7 +1237,8 @@ void main() {
         'tempo.length_preset.$channel',
     ]) {
       test(
-        'invalid saved $key never starts audio or rewrites intent',
+        'invalid saved $key stages no length and never rewrites intent; '
+        'audio still opens',
         () async {
           store.values['looper.default_length_bars'] = 4;
           store.values[key] = key == 'looper.mode' ? 5 : 65;
@@ -1183,11 +1248,17 @@ void main() {
             settings: settings,
             mixSettings: testMixSettings(repository, settings: settings),
           );
-          expect(result.started, isFalse);
-          expect(engine.startCalls, 0);
+          // Only Record length is unavailable; its owner's Retry repairs it.
+          expect(result.started, isTrue);
+          expect(engine.startCalls, 1);
+          expect(engine.stopCalls, 0);
           expect(repository.sessionTransport.defaultLengthPresetBars, 0);
           expect(repository.trackLengthPresetOverrides, isEmpty);
-          expect(store.values, before);
+          // The stored length keys are untouched; a started first run saves
+          // its audio configuration beside them.
+          for (final entry in before.entries) {
+            expect(store.values[entry.key], entry.value);
+          }
         },
       );
     }
@@ -1977,8 +2048,6 @@ void main() {
       fxPersistence = FxChainPersistence(looper: repository);
       final mixSettings = testMixSettings(repository, settings: settings);
       bloc = LooperBloc(
-        recordLengthControl: FakeRecordLengthControl(),
-        recordTimingControl: FakeRecordTimingControl(),
         fxPersistence: fxPersistence,
         mixSettings: mixSettings,
         repository: repository,

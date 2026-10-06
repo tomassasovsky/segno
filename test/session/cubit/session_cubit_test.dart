@@ -149,10 +149,6 @@ class _RecordOwner extends Fake implements RecordSettings {
   final LooperRepository looper;
 
   @override
-  Future<T> runRecordExclusive<T>(Future<T> Function() operation) =>
-      operation();
-
-  @override
   RecordLengthSnapshot get durableRecordLengthSnapshot => RecordLengthSnapshot(
     defaultBars: looper.sessionTransport.defaultLengthPresetBars,
     trackOverrides: looper.trackLengthPresetOverrides,
@@ -164,10 +160,6 @@ class _RecordOwner extends Fake implements RecordSettings {
 class _TimingOwner extends Fake implements RecordTimingSettings {
   _TimingOwner(this.looper);
   final LooperRepository looper;
-
-  @override
-  Future<T> runRecordTimingExclusive<T>(Future<T> Function() operation) =>
-      operation();
 
   @override
   RecordTimingSnapshot get durableRecordTimingSnapshot => RecordTimingSnapshot(

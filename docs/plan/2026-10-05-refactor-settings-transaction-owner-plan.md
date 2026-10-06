@@ -398,6 +398,8 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/dart analyze --fatal-
 
 #### Part 2c: Record length and mode, Record timing
 
+Status: built (branch `claude/settings-owner-1159-p2c`).
+
 ```success-criteria
 GOAL: Record length and mode and Record timing run on the shared owner; the deferred section 2.1 items land; the remaining startEngine gates, LooperBloc forwarding and LooperPersistFlush are gone.
 SUCCESS CRITERIA:
@@ -536,6 +538,88 @@ Decisions taken under the owner rules (2026-10-05):
 Deviations: `PlaybackSettings` is kept as a thin holder (owners, adapters,
 projection) rather than deleted, mirroring `TempoSettings` after 2a; its
 transaction code is what 2b removes. Production change: +883 / -1,432.
+
+#### Part 2c as built
+
+- Review of PR #1175, first commit: a refused multi-address Decay request
+  restores the restart values captured before any send. Reading them after
+  the send-back would have made a held temporary value durable. The comment
+  records why send-back results are not checked.
+- Record timing and Record length and mode: `LooperRepository` keeps a
+  `SettingsReceipt` for each vector, replacing `_PendingTiming`,
+  `_PendingLengthSettings` and their cancel, accept, fail and recover members.
+  The live caches read the receipts. Timing keeps its revision fence; length
+  keeps its snapshot match. `setRecordTimingSettings` and `setLengthSettings`
+  take an optional Released vector (and timing an edit mask), which the
+  families use; the per-address wrappers stay for the package tests.
+- Section 2.1 items: one `captureLocked` getter, true only on a running
+  engine, backs the Record length, Record timing, Hear click and Count-in
+  locks. `_requestMix` no longer refuses while timing is owed. A length
+  receipt accepts a vector that landed even when a take began before the
+  poll. The `startEngine` length and timing gates are gone; the session-boot
+  and Mixer fences stay.
+- `RecordTimingFamily` and `RecordLengthFamily` (`settings_families.dart`).
+  Timing's stored checkpoint is the one tuple for every address, so
+  `SettingsFamily.checkpointOf` now receives the checkpoint read before the
+  write and replaces only its address's part. Length has the looper mode as
+  an address (`LooperModeAddress`).
+- `SettingsFamily.supersededBy` names the addresses an ordinary write settles
+  besides its own. Entering Multi settles all eight track presets: their
+  revisions advance and `ordinaryChanges` reports them with
+  `superseded: true`, which `RecordSettings` turns into a supersede (null
+  bars) for `ControlCubit`. Before, Multi entry reported ordinary values,
+  which `ControlCubit` recorded as priority, so a hold released after Multi
+  left an owed release and power-off threw `ControlCleanupPending`.
+- `RecordTimingSettings` and `RecordSettings` keep only their owner, the
+  `RecordTimingControl` / `RecordLengthControl` ports, the page edits and
+  their projections (and Record settings' rec/dub and loop-length options).
+  Their transaction code is gone. `AppRuntime` registers both owners after
+  Playback's; `prepareShutdown`'s length and timing blocks are gone, and
+  Session exclusion goes through the registry only.
+- `LooperBloc` no longer forwards Record timing, Record length or the mode,
+  and `LooperPersistFlush` is gone: the length page writes through
+  `RecordTimingCubit`, the mode change through `RecordOptionsCubit`, and
+  `prepareShutdown` already flushed FX itself before the event.
+- Bootstrap stages length and timing through the shared staging path; the
+  two separate stages are gone.
+
+Decisions taken under the owner rules (2026-10-05):
+
+22. An unreadable saved Record length, mode or Record timing value no longer
+    keeps audio stopped: audio opens with the repository's values, the
+    family is unavailable and Retry repairs the stored data (decision 17's
+    rule). Length repairs the one unreadable key; timing's keys are one
+    tuple, so Retry replaces the whole tuple and logs the old values. Rules
+    2 and 4.
+23. Length and timing uncertainty no longer stops audio or blocks a restart:
+    the receipt owes the Released vector, a restart replays it and Retry
+    re-requests it while running. An unconfirmed startup replay logs and
+    owes instead of stopping. An engine that refuses to admit the startup
+    replay still fails the start. Rule 2.
+24. A new take still waits for an unsettled timing receipt and refuses while
+    timing is owed, as Count-in does (decision 13): that take could start
+    with the wrong quantize. Rule 2.
+25. When a length vector equals the prior one and a take is capturing, the
+    receipt cannot tell whether the callback applied it, so it reads as
+    refused, as before. A vector that differs and landed is accepted even
+    during a take. Rule 1.
+26. A refused length or timing write whose rollback succeeded no longer
+    blocks power-off (decision 20). A failed rollback still does. Rule 4.
+27. Session capture still waits for a pending length receipt and fails if it
+    does not confirm, as before; the registry's exclusion alone would capture
+    the owed value. Rule 1.
+28. A released default record timing without a gate takes the durable
+    remembered division, as `setRecordTiming` did, so a released hold does
+    not keep the held division. Rule 1.
+29. A write whose checkpoint read fails after the lifetime moved on reports
+    superseded, not rejected, for every owner. Rule 3.
+
+Deviations: `RecordTimingSettings` is kept as a thin holder (owner, port,
+projection) instead of being deleted, as `PlaybackSettings` was in 2b: about
+30 test files construct it. The capture-time length settle in
+`SessionSettingsCoordinator` stays (decision 27). Production change:
++1,154 / -1,679, past the 1,000-line split threshold; most additions rewrite
+the two repository transactions and the two holders.
 
 
 ### Part 3: Control dispatch collapse

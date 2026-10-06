@@ -79,6 +79,7 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.sessionRevision).thenReturn(0);
   });
 
   void seed(LooperState state) {

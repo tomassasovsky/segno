@@ -433,8 +433,6 @@ void main() {
   tearDown(() => stateController.close());
 
   LooperBloc buildBloc() => LooperBloc(
-    recordLengthControl: recordLength,
-    recordTimingControl: recordTiming,
     fxPersistence: FxChainPersistence(looper: repository),
     repository: repository,
     mixSettings: testMixSettings(repository),
@@ -492,8 +490,6 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'takeLocked suppresses LooperRecordPressed',
     build: () => LooperBloc(
-      recordLengthControl: recordLength,
-      recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -507,8 +503,6 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'takeLocked suppresses LooperClearPressed',
     build: () => LooperBloc(
-      recordLengthControl: recordLength,
-      recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -674,38 +668,12 @@ void main() {
     );
     addTearDown(() => unawaited(playback.close()));
     return LooperBloc(
-      recordLengthControl: recordLength,
-      recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository, settings: trackSettings),
       repository: repository,
       settings: trackSettings,
     );
   }
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperTrackRecordTimingChanged delegates persistence to its shared owner',
-    build: buildBlocWithSettings,
-    act: (bloc) => bloc.add(
-      const LooperTrackRecordTimingChanged(2, timing: RecordTiming.quarter),
-    ),
-    verify: (_) {
-      verify(
-        () => recordTiming.setTrackTiming(
-          channel: 2,
-          timing: RecordTiming.quarter,
-        ),
-      ).called(1);
-      // The actual App and Session suites prove the owner's persistence;
-      // this boundary must never duplicate those writes in the Bloc.
-      verifyNever(
-        () => repository.setTrackRecordTiming(
-          channel: any(named: 'channel'),
-          timing: any(named: 'timing'),
-        ),
-      );
-    },
-  );
 
   blocTest<LooperBloc, LooperState>(
     'LooperTrackPanChanged persists confirmed pan',
@@ -1024,62 +992,11 @@ void main() {
   });
 
   blocTest<LooperBloc, LooperState>(
-    'LooperTrackLengthPresetChanged uses the shared transaction owner',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperTrackLengthPresetChanged(1, 8)),
-    verify: (_) => verify(
-      () => recordLength.setTrackRecordLength(channel: 1, bars: 8),
-    ).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'late length refusal leaves the saved override unchanged',
-    setUp: () => when(
-      () => repository.settleLengthSettings(),
-    ).thenAnswer((_) async => EngineResult.invalid),
-    build: buildBlocWithSettings,
-    act: (bloc) => bloc.add(const LooperTrackLengthPresetChanged(1, 8)),
-    verify: (_) async =>
-        expect(await trackSettings.loadTrackLengthPreset(1), isNull),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'refused record timing does not persist',
-    build: () {
-      when(
-        () => repository.setTrackRecordTiming(
-          channel: 2,
-          timing: RecordTiming.bar,
-        ),
-      ).thenReturn(EngineResult.invalid);
-      return buildBlocWithSettings();
-    },
-    act: (bloc) => bloc.add(
-      const LooperTrackRecordTimingChanged(2, timing: RecordTiming.bar),
-    ),
-    verify: (_) async {
-      expect(
-        (await trackSettings.readRecordTimingCheckpoint()).trackOverrides[2],
-        isNull,
-      );
-    },
-  );
-
-  blocTest<LooperBloc, LooperState>(
     'LooperCrownPrimaryPressed forwards the channel to the repository (D18, '
     'B5c)',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperCrownPrimaryPressed(2)),
     verify: (_) => verify(() => repository.crownPrimary(channel: 2)).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperModeChanged forwards the mode to its transaction owner — '
-    "the confirmation flow is the UI's job, not the bloc's",
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.band)),
-    verify: (_) =>
-        verify(() => recordLength.setLooperMode(LooperMode.band)).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -1544,8 +1461,6 @@ void main() {
           ),
         );
         return LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1593,8 +1508,6 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLaneMuteToggled persists the toggled mute onto the lane',
       build: () => LooperBloc(
-        recordLengthControl: recordLength,
-        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1612,8 +1525,6 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperClearPressed persists the unmute so a cleared track stays armed',
       build: () => LooperBloc(
-        recordLengthControl: recordLength,
-        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1643,8 +1554,6 @@ void main() {
         () => repository.clear(channel: 1),
       ).thenReturn(EngineResult.invalid),
       build: () => LooperBloc(
-        recordLengthControl: recordLength,
-        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1660,8 +1569,6 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'a lane effect structural edit persists the encoded chain onto the lane',
       build: () => LooperBloc(
-        recordLengthControl: recordLength,
-        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1685,8 +1592,6 @@ void main() {
       'snapshot copy (F3)',
       () async {
         final bloc = LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1729,8 +1634,6 @@ void main() {
           ),
         ]);
         return LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1758,8 +1661,6 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLaneEffectParamChanged persists the re-encoded chain',
       build: () => LooperBloc(
-        recordLengthControl: recordLength,
-        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1785,8 +1686,6 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLanePluginParamChanged persists the re-encoded chain',
       build: () => LooperBloc(
-        recordLengthControl: recordLength,
-        recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
         repository: repository,
@@ -1868,8 +1767,6 @@ void main() {
         'LooperTrackEffectsChanged pushes the chain and persists the '
         'envelope with the repo chain flag',
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -1904,8 +1801,6 @@ void main() {
             ),
           ).thenAnswer((_) => applied.future);
           final bloc = LooperBloc(
-            recordLengthControl: recordLength,
-            recordTimingControl: recordTiming,
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -1937,8 +1832,6 @@ void main() {
             ),
           ).thenAnswer((_) => applied.future);
           final bloc = LooperBloc(
-            recordLengthControl: recordLength,
-            recordTimingControl: recordTiming,
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -1999,8 +1892,6 @@ void main() {
           ),
         ).thenAnswer((_) => oldWait.future);
         final bloc = LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2041,8 +1932,6 @@ void main() {
             return writes == 1 ? firstWrite.future : Future<void>.value();
           });
           final bloc = LooperBloc(
-            recordLengthControl: recordLength,
-            recordTimingControl: recordTiming,
             fxPersistence: FxChainPersistence(looper: repository),
             mixSettings: testMixSettings(repository),
             repository: repository,
@@ -2069,8 +1958,6 @@ void main() {
           () => settings.saveTrackFxChain(1, any()),
         ).thenAnswer((_) async => throw StateError('storage refused')),
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2105,8 +1992,6 @@ void main() {
           });
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2150,8 +2035,6 @@ void main() {
           ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2200,8 +2083,6 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2255,8 +2136,6 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2298,8 +2177,6 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2350,8 +2227,6 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2403,8 +2278,6 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2460,8 +2333,6 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2516,8 +2387,6 @@ void main() {
           ).thenReturn(true);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2551,8 +2420,6 @@ void main() {
         setUp: () =>
             when(() => repository.trackEffects(0)).thenReturn(const []),
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2584,8 +2451,6 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2619,8 +2484,6 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2651,8 +2514,6 @@ void main() {
           ).thenReturn(true);
         },
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2671,8 +2532,6 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'LooperTrackEffectEnabledToggled flips the slot and re-persists',
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2697,8 +2556,6 @@ void main() {
         'LooperTrackChainEnabledToggled flips the chain flag and '
         're-persists',
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2718,8 +2575,6 @@ void main() {
         'LooperOutputEffectsChanged pushes the chain and persists the '
         'envelope',
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2742,8 +2597,6 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'LooperMasterEffectEnabledToggled flips the slot and re-persists',
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2768,8 +2621,6 @@ void main() {
         'LooperOutputChainEnabledToggled flips the chain flag and '
         're-persists',
         build: () => LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2792,8 +2643,6 @@ void main() {
         when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
         when(() => repository.settledLooperMode).thenReturn(LooperMode.band);
         return LooperBloc(
-          recordLengthControl: recordLength,
-          recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
           repository: repository,
@@ -2869,8 +2718,6 @@ void main() {
     });
 
     LooperBloc buildDebounced() => LooperBloc(
-      recordLengthControl: recordLength,
-      recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
       mixSettings: testMixSettings(repository),
       repository: repository,
@@ -3103,15 +2950,29 @@ void main() {
     );
 
     test(
-      'LooperPersistFlush writes a drag that ended inside the window',
+      'an FX flush writes a drag that ended inside the window',
       () => fakeAsync((clock) {
-        final bloc = buildDebounced()
-          ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25));
+        // The flush also confirms lane mutes; only the FX write is asserted.
+        when(
+          () => settings.saveLaneMute(
+            any(),
+            any(),
+            muted: any(named: 'muted'),
+          ),
+        ).thenAnswer((_) async {});
+        final fx = FxChainPersistence(looper: repository);
+        final bloc = LooperBloc(
+          fxPersistence: fx,
+          mixSettings: testMixSettings(repository),
+          repository: repository,
+          settings: settings,
+          fxPersistDebounce: debounce,
+        )..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25));
         try {
           clock.flushMicrotasks();
           verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
 
-          bloc.add(const LooperPersistFlush());
+          unawaited(fx.flush());
           clock.flushMicrotasks();
 
           verify(() => settings.saveLaneEffects(0, 1, any())).called(1);

@@ -51,14 +51,10 @@ class SessionSettingsCoordinator {
   Future<T> runExclusive<T>(Future<T> Function() operation) =>
       _fade.runExclusive(
         (admittedEdits) => _mix.runExclusive(
-          () => _owners.runExclusive(
-            () => _record.runRecordExclusive(
-              () => _timing.runRecordTimingExclusive(() async {
-                await admittedEdits;
-                return operation();
-              }),
-            ),
-          ),
+          () => _owners.runExclusive(() async {
+            await admittedEdits;
+            return operation();
+          }),
         ),
       );
 
