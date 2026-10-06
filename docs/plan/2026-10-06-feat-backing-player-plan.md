@@ -1,5 +1,7 @@
 # Backing player: prepared list, transport, routing, foot Backing and the Mixer strip
 
+<!-- cspell:ignore subformat ADPCM RIFX fseek isfinite -->
+
 Tracking: #1200 (gap inventory E7-8, E6-8, E3-3, E5-6 and the backing and
 click targets of E6-12), `stage:plan`, `autonomy:merge-gate` (a new native
 audio source, a new session field and new performance surfaces: verifiable
@@ -189,8 +191,9 @@ from RAM. Reasons:
    starting a `Play selected` decode first releases the staged Next (it
    belongs to the outgoing file and is re-staged for whichever file ends up
    loaded). Import never holds a third: it probes, retaining no PCM (D2).
-   A decode's own peak (its source read plus its output) is checked against
-   `MemAvailable` before it allocates (D11). A file over the cap is refused
+   A decode's own peak (the source it reads, the planes a halving works on,
+   and its output) is checked against `MemAvailable` before it allocates
+   (D11). A file over the cap is refused
    at import with the reason, never truncated.
 
 Selection does not pre-decode: `Play selected` decodes on demand while the
@@ -201,23 +204,38 @@ backing file leaves the current one playing until Play"; the library study's
 
 ### D2 Decode path: the app's one decoder, native, in a Dart background isolate
 
-- **One decoder for the app (review M3, rule 4).** `le_backing_decode_file`
-  (Part 2, `src/core/engine_decode.c`) is the only audio-file decoder: the
-  backing player, the Library preview (its Part 6b, instead of a WAV-only
-  Dart reader) and #1198's recording parts all read through it. Its bounded
-  form takes a start frame (source rate) and a maximum output length and says
-  whether it stopped early, which is what a preview and a recording part
-  need; at the engine rate it is sample-exact. `le_backing_probe_file`
-  decodes a whole file in 4096-frame chunks, keeping no PCM, to validate it
-  and compute peaks. The coordinator has told the Library and #1198.
-- **Formats:** WAV (PCM 8/16/24/32, float 32/64) and MP3, through miniaudio's
-  built-in dr_wav and dr_mp3 (`MA_NO_DECODING` removed). The FLAC decoder
-  stays compiled out (`MA_NO_FLAC`) because CVE-2024-41147, an out-of-bounds
-  write in `ma_dr_flac__decode_samples__lpc`, affects the vendored 0.11.21
-  and was fixed in 0.11.22. The pen shows only `.wav` and `.mp3` (18/02).
-  Mono plays dual mono; more than two channels is refused ("Only mono and
-  stereo files can be used."), never downmixed. Anything refused is listed
-  with `—` and its reason (18/02's damaged row).
+- **One reader of audio samples for the app (review M3(a), rule 4).**
+  `le_backing_decode_file` (Part 2, `src/core/engine_decode.c`), natively and
+  bounded, is the only code that turns a file's bytes into samples for the
+  app: the backing player, the Library preview (its Part 6b) and #1198's
+  recording recovery all decode through it. `wav_codec` stays the app's WAV
+  writer and its header and part model (RIFF headers, part metadata,
+  `.part` bookkeeping); it never decodes samples for playback, preview or
+  recovery. The bounded form takes a start frame (source rate) and a maximum
+  output length, says whether it stopped early, and returns exactly the
+  whole-file decode's samples at the same positions; at the engine rate that
+  is the file's own samples. What the other two plans must accept: the
+  output is stereo (a mono part reads back as two equal sides), at the
+  engine rate, from mono or stereo WAV PCM 16/24/32 or float32 at 8-192 kHz
+  (a recording part at the device rate is read back unchanged).
+  `le_backing_probe_file` decodes a whole file in 4096-frame chunks, keeping
+  no PCM, to validate it and compute peaks. The coordinator routes this
+  wording to the #1198 plan and the Library plan's Part 6b.
+- **Formats (review of #1223, M1):** a whitelist, checked by the decoder's
+  own header parse before any miniaudio decoder sees the file: WAV (RIFF)
+  with 16/24/32-bit PCM or 32-bit float, plain or EXTENSIBLE with the PCM or
+  float subformat, and MPEG Layer III (MP3), through miniaudio's dr_wav and
+  dr_mp3 (`MA_NO_DECODING` removed, `MA_DR_MP3_ONLY_MP3` set). Refused as
+  unsupported, before decoding: 8-bit and 64-bit WAV, ADPCM, mu-law and
+  A-law, RIFX, RF64, BW64, Wave64, AIFF, Ogg, MPEG Layer I/II, and FLAC,
+  which stays compiled out (`MA_NO_FLAC`) because CVE-2024-41147, an
+  out-of-bounds write in `ma_dr_flac__decode_samples__lpc`, affects the
+  vendored 0.11.21 (#1235 updates miniaudio and re-enables it). The pen
+  shows only `.wav` and `.mp3` (18/02). Mono plays dual mono; more than two
+  channels is refused ("Only mono and stereo files can be used."), never
+  downmixed. Anything refused is listed with `—` and its reason (18/02's
+  damaged row): unsupported for a format outside the list, damaged for a
+  file that claims a listed format and is inconsistent.
 - **Where:** `Isolate.run` in Dart, with the library opened by the existing
   top-level `_openLibrary()` (`native_audio_engine.dart:39-48`). The UI
   isolate never decodes and no native thread is added. The returned
@@ -226,32 +244,61 @@ backing file leaves the current one playing until Play"; the library study's
   path frees it.
 - **Import validates by streaming.** Import probes the copied file (whole
   decode, no PCM retained, 512 peaks and the decoded length into `info.json`)
-  and keeps it only if that succeeds, so a performance never meets a file
-  that has not decoded cleanly once, and import never holds a full buffer.
+  and keeps it only if that succeeds. The probe refuses a source rate the
+  converter cannot reach from every engine rate (44.1, 48, 88.2 and 96 kHz;
+  review of #1223, L1), so a file that imports decodes at whatever rate the
+  interface runs, and a performance never meets a file that has not decoded
+  cleanly once. Import never holds a full buffer.
 
-### D2a Untrusted files (review M2)
+### D2a Untrusted files (review M2; review of #1223, H1-H3, M1)
 
 The decoders parse whatever a performer brings on a drive, inside the app's
-process. As built (Part 2):
+process, so no input may crash, hang or poison audio (rule 2). The first
+build left that to miniaudio's own checks, and a wider fuzzer found, within
+minutes, a process abort (a WAV with 255 or 256 channels: miniaudio freed a
+stack address after its post-init failed), endless seeks (a `fact` chunk
+under 4 bytes, a Wave64 chunk size), an out-of-bounds table read (MS-ADPCM)
+and non-finite float samples that silenced a bus with a reverb for good. As
+built after that review:
 
-- every header value is checked before it sizes anything: the source rate
-  must be 8-384 kHz and the channels 1-2, and the stated length must fit what
-  the file could hold (at most 512 decoded float bytes per file byte; an
-  8 kb/s MP3 at 48 kHz stereo expands 384x), so a lying header cannot
-  request a huge allocation;
-- the 15-minute cap applies to the decoded frames as well as the stated
-  ones, and a whole-file decode that yields a different length than the file
-  states is refused as damaged (truncated data, a mid-stream decoder error);
-- the WAV decoder runs without its metadata parser (`ma_decoder` opens WAV
-  with `ma_dr_wav_init_file`, flags 0, `miniaudio.h:61571`), so
-  CVE-2026-32837 (an out-of-bounds read in the BEXT parser, open through
-  0.11.25) is unreachable; MP3 has no published CVE against 0.11.21; FLAC is
-  out (above);
-- a decoder fuzz target (`src/test/fuzz_backing_decode.c`) runs a fixed-seed
-  mutation loop over WAV, MP3 and FLAC seeds (bogus sizes, rates, chunk
-  lengths, truncations, ID3 garbage) in every native configuration, so the
-  ASan job fuzzes it on every push; the same file is a libFuzzer entry point
-  for longer local campaigns. 20,000 inputs under ASan: no finding.
+- **Our own header parse first.** Before any miniaudio call the decoder reads
+  the file itself: a RIFF/WAVE whose chunks up to `data` each fit inside the
+  file, exactly one `fmt ` of a listed format (D2), 1-2 channels, a block
+  align that matches, a `fact` chunk of at least 4 bytes; or ID3v2 tags
+  followed, within 64 KiB, by a Layer III frame header and a consistent
+  second one. Everything else is refused before a decoder sees it. A
+  trailing ID3v1 tag is cut from the stream (a short tagged MP3 was refused
+  otherwise; review L4).
+- **Exactly one backend, through bounded I/O.** miniaudio is opened with the
+  format named (no fallback across decoders) and our read and seek
+  callbacks: a seek outside the file fails (where `fseek` past the end
+  succeeds on a regular file, which is what let a crafted size loop), and
+  every read and seek counts against a work budget of eight passes over the
+  file plus 64 MiB, after which every call fails. A non-regular path (a
+  FIFO, a device) is refused before it is opened.
+- **Values in range.** The source rate must be 8-192 kHz and reachable by the
+  converter from every engine rate; the channels 1-2; the stated length
+  must fit what the file could hold (at most 512 decoded float bytes per file
+  byte); the 15-minute cap applies to decoded frames as well; a whole-file
+  decode that yields another length than the file states is damaged.
+- **Finite, bounded samples only (H3).** The probe and every decode refuse
+  a NaN or Inf sample, and any sample beyond 1024 (60 dB over full scale:
+  the widened fuzzer found finite values near `FLT_MAX` that the converter
+  summed to Inf), as damaged, and `le_backing_buffer_from_pcm` refuses one too,
+  so nothing non-finite reaches the voice. (A guard on the output buses
+  themselves, for any source, is proposed in section 8.)
+- **Compiled out:** FLAC, MPEG Layer I/II, the WAV metadata parser (never
+  requested, so CVE-2026-32837, the BEXT parser, is unreachable). miniaudio's
+  post-init double uninit is patched (`SEGNO PATCH`, recorded in its README)
+  as defense in depth, though the app no longer reaches it.
+- **Fuzzing.** `src/test/fuzz_backing_decode.c` mutates whole files (bit and
+  byte edits anywhere, extreme 16- and 32-bit values, chunk sizes after
+  anything that looks like a chunk id, repeated spans, splices from other
+  seeds, runs of 0x00 or 0xFF, truncation) over seeds of every accepted and
+  refused format and container plus every fixture and reproducer, with a
+  10 s watchdog per input, and keeps any violating input for replay. It
+  runs in every native configuration, and the ASan CI job builds it with
+  UBSan too and runs 20,000 inputs. Section 12 records the local campaign.
 
 **Residual risk, recorded.** A decoder fault would still end the app, and
 with it the audio. A child process would contain it, but forking from the app
@@ -261,9 +308,9 @@ tables under the RT audio thread's lock and produce audible clicks
 long-lived process started at boot, which the appliance image does not have.
 Decoding happens at import, before a performance, and later decodes read only
 managed copies that already passed and whose digest is verified first (D7).
-**Follow-up (no issue yet; the main session files it):** update the vendored
-miniaudio to the current 0.11.x, re-applying the `SEGNO PATCH` hunks in its
-ALSA backend, then re-enable FLAC.
+#1235 updates the vendored miniaudio (re-applying every `SEGNO PATCH`),
+re-enables FLAC, and must re-check the three upstream defects the whitelist
+works around (section 8) and re-run the fuzzer after the update.
 
 ### D3 Sample-rate conversion: an offline polyphase windowed sinc
 
@@ -280,12 +327,16 @@ built for any reduction its DC gain is 1 at phase 0 and 1.09 to 2.0 elsewhere
 is linear interpolation behind a low-order filter.
 
 So `le_resample_offline` (`src/core/engine_decode.c`, internal, not FFI) is a
-polyphase Kaiser-windowed sinc (beta 10.06, about 100 dB stop band) of
+polyphase Kaiser-windowed sinc (beta 10.06, about 100 dB stop band for this
+stage) of
 half-width `ceil(32 / r)` input samples, `r = min(1, out / in)`, with exact
 rational phases (`out / gcd(in, out)`, refused above 8192) each normalized to
 unity DC gain. Its transition is 0.45 r to 0.55 r of the input rate, so
 aliases fold only above `0.45 · out_rate`. Reductions below one half first
-halve through `le_halfband_decimate`. Equal rates copy exactly. It reads and
+halve through `le_halfband_decimate`, whose stop band is -78 dB, so content
+folding through a halving (a 192 kHz source on a 48 kHz engine) is
+attenuated by about 78 dB, not 100. A source rate the phase bound refuses
+from any engine rate is refused at import (D2). Equal rates copy exactly. It reads and
 writes strided channels, so a decode converts straight from the interleaved
 source into the interleaved output. Measured: a five-minute 44.1 kHz MP3
 decodes and converts in 0.58 s at 48 kHz and 1.01 s at 96 kHz on the dev
@@ -454,17 +505,22 @@ and who enforces it. Figures at 96 kHz.
 | OS, compositor, Flutter app baseline | about 1.2 GB (to measure) | hardware criterion of Part 2 |
 | Floor kept free for everything else | 512 MiB of `MemAvailable` | `LE_MEM_RESERVE_BYTES`: every decode checks its own peak against it before allocating (Part 2) |
 | Backing buffers (loaded + staged + one in transit) | 1.5 GiB of PCM | `LE_BACKING_BUDGET_BYTES` in the engine's registry (Part 1); loads past it are refused |
-| One decode in flight (source read + output) | about 1.0 GB worst case (15 min, 44.1 kHz stereo source to 96 kHz) | allocated once, from the stated length, after the floor check |
+| One decode in flight (source + halving planes + output) | up to 2.1 GB: 15 min of a 192 kHz stereo source on a 96 kHz engine reads 1.38 GB of source and writes 0.69 GB of output (review of #1223, M2). A 44.1 kHz source needs 1.0 GB; on a 48 kHz engine a 192 kHz source halves through planes it is read straight into, peaking at 1.73 GB | allocated once, from the stated length, after the floor check, which counts every term |
 | Import | 32 KiB of decode scratch | the probe keeps no PCM (Part 2) |
 | Library preview (audition voice) | 120 s: 92 MB, plus a bounded decode of the same size | the bounded decode (`max_frames`) and the floor check |
 | Recording capture rings (#1198) | up to 264 MiB | #1198's ring sizing |
-| Loop-stage wet cache | 64 MiB | `LE_CACHE_DEFAULT_CAP_BYTES` |
+| Loop-stage wet cache | 192 MiB (pitch/time Part 3a's cap) | `LE_CACHE_DEFAULT_CAP_BYTES` |
 | Loops (lanes x undo layers) | grows with use: one buffer is `max_loop_frames` x 4 B (11.5 MB at the 30 s default) | not bounded today; see section 8 |
 | Instruments (#1197) | not stated by #1197 | #1197 must take a share of this table |
 
 The floor check is the backstop: whatever loops and instruments have taken, a
 decode never starts that would leave less than 512 MiB available, and says
-"Not enough memory to load this file." Hardware criterion (Part 2): peak RSS
+"Not enough memory to load this file." The worst `Play selected` therefore
+needs about 2.8 GB above the floor (a loaded 96 kHz buffer plus that decode);
+source rates are capped at 192 kHz to keep it there (384 kHz would double
+the source term). If the hardware criterion below fails, a streaming
+converter (decode in chunks into the output, the source never whole) is the
+next step. Hardware criterion (Part 2): peak RSS
 while A plays, B is staged and C is imported, all at 96 kHz, with eight
 tracks recorded, stays under 6.5 GB, and no xrun is logged while a 96 kHz
 decode runs with loops playing (review L4).
@@ -495,7 +551,8 @@ le_engine_backing_state(e, &state);                  /* reads, and collects retu
 #define LE_MEM_RESERVE_BYTES (512ll * 1024 * 1024)
 le_backing_decode_file(path, rate, start_frame, max_frames, &out, &info);
 le_backing_probe_file(path, &info, peaks, buckets);
-/* LE_ERR_TOO_LONG = -12 */
+/* LE_ERR_TOO_LONG = -12; LE_ERR_UNSUPPORTED (-5, existing) for a file
+ * outside the whitelist; LE_ERR_INVALID for a damaged one */
 ```
 
 **Handoff protocol (review H1, as built).** The review's three races are
@@ -526,7 +583,11 @@ built protocol has no control-side swap:
    callback's last read of that buffer (the fade voice keeps a shared buffer
    until its own ramp ends), so a stopped voice holds nothing back and a
    replace is never stuck in `NOT_READY` (that code means only "a buffer is
-   in transit; retry after one block").
+   in transit; retry after one block"). In transit is counted, not guessed
+   (review of #1222, L1): the callback counts the buffer-carrying loads and
+   stages it applied and flags while the fade voice owns a replaced buffer,
+   and the registry compares those with what it posted, so a stage that fits
+   once a fading buffer is back reads `NOT_READY`, never `CAPACITY`.
 5. Configure, reopen and destroy release with the callback stopped,
    including any buffer still queued in the ring (which they reset).
 
@@ -566,74 +627,40 @@ and P8 merges second. Every part leaves the app working, adds no control that do
 nothing, and runs normal, ASAN and telemetry-off native suites where it
 touches native code.
 
-### Part 1: native backing voice and click pan (built: PR #1222, about 850 lines)
+### Part 1: native backing voice and click pan (built: PR #1222, about 900 lines)
 
-Files: `src/core/engine_voice.h` (new), `engine_private.h` (backing fields
-beside the click block), `engine_core.h` if a helper must reach
-`engine_commands.c`, `engine_commands.c` (the API), `engine_process.c`
-(handlers, `backing_frame` after `click_frame` at `:6767`, `click_frame` via
-`le_fx_route_frame`, `handle_cut_sound` `:2201`, block-end ack),
-`engine.c` (`le_engine_reset_material` `:422`, `le_engine_reset_runtime`
-`:500`, `le_engine_destroy` `:1209`), `segno_engine_api.h` (4.1 without
-`le_backing_decode_file`; the stale click comments `:242-246` and `:2218-2226`
-corrected), `lockfree_ring.h` only if a payload shape is missing, regenerated
-and formatted bindings.
+As built; section 4.1 is the contract and section 12 the record. Files: new
+`src/core/engine_backing.c` (buffers, the control-thread registry with its
+transit counts, the API), `engine_process.c` (`le_backing_apply`, the fade
+voice, `backing_frame` after `click_frame`, the guarded End = Next advance,
+the per-block publish, the capture marker, `click_frame` through
+`le_fx_route_frame`), `engine_private.h`, `engine.c` (seeding,
+`reset_material` releases everything, `reset_runtime` keeps the loaded and
+staged buffers and bumps the epoch, destroy, raw posts refused),
+`lockfree_ring.h` (the buffer payload), `engine_core.h`, `engine_commands.c`
+(the marker reset at arm), `perf_drain.c` (`backing_in_master`),
+`segno_engine_api.h`, `CMakeLists.txt` and the macOS forwarders, bindings,
+`packages/segno_engine/.gitignore` (`*.o`). No `engine_voice.h` and no
+block-end ack: buffers come back through four return slots (4.1 item 4).
 
-Tests (new `src/test/test_engine_backing.h`, included like
-`test_engine_peel.h` at `test_engine_core.c:33548`; buffers from
-`le_backing_buffer_from_pcm` with a literal ramp `x[k] = (k + 1) / 1024.0f` on
-L and `x[k] / 2` on R, 48 kHz, so every expected sample is a closed form):
-
-- `test_backing_play_literal`: load play=1, routed to channels 0-1, level 1,
-  pan 0, nothing else sounding: output frame `f` equals `(x[f], x[f] / 2)` exactly
-  for 4096 frames; channels 2-3 stay 0.
-- `test_backing_level_pan_route`: level 0.5 halves every sample; pan 0.5 gives
-  `gl = 0.70710677f` on L and 1 on R (the `le_pan_gains` value, asserted
-  against the formula); mask `0b0001` writes the mid `0.75 · x[f]` to the lone
-  channel per `le_fx_route_frame`; a structurally disabled output never
-  carries it.
-- `test_backing_pause_resume_stop_ramps`: pause at frame 1000 yields 240
-  frames `x[1000 + i] · (1 - (i + 1) / 240)` then silence with position held;
-  resume fades in over 240 frames from that position; Stop ramps out and
-  rewinds to 0.
-- `test_backing_seek_clamp_and_preserve`: seek while paused to 9000 then
-  Play reads `x[9000]` first; seek past the end clamps to `frames - 1`; seek
-  while playing ramps out, jumps, ramps in; seek with no buffer is refused.
-- `test_backing_end_modes`: a 300-frame buffer; Stop → silence after frame
-  299, transport Stopped, position 0, `EV_STOPPED`; Repeat → frame 300 equals
-  `x[0]` with no ramp, `EV_REPEATED` each wrap; Next with a staged second
-  buffer `y` → frame 300 equals `y[0]`, `item` becomes the staged token,
-  `EV_ADVANCED`; Next without → Stopped at 0, `EV_NEXT_MISSING`.
-- `test_backing_replace_while_playing`: playing A at frame 500, load B
-  play=1: 240 frames of A ramping out, then `B[0]`; A is freed only after the
-  ack (ASAN catches a premature free; a test hook asserts the pointer is not
-  freed while the block that read it is open); a second replace before the ack
-  returns `LE_ERR_NOT_READY`.
-- `test_backing_independent_of_loops`: a recorded track plays; loop Stop,
-  Clear and Undo leave the backing samples unchanged; Cut sound silences the
-  backing on the next frame with no ramp and rewinds.
-- `test_backing_capture_and_stems`: arm a performance on bus 0, track and
-  backing both routed there, disarm, finalize, render: `master.pcm` equals
-  track plus backing sample for sample; the track's stem equals the track
-  alone; `events.log` contains no backing code. A take recorded while backing
-  plays contains only its input.
-- `test_backing_output_bus_processes_it`: output bus 0 level 0.5 halves the
-  backing; bus mute silences it; master gain 0.5 halves it.
-- `test_backing_lifetimes`: configure frees every buffer (ASAN leak check
-  clean), bumps the epoch, state reads no item; a retained reopen keeps the
-  buffer with frames intact, Stopped at 0, epoch bumped; destroy with
-  current, staged, retired and ended buffers frees all four.
-- `test_click_pan`: pan 0 is bit-identical to the existing click output on
-  every masked channel (the existing click tests pass unchanged); pan -1
-  leaves the right channel of the pair exactly 0.
-- Shim: `docs/PROGRESS.md`'s C++ repro with `engine_voice.h` reachable from
-  `engine_private.h`.
+Tests (`src/test/test_engine_backing.h`, literal ramps, exact comparisons):
+`test_backing_buffer_and_refusals` (including non-finite PCM),
+`_play_literal`, `_level_pan_route`, `_pause_resume_stop_ramps`,
+`_seek_clamp_and_preserve`, `_end_modes`, `_replace_while_playing` (the
+four-buffer bound reads NOT_READY while buffers are queued),
+`_independent_of_loops`, `_output_bus_processes_it`, `_in_master_capture`,
+`_excluded_from_stems`, `_lifetimes` (reopen, configure, a configure while a
+Pause still fades, destroy), `_byte_budget` (CAPACITY with nothing in
+transit, NOT_READY while a replaced buffer still fades),
+`_advance_refused_when_returns_full`, `_marks_capture` (two captures on one
+engine), `test_click_pan`; and `src/test/test_backing_races.c`, the paced
+handoff stress test, under ThreadSanitizer and AddressSanitizer.
 
 ```success-criteria
 GOAL: An independent, routed backing voice plays an engine-owned buffer sample-exactly with Play, Pause, Stop, seek and End = Stop/Repeat/Next, level, pan and an output mask, is processed by the output buses and captured on the captured bus, never reaches stems or loop takes, and the click gains pan.
 SUCCESS CRITERIA:
 - Literal-ramp oracles hold for play, level, pan, routing, ramps, seek, the three End modes, gapless Next, replace and Cut sound. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- Buffers are freed only on the control thread after the block-end ack; configure, reopen and destroy leak nothing; sanitizer and telemetry-off builds pass. | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh
+- Buffers are freed only on the control thread, after the callback hands them back through a return slot or with the callback stopped; configure, reopen and destroy leak nothing; a load past the bounds reads NOT_READY while a buffer is in transit and CAPACITY otherwise; sanitizer and telemetry-off builds pass. | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh
 - master.pcm contains the routed backing; stems and events.log do not; existing click tests are unchanged at pan 0. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Bindings are regenerated and formatted, symbol parity holds, and the C++ shim repro compiles. | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart && git diff --stat lib/src/generated) && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)"
 - The handoff stress test passes under ThreadSanitizer (no report) and AddressSanitizer; the byte budget, the refused advance and the capture marker hold. | verify: NATIVE_TESTS_ONLY=races EXTRA_CFLAGS="-fsanitize=thread -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh
@@ -642,50 +669,41 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
-### Part 2: decode and resample (built: PR #1223, about 600 lines)
+### Part 2: decode and resample (built: PR #1223, about 900 lines)
 
-Files: `src/miniaudio/miniaudio_impl.c:10` (drop `MA_NO_DECODING` only),
-new `src/core/backing_decode.c` (`le_backing_decode_file`, `le_backing_buffer_peaks`),
-`src/stretch/le_stretch.cpp` and `le_stretch.h` (`le_resample_offline`),
-`segno_engine_api.h` (`le_backing_decode_file`, `LE_ERR_TOO_LONG`),
-`src/CMakeLists.txt:60-135`, `run_native_tests.sh:70-105`,
-`tool/build_test_lib.sh`, `macos/Classes/backing_decode.c` (forwarder like
-`restore_halfband.c`), `Package.swift`, bindings. Fixtures under
-`src/test/fixtures/backing/`: `sine1k_44k1_stereo.mp3` and
-`sine1k_44k1_mono.flac` (each two seconds, generated once with ffmpeg/LAME
-from a stated command recorded in the fixture README, a few tens of KB); WAV
-fixtures are written by the test itself.
+As built; D2, D2a and D3 are the design and section 12 the record. Files:
+new `src/core/engine_decode.c` (the whitelist header parse, bounded I/O,
+the probe, the whole and bounded decode, the memory floor, the polyphase
+converter `le_resample_offline` and its offset form), `miniaudio_impl.c`
+(`MA_NO_DECODING` dropped; `MA_NO_FLAC` and `MA_DR_MP3_ONLY_MP3` added),
+`miniaudio.h` (three `SEGNO PATCH` markers, recorded in its README),
+`segno_engine_api.h` (`le_backing_decode_file`, `le_backing_probe_file`,
+`le_backing_buffer_pcm`, `LE_ERR_TOO_LONG`; `LE_ERR_UNSUPPORTED` reused),
+`engine_core.h`, `CMakeLists.txt` and the macOS forwarders, bindings,
+`run_native_tests.sh` and the ASan CI job (the fuzz driver under UBSan).
+Fixtures in `src/test/fixtures/backing/` with their README: two 1 kHz sines
+(MP3, FLAC), a short tagged MP3, an MPEG Layer II file, an AIFF and the five
+review reproducers.
 
-Tests (`test_engine_backing_decode.h`):
-
-- `test_resample_identity`: equal rates copy bit-exactly.
-- `test_resample_dc_and_tone`: DC 0.5 at 44.1→48, 48→44.1, 96→48 and
-  44.1→96 reads `0.5 ± 5e-4` away from the edges; a 1 kHz sine of amplitude
-  0.5 keeps `0.5 ± 0.0006` (±0.01 dB) by Goertzel at 1 kHz; every other
-  Goertzel bin below 18 kHz is at least 90 dB below it; output length is
-  `floor(in · out / in_rate)` exactly.
-- `test_resample_192k_to_48k` takes the half-band path and meets the same
-  bounds.
-- `test_decode_wav_formats`: test-written 16-bit, 24-bit and float WAVs of a
-  literal ramp at 48 kHz decode at 48 kHz to the exact ramp (16-bit to
-  `k / 32768.0f`), mono to dual-mono.
-- `test_decode_mp3_flac`: the fixtures decode at 48 kHz to two seconds
-  ±1152 frames (the MP3 decoder delay bound), 1 kHz dominant by ≥ 60 dB.
-- `test_decode_refusals`: a missing path, a truncated header, a text file
-  renamed `.wav`, a 4-channel WAV (`LE_ERR_INVALID`), and a WAV whose header
-  claims 901 s (`LE_ERR_TOO_LONG`, nothing allocated past the cap).
-- `test_decode_peaks`: 512 buckets of a literal ramp equal the per-bucket max.
+Tests (`test_engine_backing.h`): `test_resample_identity_and_guards`,
+`_dc_tone_and_alignment`, `_alias_and_image`; `test_backing_decode_wav_formats`,
+`_192k`, `_mp3_and_no_flac`, `_refusals`, `_bounded`, `test_backing_probe`,
+`_memory_guard` (every term of the peak, the halving path included),
+`_header_checks`, `_whitelist` (the reproducers and every accepted and
+refused format and container), `_non_finite`, `_bounded_matches_whole`
+(converted and halved), `_work_bound`; and the fuzz driver
+`src/test/fuzz_backing_decode.c` in every configuration.
 
 ```success-criteria
-GOAL: WAV and MP3 files decode off the audio thread into stereo float buffers at the engine rate through a band-limited converter, whole or bounded, with untrusted headers checked before they size anything, a streaming probe for import, and a memory floor every decode respects.
+GOAL: WAV and MP3 files decode off the audio thread into stereo float buffers at the engine rate through a band-limited converter, whole or bounded, behind a format whitelist checked before any decoder sees the file, with a streaming probe for import and a memory floor every decode respects; no input crashes, hangs or yields a non-finite sample.
 SUCCESS CRITERIA:
 - Identity is exact; DC, 1 kHz level, residual, alias, image and alignment meet the literal bounds for 44.1, 48, 88.2, 96 and 192 kHz sources. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- WAV variants decode to exact ramps; the MP3 fixture decodes to its exact length; FLAC is refused; bounded reads are exact at the engine rate and report truncation; the probe validates and peaks with no PCM retained. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- Out-of-range rates and channels, a stated length the file cannot hold, a length mismatch, a file over the cap (before allocation) and a decode that would breach the memory floor are refused with their codes. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- The fuzz driver finds nothing under ASan; telemetry-off, shim repro and symbol parity pass. | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)"
+- WAV variants decode to exact ramps; the MP3 fixtures decode, the short tagged one included; a bounded read equals the whole-file decode at the same positions; the probe validates and peaks with no PCM retained and refuses what the converter cannot reach from any engine rate. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Formats and containers outside the whitelist, the review reproducers, non-finite samples, short fact chunks, chunks past the end of the file, a length mismatch, a file over the cap and a decode that would breach the memory floor are refused with their codes, and an exhausted work budget ends a decode. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- The fuzz driver finds nothing under ASan and UBSan; telemetry-off, shim repro and symbol parity pass. | verify: EXTRA_CFLAGS="-fsanitize=address -g" FUZZ_CFLAGS="-fsanitize=undefined -fno-sanitize-recover=undefined" SEGNO_FUZZ_ITERATIONS=20000 bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)"
 - Appliance: a five-minute 44.1 kHz MP3 decodes at the device rate in under 3 s; peak RSS with A playing, B staged and C importing, all at 96 kHz, with eight tracks recorded, stays under 6.5 GB; no xrun is logged while a 96 kHz decode runs with loops playing. | verify: manual on the console: a timing log line around the decode, VmRSS from /proc/self/status, xrun count from the callback telemetry. [HARDWARE]
 NON-GOALS:
-- Streaming, FLAC (until miniaudio is updated), Ogg/AIFF/AAC, multichannel downmix, tempo or pitch change, a decode helper process.
+- Streaming, FLAC (until #1235), Ogg/AIFF/AAC/MPEG Layer I-II, multichannel downmix, tempo or pitch change, a decode helper process.
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
@@ -1025,14 +1043,37 @@ the idle-dimming owner lands it must read `BackingPlayerState.playing`.
 - The Library plan's D8 playback predicate and D9 field-table test predate the
   backing; Part 5 extends both if those parts landed first, otherwise the
   Library parts must include the backing fields when they land.
-- **One decoder (review M3).** The Library's Part 6b and #1198's bounded part
-  reader read through `le_backing_decode_file` (D2), not a Dart WAV decoder;
-  the coordinator has told both plans.
+- **One reader of audio samples (review M3(a)).** As decided in D2:
+  `le_backing_decode_file` decodes, natively and bounded, for the backing
+  player, the Library preview (Part 6b) and #1198's recovery; `wav_codec`
+  is the writer and the header and part model only. Both other plans still
+  say otherwise at the time of writing (#1198: `wav_codec` is "the one Dart
+  reader"; Library Part 6b: `wav_codec.decodeFloat32`). The coordinator
+  routes D2's wording to them.
 - **Vendored miniaudio is 0.11.21** with two published decoder CVEs
   (CVE-2024-41147, FLAC, fixed in 0.11.22; CVE-2026-32837, WAV BEXT, open
-  through 0.11.25). Part 2 compiles FLAC out and never enables WAV metadata.
-  Updating miniaudio means re-applying the `SEGNO PATCH` hunks in its ALSA
-  backend; it is a separate change the main session should file.
+  through 0.11.25) and three defects the #1223 review found, which the
+  decoder's whitelist works around: the post-init double uninit with a field
+  address (patched, `SEGNO PATCH`), dr_wav's `fact` handler wrapping a
+  chunk under 4 bytes into an endless seek, and the MS-ADPCM predictor
+  indexing a 7-entry table with a file byte. #1235 (the update, then FLAC)
+  re-checks all of them, re-applies every `SEGNO PATCH` and re-runs the
+  fuzzer.
+- **A non-finite guard on the output buses (proposed, review of #1223, H3).**
+  The backing can no longer carry a NaN or Inf (D2a), but any source can
+  still put one on a bus (a hosted plugin, a future instrument), and the
+  bus FX keep it for good: the review measured a reverb and a filter staying
+  entirely non-finite after the source was gone, and an Inf drives the
+  limiter's gain to 0 for that frame. Proposal: in `output_bus_frame`, after
+  `fx_apply_chain`, test `isfinite(l) && isfinite(r)` (two compares per bus
+  per frame, nothing else on the common path); on a failure write zero for
+  that frame and flag the bus; at the end of the block, reset the flagged
+  bus's chain state with the same reset a chain rebuild uses, and count it
+  in a snapshot field the app turns into a notice ("Output effects on Main
+  were reset: they received a damaged signal."; rule 3). `master_bus_frame`
+  replaces a non-finite sample with 0 before the limiter. The same check
+  would serve the Track and Loop stage chains. This is engine-wide, so it
+  belongs to its own issue, not to the backing parts.
 - **Loop memory is unbounded.** Lane buffers and undo layers allocate on
   demand with no budget (D11); the decode floor protects decodes from loops,
   not loops from each other. The loop owner's issue, not this plan's.
@@ -1058,6 +1099,10 @@ the idle-dimming owner lands it must read `BackingPlayerState.playing`.
   truncation or the OOM killer).
 - FLAC refused until miniaudio is updated (D2; rule 2).
 - More than two channels refused rather than downmixed (rule 3).
+- A format whitelist (WAV PCM 16/24/32 and float32, MPEG Layer III) checked
+  by our own header parse, source rates capped at 192 kHz and refused when
+  the converter cannot reach every engine rate, and a non-finite sample
+  refused as damaged (D2, D2a; rule 2: no crash, hang or poisoned audio).
 - Stop during a pending `Play selected` cancels it (rule 2: the last press
   wins and leaves a known state).
 - Cut sound stops the backing without a ramp (AB 3.6) and rewinds (the
@@ -1083,8 +1128,10 @@ Numbers come from the main session's ledger, not from scanning branches.
 Backing owns commands 88-95, perf-log facts 340-343 and `LE_ERR` -12 and -13.
 Taken so far: `LE_CMD_BACKING_LOAD` 88, `LE_CMD_BACKING_STAGE_NEXT` 89,
 `LE_CMD_BACKING_CLEAR` 90, `LE_CMD_BACKING_TRANSPORT` 91,
-`LE_CMD_BACKING_SEEK` 92 (Part 1); `LE_ERR_TOO_LONG` -12 (Part 2). Commands
-93-95, `LE_ERR` -13 and all four facts are unused: the backing is never
+`LE_CMD_BACKING_SEEK` 92 (Part 1); `LE_ERR_TOO_LONG` -12 (Part 2). A file
+outside the decoder's whitelist reuses the existing `LE_ERR_UNSUPPORTED`
+(-5), so no new code was needed for it. Commands 93-95, `LE_ERR` -13 and all
+four facts are unused: the backing is never
 perf-logged, so no fact is needed. The Session schema bump (Part 5) takes the
 next free version at landing and adds its step to the #1196 migration chain.
 
@@ -1154,6 +1201,44 @@ caught: the window, the band limit, the phase normalization, the halving, the
 stated-length cap (observable through the memory floor), the phase offset,
 the rate range, the file-size bound, both length-match checks, the memory
 floor, the truncation flag, the bounded length, and FLAC back on.
+
+### Review fixes to Parts 1 and 2 (the #1222 and #1223 reviews)
+
+**Part 1** (`6cca20754`): the registry counts transit instead of guessing it
+(the callback counts applied buffer posts and flags while the fade voice
+owns a replaced buffer), so a stage that fits once a fading buffer is back
+reads `NOT_READY` (L1); tests for a configure while a Pause still fades and
+for the capture marker across two captures on one engine (L2; the two
+surviving mutations are now caught: ASan reports the use-after-free in
+`backing_frame`, and the marker test fails); the stray `stretch.o` removed
+and `*.o` ignored (L3); the header comments (L4);
+`le_backing_buffer_from_pcm` refuses non-finite PCM (defense in depth for
+the #1223 review's H3).
+
+**Part 2** (`eaa09a351`, `e06bb06a2`): the whitelist header parse, bounded
+I/O and exact backend (H1, H2, M1); non-finite and out-of-range samples
+refused (H3); `MA_DR_MP3_ONLY_MP3`; the `SEGNO PATCH` for miniaudio's
+post-init double uninit (24 markers now, recorded in its README); rates
+capped at 192 kHz, the halving path read straight into planes, and the
+memory floor counting every term (M2); the probe refusing rates the
+converter cannot reach from any engine rate (L1); bounded reads equal to
+the whole-file decode at the same positions (L2); the missing tests (L3);
+short tagged MP3s (L4); the whole-file fuzz driver. Refusals outside the
+whitelist reuse `LE_ERR_UNSUPPORTED`; Parts 3 and 4 map it (`3f42d99d0`,
+`8f9bcba92`) instead of guessing "unsupported" from the file extension.
+
+Measured (dev machine): every review reproducer is refused at once, in
+release and under ASan. Peak memory of a 60 s, 192 kHz stereo float WAV
+decode: 117 MB at 48 kHz (the review measured 209 MB before the planes
+change; the floor now budgets 2 x 11.5 M planes plus a half plane, 115 MB)
+and 140 MB at 96 kHz. Fuzzing with the new driver under ASan and UBSan: a
+first campaign of 6 x 150,000 inputs found one defect (finite floats near
+`FLT_MAX` overflowing the converter, now refused, its input a fixture);
+after the fix, 10 x 150,000 inputs (1.5 million, seeds 1-6 and 101-108)
+found nothing. Native suites plain, ASan (with the UBSan fuzz run of
+20,000) and telemetry-off, and the races-only ThreadSanitizer pass, all
+green on the Part 2 head; the C++ shim repro compiles; bindings
+regenerated and formatted.
 
 ### Part 3 (`claude/backing-1200-p3`, stacked on Part 2)
 
@@ -1261,3 +1346,19 @@ capture (Parts 1, 6).
 | L6 store location | D7 (stays under `exportsRoot` to reuse `copyFile`; capture listing skips it, tested in Part 4) |
 | L7 #1198 oracle | section 8 |
 | L8 DAW export | 4.1 and section 8 (`backing_in_master`, the export says so) |
+
+**Delta review and the #1222/#1223 reviews (2026-10-06):**
+
+| Finding | Where it is answered |
+|---|---|
+| Delta D1 stale Part 1/2 text | Parts 1 and 2 rewritten to the as-built design |
+| Delta D2 stop band | D3 (the half-band stage stops at -78 dB) |
+| Delta D3 the D2 promise | D2 (the probe refuses rates the converter cannot reach) |
+| Delta M1 D11 worst case | D11 (2.1 GB for a 192 kHz source on a 96 kHz engine; rates capped at 192 kHz) |
+| Delta M2 untrusted files reopened | D2a rewritten; #1223 H1-H3, M1 below |
+| Delta M3(a) one reader | D2 and section 8: `le_backing_decode_file` decodes, `wav_codec` writes and models headers; the coordinator routes it to #1198 and the Library plan |
+| #1223 H1, H2, M1 | D2a (own header parse before miniaudio, bounded I/O, one backend, whitelist, `SEGNO PATCH`) |
+| #1223 H3 | D2a (non-finite and out-of-range samples refused); section 8 (proposed output-bus guard) |
+| #1223 M2 | D11; Part 2 (planes, full estimate, 192 kHz cap) |
+| #1223 L1-L4 | D2; section 12 (review fixes) |
+| #1222 L1-L4 | 4.1 item 4; section 12 (review fixes) |
