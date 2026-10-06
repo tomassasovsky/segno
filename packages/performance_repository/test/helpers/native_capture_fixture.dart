@@ -38,6 +38,16 @@ void writeNativeSidecar(
   ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(json));
 }
 
+/// Writes [samples] as raw little-endian float32 bytes to [path]: the
+/// `master.pcm` / `input-<n>.pcm` a capture from before #1198 left.
+void writeRawPcm(String path, Float32List samples) {
+  final bytes = ByteData(samples.length * 4);
+  for (var i = 0; i < samples.length; i++) {
+    bytes.setFloat32(i * 4, samples[i], Endian.little);
+  }
+  File(path).writeAsBytesSync(bytes.buffer.asUint8List());
+}
+
 /// Writes an open part the way `perf_drain.c` leaves one when the process
 /// dies: the 84-byte header with its RIFF and data sizes still 0, then the
 /// float [samples] as written, plus [tornBytes] of an unfinished frame.

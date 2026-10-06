@@ -111,41 +111,23 @@ class PerformanceRepository {
   ///
   /// The same constant as [reservedRecoveredDirName]: [renameCapture]'s slug
   /// validation refuses the name, since a take renamed onto it would BE this
-  /// area — enumerated by the retention prune, adopted by future salvages.
+  /// area, adopted by future salvages.
   static const String recoveredDirName = reservedRecoveredDirName;
 
-  /// How long a salvaged capture lives under [recoveredDirName] before
-  /// [runBootRecovery] prunes it at the next boot.
-  ///
-  /// Measured from when the bundle *landed* in the recovered area — read
-  /// from the [recoveredAtStampName] stamp the move writes — not from when
-  /// it was captured or finalized, so a bundle salvaged (or stranded, then
-  /// swept) after the console sat unpowered for weeks still gets its full
-  /// window on disk.
-  static const Duration recoveredRetention = Duration(days: 30);
+  /// The largest raw `.pcm` file of a pre-#1198 capture that finalize still
+  /// converts by reading it whole, as it always did. A capture with a larger
+  /// one stays unfinalized, in place, for Part 8's bounded conversion.
+  static const int legacyConvertMaxBytes = 1 << 30;
 
-  /// The provenance + retention-clock stamp inside every recovered bundle:
-  /// epoch milliseconds as text, written on the SOURCE bundle immediately
-  /// before the move's rename so the rename carries it atomically — a
-  /// bundle can never exist in the recovered area without its stamp, and a
-  /// crash before the rename just re-stamps on that boot's retry. The prune
-  /// ages ONLY stamped entries: the stamp is what proves the salvage moved
-  /// a bundle in (a finished take a user drags into the area by hand has a
-  /// sidecar but no stamp, and is never the prune's to delete), and its
-  /// contents — not any filesystem mtime, which copies and moves rewrite
-  /// freely — are the retention clock.
+  /// The provenance stamp inside every recovered bundle: epoch
+  /// milliseconds as text, written on the SOURCE bundle immediately before
+  /// the move's rename so the rename carries it atomically — a bundle can
+  /// never exist in the recovered area without its stamp, and a crash before
+  /// the rename just re-stamps on that boot's retry. It records when the
+  /// salvage moved the bundle in. Nothing ages or deletes a recovered
+  /// bundle: recovered audio is kept until the user removes it (owner
+  /// decision, #1198).
   static const String recoveredAtStampName = '.recovered-at';
-
-  /// Timestamps before this instant are treated as evidence of a wrong
-  /// clock, and the prune never acts on them. An RTC-less appliance (the Pi
-  /// console) boots at/near the epoch until its first NTP sync, so a capture
-  /// recovered before that sync carries a near-epoch [recoveredAtStampName]
-  /// stamp — comparing it against the later-corrected clock computes
-  /// decades of "age" and would delete yesterday's recovery. Anything
-  /// stamped before this project's own era plainly wasn't recovered then;
-  /// keep it and let a boot with a sane clock (which re-stamps nothing) age
-  /// it out only if it truly is old.
-  static final DateTime pruneSanityFloor = DateTime.utc(2026);
 
   /// The marker file [runBootRecovery] drops inside a bundle before
   /// salvaging it, and removes only after the bundle lands under
@@ -649,9 +631,8 @@ class PerformanceRepository {
     if (dir.existsSync()) await dir.delete(recursive: true);
   }
 
-  /// Boot-time crash salvage, run silently (D-SALVAGE, #679): prunes the
-  /// [recoveredDirName] area of entries older than [recoveredRetention],
-  /// then salvages — finalize, stem render, move — every capture a crash
+  /// Boot-time crash salvage, run silently (D-SALVAGE, #679): salvages —
+  /// finalize, stem render, move — every capture a crash
   /// left unfinalized, plus any bundle a previous boot finalized but never
   /// moved ([_strandedSalvage]), each finished bundle landing in
   /// `{exportsRoot}/`[recoveredDirName]`/<slug>/` — rendered, usable audio
@@ -665,10 +646,10 @@ class PerformanceRepository {
   /// missing sidecar, or a thrown write — leaves the raw bundle in place,
   /// untouched, to be retried at the next boot; what could not be rendered
   /// is never deleted. Retries are unbounded but cheap (the undecodable
-  /// -sidecar case is [_finalize]'s documented early return), and the prune
-  /// only ever touches bundles that DID recover, so a permanently
-  /// unrecoverable bundle stays on disk for the user rather than aging out
-  /// silently. A failed *stem render* on a finalized bundle still moves it —
+  /// -sidecar case is [_finalize]'s documented early return). Nothing here
+  /// deletes audio: a permanently unrecoverable bundle stays on disk for the
+  /// user, and a recovered one stays in [recoveredDirName] until the user
+  /// removes it. A failed *stem render* on a finalized bundle still moves it —
   /// the bundle is complete and valid without its stems, the same
   /// partial-success posture [_finalize] itself takes. Each capture is
   /// salvaged under its own guard: one bundle's failure never aborts its
@@ -691,7 +672,6 @@ class PerformanceRepository {
     } on Exception {
       return; // cannot resolve the root: nothing to recover this boot
     }
-    _pruneRecovered(root);
     final List<UnfinalizedCapture> unfinalized;
     try {
       unfinalized = await findUnfinalized();
@@ -811,13 +791,11 @@ class PerformanceRepository {
   /// salvage complete.
   ///
   /// Writes the [recoveredAtStampName] stamp on the SOURCE, before anything
-  /// else in the move: the rename then carries provenance and retention
-  /// clock atomically, so no crash window can land a bundle in the
-  /// recovered area unstamped (where the prune would otherwise have only a
-  /// stale finalize time to age it by — a bundle stranded through a month
-  /// unpowered would be pruned on the very next boot). A failure anywhere
-  /// mid-move merely leaves a stamp travelling with the bundle, which the
-  /// next boot's retry overwrites with its own fresh landing time.
+  /// else in the move: the rename then carries it atomically, so no crash
+  /// window can land a bundle in the recovered area unstamped. A failure
+  /// anywhere mid-move merely leaves a stamp travelling with the bundle,
+  /// which the next boot's retry overwrites with its own fresh landing
+  /// time.
   void _moveToRecovered(String root, String dir) {
     File(
       '$dir/$recoveredAtStampName',
@@ -862,47 +840,6 @@ class PerformanceRepository {
       out.add(entity.path);
     }
     return out;
-  }
-
-  /// Deletes recovered-area entries older than [recoveredRetention], aged
-  /// by — and ONLY by — the salvage's own [recoveredAtStampName] stamp.
-  /// The stamp is provenance, not just shape: a finished take a user drags
-  /// into the area by hand carries a sidecar but no stamp, so nothing the
-  /// salvage didn't move in is ever the prune's to delete (belt to
-  /// [performanceCaptureSlug]'s reserved-name refusal). Age is read from
-  /// the stamp's contents, never a filesystem mtime — mtimes are rewritten
-  /// by copies and moves, and were the fragility behind two review rounds
-  /// here. A stamp before [pruneSanityFloor] is never acted on — see that
-  /// constant for the RTC-less-boot clock hazard — and an unreadable stamp
-  /// means no age worth guessing at. An entry the filesystem refuses is
-  /// skipped — and an unreadable recovered area skips the prune whole — the
-  /// next boot retries; a prune must never be the thing that takes boot
-  /// recovery down.
-  void _pruneRecovered(String root) {
-    final recoveredRoot = Directory('$root/$recoveredDirName');
-    if (!recoveredRoot.existsSync()) return;
-    final List<FileSystemEntity> entries;
-    try {
-      entries = recoveredRoot.listSync();
-    } on FileSystemException {
-      return; // unreadable area: prune waits for a healthier boot
-    }
-    for (final entity in entries) {
-      if (entity is! Directory) continue;
-      try {
-        final stampFile = File('${entity.path}/$recoveredAtStampName');
-        if (!stampFile.existsSync()) continue; // not ours: never delete
-        final millis = int.tryParse(stampFile.readAsStringSync().trim());
-        if (millis == null) continue; // unreadable stamp: no age to act on
-        final recoveredAt = DateTime.fromMillisecondsSinceEpoch(millis);
-        if (recoveredAt.isBefore(pruneSanityFloor)) continue;
-        if (_now().difference(recoveredAt) > recoveredRetention) {
-          entity.deleteSync(recursive: true);
-        }
-      } on FileSystemException {
-        continue;
-      }
-    }
   }
 
   /// Whether [dir]'s sidecar provably reads back with `finalized: true` — a
@@ -979,11 +916,31 @@ class PerformanceRepository {
         // recoverable to finalize), instead of upgrading every outer guard.
         return;
       }
-      // The drain writes each stream as finished float WAV parts, so there
-      // is nothing to convert. A crash leaves the open part's sizes
-      // unpatched; seal it here so a salvaged take still plays (#1198).
-      // Part 8 replaces this with the checkpoint-based recovery.
-      _sealOpenParts(dir);
+      final layout =
+          native['channel_layout'] as Map<String, dynamic>? ?? const {};
+      final capturedInputs = [
+        for (final c
+            in (layout['captured_inputs'] as List<dynamic>? ?? const []))
+          (c as num).toInt(),
+      ];
+      final legacy = [
+        File('$dir/master.pcm'),
+        for (final input in capturedInputs) File('$dir/input-$input.pcm'),
+      ].where((f) => f.existsSync()).toList();
+      if (legacy.isNotEmpty && !File('$dir/master-001.wav').existsSync()) {
+        // A capture from before #1198: raw PCM, no parts. Converted exactly
+        // as before, so an existing install's takes keep their audio. A raw
+        // file too large to read whole is left unfinalized, in place, for
+        // Part 8's bounded conversion; it is never finalized without audio.
+        if (legacy.any((f) => f.lengthSync() > legacyConvertMaxBytes)) return;
+        await _convertLegacyPcm(dir, native, capturedInputs);
+      } else {
+        // The drain writes each stream as finished float WAV parts, so there
+        // is nothing to convert. A crash leaves the open part's sizes
+        // unpatched; seal it here so a salvaged take still plays (#1198).
+        // Part 8 replaces this with the checkpoint-based recovery.
+        _sealOpenParts(dir);
+      }
 
       var resolvedArm = armSnapshot;
       final armFile = File('$dir/$_armSnapshotFileName');
@@ -1144,6 +1101,50 @@ class PerformanceRepository {
         'effects': [for (final e in m.effects) e.toJson()],
       },
   ];
+
+  /// Converts a pre-#1198 capture's raw `master.pcm` and `input-<n>.pcm` to
+  /// `master.wav` and `live-input-<n>.wav`, as every finalize did before the
+  /// drain wrote parts.
+  Future<void> _convertLegacyPcm(
+    String dir,
+    Map<String, dynamic> native,
+    List<int> capturedInputs,
+  ) async {
+    final layout =
+        native['channel_layout'] as Map<String, dynamic>? ?? const {};
+    final sampleRate = (native['sample_rate'] as num?)?.toInt() ?? 0;
+    final masterChannels = (layout['master_channels'] as num?)?.toInt() ?? 1;
+    final masterPcm = File('$dir/master.pcm');
+    if (masterPcm.existsSync()) {
+      await File('$dir/master.wav').writeAsBytes(
+        WavCodec.encodeFloat32(
+          samples: _readRawPcm(masterPcm),
+          sampleRate: sampleRate,
+          channels: masterChannels,
+        ),
+      );
+    }
+    for (final input in capturedInputs) {
+      final raw = File('$dir/input-$input.pcm');
+      if (!raw.existsSync()) continue;
+      await File('$dir/live-input-$input.wav').writeAsBytes(
+        WavCodec.encodeFloat32(
+          samples: _readRawPcm(raw),
+          sampleRate: sampleRate,
+          channels: 2,
+        ),
+      );
+    }
+  }
+
+  Float32List _readRawPcm(File file) {
+    final bytes = file.readAsBytesSync();
+    return Float32List.view(
+      bytes.buffer,
+      bytes.offsetInBytes,
+      bytes.lengthInBytes ~/ 4,
+    );
+  }
 
   /// A part file the drain names: `master-001.wav`, `input-3-002.wav`.
   static final _partFile = RegExp(r'^(master|input-\d+)-\d{3}\.wav$');

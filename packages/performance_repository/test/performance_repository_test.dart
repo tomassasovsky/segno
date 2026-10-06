@@ -106,67 +106,6 @@ class _ThrowAfterArmEngine extends FakePerformanceEngine {
   }
 }
 
-/// A [File] whose [readAsStringSync] throws — an `IOOverrides` hook modeling
-/// a recovered-at stamp the filesystem refuses to read, so a test can drive
-/// the prune's skip-and-continue branch deterministically. Only the members
-/// the prune touches on the stamp file are implemented; anything else is a
-/// test bug and throws.
-class _ThrowingStampFile implements File {
-  _ThrowingStampFile(this._inner);
-
-  final File _inner;
-
-  @override
-  bool existsSync() => _inner.existsSync();
-
-  @override
-  String readAsStringSync({Encoding encoding = utf8}) =>
-      throw const FileSystemException('stamp unreadable');
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
-    'not reached by _pruneRecovered on the stamp file: $invocation',
-  );
-}
-
-/// Writes [dir]'s recovered-at stamp as the salvage itself would, dated
-/// [at] — the fixture for aging recovered entries deterministically.
-void writeRecoveredStamp(String dir, DateTime at) {
-  File(
-    '$dir/${PerformanceRepository.recoveredAtStampName}',
-  ).writeAsStringSync(at.millisecondsSinceEpoch.toString());
-}
-
-/// A [Directory] whose [listSync] throws — an `IOOverrides` hook modeling a
-/// recovered/ area the filesystem refuses to enumerate (fsck-damaged perms,
-/// a yanked exports volume), so a test can drive the prune's skip-the-area
-/// branch deterministically. [existsSync]/[createSync] delegate (the same
-/// path is legitimately touched by the salvage's move); anything else is a
-/// test bug and throws.
-class _ThrowingListDirectory implements Directory {
-  _ThrowingListDirectory(this._inner);
-
-  final Directory _inner;
-
-  @override
-  bool existsSync() => _inner.existsSync();
-
-  @override
-  List<FileSystemEntity> listSync({
-    bool recursive = false,
-    bool followLinks = true,
-  }) => throw const FileSystemException('unreadable directory');
-
-  @override
-  void createSync({bool recursive = false}) =>
-      _inner.createSync(recursive: recursive);
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
-    'not reached by boot recovery on the recovered dir: $invocation',
-  );
-}
-
 void main() {
   late Directory tempDir;
   late FakePerformanceEngine engine;
@@ -1176,6 +1115,32 @@ void main() {
       );
     }
 
+    test('a capture from before #1198 (raw PCM, no parts) still converts '
+        'to WAV, as it always did', () async {
+      await repo.arm();
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+      final dir = repo.armedDirectory!;
+      writeNativeSidecar(dir, capturedInputs: const [0]);
+      writeRawPcm(
+        '$dir/master.pcm',
+        Float32List.fromList([0.1, 0.2, 0.3, 0.4]),
+      );
+      writeRawPcm('$dir/input-0.pcm', Float32List.fromList([0.5, 0.6]));
+
+      await repo.disarm();
+
+      final master = WavCodec.decodeFloat32(
+        File('$dir/master.wav').readAsBytesSync(),
+      );
+      expect(master.channels, 2);
+      expect(master.samples, Float32List.fromList([0.1, 0.2, 0.3, 0.4]));
+      final input = WavCodec.decodeFloat32(
+        File('$dir/live-input-0.wav').readAsBytesSync(),
+      );
+      expect(input.samples, Float32List.fromList([0.5, 0.6]));
+      expect(File('$dir/master.pcm').existsSync(), isTrue);
+    });
+
     test('seals the open parts a crash left, dropping a torn frame, and '
         'converts nothing (#1198)', () async {
       await armAndSeedNative(engine, repo);
@@ -1200,6 +1165,28 @@ void main() {
       expect(File('$dir/master.wav').existsSync(), isFalse);
       expect(File('$dir/live-input-0.wav').existsSync(), isFalse);
     });
+
+    test(
+      'floors a mono part to whole mono frames, read from its header',
+      () async {
+        await repo.arm();
+        clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+        final dir = repo.armedDirectory!;
+        writeNativeSidecar(dir, masterChannels: 1);
+        writeOpenPart(
+          '$dir/master-001.wav',
+          Float32List.fromList([0.1, 0.2, 0.3]),
+          channels: 1,
+          tornBytes: 2,
+        );
+
+        await repo.disarm();
+
+        // Three mono frames: 12 bytes, not floored to stereo's 8.
+        expect(partSizes('$dir/master-001.wav'), (84 - 8 + 12, 12));
+        expect(File('$dir/master-001.wav').lengthSync(), 84 + 12);
+      },
+    );
 
     test('leaves a sealed part and a file that is not a part alone', () async {
       await repo.arm();
@@ -1755,6 +1742,51 @@ void main() {
   });
 
   group('runBootRecovery (silent boot salvage, #679)', () {
+    test('a crashed capture from before #1198 recovers with its WAV and is '
+        'never deleted afterwards', () async {
+      final dir = '${tempDir.path}/exports/perf-legacy';
+      Directory(dir).createSync(recursive: true);
+      writeNativeSidecar(dir);
+      writeRawPcm('$dir/master.pcm', Float32List.fromList([0.25, 0.5]));
+
+      await repo.runBootRecovery();
+      final recovered = '${tempDir.path}/exports/recovered/perf-legacy';
+      expect(File('$recovered/master.wav').existsSync(), isTrue);
+      expect(File('$recovered/master.pcm').existsSync(), isTrue);
+
+      clock = clock.add(const Duration(days: 400));
+      await repo.runBootRecovery();
+      expect(File('$recovered/master.wav').existsSync(), isTrue);
+    });
+
+    test('a pre-#1198 capture too large to read whole stays unfinalized in '
+        'place, raw audio intact, for Part 8', () async {
+      final dir = '${tempDir.path}/exports/perf-huge';
+      Directory(dir).createSync(recursive: true);
+      writeNativeSidecar(dir);
+      // Sparse: the length is past the bound, the disk holds almost nothing.
+      File('$dir/master.pcm').openSync(mode: FileMode.write)
+        ..setPositionSync(PerformanceRepository.legacyConvertMaxBytes)
+        ..writeFromSync([0, 0, 0, 0])
+        ..closeSync();
+
+      await repo.runBootRecovery();
+
+      expect(
+        File('$dir/master.pcm').lengthSync(),
+        PerformanceRepository.legacyConvertMaxBytes + 4,
+      );
+      expect(File('$dir/master.wav').existsSync(), isFalse);
+      expect(
+        (await repo.findUnfinalized()).map((c) => c.directory),
+        contains(dir),
+      );
+      expect(
+        Directory('${tempDir.path}/exports/recovered/perf-huge').existsSync(),
+        isFalse,
+      );
+    });
+
     /// A crashed capture: unfinalized sidecar plus an open master part, the
     /// same fixture shape the recoverCapture tests use.
     String seedCrashed(String slug) {
@@ -1821,31 +1853,25 @@ void main() {
     });
 
     test(
-      'prunes recovered entries older than recoveredRetention and keeps '
-      'fresh ones',
+      'never deletes a recovered take, however long ago it landed — '
+      'recovered audio is kept until the user removes it',
       () async {
         final recoveredRoot = '${tempDir.path}/exports/recovered';
         final old = '$recoveredRoot/perf-old';
-        final fresh = '$recoveredRoot/perf-fresh';
         Directory(old).createSync(recursive: true);
-        Directory(fresh).createSync(recursive: true);
         writeNativeSidecar(old, finalized: true);
-        writeNativeSidecar(fresh, finalized: true);
-        // Age is the recovered-at stamp's contents (landing time); the
-        // injected clock is "now". One entry past the window, one
-        // comfortably inside it.
-        writeRecoveredStamp(
-          old,
-          clock.subtract(
-            PerformanceRepository.recoveredRetention + const Duration(days: 1),
-          ),
+        File(
+          '$old/${PerformanceRepository.recoveredAtStampName}',
+        ).writeAsStringSync(
+          clock
+              .subtract(const Duration(days: 3650))
+              .millisecondsSinceEpoch
+              .toString(),
         );
-        writeRecoveredStamp(fresh, clock.subtract(const Duration(days: 1)));
 
         await repo.runBootRecovery();
 
-        expect(Directory(old).existsSync(), isFalse);
-        expect(Directory(fresh).existsSync(), isTrue);
+        expect(Directory(old).existsSync(), isTrue);
       },
     );
 
@@ -2193,40 +2219,6 @@ void main() {
     );
 
     test(
-      'an unreadable recovered/ area skips the prune whole without taking '
-      'the rest of boot recovery down (#679 r3)',
-      () async {
-        final recoveredRoot = '${tempDir.path}/exports/recovered';
-        Directory(recoveredRoot).createSync(recursive: true);
-        final crashed = seedCrashed('perf-crashed');
-
-        final testZone = Zone.current;
-        await IOOverrides.runZoned(
-          () => repo.runBootRecovery(),
-          createDirectory: (path) {
-            // Real directories must be constructed outside the override
-            // zone, or the Directory() factory would re-enter this callback
-            // forever.
-            final real = testZone.run(() => Directory(path));
-            return path == recoveredRoot ? _ThrowingListDirectory(real) : real;
-          },
-        );
-
-        expect(
-          Directory(crashed).existsSync(),
-          isFalse,
-          reason:
-              'the crashed capture still recovered — a broken prune must '
-              'not abort the boot',
-        );
-        expect(
-          Directory('$recoveredRoot/perf-crashed').existsSync(),
-          isTrue,
-        );
-      },
-    );
-
-    test(
       'sweeps a finalized bundle stranded with its recovery marker into '
       'recovered/, and never touches an unmarked finished take (#679 r2)',
       () async {
@@ -2280,7 +2272,7 @@ void main() {
     );
 
     test(
-      'survives the boot scan itself failing after prune/sweep already ran '
+      'survives the boot scan itself failing after the sweep already ran '
       '(the root resolves once, then the volume goes away)',
       () async {
         var rootCalls = 0;
@@ -2302,7 +2294,7 @@ void main() {
           rootCalls,
           2,
           reason:
-              'prune/sweep consumed the first resolution; the scan '
+              'the sweep consumed the first resolution; the scan '
               're-resolved, failed, and was contained',
         );
       },
@@ -2330,130 +2322,6 @@ void main() {
             '$stranded/${PerformanceRepository.recoveryMarkerName}',
           ).existsSync(),
           isTrue,
-        );
-      },
-    );
-
-    test(
-      'prune never deletes an entry without the recovered-at stamp — '
-      'neither a sidecar-less squatter nor a user-dragged finished take '
-      "(sidecar and all) is the salvage's to age out (#679 r5, r6)",
-      () async {
-        final recoveredRoot = '${tempDir.path}/exports/recovered';
-        // A take's insides squatting the area: subdirectories with audio,
-        // no sidecar, no stamp.
-        final squatter = '$recoveredRoot/loops';
-        Directory(squatter).createSync(recursive: true);
-        File('$squatter/track0-lane0.wav').writeAsStringSync('audio');
-        // A finished take a user dragged in by hand: a full capture bundle,
-        // sidecar included — everything but the salvage's own stamp. Shape
-        // says "capture"; only provenance says "ours to prune".
-        final dragged = '$recoveredRoot/my-best-take';
-        Directory(dragged).createSync(recursive: true);
-        writeNativeSidecar(dragged, finalized: true);
-        // An old genuine recovery alongside them, proving the prune itself
-        // still ran and the unstamped entries were skipped, not the whole
-        // area.
-        final old = '$recoveredRoot/perf-old';
-        Directory(old).createSync(recursive: true);
-        writeNativeSidecar(old, finalized: true);
-        writeRecoveredStamp(
-          old,
-          clock.subtract(
-            PerformanceRepository.recoveredRetention + const Duration(days: 1),
-          ),
-        );
-
-        await repo.runBootRecovery();
-
-        expect(
-          Directory(squatter).existsSync(),
-          isTrue,
-          reason: 'no stamp means the salvage never moved it here',
-        );
-        expect(File('$squatter/track0-lane0.wav').existsSync(), isTrue);
-        expect(
-          Directory(dragged).existsSync(),
-          isTrue,
-          reason:
-              'a sidecar proves "is a capture bundle", not provenance — '
-              'the dragged-in take survives pruning forever',
-        );
-        expect(Directory(old).existsSync(), isFalse);
-      },
-    );
-
-    test(
-      'an unparsable recovered-at stamp yields no age to act on — the '
-      'entry survives, its prunable sibling still goes (#679 r6)',
-      () async {
-        final recoveredRoot = '${tempDir.path}/exports/recovered';
-        final garbled = '$recoveredRoot/perf-garbled';
-        final old = '$recoveredRoot/perf-old';
-        Directory(garbled).createSync(recursive: true);
-        Directory(old).createSync(recursive: true);
-        writeNativeSidecar(garbled, finalized: true);
-        writeNativeSidecar(old, finalized: true);
-        File(
-          '$garbled/${PerformanceRepository.recoveredAtStampName}',
-        ).writeAsStringSync('not a number');
-        writeRecoveredStamp(
-          old,
-          clock.subtract(
-            PerformanceRepository.recoveredRetention + const Duration(days: 1),
-          ),
-        );
-
-        await repo.runBootRecovery();
-
-        expect(Directory(garbled).existsSync(), isTrue);
-        expect(Directory(old).existsSync(), isFalse);
-      },
-    );
-
-    test(
-      'an entry whose stamp the filesystem refuses to read is skipped by '
-      'the prune — its prunable sibling still goes, and boot does not crash',
-      () async {
-        final recoveredRoot = '${tempDir.path}/exports/recovered';
-        final unreadable = '$recoveredRoot/perf-unreadable';
-        final old = '$recoveredRoot/perf-old';
-        Directory(unreadable).createSync(recursive: true);
-        Directory(old).createSync(recursive: true);
-        writeNativeSidecar(unreadable, finalized: true);
-        writeNativeSidecar(old, finalized: true);
-        // Both entries are old enough to prune; only the readable one may
-        // actually go.
-        final oldStamp = clock.subtract(
-          PerformanceRepository.recoveredRetention + const Duration(days: 1),
-        );
-        writeRecoveredStamp(unreadable, oldStamp);
-        writeRecoveredStamp(old, oldStamp);
-
-        final testZone = Zone.current;
-        await IOOverrides.runZoned(
-          () => repo.runBootRecovery(),
-          createFile: (path) {
-            // Real files must be constructed outside the override zone, or
-            // the File() factory would re-enter this callback forever.
-            final real = testZone.run(() => File(path));
-            return path ==
-                    '$unreadable/'
-                        '${PerformanceRepository.recoveredAtStampName}'
-                ? _ThrowingStampFile(real)
-                : real;
-          },
-        );
-
-        expect(
-          Directory(unreadable).existsSync(),
-          isTrue,
-          reason: 'an unreadable stamp is skipped, never guessed at',
-        );
-        expect(
-          Directory(old).existsSync(),
-          isFalse,
-          reason: 'the loop continued past the failure to its sibling',
         );
       },
     );
@@ -2565,30 +2433,10 @@ void main() {
     );
 
     test(
-      'never prunes an entry whose stamp predates the sanity floor — an '
-      'RTC-less boot writes near-epoch stamps that a later-corrected clock '
-      'would misread as decades of age (#679 r2)',
-      () async {
-        final nearEpoch = '${tempDir.path}/exports/recovered/perf-preclock';
-        Directory(nearEpoch).createSync(recursive: true);
-        writeNativeSidecar(nearEpoch, finalized: true);
-        writeRecoveredStamp(nearEpoch, DateTime.utc(1970, 1, 2));
-
-        await repo.runBootRecovery();
-
-        expect(
-          Directory(nearEpoch).existsSync(),
-          isTrue,
-          reason: 'a clearly-wrong timestamp must never justify a delete',
-        );
-      },
-    );
-
-    test(
       'the recovered-at stamp is written on the SOURCE before the rename — '
       'a move that dies mid-way leaves the stamp with the bundle, and the '
-      'retry re-stamps at ITS landing, so retention runs from arrival, '
-      'never from a month-old first attempt (#679 r6)',
+      'retry re-stamps at ITS landing, so the stamp records the arrival, '
+      'never a month-old first attempt (#679 r6)',
       () async {
         // Boot 1: the move fails after the stamp (a file squatting where
         // recovered/ must go) — the crash-window simulation.
@@ -2629,25 +2477,13 @@ void main() {
             '$moved/${PerformanceRepository.recoveredAtStampName}',
           ).readAsStringSync(),
           boot2Clock.millisecondsSinceEpoch.toString(),
-          reason: 'the landing re-stamps: retention runs from arrival',
+          reason: 'the landing re-stamps: the stamp records the arrival',
         );
 
-        // Boot 3, a day later: well inside the window measured from
-        // landing — 41 days from the first attempt must not count.
-        clock = clock.add(const Duration(days: 1));
+        // Later boots keep it: recovered audio is never deleted.
+        clock = clock.add(const Duration(days: 400));
         await repo.runBootRecovery();
-        expect(
-          Directory(moved).existsSync(),
-          isTrue,
-          reason: 'full retention from landing, not from the first attempt',
-        );
-
-        // And once the window HAS elapsed from landing, it goes.
-        clock = boot2Clock.add(
-          PerformanceRepository.recoveredRetention + const Duration(days: 1),
-        );
-        await repo.runBootRecovery();
-        expect(Directory(moved).existsSync(), isFalse);
+        expect(Directory(moved).existsSync(), isTrue);
       },
     );
 
@@ -2753,7 +2589,7 @@ void main() {
     test(
       'refuses the reserved name "recovered" — case-insensitively, since a '
       'case-insensitive exports volume would make the renamed take BE the '
-      'salvage area, pruned by retention and adopted by future salvages '
+      'salvage area, adopted by future salvages '
       '(#679 r5)',
       () async {
         final dir = Directory('${root.path}/perf-a')
