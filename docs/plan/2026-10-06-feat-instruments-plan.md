@@ -545,6 +545,41 @@ take uses one lane of eight, Pan places it, and no stereo-pair rules apply.
   first can never write into an engine port again. `le_engine_destroy`
   detaches every attached port first. A TSAN test in `native-tests-tsan`
   races a producer thread against detach, reattach and destroy.
+- **The shared sink, final layout (one design with the MIDI clock plan
+  #1236, M8; built in `claude/midi-clock-1228-p1`,
+  `src/midi/le_midi_port.h`).**
+  - Ring entry, 16 bytes: `le_midi_port_event {u64 t_ns; u32 gen; u8 status,
+    data1, data2, reserved}`. `t_ns` is `CLOCK_MONOTONIC` at arrival (the
+    base of `le_now_ns`); `gen` is the port generation it was pushed under.
+  - Port, `le_midi_port` (engine-owned, `LE_MAX_MIDI_PORTS = 8`):
+    `_Atomic u32 a_gen` (bumped by every bind and unbind), `_Atomic i32
+    a_lost`, `_Atomic size_t a_gap` (0, or the ring tail at the latest loss
+    plus one; moved forward by the producer, cleared by the consumer once
+    its head has passed it: the overflow mark above), the owning sink, SPSC
+    `head`/`tail`, and 256 entries.
+  - Sink, `le_midi_sink {port, gen, in_flight}`, the first member of
+    `struct le_midi` (pinned by a static assertion), so the engine binds a
+    capture by casting `le_midi*` and links no MIDI backend.
+  - Quiescence: every producer write into engine memory sits between
+    `le_midi_sink_enter` (counter `seq_cst` increment, then `seq_cst` load
+    of the port) and `le_midi_sink_leave` (release decrement); unbind is a
+    `seq_cst` exchange of the port to NULL, then `seq_cst` loads of the
+    counter until zero. The ring push and the lost mark are bracketed
+    today; the MIDI clock relay and DIN Thru rings (#1236 Parts 6 and 7)
+    are written inside the same bracket, never outside it.
+  - Kinds: the sink carries Note On/Off, CC, channel pressure (0xD0),
+    pitch bend (0xE0), Song Position (0xF2), Timing Clock, Start, Continue
+    and Stop; the Dart ring keeps Note, CC and Program only, so `_parse` is
+    unchanged.
+  - One consumer: `le_midi_ports_drain`, right after the command drain, is
+    the only code that clears `a_gap` and observes `a_lost` edges; it drops
+    stale-generation events and dispatches instrument routing (this plan)
+    and the clock follower (#1236) in ring order, with the loss reported at
+    its exact position.
+  - API, direct calls, no commands: `le_engine_attach_midi_input(e, m,
+    port)` and `le_engine_detach_midi_input(e, port)` (the former commands
+    100 and 101 are not needed: generations make a rebind safe without the
+    audio thread's acknowledgement; 100 and 101 return to the spare range).
 - **Device loss (review L7).** The ALSA backend already receives the
   sequencer's port-exit announcements; Part 2c makes a `PORT_EXIT` or
   `PORT_UNSUBSCRIBED` for the open source mark the capture lost natively
@@ -736,10 +771,11 @@ TU, with their own tests.
   merges them by it (at most 512 events per block, the rest wait in order),
   so a note-on and its note-off posted before one block apply in that order
   while note-ons can never crowd out a release.
-- `ports[LE_MAX_MIDI_PORTS = 8]` (Part 2c): `_Atomic uint32_t a_gen`,
-  `_Atomic int32_t a_overflow`, `_Atomic int32_t a_lost`, and an SPSC ring of
-  `{u32 gen; u8 status, d1, d2}` (256). Producer: that port's OS MIDI thread
-  through the quiescent sink; consumer: the audio thread.
+- `midi_ports[LE_MAX_MIDI_PORTS = 8]` (the shared sink, built by #1236
+  Part 1 before Part 2c): the 16-byte timestamped entry and the port layout
+  of D4's "shared sink, final layout". Producer: that port's OS MIDI thread
+  through the quiescent sink; consumer: the audio thread's
+  `le_midi_ports_drain`.
 - `routes[2]` plus `_Atomic int32_t a_routes_live`, `a_routes_seen`
   (Part 2c): per instrument `{midi_enabled, port, channel (0 = All), low,
   high, remap_count, remaps[32] {port, channel, kind (note | cc), number,
@@ -964,26 +1000,28 @@ the quiescent sink on `le_midi` (in-flight counter, detach-and-spin in the
 `seq_cst` order of D4, `le_midi_close` performing it with a generation bump
 and the lost mark, its TSAN test); this part adds the instrument port rings
 behind it and no second sink.
-the parser gains `LE_MIDI_PITCH_BEND` (0xE0, 14-bit) and
-`LE_MIDI_CHANNEL_PRESSURE` (0xD0), still filtered out of the Dart ring so
-`_parse` is unchanged; the Linux backend converts `SND_SEQ_EVENT_PITCHBEND`
-and `SND_SEQ_EVENT_CHANPRESS` (`midi_backend_linux.c:136-171`) and handles
-`PORT_EXIT` / `PORT_UNSUBSCRIBED` for its source; the CoreMIDI backend
-(`midi_backend_apple.c:110-150` parses the raw packets) marks a removed source
-lost from its notify callback (L7). Engine: port rings with the overflow flag
-(H3), routes with the coalesced two-slot publish (L8), note-off and CC64-off
+The shared sink also already carries pitch bend and channel pressure (parser
+kinds `LE_MIDI_PITCH_BEND`, `LE_MIDI_CHANNEL_PRESSURE`, kept out of the Dart
+ring), the ALSA conversions of PITCHBEND and CHANPRESS, and the ALSA source
+PORT_EXIT / CLIENT_EXIT / PORT_UNSUBSCRIBED lost mark. The CoreMIDI
+removed-source notification is not built there: CoreMIDI delivers notify
+callbacks on the creating thread's run loop, which the Dart thread does not
+run, and macOS is a development host only; the 2 s Dart poll covers it.
+This part adds: the dispatch from `le_midi_ports_drain`'s marked points into
+routing, releases at the overflow mark (H3), routes with the coalesced
+two-slot publish (L8), note-off and CC64-off
 first by origin (M1), origin encoding with the tag bit and the contributor
-table (L3), expression and sustain in the synth TU. API:
-`le_engine_attach_midi_input(e, m, port)` (command 100),
-`le_engine_detach_midi_input(e, port)` (101),
+table (L3), expression and sustain in the synth TU. API (attach and detach
+are the shared sink's direct calls, no commands):
 `le_engine_set_instrument_routes(e, const le_inst_routes*)` (returns
 `LE_ERR_NOT_READY` until the audio thread acknowledged the previous flip;
 flips directly while the engine is stopped). The bench's joint scenario gains
 the routing cost: 8 ports × 256 events and 256 control events per block
 against 8 instruments × 32 remaps.
 
-Tests (`test_engine_instruments.h`, `test_midi_core.c`, and a new
-`src/test/test_midi_sink_races.c` built in the TSAN job), each failing
+Tests (`test_engine_instruments.h`, `test_midi_core.c`, and the shared
+sink's `src/test/test_midi_sink_races.c`, already in the TSAN job and extended
+here with routing running on the audio thread), each failing
 without the change:
 - split, layer, range, remap (a chord with one origin, released together,
   the ordinary note not also played), an explicit CC64 remap not sustaining;
