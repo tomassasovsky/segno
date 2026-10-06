@@ -272,6 +272,26 @@ void main() {
       },
     );
 
+    test('peel depth is projected from the native field and compared', () {
+      final ptr = calloc<le_track_snapshot>();
+      addTearDown(() => calloc.free(ptr));
+      ptr.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..undo_depth = 3
+        ..peel_depth = 2;
+      final peelable = TrackSnapshot.fromNative(ptr.ref);
+      expect(peelable.undoDepth, 3);
+      expect(peelable.peelDepth, 2);
+      expect(const TrackSnapshot.empty().peelDepth, 0);
+      ptr.ref.peel_depth = 0;
+      final peeled = TrackSnapshot.fromNative(ptr.ref);
+      expect(peeled.peelDepth, 0);
+      expect(peeled, isNot(peelable));
+      expect(peeled.hashCode, isNot(peelable.hashCode));
+    });
+
     test('global native record settings each participate in equality', () {
       final ptr = calloc<le_snapshot>();
       addTearDown(() => calloc.free(ptr));

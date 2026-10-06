@@ -200,6 +200,12 @@ void main() {
       ).thenReturn(const []);
 
       when(() => looper.mixSettingsSettled).thenReturn(true);
+
+      when(() => looper.mixRecoveryRequired).thenReturn(false);
+
+      when(
+        () => looper.mixSettingsFailures,
+      ).thenAnswer((_) => const Stream.empty());
       when(() => looper.fxRecipesSettled).thenReturn(true);
       when(
         () => looper.fxReplayConfirmed,

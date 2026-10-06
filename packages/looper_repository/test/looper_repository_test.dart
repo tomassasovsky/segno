@@ -1014,6 +1014,21 @@ void main() {
         return buildRepo()..startEngine(const EngineConfig());
       }
 
+      test('peel hands the engine its answer and touches no cache', () {
+        final repo = rigOfThree();
+        expect(repo.peel(channel: 2), EngineResult.ok);
+        expect(calls('peel'), 1);
+        expect(engine.lastChannel, 2);
+        engine.nextPeelResult = EngineResult.invalid;
+        expect(repo.peel(channel: 1), EngineResult.invalid);
+        engine.nextPeelResult = EngineResult.notReady;
+        expect(repo.peel(), EngineResult.notReady);
+        expect(calls('peel'), 3);
+        expect(calls('undo'), 0);
+        expect(calls('undoRestoresClear'), 0);
+        expect(calls('clearRestorePending'), 0);
+      });
+
       test('undo on any member restores every member once', () {
         final repo = rigOfThree();
         engine.undoRestoresClearChannels = {0, 1, 2};

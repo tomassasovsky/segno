@@ -118,11 +118,6 @@ void main() {
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
-    fade = FadeSettings(
-      settings: settings,
-      blocked: () => false,
-      sessionBlocked: () => false,
-    );
     bloc = _MockLooperBloc();
     // Nothing lost by default; the device-lost scene below re-stubs audio.
     audioSetup = _MockAudioSetupCubit();
@@ -153,6 +148,18 @@ void main() {
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.mixGeneration).thenReturn(0);
+    when(
+      () => repository.looperState,
+    ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
+    fade = FadeSettings(
+      repository: repository,
+      settings: settings,
+      blocked: () => false,
+      sessionBlocked: () => false,
+    );
     // The tray's Signal face reads these through `MonitorCubit`. A bare mock
     // returns null for each and the cubit dies in its constructor.
     when(() => repository.monitorChanges).thenAnswer(
@@ -166,6 +173,9 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(

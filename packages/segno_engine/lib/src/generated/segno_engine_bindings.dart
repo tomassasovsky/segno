@@ -1764,6 +1764,37 @@ class SegnoEngineBindings {
   late final _le_engine_redo = _le_engine_redoPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Removes the newest overdub layer as one history entry (#1164): the pre-pass
+  /// image becomes live, the removed image is kept for le_engine_undo, and the
+  /// Redo branch is dropped. Never touches the original take: Peel consumes the
+  /// topmost overdub layer reachable through earlier peels only, so the deepest
+  /// layer (the pre-first-overdub image) is swapped in but never consumed, and
+  /// any non-overdub history above the layers (a clear, a loop-close restoration)
+  /// blocks it. Undo of a Peel restores the layer; Redo re-peels. A synchronous
+  /// control-thread swap like the in-track undo: no command, no receipt.
+  /// LE_ERR_INVALID when no overdub layer can be peeled (none remain, the track
+  /// is empty or cleared, or the newest edit is not an overdub); LE_ERR_NOT_READY
+  /// while the track captures, drains a layer, or has a pending state command,
+  /// cancel, Clear report or Count-in launch — never queued, nothing mutated.
+  int le_engine_peel(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_peel(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_peelPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_peel');
+  late final _le_engine_peel = _le_engine_peelPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   int le_engine_set_track_volume(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -5306,6 +5337,55 @@ class SegnoEngineBindings {
   late final _le_engine_finalize_layers = _le_engine_finalize_layersPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
+  /// Lists track `channel`'s history entries in image-ordinal order (#1164):
+  /// the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the
+  /// entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 3 loop-close
+  /// restoration) and `skipped[i]` its peel payload (0 for every other kind). A
+  /// redo-side peel entry is a marker without an image: le_engine_export_layer's
+  /// ordinals count image-bearing entries only, so a track's image count is
+  /// `undo_count + 1 + (redo entries that are not peel markers)`. Writes at most
+  /// `max` entries and returns the track's TOTAL entry count (which may exceed
+  /// `max`), or LE_ERR_INVALID for a bad handle, channel, NULL array or negative
+  /// `max`. Control thread.
+  int le_engine_export_history(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<ffi.Int32> kinds,
+    ffi.Pointer<ffi.Int32> skipped,
+    int max,
+  ) {
+    return _le_engine_export_history(
+      engine,
+      channel,
+      kinds,
+      skipped,
+      max,
+    );
+  }
+
+  late final _le_engine_export_historyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_export_history');
+  late final _le_engine_export_history = _le_engine_export_historyPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+          int,
+        )
+      >();
+
   /// Establishes the master loop at `base_frames` and parks every imported track
   /// (EMPTY with a loaded length) STOPPED at its whole-loop multiple
   /// (length / base_frames). Restores exactly `loop_bars` musical bars over that
@@ -5409,21 +5489,93 @@ class SegnoEngineBindings {
         )
       >();
 
-  /// Consumes one completed result. Returns NOT_READY before callback publication,
-  /// INVALID for an absent/consumed/retired id; otherwise OK and fills result.
-  int le_engine_read_fade_result(
+  /// Reverse (#1162): flips, or installs, the read direction of track
+  /// [channel]'s recorded material at its current position, click-free. Speed
+  /// and pitch are unchanged; a STOPPED track stays stopped and plays reversed
+  /// from its re-entry coordinate. Admission returns a nonzero request id only on
+  /// LE_OK; the callback decides and the receipt below carries its verdict.
+  /// Toggle refusals: LE_ERR_INVALID for a bad channel or a track that reads
+  /// EMPTY, RECORDING or OVERDUBBING; LE_ERR_NOT_READY while an arm or Count-in
+  /// launch is pending on the track (it may fire into OVERDUBBING before the
+  /// toggle lands) or when no receipt slot is free; LE_ERR_NOT_RUNNING when not
+  /// configured. Install accepts an EMPTY track that already holds imported
+  /// material (Session recall, before the commit) and otherwise refuses like
+  /// toggle. The callback refuses either (receipt LE_ERR_INVALID) while a punch
+  /// tail is still writing or the loop has no length. Overdubbing into a
+  /// reversed track is refused by le_engine_record with LE_ERR_REVERSED.
+  int le_engine_toggle_reverse(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_toggle_reverse(
+      engine,
+      channel,
+      request,
+    );
+  }
+
+  late final _le_engine_toggle_reversePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_toggle_reverse');
+  late final _le_engine_toggle_reverse = _le_engine_toggle_reversePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  int le_engine_install_reverse(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int reversed,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_install_reverse(
+      engine,
+      channel,
+      reversed,
+      request,
+    );
+  }
+
+  late final _le_engine_install_reversePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_install_reverse');
+  late final _le_engine_install_reverse = _le_engine_install_reversePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  /// Consumes one completed Fade or Reverse result. Returns NOT_READY before
+  /// callback publication, INVALID for an absent/consumed/retired id; otherwise
+  /// OK and fills result.
+  int le_engine_read_request_result(
     ffi.Pointer<le_engine> engine,
     int request,
     ffi.Pointer<ffi.Int32> result,
   ) {
-    return _le_engine_read_fade_result(
+    return _le_engine_read_request_result(
       engine,
       request,
       result,
     );
   }
 
-  late final _le_engine_read_fade_resultPtr =
+  late final _le_engine_read_request_resultPtr =
       _lookup<
         ffi.NativeFunction<
           ffi.Int32 Function(
@@ -5432,8 +5584,8 @@ class SegnoEngineBindings {
             ffi.Pointer<ffi.Int32>,
           )
         >
-      >('le_engine_read_fade_result');
-  late final _le_engine_read_fade_result = _le_engine_read_fade_resultPtr
+      >('le_engine_read_request_result');
+  late final _le_engine_read_request_result = _le_engine_read_request_resultPtr
       .asFunction<
         int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Int32>)
       >();
@@ -5742,7 +5894,11 @@ enum le_result {
   LE_ERR_MODE_MISMATCH(-7),
 
   /// a pending command/report prevents a safe decision
-  LE_ERR_NOT_READY(-8);
+  LE_ERR_NOT_READY(-8),
+
+  /// a punch-in on a reversed track (#1162): overdub
+  /// is unavailable while Reverse is on
+  LE_ERR_REVERSED(-9);
 
   final int value;
   const le_result(this.value);
@@ -5757,6 +5913,7 @@ enum le_result {
     -6 => LE_ERR_CAPACITY,
     -7 => LE_ERR_MODE_MISMATCH,
     -8 => LE_ERR_NOT_READY,
+    -9 => LE_ERR_REVERSED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -6194,8 +6351,12 @@ enum le_command_code {
   /// checked internal Fade request; never raw-posted
   LE_CMD_FADE(81),
 
-  /// internal material-import invalidation
-  LE_CMD_RESET_FADE(82);
+  /// internal material-import transform reset
+  /// (Fade and direction); never raw-posted
+  LE_CMD_RESET_TRANSFORMS(82),
+
+  /// checked internal Reverse request; never raw-posted
+  LE_CMD_REVERSE(83);
 
   final int value;
   const le_command_code(this.value);
@@ -6281,7 +6442,8 @@ enum le_command_code {
     79 => LE_CMD_STOP_RECORD_CONTROL,
     80 => LE_CMD_CANCEL_COUNT_IN,
     81 => LE_CMD_FADE,
-    82 => LE_CMD_RESET_FADE,
+    82 => LE_CMD_RESET_TRANSFORMS,
+    83 => LE_CMD_REVERSE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -6828,6 +6990,22 @@ final class le_track_snapshot extends ffi.Struct {
   /// This is cancellation authority, not pending membership or fresh admission.
   @ffi.Int32()
   external int count_in_cancel_grace;
+
+  /// Trailing (#1162, Reverse): 0 forward, 1 reversed — the callback-owned
+  /// read direction of the track's recorded material, published with every
+  /// accepted le_engine_toggle_reverse / le_engine_install_reverse and reset to
+  /// forward with the material (Clear, Undo to empty, a new capture, import).
+  /// A performance transform, not an audio edit: never in the undo history.
+  @ffi.Int32()
+  external int reversed;
+
+  /// Trailing (#1164): how many overdub layers le_engine_peel can still remove
+  /// — the LAYER entries above the newest history entry that is neither an
+  /// overdub nor a peel. Published under undo_depth's gates, so an EMPTY track
+  /// reads 0 here too. The host derives its layer count from this: PEEL
+  /// entries keep undo_depth constant while a layer disappears.
+  @ffi.Int32()
+  external int peel_depth;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct

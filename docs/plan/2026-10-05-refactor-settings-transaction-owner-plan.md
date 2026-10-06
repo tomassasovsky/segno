@@ -413,6 +413,8 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/dart analyze --fatal-
 
 #### Part 2d: Fade, Session and Mixer timeout
 
+Status: built (branch `claude/settings-owner-1159-p2d`).
+
 ```success-criteria
 GOAL: Fade runs on the shared owner; the Mixer's timeout path uses SettingsReceipt; Session JSON is validated at decode; no per-family transaction copy remains.
 SUCCESS CRITERIA:
@@ -631,6 +633,91 @@ projection) instead of being deleted, as `PlaybackSettings` was in 2b: about
 30 test files construct it. Production change:
 +1,154 / -1,679, past the 1,000-line split threshold; most additions rewrite
 the two repository transactions and the two holders.
+
+#### Part 2d as built
+
+- Fade: `FadeFamily` (`settings_families.dart`) is the second family without
+  a native command. It holds the accepted live and durable durations itself,
+  reads and writes the one stored JSON record, and repairs an unreadable
+  record to the stored defaults, as Retry did before. `FadeSettings` keeps
+  only its owner, the gesture edits, `ControlCubit`'s controller write and
+  the getters the Fade surfaces read; its own queue, rollback, repair and
+  exclusion code is gone. Fade registers last in `AppRuntime`'s registry,
+  and its failure toast is the keyed owned notice.
+- Session exclusion is the registry's alone: `SessionSettingsCoordinator`
+  no longer nests Fade's own exclusion, and `installFade` runs
+  `SettingsOwner.installSession`, which requires the registry's exclusion
+  and stores the Session's value at every storage address. The Session load
+  has already moved the lifetime, so controller work captured before it is
+  superseded. `prepareShutdown` drops its Fade Retry and flush; the
+  registry's carry Fade.
+- Mixer timeout: the Mixer's vector runs on a `SettingsReceipt`
+  (`_PendingMix`, `_failMix`, `_cancelMix` and `_settlePendingMix` are
+  gone). The receipt gained an `accepted` hook, so the repository's mix
+  caches still adopt each accepted vector, and a `pending` getter for the
+  image settlement that writes into the in-flight vector. A timeout or an
+  unconfirmed startup replay owes the vector and leaves audio running;
+  Retry (`recoverMixSettings`) re-sends it in full and a restart replays it.
+  `MixSettingsCoordinator` keeps the durable candidate in storage when the
+  repository owes it, reports `recoveryRequired`, and its Retry re-sends it.
+  A failed storage rollback still stops audio and blocks restart, unchanged
+  (not a receipt). Mixer internals are otherwise unchanged.
+- Session decode: `Session.fromJson` refuses a Count-in outside 0, 1, 2 and
+  4, and any per-track override key (timing, decay, Loop/Once, length, pan)
+  outside the eight tracks, before the rig is cleared.
+- The Play fence that was planned here landed in Part 2a (see its as-built
+  section).
+- The grep criterion holds on the branch head: no `_restore(Decay|Once|
+  Length|RecordStart|ClickMode)`, `flush(Decay|OneShot|RecordLength|
+  RecordTiming|ClickMode|RecordStart)` or `_Pending(Timing|LengthSettings|
+  RecordStart|ClickMode|ClickVolume|OneShot|Mix)` remains in lib or packages.
+
+Decisions taken under the owner rules (2026-10-06):
+
+31. A Fade edit during Session exclusion queues behind it, as every owned
+    family's does, instead of being refused. Behind a Session Save it applies
+    after the save. Behind a Session load it carries the old lifetime, so the
+    load's values supersede it and it is dropped with no notice, as for the
+    other families. It used to be refused with an error. Rule 4.
+32. A Fade write still in flight when Fade closes is superseded and its
+    storage rolled back, as for every owner. Shutdown flushes Fade through
+    the registry before it closes, so admitted edits still land. Rule 4.
+33. Fade's controller fence is the shared lifetime (Session revision and
+    device generation), so a device restart also supersedes queued
+    controller Fade work, as for the other families. A lifetime change also
+    returns Fade's live durations to the durable ones
+    (`SettingsFamily.retireLive`), so a value held across a restart does not
+    outlive the release that is now refused: the next gesture uses Released.
+    That is the same recovery the receipt families get from their restart
+    replay. Rules 1 and 4.
+34. Session Save captures Fade's durable durations even while Fade is
+    unavailable, as decision 30 states for every family; Save no longer
+    refuses there. Rules 2 and 4.
+35. A Fade step is never replaced by a later step while it waits, so rapid
+    steps each count; absolute Fade edits coalesce as other families'.
+    Rule 1.
+36. A Mixer receipt timeout owes the vector instead of stopping audio
+    (defect 1). A fresh take refuses while the Mixer's vector is owed, since
+    its routes are unconfirmed, and the Mixer notice says audio was stopped
+    only when it was. Rules 2 and 3.
+37. A Session file whose Count-in or per-track override key cannot be
+    applied is refused when it is read, so the live rig is never cleared for
+    it. Rule 2.
+38. A Mixer edit while the repository owes a vector is refused with
+    `recoveryRequired` before storage is touched, as the owners refuse writes
+    while a value is owed. Storage keeps the owed vector, so Retry and the
+    next start land the value storage holds. Rules 2 and 3.
+39. An owed Mixer vector that no edit of the coordinator's caused (an
+    unconfirmed restart or reconnect replay) is reported once through the
+    coordinator's failures as `recoveryRequired`, so the Mixer Retry notice
+    shows instead of Record refusing silently. Rule 3.
+
+Deviations: `FadeSettings` is kept as a thin holder, as the other holders
+are. The registry builds Fade's owner from a `LooperRepository`, so
+`FadeSettings` now takes one. Production change: +454 / -419, then +75 / -2
+for the review fixes (decisions 33, 38 and 39). Fade is not in the shared
+contract suite: its cases are built on a receipt being withheld and
+delivered, and Fade has none; `fade_settings_test` pins decision 33.
 
 
 ### Part 3: Control dispatch collapse

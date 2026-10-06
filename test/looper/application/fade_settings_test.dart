@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/fade_settings.dart';
+import 'package:segno/looper/model/owned_setting.dart';
 import 'package:settings_repository/settings_repository.dart';
 
+import '../../helpers/fake_audio_engine.dart';
 import '../../helpers/fake_key_value_store.dart';
 
 class _Store extends FakeKeyValueStore {
@@ -48,12 +51,18 @@ void main() {
   group(FadeSettings, () {
     late _Store store;
     late FadeSettings owner;
+    late LooperRepository repository;
     late bool blocked;
     const key = 'looper.fade_durations';
     setUp(() async {
       store = _Store();
       blocked = false;
+      repository = LooperRepository(
+        engine: FakeAudioEngine(),
+        ticker: const Stream.empty(),
+      );
       owner = FadeSettings(
+        repository: repository,
         settings: SettingsRepository(store: store),
         blocked: () => blocked,
         sessionBlocked: () => blocked,
@@ -67,6 +76,7 @@ void main() {
       blocked = false;
       await owner.recover();
       await owner.close();
+      await repository.dispose();
     });
 
     test(
@@ -120,7 +130,7 @@ void main() {
         await expectLater(owner.setDefault(8000), throwsStateError);
         expect(owner.needsRecovery, isTrue);
         await expectLater(owner.setDefault(9000), throwsStateError);
-        await expectLater(owner.flush(), throwsStateError);
+        expect((await owner.owner.flush()).isOk, isFalse);
         expect(await owner.recover(), isFalse);
         store.refuseRepair = false;
         expect(await owner.recover(), isTrue);
@@ -130,27 +140,40 @@ void main() {
     );
 
     test(
-      'drains admitted edits and excludes later edits through Session capture',
+      'Session capture waits for admitted edits; a later edit applies after it',
       () async {
         store.gate = Completer<void>();
         final first = owner.setDefault(6000);
         await store.entered.future;
         final second = owner.setOverride(0, 6000);
         FadeDurations? captured;
-        final capture = owner.runExclusive((admittedEdits) async {
-          await admittedEdits;
+        Future<void>? later;
+        final capture = owner.owner.runExclusive(() async {
           captured = owner.confirmed;
+          // Queued behind the Session operation, not refused by it.
+          later = owner.setDefault(8000);
+          await pumpEventQueue();
+          expect(owner.confirmed.defaultMs, 6000);
         });
-        await expectLater(owner.setDefault(8000), throwsStateError);
-        expect(owner.confirmed.defaultMs, 4000);
         store.gate!.complete();
         await Future.wait([first, second, capture]);
+        await later;
         expect(
           captured,
           FadeDurations(defaultMs: 6000, overrides: const {0: 6000}),
         );
+        expect(owner.confirmed.defaultMs, 8000);
       },
     );
+
+    test('a Session install outside Session exclusion is refused', () async {
+      await expectLater(
+        owner.installSession(FadeDurations(defaultMs: 12000)),
+        throwsStateError,
+      );
+      expect(owner.confirmed, FadeDurations.defaults);
+      expect(store.values.containsKey(key), isFalse);
+    });
 
     test(
       'accepted Session completes incoming vector after ordinary repair debt',
@@ -162,19 +185,17 @@ void main() {
         blocked = true;
         expect(await owner.recover(), isFalse);
         store.refuseRepair = false;
-        await owner.runExclusive(
-          (admittedEdits) async {
-            await admittedEdits;
-            await owner.installSession(FadeDurations(defaultMs: 12000));
-          },
+        await owner.owner.runExclusive(
+          () => owner.installSession(FadeDurations(defaultMs: 12000)),
         );
+        expect(owner.needsRecovery, isFalse);
         expect(owner.confirmed.defaultMs, 12000);
         expect(owner.confirmed.overrides, isEmpty);
       },
     );
 
     test(
-      'early Session owner refusal cannot detach a prior write from close',
+      'a refused Session scope cannot detach a prior write from close',
       () async {
         store.gate = Completer<void>();
         Object? writeError;
@@ -182,9 +203,7 @@ void main() {
           writeError = error;
         });
         await store.entered.future;
-        // An existing owner (for example Mix recovery) can refuse before it
-        // reaches the callback that awaits the admitted Fade edits.
-        final refusal = owner.runExclusive<void>((_) async {
+        final refusal = owner.owner.runExclusive<void>(() async {
           throw StateError('other owner recovery');
         });
         final refused = expectLater(refusal, throwsStateError);
@@ -196,7 +215,9 @@ void main() {
         await Future.wait([write, refused, closing]);
         expect(closedBeforeWrite, isFalse);
         expect(writeError, isNull);
-        expect(owner.confirmed.defaultMs, 6000);
+        // Close superseded the write it waited for; storage was restored.
+        expect(owner.confirmed.defaultMs, 4000);
+        expect(store.values.containsKey(key), isFalse);
       },
     );
 
@@ -204,19 +225,19 @@ void main() {
       'throwing scope releases exclusion; repeated scopes drain before close',
       () async {
         await expectLater(
-          owner.runExclusive<void>((_) => throw StateError('scope refused')),
+          owner.owner.runExclusive<void>(
+            () => throw StateError('scope refused'),
+          ),
           throwsStateError,
         );
         await owner.setDefault(6000);
         final release = Completer<void>();
         final order = <int>[];
-        final first = owner.runExclusive((drain) async {
-          await drain;
+        final first = owner.owner.runExclusive(() async {
           order.add(1);
           await release.future;
         });
-        final second = owner.runExclusive((drain) async {
-          await drain;
+        final second = owner.owner.runExclusive(() async {
           order.add(2);
         });
         var closed = false;
@@ -232,7 +253,8 @@ void main() {
     );
 
     test(
-      'close drains the admitted write and immediately rejects new work',
+      'close supersedes the admitted write, restores storage and rejects '
+      'new work',
       () async {
         store.gate = Completer<void>();
         final write = owner.setDefault(6000);
@@ -241,7 +263,10 @@ void main() {
         await expectLater(owner.setDefault(8000), throwsStateError);
         store.gate!.complete();
         await Future.wait([write, closing]);
-        expect(owner.confirmed.defaultMs, 6000);
+        // As every owner: a write still in flight at close is superseded and
+        // its storage rolled back, so nothing half-applied stays behind.
+        expect(owner.confirmed.defaultMs, 4000);
+        expect(store.values.containsKey(key), isFalse);
       },
     );
 
@@ -251,15 +276,13 @@ void main() {
         await owner.close();
         store.values[key] = '{"defaultMs":8000,"overrides":{}}';
         owner = FadeSettings(
+          repository: repository,
           settings: SettingsRepository(store: store),
           blocked: () => false,
           sessionBlocked: () => false,
         );
         final release = Completer<void>();
-        final scope = owner.runExclusive((drain) async {
-          await drain;
-          await release.future;
-        });
+        final scope = owner.owner.runExclusive(() => release.future);
         final loaded = owner.load();
         release.complete();
         await Future.wait([scope, loaded]);
@@ -274,7 +297,7 @@ void main() {
         int? channel,
         int milliseconds, {
         int? released,
-        int? lifetime,
+        SettingLifetime? lifetime,
         int? revision,
       }) => owner.setControllerDuration(
         channel,
@@ -296,6 +319,27 @@ void main() {
         expect(await write(null, 2500), isTrue);
         expect((owner.live.defaultMs, stored().defaultMs), (2500, 2500));
       });
+
+      test(
+        'a device restart retires a held value: the next gesture uses '
+        'Released',
+        () async {
+          expect(await write(null, 5000, released: 1000), isTrue);
+          expect(owner.live.defaultMs, 5000);
+          final lifetime = owner.lifetime;
+          expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+          await Future<void>.delayed(Duration.zero);
+          expect(owner.lifetime, isNot(lifetime));
+          expect(owner.live.defaultMs, 1000);
+          expect(owner.confirmed.defaultMs, 1000);
+          // The pedal's release from the old lifetime is refused, harmlessly.
+          expect(
+            await write(null, 1000, lifetime: lifetime, revision: 0),
+            isFalse,
+          );
+          expect(owner.live.defaultMs, 1000);
+        },
+      );
 
       test('writing an inherited track creates its override', () async {
         await owner.setDefault(8000);
@@ -343,21 +387,29 @@ void main() {
       );
 
       test(
-        'a Session install supersedes queued intent and the held value',
+        'a Session load supersedes queued intent; its install replaces the '
+        'held value',
         () async {
           final lifetime = owner.lifetime;
           expect(await write(null, 10000, released: 6000), isTrue);
           late Future<bool> queued;
-          await owner.runExclusive((admittedEdits) async {
-            await admittedEdits;
+          await owner.owner.runExclusive(() async {
             // Queued behind the Session operation, not refused by it.
             queued = write(null, 20000, lifetime: lifetime);
+            await repository.applySession(
+              const SessionRig(),
+              clearPollInterval: Duration.zero,
+            );
             await owner.installSession(FadeDurations(defaultMs: 12000));
           });
           expect(await queued, isFalse);
           expect(owner.lifetime, isNot(lifetime));
           expect(owner.live, owner.confirmed);
           expect(owner.live.defaultMs, 12000);
+          expect(
+            FadeDurations.fromJson(jsonDecode(store.values[key]! as String)),
+            FadeDurations(defaultMs: 12000),
+          );
         },
       );
 
@@ -367,8 +419,7 @@ void main() {
           expect(await write(null, 10000, released: 6000), isTrue);
           FadeDurations? captured;
           late Future<bool> release;
-          await owner.runExclusive((admittedEdits) async {
-            await admittedEdits;
+          await owner.owner.runExclusive(() async {
             release = write(null, 6000);
             captured = owner.confirmed;
           });
@@ -378,21 +429,25 @@ void main() {
         },
       );
 
-      test('refuses without a write during recovery or out of range', () async {
-        await owner.close();
-        owner = FadeSettings(
-          settings: SettingsRepository(store: store),
-          blocked: () => false,
-          sessionBlocked: () => false,
-        );
-        expect(await write(null, 8000), isFalse);
-        expect(store.values.containsKey(key), isFalse);
-        await owner.load();
-        expect(await write(null, 30500), isFalse);
-        expect(await write(8, 8000), isFalse);
-        expect(store.values.containsKey(key), isFalse);
-        expect(owner.live, FadeDurations.defaults);
-      });
+      test(
+        'refuses out of range; a write before load starts the load',
+        () async {
+          await owner.close();
+          owner = FadeSettings(
+            repository: repository,
+            settings: SettingsRepository(store: store),
+            blocked: () => false,
+            sessionBlocked: () => false,
+          );
+          expect(await write(null, 30500), isFalse);
+          expect(await write(8, 8000), isFalse);
+          expect(store.values.containsKey(key), isFalse);
+          expect(owner.live, FadeDurations.defaults);
+          expect(await write(null, 8000), isTrue);
+          expect(owner.needsRecovery, isFalse);
+          expect(owner.live.defaultMs, 8000);
+        },
+      );
     });
 
     test(
@@ -401,11 +456,12 @@ void main() {
         await owner.close();
         store.values[key] = '{"defaultMs":500.5,"overrides":{}}';
         owner = FadeSettings(
+          repository: repository,
           settings: SettingsRepository(store: store),
           blocked: () => false,
           sessionBlocked: () => false,
         );
-        await expectLater(owner.load(), throwsFormatException);
+        await owner.load();
         expect(owner.needsRecovery, isTrue);
         expect(store.values[key], '{"defaultMs":500.5,"overrides":{}}');
         expect(await owner.recover(), isTrue);

@@ -1938,7 +1938,7 @@ void main() {
     }
 
     for (final key in OwnedSetting.values.where(
-      (key) => key != OwnedSetting.decay,
+      (key) => key != OwnedSetting.decay && key != OwnedSetting.fade,
     )) {
       testWidgets(
         'a restart that lands the owed value clears its recovery notice; '
@@ -1986,7 +1986,8 @@ void main() {
               AppToastId.recordTimingSettings,
               timing.owner,
             ),
-            OwnedSetting.decay => throw StateError('Decay has no receipt'),
+            OwnedSetting.decay ||
+            OwnedSetting.fade => throw StateError('No receipt'),
           };
           engine
             ..publishClickCommands = key != OwnedSetting.clickVolume
@@ -2007,7 +2008,8 @@ void main() {
             ),
             OwnedSetting.recordLength => record.setDefaultLengthBars(4),
             OwnedSetting.recordTiming => timing.setTiming(RecordTiming.quarter),
-            OwnedSetting.decay => throw StateError('Decay has no receipt'),
+            OwnedSetting.decay ||
+            OwnedSetting.fade => throw StateError('No receipt'),
           });
           await tester.pump(const Duration(milliseconds: 600));
           await tester.pump();

@@ -270,7 +270,8 @@ void main() {
       expect(engine.lanePan[(0, 0)], 0);
     });
 
-    test('timeout stops and restart replays only confirmed intent', () async {
+    test('a receipt timeout owes the vector without a stop, and a restart '
+        'replays it', () async {
       final repo = start()..setTrackPan(.25);
       engine
         ..publishMixCommands = false
@@ -283,14 +284,41 @@ void main() {
         ),
         EngineResult.notReady,
       );
-      expect(engine.calls.last, 'stop');
+      expect(engine.calls, isNot(contains('stop')));
+      expect(repo.sessionTransport.isRunning, isTrue);
+      expect(repo.mixRecoveryRequired, isTrue);
       expect(repo.trackPan(0), .25);
+      // A new edit waits for the owed vector instead of replacing it.
+      expect(repo.setTrackPan(.75), EngineResult.notReady);
       engine
         ..publishMixCommands = true
         ..commandsAreSettled = true;
-      repo.startEngine(const EngineConfig());
-      expect(engine.pendingMix, isNull);
-      expect(engine.lanePan[(0, 0)], .25);
+      expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+      expect(await repo.settleMixSettings(), EngineResult.ok);
+      expect(repo.mixRecoveryRequired, isFalse);
+      expect(repo.trackPan(0), -.5);
+      expect(engine.lanePan[(0, 0)], -.5);
+    });
+
+    test('Retry lands an owed vector while running, without a stop', () async {
+      final repo = start()..setTrackPan(.25);
+      engine
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      expect(repo.setTrackPan(-.5), EngineResult.ok);
+      await repo.settleMixSettings(attempts: 1, pollInterval: Duration.zero);
+      expect(repo.mixRecoveryRequired, isTrue);
+      engine
+        ..publishMixCommands = true
+        ..commandsAreSettled = true;
+      // A fresh take would record through unconfirmed routes.
+      expect(repo.record(), EngineResult.notReady);
+      expect(repo.recoverMixSettings(), EngineResult.ok);
+      expect(await repo.settleMixSettings(), EngineResult.ok);
+      expect(repo.mixRecoveryRequired, isFalse);
+      expect(repo.trackPan(0), -.5);
+      expect(engine.calls, isNot(contains('stop')));
+      expect(repo.record(), EngineResult.ok);
     });
   });
 

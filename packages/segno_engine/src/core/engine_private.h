@@ -85,6 +85,7 @@ inline T le_cxx_atomic_exchange(T* slot, V value) {
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
 #include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
+#include "engine_direction.h"
 #include "engine_fade.h"
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
@@ -784,6 +785,12 @@ typedef enum {
   LE_HIST_CLEAR = 1, /* a clear restore point: everything needed to put the
                       * track back as it was (#219). Pushed ON TOP of the
                       * layers it erased, which stay peelable after a restore. */
+  LE_HIST_PEEL = 2,  /* a Peel (#1164): on the undo stack, the image Peel
+                      * removed (the former live slot) plus `skipped`; on the
+                      * redo stack a marker with slot -1 that re-peels. */
+  LE_HIST_PROCESSED = 3, /* a loop-close restoration commit (#697 S9): the raw
+                          * take beneath a conditioned live image. Undo/Redo
+                          * swap it like a LAYER; Peel never consumes it. */
 } le_hist_kind;
 
 /* One entry on a track's undo/redo history (control-thread-owned). A bare pool
@@ -806,6 +813,10 @@ typedef struct {
   uint32_t clear_generation;
   float fade_amount; /* stationary amount at the callback Clear boundary */
   int fade_ready;
+  int32_t skipped; /* PEEL: how many PEEL entries sat above the LAYER this
+                    * peel consumed. Undo re-inserts that LAYER `skipped`
+                    * entries below the PEEL's position (clamped to the
+                    * bottom), restoring the exact pre-peel stack. */
 } le_hist_entry;
 
 /* Positional aggregate init, not the designated initializer the rest of the
@@ -1118,6 +1129,9 @@ typedef struct le_track {
   _Atomic int32_t a_clear_restore; /* published: 1 when the next undo restores a
                                     * cleared take rather than peeling a layer */
   _Atomic int32_t a_redo_depth;    /* published redo_count */
+  _Atomic int32_t a_peel_depth; /* published le_peel_depth: LAYER entries Peel
+                                 * can still consume, under a_undo_depth's
+                                 * gates (0 on an EMPTY track) — #1164 */
   /* Offline loop-close restoration telemetry (#697 S9): 0 idle, 1 queued
    * (enqueue copy pending / QUEUED for the worker), 2 running (worker DSP in
    * flight). Written by the control-thread le_restore_tick, read by the
@@ -1270,6 +1284,24 @@ typedef struct le_track {
    * Only a launch after an automatic Once end changes it; ordinary captures
    * and history recovery retain their established shared phase. */
   int32_t playback_offset;
+  /* Reverse (#1162). `reversed` is the audio-thread-owned read direction of
+   * the recorded material (0 forward, 1 reversed); playback_offset above is
+   * the read origin in BOTH directions (engine_direction.h), re-origined at a
+   * toggle so the read index is continuous at the turn. Material, not
+   * runtime: it resets with the content (le_transform_reset) and survives a
+   * retained reopen. The turn window mixes the pre-turn head over the first
+   * turn_frames frames (turn_left counts down once per frame per track):
+   * turn_reversed/turn_offset are that old head's direction and origin. */
+  int32_t reversed;
+  int32_t turn_left, turn_frames, turn_reversed, turn_offset;
+  _Atomic int32_t a_reversed; /* published direction (snapshot) */
+  /* Control's view of direction while toggles are in flight
+   * (le_effective_reversed): the number of REVERSE commands posted, the
+   * direction they predict once applied, and the callback's count of REVERSE
+   * commands processed (accepted or refused), released after a_reversed. */
+  uint32_t reverse_posted;
+  int32_t reverse_pending;
+  _Atomic uint32_t a_reverse_applied;
   /* Automatic-end marker: an explicit launch starts at frame zero. It also
    * prevents a sibling's launch from automatically unparking this track. */
   int once_ended;
@@ -1660,11 +1692,15 @@ struct le_engine {
    * or refusal. Configure resets it with the command counters. */
   uint64_t lane_growth_command;
   uint64_t input_routing_command; /* fresh Sound admission reads only applied routes */
-  uint64_t fade_lifetime, fade_next_request; /* control-owned; never reused */
+  uint64_t fade_lifetime; /* control-owned; binds every Fade image install */
+  /* Checked per-track requests with a callback verdict (Fade, Reverse): one
+   * request id per admission, never reused; the receipt holds the posting
+   * ticket and the result the callback stores (le_engine_read_request_result). */
+  uint64_t next_request;
   struct {
     uint64_t request, command;
     _Atomic int32_t result;
-  } fade_receipts[LE_RING_CAPACITY];
+  } receipts[LE_RING_CAPACITY];
   uint64_t commands_posted;
   uint64_t commands_applied;
   /* Callback-only: image publication invalidates the current frame snapshots. */
