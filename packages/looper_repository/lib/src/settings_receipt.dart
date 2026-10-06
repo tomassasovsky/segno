@@ -121,6 +121,12 @@ final class SettingsReceipt<T extends Object> {
     pending?.observation.complete(EngineResult.notReady);
   }
 
+  /// Adopts a value applied outside the receipt, as a Session reset does.
+  void adopt(T value) {
+    _live = value;
+    _restart = value;
+  }
+
   /// A device stop retires a temporary live value to its restart value.
   void retireLive() => _live = _restart;
 

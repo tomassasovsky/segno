@@ -761,7 +761,13 @@ void main() {
         .whereType<MidiParameterControl>()
         .singleWhere((control) => control.key == key);
     expect((saved.low, saved.high), (1, 1));
-    verifyNever(() => looper.setDefaultOneShot(oneShot: any(named: 'oneShot')));
+    verifyNever(
+      () => looper.setOneShotSnapshot(
+        defaultOneShot: any(named: 'defaultOneShot'),
+        trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
+      ),
+    );
   });
 
   testWidgets('unavailable Click row can be repaired without changing range', (

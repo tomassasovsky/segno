@@ -130,8 +130,6 @@ void main() {
                   settings: settings,
                   mixSettings: mixSettings,
                   fxPersistence: fxPersistence,
-                  decayControl: playback,
-                  oneShotControl: playback,
                   recordLengthControl: recordOptions,
                   recordTimingControl: timing,
                 ),
@@ -162,8 +160,8 @@ void main() {
               BlocProvider<ControlCubit>(
                 create: (_) => ControlCubit(
                   fadeSettings: testFadeSettings(),
-                  decayControl: playback,
-                  oneShotControl: playback,
+                  decayControl: playback.decayControl,
+                  oneShotControl: playback.oneShotControl,
                   recordLengthControl: recordOptions,
                   recordTimingControl: timing,
                   clickVolumeControl: tempo.clickVolumeControl,

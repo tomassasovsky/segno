@@ -77,7 +77,6 @@ void main() {
     confirmedTrackOneShot = {};
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.sessionRevision).thenReturn(0);
-    when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
     when(
       () => repository.defaultOverdubDecay,
     ).thenAnswer((_) => confirmedDecay);
@@ -97,6 +96,9 @@ void main() {
     when(() => repository.oneShotSettingsSettled).thenReturn(true);
     when(() => repository.oneShotRecoveryRequired).thenReturn(false);
     when(
+      () => repository.oneShotFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(
       () => repository.settleOneShot(),
     ).thenAnswer((_) async => EngineResult.ok);
     when(() => repository.oneShotRestartIntent).thenAnswer(
@@ -106,37 +108,16 @@ void main() {
       ),
     );
     when(
-      () => repository.setOneShotRestartIntent(
-        defaultOneShot: any(named: 'defaultOneShot'),
-        trackOverrides: any(named: 'trackOverrides'),
-      ),
-    ).thenAnswer((_) {});
-    when(
       () => repository.setOneShotSnapshot(
         defaultOneShot: any(named: 'defaultOneShot'),
         trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
       ),
     ).thenAnswer((call) {
       confirmedOneShot = call.namedArguments[#defaultOneShot] as bool;
       confirmedTrackOneShot = Map.of(
         call.namedArguments[#trackOverrides] as Map<int, bool>,
       );
-      return EngineResult.ok;
-    });
-    when(
-      () => repository.setOneShot(
-        channel: any(named: 'channel'),
-        oneShot: any(named: 'oneShot'),
-        releasedOneShot: any(named: 'releasedOneShot'),
-      ),
-    ).thenAnswer((call) {
-      final channel = call.namedArguments[#channel] as int;
-      final value = call.namedArguments[#oneShot] as bool?;
-      if (value == null) {
-        confirmedTrackOneShot.remove(channel);
-      } else {
-        confirmedTrackOneShot[channel] = value;
-      }
       return EngineResult.ok;
     });
 
@@ -148,15 +129,6 @@ void main() {
     ).thenAnswer((_) {});
     when(() => repository.setOverdubDecay(any())).thenAnswer((call) {
       confirmedDecay = call.positionalArguments.single as int;
-      return EngineResult.ok;
-    });
-    when(
-      () => repository.setDefaultOneShot(
-        oneShot: any(named: 'oneShot'),
-        releasedOneShot: any(named: 'releasedOneShot'),
-      ),
-    ).thenAnswer((call) {
-      confirmedOneShot = call.namedArguments[#oneShot] as bool;
       return EngineResult.ok;
     });
     when(() => repository.fxReplayConfirmed).thenAnswer(
@@ -461,8 +433,6 @@ void main() {
   tearDown(() => stateController.close());
 
   LooperBloc buildBloc() => LooperBloc(
-    decayControl: FakeDecayControl(),
-    oneShotControl: FakeOneShotControl(),
     recordLengthControl: recordLength,
     recordTimingControl: recordTiming,
     fxPersistence: FxChainPersistence(looper: repository),
@@ -522,8 +492,6 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'takeLocked suppresses LooperRecordPressed',
     build: () => LooperBloc(
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
       recordLengthControl: recordLength,
       recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
@@ -539,8 +507,6 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'takeLocked suppresses LooperClearPressed',
     build: () => LooperBloc(
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
       recordLengthControl: recordLength,
       recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
@@ -708,8 +674,6 @@ void main() {
     );
     addTearDown(() => unawaited(playback.close()));
     return LooperBloc(
-      decayControl: playback,
-      oneShotControl: playback,
       recordLengthControl: recordLength,
       recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),
@@ -740,17 +704,6 @@ void main() {
           timing: any(named: 'timing'),
         ),
       );
-    },
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperOneShotToggled forwards the override to the repository and '
-    'persists it',
-    build: buildBlocWithSettings,
-    act: (bloc) => bloc.add(const LooperOneShotToggled(2, oneShot: true)),
-    verify: (_) async {
-      verify(() => repository.setOneShot(channel: 2, oneShot: true)).called(1);
-      expect(await trackSettings.readOneShotCheckpoint(channel: 2), isTrue);
     },
   );
 
@@ -1071,20 +1024,6 @@ void main() {
   });
 
   blocTest<LooperBloc, LooperState>(
-    'LooperTrackOverdubDecayChanged forwards the override to the repository '
-    'and persists it',
-    build: buildBlocWithSettings,
-    act: (bloc) =>
-        bloc.add(const LooperTrackOverdubDecayChanged(1, percent: 40)),
-    verify: (_) async {
-      verify(
-        () => repository.setTrackOverdubDecay(channel: 1, percent: 40),
-      ).called(1);
-      expect(await trackSettings.readDecayCheckpoint(channel: 1), 40);
-    },
-  );
-
-  blocTest<LooperBloc, LooperState>(
     'LooperTrackLengthPresetChanged uses the shared transaction owner',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperTrackLengthPresetChanged(1, 8)),
@@ -1105,7 +1044,7 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'refused record timing and decay do not persist',
+    'refused record timing does not persist',
     build: () {
       when(
         () => repository.setTrackRecordTiming(
@@ -1113,20 +1052,16 @@ void main() {
           timing: RecordTiming.bar,
         ),
       ).thenReturn(EngineResult.invalid);
-      when(
-        () => repository.setTrackOverdubDecay(channel: 2, percent: 40),
-      ).thenReturn(EngineResult.invalid);
       return buildBlocWithSettings();
     },
-    act: (bloc) => bloc
-      ..add(const LooperTrackRecordTimingChanged(2, timing: RecordTiming.bar))
-      ..add(const LooperTrackOverdubDecayChanged(2, percent: 40)),
+    act: (bloc) => bloc.add(
+      const LooperTrackRecordTimingChanged(2, timing: RecordTiming.bar),
+    ),
     verify: (_) async {
       expect(
         (await trackSettings.readRecordTimingCheckpoint()).trackOverrides[2],
         isNull,
       );
-      expect(await trackSettings.readDecayCheckpoint(channel: 2), isNull);
     },
   );
 
@@ -1609,8 +1544,6 @@ void main() {
           ),
         );
         return LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -1660,8 +1593,6 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLaneMuteToggled persists the toggled mute onto the lane',
       build: () => LooperBloc(
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
         recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
@@ -1681,8 +1612,6 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperClearPressed persists the unmute so a cleared track stays armed',
       build: () => LooperBloc(
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
         recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
@@ -1714,8 +1643,6 @@ void main() {
         () => repository.clear(channel: 1),
       ).thenReturn(EngineResult.invalid),
       build: () => LooperBloc(
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
         recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
@@ -1733,8 +1660,6 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'a lane effect structural edit persists the encoded chain onto the lane',
       build: () => LooperBloc(
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
         recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
@@ -1760,8 +1685,6 @@ void main() {
       'snapshot copy (F3)',
       () async {
         final bloc = LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -1806,8 +1729,6 @@ void main() {
           ),
         ]);
         return LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -1837,8 +1758,6 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLaneEffectParamChanged persists the re-encoded chain',
       build: () => LooperBloc(
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
         recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
@@ -1866,8 +1785,6 @@ void main() {
     blocTest<LooperBloc, LooperState>(
       'LooperLanePluginParamChanged persists the re-encoded chain',
       build: () => LooperBloc(
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
         recordLengthControl: recordLength,
         recordTimingControl: recordTiming,
         fxPersistence: FxChainPersistence(looper: repository),
@@ -1951,8 +1868,6 @@ void main() {
         'LooperTrackEffectsChanged pushes the chain and persists the '
         'envelope with the repo chain flag',
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -1989,8 +1904,6 @@ void main() {
             ),
           ).thenAnswer((_) => applied.future);
           final bloc = LooperBloc(
-            decayControl: FakeDecayControl(),
-            oneShotControl: FakeOneShotControl(),
             recordLengthControl: recordLength,
             recordTimingControl: recordTiming,
             fxPersistence: FxChainPersistence(looper: repository),
@@ -2024,8 +1937,6 @@ void main() {
             ),
           ).thenAnswer((_) => applied.future);
           final bloc = LooperBloc(
-            decayControl: FakeDecayControl(),
-            oneShotControl: FakeOneShotControl(),
             recordLengthControl: recordLength,
             recordTimingControl: recordTiming,
             fxPersistence: FxChainPersistence(looper: repository),
@@ -2088,8 +1999,6 @@ void main() {
           ),
         ).thenAnswer((_) => oldWait.future);
         final bloc = LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2132,8 +2041,6 @@ void main() {
             return writes == 1 ? firstWrite.future : Future<void>.value();
           });
           final bloc = LooperBloc(
-            decayControl: FakeDecayControl(),
-            oneShotControl: FakeOneShotControl(),
             recordLengthControl: recordLength,
             recordTimingControl: recordTiming,
             fxPersistence: FxChainPersistence(looper: repository),
@@ -2162,8 +2069,6 @@ void main() {
           () => settings.saveTrackFxChain(1, any()),
         ).thenAnswer((_) async => throw StateError('storage refused')),
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2200,8 +2105,6 @@ void main() {
           });
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2247,8 +2150,6 @@ void main() {
           ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2299,8 +2200,6 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2356,8 +2255,6 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2401,8 +2298,6 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2455,8 +2350,6 @@ void main() {
           ]);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2510,8 +2403,6 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2569,8 +2460,6 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2627,8 +2516,6 @@ void main() {
           ).thenReturn(true);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2664,8 +2551,6 @@ void main() {
         setUp: () =>
             when(() => repository.trackEffects(0)).thenReturn(const []),
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2699,8 +2584,6 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2736,8 +2619,6 @@ void main() {
           ).thenReturn(EngineResult.ok);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2770,8 +2651,6 @@ void main() {
           ).thenReturn(true);
         },
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2792,8 +2671,6 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'LooperTrackEffectEnabledToggled flips the slot and re-persists',
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2820,8 +2697,6 @@ void main() {
         'LooperTrackChainEnabledToggled flips the chain flag and '
         're-persists',
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2843,8 +2718,6 @@ void main() {
         'LooperOutputEffectsChanged pushes the chain and persists the '
         'envelope',
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2869,8 +2742,6 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'LooperMasterEffectEnabledToggled flips the slot and re-persists',
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2897,8 +2768,6 @@ void main() {
         'LooperOutputChainEnabledToggled flips the chain flag and '
         're-persists',
         build: () => LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2923,8 +2792,6 @@ void main() {
         when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
         when(() => repository.settledLooperMode).thenReturn(LooperMode.band);
         return LooperBloc(
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
           recordLengthControl: recordLength,
           recordTimingControl: recordTiming,
           fxPersistence: FxChainPersistence(looper: repository),
@@ -3002,8 +2869,6 @@ void main() {
     });
 
     LooperBloc buildDebounced() => LooperBloc(
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
       recordLengthControl: recordLength,
       recordTimingControl: recordTiming,
       fxPersistence: FxChainPersistence(looper: repository),

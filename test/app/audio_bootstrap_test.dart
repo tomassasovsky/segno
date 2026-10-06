@@ -161,11 +161,15 @@ class _ClickModeBootEngine extends FakeAudioEngine {
 class _OnceBootEngine extends FakeAudioEngine {
   bool refuseOnce = false;
 
+  /// Admits Once commands without ever publishing them.
+  bool dropOnce = false;
+
   @override
-  EngineResult setOneShotMask({required int channels, required bool oneShot}) =>
-      refuseOnce
-      ? EngineResult.invalid
-      : super.setOneShotMask(channels: channels, oneShot: oneShot);
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) {
+    if (refuseOnce) return EngineResult.invalid;
+    if (dropOnce) return EngineResult.ok;
+    return super.setOneShotMask(channels: channels, oneShot: oneShot);
+  }
 }
 
 void main() {
@@ -653,7 +657,7 @@ void main() {
         }
       }
       test(
-        'invalid last slot preserves prior intent and never opens audio',
+        'an invalid last slot preserves prior intent and audio still opens',
         () async {
           repository.setOneShotSnapshot(
             defaultOneShot: true,
@@ -668,13 +672,42 @@ void main() {
             settings: settings,
             mixSettings: testMixSettings(repository, settings: settings),
           );
-          expect(result.started, isFalse);
-          expect(engine.startCalls, 0);
+          // Only Loop/Once is unavailable; its owner's Retry repairs it.
+          expect(result.started, isTrue);
+          expect(engine.startCalls, 1);
+          expect(engine.stopCalls, 0);
           expect(repository.defaultOneShot, isTrue);
           expect(repository.trackOneShotOverrides, {1: false});
           expect(store.values['track_one_shot.7'], 'invalid');
         },
       );
+      for (final hasAudioConfig in [false, true]) {
+        test('an unconfirmed startup replay owes Loop/Once and audio keeps '
+            'running, saved config $hasAudioConfig', () async {
+          if (hasAudioConfig) {
+            await settings.saveAudioConfig(
+              const StoredAudioConfig(sampleRate: 48000, bufferFrames: 256),
+            );
+          }
+          final dropping = _OnceBootEngine()..dropOnce = true;
+          final looper = LooperRepository(
+            engine: dropping,
+            ticker: const Stream<void>.empty(),
+          );
+          addTearDown(looper.dispose);
+          await settings.restoreOneShotCheckpoint(channel: null, oneShot: true);
+          final result = await tryAutoStartEngine(
+            repository: looper,
+            settings: settings,
+            mixSettings: testMixSettings(looper, settings: settings),
+          );
+          expect(result.started, isTrue);
+          expect(dropping.stopCalls, 0);
+          expect(looper.oneShotRecoveryRequired, isTrue);
+          expect(looper.oneShotRestartIntent.defaultOneShot, isTrue);
+          expect(store.values['looper.default_one_shot'], true);
+        });
+      }
       test(
         'refused initial playback command cannot report successful start',
         () async {
@@ -732,7 +765,8 @@ void main() {
       }
 
       test(
-        'an invalid last slot prevents every saved decay write and open',
+        'an invalid last slot prevents every saved decay write, '
+        'and audio still opens',
         () async {
           repository
             ..setOverdubDecay(10)
@@ -747,10 +781,13 @@ void main() {
             repository: repository,
             settings: settings,
           );
-          expect(result.started, isFalse);
-          expect(engine.startCalls, 0);
+          // Decay's failed restore reports unavailable instead of stopping.
+          expect(result.started, isTrue);
+          expect(engine.startCalls, 1);
+          expect(engine.stopCalls, 0);
           expect(repository.defaultOverdubDecay, 10);
           expect(repository.trackOverdubDecayOverrides, {7: 20});
+          expect(store.values['track_overdub_decay.7'], 101);
         },
       );
 
@@ -775,7 +812,6 @@ void main() {
           );
           expect(result.started, isFalse);
           expect(repository.state.transport.isRunning, isFalse);
-          expect(repository.decayReplayResult, EngineResult.invalid);
         });
       }
     });
@@ -1941,8 +1977,6 @@ void main() {
       fxPersistence = FxChainPersistence(looper: repository);
       final mixSettings = testMixSettings(repository, settings: settings);
       bloc = LooperBloc(
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
         recordLengthControl: FakeRecordLengthControl(),
         recordTimingControl: FakeRecordTimingControl(),
         fxPersistence: fxPersistence,

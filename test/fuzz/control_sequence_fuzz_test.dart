@@ -835,8 +835,6 @@ class _Harness {
     final fxPersistence = FxChainPersistence(looper: repo);
     final mixSettings = testMixSettings(repo);
     bloc = LooperBloc(
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
       recordTimingControl: FakeRecordTimingControl(),
       fxPersistence: fxPersistence,

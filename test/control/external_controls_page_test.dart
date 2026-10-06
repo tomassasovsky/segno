@@ -712,7 +712,11 @@ void main() {
       expect(saved().parameters.single.active, once ? 0 : 1);
       expect(saved().parameters.single.inactive, once ? 1 : 0);
       verifyNever(
-        () => looper.setDefaultOneShot(oneShot: any(named: 'oneShot')),
+        () => looper.setOneShotSnapshot(
+          defaultOneShot: any(named: 'defaultOneShot'),
+          trackOverrides: any(named: 'trackOverrides'),
+          released: any(named: 'released'),
+        ),
       );
     });
   }
@@ -764,7 +768,13 @@ void main() {
     await tap(tester, 'external_value_active_once');
     await tap(tester, 'external_cancel');
     expect(saved().parameters.single.active, 0);
-    verifyNever(() => looper.setDefaultOneShot(oneShot: any(named: 'oneShot')));
+    verifyNever(
+      () => looper.setOneShotSnapshot(
+        defaultOneShot: any(named: 'defaultOneShot'),
+        trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
+      ),
+    );
   });
 
   testWidgets('unavailable Loop/Once row repairs without changing endpoints', (

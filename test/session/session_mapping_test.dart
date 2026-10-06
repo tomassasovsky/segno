@@ -257,7 +257,10 @@ void main() {
           ..setSyncTempo(on: false)
           ..setRecordTiming(RecordTiming.eighth)
           ..setOverdubDecay(30)
-          ..setDefaultOneShot(oneShot: true)
+          ..setOneShotSnapshot(
+            defaultOneShot: true,
+            trackOverrides: {0: false, 1: true},
+          )
           ..setDefaultLengthPreset(8)
           ..setDefaultMultiple(multiple: 3)
           ..setRecDub(enabled: true)
@@ -273,8 +276,6 @@ void main() {
           ..setTrackRecordTiming(channel: 0, timing: RecordTiming.eighth)
           ..setTrackOverdubDecay(channel: 0, percent: 30)
           ..setTrackOverdubDecay(channel: 1, percent: 0)
-          ..setOneShot(channel: 0, oneShot: false)
-          ..setOneShot(channel: 1, oneShot: true)
           ..setTrackLengthPreset(channel: 0, bars: 4);
         expect(engine.snapshot().isRunning, isFalse);
         expect(engine.snapshot().tempoBpm, 0);
@@ -337,7 +338,7 @@ void main() {
         looper
           ..setTrackRecordTiming(channel: 0, timing: null)
           ..setTrackOverdubDecay(channel: 0, percent: null)
-          ..setOneShot(channel: 0, oneShot: null)
+          ..setOneShotSnapshot(defaultOneShot: true, trackOverrides: {1: true})
           ..setTrackLengthPreset(channel: 0, bars: null)
           ..setRecordStartSettings(
             countInBars: 0,

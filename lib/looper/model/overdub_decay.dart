@@ -38,6 +38,36 @@ final class DecaySnapshot extends Equatable {
   int effectivePercent(DecayAddress address) =>
       trackOverrides[address.channel] ?? defaultPercent;
 
+  /// The value [address] holds; null for a track that inherits.
+  int? at(DecayAddress address) => address.channel == null
+      ? defaultPercent
+      : trackOverrides[address.channel];
+
+  /// This snapshot with [address] set to [percent]; null removes only a
+  /// track's override. Throws for an unsupported address or a null default.
+  DecaySnapshot withValue(DecayAddress address, int? percent) {
+    final channel = address.channel;
+    if (!address.isValid || channel == null && percent == null) {
+      throw ArgumentError.value(address, 'address');
+    }
+    if (channel == null) {
+      return DecaySnapshot(
+        defaultPercent: percent!,
+        trackOverrides: trackOverrides,
+      );
+    }
+    final overrides = Map<int, int>.of(trackOverrides);
+    if (percent == null) {
+      overrides.remove(channel);
+    } else {
+      overrides[channel] = percent;
+    }
+    return DecaySnapshot(
+      defaultPercent: defaultPercent,
+      trackOverrides: overrides,
+    );
+  }
+
   @override
   List<Object?> get props => [defaultPercent, trackOverrides];
 }
