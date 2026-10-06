@@ -532,30 +532,28 @@ install hook remain unchanged. A failed inspection stops the release build.
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
-- **Driving the Network domain off the appliance:** both radios are Linux-only
-  helpers (`segno-wifi-ctl`, `segno-bt-ctl`), so on macOS every path past "no
-  WiFi on this build" is unreachable — including the ones with the most
+- **Driving the Network page off the appliance:** Wi-Fi is a Linux-only
+  helper (`segno-wifi-ctl`), so on macOS every path past "no WiFi on this
+  build" is unreachable — including the ones with the most
   behaviour in them. Add `--dart-define=SEGNO_FAKE_RADIOS=true` to swap in
-  in-memory stacks:
+  an in-memory stack:
   ```sh
   flutter run -d macos --flavor development -t lib/main_development.dart \
     --dart-define=SEGNO_FAKE_RADIOS=true
   ```
-  The define is read inside `createWifiClient` / `createBluetoothClient`
-  **before** their platform test, so every entry point picks it up with no app
-  wiring change. The fakes are opinionated rather than empty — they exist to
-  reach the states the mockups draw, with deliberate delays so in-flight
-  spinners and banners are visible. Failure is reachable on purpose:
-  `segno123` is the only passphrase that joins, and one Bluetooth device
-  always refuses to pair. **Off by default**, so a shipped build can never
+  The define is read inside `createWifiClient` **before** its platform test,
+  so every entry point picks it up with no app wiring change. The fake is
+  opinionated rather than empty — it exists to reach the states the mockups
+  draw, with deliberate delays so in-flight spinners and banners are visible.
+  Failure is reachable on purpose: `segno123` is the only passphrase that
+  joins. **Off by default**, so a shipped build can never
   present invented networks as real ones; the factory tests assert the flag
   from both sides, so the branch is covered by the ordinary CI run.
-- **Appliance helper suites** (shell, no device):
-  ```sh
-  bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_ctl_tests.sh
-  ```
-  Pins the ordering inside `segno-bt-ctl`'s device verbs against a stubbed
-  `bluetoothctl`. What bluez does with those commands still needs hardware.
+- **Appliance helper suites** (shell, no device): every
+  `deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_*_tests.sh`,
+  as the `appliance-shell-tests` CI job runs them. Bluetooth was retired (#1199): the
+  image ships no BlueZ, and the pairings an earlier image kept stay on
+  `/data/bluetooth` for a fallback to the previous slot.
 
 ---
 

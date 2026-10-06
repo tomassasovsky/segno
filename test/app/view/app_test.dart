@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -12,6 +13,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_client/midi_client.dart' show MidiControllerSource;
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -34,8 +36,8 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno_engine/segno_engine.dart'
     as le
@@ -317,7 +319,8 @@ class _MonitorRestoreStore extends FakeKeyValueStore {
 }
 
 class _NoticeSessionRepository extends SessionRepository {
-  _NoticeSessionRepository() : super(engine: FakeAudioEngine());
+  _NoticeSessionRepository()
+    : super(engine: FakeAudioEngine(), guards: GuardRegistry());
 
   final readEntered = Completer<void>();
   final readRelease = Completer<void>();
@@ -343,30 +346,35 @@ class _NoticeSessionRepository extends SessionRepository {
   );
 
   @override
-  Future<SessionBundle> read(String directory) async {
+  Future<OpenedSession> open(
+    String directory, {
+    FutureOr<SessionSettings> Function()? liveSettings,
+  }) async {
     if (!readEntered.isCompleted) readEntered.complete();
     await readRelease.future;
     if (refuseRead) throw StateError('session read unavailable');
-    return (
-      session: const Session(
-        sampleRate: 48000,
-        channels: 2,
-        baseLengthFrames: 0,
-        tracks: [],
-        monitors: [
-          SessionMonitor(
-            input: 0,
-            mode: 'on',
-            outputMask: 16,
-            volume: .65,
-            muted: true,
-            encoded: '',
-          ),
-        ],
-      ),
-      laneStems: <(int, int), List<Float32List>>{},
-    );
+    return (bundle: _bundle, conversion: null);
   }
+
+  static final SessionBundle _bundle = (
+    session: const Session(
+      sampleRate: 48000,
+      channels: 2,
+      baseLengthFrames: 0,
+      tracks: [],
+      monitors: [
+        SessionMonitor(
+          input: 0,
+          mode: 'on',
+          outputMask: 16,
+          volume: .65,
+          muted: true,
+          encoded: '',
+        ),
+      ],
+    ),
+    laneStems: <(int, int), List<Float32List>>{},
+  );
 }
 
 class _ClickModeStore extends FakeKeyValueStore {
@@ -683,8 +691,12 @@ void main() {
       );
       controllerRepository = ControllerRepository(sources: const []);
       settings = SettingsRepository(store: FakeKeyValueStore());
-      sessionRepository = SessionRepository(engine: FakeAudioEngine());
+      sessionRepository = SessionRepository(
+        guards: GuardRegistry(),
+        engine: FakeAudioEngine(),
+      );
       performanceRepository = PerformanceRepository(
+        guards: GuardRegistry(),
         engine: FakeAudioEngine(),
         exportsRoot: () async => '.',
       );
@@ -705,9 +717,12 @@ void main() {
       PowerKeySource? powerKeySource,
       Duration waveformWindowOpenDelay = Duration.zero,
       bool settle = true,
+      ConsoleFactsClient consoleFacts = const UnsupportedConsoleFactsClient(),
     }) async {
       await tester.pumpWidget(
         App(
+          consoleFacts: consoleFacts,
+          guards: GuardRegistry(),
           mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
@@ -730,6 +745,7 @@ void main() {
     ) async {
       await tester.pumpWidget(
         App(
+          guards: GuardRegistry(),
           mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
@@ -806,6 +822,7 @@ void main() {
         final controllers = ControllerRepository(sources: const []);
         final midi = MidiDeviceRepository(source: null, settings: settings);
         final performance = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '.',
         );
@@ -815,13 +832,17 @@ void main() {
         addTearDown(performance.dispose);
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllers,
             midiDeviceRepository: midi,
             settings: settings,
             waveformWindow: NoopWaveformWindowService(),
-            sessionRepository: SessionRepository(engine: engine),
+            sessionRepository: SessionRepository(
+              guards: GuardRegistry(),
+              engine: engine,
+            ),
             performanceRepository: performance,
           ),
         );
@@ -3409,7 +3430,7 @@ void main() {
     );
 
     testWidgets(
-      'Update on the toast opens Settings on the Updates tab',
+      'Update on the toast opens the Updates page',
       (
         tester,
       ) async {
@@ -3419,16 +3440,11 @@ void main() {
         );
         await tester.tap(find.byKey(const Key('app_update_banner_update')));
         await tester.pumpAndSettle();
-        expect(find.byType(SettingsPage), findsOneWidget);
-        expect(find.byType(UpdatesSettingsSection), findsOneWidget);
-        expect(
-          find.byKey(const Key('settings_tab_updates')),
-          findsOneWidget,
-        );
+        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
         expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        // Pop so the navigator re-entrancy guard (`_settingsOpen`) clears for
-        // later tests in this file that also open Settings.
-        await tester.tap(find.byKey(const Key('settings_close_button')));
+        // Pop so the navigator's open-route guard clears for later tests in
+        // this file that also open Settings.
+        await tester.tap(find.byKey(const Key('loop_settings_back')));
         await tester.pumpAndSettle();
       },
       // Toast, not a widget. These notifications moved to toastification,
@@ -3448,18 +3464,16 @@ void main() {
           tester,
           UpdateRepository(backend: backend),
         );
-        // NOT awaited: openSegnoSettings awaits navigator.push, which resolves
-        // only when the route is POPPED. Awaiting it here deadlocks the test on
-        // its own first statement — settings is not closed until the end — and
-        // it does not fail fast: it spins until the harness gives up minutes
-        // later, poisoning the rest of the file.
-        unawaited(openSegnoSettings(section: SettingsSection.updates));
+        // NOT awaited: openUpdateSettings awaits navigator.push, which
+        // resolves only when the route is POPPED. Awaiting it here deadlocks
+        // the test on its own first statement.
+        unawaited(openUpdateSettings());
         await tester.pumpAndSettle();
         backend.complete();
         await tester.pumpAndSettle();
-        expect(find.byType(UpdatesSettingsSection), findsOneWidget);
+        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
         expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        await tester.tap(find.byKey(const Key('settings_close_button')));
+        await tester.tap(find.byKey(const Key('loop_settings_back')));
         await tester.pumpAndSettle();
       },
       // Toast, not a widget. These notifications moved to toastification,
@@ -3486,6 +3500,7 @@ void main() {
       tester,
     ) async {
       App buildApp() => App(
+        guards: GuardRegistry(),
         mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         controllerRepository: controllerRepository,
@@ -3520,6 +3535,7 @@ void main() {
         );
         addTearDown(() => sessionsRoot.delete(recursive: true));
         sessionRepository = SessionRepository(
+          guards: GuardRegistry(),
           engine: FakeAudioEngine(),
           sessionsRoot: () async => sessionsRoot.path,
         );
@@ -3528,6 +3544,7 @@ void main() {
         link.hello();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
@@ -3565,6 +3582,7 @@ void main() {
       // directly even with no saved audio config.
       await tester.pumpWidget(
         App(
+          guards: GuardRegistry(),
           mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
@@ -3662,8 +3680,8 @@ void main() {
       expect(windowService.isOpen, isFalse);
     });
 
-    testWidgets('right-click opens settings; disabling the waveform window '
-        'closes it', (tester) async {
+    testWidgets('right-click opens Settings; disabling the waveform window '
+        'on Displays closes it', (tester) async {
       final windowService = _RecordingWindowService();
       await pumpApp(tester, windowService);
       expect(windowService.isOpen, isTrue);
@@ -3673,37 +3691,100 @@ void main() {
         buttons: kSecondaryButton,
       );
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.byType(SettingsHomePage), findsOneWidget);
 
-      // Disable the secondary waveform window; it closes (Tracks is the
-      // only mode now, so the window follows this enable toggle alone).
-      await tester.tap(
-        find.byKey(const Key('settings_waveformWindow_switch')),
-      );
+      // Disable the secondary waveform window from Displays; it closes
+      // (Tracks is the only mode now, so the window follows this toggle).
+      await tester.tap(find.byKey(const Key('settings_tile_displays')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('system_waveform_switch')));
       await tester.pumpAndSettle();
 
       expect(windowService.isOpen, isFalse);
 
-      // Close the settings page so the global open-guard resets for the next
-      // test (the toggle no longer navigates away on its own).
-      await tester.tap(find.byKey(const Key('settings_close_button')));
+      // Back to the stage, so the open-route guard resets for the next test.
+      await tester.tap(find.byKey(const Key('loop_settings_stage')));
       await tester.pumpAndSettle();
 
       // The layout never swaps — Tracks is the only mode.
       expect(find.byType(TracksView), findsOneWidget);
     });
 
-    testWidgets('the S key opens the settings page', (tester) async {
+    testWidgets('an install that started in Mute starts in Record and is '
+        'told once', (tester) async {
+      final store = FakeKeyValueStore();
+      await store.setString('looper.default_mode', 'mute');
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      final control = tester
+          .element(find.byType(TracksView))
+          .read<ControlCubit>();
+      expect(control.state.mode, InteractionMode.record);
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isTrue);
+
+      // The next start has nothing to say.
+      dismissAppToast(AppToastId.bootModeRetired);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+    });
+
+    testWidgets('an install that started in Record is not told anything', (
+      tester,
+    ) async {
+      final store = FakeKeyValueStore();
+      await store.setString('looper.default_mode', 'record');
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+    });
+
+    testWidgets('an install with paired Bluetooth devices is told once', (
+      tester,
+    ) async {
+      final facts = FakeConsoleFactsClient(
+        latency: Duration.zero,
+        bluetoothPairings: 2,
+      );
+      await pumpApp(tester, NoopWaveformWindowService(), consoleFacts: facts);
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isTrue);
+      expect(await settings.loadBluetoothRetiredNoticeShown(), isTrue);
+
+      // The next start has nothing to say, though the pairings are still
+      // there for a fallback to the previous system.
+      dismissAppToast(AppToastId.bluetoothRetired);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService(), consoleFacts: facts);
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isFalse);
+    });
+
+    testWidgets('an install with no Bluetooth pairings is told nothing', (
+      tester,
+    ) async {
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        consoleFacts: FakeConsoleFactsClient(latency: Duration.zero),
+      );
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isFalse);
+      expect(await settings.loadBluetoothRetiredNoticeShown(), isFalse);
+    });
+
+    testWidgets('the S key opens Settings', (tester) async {
       await pumpApp(tester, NoopWaveformWindowService());
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.byType(SettingsHomePage), findsOneWidget);
 
-      // Close it so the global open-guard resets for the next test.
-      await tester.tap(find.byKey(const Key('settings_close_button')));
+      // Close it so the open-route guard resets for the next test.
+      await tester.tap(find.byKey(const Key('loop_settings_back')));
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsNothing);
+      expect(find.byType(SettingsHomePage), findsNothing);
     });
 
     // The successor to the device-lost BANNER tests the toast rewrite
@@ -3745,6 +3826,7 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(pinned),
             repository: pinned,
             controllerRepository: controllerRepository,
@@ -3837,6 +3919,7 @@ void main() {
 
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(pinned),
             repository: pinned,
             controllerRepository: controllerRepository,
@@ -3959,6 +4042,7 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
@@ -4098,6 +4182,7 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
@@ -4334,6 +4419,7 @@ void main() {
         final window = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(driven),
             repository: driven,
             controllerRepository: controllerRepository,
@@ -4813,6 +4899,7 @@ void main() {
         // arrival). pump (not pumpAndSettle) — the cubit holds a periodic poll.
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
@@ -4838,6 +4925,49 @@ void main() {
       // the persistent-surface work — see #453.
       skip: true,
     );
+
+    testWidgets('the audio-recovery toast opens the Device page', (
+      tester,
+    ) async {
+      // The pinned interface is absent, so recovery waits and the toast
+      // stands. Its action is the way to the interface chooser.
+      await tester.pumpWidget(
+        App(
+          guards: GuardRegistry(),
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
+          audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
+        ),
+      );
+      // pump, not pumpAndSettle: the recovery cubit holds a periodic poll.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(debugAppToastActive(AppToastId.audioRecovery), isTrue);
+      // Let the toast animate in before tapping its action.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key(AppToastId.audioRecovery)),
+          matching: find.byType(TextButton),
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byType(DeviceSettingsPage), findsOneWidget);
+
+      // Unmount so the recovery poll stops with the test.
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
 
     testWidgets(
       'macOS PlatformMenuBar survives MaterialApp theme rebuild and '

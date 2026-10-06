@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:session_repository/session_repository.dart';
 
 import 'helpers/fake_session_engine.dart';
@@ -22,8 +23,11 @@ void main() {
     root.deleteSync(recursive: true);
   });
 
-  SessionRepository repo() =>
-      SessionRepository(engine: engine, sessionsRoot: () async => root.path);
+  SessionRepository repo() => SessionRepository(
+    guards: GuardRegistry(),
+    engine: engine,
+    sessionsRoot: () async => root.path,
+  );
 
   String bundle() => '${root.path}/s-a';
 

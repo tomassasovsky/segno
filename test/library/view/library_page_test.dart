@@ -695,6 +695,20 @@ void main() {
       expect(find.byKey(const Key('library_open_session')), findsNothing);
     });
 
+    testWidgets('a session too old to convert says so', (tester) async {
+      when(() => repository.readPreview('s-gig')).thenThrow(
+        const SessionUnconvertible(version: 0, reason: 'older than 1'),
+      );
+      await openLibrary(tester);
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+
+      expect(
+        inPreview(find.text(l10n.sessionErrorUnconvertible)),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a session that does not decode says it cannot be read', (
       tester,
     ) async {
