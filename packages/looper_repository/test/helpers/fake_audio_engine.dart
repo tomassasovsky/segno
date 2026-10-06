@@ -1620,6 +1620,71 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  // ---- shared render recipe (#1202): scripted by the tests ----
+
+  /// Answer of [measureRender].
+  RenderMeasurement measureRenderAnswer = (
+    result: EngineResult.ok,
+    plan: const RenderPlan(
+      frames: 48,
+      method: RenderMethod.commonCycle,
+      beatsMilli: 0,
+      tempoSet: false,
+    ),
+  );
+
+  /// Answer of [beginRender].
+  RenderAdmission beginRenderAnswer = (result: EngineResult.ok, job: 1);
+
+  /// Statuses [pollRender] returns in order; the last one repeats. An empty
+  /// list (or `null` in it) reads as an unknown job.
+  List<RenderJobStatus?> renderStatuses = const [
+    RenderJobStatus(state: RenderJobState.done, permille: 1000),
+  ];
+
+  /// Samples [copyRender] returns.
+  Float32List? renderSamples;
+
+  /// Requests passed to [measureRender] and [beginRender], in order.
+  final List<RenderRequest> renderRequests = [];
+
+  /// Jobs passed to [cancelRender], in order.
+  final List<int> cancelledRenders = [];
+
+  int _renderPolls = 0;
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) {
+    renderRequests.add(request);
+    return measureRenderAnswer;
+  }
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) {
+    renderRequests.add(request);
+    _renderPolls = 0;
+    return beginRenderAnswer;
+  }
+
+  @override
+  RenderJobStatus? pollRender(int job) {
+    if (renderStatuses.isEmpty) return null;
+    final i = _renderPolls < renderStatuses.length
+        ? _renderPolls
+        : renderStatuses.length - 1;
+    _renderPolls++;
+    return renderStatuses[i];
+  }
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => renderSamples;
+
+  @override
+  EngineResult cancelRender(int job) {
+    cancelledRenders.add(job);
+    return EngineResult.ok;
+  }
+
   @override
   void dispose() => calls.add('dispose');
 
