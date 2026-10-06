@@ -9,6 +9,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
@@ -113,25 +114,30 @@ class _Rig {
       engine: engine,
       exportsRoot: () async => Directory.systemTemp.path,
     );
+    final ownedFade = testFadeSettings();
     cubit = ControlCubit(
-      fadeSettings: testFadeSettings(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: FakeRecordTimingControl(),
       looper: looper,
       pedal: pedal,
       settings: settings,
       performance: performance,
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: looper),
-      clickVolumeControl: tempo.clickVolumeControl,
-      clickModeControl: tempo.clickModeControl,
-      recordStartControl: tempo.recordStartControl,
       takeLocked: () => powerUp,
       controller: controller,
       midiDevices: midi,
       midiClock: () => clock.elapsed,
+      fadeSettings: ownedFade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: tempo.clickVolumeControl,
+        clickMode: tempo.clickModeControl,
+        recordStart: tempo.recordStartControl,
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: ownedFade,
+      ),
     );
     link.hello();
     unawaited(cubit.load());

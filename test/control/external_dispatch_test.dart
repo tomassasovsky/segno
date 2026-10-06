@@ -9,6 +9,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
@@ -152,15 +153,8 @@ class _Rig {
       exportsRoot: () async => Directory.systemTemp.path,
     );
     fx = FxChainPersistence(looper: looper);
+    final ownedFade = testFadeSettings();
     cubit = ControlCubit(
-      fadeSettings: testFadeSettings(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: FakeRecordTimingControl(),
-      clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: FakeClickModeControl(),
-      recordStartControl: FakeRecordStartControl(),
       looper: looper,
       pedal: pedal,
       settings: settings,
@@ -170,6 +164,18 @@ class _Rig {
       midiDevices: midi,
       midiClock: () => clock.elapsed,
       controller: controller,
+      fadeSettings: ownedFade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: ownedFade,
+      ),
     );
     link.hello();
     unawaited(cubit.load());
@@ -1968,6 +1974,178 @@ void main() {
     (r) {
       looper.setMasterGain(.37);
       expect(looper.readValueTarget(const MasterGainTarget()), .37);
+    },
+  );
+
+  check(
+    'a pair link during the FX settle drops only the Input pan, and the '
+    'FX value is released',
+    ExternalJackSetup.empty,
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..bindMidi(
+          controls: [
+            MidiParameterControl(
+              key: _param.canonicalString(),
+              low: .2,
+              high: .8,
+            ),
+            MidiParameterControl(
+              key: const InputPanTarget(0).canonicalString(),
+              low: const InputPanTarget(0).fromDomain(-.5),
+              high: const InputPanTarget(0).fromDomain(.5),
+            ),
+          ],
+        )
+        // The press is admitted; its FX receipt waits for the next callback.
+        ..midi.push(
+          const RawControllerInput(
+            kind: ControllerSourceKind.midiCc,
+            id: 21,
+            value: 127,
+          ),
+        )
+        ..clock.flushMicrotasks();
+      unawaited(r.mix.setInputPair(input: 0, paired: true));
+      r
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(looper.inputSetup.pairs, contains(0));
+      expect(drive(), closeTo(.8, .0001));
+      // The accepted press owns the FX value, so what is saved is its
+      // Released value, not the held one.
+      final stored = decodeFxChain(
+        r.store.values['track_fx_chain.0'] as String?,
+      );
+      expect(
+        (stored.entries.single as BuiltInEffect).params.first,
+        closeTo(.2, .0001),
+      );
+      r.midiValue(0);
+      expect(drive(), closeTo(.2, .0001));
+    },
+  );
+
+  check(
+    'a pair link while MIDI work is queued drops only the Input pan',
+    ExternalJackSetup.empty,
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..bindMidi(id: 22)
+        ..bindMidi(
+          controls: [
+            MidiParameterControl(
+              key: _param.canonicalString(),
+              low: .2,
+              high: .8,
+            ),
+            MidiParameterControl(
+              key: const InputPanTarget(0).canonicalString(),
+              low: const InputPanTarget(0).fromDomain(-.5),
+              high: const InputPanTarget(0).fromDomain(.5),
+            ),
+          ],
+        )
+        // A chain press holds the shared queue on its storage write.
+        ..store.fxGate = Completer<void>()
+        ..midiValue(127, id: 22)
+        ..midi.push(
+          const RawControllerInput(
+            kind: ControllerSourceKind.midiCc,
+            id: 21,
+            value: 127,
+          ),
+        )
+        ..clock.flushMicrotasks();
+      unawaited(r.mix.setInputPair(input: 0, paired: true));
+      r
+        ..settle()
+        ..store.fxGate!.complete()
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(looper.inputSetup.pairs, contains(0));
+      expect(drive(), closeTo(.8, .0001));
+    },
+  );
+
+  check(
+    'a pair link while an External press saves its FX drops only the Input '
+    'pan',
+    button(
+      [],
+      parameters: [
+        ExternalParameter(
+          target: _param,
+          active: .8,
+          inactive: .2,
+          condition: ExternalValueCondition.heldReleased,
+        ),
+        ExternalParameter(
+          target: const TrackVolumeTarget(0),
+          active: const TrackVolumeTarget(0).fromDomain(.6),
+          inactive: const TrackVolumeTarget(0).fromDomain(.3),
+          condition: ExternalValueCondition.heldReleased,
+        ),
+        ExternalParameter(
+          target: const InputPanTarget(0),
+          active: const InputPanTarget(0).fromDomain(.5),
+          inactive: const InputPanTarget(0).fromDomain(-.5),
+          condition: ExternalValueCondition.heldReleased,
+        ),
+      ],
+    ),
+    (r) {
+      // The press's FX save waits in storage while the link lands.
+      r
+        ..store.fxGate = Completer<void>()
+        ..sample(255)
+        ..settle();
+      unawaited(r.mix.setInputPair(input: 0, paired: true));
+      r.settle();
+      expect(looper.inputSetup.pairs, contains(0));
+      r
+        ..store.fxGate!.complete()
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(
+        (looper.trackEffects(0).single as BuiltInEffect).params[0],
+        closeTo(.8, .0001),
+      );
+      // The track level in the same press still lands.
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(.6, 1e-6));
+    },
+  );
+
+  check(
+    'an unrelated pair link keeps another jack expression baseline',
+    ExternalJackSetup(
+      type: ExternalJackType.expression,
+      expression: ExternalExpressionSetup(
+        calibration: ExpressionCalibration(heel: 0, toe: 255),
+        mappings: [ExpressionMapping(target: _param)],
+      ),
+    ),
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..sample(0, kind: PedalCtrlKind.expression)
+        ..sample(255, kind: PedalCtrlKind.expression)
+        ..settle();
+      expect(drive(), closeTo(1, .0001));
+      unawaited(r.mix.setInputPair(input: 0, paired: true));
+      r.settle();
+      expect(looper.inputSetup.pairs, contains(0));
+      // The pair link retired Input pan, which this jack does not map: its
+      // first move after the link applies.
+      r
+        ..sample(51, kind: PedalCtrlKind.expression)
+        ..settle();
+      expect(drive(), closeTo(51 / 255, .0001));
     },
   );
 }
