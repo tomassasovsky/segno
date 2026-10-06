@@ -297,7 +297,11 @@ static void le_count_in_reset(le_engine* e) {
       e->tracks[c].pending_capture_shadow = 0;
     }
     e->launch_action[c] = 0;
-    store_i32(&e->tracks[c].a_pending_launch, 0);
+    /* A commit keeps each member's pending flag until its grace flag is
+     * stored (le_count_in_commit), so a control thread never reads both as
+     * clear while the launch is still cancellable; a cancellation clears it
+     * here, since no grace follows. */
+    if (!e->launch_committing) store_i32(&e->tracks[c].a_pending_launch, 0);
   }
   e->launch_count = 0;
   e->launch_stopped_mask = 0;
@@ -4179,6 +4183,11 @@ static void le_count_in_commit(le_engine* e, uint64_t frame) {
     actions[i] = e->launch_action[order[i]];
     e->launch_action[order[i]] = 0; /* keep the member's prepared image */
   }
+  /* Set before the reset so it leaves a_pending_launch to the member loop
+   * below: a DISARM control posts while a member reads neither pending nor
+   * in grace would drain against launch_grace and empty the take unticketed
+   * (#1146). The start bodies below already run under this flag. */
+  e->launch_committing = 1;
   le_count_in_reset(e);
   e->launch_stopped_mask = stopped;
   const int mode = load_i32(&e->a_looper_mode);
@@ -4191,7 +4200,6 @@ static void le_count_in_commit(le_engine* e, uint64_t frame) {
     if (section >= 0) for (int c = 0; c < e->track_count; ++c)
       if (c != section && c != primary) e->launch_stopped_mask |= 1u << c;
   }
-  e->launch_committing = 1;
   for (int i = 0; i < count; ++i) {
     const int ch = order[i], action = actions[i];
     const int state = load_i32(&e->tracks[ch].a_state);
@@ -4201,7 +4209,19 @@ static void le_count_in_commit(le_engine* e, uint64_t frame) {
     if (action == 2) handle_play(e, ch, frame);
     else handle_record(e, ch, frame);
     e->launch_grace[ch] = action;
-    store_i32(&e->tracks[ch].a_launch_grace, action);
+    /* Grace before pending, both release: le_ticket_launch_cancel reads
+     * pending first (acquire), so a clear it observes implies the grace store
+     * is visible, and the member is cancellable-and-ticketed at every instant. */
+    atomic_store_explicit(&e->tracks[ch].a_launch_grace, action,
+                          memory_order_release);
+    atomic_store_explicit(&e->tracks[ch].a_pending_launch, 0,
+                          memory_order_release);
+  }
+  /* Members skipped above (no longer in a launchable state) get no grace:
+   * their pending flag, kept by the reset, clears here. */
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    atomic_store_explicit(&e->tracks[c].a_pending_launch, 0,
+                          memory_order_release);
   }
   /* Section exclusion changes playback, not capture ownership. A later Play
    * must not finalize an earlier capture; only a subsequent capture does so. */

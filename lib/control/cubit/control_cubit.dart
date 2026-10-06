@@ -1966,12 +1966,23 @@ class ControlCubit extends Cubit<ControlState> {
       if (track.state == TrackState.stopped) {
         return _looper.play(channel: channel).isOk; // parked -> resume
       } else {
-        return _looper.record(channel: channel).isOk;
+        return _recordAccepted(channel);
       }
     }
     // The engine's cycling record() walks empty -> record, capturing -> play
     // (finalize), playing -> overdub.
-    return _looper.record(channel: channel).isOk;
+    return _recordAccepted(channel);
+  }
+
+  /// A Record press counts as accepted when the engine took it, or when the
+  /// repository still owes it the one retry a fresh capture refused inside the
+  /// callback's one-block window gets (#1146): the press is not lost, so its
+  /// contact stays lit while it resolves.
+  bool _recordAccepted(int channel) {
+    final result = _looper.record(channel: channel);
+    return result.isOk ||
+        (result == EngineResult.notReady &&
+            _looper.recordRetryPending(channel));
   }
 
   /// Mute mode Rec/Play: resume while parked; while running, expand to the
