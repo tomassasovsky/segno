@@ -5,9 +5,12 @@
  */
 #define MINIAUDIO_IMPLEMENTATION
 
-/* PCM capture/playback plus the built-in WAV, FLAC and MP3 decoders, which
- * the backing player reads its files with (#1200, le_backing_decode_file).
- * Encoders, generators and the resource manager stay compiled out. */
+/* PCM capture/playback plus the built-in WAV and MP3 decoders, which the
+ * app's audio-file decoder uses (#1200, engine_decode.c). The FLAC decoder
+ * stays out: CVE-2024-41147 (an out-of-bounds write in its LPC path) is
+ * unfixed in this vendored 0.11.21. Encoders, generators and the resource
+ * manager stay compiled out too. */
+#define MA_NO_FLAC
 #define MA_NO_ENCODING
 #define MA_NO_GENERATION
 #define MA_NO_RESOURCE_MANAGER

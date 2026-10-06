@@ -2336,23 +2336,59 @@ LE_EXPORT int32_t le_backing_buffer_rate(const le_backing_buffer* buffer);
  * whole buffer into [out]; returns the count written, or LE_ERR_INVALID. */
 LE_EXPORT int32_t le_backing_buffer_peaks(const le_backing_buffer* buffer,
                                           float* out, int32_t buckets);
-/* The longest backing file accepted, in seconds of source audio. */
-#define LE_BACKING_MAX_SECONDS 900
+/* ---- the audio-file decoder (#1200; the app's only one: the backing
+ * player, the Library preview and recording recovery all read files here) --
+ * WAV (8/16/24/32-bit PCM, 32/64-bit float) and MP3. FLAC is compiled out
+ * until the vendored miniaudio carries the fix for CVE-2024-41147. Sources
+ * must be 8-384 kHz, mono or stereo. Any thread but the audio thread; no
+ * engine handle; nothing here touches engine state. */
 
-/* Decodes the audio file at [path] (WAV: 8/16/24/32-bit PCM and 32/64-bit
- * float; FLAC; MP3) into a new stereo buffer at [sample_rate], converting the
- * rate with the band-limited offline converter (le_resample_offline, after
- * exact half-band halving for reductions below one half). Mono plays as dual
- * mono. Any thread but the audio thread; no engine handle. Writes the file's
- * own rate and channel count to [source_rate] / [source_channels] when they
- * are not NULL. LE_ERR_INVALID: NULL or empty path, a missing, unreadable,
- * unsupported or damaged file, or more than two channels; LE_ERR_TOO_LONG:
- * over LE_BACKING_MAX_SECONDS (refused before the whole file is read when its
- * header states the length); LE_ERR_CAPACITY: allocation failure. */
+/* The longest whole file accepted, in seconds of source audio. */
+#define LE_BACKING_MAX_SECONDS 900
+/* What a decode must leave free (MemAvailable on Linux) for loops, capture
+ * and the system: the appliance memory budget's floor (#1200 plan, M1). */
+#define LE_MEM_RESERVE_BYTES (512ll * 1024 * 1024)
+
+typedef struct le_backing_decode_info {
+  int32_t source_rate;     /* the file's own rate */
+  int32_t source_channels; /* 1 or 2 */
+  int64_t source_frames;   /* frames decoded, at the source rate */
+  int32_t truncated;       /* a bounded read stopped before the end */
+} le_backing_decode_info;
+
+/* Decodes [path] into a new stereo buffer at [sample_rate] (mono plays as
+ * dual mono), converting the rate with the band-limited offline converter
+ * after exact half-band halving for reductions below one half.
+ *
+ * Whole file (start_frame 0, max_frames 0): refused past
+ * LE_BACKING_MAX_SECONDS (LE_ERR_TOO_LONG, before reading when the length is
+ * stated), and refused as damaged when it decodes to a length other than the
+ * one it states. Bounded read (a preview, a recording part): starts at
+ * [start_frame] (source frames) and keeps at most [max_frames] output frames,
+ * setting info->truncated when the file goes on.
+ *
+ * Refuses with LE_ERR_CAPACITY when the decode's peak (source plus output)
+ * would leave less than LE_MEM_RESERVE_BYTES available, or an allocation
+ * fails. LE_ERR_INVALID: bad arguments, a missing, unreadable, unsupported or
+ * damaged file, a rate or channel count out of range, a decode error mid-
+ * stream. [info] (may be NULL) is filled as far as the file was read. */
 LE_EXPORT int32_t le_backing_decode_file(const char* path, int32_t sample_rate,
+                                         int64_t start_frame,
+                                         int32_t max_frames,
                                          le_backing_buffer** out,
-                                         int32_t* source_rate,
-                                         int32_t* source_channels);
+                                         le_backing_decode_info* info);
+
+/* Decodes all of [path] in small chunks, retaining no PCM, to prove it plays
+ * and to measure it: fills [info] and [buckets] per-bucket absolute peaks
+ * (max of both sides; buckets may be 0). The same refusals as a whole-file
+ * decode, minus the memory one. What an import runs before it keeps a file. */
+LE_EXPORT int32_t le_backing_probe_file(const char* path,
+                                        le_backing_decode_info* info,
+                                        float* peaks, int32_t buckets);
+
+/* The buffer's interleaved stereo float32 samples (frames x 2), for a
+ * consumer that copies them (the Library preview). */
+LE_EXPORT const float* le_backing_buffer_pcm(const le_backing_buffer* buffer);
 
 /* Frees a buffer the caller still owns. NULL is a no-op. */
 LE_EXPORT void le_backing_buffer_free(le_backing_buffer* buffer);
