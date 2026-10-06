@@ -28,6 +28,7 @@ export 'package:segno_engine/segno_engine.dart'
         RecordTiming,
         ReopenOutcome,
         TempoSource,
+        TrackHistory,
         TrackState,
         inputTrimGainOfDb,
         kInputTrimStepDb,

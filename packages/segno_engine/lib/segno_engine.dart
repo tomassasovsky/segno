@@ -54,7 +54,7 @@ export 'src/engine_snapshot.dart'
         kMaxOutputBuses;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
 export 'src/fx_recipe.dart' show FxOwner, FxRecipe, FxRecipeSlot;
-export 'src/history_entry.dart' show HistoryEntry, HistoryKind;
+export 'src/history_entry.dart' show HistoryEntry, HistoryKind, TrackHistory;
 export 'src/input_conditioning_param.dart' show InputConditioningParam;
 export 'src/lane_cache.dart' show LaneCacheState;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;

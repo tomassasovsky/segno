@@ -779,6 +779,7 @@ void main() {
       outputMask: 0x3,
       inputChannel: index,
       layers: [SessionLayer(file: file)],
+      history: TrackHistory.none,
     );
 
     Session sessionWith(List<SessionTrack> tracks) => Session(
@@ -1075,10 +1076,10 @@ void main() {
     test('maps a multi-lane track with per-lane overdub history', () {
       // Two lanes, each a 3-layer stack (undo 1, live, redo 1) — the per-lane
       // layer zip must keep each lane's ordered layers, history and counts.
-      const history = [
+      const history = TrackHistory([
         HistoryEntry(HistoryKind.processed),
         HistoryEntry(HistoryKind.layer),
-      ];
+      ], undoCount: 1);
       SessionLane historyLane(int index, List<String> files) => SessionLane(
         lane: index,
         volume: 1,
@@ -1086,8 +1087,6 @@ void main() {
         outputMask: 0x3,
         inputChannel: index,
         history: history,
-        undoCount: 1,
-        redoCount: 1,
         layers: [for (final f in files) SessionLayer(file: f)],
       );
       final l0 = [

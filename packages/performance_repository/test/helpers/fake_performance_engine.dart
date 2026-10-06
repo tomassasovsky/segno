@@ -211,14 +211,11 @@ class FakePerformanceEngine implements AudioEngine {
   ) => EngineResult.ok;
 
   @override
-  List<HistoryEntry> exportHistory(int channel) => const [];
+  TrackHistory exportHistory(int channel) => TrackHistory.none;
 
   @override
-  EngineResult finalizeHistory(
-    int channel,
-    List<HistoryEntry> history,
-    int undoCount,
-  ) => EngineResult.ok;
+  EngineResult finalizeHistory(int channel, TrackHistory history) =>
+      EngineResult.ok;
 
   @override
   EngineResult commitSession(int baseFrames, {required int loopBars}) =>

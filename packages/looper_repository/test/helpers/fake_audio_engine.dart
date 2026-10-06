@@ -1462,9 +1462,8 @@ class FakeAudioEngine implements AudioEngine {
   /// `(channel, lane, ordinal)`.
   final Map<(int, int, int), Float32List> importedLayers = {};
 
-  /// The history and undo count passed to [finalizeHistory], keyed by
-  /// channel.
-  final Map<int, (List<HistoryEntry>, int)> finalizedHistory = {};
+  /// The history passed to [finalizeHistory], keyed by channel.
+  final Map<int, TrackHistory> finalizedHistory = {};
 
   /// Result returned by [importLayer] once any [importFailCountdown] is spent.
   EngineResult importResult = EngineResult.ok;
@@ -1512,19 +1511,15 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  List<HistoryEntry> exportHistory(int channel) {
+  TrackHistory exportHistory(int channel) {
     calls.add('exportHistory');
-    return const [];
+    return TrackHistory.none;
   }
 
   @override
-  EngineResult finalizeHistory(
-    int channel,
-    List<HistoryEntry> history,
-    int undoCount,
-  ) {
+  EngineResult finalizeHistory(int channel, TrackHistory history) {
     calls.add('finalizeHistory');
-    finalizedHistory[channel] = (history, undoCount);
+    finalizedHistory[channel] = history;
     return EngineResult.ok;
   }
 
@@ -1545,8 +1540,8 @@ class FakeAudioEngine implements AudioEngine {
         volume: 1,
         muted: false,
         lengthFrames: entry.value.length,
-        undoDepth: finalized.$2,
-        redoDepth: finalized.$1.length - finalized.$2,
+        undoDepth: finalized.undoCount,
+        redoDepth: finalized.redoCount,
         rms: 0,
         peak: 0,
       );

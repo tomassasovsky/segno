@@ -5204,8 +5204,8 @@ class SegnoEngineBindings {
       >();
 
   /// Copies up to `max_frames` frames of track `channel`'s lane `lane` image at
-  /// `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_depth)` are the
-  /// undo snapshots, `undo_depth` is the live buffer, and the redo snapshots
+  /// `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_count)` are the
+  /// undo snapshots, `undo_count` is the live buffer, and the redo snapshots
   /// follow, newest-adjacent first; a redo-side peel marker holds no image and
   /// takes no ordinal (le_engine_export_history). Returns the frames written (the
   /// loop length, clamped to `max_frames`), 0 for an empty layer, or
@@ -5364,15 +5364,21 @@ class SegnoEngineBindings {
   /// redo-side peel entry is a marker without an image: le_engine_export_layer's
   /// ordinals count image-bearing entries only, so a track's image count is
   /// `undo_count + 1 + (redo entries that are not peel markers)`. Writes at most
-  /// `max` entries and returns the track's TOTAL entry count (which may exceed
-  /// `max`), or LE_ERR_INVALID for a bad handle, channel, NULL array or negative
-  /// `max`. Control thread.
+  /// `max` entries, stores the undo stack's entry count in `*undo_count` (the
+  /// first `*undo_count` entries are the undo side and ordinal `*undo_count` is
+  /// the live image), and returns the track's TOTAL entry count (which may exceed
+  /// `max`), or LE_ERR_INVALID for a bad handle, channel, NULL pointer or
+  /// negative `max`. `*undo_count` is the raw stack count, not the snapshot's
+  /// undo_depth: that one reads 0 while a content-giving command (a clear
+  /// restore) is in flight, so a Session capture must split by this value.
+  /// Control thread.
   int le_engine_export_history(
     ffi.Pointer<le_engine> engine,
     int channel,
     ffi.Pointer<ffi.Int32> kinds,
     ffi.Pointer<ffi.Int32> skipped,
     int max,
+    ffi.Pointer<ffi.Int32> undo_count,
   ) {
     return _le_engine_export_history(
       engine,
@@ -5380,6 +5386,7 @@ class SegnoEngineBindings {
       kinds,
       skipped,
       max,
+      undo_count,
     );
   }
 
@@ -5392,6 +5399,7 @@ class SegnoEngineBindings {
             ffi.Pointer<ffi.Int32>,
             ffi.Pointer<ffi.Int32>,
             ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
           )
         >
       >('le_engine_export_history');
@@ -5403,6 +5411,7 @@ class SegnoEngineBindings {
           ffi.Pointer<ffi.Int32>,
           ffi.Pointer<ffi.Int32>,
           int,
+          ffi.Pointer<ffi.Int32>,
         )
       >();
 
