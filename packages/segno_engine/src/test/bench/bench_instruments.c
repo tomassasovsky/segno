@@ -15,13 +15,18 @@
  *   voices    the costliest patch, then a mixed set (eight instruments, one
  *             per family plus a pad, voices spread across them), at 8, 16,
  *             32 and 64 voices of a 64-voice pool, over --seconds.
- *   burst     32 note-ons on an idle pool plus the render of the block they
- *             land in, timed together, repeated (the chord-strike worst case).
+ *   burst     32 note-ons plus the render of the block they land in, timed
+ *             together, repeated: on an idle pool, and on a full 32-voice
+ *             pool (32 steals, 32 fades).
  *   engine    le_engine_process with 8 tracks x 8 lanes PLAYING (the
- *             pitch/time baseline), alone and then with 32 voices of the
- *             costliest patch rendered in the same period; informational
- *             here, Part 2a's threshold once the voices run inside the
- *             callback.
+ *             pitch/time baseline), alone and with 32 voices of the costliest
+ *             patch rendered in the same period (informational).
+ *   joint     the whole worst case in one period, judged on its tail: the
+ *             8 x 8 baseline with eight live inputs monitored through one
+ *             reverb each, the pitch/time read head at 8x over the 64 lanes
+ *             (the Speed work its plan adds to the mixer), and 32 voices of
+ *             the costliest patch. Reported with p99.9 and the count of
+ *             periods over the budget ("late").
  *
  * Scheduling: SCHED_FIFO (BENCH_RT_PRIO, below the app's audio thread) around
  * the timed loops only. Thresholds (--assert): the Pi 5 set, refused on
@@ -47,6 +52,7 @@
 #include <sys/syscall.h>
 #endif
 
+#include "engine_read_head.h"
 #include "segno_engine_api.h"
 #include "synth_voice.h"
 
@@ -112,14 +118,22 @@ static stats run_voices(const bench_opts* o, const voice_set* set,
   return s;
 }
 
+/* `notes` note-ons plus their block; `prefill` voices already held. */
 static stats run_burst(const bench_opts* o, int32_t patch, int32_t notes,
-                       size_t iterations) {
+                       int32_t prefill, size_t iterations) {
   double* t = (double*)malloc(sizeof(double) * iterations);
   const int drums = le_synth_patch_at(patch)->family == LE_SYNTH_DRUMS;
   rt_enter();
   for (size_t k = 0; k < iterations; ++k) {
     le_synth_init(&g_synth, o->rate, LE_SYNTH_DEFAULT_VOICES, (uint32_t)k);
     le_synth_set_instrument(&g_synth, 0, patch);
+    for (int32_t n = 0; n < prefill; ++n) {
+      le_synth_note_on(&g_synth, 0, 1000u + (uint32_t)n,
+                       drums ? k_drum_notes[n % 7] : 37 + n * 2, 90);
+    }
+    if (prefill > 0) {
+      le_synth_render(&g_synth, g_bus, LE_SYNTH_MAX_INSTRUMENTS, o->period);
+    }
     const double a = now_us();
     for (int32_t n = 0; n < notes; ++n) {
       le_synth_note_on(&g_synth, 0, (uint32_t)n + 1,
@@ -159,6 +173,68 @@ static stats run_engine(const bench_opts* o, int32_t patch, int32_t voices,
   }
   rt_leave();
   free(snap);
+  const stats s = stats_of(t, periods);
+  free(t);
+  rig_destroy(&r);
+  return s;
+}
+
+/* The joint worst case: everything the period may have to carry at once. */
+static stats run_joint(const bench_opts* o, int32_t patch, int32_t voices,
+                       const float* src, int32_t frames) {
+  enum { kInputs = 8, kLanesPerTrack = 8 };
+  rig r;
+  if (!rig_create_io(&r, o, kLanesPerTrack, src, frames, kInputs)) {
+    fprintf(stderr, "joint rig failed\n");
+    exit(3);
+  }
+  for (int32_t c = 0; c < kInputs; ++c) {
+    if (le_engine_set_monitor_input_fx(r.e, c, 0, LE_FX_REVERB) != LE_OK ||
+        le_engine_set_monitor_input_fx_count(r.e, c, 1) != LE_OK ||
+        le_engine_set_monitor_input(r.e, c, 1) != LE_OK) {
+      fprintf(stderr, "joint monitor %d failed\n", c);
+      exit(3);
+    }
+  }
+  for (int k = 0; k < 50; ++k) le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
+  /* the read head reads one copy per track (8 x frames floats), each lane of
+   * a track the same copy: the arithmetic is the plan's, the cache footprint
+   * an eighth of eight distinct lanes */
+  float* copies[LE_MAX_TRACKS];
+  float* lanes[LE_MAX_TRACKS * kLanesPerTrack];
+  le_read_head heads[LE_MAX_TRACKS];
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    copies[t] = (float*)malloc(sizeof(float) * (size_t)frames);
+    memcpy(copies[t], src, sizeof(float) * (size_t)frames);
+    for (int l = 0; l < kLanesPerTrack; ++l) lanes[t * kLanesPerTrack + l] = copies[t];
+    heads[t].reversed = 0;
+    heads[t].origin = (double)(t * 977 % frames);
+    heads[t].rate = 8.0;
+  }
+  float* acc = (float*)calloc((size_t)o->period, sizeof(float));
+  le_synth_init(&g_synth, o->rate, LE_SYNTH_DEFAULT_VOICES, 1);
+  le_synth_set_instrument(&g_synth, 0, patch);
+  uint32_t origin = 0;
+  const size_t periods = (size_t)(o->seconds * o->rate / o->period);
+  double* t = (double*)malloc(sizeof(double) * (periods ? periods : 1));
+  le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
+  int64_t base = 0;
+  rt_enter();
+  for (size_t k = 0; k < periods; ++k) {
+    const double a = now_us();
+    le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
+    head_period(heads, lanes, kLanesPerTrack, frames, base, o->period, 8.0, acc);
+    keep_voices(&g_synth, 0, voices, &origin);
+    le_synth_render(&g_synth, g_bus, LE_SYNTH_MAX_INSTRUMENTS, o->period);
+    t[k] = now_us() - a;
+    base += o->period;
+    g_sink = acc[(k * 7) % (size_t)o->period];
+    if ((k & 63) == 0) le_engine_get_snapshot(r.e, snap);
+  }
+  rt_leave();
+  free(snap);
+  free(acc);
+  for (int i = 0; i < LE_MAX_TRACKS; ++i) free(copies[i]);
   const stats s = stats_of(t, periods);
   free(t);
   rig_destroy(&r);
@@ -232,7 +308,7 @@ int main(int argc, char** argv) {
 
   /* voices */
   printf("## voices (64-voice pool)\n\n");
-  print_header();
+  print_tail_header();
   static const int32_t counts[] = {8, 16, 32, 64};
   stats worst[4], mixed[4];
   const voice_set cost = {{costliest}, 1};
@@ -245,24 +321,27 @@ int main(int argc, char** argv) {
     worst[c] = run_voices(&o, &cost, counts[c], LE_SYNTH_MAX_VOICES, o.seconds);
     snprintf(label, sizeof(label), "%s x %d", le_synth_patch_at(costliest)->id,
              counts[c]);
-    print_row(label, worst[c]);
+    print_tail_row(label, worst[c]);
   }
   for (int c = 0; c < 4; ++c) {
     char label[64];
     mixed[c] = run_voices(&o, &mix, counts[c], LE_SYNTH_MAX_VOICES, o.seconds);
     snprintf(label, sizeof(label), "mixed set x %d", counts[c]);
-    print_row(label, mixed[c]);
+    print_tail_row(label, mixed[c]);
   }
   printf("\n");
 
   /* burst */
   printf("## burst (32 note-ons + the block they land in)\n\n");
-  print_header();
+  print_tail_header();
   size_t iterations = (size_t)(o.seconds * o.rate / o.period / 8);
   if (iterations < 200) iterations = 200;
   if (iterations > 20000) iterations = 20000;
-  const stats burst = run_burst(&o, costliest, 32, iterations);
-  print_row("32-note burst", burst);
+  const stats burst_idle = run_burst(&o, costliest, 32, 0, iterations);
+  print_tail_row("32-note burst, idle pool", burst_idle);
+  const stats burst_full = run_burst(&o, costliest, 32, 32, iterations);
+  print_tail_row("32-note burst, full pool", burst_full);
+  const stats burst = burst_full.p999 > burst_idle.p999 ? burst_full : burst_idle;
   printf("\n");
 
   /* engine */
@@ -274,12 +353,16 @@ int main(int argc, char** argv) {
   print_row("8 x 8 lanes", base);
   const stats with = run_engine(&o, costliest, 32, src, frames);
   print_row("8 x 8 lanes + 32 voices", with);
+  printf("\n## joint (8 x 8 lanes + 8 monitored inputs with reverb + read head 8x + 32 voices)\n\n");
+  print_tail_header();
+  const stats joint = run_joint(&o, costliest, 32, src, frames);
+  print_tail_row("joint worst case", joint);
   free(src);
   printf("\n- peak RSS: %.0f MiB\n\n", peak_rss_bytes() / 1048576.0);
 
   /* the higher of the costliest-patch and mixed-set figures at each count */
-  const double p99_32 = worst[2].p99 > mixed[2].p99 ? worst[2].p99 : mixed[2].p99;
-  const double p99_64 = worst[3].p99 > mixed[3].p99 ? worst[3].p99 : mixed[3].p99;
+  const double p999_32 = worst[2].p999 > mixed[2].p999 ? worst[2].p999 : mixed[2].p999;
+  const double p999_64 = worst[3].p999 > mixed[3].p999 ? worst[3].p999 : mixed[3].p999;
   const double p50_32 = worst[2].p50 > mixed[2].p50 ? worst[2].p50 : mixed[2].p50;
   const double p50_64 = worst[3].p50 > mixed[3].p50 ? worst[3].p50 : mixed[3].p50;
   if (o.do_assert) {
@@ -287,10 +370,13 @@ int main(int argc, char** argv) {
       judge("32 voices p50 <= 7.5% of period", 100.0 * p50_32 / g_budget_us, 7.5, 1);
       judge("64 voices p50 <= 15% of period", 100.0 * p50_64 / g_budget_us, 15.0, 1);
       judge("32-note burst p50 <= 10% of period", 100.0 * burst.p50 / g_budget_us, 10.0, 1);
+      judge("joint worst case p50 <= 37.5% of period", 100.0 * joint.p50 / g_budget_us, 37.5, 1);
     } else {
-      judge("32 voices p99 <= 15% of period", 100.0 * p99_32 / g_budget_us, 15.0, 1);
-      judge("64 voices p99 <= 30% of period", 100.0 * p99_64 / g_budget_us, 30.0, 1);
-      judge("32-note burst p99 <= 20% of period", 100.0 * burst.p99 / g_budget_us, 20.0, 1);
+      judge("32 voices p99.9 <= 15% of period", 100.0 * p999_32 / g_budget_us, 15.0, 1);
+      judge("64 voices p99.9 <= 30% of period", 100.0 * p999_64 / g_budget_us, 30.0, 1);
+      judge("32-note burst p99.9 <= 20% of period", 100.0 * burst.p999 / g_budget_us, 20.0, 1);
+      judge("joint worst case p99.9 <= 75% of period", 100.0 * joint.p999 / g_budget_us, 75.0, 1);
+      judge("joint worst case: no period over the budget", (double)joint.over, 0.0, 1);
     }
     printf("## verdict (%s thresholds)\n\n", o.proxy ? "arm64 proxy" : "Pi 5");
     int failed = 0;

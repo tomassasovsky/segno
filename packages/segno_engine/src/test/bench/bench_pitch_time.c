@@ -89,8 +89,6 @@ static void lower_to_worker_nice(void) {
 #endif
 }
 
-static volatile float g_sink;
-
 static stats scenario_head(const bench_opts* o, int total_lanes, double rate,
                            float** lane_bufs, int32_t len) {
   const int lanes_per_track = total_lanes / LE_MAX_TRACKS;
@@ -104,23 +102,11 @@ static stats scenario_head(const bench_opts* o, int total_lanes, double rate,
   double* tm = (double*)malloc(sizeof(double) * periods);
   float* acc = (float*)calloc((size_t)o->period, sizeof(float));
   int64_t base = 0;
-  const int decimate = rate >= 2.0;
   rt_enter();
   for (size_t k = 0; k < periods; ++k) {
     const double a = now_us();
-    for (int32_t f = 0; f < o->period; ++f) {
-      const int64_t pos = base + f;
-      float sum = 0.0f;
-      for (int t = 0; t < LE_MAX_TRACKS; ++t) {
-        const double idx = le_head_index(&heads[t], pos, len);
-        for (int l = 0; l < lanes_per_track; ++l) {
-          const float* buf = lane_bufs[t * lanes_per_track + l];
-          sum += decimate ? le_head_sample_decimated(buf, len, idx, rate)
-                          : le_head_sample(buf, len, idx);
-        }
-      }
-      acc[f] = sum;
-    }
+    head_period(heads, lane_bufs, lanes_per_track, len, base, o->period, rate,
+                acc);
     base += o->period;
     tm[k] = now_us() - a;
     g_sink = acc[(k * 7) % (size_t)o->period];
