@@ -1028,6 +1028,19 @@
     "renameable",
     "topbar",
     "Mogf",
-    "RKTE"
+    "RKTE",
+    "quiesces",
+    "resamplers",
+    "halfband",
+    "writability",
+    "OIOV",
+    "wotf",
+    "ZDIR",
+    "downmixed",
+    "downmix",
+    "sinc",
+    "gaplessly",
+    "Goertzel",
+    "bandlimited"
   ]
 }
