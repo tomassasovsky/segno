@@ -385,9 +385,17 @@ class _FootFadePedal extends StatelessWidget {
             _ => '',
           };
     final timeEditable = projection.durations != null;
+    final hold = context.select<ControlCubit, ({bool pending, Duration after})>(
+      (cubit) => (
+        pending: cubit.state.pendingHolds.contains(button),
+        after: cubit.state.holdThreshold,
+      ),
+    );
     return PerformancePedal(
       keyPrefix: 'foot_fade_pedal',
       button: button,
+      holdPending: hold.pending,
+      holdThreshold: hold.after,
       label: switch (button) {
         PedalButton.recPlay => '●+▶',
         PedalButton.stop => '■',

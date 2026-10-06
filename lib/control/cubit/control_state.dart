@@ -25,6 +25,8 @@ class ControlState extends Equatable {
     this.footReverseFailure = 0,
     this.footPeelFailure = 0,
     this.footPeelRefusal = FootPeelRefusal.failed,
+    this.pendingHolds = const <PedalButton>{},
+    this.holdThreshold = const Duration(milliseconds: 800),
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -133,6 +135,17 @@ class ControlState extends Equatable {
 
   /// Why the latest refused Peel press removed nothing.
   final FootPeelRefusal footPeelRefusal;
+
+  /// The pedals whose Hold is armed and not yet settled: the hold has neither
+  /// fired, nor been released into its tap, nor been cancelled (#1229, the
+  /// Pending Hold cue). Only the fact is published, never an instant: a face
+  /// times its progress bar from its own ticker against [holdThreshold], so
+  /// a wall-clock step (no RTC, NTP after boot) cannot move it.
+  final Set<PedalButton> pendingHolds;
+
+  /// How long a contact must last to become a Hold — the loaded pedal
+  /// long-press threshold every gesture uses.
+  final Duration holdThreshold;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -250,6 +263,8 @@ class ControlState extends Equatable {
     int? footReverseFailure,
     int? footPeelFailure,
     FootPeelRefusal? footPeelRefusal,
+    Set<PedalButton>? pendingHolds,
+    Duration? holdThreshold,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -285,6 +300,8 @@ class ControlState extends Equatable {
     footReverseFailure: footReverseFailure ?? this.footReverseFailure,
     footPeelFailure: footPeelFailure ?? this.footPeelFailure,
     footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
+    pendingHolds: pendingHolds ?? this.pendingHolds,
+    holdThreshold: holdThreshold ?? this.holdThreshold,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -322,6 +339,8 @@ class ControlState extends Equatable {
     footReverseFailure,
     footPeelFailure,
     footPeelRefusal,
+    pendingHolds,
+    holdThreshold,
     cursor,
     activeBank,
     excluded,
