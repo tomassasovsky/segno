@@ -6,14 +6,8 @@ import 'package:segno/control/binding/control_availability.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/owned_value_control.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/model/click_mode.dart';
-import 'package:segno/looper/model/one_shot.dart';
-import 'package:segno/looper/model/overdub_decay.dart';
-import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_start.dart';
-import 'package:segno/looper/model/record_timing.dart';
-import 'package:settings_repository/settings_repository.dart';
 
 /// Picker categories; Loop controls are separate from FX stage categories.
 enum ExpressionDestinationKind {
@@ -318,14 +312,7 @@ List<ExpressionDestination> expressionDestinations(
   List<String> trackNames,
   LooperRepository looper, {
   bool withActivations = false,
-  ClickModeSnapshot? clickModeSnapshot,
-  double? clickVolume,
-  DecaySnapshot? decaySnapshot,
-  FadeDurations? fadeDurations,
-  OneShotSnapshot? oneShotSnapshot,
-  RecordLengthSnapshot? recordLengthSnapshot,
-  RecordStartSnapshot? recordStartSnapshot,
-  RecordTimingSnapshot? recordTimingSnapshot,
+  OwnedValueSnapshots owned = const OwnedValueSnapshots(),
 }) {
   final drafts = <String, _Draft>{};
   _Draft draftFor(
@@ -341,17 +328,7 @@ List<ExpressionDestination> expressionDestinations(
     ),
   );
 
-  final availability = ControlAvailability(
-    looper: looper,
-    clickModeSnapshot: clickModeSnapshot,
-    clickVolume: clickVolume,
-    decaySnapshot: decaySnapshot,
-    fadeDurations: fadeDurations,
-    oneShotSnapshot: oneShotSnapshot,
-    recordLengthSnapshot: recordLengthSnapshot,
-    recordStartSnapshot: recordStartSnapshot,
-    recordTimingSnapshot: recordTimingSnapshot,
-  );
+  final availability = ControlAvailability(looper: looper, owned: owned);
   for (final target in availability.targets) {
     final place = _placeOf(target);
     if (place == null) continue;

@@ -758,7 +758,86 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/dart analyze --fatal-infos lib test packages && bloc lint lib test packages && /Users/Tomas/development/flutter/bin/flutter test
 ```
 
-### Part 4: owner-decided behavior changes
+#### Part 3 as built
+
+Status: built (branch `claude/settings-owner-1159-p3`, on the trunk-merged
+2d head).
+
+- Target type: `OwnedValueTarget` (`control_value_target.dart`) carries
+  `family`, `relativeStep` and `coerce`. Click volume's `coerce` clamps, as
+  the old fallthrough did; the other families round-trip through their
+  domain.
+- Port: `OwnedValueControl` and `OwnedValueReadout`
+  (`control/binding/owned_value_control.dart`). `OwnedValuePort`
+  (`app/application/owned_value_port.dart`) implements it over the eight
+  family ports and `LooperRepository`. It holds the one exhaustive
+  conversion switch (`origin`, `writeController`), the cleanup exemptions in
+  `resolves(cleanup:)`, the merged ordinary stream, the owned part of the
+  release eligibility (`eligibilityKey`), and the lifetime record with
+  `lifetimeChanges` (Click volume invalidates, the rest supersede, in the old
+  order). `AppRuntime` builds it.
+- Dispatch: `ControlCubit` takes `ownedValues` in place of seven family
+  ports. The origin record is `({mix, owned})`. One External loop and one
+  MIDI case write every owned value through `writeController`, which resolves
+  Released once. One subscription replaces seven, and `_releaseEligibility`
+  carries `eligibilityKey`. `_midiStep` and `_coerceMidiValue` use the base
+  type. No family target or control type is named in `control_cubit.dart` or
+  `control_midi.dart`. The only remaining family name is `FadeSettings`,
+  which is passed for the foot Fade gestures (see Deviations). The
+  `TrackOperation` switch is unchanged.
+- Readout: `readValueTarget`, `valueTargetResolves` and
+  `availableValueTargets` take one `OwnedValueReadout`. `ControlAvailability`
+  and `expressionDestinations` take one `OwnedValueSnapshots` (the page's Bloc
+  read models). The read switch moved from the resolver into
+  `OwnedValueSnapshots`, and the catalogue order is the `ownedValueTargets`
+  list. The pages' per-family `snapshot == null` guards were already gone at
+  this head (they read `ControlAvailability`). `external_pedal_page.dart`
+  keeps its Record length and Record timing endpoint snapping, which is
+  editor behavior and not a guard.
+- #1093 fix 1: MIDI `cancelled()` and External `cancelled()` check only the
+  session and close (plus External's own token and calibration). A stale
+  origin drops only its target: `_originCurrent` checks an owned value
+  through the port and a Mixer value against its own topology revision. The
+  dispatch-time origins travel into `_applyMidiProposals` instead of
+  skipping the whole event.
+- #1093 fix 2: `_invalidateValueTargets` clears the expression baseline only
+  for jacks that map an invalidated target, and resets the MIDI decoders and
+  levels only for devices with a mapping that names one.
+- Tests (`external_dispatch_test.dart`):
+  - A MIDI {FX param, Input pan} press during the FX settle with a pair link:
+    the FX value is saved at its Released value and released.
+  - The same mapping queued behind a held storage write: the FX value lands.
+  - An External {FX param, Track volume, Input pan} press whose FX save is
+    held while the link lands: the track level still lands.
+  - An unrelated pair link keeps an expression jack's baseline.
+  Each fails without its fix. The plan named `foot_mixer_dispatch_test` for
+  the first criterion; it has no MIDI or External harness, so the cases live
+  in `external_dispatch_test`.
+- Test edits are construction and access-path only. `ControlCubit`
+  constructions pass `OwnedValuePort(...)` with the same family fakes or
+  owners. A `testFadeSettings()` call that was inline is hoisted into a local
+  so the port and the foot Fade share one instance. Snapshot arguments become
+  `owned: OwnedValueSnapshots(...)`.
+
+Decisions taken under the owner rules (2026-10-06):
+
+40. An owned value with no captured origin is skipped, as seven of the eight
+    families already did. Click volume used to fall back to its current
+    lifetime. Origins are captured for every requested and held target, so
+    this only affects a target that entered a queued External job after the
+    capture. Rule 4.
+41. External writes owned values in the order of the job's parameter map.
+    Click volume no longer goes first. The families are independent owners,
+    so no result depends on the order. Rule 4.
+
+Deviations: `ControlCubit` still takes `FadeSettings` for `FootFadeActions`,
+which is the foot Fade gesture owner and not value dispatch. Moving that
+gesture behind the port is out of scope. The port takes `LooperRepository`
+and the eight family ports, not the registry, because the controller APIs
+live on the ports. Production change: +823 / -1,174 against the +180 / -760
+estimate. The new files carry API docs, and the readout and catalogue moved
+rather than shrank.
+
 
 - Power-off blocks only recording. `takeLocked` is `power.state.isUiUp || ...`
   (`app_runtime.dart:140-141`) and gates expression (`control_cubit.dart:512`),

@@ -11,6 +11,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
@@ -285,21 +286,25 @@ void main() {
     final fade = testFadeSettings();
     addTearDown(() => unawaited(fade.close()));
     control = ControlCubit(
-      fadeSettings: fade,
-      decayControl: playback,
-      oneShotControl: playback,
-      recordLengthControl: record,
-      recordTimingControl: timingOwner,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
-      clickVolumeControl: tempo,
-      clickModeControl: tempo,
-      recordStartControl: tempo,
       mixSettings: mixSettings,
       controller: controller,
       pedal: pedal,
       settings: settings,
       performance: performance,
+      fadeSettings: fade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: tempo,
+        clickMode: tempo,
+        recordStart: tempo,
+        decay: playback,
+        oneShot: playback,
+        recordLength: record,
+        recordTiming: timingOwner,
+        fade: fade,
+      ),
     );
     tracks = TracksCubit(settings: settings);
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks
