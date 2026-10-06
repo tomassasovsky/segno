@@ -796,9 +796,9 @@ class LooperRepository {
     // Session replacement also retires callers without reconfiguring native
     // storage. Keep their IDs until a later poll/admission consumes the result
     // (or INVALID after configure), rather than leaking native receipt slots.
-    for (final entry in _pendingFades.entries) {
+    for (final entry in _pendingReceipts.entries) {
       entry.value?.complete(EngineResult.notReady);
-      _pendingFades[entry.key] = null;
+      _pendingReceipts[entry.key] = null;
     }
     for (final receipt in <SettingsReceipt<Object>>[
       _clickMode,
@@ -1966,34 +1966,34 @@ class LooperRepository {
 
   // Null observations are expired callers with native claims still to drain.
   // Admission drains too because normal polling stops without UI subscribers.
-  final Map<int, ReceiptObservation?> _pendingFades = {};
-  bool _drainFade(int request) {
-    if (!_pendingFades.containsKey(request)) return false;
-    final result = _engine.readFadeResult(request);
+  final Map<int, ReceiptObservation?> _pendingReceipts = {};
+  bool _drainReceipt(int request) {
+    if (!_pendingReceipts.containsKey(request)) return false;
+    final result = _engine.readRequestResult(request);
     if (result == null) return false;
-    _pendingFades.remove(request)?.complete(result);
+    _pendingReceipts.remove(request)?.complete(result);
     return true;
   }
 
-  bool _drainFades() {
+  bool _drainReceipts() {
     var changed = false;
-    for (final request in _pendingFades.keys.toList()) {
-      if (_drainFade(request)) changed = true;
+    for (final request in _pendingReceipts.keys.toList()) {
+      if (_drainReceipt(request)) changed = true;
     }
     return changed;
   }
 
-  Future<EngineResult> _requestFade(FadeAdmission Function() admit) {
-    _drainFades();
+  Future<EngineResult> _requestReceipt(RequestAdmission Function() admit) {
+    _drainReceipts();
     final admission = admit();
     if (!admission.result.isOk) return Future.value(admission.result);
     final observation = ReceiptObservation();
-    _pendingFades[admission.request] = observation;
+    _pendingReceipts[admission.request] = observation;
     _watchReceipt(
       observation,
-      settle: () => _drainFade(admission.request),
+      settle: () => _drainReceipt(admission.request),
       expire: () {
-        _pendingFades[admission.request] = null;
+        _pendingReceipts[admission.request] = null;
         observation.complete(EngineResult.notReady);
       },
     );
@@ -2007,7 +2007,7 @@ class LooperRepository {
   Future<EngineResult> toggleFade({
     required int channel,
     required double seconds,
-  }) => _requestFade(
+  }) => _requestReceipt(
     () => _engine.toggleFade(channel: channel, seconds: seconds),
   );
 
@@ -2015,7 +2015,25 @@ class LooperRepository {
   Future<EngineResult> installFade({
     required int channel,
     required FadeImage image,
-  }) => _requestFade(() => _engine.installFade(channel: channel, image: image));
+  }) => _requestReceipt(
+    () => _engine.installFade(channel: channel, image: image),
+  );
+
+  /// Flips the read direction of track [channel]'s recorded material at its
+  /// current position (Reverse, #1162). Completes with the exact callback
+  /// outcome: [EngineResult.invalid] for an empty or writing track,
+  /// [EngineResult.notReady] while an arm or launch is pending on it. The
+  /// projection's `Track.reversed` follows the published direction.
+  Future<EngineResult> toggleReverse({required int channel}) =>
+      _requestReceipt(() => _engine.toggleReverse(channel: channel));
+
+  /// Installs an explicit direction (Session recall, before the commit).
+  Future<EngineResult> installReverse({
+    required int channel,
+    required bool reversed,
+  }) => _requestReceipt(
+    () => _engine.installReverse(channel: channel, reversed: reversed),
+  );
 
   void _watchReceipt(
     ReceiptObservation observation, {
@@ -2030,7 +2048,7 @@ class LooperRepository {
   }
 
   bool _observeSettingsReceipts() {
-    var changed = _drainFades();
+    var changed = _drainReceipts();
     for (final observation in [
       _oneShot.observation,
       _clickVolume.observation,
@@ -2266,6 +2284,7 @@ class LooperRepository {
               channel: i,
               state: s.tracks[i].state,
               fade: s.tracks[i].fade,
+              reversed: s.tracks[i].reversed,
               // An untouched live fader is unity. Native volume already
               // includes
               // source balance, which must never become a second saved level.

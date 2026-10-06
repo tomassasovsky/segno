@@ -1,3 +1,4 @@
+#include "engine_direction.h"
 #include "engine_fade.h"
 /*
  * perf_render.c — see perf_render.h.
@@ -677,7 +678,26 @@ typedef struct le_pr_segment {
                       * (#260). */
   float* image;      /* owned; NULL = silence */
   int32_t image_len; /* loop period in frames; meaningless if image is NULL */
+  /* Read direction (#1162, LE_PLOG_REVERSE): phase0 is the index read at
+   * start_frame in either direction, and the index then steps +1 forward or
+   * -1 reversed (engine_direction.h, the callback's own arithmetic). A
+   * segment appended by a direction fact also mixes the pre-turn head for
+   * turn_frames frames: turn_phase0/turn_reversed are that head's index at
+   * start_frame and its direction. Inherited by every later segment of the
+   * same material; a new take and an emptying read forward. */
+  int reversed;
+  int32_t turn_frames;
+  int32_t turn_phase0;
+  int turn_reversed;
 } le_pr_segment;
+
+/* The image index segment `seg` reads at capture frame `f` (>= start_frame). */
+static int32_t le_pr_segment_index(const le_pr_segment* seg, uint64_t f) {
+  const int32_t origin = le_direction_origin(seg->reversed, (int32_t)seg->phase0,
+                                             0, seg->image_len);
+  return le_direction_index(seg->reversed, origin,
+                            (int64_t)(f - seg->start_frame), seg->image_len);
+}
 
 typedef struct le_pr_track_build {
   le_pr_segment segments[LE_PR_MAX_SEGMENTS];
@@ -704,6 +724,11 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
    * same instant — le_pr_render_track's lookup (last segment with
    * start_frame <= f) already resolves that correctly without special-casing
    * it here. */
+  /* Direction is a property of the material (#1162): a segment inherits the
+   * previous one's, and only a direction fact, a new take or an emptying
+   * changes it (their call sites set the field after this append). */
+  const int reversed =
+      b->segment_count > 0 ? b->segments[b->segment_count - 1].reversed : 0;
   le_pr_segment* seg = &b->segments[b->segment_count++];
   seg->owns_image = 1;
   seg->silent = 0;
@@ -711,20 +736,59 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   seg->phase0 = image_len > 0 ? phase0 % (uint64_t)image_len : 0;
   seg->image = image;
   seg->image_len = image_len;
+  seg->reversed = reversed;
+  seg->turn_frames = 0;
+  seg->turn_phase0 = 0;
+  seg->turn_reversed = 0;
 }
 
 /* The loop phase (image index) the CURRENT last segment would play at
  * `frame` — the loop-position counter a new segment activating at `frame`
- * must inherit to stay phase-locked with live playback (#255). A build whose
- * last segment is silence (baseline, or post-CLEAR) has no phase to carry:
- * the next content supplies its own anchor (the arm image's PERF_ARMED phase,
- * or a RECORD_END's track epoch — le_pr_record_end_phase below). */
+ * must inherit to stay phase-locked with live playback (#255), stepped in
+ * that segment's direction (#1162). A build whose last segment is silence
+ * (baseline, or post-CLEAR) has no phase to carry: the next content supplies
+ * its own anchor (the arm image's PERF_ARMED phase, or a RECORD_END's track
+ * epoch — le_pr_record_end_phase below). */
 static uint64_t le_pr_build_phase_at(const le_pr_track_build* b,
                                      uint64_t frame) {
   if (b->segment_count == 0) return 0;
   const le_pr_segment* seg = &b->segments[b->segment_count - 1];
   if (seg->image == NULL || seg->image_len <= 0) return 0;
-  return (seg->phase0 + (frame - seg->start_frame)) % (uint64_t)seg->image_len;
+  return (uint64_t)le_pr_segment_index(seg, frame);
+}
+
+/* A direction fact (LE_PLOG_REVERSE, #1162) on this channel. A toggle or
+ * install re-anchors the material at the exact index the callback logged and
+ * carries the turn the callback mixed, so the stem reproduces the live turn
+ * sample-exactly; a reset (read_index < 0) returns a reversed track to
+ * forward from its continuation phase. A fact on silence has nothing to
+ * read and is ignored: the next content supplies its own direction. */
+static void le_pr_apply_direction(le_pr_track_build* b, uint64_t frame,
+                                  int reversed, int32_t read_index,
+                                  int32_t turn_frames) {
+  if (b->segment_count == 0) return;
+  const le_pr_segment* last = &b->segments[b->segment_count - 1];
+  if (last->image == NULL || last->image_len <= 0) return;
+  if (read_index < 0) {
+    if (!last->reversed) return;
+    reversed = 0;
+    read_index = (int32_t)le_pr_build_phase_at(b, frame);
+    turn_frames = 0;
+  }
+  const int32_t old_phase0 = (int32_t)le_pr_build_phase_at(b, frame);
+  const int old_reversed = last->reversed;
+  const int silent = last->silent;
+  float* image = last->image;
+  const int32_t image_len = last->image_len;
+  le_pr_append_segment(b, frame, (uint64_t)read_index, image, image_len);
+  if (b->load_failed) return;
+  le_pr_segment* seg = &b->segments[b->segment_count - 1];
+  seg->owns_image = 0;
+  seg->silent = silent;
+  seg->reversed = reversed;
+  seg->turn_frames = turn_frames;
+  seg->turn_phase0 = old_phase0;
+  seg->turn_reversed = old_reversed;
 }
 
 /* The latest LE_PLOG_LOOP_LENGTH_LOCKED at or before `frame` (INCLUSIVE, so
@@ -972,6 +1036,11 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
                   le_pr_record_end_phase(m, log, log_count, channel, e->frame,
                                          frames),
                   image, frames);
+              /* A fresh take reads forward (#1162): its direction reset is
+               * logged with the finalize, whichever lands first in the file. */
+              if (!build.load_failed) {
+                build.segments[build.segment_count - 1].reversed = 0;
+              }
             } else {
               build.load_failed = 1;
             }
@@ -1065,6 +1134,14 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
        * ends with it; the next content supplies its own 322 or RECORD_END. */
       restore_id = 0;
       le_pr_append_segment(&build, e->frame, 0, NULL, 0);
+      if (!build.load_failed) {
+        build.segments[build.segment_count - 1].reversed = 0; /* #1162 */
+      }
+    } else if (e->cmd.code == LE_PLOG_REVERSE &&
+               e->cmd.reverse_log.channel == channel) {
+      le_pr_apply_direction(&build, e->frame, e->cmd.reverse_log.reversed != 0,
+                            e->cmd.reverse_log.read_index,
+                            e->cmd.reverse_log.turn_frames);
     }
     if (build.load_failed) break;
   }
@@ -1092,11 +1169,20 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     if (!seg->silent && seg->image != NULL && seg->image_len > 0) {
       /* Phase-locked (#255): the segment's image plays from the loop
        * position it was actually at when the segment activated, not from
-       * its own index 0 — stems reproduce exactly what the performer
-       * heard. */
-      const uint64_t pos =
-          (seg->phase0 + (f - seg->start_frame)) % (uint64_t)seg->image_len;
+       * its own index 0, in its own direction (#1162) — stems reproduce
+       * exactly what the performer heard. A direction turn mixes the old
+       * head out with the callback's equal-gain law for its window. */
+      const int32_t pos = le_pr_segment_index(seg, f);
       stem[f] = seg->image[pos];
+      const int64_t into = (int64_t)(f - seg->start_frame);
+      if (seg->turn_frames > 0 && into < seg->turn_frames) {
+        const int32_t old_origin = le_direction_origin(
+            seg->turn_reversed, seg->turn_phase0, 0, seg->image_len);
+        const int32_t old = le_direction_index(seg->turn_reversed, old_origin,
+                                               into, seg->image_len);
+        const float x = le_direction_turn_mix((int32_t)into, seg->turn_frames);
+        stem[f] = stem[f] * x + seg->image[old] * (1.0f - x);
+      }
     }
   }
 

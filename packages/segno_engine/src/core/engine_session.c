@@ -135,7 +135,7 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
    * lane if it is later un-routed. */
   store_i32(&ln->a_recoverable, 1);
   le_audio_rev_bump(t); /* [R1] session load: imported content replaces all */
-  if (lane == 0) (void)le_push(engine, LE_CMD_RESET_FADE, channel, 0);
+  if (lane == 0) (void)le_push(engine, LE_CMD_RESET_TRANSFORMS, channel, 0);
   return LE_OK;
 }
 
@@ -295,7 +295,7 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
   le_publish_live_image(engine, t, undo_count, 0);
   store_i32(&t->a_undo_depth, undo_count);
   store_i32(&t->a_redo_depth, redo_count);
-  (void)le_push(engine, LE_CMD_RESET_FADE, channel, 0);
+  (void)le_push(engine, LE_CMD_RESET_TRANSFORMS, channel, 0);
   return LE_OK;
 }
 
