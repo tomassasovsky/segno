@@ -10,7 +10,8 @@ enum BackingFailureReason {
   /// its bytes no longer match its digest.
   damaged,
 
-  /// Not a WAV or MP3, or more than two channels.
+  /// Outside the decoder's whitelist: not a WAV (16/24/32-bit PCM or 32-bit
+  /// float) or an MP3, more than two channels, or a rate it cannot convert.
   unsupported,
 
   /// Over the 15-minute cap.
@@ -34,6 +35,7 @@ enum BackingFailureReason {
   /// The reason for a decoder or engine [result].
   static BackingFailureReason fromEngine(EngineResult result) =>
       switch (result) {
+        EngineResult.unsupported => unsupported,
         EngineResult.tooLong => tooLong,
         EngineResult.capacity => noMemory,
         EngineResult.notRunning => notRunning,
