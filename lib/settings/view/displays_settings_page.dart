@@ -5,8 +5,10 @@ import 'package:segno/appliance/display_brightness_edit.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/settings/view/settings_destination_page.dart';
 import 'package:segno/system/view/display_system_tab.dart';
+import 'package:segno/theme/theme.dart';
 
 /// The Displays destination: brightness first, then what the screens do.
 ///
@@ -16,39 +18,100 @@ class DisplaysSettingsPage extends StatelessWidget {
   /// Creates a [DisplaysSettingsPage].
   const DisplaysSettingsPage({super.key});
 
-  /// What the brightness bar is inset by inside its card.
-  static const EdgeInsets _barInset = EdgeInsets.all(18);
+  @override
+  Widget build(BuildContext context) => SettingsDestinationPage(
+    title: context.l10n.settingsDisplaysTitle,
+    body: const Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ConsoleCard(children: [DisplayBrightnessRow()]),
+        Expanded(child: DisplaySystemTab()),
+      ],
+    ),
+  );
+}
+
+/// The brightness slider: the Loop settings slider, so touch, the encoder's
+/// draft grammar (Enter, turn, Enter; Back cancels) and a screen reader's
+/// increase and decrease all adjust it.
+///
+/// The whole travel covers the brightness the console allows,
+/// [kMinDisplayBrightness] to full: the left end is the dimmest readable
+/// level rather than a stretch of dead travel below it. A double tap returns
+/// to [kDefaultDisplayBrightness].
+class DisplayBrightnessRow extends StatelessWidget {
+  /// Creates a [DisplayBrightnessRow].
+  const DisplayBrightnessRow({super.key});
+
+  /// One encoder detent or arrow press: 5% of the travel.
+  static const double step = 0.05;
+
+  static const double _range = 1 - kMinDisplayBrightness;
+
+  /// The slider position for [brightness].
+  static double travelOf(double brightness) =>
+      ((brightness - kMinDisplayBrightness) / _range).clamp(0.0, 1.0);
+
+  /// The brightness at slider position [travel].
+  static double brightnessAt(double travel) =>
+      kMinDisplayBrightness + travel.clamp(0.0, 1.0) * _range;
+
+  static const double _labelWidth = 160;
+  static const double _readoutWidth = 94;
+  static const double _gap = 18;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final surface = context.surface;
     final brightness = context.watch<DisplayBrightnessCubit>().state;
-    return SettingsDestinationPage(
-      title: l10n.settingsDisplaysTitle,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    String percent(double travel) =>
+        l10n.trayBrightnessPercent((brightnessAt(travel) * 100).round());
+    void apply(double travel) =>
+        editDisplayBrightness(context, brightnessAt(travel));
+    return Padding(
+      padding: const EdgeInsets.all(_gap),
+      child: Row(
         children: [
-          ConsoleCard(
-            children: [
-              Padding(
-                padding: _barInset,
-                // The bar's whole travel is 0..1; below the floor the cubit
-                // clamps, so the left end reads the dimmest the console
-                // allows rather than a black screen nobody could read to undo.
-                child: ConsoleValueBar(
-                  key: const Key('displays_brightness'),
-                  label: l10n.trayBrightnessLabel,
-                  value: brightness,
-                  resetValue: kDefaultDisplayBrightness,
-                  readout: l10n.trayBrightnessPercent(
-                    (brightness * 100).round(),
-                  ),
-                  onChanged: (value) => editDisplayBrightness(context, value),
+          SizedBox(
+            width: _labelWidth,
+            child: AppText(
+              l10n.trayBrightnessLabel,
+              style: TextStyle(color: surface.textPrimary, fontSize: 16),
+            ),
+          ),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) => LoopSlider(
+                key: const Key('displays_brightness'),
+                width: constraints.maxWidth,
+                value: travelOf(brightness),
+                keyboardStep: step,
+                semanticLabel: l10n.trayBrightnessLabel,
+                semanticValueBuilder: percent,
+                onChanged: apply,
+                onEditCancel: apply,
+                onDoubleTap: () => editDisplayBrightness(
+                  context,
+                  kDefaultDisplayBrightness,
                 ),
               ),
-            ],
+            ),
           ),
-          const Expanded(child: DisplaySystemTab()),
+          const SizedBox(width: _gap),
+          SizedBox(
+            width: _readoutWidth,
+            child: AppText(
+              percent(travelOf(brightness)),
+              key: const Key('displays_brightness_readout'),
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 14,
+                fontFamily: SurfaceTheme.monoFont,
+              ),
+            ),
+          ),
         ],
       ),
     );

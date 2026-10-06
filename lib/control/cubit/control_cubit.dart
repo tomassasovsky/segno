@@ -31,14 +31,17 @@ import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/control_projection.dart';
 import 'package:segno/control/foot_fade_actions.dart';
 import 'package:segno/control/foot_mixer_actions.dart';
+import 'package:segno/control/foot_reverse_actions.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/control/model/foot_reverse.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'control_foot_fade.dart';
+part 'control_foot_reverse.dart';
 part 'control_foot_mixer.dart';
 part 'control_midi.dart';
 part 'control_state.dart';
@@ -187,6 +190,7 @@ class ControlCubit extends Cubit<ControlState> {
        _mixSettings = mixSettings,
        _fxPersistence = fxPersistence,
        _owned = ownedValues,
+       _footReverseActions = FootReverseActions(repository: looper),
        _footFadeActions = FootFadeActions(
          repository: looper,
          settings: fadeSettings,
@@ -1047,6 +1051,7 @@ class ControlCubit extends Cubit<ControlState> {
   Object _surfaceVisit = Object();
   (int, int)? _footMixerSource;
   final FootFadeActions _footFadeActions;
+  final FootReverseActions _footReverseActions;
   int _footFadeSession = 0;
   late final _footMixerActions = FootMixerActions(
     repository: _looper,
@@ -1309,7 +1314,8 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.fx => InteractionMode.custom,
     InteractionMode.custom ||
     InteractionMode.mixer ||
-    InteractionMode.fade => InteractionMode.record,
+    InteractionMode.fade ||
+    InteractionMode.reverse => InteractionMode.record,
   });
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
@@ -1449,6 +1455,14 @@ class ControlCubit extends Cubit<ControlState> {
             },
           ),
         );
+      case InteractionMode.reverse:
+        emit(
+          state.copyWith(
+            mode: next,
+            excluded: const {},
+            parkedResume: const {},
+          ),
+        );
       case InteractionMode.fade:
         _footFadeSession = _looper.sessionRevision;
         emit(
@@ -1562,6 +1576,8 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.record:
       case InteractionMode.mixer:
       case InteractionMode.fade:
+        _recAdvance(state.cursor);
+      case InteractionMode.reverse:
         _recAdvance(state.cursor);
       case InteractionMode.mute:
         _muteRecPlay();
@@ -1704,6 +1720,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.mute:
       case InteractionMode.mixer:
       case InteractionMode.fade:
+      case InteractionMode.reverse:
         parkAll();
       case InteractionMode.fx:
         panicTrackChains();
@@ -1770,6 +1787,7 @@ class ControlCubit extends Cubit<ControlState> {
         toggleTrackChain(channel);
       case InteractionMode.mixer:
       case InteractionMode.fade:
+      case InteractionMode.reverse:
         break;
       case InteractionMode.custom:
         // Inert here: the switch runs its assignment at the press. Note the
@@ -2073,6 +2091,47 @@ class ControlCubit extends Cubit<ControlState> {
     if (action != null) _dispatchFadeAction(action, role.slot);
   }
 
+  /// Admits a screen contact on the Reverse surface into the shared ledger.
+  void footReversePressed(PedalButton button, Object contact) {
+    if (state.mode != InteractionMode.reverse || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the admitted screen contact may complete its Reverse contact.
+  void footReverseReleased(PedalButton button, Object contact) =>
+      footMixerReleased(button, contact);
+
+  /// Cancels an abandoned Reverse contact.
+  void footReverseCancelled(PedalButton button, Object contact) =>
+      footMixerCancelled(button, contact);
+
+  /// Accessible semantic activation uses the same Reverse role as contacts.
+  void activateFootReversePedal(PedalButton button) {
+    final role = FootReverseProjection.pedalRoles[button]!;
+    if (role.press != FootReverseAction.exit && !_reverseEditable) return;
+    _dispatchReverseAction(role.press, role.slot);
+  }
+
+  /// Turns the recorded track in visible [slot] of the current bank around.
+  Future<void> toggleFootReverseTrack(int slot) async {
+    if (!_reverseEditable || slot < 0 || slot >= 4) return;
+    await _toggleReverseChannel(state.activeBank * 4 + slot);
+  }
+
+  Future<void> _toggleReverseChannel(int channel) async {
+    if (!_reverseEditable || channel < 0 || channel >= 8) return;
+    // An empty track has no direction: nothing to report. A recorded track
+    // that is busy is refused with the notice, like any other refusal.
+    final projection = _footReverseActions.project(bank: state.activeBank);
+    if (!projection.tracks[channel].recorded) return;
+    final visit = _surfaceVisit;
+    final session = _looper.sessionRevision;
+    final result = await _footReverseActions.toggle(channel);
+    if (!result.isOk) {
+      _reportReverseFailure(visit, session);
+    }
+  }
+
   /// Fades the recorded track in visible [slot] of the current bank.
   Future<void> toggleFootFadeTrack(int slot) async {
     final fade = _footFadeActions;
@@ -2280,6 +2339,10 @@ class ControlCubit extends Cubit<ControlState> {
       _onFadePress(button);
       return;
     }
+    if (state.mode == InteractionMode.reverse) {
+      _onReversePress(button);
+      return;
+    }
     if (state.mode == InteractionMode.custom) {
       // These two physical exits cannot be assigned. They act on contact,
       // without a second action waiting on the release.
@@ -2331,7 +2394,8 @@ class ControlCubit extends Cubit<ControlState> {
           InteractionMode.fx ||
           InteractionMode.custom ||
           InteractionMode.mixer ||
-          InteractionMode.fade => false,
+          InteractionMode.fade ||
+          InteractionMode.reverse => false,
         };
         if (accepted) _acceptedContacts.add(button);
         _armRecordHold();
@@ -2497,8 +2561,11 @@ class ControlCubit extends Cubit<ControlState> {
         selectTrack(channels.single);
         return true;
       case TrackOperationAction(:final operation):
-        if (operation == TrackOperation.fade && channels.length > 1) {
-          // Each recorded track fades independently; one stomp, every one.
+        if ((operation == TrackOperation.fade ||
+                operation == TrackOperation.reverse) &&
+            channels.length > 1) {
+          // Each recorded track fades or turns around independently; one
+          // stomp, every one.
           return Future.wait([
             for (final channel in channels)
               Future.value(_runTrackOperation(operation, channel)),
@@ -2571,6 +2638,11 @@ class ControlCubit extends Cubit<ControlState> {
       case TrackOperation.fade:
         if (track == null) return false;
         return _footFadeActions.toggle(channel).then((result) => result.isOk);
+      case TrackOperation.reverse:
+        if (track == null) return false;
+        return _footReverseActions
+            .toggle(channel)
+            .then((result) => result.isOk);
     }
   }
 
@@ -3341,6 +3413,17 @@ class ControlCubit extends Cubit<ControlState> {
         ];
         return recorded.isNotEmpty &&
             recorded.every((track) => track.fade.attenuated);
+      }(),
+      // Lit while every recorded scope member plays reversed.
+      TrackOperationAction(operation: TrackOperation.reverse) => () {
+        final recorded = [
+          for (final channel in channels)
+            if (channel >= 0 &&
+                channel < looper.tracks.length &&
+                looper.tracks[channel].hasContent)
+              looper.tracks[channel],
+        ];
+        return recorded.isNotEmpty && recorded.every((track) => track.reversed);
       }(),
       CommandAction(command: ControlCommand.recordPerformance) =>
         _performanceArmed,

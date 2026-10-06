@@ -1,16 +1,22 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/settings/settings.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
 
+import '../../helpers/helpers.dart';
 import 'destination_harness.dart';
 
 void main() {
@@ -18,6 +24,8 @@ void main() {
 
   setUp(() {
     resetSegnoNavigatorForTest();
+    resetAppToastsForTest();
+    resetToastificationForTest();
     harness = DestinationHarness();
   });
 
@@ -102,17 +110,18 @@ void main() {
     });
 
     testWidgets(
-      'Recording keeps only the loop cap and the default length; what a '
-      'record press does lives in Loop settings',
+      'Device carries the loop cap; Recording keeps only the default length; '
+      'what a record press does lives in Loop settings',
       (tester) async {
         await pump(tester);
         unawaited(openDeviceSettings());
         await tester.pumpAndSettle();
+        expect(find.byKey(const Key('audio_max_loop_row')), findsOneWidget);
+
         await tester.tap(find.text(l10n(tester).audioRecordingTab));
         await tester.pumpAndSettle();
-
         expect(find.byKey(const Key('audio_recording_tab')), findsOneWidget);
-        expect(find.byKey(const Key('audio_max_loop_row')), findsOneWidget);
+        expect(find.byKey(const Key('audio_max_loop_row')), findsNothing);
         expect(
           find.byKey(const Key('audio_default_length_row')),
           findsOneWidget,
@@ -125,35 +134,112 @@ void main() {
   });
 
   group('Displays', () {
-    testWidgets('brightness reads the cubit and writes through it', (
-      tester,
-    ) async {
+    Finder slider() => find.byKey(const Key('displays_brightness'));
+    String readout(WidgetTester tester) => tester
+        .widget<AppText>(find.byKey(const Key('displays_brightness_readout')))
+        .data!;
+
+    Future<void> openDisplays(WidgetTester tester) async {
       await pump(tester);
       unawaited(openDisplaySettings());
       await tester.pumpAndSettle();
-      final bar = find.byKey(const Key('displays_brightness'));
-      expect(bar, findsOneWidget);
-      expect(find.text(l10n(tester).trayBrightnessPercent(100)), findsOne);
+    }
 
-      // Dragging to the far left asks for zero; the console keeps its
-      // floor, so the screen stays readable enough to undo it.
-      await tester.drag(bar, const Offset(-2000, 0));
+    testWidgets('the whole travel is the brightness the console allows', (
+      tester,
+    ) async {
+      await openDisplays(tester);
+      expect(readout(tester), l10n(tester).trayBrightnessPercent(100));
+
+      // The left end is the floor itself, not dead travel below it.
+      await tester.drag(slider(), const Offset(-4000, 0));
       await tester.pumpAndSettle();
       expect(harness.brightness.state, 0.1);
-      expect(find.text(l10n(tester).trayBrightnessPercent(10)), findsOne);
+      expect(readout(tester), l10n(tester).trayBrightnessPercent(10));
       expect(await harness.settings.loadBrightness(), 0.1);
+
+      // Halfway along is halfway between the floor and full.
+      await tester.tapAt(tester.getCenter(slider()));
+      await tester.pump(kDoubleTapTimeout);
+      await tester.pumpAndSettle();
+      expect(harness.brightness.state, closeTo(0.55, 0.01));
+    });
+
+    testWidgets('a double tap returns to full brightness', (tester) async {
+      await openDisplays(tester);
+      await tester.drag(slider(), const Offset(-4000, 0));
+      await tester.pumpAndSettle();
+      expect(harness.brightness.state, 0.1);
+
+      await tester.tap(slider());
+      await tester.pump(kDoubleTapMinTime);
+      await tester.tap(slider());
+      await tester.pumpAndSettle();
+      expect(harness.brightness.state, 1.0);
+      expect(await harness.settings.loadBrightness(), 1.0);
+    });
+
+    testWidgets('the encoder grammar: Enter, turn, Enter; Back cancels', (
+      tester,
+    ) async {
+      await openDisplays(tester);
+      Focus.of(
+        tester.element(
+          find.descendant(of: slider(), matching: find.byType(Container)),
+        ),
+      ).requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump();
+      // Two 5% steps of travel below full.
+      expect(harness.brightness.state, closeTo(0.91, 1e-9));
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(harness.brightness.state, closeTo(0.91, 1e-9));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump();
+      expect(harness.brightness.state, closeTo(0.865, 1e-9));
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(harness.brightness.state, closeTo(0.91, 1e-9));
+    });
+
+    testWidgets('a screen reader can increase and decrease it', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await openDisplays(tester);
+      final node = tester.getSemantics(slider());
+      expect(node.label, l10n(tester).trayBrightnessLabel);
+      expect(node.value, l10n(tester).trayBrightnessPercent(100));
+      expect(
+        node.decreasedValue,
+        l10n(tester).trayBrightnessPercent(96),
+      );
+      node.owner!.performAction(node.id, SemanticsAction.decrease);
+      await tester.pumpAndSettle();
+      expect(harness.brightness.state, closeTo(0.955, 1e-9));
+
+      final after = tester.getSemantics(slider());
+      after.owner!.performAction(after.id, SemanticsAction.increase);
+      await tester.pumpAndSettle();
+      expect(harness.brightness.state, closeTo(1.0, 1e-9));
+      semantics.dispose();
     });
 
     testWidgets('the screen rows from the tray follow the brightness', (
       tester,
     ) async {
-      await pump(tester);
-      unawaited(openDisplaySettings());
-      await tester.pumpAndSettle();
+      await openDisplays(tester);
       expect(find.byKey(const Key('system_display_tab')), findsOneWidget);
       expect(find.byKey(const Key('system_waveform_row')), findsOneWidget);
       expect(
-        tester.getTopLeft(find.byKey(const Key('displays_brightness'))).dy,
+        tester.getTopLeft(slider()).dy,
         lessThan(
           tester.getTopLeft(find.byKey(const Key('system_waveform_row'))).dy,
         ),
@@ -188,6 +274,19 @@ void main() {
       unawaited(openStorageSettings());
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('system_storage_tab')), findsOneWidget);
+    });
+
+    testWidgets('opening Updates drops the update toast', (tester) async {
+      await pump(tester);
+      showAppToast(id: AppToastId.update, title: const Text('Update'));
+      await tester.pump();
+      expect(debugAppToastActive(AppToastId.update), isTrue);
+
+      unawaited(openUpdateSettings());
+      await tester.pumpAndSettle();
+      expect(debugAppToastActive(AppToastId.update), isFalse);
+      // Let the dismissed toast's exit animation finish.
+      await tester.pump(const Duration(seconds: 2));
     });
 
     testWidgets('Updates hosts the update face and leads to About', (

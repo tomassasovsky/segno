@@ -635,7 +635,7 @@ static void test_history_loop_close_restore_fails_truthfully(void) {
 /* Review E3: a session import during capture rewrites a slot whose image an
  * earlier Undo staged (slot X, id 1), then Undo-to-empty keeps X live. The
  * imported PCM must not be logged as image 1: the callback logs 323/0 and the
- * stem fails. Leg 1 is the layered import (le_engine_finalize_layers). */
+ * stem fails. Leg 1 is the layered import (le_engine_finalize_history). */
 static void test_history_import_during_capture_fails_truthfully(void) {
   printf("test_history_import_during_capture_fails_truthfully\n");
   for (int layered = 0; layered < 2; ++layered) {
@@ -654,7 +654,7 @@ static void test_history_import_during_capture_fails_truthfully(void) {
     for (int i = 0; i < HR_LEN; ++i) pcm[i] = .0625f;
     if (layered) {
       CHECK(le_engine_import_layer(e, 0, 0, 0, pcm, HR_LEN) == LE_OK);
-      CHECK(le_engine_finalize_layers(e, 0, 0, 0) == LE_OK);
+      CHECK(finalize_layer_history(e, 0, 0, 0) == LE_OK);
     } else {
       CHECK(le_engine_import_track(e, 0, pcm, HR_LEN) == LE_OK);
     }
