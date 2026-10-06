@@ -130,7 +130,13 @@ void main() {
       final io = NativeStorageIo()..syncDirectory(dir.path);
       expect(
         () => io.syncDirectory('${dir.path}/missing'),
-        throwsA(isA<FileSystemException>()),
+        throwsA(
+          isA<FileSystemException>().having(
+            (e) => e.osError?.errorCode,
+            'errno, so a pulled drive can be told apart (#1177)',
+            2,
+          ),
+        ),
       );
       expect(() => io.syncDirectory(''), throwsA(isA<FileSystemException>()));
     }, skip: skip);

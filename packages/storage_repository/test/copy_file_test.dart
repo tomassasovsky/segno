@@ -114,7 +114,8 @@ void main() {
     });
 
     test('a directory sync the device refuses fails the copy as io: '
-        '"copied" is never claimed for a rename that is not durable', () async {
+        '"copied" is never claimed for a rename that is not durable, and the '
+        'failure says where the complete file is', () async {
       final source = h.source('take.wav', 100);
       repo = h.build();
       h.io.failingSyncs.add('${h.exports}/Segno');
@@ -126,9 +127,39 @@ void main() {
           'Segno/take.wav',
           onConflict: ConflictPolicy.ask,
         ),
-        throwsA(isA<StorageIo>()),
+        throwsA(
+          isA<StorageIo>().having(
+            (e) => e.writtenTo,
+            'writtenTo',
+            '${h.exports}/Segno/take.wav',
+          ),
+        ),
+      );
+      expect(
+        File('${h.exports}/Segno/take.wav').readAsBytesSync(),
+        source.readAsBytesSync(),
       );
       expect(repo.leases, isEmpty);
+    });
+
+    test('a sync that fails because the drive was pulled is a lost volume, '
+        'not an I/O error', () async {
+      final source = h.source('take.wav', 100);
+      repo = h.build(initial: [h.record(1)]);
+      await pumpEventQueue();
+      h.io.failingSyncs.add(h.mountPoint(1));
+      // The sync fails with EIO as the drive goes; its record follows.
+      h.io.onSyncFailure = () => h.client.detach(1);
+
+      await expectLater(
+        repo.copyFile(
+          source.path,
+          const StorageDestination.removable(1),
+          'take.wav',
+          onConflict: ConflictPolicy.ask,
+        ),
+        throwsA(const StorageFailure.volumeLost(1)),
+      );
     });
 
     test('the sync of a parent the copy created is honoured too', () async {

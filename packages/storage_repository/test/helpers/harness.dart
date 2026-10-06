@@ -98,8 +98,11 @@ class FakeStorageIo implements engine.StorageIo {
   /// Every directory synced, in order.
   final synced = <String>[];
 
-  /// Directories whose sync fails, as the engine reports it.
+  /// Directories whose sync fails, as the engine reports it (EIO).
   final failingSyncs = <String>{};
+
+  /// Runs as a sync fails, before it throws: a drive going with it.
+  void Function()? onSyncFailure;
 
   /// False plays a filesystem without `RENAME_NOREPLACE`.
   bool canRefuseReplacement = true;
@@ -111,6 +114,7 @@ class FakeStorageIo implements engine.StorageIo {
   @override
   void syncDirectory(String path) {
     if (failingSyncs.contains(path)) {
+      onSyncFailure?.call();
       throw FileSystemException(
         'could not sync the directory',
         path,

@@ -3072,6 +3072,13 @@ LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
  * fails. */
 LE_EXPORT int32_t le_fs_sync_dir(const char* path);
 
+/* le_fs_sync_dir, also reporting why it failed: on LE_ERR_DEVICE,
+ * *out_errno (when not NULL) is the OS error (ENOENT for a missing path,
+ * ENOTDIR for a file, EIO from a drive that went away mid-sync), so a caller
+ * can tell a pulled drive from a failing one (#1177). *out_errno is 0 on
+ * LE_OK. */
+LE_EXPORT int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno);
+
 /* Renames `from` to `to` (both UTF-8) only if nothing is at `to`, as one
  * atomic step: renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL)
  * on macOS, MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows. A copy

@@ -325,6 +325,11 @@ int32_t le_fs_rename_noreplace(const char* from, const char* to,
 }
 
 int32_t le_fs_sync_dir(const char* path) {
+  return le_fs_sync_dir_errno(path, NULL);
+}
+
+int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno) {
+  if (out_errno != NULL) *out_errno = 0;
   if (path == NULL || path[0] == '\0') return LE_ERR_INVALID;
 #if defined(_WIN32)
   /* NTFS journals a rename as part of the operation; there is no directory
@@ -337,6 +342,9 @@ int32_t le_fs_sync_dir(const char* path) {
   }
   const DWORD attrs = GetFileAttributesW(wide);
   if (attrs == INVALID_FILE_ATTRIBUTES || !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+    if (out_errno != NULL) {
+      *out_errno = attrs == INVALID_FILE_ATTRIBUTES ? ENOENT : ENOTDIR;
+    }
     return LE_ERR_DEVICE;
   }
   return LE_OK;
@@ -349,12 +357,18 @@ int32_t le_fs_sync_dir(const char* path) {
   const int flags = O_RDONLY | O_CLOEXEC;
 #endif
   const int fd = open(path, flags);
-  if (fd < 0) return LE_ERR_DEVICE;
+  if (fd < 0) {
+    if (out_errno != NULL) *out_errno = errno;
+    return LE_ERR_DEVICE;
+  }
   int rc;
   do {
     rc = fsync(fd);
   } while (rc != 0 && errno == EINTR);
+  const int sync_errno = errno;
   close(fd);
-  return rc == 0 ? LE_OK : LE_ERR_DEVICE;
+  if (rc == 0) return LE_OK;
+  if (out_errno != NULL) *out_errno = sync_errno;
+  return LE_ERR_DEVICE;
 #endif
 }

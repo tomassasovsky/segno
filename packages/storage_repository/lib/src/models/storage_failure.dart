@@ -24,7 +24,8 @@ sealed class StorageFailure extends Equatable implements Exception {
   const factory StorageFailure.unsupported() = StorageUnsupported;
 
   /// Any other I/O failure, with the OS's own words.
-  const factory StorageFailure.io(String reason) = StorageIo;
+  const factory StorageFailure.io(String reason, {String? writtenTo}) =
+      StorageIo;
 
   @override
   List<Object?> get props => const [];
@@ -75,14 +76,24 @@ final class StorageUnsupported extends StorageFailure {
 /// Any other I/O failure.
 final class StorageIo extends StorageFailure {
   /// Creates a [StorageIo] with the OS's [reason].
-  const StorageIo(this.reason);
+  const StorageIo(this.reason, {this.writtenTo});
 
   /// What the OS said.
   final String reason;
 
-  @override
-  List<Object?> get props => [reason];
+  /// Where the file is, complete, when only the last step failed: the copy
+  /// was renamed into place but the drive did not confirm the rename is
+  /// durable. A caller says "copied, but the drive did not confirm it"
+  /// rather than "failed", and a retry is not needed for the bytes (a
+  /// `keepBoth` retry would only add a second copy). Null when nothing was
+  /// published.
+  final String? writtenTo;
 
   @override
-  String toString() => 'storage I/O failed: $reason';
+  List<Object?> get props => [reason, writtenTo];
+
+  @override
+  String toString() => writtenTo == null
+      ? 'storage I/O failed: $reason'
+      : 'copied to $writtenTo, but the drive did not confirm it: $reason';
 }
