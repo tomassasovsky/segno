@@ -202,15 +202,18 @@ class GuardRegistry {
   // deviceChange, calibration, restart.
   static const List<List<GuardRule>> _table = [
     // capture: one take at a time; never during an apply, a device change,
-    // a calibration or a shutdown; not onto a volume being ejected.
-    [_r, _r, _a, _a, _v, _r, _r, _r],
+    // a calibration or a shutdown; not onto a volume being ejected or
+    // written by a transfer (it would compete for the bandwidth the take
+    // needs and end it as slow storage).
+    [_r, _r, _a, _v, _v, _r, _r, _r],
     // sessionApply: a running take is finished first (as today), so capture
     // allows it; never over another apply or a save in flight.
     [_a, _r, _r, _a, _a, _r, _r, _r],
     // sessionWrite: anything but the same bundle or a shutdown.
     [_a, _a, _i, _a, _a, _a, _a, _r],
-    // transfer: not onto a volume being ejected, not during shutdown.
-    [_a, _a, _a, _a, _v, _a, _a, _r],
+    // transfer: not onto a volume being ejected or recorded to, not during
+    // shutdown.
+    [_v, _a, _a, _a, _v, _a, _a, _r],
     // eject: not while that volume is recorded to or copied to.
     [_v, _a, _a, _v, _r, _a, _a, _r],
     // deviceChange: not under a take, an apply, a calibration or shutdown.

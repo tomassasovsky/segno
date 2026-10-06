@@ -7,10 +7,10 @@ import 'package:test/test.dart';
 /// restart. a = allow, r = refuse, v = refuse on the same volume,
 /// i = refuse on the same item.
 const Map<GuardKind, String> _d8 = {
-  GuardKind.capture: 'r r a a v r r r',
+  GuardKind.capture: 'r r a v v r r r',
   GuardKind.sessionApply: 'a r r a a r r r',
   GuardKind.sessionWrite: 'a a i a a a a r',
-  GuardKind.transfer: 'a a a a v a a r',
+  GuardKind.transfer: 'v a a a v a a r',
   GuardKind.eject: 'v a a v r a a r',
   GuardKind.deviceChange: 'r r a a a r r r',
   GuardKind.calibration: 'r r a a a r r r',
