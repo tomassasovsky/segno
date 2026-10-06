@@ -1775,6 +1775,101 @@ void main() {
           });
         }
 
+        test('an arm waiting for its boundary, and a Count-in, are withdrawn '
+            'before the outgoing rig is saved (review D-1)', () async {
+          stubOpen();
+          var live = LooperState(
+            tracks: [
+              const Track(state: TrackState.playing, lengthFrames: 48000),
+              const Track(channel: 1, pending: true),
+              const Track(
+                channel: 2,
+                pendingLaunch: PendingLaunchAction.record,
+              ),
+              for (var c = 3; c < 8; c++) Track(channel: c),
+            ],
+          );
+          when(() => looper.state).thenAnswer((_) => live);
+          when(() => looper.laneCount(any())).thenReturn(1);
+          when(
+            () => looper.cancelArm(channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.ok);
+          when(looper.cancelCountIn).thenAnswer((_) {
+            // The engine has taken both withdrawals by its next block.
+            live = LooperState(
+              tracks: [
+                const Track(state: TrackState.playing, lengthFrames: 48000),
+                for (var c = 1; c < 8; c++) Track(channel: c),
+              ],
+            );
+            return EngineResult.ok;
+          });
+          final cubit = build();
+          addTearDown(cubit.close);
+          cubit.emit(
+            const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+          );
+          await cubit.save();
+          clearInteractions(repository);
+          liveFingerprint = 'changed';
+
+          await cubit.open('B');
+
+          verifyInOrder([
+            () => looper.cancelArm(channel: 1),
+            looper.cancelCountIn,
+            () => repository.save(
+              '/root/A',
+              chains: any(named: 'chains'),
+              settings: any(named: 'settings'),
+              pedalBindings: any(named: 'pedalBindings'),
+              name: 'A',
+              captureStillValid: any(named: 'captureStillValid'),
+            ),
+          ]);
+          verifyNever(() => looper.cancelArm(channel: 0));
+          verifyNever(
+            () => looper.stopRecordControl(channel: any(named: 'channel')),
+          );
+          expect(cubit.state.currentSessionId, 'B');
+        });
+
+        test('an arm that is not withdrawn in time refuses the Open', () async {
+          stubOpen();
+          when(() => looper.state).thenReturn(
+            LooperState(
+              tracks: [
+                const Track(pending: true),
+                for (var c = 1; c < 8; c++) Track(channel: c),
+              ],
+            ),
+          );
+          when(
+            () => looper.cancelArm(channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.ok);
+          final cubit = SessionCubit(
+            captureSettings: captureSettings,
+            fxPersistence: fxPersistence,
+            settings: settings,
+            repository: repository,
+            looper: looper,
+            performance: performance,
+            mixSettings: mixSettings,
+            mixPersistence: mixPersistence,
+            guards: GuardRegistry(),
+            captureEndTimeout: const Duration(milliseconds: 20),
+          );
+          addTearDown(cubit.close);
+          cubit.emit(
+            const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+          );
+
+          await cubit.open('B');
+
+          expect(cubit.state.error, SessionError.captureInProgress);
+          verifyNoSave();
+        });
+
         test('a take that does not end in time refuses the Open and changes '
             'nothing', () async {
           stubOpen();

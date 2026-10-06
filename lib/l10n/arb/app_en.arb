@@ -2698,7 +2698,7 @@
     "@libraryNewLoopStart": {
         "description": "Confirms New loop."
     },
-    "libraryTakeStillRunning": "The take has not finished yet. Nothing was changed; try again when it has.",
+    "libraryTakeStillRunning": "The take is finishing. Try again when it has stopped.",
     "@libraryTakeStillRunning": {
         "description": "An Open or New loop ended a take in progress and it did not finish in time; nothing was saved, opened or cleared."
     },
