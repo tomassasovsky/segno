@@ -1209,6 +1209,11 @@ le_engine* le_engine_create(void) {
 
 void le_engine_destroy(le_engine* engine) {
   if (engine == NULL) return;
+  /* No capture may write a port of a freed engine (#1228, review H2): each
+   * detach waits until its producer has no push in flight. */
+  for (int p = 0; p < LE_MAX_MIDI_PORTS; ++p) {
+    le_midi_port_unbind(&engine->midi_ports[p]);
+  }
   /* Release the device + context through the backend that opened it. NULL until
    * the first successful start; close() is idempotent, so a create→destroy with
    * no start (and a stop→destroy) are both safe. */
@@ -1547,6 +1552,8 @@ void (*le_test_record_timing_hook)(le_engine*, int) = NULL;
 void (*le_test_click_mode_hook)(le_engine*, int) = NULL;
 void (*le_test_record_start_hook)(le_engine*, int) = NULL;
 void (*le_test_peel_hook)(le_engine*, int) = NULL;
+void (*le_test_midi_dispatch_hook)(le_engine*, int, int,
+                                   const le_midi_port_event*) = NULL;
 #endif
 
 int32_t le_push_cmd(le_engine* engine, le_command cmd) {

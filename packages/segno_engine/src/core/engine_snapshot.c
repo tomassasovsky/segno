@@ -435,6 +435,25 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->primary_track = load_i32(&engine->a_primary_track);
   /* MIDI clock (Phase C, D15; trailing block; default reads 0 = OFF). */
   out->clock_mode = load_i32(&engine->a_clock_mode);
+  /* Native MIDI input sink totals (#1228 Part 1; trailing block). */
+  out->midi_in_events =
+      atomic_load_explicit(&engine->a_midi_in_events, memory_order_relaxed);
+  out->midi_in_stale =
+      atomic_load_explicit(&engine->a_midi_in_stale, memory_order_relaxed);
+  out->midi_in_overflows =
+      atomic_load_explicit(&engine->a_midi_in_overflows, memory_order_relaxed);
+  out->midi_in_lost =
+      atomic_load_explicit(&engine->a_midi_in_lost, memory_order_relaxed);
+  uint32_t attached = 0u;
+  for (int p = 0; p < LE_MAX_MIDI_PORTS; ++p) {
+    if (atomic_load_explicit(&engine->midi_ports[p].a_owner,
+                             memory_order_acquire) != NULL) {
+      attached |= 1u << p;
+    }
+  }
+  out->midi_in_attached_mask = attached;
+  out->midi_in_rebinds =
+      atomic_load_explicit(&engine->a_midi_in_rebinds, memory_order_relaxed);
   /* Input clip + conditioning activity (input clip, S2; trailing block).
    * The clip mask is the audio thread's published verdict; the cond mask is
    * derived here from the published per-input enables intersected with the
