@@ -277,32 +277,42 @@ int32_t le_stretch_render_offline(const float* const* in, int32_t in_frames,
 }
 
 int32_t le_stretch_render_loop(const float* in, int32_t frames,
+                               int32_t out_frames,
                                int32_t sample_rate, float semitones,
                                float tonality_limit, int32_t cheaper,
                                uint32_t seed, int32_t fold,
                                float* out) noexcept {
-  if (in == nullptr || out == nullptr || frames <= 1 || fold < 0) {
+  if (in == nullptr || out == nullptr || frames <= 1 || out_frames <= 1 ||
+      fold < 0) {
+    return LE_STRETCH_ERR_INVALID;
+  }
+  const double ratio = (double)out_frames / (double)frames;
+  if (!(ratio >= 1.0 / LE_STRETCH_MAX_RATIO && ratio <= LE_STRETCH_MAX_RATIO)) {
     return LE_STRETCH_ERR_INVALID;
   }
   if (sample_rate <= 0 || sample_rate > LE_STRETCH_MAX_SAMPLE_RATE) {
     return LE_STRETCH_ERR_INVALID;
   }
   try {
-    /* What the run-out can carry past the lap at ratio 1: W - in_lat. */
+    /* What the run-out can carry past the lap: (W - in_lat) input frames,
+     * ratio times as many output frames. */
     std::unique_ptr<le_stretch> probe(
         create_or_throw(1, sample_rate, cheaper, seed));
-    const int32_t room = probe->st.blockSamples() + probe->st.intervalSamples() -
-                         probe->st.inputLatency();
+    const int32_t room = (int32_t)std::floor(
+        (double)(probe->st.blockSamples() + probe->st.intervalSamples() -
+                 probe->st.inputLatency()) *
+        ratio);
     probe.reset();
-    fold = std::min(fold, std::min(room, frames / 2));
-    std::vector<float> tmp((size_t)frames + (size_t)fold);
+    fold = std::min(fold, std::min(room, out_frames / 2));
+    std::vector<float> tmp((size_t)out_frames + (size_t)fold);
     const float* ins[1] = {in};
     float* outs[1] = {tmp.data()};
     const int32_t rc = le_stretch_render_offline(
-        ins, frames, 1, sample_rate, 1.0, semitones, tonality_limit, cheaper,
-        seed, 1, outs, frames + fold);
+        ins, frames, 1, sample_rate, ratio, semitones, tonality_limit, cheaper,
+        seed, 1, outs, out_frames + fold);
     if (rc != LE_STRETCH_OK) return rc;
-    std::copy(tmp.begin(), tmp.begin() + frames, out);
+    std::copy(tmp.begin(), tmp.begin() + out_frames, out);
+    frames = out_frames; /* the lap's output length, below */
     /* The head (v, fading in) and the run-out (u, fading out) are renders of
      * the same input, so they are correlated, and a fixed law swells
      * (equal-power, in phase) or dips (out of phase) by several dB at the

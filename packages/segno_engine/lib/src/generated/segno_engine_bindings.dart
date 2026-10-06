@@ -6020,6 +6020,48 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
       >();
 
+  /// Pitch across a retime (#1179 Part 4a-ii). A following track that plays
+  /// over another span than its take's either keeps its pitch (0 Unchanged,
+  /// the default): the cache worker renders the take time-stretched to the
+  /// span (with its Transpose pitch, one render) and the track crossfades to
+  /// it at the same position; until it lands the take plays through the
+  /// varispeed head, timing exact, its pitch off by the tempo ratio and
+  /// reported in le_track_snapshot.pitch_effective_cents. A render within
+  /// 0.5 % of the span serves it (the head absorbs the rest), so a small tempo
+  /// move does not re-render. Or its pitch follows the ratio (1 Follows
+  /// speed), with no render. [channel] -1 sets the default ([value] 0/1); a
+  /// track sets its override (-1 inherits). LE_ERR_INVALID for a bad channel
+  /// or value.
+  int le_engine_set_pitch_mode(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int value,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_set_pitch_mode(
+      engine,
+      channel,
+      value,
+      request,
+    );
+  }
+
+  late final _le_engine_set_pitch_modePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_set_pitch_mode');
+  late final _le_engine_set_pitch_mode = _le_engine_set_pitch_modePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
   /// Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
   /// callback publication, INVALID for an absent/consumed/retired id; otherwise
   /// OK and fills result.
@@ -6847,9 +6889,12 @@ enum le_command_code {
   LE_CMD_TRANSPOSE_BYPASS(87),
 
   /// checked internal Follow tempo setting
-  /// (#1179 Part 4a); 121-123 are held for
-  /// #1179's later parts
-  LE_CMD_SET_FOLLOW_TEMPO(120);
+  /// (#1179 Part 4a)
+  LE_CMD_SET_FOLLOW_TEMPO(120),
+
+  /// checked internal Pitch setting (#1179 Part
+  /// 4a-ii); 122-123 are held for #1179
+  LE_CMD_SET_PITCH_MODE(121);
 
   final int value;
   const le_command_code(this.value);
@@ -6941,6 +6986,7 @@ enum le_command_code {
     86 => LE_CMD_TRANSPOSE,
     87 => LE_CMD_TRANSPOSE_BYPASS,
     120 => LE_CMD_SET_FOLLOW_TEMPO,
+    121 => LE_CMD_SET_PITCH_MODE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -7525,6 +7571,18 @@ final class le_track_snapshot extends ffi.Struct {
   /// the song tempo).
   @ffi.Int32()
   external int follow_override;
+
+  /// Trailing (#1179 Part 4a-ii): this track's Pitch override (-1 inherits
+  /// le_snapshot.pitch_follows_speed, 0 Unchanged, 1 Follows speed), and the
+  /// pitch the tempo retime puts on what it sounds now, in cents: 0 at its
+  /// own span or once a stretch render plays (within the 0.5 % tolerance,
+  /// about 9 cents), the varispeed's shift while that render is pending or
+  /// with Follows speed. Speed and Transpose are not included.
+  @ffi.Int32()
+  external int pitch_override;
+
+  @ffi.Int32()
+  external int pitch_effective_cents;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -8097,6 +8155,11 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Int32()
   external int tempo_follow;
+
+  /// Trailing (#1179 Part 4a-ii): the Pitch default every track inherits
+  /// (0 Unchanged, the default; 1 Follows speed).
+  @ffi.Int32()
+  external int pitch_follows_speed;
 }
 
 /// The plugin format a descriptor was discovered in.
