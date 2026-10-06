@@ -23,6 +23,15 @@ void main() {
       expect(engine.snapshot().tracks, before.tracks);
     });
 
+    test('peel is unavailable because the mock keeps no overdub layers', () {
+      expect(engine.peel(), EngineResult.notRunning);
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      final before = engine.snapshot();
+      expect(engine.peel(channel: 2), EngineResult.invalid);
+      expect(engine.snapshot().tracks, before.tracks);
+      expect(before.tracks.first.peelDepth, 0);
+    });
+
     test('restores exact internal tempo and clears an unset grid', () {
       expect(
         engine.restoreTempo(bpm: 120, source: TempoSource.tapped),

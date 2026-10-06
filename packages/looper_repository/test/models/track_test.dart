@@ -92,7 +92,7 @@ void main() {
       expect(recording.progress, 0);
     });
 
-    test('layers count the base take plus every retired pass', () {
+    test('layers count the base take plus every peelable pass', () {
       expect(const Track().layers, 0);
       expect(
         const Track(
@@ -106,8 +106,78 @@ void main() {
           state: TrackState.playing,
           lengthFrames: 10,
           undoDepth: 2,
+          peelDepth: 2,
         ).layers,
         3,
+      );
+      // A peel leaves a history entry behind: the undo depth holds while a
+      // layer disappears, so the badge follows the peel depth.
+      expect(
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 10,
+          undoDepth: 2,
+          peelDepth: 1,
+        ).layers,
+        2,
+      );
+    });
+
+    test('canPeel needs a layer above the original and a settled track', () {
+      const playing = Track(
+        state: TrackState.playing,
+        lengthFrames: 10,
+        undoDepth: 1,
+        peelDepth: 1,
+      );
+      expect(playing.canPeel, isTrue);
+      expect(
+        const Track(state: TrackState.playing, lengthFrames: 10).canPeel,
+        isFalse,
+      );
+      expect(
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 10,
+          undoDepth: 1,
+        ).canPeel,
+        isFalse,
+      );
+      expect(
+        const Track(
+          state: TrackState.overdubbing,
+          lengthFrames: 10,
+          peelDepth: 1,
+        ).canPeel,
+        isFalse,
+      );
+      expect(
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 10,
+          peelDepth: 1,
+          layerInFlight: true,
+        ).canPeel,
+        isFalse,
+      );
+      expect(
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 10,
+          peelDepth: 1,
+          pendingLaunch: PendingLaunchAction.overdub,
+        ).canPeel,
+        isFalse,
+      );
+      expect(
+        playing,
+        isNot(
+          const Track(
+            state: TrackState.playing,
+            lengthFrames: 10,
+            undoDepth: 1,
+          ),
+        ),
       );
     });
   });

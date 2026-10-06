@@ -63,6 +63,41 @@ static int le_history_is_cleared(const le_track* t) {
  * The pair is stored non-atomically with respect to each other; a host reading
  * between them sees at worst a stale flag on the next poll, the same tolerance
  * every other published depth already carries. */
+/* The undo-stack index of the LAYER the next Peel consumes (#1164): the
+ * topmost LAYER reachable from the top through PEEL entries only, with
+ * *skipped = how many PEEL entries sit above it. -1 when none is reachable —
+ * the stack is empty (the live buffer is the original take), or a kind that is
+ * not an overdub (CLEAR, PROCESSED) lies above the topmost LAYER. Stopping at
+ * the deepest LAYER is what keeps the original take out of Peel's reach: that
+ * entry IS the pre-first-overdub image, so swapping it in leaves the original
+ * audible with nothing deeper to consume. */
+static int le_peel_target(const le_track* t, int32_t* skipped) {
+  int n = 0;
+  for (int i = t->undo_count - 1; i >= 0; --i) {
+    const int32_t kind = t->undo_stack[i].kind;
+    if (kind == LE_HIST_LAYER) {
+      *skipped = n;
+      return i;
+    }
+    if (kind != LE_HIST_PEEL) break;
+    ++n;
+  }
+  *skipped = 0;
+  return -1;
+}
+
+/* How many LAYER entries Peel can still consume: those above the highest entry
+ * that is neither LAYER nor PEEL (the whole stack when there is none). */
+static int32_t le_peel_depth(const le_track* t) {
+  int32_t depth = 0;
+  for (int i = t->undo_count - 1; i >= 0; --i) {
+    const int32_t kind = t->undo_stack[i].kind;
+    if (kind == LE_HIST_LAYER) ++depth;
+    else if (kind != LE_HIST_PEEL) break;
+  }
+  return depth;
+}
+
 static void le_publish_undo_depth(le_track* t) {
   /* A frozen take's restore point is still to be filed: the layers kept
    * beneath it are not peelable yet (the track reads EMPTY), and the restore
@@ -70,6 +105,7 @@ static void le_publish_undo_depth(le_track* t) {
   if (t->clear_restore_pending) {
     store_i32(&t->a_undo_depth, 0);
     store_i32(&t->a_clear_restore, 0);
+    store_i32(&t->a_peel_depth, 0);
     return;
   }
   /* A command that gives the track content is in flight (a clear restore,
@@ -82,12 +118,15 @@ static void le_publish_undo_depth(le_track* t) {
       load_i32(&t->a_state) == LE_TRACK_EMPTY) {
     store_i32(&t->a_undo_depth, 0);
     store_i32(&t->a_clear_restore, 0);
+    store_i32(&t->a_peel_depth, 0);
     t->depth_republish = 1;
     return;
   }
   const int cleared = le_history_is_cleared(t);
   store_i32(&t->a_undo_depth, cleared ? 0 : t->undo_count);
   store_i32(&t->a_clear_restore, cleared ? 1 : 0);
+  /* A CLEAR on top already reads 0 (nothing LAYER or PEEL above it). */
+  store_i32(&t->a_peel_depth, le_peel_depth(t));
 }
 
 /* The pool slot INDEX the next shadow acquisition on [t] selects, given the
@@ -111,7 +150,11 @@ static void le_publish_undo_depth(le_track* t) {
  * invariant is subtle and lives in three places, so this stays: if it ever
  * breaks, degrading peel depth is survivable and recycling the erased take's
  * buffer into a live recording is not. Deliberately untested — the mutation
- * that removes it cannot be caught, because the path cannot be reached. */
+ * that removes it cannot be caught, because the path cannot be reached.
+ *
+ * PEEL and PROCESSED entries (#1164) are evictable like LAYERs: losing one
+ * costs a recovery step, never audio the track plays. A redo-side PEEL marker
+ * names slot -1, which the `used` scan never matches, so it pins nothing. */
 static int track_select_slot(le_track* t, int undo_count, int redo_count,
                              int outstanding_count, int* evict) {
   *evict = -1;
@@ -290,14 +333,71 @@ static int le_redo_push(le_track* t, le_hist_entry e) {
  * swap (D5); the stem then fails truthfully (323/0). */
 static uint32_t le_stage_source_image(le_engine* engine, int32_t channel,
                                       int32_t slot, int32_t len);
+
+/* A history entry of `kind` naming `slot`; `skipped` is meaningful for PEEL
+ * only and zero otherwise. Same zero-filling aggregate shape as le_hist_layer. */
+static le_hist_entry le_hist_kind_entry(int32_t kind, int32_t slot,
+                                        int32_t skipped) {
+  le_hist_entry e = le_hist_layer(slot);
+  e.kind = kind;
+  e.skipped = skipped;
+  return e;
+}
+
 static void le_undo_swap(le_engine* engine, le_track* t) {
-  const int32_t prev = t->undo_stack[--t->undo_count].slot;
+  const le_hist_entry top = t->undo_stack[--t->undo_count];
+  const int32_t live = load_i32(&t->lanes[0].a_live);
   const uint32_t id = le_stage_source_image(
-      engine, (int32_t)(t - engine->tracks), prev, load_i32(&t->lanes[0].a_len));
-  (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
-  le_publish_live_image(engine, t, prev, id); /* [R1] undo swap */
+      engine, (int32_t)(t - engine->tracks), top.slot,
+      load_i32(&t->lanes[0].a_len));
+  if (top.kind == LE_HIST_PEEL) {
+    /* Undo of a Peel (#1164): the image Peel removed comes back live, and the
+     * LAYER it consumed is re-inserted `skipped` entries below the PEEL's
+     * position — beneath the PEEL entries that sat above it at peel time — so
+     * the stack is exactly what it was before that peel and history stays
+     * chronological across repeated peels and later overdubs. Clamped to the
+     * bottom: pool eviction removes the lowest entries first, so the entries
+     * between the insertion point and the PEEL can only have vanished once
+     * nothing lay below them. The redo marker (slot -1) re-peels. */
+    const int p = t->undo_count;
+    int insert = p - top.skipped;
+    if (insert < 0) insert = 0;
+    for (int k = p; k > insert; --k) t->undo_stack[k] = t->undo_stack[k - 1];
+    t->undo_stack[insert] = le_hist_layer(live);
+    t->undo_count++;
+    (void)le_redo_push(t, le_hist_kind_entry(LE_HIST_PEEL, -1, top.skipped));
+  } else {
+    /* LAYER and PROCESSED: the redo entry keeps the kind, so a redo re-files
+     * a restoration swap as PROCESSED rather than as a peelable layer. */
+    (void)le_redo_push(t, le_hist_kind_entry(top.kind, live, 0));
+  }
+  le_publish_live_image(engine, t, top.slot, id); /* [R1] undo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
+}
+
+/* The Peel motion (#1164), shared by le_engine_peel and the redo of a PEEL
+ * marker: removes the LAYER at `idx` (the `skipped` PEEL entries above it
+ * shift down one), pushes PEEL{former live, skipped} on top, and publishes
+ * the LAYER's slot live on every lane. The stack count is unchanged and every
+ * slot stays referenced exactly once (track_select_slot's uniqueness scan).
+ * Never allocates or writes PCM: Peel only moves between images that already
+ * exist. The target is staged before it is published (#1143) so a running
+ * capture replays the swap exactly. Depths and the redo branch are the
+ * callers' to settle. */
+static void le_peel_apply(le_engine* engine, le_track* t, int idx,
+                          int32_t skipped) {
+  const int32_t target = t->undo_stack[idx].slot;
+  const int32_t live = load_i32(&t->lanes[0].a_live);
+  const uint32_t id = le_stage_source_image(
+      engine, (int32_t)(t - engine->tracks), target,
+      load_i32(&t->lanes[0].a_len));
+  for (int k = idx + 1; k < t->undo_count; ++k) {
+    t->undo_stack[k - 1] = t->undo_stack[k];
+  }
+  t->undo_stack[t->undo_count - 1] =
+      le_hist_kind_entry(LE_HIST_PEEL, live, skipped);
+  le_publish_live_image(engine, t, target, id); /* [R1] peel swap */
 }
 
 /* #595: drops every lane's recoverable flag once NOTHING on this track can
@@ -417,11 +517,15 @@ int32_t le_restore_commit_layer(le_engine* engine, int32_t channel,
 
   /* A fresh action invalidates any redo path, exactly like a punch-in. */
   le_clear_redo(t);
-  /* Push the pre-restoration live slot as one lockstep undo layer so a plain
-   * le_engine_undo peels the restoration back to the raw take (the retention
-   * model the plan specifies: in-session undo, no session-bundle change). */
+  /* Push the pre-restoration live slot as one lockstep undo entry so a plain
+   * le_engine_undo swaps the restoration back to the raw take (the retention
+   * model the plan specifies: in-session undo, no session-bundle change).
+   * Filed as PROCESSED, not LAYER (#1164): a conditioning swap is not an
+   * overdub, so Peel must never consume it as one — a full-length raw take
+   * swapped under a conditioned image would not be "the newest overdub". */
   if (t->undo_count < LE_POOL_SLOTS) {
-    t->undo_stack[t->undo_count++] = le_hist_layer(live);
+    t->undo_stack[t->undo_count++] =
+        le_hist_kind_entry(LE_HIST_PROCESSED, live, 0);
   }
   le_publish_undo_depth(t);
   /* Swap a_live to the restored slot on every lane + bump a_audio_rev in one
@@ -2145,7 +2249,10 @@ int32_t le_engine_history_mode_gate(le_engine* engine, uint32_t channels,
     }
   }
   /* Re-clears and same-span layer edits add no incompatible content. In
-   * particular a grouped redo must not fence its own preceding re-clear. */
+   * particular a grouped redo must not fence its own preceding re-clear.
+   * PEEL and PROCESSED entries and redo-side PEEL markers (#1164) are
+   * same-span swaps too: every kind test in this projection asks only
+   * "is it CLEAR", so they fall with LAYER by construction. */
   if (!restores_content) return LE_OK;
   if (engine->clock_commands_posted !=
       atomic_load_explicit(&engine->a_clock_commands_applied,
@@ -2534,15 +2641,85 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     store_i32(&t->a_redo_depth, t->redo_count);
     return LE_OK;
   }
-  const int32_t next = t->redo_stack[--t->redo_count].slot;
-  const uint32_t image_id = le_stage_source_image(engine, channel, next,
+  const le_hist_entry top = t->redo_stack[t->redo_count - 1];
+  if (top.kind == LE_HIST_PEEL) {
+    /* Redo of an undone Peel (#1164): run the Peel motion again, keeping the
+     * rest of the redo branch. By construction the LAYER it re-consumes is the
+     * one the undo re-inserted, under the same PEEL entries. */
+    int32_t skipped;
+    const int idx = le_peel_target(t, &skipped);
+    if (idx < 0) return LE_ERR_INVALID;
+    t->redo_count--;
+    le_peel_apply(engine, t, idx, skipped);
+    le_publish_undo_depth(t);
+    store_i32(&t->a_redo_depth, t->redo_count);
+    le_plog_push_ctrl(engine,
+                      (le_command){.code = LE_PLOG_REDO, .arg_i = channel});
+    return LE_OK;
+  }
+  t->redo_count--;
+  const uint32_t image_id = le_stage_source_image(engine, channel, top.slot,
                                                   load_i32(&t->lanes[0].a_len));
-  t->undo_stack[t->undo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
-  le_publish_live_image(engine, t, next, image_id); /* [R1] redo swap */
+  /* The kind rides along: a PROCESSED entry undone and redone stays PROCESSED. */
+  t->undo_stack[t->undo_count++] =
+      le_hist_kind_entry(top.kind, load_i32(&t->lanes[0].a_live), 0);
+  le_publish_live_image(engine, t, top.slot, image_id); /* [R1] redo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
   le_plog_push_ctrl(engine,
                     (le_command){.code = LE_PLOG_REDO, .arg_i = channel});
+  return LE_OK;
+}
+
+int32_t le_engine_peel(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  le_engine_drain_events(engine);
+#ifdef LE_NATIVE_TESTS
+  if (le_test_peel_hook) le_test_peel_hook(engine, 1);
+#endif
+  le_track* t = &engine->tracks[channel];
+  /* Never queued (accepted design §2.10: the in-progress layer is Undo's): a
+   * Peel that meets a capture, a layer still draining, a Count-in launch or
+   * any pending state command, cancel or Clear report is refused untouched,
+   * and the host shows the refusal as an unlit LED. */
+  if (load_i32(&t->a_pending_launch) || t->clear_restore_pending ||
+      t->cancel_pending) {
+    return LE_ERR_NOT_READY;
+  }
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
+    return LE_ERR_NOT_READY;
+  }
+  if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
+    return LE_ERR_NOT_READY;
+  }
+  /* The flight flag cleared: the audio thread pushes the final retire event
+   * BEFORE clearing it, so a retire that landed between the drain above and
+   * this load is still in the ring. One more drain is guaranteed to have it on
+   * the stack (le_engine_undo does the same); without it a Peel tapped right
+   * after a punch-out would consume the layer beneath the one just retired
+   * and the late retire would then file on top of the PEEL, out of order. */
+  le_engine_drain_events(engine);
+  if (t->state_cmds_posted >
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
+    return LE_ERR_NOT_READY;
+  }
+  int32_t skipped;
+  const int idx = le_peel_target(t, &skipped);
+  if (idx < 0) return LE_ERR_INVALID; /* none remain, or not an overdub */
+  le_command fact = {.code = LE_PLOG_PEEL};
+  fact.peel_log.channel = channel;
+  fact.peel_log.slot = t->undo_stack[idx].slot;
+  fact.peel_log.previous = load_i32(&t->lanes[0].a_live);
+  fact.peel_log.generation = t->dub_generation;
+  le_peel_apply(engine, t, idx, skipped);
+  le_clear_redo(t); /* Peel is an edit: the redo branch dies (§2.10) */
+  le_publish_undo_depth(t);
+  le_plog_push_ctrl(engine, fact);
   return LE_OK;
 }
 int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
