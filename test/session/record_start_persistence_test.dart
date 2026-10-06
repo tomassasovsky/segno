@@ -266,7 +266,8 @@ void main() {
       );
 
       test(
-        'an unconfirmed pair is never saved: Save keeps the confirmed pair',
+        'a Sound edit refused at storage leaves the stored pair, and Save '
+        'keeps it while Count-in is unavailable',
         () async {
           await session.saveAs('Protected');
           expect(session.state.status, SessionStatus.success);
