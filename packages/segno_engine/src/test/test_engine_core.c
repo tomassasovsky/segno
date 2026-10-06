@@ -11442,6 +11442,218 @@ static void test_perf_slow_storage_stops_at_first_drop(void) {
   le_engine_destroy(e);
 }
 
+/* Waits until the drain has flushed a cycle covering `frames` (its sidecar
+ * says so). */
+static int perf_wait_flushed(const char* sidecar_dir, unsigned long long frames) {
+  char path[800];
+  snprintf(path, sizeof(path), "%s/performance.json", sidecar_dir);
+  char needle[64];
+  snprintf(needle, sizeof(needle), "\"capture_frames\": %llu,", frames);
+  for (int i = 0; i < 400; ++i) {
+    char json[16384];
+    if (read_file_for_test(path, json, sizeof(json)) > 0 &&
+        strstr(json, needle) != NULL) {
+      return 1;
+    }
+    test_sleep_ms(10);
+  }
+  return 0;
+}
+
+/* Counts the drain's cycles from its mid-cycle hook. */
+static void perf_mid_cycle_count(void* raw) {
+  if (raw != NULL) atomic_fetch_add((_Atomic int*)raw, 1);
+}
+
+static void perf_wait_cycles(_Atomic int* cycles, int more) {
+  const int target = atomic_load(cycles) + more;
+  for (int i = 0; i < 400 && atomic_load(cycles) < target; ++i) test_sleep_ms(10);
+  CHECK(atomic_load(cycles) >= target);
+}
+
+static int perf_wait_self_stopped(le_engine* e) {
+  le_snapshot s;
+  for (int i = 0; i < 300; ++i) {
+    le_engine_get_snapshot(e, &s);
+    if (s.perf_stopped) return 1;
+    test_sleep_ms(10);
+  }
+  return 0;
+}
+
+/* A drop the drain could not have seen when it popped (#1198 review): frames
+ * past `elapsed` sit in the ring (a block the audio thread has pushed but
+ * not counted), and the drop at frame 105 is only recorded after the drain's
+ * cycle ran. The drain must not have popped past `elapsed`, so the next
+ * cycle still ends the take exactly at the drop, while armed. */
+static void test_perf_unseen_drop_still_stops_exactly(void) {
+  printf("test_perf_unseen_drop_still_stops_exactly\n");
+  le_engine* e = make_configured_engine(); /* mono master */
+  perf_clear_test_dir();
+  CHECK(perf_arm_reserve_for_test(e, 0, UINT64_MAX, 0) == LE_OK);
+  drain(e);
+  float out[64];
+  process_const(e, 0.5f, 50, out);
+  process_const(e, 0.5f, 50, out);
+  CHECK(perf_wait_flushed(perf_test_dir(), 100));
+
+  _Atomic int cycles;
+  atomic_init(&cycles, 0);
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_count, &cycles);
+  /* An uncounted block: in the ring, not in `elapsed`. */
+  const float frame[1] = {0.75f};
+  for (int i = 0; i < 50; ++i) {
+    CHECK(le_audio_ring_push_frame(&e->perf.master_ring, frame, 1));
+  }
+  perf_wait_cycles(&cycles, 2); /* a whole cycle ran with it in the ring */
+  /* The drop lands in that block, then the block is counted. */
+  atomic_store_explicit(&e->a_perf_first_drop_frame, 105, memory_order_relaxed);
+  atomic_fetch_add_explicit(&e->a_perf_frames, 50, memory_order_release);
+
+  CHECK(perf_wait_self_stopped(e)); /* the take ends on its own */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_SLOW_STORAGE);
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  CHECK(perf_test_file_size("master-001.wav") == 84 + 105 * 4);
+  CHECK(perf_sidecar_contains("\"stopped_early\": \"slow_storage\""));
+  le_engine_destroy(e);
+}
+
+/* After the take stopped at the reserve, the audio thread's full rings are
+ * not drops of the take: no first-drop frame, no overruns. */
+static void test_perf_no_drop_recorded_after_a_stop(void) {
+  printf("test_perf_no_drop_recorded_after_a_stop\n");
+  le_engine* e = make_configured_engine();
+  perf_clear_test_dir();
+  le_perf_drain_set_volume_free_for_test(
+      (int64_t)(1000000 + LE_PERF_ALLOWANCE_BYTES + 4096));
+  CHECK(perf_arm_reserve_for_test(e, 0, 1000000, 0) == LE_OK);
+  drain(e);
+  float out[64];
+  for (int i = 0; i < 40; ++i) process_const(e, 0.5f, 50, out);
+  CHECK(perf_wait_self_stopped(e));
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_RESERVE_REACHED);
+  /* Well past the 2 s ring, still armed. */
+  for (int i = 0; i < 2200; ++i) process_const(e, 0.5f, 64, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1);
+  CHECK(s.perf_first_drop_frame == UINT64_MAX);
+  CHECK(s.perf_overruns == 0);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_set_volume_free_for_test(-1);
+  le_engine_destroy(e);
+}
+
+/* A staged layer whose file is written comes off the budget like audio: a
+ * 100-frame mono layer leaves room for 100 fewer mono frames. */
+static void test_perf_reserve_counts_layer_files(void) {
+  printf("test_perf_reserve_counts_layer_files\n");
+  static float out[1000];
+  const uint64_t reserve = 1000000;
+  const long events = perf_events_bytes_for(0, 0, 1000, out);
+  le_perf_drain_set_volume_free_for_test(
+      (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + (uint64_t)events + 84 +
+                4 * 700));
+  perf_clear_test_dir();
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  CHECK(perf_arm_reserve_for_test(e, 0, reserve, 0) == LE_OK);
+  drain(e);
+  le_staged_layer entry = {.channel = 1, .slot = 0, .frame = 0,
+                           .frame_count = 100, .lane_count = 1};
+  entry.lane_pcm[0] = calloc(100, sizeof(float));
+  CHECK(entry.lane_pcm[0] != NULL);
+  CHECK(le_layer_staging_ring_push(&e->perf.layer_staging_ring, entry) == 1);
+  for (int i = 0; i < 300 && !perf_sidecar_contains("\"frame_count\": 100"); ++i) {
+    test_sleep_ms(10);
+  }
+  CHECK(perf_sidecar_contains("\"frame_count\": 100")); /* the layer landed */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  drain(e);
+  for (int base = 0; base < 1000; base += 50) {
+    float in[50];
+    for (int i = 0; i < 50; ++i) in[i] = perf_indexed_sample(base + i);
+    le_engine_process(e, out + base, in, 50);
+  }
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_set_volume_free_for_test(-1);
+  CHECK(perf_part_holds("master-001.wav", out, 600, 1));
+  CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
+  le_engine_destroy(e);
+}
+
+/* A staged layer the budget cannot pay for is not written: the take stops
+ * at the reserve there, every stream at the same frame. */
+static void test_perf_layer_past_the_budget_stops_the_take(void) {
+  printf("test_perf_layer_past_the_budget_stops_the_take\n");
+  perf_clear_test_dir();
+  char layer[700];
+  snprintf(layer, sizeof(layer), "%s/layer-1-0-0.pcm", perf_test_dir());
+  remove(layer); /* an earlier test's */
+  le_perf_drain_set_volume_free_for_test(
+      (int64_t)(1000000 + LE_PERF_ALLOWANCE_BYTES + 4096));
+  le_engine* e = make_configured_engine();
+  CHECK(perf_arm_reserve_for_test(e, 0, 1000000, 0) == LE_OK);
+  drain(e);
+  float out[64];
+  process_const(e, 0.5f, 50, out);
+  CHECK(perf_wait_flushed(perf_test_dir(), 50));
+  le_staged_layer entry = {.channel = 1, .slot = 0, .frame = 0,
+                           .frame_count = 10000, .lane_count = 1};
+  entry.lane_pcm[0] = calloc(10000, sizeof(float));
+  CHECK(entry.lane_pcm[0] != NULL);
+  CHECK(le_layer_staging_ring_push(&e->perf.layer_staging_ring, entry) == 1);
+  CHECK(perf_wait_self_stopped(e));
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_RESERVE_REACHED);
+  process_const(e, 0.5f, 50, out);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_set_volume_free_for_test(-1);
+  CHECK(perf_test_file_size("master-001.wav") == 84 + 50 * 4);
+  CHECK(perf_test_file_size("layer-1-0-0.pcm") == -1);
+  CHECK(perf_sidecar_contains("\"layers_dropped\": 1"));
+  le_engine_destroy(e);
+}
+
+/* The budget follows the volume: when another writer takes space, the next
+ * re-read moves the stop. */
+static void test_perf_reserve_rereads_the_volume(void) {
+  printf("test_perf_reserve_rereads_the_volume\n");
+  perf_clear_test_dir();
+  const uint64_t reserve = 1000000;
+  le_perf_drain_set_free_sample_cycles_for_test(2);
+  le_perf_drain_set_volume_free_for_test(
+      (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + 100000000));
+  le_engine* e = make_configured_engine();
+  CHECK(perf_arm_reserve_for_test(e, 0, reserve, 0) == LE_OK);
+  drain(e);
+  float out[64];
+  for (int i = 0; i < 4; ++i) process_const(e, 0.5f, 50, out);
+  CHECK(perf_wait_flushed(perf_test_dir(), 200));
+  /* Another writer left room for exactly 300 more mono frames. */
+  le_perf_drain_set_volume_free_for_test(
+      (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + 4 * 300));
+  _Atomic int cycles;
+  atomic_init(&cycles, 0);
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_count, &cycles);
+  perf_wait_cycles(&cycles, 3); /* a re-read happened */
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+  for (int i = 0; i < 20; ++i) process_const(e, 0.5f, 50, out);
+  CHECK(perf_wait_self_stopped(e));
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_set_volume_free_for_test(-1);
+  le_perf_drain_set_free_sample_cycles_for_test(0);
+  CHECK(perf_test_file_size("master-001.wav") == 84 + 500 * 4);
+  CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
+  le_engine_destroy(e);
+}
+
 /* THE STEADY-STATE DRAIN CYCLE IS ALLOCATION-FREE (#722).
  *
  * An invariant, not a bug fix: the drain used to malloc + free a 512 KB
@@ -11656,14 +11868,22 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
    * the timeout is reported as exactly that, not as whichever downstream
    * assertion happens to notice first. */
   const int observed_cycles = atomic_load(&ctx.cycles);
+  /* A drain too slow to keep up overflows the ring, and that ends the take
+   * (#1198): it stops cycling, legitimately. That is the same slow machine,
+   * reported as such, not a cadence or allocation failure. */
+  le_snapshot before_disarm;
+  le_engine_get_snapshot(e, &before_disarm);
+  const int take_ended =
+      before_disarm.perf_stop_reason == LE_PERF_STOP_SLOW_STORAGE;
   if (observed_cycles < LE_TEST_ALLOC_WATCH_CYCLES) {
     printf(
-        "  drain reached only %d of %d cycles in %d ms — too slow a machine, "
+        "  drain reached only %d of %d cycles in %d ms%s — too slow a machine, "
         "NOT an allocation failure\n",
         observed_cycles, LE_TEST_ALLOC_WATCH_CYCLES,
-        LE_TEST_ALLOC_WATCH_TIMEOUT_MS);
+        LE_TEST_ALLOC_WATCH_TIMEOUT_MS,
+        take_ended ? " (the take ended on a dropped frame)" : "");
   }
-  CHECK(observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES);
+  CHECK(observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES || take_ended);
 
   const int disarmed = (le_perf_disarm(e) == LE_OK); /* joins the drain thread */
   CHECK(disarmed);
@@ -34848,6 +35068,11 @@ int main(void) {
   test_perf_reserve_counts_the_next_part_header();
   test_perf_no_budget_never_stops_on_space();
   test_perf_slow_storage_stops_at_first_drop();
+  test_perf_unseen_drop_still_stops_exactly();
+  test_perf_no_drop_recorded_after_a_stop();
+  test_perf_reserve_counts_layer_files();
+  test_perf_layer_past_the_budget_stops_the_take();
+  test_perf_reserve_rereads_the_volume();
   test_perf_drain_steady_state_cycle_is_allocation_free();
   test_perf_drain_disk_full_stops_cleanly();
   test_perf_drain_files_are_crash_consistent_mid_capture();

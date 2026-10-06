@@ -1361,7 +1361,7 @@ void main() {
     );
 
     test('the arm minimum is the reserve, the allowance and ten seconds of '
-        'a stereo master with its header', () {
+        'every captured stream with a header each', () {
       final reserved = PerformanceRepository(
         engine: engine,
         exportsRoot: () async => '${tempDir.path}/exports',
@@ -1378,6 +1378,18 @@ void main() {
         performance.minimumFreeBytesToArm,
         (1 << 20) + 84 + 96000 * 10 * 8,
         reason: 'no reserve: the allowance and the ten seconds alone',
+      );
+
+      // A stereo master and four captured stereo inputs: five streams of
+      // eight bytes a frame each.
+      engine.nextSnapshot = const EngineSnapshot.initial().copyWith(
+        sampleRate: 96000,
+        perfCaptureStreams: 5,
+        perfCaptureFrameBytes: 40,
+      );
+      expect(
+        reserved.minimumFreeBytesToArm,
+        1000000000 + (1 << 20) + 5 * 84 + 96000 * 10 * 40,
       );
     });
 

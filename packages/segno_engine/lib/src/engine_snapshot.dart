@@ -1300,6 +1300,8 @@ class EngineSnapshot {
     this.perfRingSeconds = 0,
     this.perfStopReason = PerfStopReason.none,
     this.perfOvers = 0,
+    this.perfCaptureStreams = 0,
+    this.perfCaptureFrameBytes = 0,
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -1381,6 +1383,8 @@ class EngineSnapshot {
       perfRingSeconds = 0,
       perfStopReason = PerfStopReason.none,
       perfOvers = 0,
+      perfCaptureStreams = 0,
+      perfCaptureFrameBytes = 0,
       tempoBpm = 0,
       tempoSource = TempoSource.none,
       tsNum = 4,
@@ -1477,6 +1481,8 @@ class EngineSnapshot {
       perfRingSeconds: native.perf_ring_seconds,
       perfStopReason: PerfStopReason.fromNative(native.perf_stop_reason),
       perfOvers: native.perf_overs,
+      perfCaptureStreams: native.perf_capture_streams,
+      perfCaptureFrameBytes: native.perf_capture_frame_bytes,
       tempoBpm: native.tempo_bpm,
       tempoSource: TempoSource.fromCode(native.tempo_source),
       tsNum: native.ts_num,
@@ -1566,6 +1572,8 @@ class EngineSnapshot {
     int? perfRingSeconds,
     PerfStopReason? perfStopReason,
     int? perfOvers,
+    int? perfCaptureStreams,
+    int? perfCaptureFrameBytes,
     double? tempoBpm,
     TempoSource? tempoSource,
     int? tsNum,
@@ -1644,6 +1652,8 @@ class EngineSnapshot {
     perfRingSeconds: perfRingSeconds ?? this.perfRingSeconds,
     perfStopReason: perfStopReason ?? this.perfStopReason,
     perfOvers: perfOvers ?? this.perfOvers,
+    perfCaptureStreams: perfCaptureStreams ?? this.perfCaptureStreams,
+    perfCaptureFrameBytes: perfCaptureFrameBytes ?? this.perfCaptureFrameBytes,
     tempoBpm: tempoBpm ?? this.tempoBpm,
     tempoSource: tempoSource ?? this.tempoSource,
     tsNum: tsNum ?? this.tsNum,
@@ -1854,6 +1864,14 @@ class EngineSnapshot {
   /// Samples above full scale (magnitude over 1.0) across every stream of the
   /// take so far. Kept as recorded, never clipped (#1198).
   final int perfOvers;
+
+  /// The streams the armed take captures, or the next arm would: the first
+  /// enabled output pair plus every monitored input (#1198). 0 when nothing
+  /// could be captured.
+  final int perfCaptureStreams;
+
+  /// The bytes one frame of every [perfCaptureStreams] stream takes.
+  final int perfCaptureFrameBytes;
 
   // ---- tempo grid (A1) ----
 
@@ -2101,6 +2119,8 @@ class EngineSnapshot {
           perfRingSeconds == other.perfRingSeconds &&
           perfStopReason == other.perfStopReason &&
           perfOvers == other.perfOvers &&
+          perfCaptureStreams == other.perfCaptureStreams &&
+          perfCaptureFrameBytes == other.perfCaptureFrameBytes &&
           tempoBpm == other.tempoBpm &&
           tempoSource == other.tempoSource &&
           tsNum == other.tsNum &&
@@ -2181,6 +2201,8 @@ class EngineSnapshot {
     perfRingSeconds,
     perfStopReason,
     perfOvers,
+    perfCaptureStreams,
+    perfCaptureFrameBytes,
     tempoBpm,
     tempoSource,
     tsNum,

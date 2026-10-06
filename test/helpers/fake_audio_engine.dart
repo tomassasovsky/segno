@@ -1806,6 +1806,8 @@ class _LengthSnapshot extends EngineSnapshot {
          perfStopped: perfStopped || source.perfStopped,
          perfStopReason: perfStopReason ?? source.perfStopReason,
          perfOvers: source.perfOvers,
+         perfCaptureStreams: source.perfCaptureStreams,
+         perfCaptureFrameBytes: source.perfCaptureFrameBytes,
          perfFollowOutput: perfFollowOutput ?? source.perfFollowOutput,
          perfCaptureBus: perfCaptureBus ?? source.perfCaptureBus,
          perfCaptureMask: perfCaptureMask ?? source.perfCaptureMask,
