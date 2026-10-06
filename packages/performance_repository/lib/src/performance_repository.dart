@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:operation_guards/operation_guards.dart';
+import 'package:performance_repository/src/models/capture_summary.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
 import 'package:performance_repository/src/models/performance_manifest.dart';
 import 'package:performance_repository/src/models/unfinalized_capture.dart';
@@ -985,6 +986,247 @@ class PerformanceRepository {
   String _dirname(String path) {
     final idx = path.lastIndexOf(RegExp(r'[/\\]'));
     return idx == -1 ? '.' : path.substring(0, idx);
+  }
+
+  /// The DAW project files a bundle carries once written: the Ableton Live
+  /// Set and the plain-text effect chains it is read with.
+  static const List<String> dawProjectFiles = ['project.als', 'fx-chains.txt'];
+
+  /// Every finished recording, newest first (#1178 Part 7): the takes in the
+  /// exports root and the ones boot recovery salvaged under
+  /// [recoveredDirName], which are kept and listed with
+  /// [CaptureSummary.recovered] set (owner decision: no automatic delete
+  /// from the Library's point of view).
+  ///
+  /// Left out: the take being recorded, any bundle whose sidecar is not
+  /// finalized (a crash the boot salvage has not finished), and any bundle
+  /// still carrying [recoveryMarkerName] (salvage output that has not moved
+  /// yet). An unreadable sidecar leaves its bundle out; a missing root lists
+  /// nothing.
+  Future<List<CaptureSummary>> listCaptures() async {
+    final root = await _exportsRoot();
+    final out = <CaptureSummary>[
+      ..._capturesIn(root, recovered: false),
+      ..._capturesIn('$root/$recoveredDirName', recovered: true),
+    ];
+    final epoch = DateTime.fromMillisecondsSinceEpoch(0);
+    out.sort((a, b) {
+      final byTime = (b.startedAt ?? epoch).compareTo(a.startedAt ?? epoch);
+      return byTime != 0 ? byTime : a.name.compareTo(b.name);
+    });
+    return out;
+  }
+
+  List<CaptureSummary> _capturesIn(String dir, {required bool recovered}) {
+    final List<FileSystemEntity> entries;
+    try {
+      entries = Directory(dir).listSync();
+    } on FileSystemException {
+      return const [];
+    }
+    return [
+      for (final entity in entries)
+        // The take being recorded is never finalized, so it is left out
+        // with the crashed ones.
+        if (entity is Directory &&
+            (recovered || _basename(entity.path) != recoveredDirName) &&
+            !File('${entity.path}/$recoveryMarkerName').existsSync())
+          ?_readCapture(entity.path, recovered: recovered),
+    ];
+  }
+
+  CaptureSummary? _readCapture(String dir, {required bool recovered}) {
+    final PerformanceManifest manifest;
+    try {
+      manifest = PerformanceManifest.fromJson(
+        jsonDecode(File('$dir/$manifestName').readAsStringSync())
+            as Map<String, dynamic>,
+      );
+    } on Object {
+      return null;
+    }
+    if (!manifest.finalized) return null;
+    final parts = _partsOf(dir, manifest);
+    final listed = [
+      for (final part in parts)
+        if (part.isMaster) part.frames,
+    ];
+    return CaptureSummary(
+      path: dir,
+      name: _basename(dir),
+      startedAt: performanceSlugTime(manifest.slug),
+      durationFrames: listed.isEmpty
+          ? manifest.captureFrames
+          : listed.reduce((a, b) => a + b),
+      sampleRate: manifest.sampleRate,
+      recovered: recovered,
+      hasDawProject: File('$dir/${dawProjectFiles.first}').existsSync(),
+      parts: parts,
+    );
+  }
+
+  /// The take's audio parts in order: the sidecar's `parts` list (#1198's
+  /// format) when it has one, or the single-file `master.wav` and
+  /// `live-input-<n>.wav` of a take written before it. A `parts` list that
+  /// does not read is read as no parts: the take is listed without audio
+  /// rather than with a guess at it.
+  List<CapturePart> _partsOf(String dir, PerformanceManifest manifest) {
+    final listed = manifest.native['parts'];
+    if (listed is List<dynamic>) {
+      try {
+        final parts =
+            [
+              for (final entry in listed)
+                CapturePart.fromJson(entry as Map<String, dynamic>),
+            ]..sort(
+              (a, b) => a.stream != b.stream
+                  ? a.stream.compareTo(b.stream)
+                  : a.index.compareTo(b.index),
+            );
+        return parts;
+      } on Object {
+        return const [];
+      }
+    }
+    final layout =
+        manifest.native['channel_layout'] as Map<String, dynamic>? ?? const {};
+    final inputs = [
+      for (final c in (layout['captured_inputs'] as List<dynamic>? ?? const []))
+        if (c is num) c.toInt(),
+    ]..sort();
+    return [
+      ?_legacyPart(dir, 'master.wav', 0, manifest.captureFrames),
+      for (final input in inputs)
+        ?_legacyPart(
+          dir,
+          'live-input-$input.wav',
+          1 + input,
+          manifest.captureFrames,
+        ),
+    ];
+  }
+
+  CapturePart? _legacyPart(String dir, String file, int stream, int frames) {
+    final f = File('$dir/$file');
+    if (!f.existsSync()) return null;
+    return CapturePart(
+      stream: stream,
+      index: 1,
+      file: file,
+      frames: frames,
+      bytes: f.lengthSync(),
+    );
+  }
+
+  /// The files of [capture]'s DAW package, relative to its directory, that
+  /// exist on disk: every audio part in order, the rendered stems the Live
+  /// Set points at (`stems/dry/`, `stems/wet/`), then the [dawProjectFiles].
+  /// The Library copies them keeping these paths, so the Live Set opens on
+  /// the drive.
+  List<String> dawPackageFiles(CaptureSummary capture) {
+    final dir = capture.path;
+    final stems = <String>[];
+    for (final kind in const ['dry', 'wet']) {
+      final List<FileSystemEntity> entries;
+      try {
+        entries = Directory('$dir/stems/$kind').listSync();
+      } on FileSystemException {
+        continue;
+      }
+      stems.addAll(
+        [
+          for (final e in entries)
+            if (e is File && e.path.toLowerCase().endsWith('.wav'))
+              'stems/$kind/${_basename(e.path)}',
+        ]..sort(),
+      );
+    }
+    return [
+      for (final part in capture.parts)
+        if (File('$dir/${part.file}').existsSync()) part.file,
+      ...stems,
+      for (final file in dawProjectFiles)
+        if (File('$dir/$file').existsSync()) file,
+    ];
+  }
+
+  /// Deletes the finished recording [capture] from internal storage (the
+  /// Library's confirmed Delete, #1178 Part 7).
+  ///
+  /// Refused with [PerformanceCaptureBusy] while a take is being recorded,
+  /// finalized or rendered, since any of them may be writing into a bundle,
+  /// and with [GuardRefused] when the guard table forbids a bundle write
+  /// (a shutdown in flight). Refuses a path that is not a finished take
+  /// in the exports root or its recovered area with [ArgumentError].
+  Future<void> deleteCapture(CaptureSummary capture) async {
+    final root = await _exportsRoot();
+    final dir = capture.path;
+    final parent = _dirname(dir);
+    if ((parent != root && parent != '$root/$recoveredDirName') ||
+        _basename(dir) == recoveredDirName ||
+        !_sidecarFinalized(dir)) {
+      throw ArgumentError.value(dir, 'capture', 'not a finished take');
+    }
+    if (_armedDir != null ||
+        _armInFlight ||
+        _finalizesInFlight > 0 ||
+        !renderProgress.done) {
+      throw const PerformanceCaptureBusy();
+    }
+    final guard = _guards.enter(
+      GuardKind.sessionWrite,
+      GuardScope.internal(item: dir),
+      purpose: capturePurpose,
+    );
+    try {
+      Directory(dir).deleteSync(recursive: true);
+    } finally {
+      guard.release();
+    }
+  }
+
+  /// Plays [capture]'s first main-output part on the engine's audition voice
+  /// (the Library's `Preview`), decoded by the engine's one decoder off the
+  /// UI isolate. A take with no main-output part is refused with
+  /// [EngineResult.invalid] before the engine.
+  Future<AuditionStart> startAudition(CaptureSummary capture) async {
+    final first = capture.masterParts.firstOrNull;
+    final path = first == null ? null : '${capture.path}/${first.file}';
+    if (path == null || !File(path).existsSync()) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    return _engine.auditionStartFile(path);
+  }
+
+  /// [buckets] absolute peaks over [capture]'s main output, streamed off the
+  /// UI isolate through the engine's one decoder, the parts concatenated in
+  /// proportion to their lengths; null when no part reads.
+  Future<Float32List?> readPeaks(
+    CaptureSummary capture, {
+    int buckets = 256,
+  }) async {
+    final parts = capture.masterParts;
+    final total = parts.fold<int>(0, (sum, p) => sum + p.frames);
+    if (parts.isEmpty || total <= 0) return null;
+    final out = Float32List(buckets);
+    var filled = 0;
+    var framesBefore = 0;
+    for (final part in parts) {
+      framesBefore += part.frames;
+      final end = part == parts.last
+          ? buckets
+          : (framesBefore * buckets / total).round();
+      final share = end - filled;
+      if (share <= 0) continue;
+      final path = '${capture.path}/${part.file}';
+      final peaks = File(path).existsSync()
+          ? await _engine.filePeaks(path, buckets: share)
+          : null;
+      if (peaks == null) return null;
+      out.setRange(filled, end, peaks);
+      filled = end;
+    }
+    return out;
   }
 
   Future<void> _finalize(

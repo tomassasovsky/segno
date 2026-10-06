@@ -1,5 +1,14 @@
 part of 'library_cubit.dart';
 
+/// The Library's two sections, the topbar's crumb tabs.
+enum LibrarySection {
+  /// Saved sessions (pen 19/01).
+  sessions,
+
+  /// Recordings and session mixdowns (pen 18/01, #1178 Part 7).
+  audio,
+}
+
 /// Which storage the Library is browsing.
 enum LibraryLocation {
   /// The appliance's own sessions root.
@@ -136,6 +145,7 @@ enum LibraryListenRefusal {
 class LibraryState extends Equatable {
   /// Creates a [LibraryState].
   const LibraryState({
+    this.section = LibrarySection.sessions,
     this.location = LibraryLocation.internal,
     this.query = '',
     this.folderFilter = const AllSessions(),
@@ -148,6 +158,9 @@ class LibraryState extends Equatable {
     this.listenRefusal,
     this.peaks = const {},
   });
+
+  /// The section on screen.
+  final LibrarySection section;
 
   /// Internal or USB.
   final LibraryLocation location;
@@ -216,6 +229,7 @@ class LibraryState extends Equatable {
   /// fields as a set, so they are passed together; [clearPreview] drops
   /// them while a read is in flight.
   LibraryState copyWith({
+    LibrarySection? section,
     LibraryLocation? location,
     String? query,
     LibraryFolderFilter? folderFilter,
@@ -231,6 +245,7 @@ class LibraryState extends Equatable {
     bool clearListen = false,
     bool clearListenRefusal = false,
   }) => LibraryState(
+    section: section ?? this.section,
     location: location ?? this.location,
     query: query ?? this.query,
     folderFilter: folderFilter ?? this.folderFilter,
@@ -248,6 +263,7 @@ class LibraryState extends Equatable {
 
   @override
   List<Object?> get props => [
+    section,
     location,
     query,
     folderFilter,

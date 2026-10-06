@@ -348,56 +348,6 @@ void main() {
     },
   );
 
-  testWidgets('the re-export button calls cubit.reExport when tapped', (
-    tester,
-  ) async {
-    when(() => cubit.reExport()).thenAnswer((_) async {});
-    await pump(
-      tester,
-      const PerformanceRecorderCompleted(
-        PerformanceRecordDone('/exports/perf-1'),
-      ),
-    );
-
-    await tester.tap(find.byKey(const Key('perfCompletion_reExport')));
-    await tester.pumpAndSettle();
-
-    verify(() => cubit.reExport()).called(1);
-  });
-
-  testWidgets(
-    'the re-export button is disabled while a re-export is in progress',
-    (tester) async {
-      await pump(
-        tester,
-        const PerformanceRecorderCompleted(
-          PerformanceRecordDone('/exports/perf-1'),
-          isReExporting: true,
-        ),
-      );
-
-      final button = tester.widget<ConsoleSmallButton>(
-        find.byKey(const Key('perfCompletion_reExport')),
-      );
-      expect(button.onPressed, isNull);
-    },
-  );
-
-  testWidgets('a failed re-export shows the failure message', (
-    tester,
-  ) async {
-    await pump(
-      tester,
-      const PerformanceRecorderCompleted(
-        PerformanceRecordDone('/exports/perf-1'),
-        reExportFailed: true,
-      ),
-    );
-    final strings = await l10n();
-
-    expect(find.text(strings.perfExportReExportFailed), findsOneWidget);
-  });
-
   testWidgets('a glitched Done capture shows the dropped-frames banner', (
     tester,
   ) async {

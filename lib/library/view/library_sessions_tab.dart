@@ -125,18 +125,22 @@ class LibrarySearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final query = context.select<LibraryCubit, String>((c) => c.state.query);
-    return LibrarySearchBox(
-      key: const Key('library_search'),
-      text: query.isEmpty ? l10n.librarySearchSessions : query,
-      placeholder: query.isEmpty,
-      semanticLabel: l10n.librarySearchSessions,
-      onTap: () => unawaited(_edit(context, query)),
+    return SizedBox(
+      width: 556,
+      child: LibrarySearchBox(
+        key: const Key('library_search'),
+        text: query.isEmpty ? l10n.librarySearchSessions : query,
+        placeholder: query.isEmpty,
+        semanticLabel: l10n.librarySearchSessions,
+        onTap: () => unawaited(_edit(context, query)),
+      ),
     );
   }
 }
 
-/// The pen's 556 x 64 search box: an outlined box with the query or the
-/// placeholder, which opens a keyboard sheet instead of taking keys.
+/// The pen's 64-high search box, as wide as its parent allows (556 on the
+/// Sessions tab, 310 on the Audio tab): an outlined box with the query or
+/// the placeholder, which opens a keyboard sheet instead of taking keys.
 class LibrarySearchBox extends StatelessWidget {
   /// Creates the search box.
   const LibrarySearchBox({
@@ -181,7 +185,6 @@ class LibrarySearchBox extends StatelessWidget {
             canRequestFocus: false,
             onTap: onTap,
             child: SizedBox(
-              width: 556,
               height: 64,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 19),

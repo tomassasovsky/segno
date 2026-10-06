@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:wav_codec/wav_codec.dart';
 
 import 'helpers/fake_session_engine.dart';
 
@@ -1139,6 +1140,75 @@ void main() {
       );
       expect(await r.readPeaks('s-ghost', track), isNull);
       expect(engine.peakReads, isEmpty);
+    });
+  });
+
+  group('the mixdown in Library > Audio (#1178 Part 7)', () {
+    test("reads a mixdown's length, rate and size from its header", () async {
+      final dir = makeBundle('s-a');
+      final wav = WavCodec.encodeFloat32(
+        samples: Float32List(4800),
+        sampleRate: 48000,
+        channels: 1,
+      );
+      File('${dir.path}/mixdown.wav').writeAsBytesSync(wav);
+
+      final mixdown = await repo().mixdownOf('s-a');
+
+      expect(
+        mixdown,
+        SessionMixdown(frames: 4800, sampleRate: 48000, bytes: wav.length),
+      );
+      expect(mixdown!.duration, const Duration(milliseconds: 100));
+      expect('$mixdown', contains('4800'));
+      expect(
+        mixdown.hashCode,
+        SessionMixdown(
+          frames: 4800,
+          sampleRate: 48000,
+          bytes: wav.length,
+        ).hashCode,
+      );
+    });
+
+    test('none without a mixdown, a bundle, or a header that reads', () async {
+      makeBundle('s-a');
+      final b = makeBundle('s-b');
+      File('${b.path}/mixdown.wav').writeAsBytesSync([1, 2, 3]);
+      final c = makeBundle('s-c');
+      File('${c.path}/mixdown.wav').writeAsBytesSync(Uint8List(44));
+      final d = makeBundle('s-d');
+      final header = WavCodec.encodeFloat32(
+        samples: Float32List(0),
+        sampleRate: 48000,
+        channels: 1,
+      );
+      ByteData.sublistView(header).setUint16(22, 0, Endian.little);
+      File('${d.path}/mixdown.wav').writeAsBytesSync(header);
+      final r = repo();
+
+      for (final id in ['s-a', 's-b', 's-c', 's-d', 's-ghost']) {
+        expect(await r.mixdownOf(id), isNull, reason: id);
+      }
+      expect(
+        const SessionMixdown(frames: 1, sampleRate: 0, bytes: 1).duration,
+        Duration.zero,
+      );
+    });
+
+    test("peaks the mixdown through the engine's decoder", () async {
+      final engine = FakeSessionEngine()
+        ..peaksAnswer = Float32List.fromList([0.5, 1]);
+      final dir = makeBundle('s-a');
+      File('${dir.path}/mixdown.wav').createSync();
+      makeBundle('s-b');
+      final r = repo(engine: engine);
+
+      expect(await r.readMixdownPeaks('s-a', buckets: 2), [0.5, 1]);
+      expect(engine.peakReads.single.path, '${dir.path}/mixdown.wav');
+      expect(await r.readMixdownPeaks('s-b'), isNull);
+      expect(await r.readMixdownPeaks('s-ghost'), isNull);
+      expect(engine.peakReads, hasLength(1));
     });
   });
 }

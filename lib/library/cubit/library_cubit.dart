@@ -246,6 +246,7 @@ class LibraryCubit extends Cubit<LibraryState> {
     stopListening();
     emit(
       LibraryState(
+        section: state.section,
         location: state.location,
         query: state.query,
         folderFilter: state.folderFilter,
@@ -261,6 +262,14 @@ class LibraryCubit extends Cubit<LibraryState> {
   /// Puts the folder chip [filter] down.
   void filterFolder(LibraryFolderFilter filter) =>
       emit(state.copyWith(folderFilter: filter));
+
+  /// Shows [section]. Leaving Sessions ends Listen: the Audio tab's
+  /// `Preview` uses the same voice.
+  void showSection(LibrarySection section) {
+    if (section == state.section) return;
+    stopListening();
+    emit(state.copyWith(section: section));
+  }
 
   /// Browses [location].
   void setLocation(LibraryLocation location) =>
