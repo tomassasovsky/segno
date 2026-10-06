@@ -5840,6 +5840,143 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
       >();
 
+  /// Transpose (#1179 Part 3a): plays track [channel] as a pitch-shifted render
+  /// of its own takes at unchanged timing. The render is built off the audio
+  /// thread by the cache worker (about 100 ms after the last step, plus the
+  /// render); until it lands the track plays its dry take at true pitch and
+  /// le_track_snapshot.transpose_effective_st reads 0, then it crossfades to the
+  /// render at the same position. Step moves the stored pitch by [delta] (+1 or
+  /// -1); at +-12 the receipt is LE_ERR_CAPACITY and nothing changes. Install
+  /// sets [semitones] (-12..12; Session recall) and also accepts an EMPTY track
+  /// holding imported material. Refusals as Reverse's: LE_ERR_INVALID for a bad
+  /// channel or argument or a track that reads EMPTY (step), RECORDING or
+  /// OVERDUBBING; LE_ERR_NOT_READY while an arm or Count-in launch is pending or
+  /// no receipt slot is free. While a track's pitch is not 0 and Transpose is
+  /// not bypassed, le_engine_record refuses a punch-in with LE_ERR_TRANSFORMED.
+  int le_engine_transpose_step(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int delta,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_transpose_step(
+      engine,
+      channel,
+      delta,
+      request,
+    );
+  }
+
+  late final _le_engine_transpose_stepPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_transpose_step');
+  late final _le_engine_transpose_step = _le_engine_transpose_stepPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  int le_engine_install_transpose(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int semitones,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_install_transpose(
+      engine,
+      channel,
+      semitones,
+      request,
+    );
+  }
+
+  late final _le_engine_install_transposePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_install_transpose');
+  late final _le_engine_install_transpose = _le_engine_install_transposePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  /// Bypasses every track's Transpose (dry, stored pitches kept) or restores
+  /// it. Admitted whenever configured.
+  int le_engine_set_transpose_bypass(
+    ffi.Pointer<le_engine> engine,
+    int on$,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_set_transpose_bypass(
+      engine,
+      on$,
+      request,
+    );
+  }
+
+  late final _le_engine_set_transpose_bypassPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_set_transpose_bypass');
+  late final _le_engine_set_transpose_bypass =
+      _le_engine_set_transpose_bypassPtr
+          .asFunction<
+            int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Uint64>)
+          >();
+
+  /// Track [channel]'s Transpose source-render telemetry, the track cache
+  /// query's twin: `reason` LE_CACHE_REASON_BUDGET when the render does not fit
+  /// the cap and the track stays dry.
+  int le_engine_get_transpose_cache(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<le_lane_cache_info> out,
+  ) {
+    return _le_engine_get_transpose_cache(
+      engine,
+      channel,
+      out,
+    );
+  }
+
+  late final _le_engine_get_transpose_cachePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<le_lane_cache_info>,
+          )
+        >
+      >('le_engine_get_transpose_cache');
+  late final _le_engine_get_transpose_cache = _le_engine_get_transpose_cachePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<le_lane_cache_info>,
+        )
+      >();
+
   /// Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
   /// callback publication, INVALID for an absent/consumed/retired id; otherwise
   /// OK and fills result.
@@ -6656,7 +6793,13 @@ enum le_command_code {
 
   /// checked internal Speed request (#1179); never
   /// raw-posted
-  LE_CMD_SET_SPEED(85);
+  LE_CMD_SET_SPEED(85),
+
+  /// checked internal Transpose request (#1179)
+  LE_CMD_TRANSPOSE(86),
+
+  /// checked internal Transpose bypass
+  LE_CMD_TRANSPOSE_BYPASS(87);
 
   final int value;
   const le_command_code(this.value);
@@ -6745,6 +6888,8 @@ enum le_command_code {
     82 => LE_CMD_RESET_TRANSFORMS,
     83 => LE_CMD_REVERSE,
     85 => LE_CMD_SET_SPEED,
+    86 => LE_CMD_TRANSPOSE,
+    87 => LE_CMD_TRANSPOSE_BYPASS,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -7314,6 +7459,15 @@ final class le_track_snapshot extends ffi.Struct {
   /// moves at this rate.
   @ffi.Int32()
   external int head_rate_milli;
+
+  /// Trailing (#1179 Part 3a): the stored Transpose pitch (-12..12) and the
+  /// pitch actually sounding — 0 while its render is pending, refused or
+  /// bypassed, so a host never claims a pitch the mix is not playing.
+  @ffi.Int32()
+  external int transpose_st;
+
+  @ffi.Int32()
+  external int transpose_effective_st;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -7869,6 +8023,10 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Int32()
   external int speed_denom;
+
+  /// Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally.
+  @ffi.Int32()
+  external int transpose_bypass;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -8041,7 +8199,11 @@ enum le_cache_reason {
   LE_CACHE_REASON_RENDER_FAILED(2),
 
   /// a part Post chain must keep live tails
-  LE_CACHE_REASON_PART_POST(3);
+  LE_CACHE_REASON_PART_POST(3),
+
+  /// a Transpose source render does not fit the
+  /// cap; the track plays dry (#1179)
+  LE_CACHE_REASON_BUDGET(4);
 
   final int value;
   const le_cache_reason(this.value);
@@ -8051,6 +8213,7 @@ enum le_cache_reason {
     1 => LE_CACHE_REASON_PLUGIN,
     2 => LE_CACHE_REASON_RENDER_FAILED,
     3 => LE_CACHE_REASON_PART_POST,
+    4 => LE_CACHE_REASON_BUDGET,
     _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
   };
 }
@@ -8161,6 +8324,6 @@ const int LE_CB_BUCKETS = 8;
 
 const int LE_XRUN_KINDS = 4;
 
-const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;
+const int LE_CACHE_DEFAULT_CAP_BYTES = 402653184;
 
 const int LE_DIGEST_STATE_BYTES = 128;

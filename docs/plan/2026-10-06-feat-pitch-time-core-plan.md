@@ -940,6 +940,32 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
+As built in Part 3a (numbers from the central ledger: commands 86-87, fact
+328, events.log version 9):
+
+- **The loop fold.** A pitch shift's phase does not come back round over a
+  lap, so the plain cyclic render (W of tail, the lap, W of head, keep the
+  centre) steps audibly at the wrap (measured: 0.46 -> -0.11 on a +12 st
+  sine whose lap is a whole number of cycles). The shim's
+  `le_stretch_render_loop` renders `len + fold` frames cyclically, the last
+  `fold` continuing past the lap into its head, and folds them over the head
+  with an equal-power crossfade (20 ms), so the loop point continues the
+  stretcher's own output. The cache worker and the offline renderer call the
+  one function with one preset, seed and fold (`engine_cache.h`).
+- **Undo is not cache-hot.** Every a_live swap bumps `a_audio_rev`
+  (le_track_publish_live), so an Undo to a previously rendered take is a
+  new key: it plays dry, reported (`effective` 0), until its render lands.
+  Keying renders on slot identity instead would be a change to the content
+  revision rule all three entry kinds share; left for its own issue.
+- **Pins.** The collector defers the free of a render a turn window's old
+  head reads (`a_turn_src`) AND of the render a lane still selects
+  (`a_src_pin`) until the callback's next verdict lets go, with or without a
+  device (a device-free host drives the same callback); a shrinking cap
+  sheds everything it may evict, never a render a PLAYING track sounds.
+- **A source swap starts its own window.** A Speed step or a Reverse turn
+  inside a window carries it (decision 24); a swap between sources changes
+  what the head reads, so it restarts the window over the source in force.
+
 ### Part 3b. Transpose Dart seam and repository (about 250 production lines)
 
 `AudioEngine.transposeStep/installTranspose/setTransposeBypass`,

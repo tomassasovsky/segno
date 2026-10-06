@@ -1,4 +1,6 @@
 #include "engine_read_head.h"
+#include "../stretch/le_stretch.h" /* Transpose's source renders (#1179) */
+#include "engine_cache.h" /* LE_CACHE_SOURCE_SEED / _FOLD_MS: the same render */
 #include "engine_fade.h"
 /*
  * perf_render.c — see perf_render.h.
@@ -691,6 +693,16 @@ typedef struct le_pr_segment {
   int32_t turn_frames;
   int32_t turn_into0; /* frames of the window already mixed at start_frame */
   le_read_head turn;
+  /* Transpose (#1179 Part 3a, LE_PLOG_TRANSPOSE): `src` is the source the
+   * head reads — the image's pitch-shifted render, or NULL for the image
+   * itself — owned by the segment that rendered it (`owns_src`) and borrowed
+   * by every later one until the next fact, as the callback keeps reading
+   * the render it selected until its next verdict. A swap mixes `turn_src`
+   * out with the equal-power law (`turn_power`). */
+  float* src;
+  int owns_src;
+  const float* turn_src;
+  int turn_power;
 } le_pr_segment;
 
 /* The head segment `seg` reads through, its origin anchored at start_frame. */
@@ -737,6 +749,8 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
    * changes it (their call sites set the field after this append). */
   const int reversed =
       b->segment_count > 0 ? b->segments[b->segment_count - 1].reversed : 0;
+  float* const src =
+      b->segment_count > 0 ? b->segments[b->segment_count - 1].src : NULL;
   le_pr_segment* seg = &b->segments[b->segment_count++];
   seg->owns_image = 1;
   seg->silent = 0;
@@ -749,6 +763,10 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   seg->turn_frames = 0;
   seg->turn_into0 = 0;
   seg->turn = (le_read_head){0, 0.0, 1.0};
+  seg->src = src;
+  seg->owns_src = 0;
+  seg->turn_src = NULL;
+  seg->turn_power = 0;
 }
 
 /* The loop phase (image index) the CURRENT last segment would play at
@@ -779,9 +797,11 @@ static double le_pr_anchor(const le_pr_track_build* b, uint64_t frame,
 
 /* Re-anchors the material at `index` (exact) with a new head, mixing the
  * pre-change head out over `turn_frames` (a direction or rate fact). A fact on
- * silence has nothing to read: the next content supplies its own anchor. */
+ * silence has nothing to read: the next content supplies its own anchor. A
+ * source swap (`swap`) always starts its own window, as the callback's
+ * le_transpose_select does; a head change inside a window carries it. */
 static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
-                           double index, int32_t turn_frames) {
+                           double index, int32_t turn_frames, int swap) {
   if (b->segment_count == 0) return;
   const le_pr_segment* last = &b->segments[b->segment_count - 1];
   if (last->image == NULL || last->image_len <= 0) return;
@@ -794,8 +814,10 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
    * keeps that window and the head it fades out. */
   const int64_t into0 =
       (int64_t)(frame - last->start_frame) + last->turn_into0;
-  const int carry = turn_frames > 0 && last->turn_frames > 0 &&
+  const int carry = !swap && turn_frames > 0 && last->turn_frames > 0 &&
                     into0 < last->turn_frames;
+  const float* carried_src = last->turn_src;
+  const int carried_power = last->turn_power;
   if (carry) {
     old = last->turn;
     old_index = le_head_index(&last->turn,
@@ -818,6 +840,9 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
   seg->turn_frames = turn_frames;
   seg->turn_into0 = carry ? (int32_t)into0 : 0;
   seg->turn = old;
+  /* the old head reads the source it read (a carried window's own) */
+  seg->turn_src = carry ? carried_src : seg->src;
+  seg->turn_power = carry ? carried_power : 0;
 }
 
 /* A direction fact (LE_PLOG_REVERSE, #1162) on this channel. A toggle or
@@ -834,11 +859,51 @@ static void le_pr_apply_direction(le_pr_track_build* b, uint64_t frame,
   if (last->image == NULL || last->image_len <= 0) return;
   if (read_index < 0) {
     if (!last->reversed) return;
-    le_pr_reanchor(b, frame, 0, le_pr_build_phase_at(b, frame), 0);
+    le_pr_reanchor(b, frame, 0, le_pr_build_phase_at(b, frame), 0, 0);
     return;
   }
   le_pr_reanchor(b, frame, reversed, le_pr_anchor(b, frame, read_index),
-                 turn_frames);
+                 turn_frames, 0);
+}
+
+/* A sounding-pitch fact (LE_PLOG_TRANSPOSE, #1179 Part 3a): the material
+ * re-anchors at the logged index and reads a render of its image through the
+ * same function, preset, seed and cyclic padding as the cache worker (or the
+ * image itself at 0), the old source mixed out with the equal-power law.
+ * Returns 0 when the render fails, which fails the stem. */
+static int le_pr_apply_transpose(le_pr_track_build* b, uint64_t frame,
+                                 const le_log_command* cmd,
+                                 int32_t sample_rate) {
+  if (b->segment_count == 0) return 1;
+  const le_pr_segment* last = &b->segments[b->segment_count - 1];
+  if (last->image == NULL || last->image_len <= 0) return 1;
+  float* rendered = NULL;
+  const int32_t st = cmd->transpose_log.effective;
+  if (st != 0) {
+    rendered = (float*)malloc((size_t)last->image_len * sizeof(float));
+    if (rendered == NULL ||
+        le_stretch_render_loop(last->image, last->image_len, sample_rate,
+                               (float)st, 8000.0f / (float)sample_rate, 1,
+                               LE_CACHE_SOURCE_SEED,
+                               sample_rate * LE_CACHE_SOURCE_FOLD_MS / 1000,
+                               rendered) != LE_STRETCH_OK) {
+      free(rendered);
+      return 0;
+    }
+  }
+  const uint64_t q = (uint64_t)cmd->transpose_log.index_lo |
+                     ((uint64_t)cmd->transpose_log.index_hi << 32);
+  le_pr_reanchor(b, frame, last->reversed, le_head_index_from_q32(q),
+                 cmd->transpose_log.turn_frames, 1);
+  if (b->load_failed) {
+    free(rendered);
+    return 1;
+  }
+  le_pr_segment* seg = &b->segments[b->segment_count - 1];
+  seg->src = rendered;
+  seg->owns_src = rendered != NULL;
+  seg->turn_power = 1;
+  return 1;
 }
 
 /* A rate fact (LE_PLOG_SPEED, #1179) on this channel: later segments read at
@@ -852,7 +917,7 @@ static void le_pr_apply_speed(le_pr_track_build* b, uint64_t frame,
   const uint64_t q = (uint64_t)cmd->speed_log.index_lo |
                      ((uint64_t)cmd->speed_log.index_hi << 32);
   le_pr_reanchor(b, frame, last->reversed, le_head_index_from_q32(q),
-                 cmd->speed_log.turn_frames);
+                 cmd->speed_log.turn_frames, 0);
 }
 
 /* The latest LE_PLOG_LOOP_LENGTH_LOCKED at or before `frame` (INCLUSIVE, so
@@ -1206,6 +1271,11 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     } else if (e->cmd.code == LE_PLOG_SPEED &&
                e->cmd.speed_log.channel == channel) {
       le_pr_apply_speed(&build, e->frame, &e->cmd);
+    } else if (e->cmd.code == LE_PLOG_TRANSPOSE &&
+               e->cmd.transpose_log.channel == channel) {
+      if (!le_pr_apply_transpose(&build, e->frame, &e->cmd, m->sample_rate)) {
+        build.load_failed = 1;
+      }
     } else if (e->cmd.code == LE_PLOG_REVERSE &&
                e->cmd.reverse_log.channel == channel) {
       le_pr_apply_direction(&build, e->frame, e->cmd.reverse_log.reversed != 0,
@@ -1217,14 +1287,20 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
 
   if (build.load_failed) {
     *out_failed = 1;
-    for (int i = 0; i < build.segment_count; ++i) if (build.segments[i].owns_image) free(build.segments[i].image);
+    for (int i = 0; i < build.segment_count; ++i) {
+      if (build.segments[i].owns_image) free(build.segments[i].image);
+      if (build.segments[i].owns_src) free(build.segments[i].src);
+    }
     return NULL;
   }
 
   float* stem = (float*)calloc((size_t)m->capture_frames, sizeof(float));
   if (stem == NULL) {
     *out_failed = 1;
-    for (int i = 0; i < build.segment_count; ++i) if (build.segments[i].owns_image) free(build.segments[i].image);
+    for (int i = 0; i < build.segment_count; ++i) {
+      if (build.segments[i].owns_image) free(build.segments[i].image);
+      if (build.segments[i].owns_src) free(build.segments[i].src);
+    }
     return NULL;
   }
 
@@ -1243,20 +1319,30 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
        * head out with the callback's equal-gain law for its window. */
       const le_read_head head = le_pr_segment_head(seg);
       const int64_t into = (int64_t)(f - seg->start_frame);
-      stem[f] = le_head_read(seg->image, seg->image_len, &head,
+      const float* rb = seg->src != NULL ? seg->src : seg->image;
+      stem[f] = le_head_read(rb, seg->image_len, &head,
                              le_head_index(&head, into, seg->image_len));
       const int64_t mixed = into + seg->turn_into0;
       if (seg->turn_frames > 0 && mixed < seg->turn_frames) {
         const double old = le_head_index(&seg->turn, into, seg->image_len);
-        const float x = le_head_turn_mix((int32_t)mixed, seg->turn_frames, 0);
+        const float x = le_head_turn_mix((int32_t)mixed, seg->turn_frames,
+                                         seg->turn_power);
+        const float y =
+            seg->turn_power
+                ? le_head_turn_mix(seg->turn_frames - (int32_t)mixed,
+                                   seg->turn_frames, 1)
+                : 1.0f - x;
+        const float* ob = seg->turn_src != NULL ? seg->turn_src : seg->image;
         stem[f] = stem[f] * x +
-                  le_head_read(seg->image, seg->image_len, &seg->turn, old) *
-                      (1.0f - x);
+                  le_head_read(ob, seg->image_len, &seg->turn, old) * y;
       }
     }
   }
 
-  for (int i = 0; i < build.segment_count; ++i) if (build.segments[i].owns_image) free(build.segments[i].image);
+  for (int i = 0; i < build.segment_count; ++i) {
+    if (build.segments[i].owns_image) free(build.segments[i].image);
+    if (build.segments[i].owns_src) free(build.segments[i].src);
+  }
   return stem;
 }
 

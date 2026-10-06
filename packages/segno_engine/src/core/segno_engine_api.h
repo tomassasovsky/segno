@@ -529,6 +529,8 @@ typedef enum le_command_code {
   /* 84 is held by Multiply/Divide's LE_CMD_SET_LENGTH (#1168 plan). */
   LE_CMD_SET_SPEED = 85, /* checked internal Speed request (#1179); never
                           * raw-posted */
+  LE_CMD_TRANSPOSE = 86,        /* checked internal Transpose request (#1179) */
+  LE_CMD_TRANSPOSE_BYPASS = 87, /* checked internal Transpose bypass */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -961,6 +963,11 @@ typedef struct le_track_snapshot {
    * derived pitch and progress without re-deriving them. position_frames
    * moves at this rate. */
   int32_t head_rate_milli;
+  /* Trailing (#1179 Part 3a): the stored Transpose pitch (-12..12) and the
+   * pitch actually sounding — 0 while its render is pending, refused or
+   * bypassed, so a host never claims a pitch the mix is not playing. */
+  int32_t transpose_st;
+  int32_t transpose_effective_st;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1379,6 +1386,8 @@ typedef struct le_snapshot {
    * numer/denom (1/2, 1/1, 2/1, 4/1 or 8/1; 1/1 before any request). */
   int32_t speed_numer;
   int32_t speed_denom;
+  /* Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally. */
+  int32_t transpose_bypass;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -2779,7 +2788,8 @@ LE_EXPORT int32_t le_perf_set_follow_output(le_engine* engine, int32_t follow);
 /* Default wet-cache memory budget in bytes (appliance-tuned: ~5 stereo 30 s
  * entries at 48 kHz). Seeded once in le_engine_create; persists across
  * configure like the tempo/click settings. */
-#define LE_CACHE_DEFAULT_CAP_BYTES (64ll * 1024 * 1024)
+#define LE_CACHE_DEFAULT_CAP_BYTES (384ll * 1024 * 1024) /* Transpose's
+     * source renders share it (#1179): a 30 s mono lane at 96 kHz is 11.5 MiB */
 
 /* Per-lane cache telemetry states (le_lane_cache_info.state). */
 typedef enum le_cache_state {
@@ -2797,6 +2807,8 @@ typedef enum le_cache_reason {
                                * would pass it dry, so the lane stays live */
   LE_CACHE_REASON_RENDER_FAILED = 2, /* repeated render failures */
   LE_CACHE_REASON_PART_POST = 3, /* a part Post chain must keep live tails */
+  LE_CACHE_REASON_BUDGET = 4, /* a Transpose source render does not fit the
+                               * cap; the track plays dry (#1179) */
 } le_cache_reason;
 
 /* Snapshot of one lane's cache state (le_engine_get_lane_cache). */
@@ -3353,6 +3365,36 @@ LE_EXPORT int32_t le_engine_install_reverse(le_engine* engine, int32_t channel,
  * to 1x (le_snapshot shows it), so the next loop records. */
 LE_EXPORT int32_t le_engine_set_speed(le_engine* engine, int32_t numer,
                                      int32_t denom, uint64_t* request);
+/* Transpose (#1179 Part 3a): plays track [channel] as a pitch-shifted render
+ * of its own takes at unchanged timing. The render is built off the audio
+ * thread by the cache worker (about 100 ms after the last step, plus the
+ * render); until it lands the track plays its dry take at true pitch and
+ * le_track_snapshot.transpose_effective_st reads 0, then it crossfades to the
+ * render at the same position. Step moves the stored pitch by [delta] (+1 or
+ * -1); at +-12 the receipt is LE_ERR_CAPACITY and nothing changes. Install
+ * sets [semitones] (-12..12; Session recall) and also accepts an EMPTY track
+ * holding imported material. Refusals as Reverse's: LE_ERR_INVALID for a bad
+ * channel or argument or a track that reads EMPTY (step), RECORDING or
+ * OVERDUBBING; LE_ERR_NOT_READY while an arm or Count-in launch is pending or
+ * no receipt slot is free. While a track's pitch is not 0 and Transpose is
+ * not bypassed, le_engine_record refuses a punch-in with LE_ERR_TRANSFORMED. */
+LE_EXPORT int32_t le_engine_transpose_step(le_engine* engine, int32_t channel,
+                                          int32_t delta, uint64_t* request);
+LE_EXPORT int32_t le_engine_install_transpose(le_engine* engine,
+                                             int32_t channel,
+                                             int32_t semitones,
+                                             uint64_t* request);
+/* Bypasses every track's Transpose (dry, stored pitches kept) or restores
+ * it. Admitted whenever configured. */
+LE_EXPORT int32_t le_engine_set_transpose_bypass(le_engine* engine,
+                                                int32_t on,
+                                                uint64_t* request);
+/* Track [channel]'s Transpose source-render telemetry, the track cache
+ * query's twin: `reason` LE_CACHE_REASON_BUDGET when the render does not fit
+ * the cap and the track stays dry. */
+LE_EXPORT int32_t le_engine_get_transpose_cache(le_engine* engine,
+                                               int32_t channel,
+                                               le_lane_cache_info* out);
 /* Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
  * callback publication, INVALID for an absent/consumed/retired id; otherwise
  * OK and fills result. */
