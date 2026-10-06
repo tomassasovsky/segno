@@ -27,18 +27,33 @@
  *             reverb each, the pitch/time read head at 8x over the 64 lanes
  *             (the Speed work its plan adds to the mixer), and 32 held
  *             voices of the costliest melodic patch inside the callback,
- *             plus the MIDI routing cost (#1197 Part 2c): before every
- *             period, 255 events on each of the 8 ports (a full ring) and
- *             256 control note-offs, routed against 8 instruments x 32
- *             remaps. The port events are Note Ons above every range, Note
- *             Offs and CC 7, so each one scans all 256 remaps and the voice
- *             pool without changing the voice load. Reported with p99.9 and
- *             the count of periods over the budget ("late").
+ *             plus dense MIDI (#1197 Part 2c): before every period, 4
+ *             messages on each of the 8 ports and 8 control note-offs,
+ *             about 6000 messages a second per port, six times what a DIN
+ *             port can carry. Run three ways: without instruments or MIDI
+ *             (the base), as described, and with a ring-full burst in
+ *             every period (255 messages on every port and 256 control
+ *             note-offs). Reported with p99.9 and the count of periods over
+ *             the budget ("late").
+ *   routing   8 instruments, one per port, each with 32 remaps: 24 note
+ *             remaps on channel 16 that nothing matches and 8 CC 20 remaps,
+ *             one per port, at the end of the list. The messages are Note
+ *             Ons above every range, Note Offs, CC 7 and CC 20 at 0: CC 20
+ *             is admitted by the remap index on every port and scans every
+ *             instrument's remaps to the end (the heavy path), and none of
+ *             them changes the voice load.
  *
  * Scheduling: SCHED_FIFO (BENCH_RT_PRIO, below the app's audio thread) around
  * the timed loops only. Thresholds (--assert): the Pi 5 set, refused on
  * anything but a Cortex-A76 unless --proxy, which asserts the arm64 CI proxy
  * set (p50 at half the Pi percentages). --smoke: short runs, no assertions.
+ *
+ * The proxy gates what this plan adds to the joint period (plan D2, "the
+ * proxy gate"): the instruments' share (with dense MIDI, minus the base)
+ * and the burst's increment, not the total, which is mostly the looper, the
+ * monitors and the read head and moves with every trunk change on a runner
+ * that is not the appliance. The total is printed for reference; the Pi set
+ * gates it.
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -214,9 +229,9 @@ typedef struct bench_capture {
 enum { kRoutePorts = 8 };
 
 /* Instruments 1-7 get `patch` too (instrument 0 already holds the voices),
- * each listens on its own port over notes 0-23, and each carries 32 remaps
- * on channel 16 that the load never matches, so every message scans them
- * all. */
+ * each listens on its own port over notes 0-23 and carries 32 remaps: 24
+ * note remaps on channel 16 that nothing matches, then one CC 20 remap per
+ * port (see the header). */
 static void route_load_setup(le_engine* e, bench_capture* caps, int32_t patch) {
   le_inst_routes* r = (le_inst_routes*)calloc(1, sizeof(le_inst_routes));
   for (int32_t k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
@@ -231,10 +246,11 @@ static void route_load_setup(le_engine* e, bench_capture* caps, int32_t patch) {
     q->remap_count = LE_INST_MAX_REMAPS;
     for (int32_t m = 0; m < LE_INST_MAX_REMAPS; ++m) {
       le_inst_remap* x = &q->remaps[m];
-      x->port = q->port;
-      x->channel = 16;
-      x->kind = LE_INST_REMAP_NOTE;
-      x->number = 60 + m;
+      const int cc = m >= LE_INST_MAX_REMAPS - kRoutePorts;
+      x->port = cc ? m - (LE_INST_MAX_REMAPS - kRoutePorts) : q->port;
+      x->channel = cc ? 0 : 16;
+      x->kind = cc ? LE_INST_REMAP_CC : LE_INST_REMAP_NOTE;
+      x->number = cc ? 20 : 60 + m;
       x->count = LE_INST_REMAP_NOTES;
       for (int32_t n = 0; n < LE_INST_REMAP_NOTES; ++n) x->notes[n] = 48 + n;
     }
@@ -253,25 +269,34 @@ static void route_load_setup(le_engine* e, bench_capture* caps, int32_t patch) {
   }
 }
 
-/* One period's routing load, queued before the callback (untimed: the MIDI
- * threads and the control thread carry the posting). */
-static void route_load_post(le_engine* e, bench_capture* caps, size_t k) {
+/* The MIDI a joint period carries. */
+typedef enum { kMidiNone, kMidiDense, kMidiBurst } midi_load;
+
+/* One period's MIDI, queued before the callback (untimed: the MIDI threads
+ * and the control thread carry the posting): `per_port` messages on every
+ * port, cycling Note On, Note Off, CC 7 and CC 20 at 0, and `control`
+ * control note-offs. */
+static void route_load_post(le_engine* e, bench_capture* caps, size_t k,
+                            int32_t per_port, uint32_t control) {
   for (int32_t p = 0; p < kRoutePorts; ++p) {
-    for (int32_t i = 0; i < LE_MIDI_PORT_RING_CAP - 1; ++i) {
+    for (int32_t i = 0; i < per_port; ++i) {
       const uint8_t note = (uint8_t)(60 + (i % 40));
-      const uint8_t status = i % 3 == 0 ? 0x90 : i % 3 == 1 ? 0x80 : 0xB0;
-      le_midi_sink_push(&caps[p].sink, status, status == 0xB0 ? 7 : note, 100,
-                        (uint64_t)k);
+      switch (i % 4) {
+        case 0: le_midi_sink_push(&caps[p].sink, 0x90, note, 100, k); break;
+        case 1: le_midi_sink_push(&caps[p].sink, 0x80, note, 0, k); break;
+        case 2: le_midi_sink_push(&caps[p].sink, 0xB0, 7, 100, k); break;
+        default: le_midi_sink_push(&caps[p].sink, 0xB0, 20, 0, k); break;
+      }
     }
   }
-  for (uint32_t i = 0; i < 256; ++i) {
+  for (uint32_t i = 0; i < control; ++i) {
     le_engine_instrument_note_off(e, 100000u + (uint32_t)(k & 0xFFFFu) * 256u + i);
   }
 }
 
 /* The joint worst case: everything the period may have to carry at once. */
 static stats run_joint(const bench_opts* o, int32_t patch, int32_t voices,
-                       const float* src, int32_t frames) {
+                       midi_load midi, const float* src, int32_t frames) {
   enum { kInputs = 8, kLanesPerTrack = 8 };
   rig r;
   if (!rig_create_io(&r, o, kLanesPerTrack, src, frames, kInputs)) {
@@ -302,16 +327,20 @@ static stats run_joint(const bench_opts* o, int32_t patch, int32_t voices,
     heads[t].rate = 8.0;
   }
   float* acc = (float*)calloc((size_t)o->period, sizeof(float));
-  hold_engine_voices(r.e, o, &r, patch, voices);
+  if (voices > 0) hold_engine_voices(r.e, o, &r, patch, voices);
   bench_capture caps[kRoutePorts];
-  route_load_setup(r.e, caps, patch);
+  if (midi != kMidiNone) route_load_setup(r.e, caps, patch);
+  const int32_t per_port = midi == kMidiBurst ? (int32_t)LE_MIDI_PORT_RING_CAP - 1
+                         : midi == kMidiDense ? 4
+                                              : 0;
+  const uint32_t control = midi == kMidiBurst ? 256u : midi == kMidiDense ? 8u : 0u;
   const size_t periods = (size_t)(o->seconds * o->rate / o->period);
   double* t = (double*)malloc(sizeof(double) * (periods ? periods : 1));
   le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
   int64_t base = 0;
   rt_enter();
   for (size_t k = 0; k < periods; ++k) {
-    route_load_post(r.e, caps, k);
+    route_load_post(r.e, caps, k, per_port, control);
     const double a = now_us();
     le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
     head_period(heads, lanes, kLanesPerTrack, frames, base, o->period, 8.0, acc);
@@ -330,7 +359,9 @@ static stats run_joint(const bench_opts* o, int32_t patch, int32_t voices,
   free(snap);
   free(acc);
   for (int i = 0; i < LE_MAX_TRACKS; ++i) free(copies[i]);
-  for (int32_t p = 0; p < kRoutePorts; ++p) le_engine_detach_midi_input(r.e, p);
+  if (midi != kMidiNone) {
+    for (int32_t p = 0; p < kRoutePorts; ++p) le_engine_detach_midi_input(r.e, p);
+  }
   const stats s = stats_of(t, periods);
   free(t);
   rig_destroy(&r);
@@ -455,12 +486,22 @@ int main(int argc, char** argv) {
   print_row("8 x 8 lanes", base);
   const stats with = run_engine(&o, costliest_melodic, 32, src, frames);
   print_row("8 x 8 lanes + 32 voices", with);
-  printf("\n## joint (8 x 8 lanes + 8 monitored inputs with reverb + read head 8x + 32 voices\n"
-         "## + MIDI routing: 8 ports x 255 events + 256 control events per period,\n"
-         "## 8 instruments x 32 remaps)\n\n");
+  printf("\n## joint (8 x 8 lanes + 8 monitored inputs with reverb + read head 8x\n"
+         "## + 32 voices + dense MIDI; the burst adds a full ring on every port)\n\n");
   print_tail_header();
-  const stats joint = run_joint(&o, costliest_melodic, 32, src, frames);
+  const stats joint_base = run_joint(&o, costliest_melodic, 0, kMidiNone, src, frames);
+  print_tail_row("joint without instruments", joint_base);
+  const stats joint = run_joint(&o, costliest_melodic, 32, kMidiDense, src, frames);
   print_tail_row("joint worst case", joint);
+  const stats joint_burst = run_joint(&o, costliest_melodic, 32, kMidiBurst, src, frames);
+  print_tail_row("joint + ring-full MIDI burst", joint_burst);
+  const double share_p50 = joint.p50 - joint_base.p50;
+  const double burst_p50 = joint_burst.p50 - joint.p50;
+  const double burst_p999 = joint_burst.p999 - joint.p999;
+  printf("\n- instruments' share of the joint period, p50: %.1f us (%.1f%%)\n"
+         "- the MIDI burst's increment, p50: %.1f us (%.1f%%), p99.9: %.1f us\n",
+         share_p50, 100.0 * share_p50 / g_budget_us, burst_p50,
+         100.0 * burst_p50 / g_budget_us, burst_p999);
   free(src);
   printf("\n- peak RSS: %.0f MiB\n\n", peak_rss_bytes() / 1048576.0);
 
@@ -474,13 +515,18 @@ int main(int argc, char** argv) {
       judge("32 voices p50 <= 7.5% of period", 100.0 * p50_32 / g_budget_us, 7.5, 1);
       judge("64 voices p50 <= 15% of period", 100.0 * p50_64 / g_budget_us, 15.0, 1);
       judge("32-note burst p50 <= 10% of period", 100.0 * burst.p50 / g_budget_us, 10.0, 1);
-      judge("joint worst case p50 <= 37.5% of period", 100.0 * joint.p50 / g_budget_us, 37.5, 1);
+      judge("joint instruments' share p50 <= 7.5% of period",
+            100.0 * share_p50 / g_budget_us, 7.5, 1);
+      judge("MIDI burst increment p50 <= 10% of period",
+            100.0 * burst_p50 / g_budget_us, 10.0, 1);
     } else {
       judge("32 voices p99.9 <= 15% of period", 100.0 * p999_32 / g_budget_us, 15.0, 1);
       judge("64 voices p99.9 <= 30% of period", 100.0 * p999_64 / g_budget_us, 30.0, 1);
       judge("32-note burst p99.9 <= 20% of period", 100.0 * burst.p999 / g_budget_us, 20.0, 1);
       judge("joint worst case p99.9 <= 75% of period", 100.0 * joint.p999 / g_budget_us, 75.0, 1);
       judge("joint worst case: no period over the budget", (double)joint.over, 0.0, 1);
+      judge("MIDI burst increment p99.9 <= 20% of period",
+            100.0 * burst_p999 / g_budget_us, 20.0, 1);
     }
     printf("## verdict (%s thresholds)\n\n", o.proxy ? "arm64 proxy" : "Pi 5");
     int failed = 0;
@@ -493,6 +539,11 @@ int main(int argc, char** argv) {
       /* the pool size the plan's D2 takes from this run */
       printf("\nvoice pool: %d (64 when the 64-voice threshold passes)\n",
              g_verdicts[1].pass ? 64 : LE_SYNTH_DEFAULT_VOICES);
+    }
+    if (o.proxy) {
+      /* not gated on the runner (see the header); the Pi set gates it */
+      printf("- info: joint worst case p50 %.2f%% of period (old proxy reference "
+             "37.50, not gated)\n", 100.0 * joint.p50 / g_budget_us);
     }
     printf("\n%s\n", failed ? "THRESHOLDS FAILED" : "ALL THRESHOLDS MET");
     return failed ? 1 : 0;

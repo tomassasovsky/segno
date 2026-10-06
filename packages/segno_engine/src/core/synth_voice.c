@@ -280,6 +280,19 @@ static float fade_step(const le_synth* s) {
   return 1000.0f / ((float)LE_SYNTH_FADE_MS * (float)s->sample_rate);
 }
 
+static uint32_t held_bucket(uint32_t origin) {
+  return (origin * 2654435761u) >> 24; /* 0..255 */
+}
+
+/* Recounts every bucket exactly from the voices. */
+static void recount_held(le_synth* s) {
+  memset(s->held_hint, 0, sizeof(s->held_hint));
+  for (int32_t i = 0; i < s->voice_count; ++i) {
+    const le_synth_voice* v = &s->voices[i];
+    if (v->state == LE_SYNTH_VOICE_HELD) s->held_hint[held_bucket(v->origin)]++;
+  }
+}
+
 static int sounding(const le_synth_voice* v) {
   return v->state == LE_SYNTH_VOICE_HELD ||
          v->state == LE_SYNTH_VOICE_RELEASED ||
@@ -488,6 +501,10 @@ static int32_t note_on(le_synth* s, int32_t inst, uint32_t origin,
   le_synth_voice* v = take_slot(s, inst);
   memset(v, 0, sizeof(*v));
   v->state = LE_SYNTH_VOICE_HELD;
+  /* saturating: without a render to recount (frames 0), a bucket must
+   * never wrap back to zero */
+  uint8_t* hint = &s->held_hint[held_bucket(origin)];
+  if (*hint < UINT8_MAX) (*hint)++;
   v->inst = inst;
   v->patch = patch;
   v->note = note;
@@ -605,7 +622,7 @@ static void release_sustained(le_synth* s, int32_t inst) {
 }
 
 void le_synth_note_off(le_synth* s, uint32_t origin) {
-  if (s == NULL) return;
+  if (s == NULL || s->held_hint[held_bucket(origin)] == 0) return;
   for (int32_t i = 0; i < s->voice_count; ++i) {
     le_synth_voice* v = &s->voices[i];
     if (v->state != LE_SYNTH_VOICE_HELD || v->origin != origin) continue;
@@ -668,9 +685,11 @@ void le_synth_expression(le_synth* s, int32_t inst, int32_t kind, float value) {
   else if (kind == LE_SYNTH_PRESSURE) in->pressure = value;
 }
 
-void le_synth_release_matching(le_synth* s, uint32_t mask, uint32_t value) {
+void le_synth_release_matching(le_synth* s, int32_t inst, uint32_t mask,
+                               uint32_t value) {
   if (s == NULL) return;
   for (int32_t k = 0; k < LE_SYNTH_MAX_INSTRUMENTS; ++k) {
+    if (inst >= 0 && k != inst) continue;
     le_synth_instrument* in = &s->inst[k];
     for (int32_t i = in->sustain_n - 1; i >= 0; --i) {
       if ((in->sustain[i] & mask) == value) in->sustain[i] = in->sustain[--in->sustain_n];
@@ -678,6 +697,7 @@ void le_synth_release_matching(le_synth* s, uint32_t mask, uint32_t value) {
   }
   for (int32_t i = 0; i < s->voice_count; ++i) {
     le_synth_voice* v = &s->voices[i];
+    if (inst >= 0 && v->inst != inst) continue;
     const int held_on = !v->drum && s->inst[v->inst].sustain_n > 0;
     if (v->state == LE_SYNTH_VOICE_HELD && (v->origin & mask) == value) {
       /* its key is let go: sustain still holds it, as for a Note Off */
@@ -692,10 +712,14 @@ void le_synth_release_matching(le_synth* s, uint32_t mask, uint32_t value) {
   }
 }
 
-int32_t le_synth_held(const le_synth* s, uint32_t origin) {
-  if (s == NULL) return 0;
+int32_t le_synth_held(const le_synth* s, int32_t inst, uint32_t origin) {
+  if (s == NULL || s->held_hint[held_bucket(origin)] == 0) return 0;
   for (int32_t i = 0; i < s->voice_count; ++i) {
-    if (s->voices[i].state == LE_SYNTH_VOICE_HELD && s->voices[i].origin == origin) return 1;
+    const le_synth_voice* v = &s->voices[i];
+    if (v->state == LE_SYNTH_VOICE_HELD && v->origin == origin &&
+        (inst < 0 || v->inst == inst)) {
+      return 1;
+    }
   }
   return 0;
 }
@@ -723,7 +747,9 @@ int32_t le_synth_set_voice_limit(le_synth* s, int32_t limit) {
 
 void le_synth_render(le_synth* s, float* const* bus, int32_t n_bus,
                      int32_t frames) {
-  if (s == NULL || frames <= 0) return;
+  if (s == NULL) return;
+  recount_held(s); /* every way out of HELD is settled here, once a block */
+  if (frames <= 0) return;
   for (int32_t b = 0; b < n_bus; ++b) {
     if (bus != NULL && bus[b] != NULL) {
       memset(bus[b], 0, sizeof(float) * (size_t)frames);

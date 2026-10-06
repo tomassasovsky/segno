@@ -3571,8 +3571,11 @@ LE_EXPORT int32_t le_engine_set_instrument(le_engine* engine, int32_t slot,
 LE_EXPORT int32_t le_engine_set_instrument_param(le_engine* engine, int32_t slot,
                                                  int32_t param, float value);
 
+/* The voice pool: the highest voice limit. */
+#define LE_INST_MAX_VOICES 64
+
 /* Limits the sounding voices of all instruments together to `limit`
- * (1..64): lowering it fades the excess, the overload
+ * (1..LE_INST_MAX_VOICES): lowering it fades the excess, the overload
  * control. The default after configure is 32. Returns LE_OK, LE_ERR_INVALID
  * or LE_ERR_NOT_RUNNING. */
 LE_EXPORT int32_t le_engine_set_voice_limit(le_engine* engine, int32_t limit);
@@ -3590,6 +3593,21 @@ LE_EXPORT int32_t le_engine_reset_instrument(le_engine* engine, int32_t slot);
 LE_EXPORT int32_t le_engine_instrument_note_on(le_engine* engine, int32_t slot,
                                                uint32_t origin, int32_t note,
                                                int32_t velocity);
+
+/* One origin, one sounding note: a note-on for an origin whose voice is
+ * still held on that slot replaces it (the repeated-strike rule; a voice
+ * held on only by sustain rings on). A chord with one identity goes through
+ * here instead: `count` (1..LE_INST_CHORD_NOTES) notes started together
+ * for `origin`, released together by its note-off. All or nothing: returns
+ * LE_OK, LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT, LE_ERR_CAPACITY (no room
+ * for every note; nothing is played, one refusal is counted) or
+ * LE_ERR_NOT_RUNNING. */
+#define LE_INST_CHORD_NOTES 8
+LE_EXPORT int32_t le_engine_instrument_chord_on(le_engine* engine,
+                                                int32_t slot, uint32_t origin,
+                                                const int32_t* notes,
+                                                int32_t count,
+                                                int32_t velocity);
 
 /* Releases every voice started for `origin`, on every instrument. Rides the
  * reserved release lane. Returns LE_OK, LE_ERR_CAPACITY (the release lane is

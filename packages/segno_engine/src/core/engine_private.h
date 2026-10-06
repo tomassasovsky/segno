@@ -1650,6 +1650,11 @@ struct le_engine {
    * control thread, so a message no remap can match skips the remap scan of
    * every instrument. */
   uint16_t inst_remap_index[2][LE_MAX_MIDI_PORTS][2][128];
+  /* and which instruments carry such a remap (bit k: instrument k), and
+   * where in each instrument's list the first one sits, so an admitted
+   * message starts its scan there on those instruments only */
+  uint8_t inst_remap_insts[2][LE_MAX_MIDI_PORTS][2][128];
+  uint8_t inst_remap_first[2][LE_MAX_INSTRUMENTS][LE_MAX_MIDI_PORTS][2][128];
   _Atomic int32_t a_inst_routes_live;
   _Atomic int32_t a_inst_routes_seen;
   /* audio thread: this block's table and remap index, and the port that
@@ -1657,6 +1662,8 @@ struct le_engine {
    * a port that goes away resets only its own */
   const le_inst_routes* inst_routes_active;
   const uint16_t (*inst_remap_active)[2][128];
+  const uint8_t (*inst_remap_insts_active)[2][128];
+  const uint8_t (*inst_remap_first_active)[LE_MAX_MIDI_PORTS][2][128];
   int8_t inst_expr_port[LE_MAX_INSTRUMENTS][3];
 
   /* ---- Input clip ("HOT") detector (input clip, S2) ---- *

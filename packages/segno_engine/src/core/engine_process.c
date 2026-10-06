@@ -6522,11 +6522,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     e->commands_applied++; /* rejected and no-op commands settle too */
   }
 
+  /* Instruments (#1197): parameter changes and the note rings in posting
+   * order before the MIDI drain, so a MIDI note meets a patch posted ahead
+   * of it (review L2); then this block of every instrument's bus, ahead of
+   * the frame loop. */
+  le_instruments_apply(e);
   le_midi_ports_drain(e);
-
-  /* Instruments (#1197): parameter changes, the note rings in posting order,
-   * then this block of every instrument's bus, ahead of the frame loop. */
-  le_instruments_block(e, frames);
+  le_instruments_render(e, frames);
 
   /* Close the count-in cancel-race grace window (code-review fix) right
    * after this block's command drain: it is open for exactly one block's
