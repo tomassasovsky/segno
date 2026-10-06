@@ -464,6 +464,35 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
+#### Part 2 as built
+
+Status: built (branch `claude/reverse-1162-p2`, on the trunk `68ed3f957`).
+
+- Session schema 13: `SessionTrack.reversed` is a required bool, decoded
+  strictly (missing or non-bool is a `FormatException`), serialized and part
+  of value identity. Peel Part 2 (#1194) takes 12; whichever lands second
+  takes the next free number.
+- Capture: `SessionRepository` saves `TrackSnapshot.reversed` from the same
+  detached snapshot as `fadeAmount`. `rigFromBundle` carries it to
+  `SessionRigTrack.reversed`.
+- Recall: `LooperRepository.applySession` installs direction with
+  `installReverse` after the Fade installs and before `commitSession`, only
+  for reversed tracks (the imported material is already forward). Each
+  receipt is awaited, a refusal fails the load like Fade's, and the Session
+  revision is rechecked around it. The commit check also requires every
+  track's published direction to match the rig.
+- Reopen: direction is already material in `le_engine_reset_material`
+  (Part 1); a native test now proves a retained reopen keeps a reversed
+  track reversed and STOPPED, and Play reads it from `len-1`.
+- Tests: schema round trip and strict decode; capture; mapping; an
+  actual-native recall of a reversed and a forward track (stopped, then
+  Play reads `pcm[len-1]` downward and the forward track from 0); an
+  actual-native lifetime test (undo to empty, redo from empty, Clear and
+  Clear Undo all read forward). Each fails with its fix reverted (the
+  lifetime test against a native mutation of the direction reset).
+- Not here: the record-refusal notice for a reversed track is
+  `LooperRepository.overdubRefusals`, built with Part 3 (#1162 P3).
+
 ### Part 3. Foot Reverse surface, mappings and marker (about 600 production lines)
 
 Section 3 complete: mode, model, actions, cubit part, view, `TrackOperation.reverse`,

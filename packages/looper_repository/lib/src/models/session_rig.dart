@@ -75,6 +75,7 @@ class SessionRigTrack {
     required this.channel,
     required this.fadeAmount,
     required this.lanes,
+    this.reversed = false,
   });
 
   /// Track channel index.
@@ -82,6 +83,9 @@ class SessionRigTrack {
 
   /// Saved coefficient, installed stationary before Session commit.
   final double fadeAmount;
+
+  /// Saved playback direction, installed before Session commit (#1162).
+  final bool reversed;
 
   /// The track's lanes, each with its own audio, routing, and mix. Lane 0 is
   /// first — it is the primary import that resets the track's undo state.
