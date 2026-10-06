@@ -6857,9 +6857,11 @@ final class le_mix_settings extends ffi.Struct {
   @ffi.Uint64()
   external int image_mask;
 
-  @ffi.Uint32()
+  /// bit s: source s (#1197: instruments are 32-39)
+  @ffi.Uint64()
   external int monitor_mask;
 
+  /// trim: device channels only
   @ffi.Uint32()
   external int trim_mask;
 
@@ -6882,10 +6884,10 @@ final class le_mix_settings extends ffi.Struct {
   @ffi.Array.multi([64])
   external ffi.Array<ffi.Float> image_pan;
 
-  @ffi.Array.multi([32])
+  @ffi.Array.multi([40])
   external ffi.Array<ffi.Float> monitor_gain;
 
-  @ffi.Array.multi([32])
+  @ffi.Array.multi([40])
   external ffi.Array<ffi.Float> monitor_pan;
 
   @ffi.Array.multi([32])
@@ -7735,18 +7737,20 @@ final class le_snapshot extends ffi.Struct {
   /// output folding (0 while off, muted or without an enabled route).
   /// output_peaks[c] follows master gain/limiter but EXCLUDES click.
   /// input_trim[c] is the capture gain le_engine_set_input_trim holds
-  /// (linear, default 1). Indexed by hardware channel; entries past the
-  /// device's channel count read 0 (trim 1).
-  @ffi.Array.multi([32])
+  /// (linear, default 1). Indexed by source; device entries past the
+  /// device's channel count read 0 (trim 1). Instrument sources (#1197,
+  /// LE_INSTRUMENT_SOURCE_BASE + k) report their bus's block peak as the
+  /// input peak and a trim of 1.
+  @ffi.Array.multi([40])
   external ffi.Array<ffi.Float> input_peaks;
 
-  @ffi.Array.multi([32])
+  @ffi.Array.multi([40])
   external ffi.Array<ffi.Float> monitor_peaks;
 
   @ffi.Array.multi([32])
   external ffi.Array<ffi.Float> output_peaks;
 
-  @ffi.Array.multi([32])
+  @ffi.Array.multi([40])
   external ffi.Array<ffi.Float> input_trim;
 
   /// last wholly applied mix transaction
@@ -8206,9 +8210,13 @@ const int LE_MAX_TRACKS = 8;
 
 const int LE_MAX_INSTRUMENTS = 8;
 
+const int LE_INSTRUMENT_SOURCE_BASE = 32;
+
+const int LE_MAX_SOURCES = 40;
+
 const int LE_MAX_LANES = 8;
 
-const int LE_MAX_MONITORED_INPUTS = 32;
+const int LE_MAX_MONITORED_INPUTS = 40;
 
 const int LE_MAX_OUTPUT_BUSES = 16;
 

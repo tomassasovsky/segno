@@ -648,6 +648,14 @@ typedef struct le_config {
 #define LE_MAX_TRACKS 8
 /* Instrument slots (#1197): each a synthesized mono source. */
 #define LE_MAX_INSTRUMENTS 8
+/* The source index space every input-keyed route, monitor and mix entry uses
+ * (#1197): sources [0, LE_MAX_CHANNELS) are device input channels, and
+ * LE_INSTRUMENT_SOURCE_BASE + k is instrument slot k. The index never depends
+ * on the interface's channel count. Physical-only stages (loopback exclusion,
+ * clip detection, conditioning, capture trim, the tuner) cover device
+ * channels only. */
+#define LE_INSTRUMENT_SOURCE_BASE LE_MAX_CHANNELS
+#define LE_MAX_SOURCES (LE_MAX_CHANNELS + LE_MAX_INSTRUMENTS)
 
 /* Default and fixed-track recording choices: 0 immediately, 1 loop start,
  * 2 bar, 3 half, 4 quarter, 5 eighth, 6 sixteenth. Track -1 inherits. */
@@ -667,17 +675,18 @@ typedef struct le_record_timing_settings {
  * worst-case LE_MAX_TRACKS * LE_MAX_LANES does not inflate idle memory. */
 #define LE_MAX_LANES 8
 
-/* Input channels the live-monitor path covers, [0, LE_MAX_MONITORED_INPUTS).
+/* Sources the live-monitor path covers, [0, LE_MAX_MONITORED_INPUTS).
  * Bounds the per-input monitor array (le_engine_set_monitor_input and friends)
  * and the per-input capture rings beside it.
  *
  * Every hardware input the engine can open can be monitored (accepted
  * design, slice 3: an 18-input interface monitors channel 18 exactly as
- * well as channel 1), so this is LE_MAX_CHANNELS. It stays a distinct name
- * from LE_MAX_LANES, which bounds a different thing (lanes per track), and
- * the monitor arrays are sized by it, never by the lane ceiling. Each
- * le_monitor_input is about 3.3 KB, so 32 of them cost ~106 KB. */
-#define LE_MAX_MONITORED_INPUTS LE_MAX_CHANNELS
+ * well as channel 1), and so can every instrument source (#1197), so this
+ * is LE_MAX_SOURCES. It stays a distinct name from LE_MAX_LANES, which
+ * bounds a different thing (lanes per track), and the monitor arrays are
+ * sized by it, never by the lane ceiling. Each le_monitor_input is about
+ * 3.3 KB, so 40 of them cost ~132 KB. */
+#define LE_MAX_MONITORED_INPUTS LE_MAX_SOURCES
 
 /* Output destinations (accepted design, slice 3b): output bus k is the
  * hardware pair (2k, 2k + 1); the last bus of an odd-count device is its one
@@ -725,13 +734,14 @@ typedef struct le_mix_settings {
   uint32_t track_gain_mask;
   float track_gain[LE_MAX_TRACKS]; /* after whole-track Pre, before Post */
   uint64_t lane_mask, image_mask;
-  uint32_t monitor_mask, trim_mask, solo_mask, solo_values;
+  uint64_t monitor_mask; /* bit s: source s (#1197: instruments are 32-39) */
+  uint32_t trim_mask, solo_mask, solo_values; /* trim: device channels only */
   float lane_gain[LE_MAX_TRACKS * LE_MAX_LANES];
   float lane_pan[LE_MAX_TRACKS * LE_MAX_LANES];
   /* Source image is separate from live lane gain and track pan offset. */
   float image_gain[LE_MAX_TRACKS * LE_MAX_LANES];
   float image_pan[LE_MAX_TRACKS * LE_MAX_LANES];
-  float monitor_gain[LE_MAX_CHANNELS], monitor_pan[LE_MAX_CHANNELS];
+  float monitor_gain[LE_MAX_SOURCES], monitor_pan[LE_MAX_SOURCES];
   float input_trim[LE_MAX_CHANNELS];
   uint32_t output_mask, output_muted, output_mono;
   float output_level[LE_MAX_OUTPUT_BUSES], output_balance[LE_MAX_OUTPUT_BUSES];
@@ -1334,12 +1344,14 @@ typedef struct le_snapshot {
    * output folding (0 while off, muted or without an enabled route).
    * output_peaks[c] follows master gain/limiter but EXCLUDES click.
    * input_trim[c] is the capture gain le_engine_set_input_trim holds
-   * (linear, default 1). Indexed by hardware channel; entries past the
-   * device's channel count read 0 (trim 1). */
-  float input_peaks[LE_MAX_CHANNELS];
-  float monitor_peaks[LE_MAX_CHANNELS];
+   * (linear, default 1). Indexed by source; device entries past the
+   * device's channel count read 0 (trim 1). Instrument sources (#1197,
+   * LE_INSTRUMENT_SOURCE_BASE + k) report their bus's block peak as the
+   * input peak and a trim of 1. */
+  float input_peaks[LE_MAX_SOURCES];
+  float monitor_peaks[LE_MAX_SOURCES];
   float output_peaks[LE_MAX_CHANNELS];
-  float input_trim[LE_MAX_CHANNELS];
+  float input_trim[LE_MAX_SOURCES];
   uint32_t mix_revision; /* last wholly applied mix transaction */
   /* ---- output buses (slice 3b; trailing). output_bus_count is how many
    * the device has ((output_channels + 1) / 2); entries past it read the

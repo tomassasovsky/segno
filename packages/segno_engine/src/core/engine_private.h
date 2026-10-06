@@ -1335,7 +1335,7 @@ typedef struct le_perf_capture {
    * input_mask (frozen at arm: inputs enabled later are not retroactively
    * captured). */
   le_audio_ring monitor_ring[LE_MAX_MONITORED_INPUTS];
-  uint32_t input_mask;
+  uint64_t input_mask; /* bit s: source s, instruments included (#1197) */
 
   int armed;
 
@@ -1574,7 +1574,7 @@ struct le_engine {
    * reallocated at configure; the audio thread only ever reads the pointer
    * (set before the device runs). NULL (allocation failure) simply keeps the
    * raw path — conditioning silently off, never a crash. */
-  le_input_cond cond[LE_MAX_MONITORED_INPUTS];
+  le_input_cond cond[LE_MAX_CHANNELS]; /* device channels only (#1197) */
   float* cond_buf;
   int64_t cond_buf_cap; /* capacity in floats (frames * channels) */
   /* Bumped once per block in which conditioning was WANTED (>= 1 input
@@ -1597,6 +1597,10 @@ struct le_engine {
    * slot-major, allocated with the engine. */
   struct le_synth* synth;
   float* inst_bus;
+  /* audio thread: whether this block's buses hold this block's audio (0 for
+   * a block larger than the scratch, whose instrument sources then read
+   * silence) */
+  int inst_bus_live;
   /* control thread: the patch last requested per slot (-1: none), the
    * posting sequence, and the event rings' storage */
   int32_t inst_patch_requested[LE_MAX_INSTRUMENTS];
@@ -1635,8 +1639,8 @@ struct le_engine {
    * a_input_clip_mask is the published truth le_engine_get_snapshot reads —
    * recomputed and stored once per processed block. All reset at configure
    * (the device is closed there, so the plain fields are race-free). */
-  int32_t clip_run[LE_MAX_MONITORED_INPUTS];
-  uint64_t clip_hold_until[LE_MAX_MONITORED_INPUTS];
+  int32_t clip_run[LE_MAX_CHANNELS]; /* device channels only (#1197) */
+  uint64_t clip_hold_until[LE_MAX_CHANNELS];
   _Atomic uint32_t a_input_clip_mask;
 
   /* Output buses (slice 3b): bus k is the pair (2k, 2k + 1); see

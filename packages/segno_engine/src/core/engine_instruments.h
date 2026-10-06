@@ -47,6 +47,22 @@ static inline const float* le_instrument_bus(const le_engine* e, int32_t slot) {
   return e->inst_bus + (int64_t)slot * LE_COND_SCRATCH_FRAMES;
 }
 
+/* Whether `source` names an instrument slot (#1197 Part 2b). */
+static inline int le_source_is_instrument(int32_t source) {
+  return source >= LE_INSTRUMENT_SOURCE_BASE && source < LE_MAX_SOURCES;
+}
+
+/* Frame `f` of instrument source `source` (an instrument slot) in the current
+ * block: its bus sample, or silence when this block's buses are not live
+ * (a block larger than the scratch). An empty slot's bus is silence. */
+static inline float le_instrument_source_sample(const le_engine* e,
+                                                int32_t source, uint32_t f) {
+  if (!e->inst_bus_live) return 0.0f;
+  return e->inst_bus[(int64_t)(source - LE_INSTRUMENT_SOURCE_BASE) *
+                         LE_COND_SCRATCH_FRAMES +
+                     f];
+}
+
 #ifdef __cplusplus
 }
 #endif
