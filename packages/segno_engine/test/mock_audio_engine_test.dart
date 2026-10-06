@@ -45,6 +45,60 @@ void main() {
       expect(engine.snapshot().tracks, before.tracks);
     });
 
+    test(
+      'speed needs material the mock never holds, so capture stays open',
+      () {
+        expect(
+          engine.setSpeed(SpeedFactor.half).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        final admitted = engine.setSpeed(SpeedFactor.half);
+        expect(admitted.result, EngineResult.invalid);
+        expect(admitted.request, 0);
+        expect(engine.snapshot().speed, SpeedFactor.normal);
+        expect(engine.record(), EngineResult.ok);
+      },
+    );
+
+    test(
+      'transpose needs material the mock lacks; its bypass is a global '
+      'request with a receipt',
+      () {
+        expect(
+          engine.transposeStep(channel: 0, delta: 1).result,
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setTransposeBypass(bypassed: true).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        expect(
+          engine.transposeStep(channel: 0, delta: 1).result,
+          EngineResult.invalid,
+        );
+        expect(
+          engine.installTranspose(channel: 0, semitones: 3).result,
+          EngineResult.invalid,
+        );
+        final bypass = engine.setTransposeBypass(bypassed: true);
+        expect(bypass.result, EngineResult.ok);
+        expect(bypass.request, isNonZero);
+        expect(engine.readRequestResult(bypass.request), EngineResult.ok);
+        expect(engine.readRequestResult(bypass.request), EngineResult.invalid);
+        expect(engine.snapshot().transposeBypass, isTrue);
+        expect(engine.record(), EngineResult.ok); // nothing is transposed
+        engine.setTransposeBypass(bypassed: false);
+        expect(engine.snapshot().transposeBypass, isFalse);
+        engine.setTransposeBypass(bypassed: true);
+        expect(engine.stop(), EngineResult.ok);
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        // Configure resets it with the material.
+        expect(engine.snapshot().transposeBypass, isFalse);
+      },
+    );
+
     test('peel is unavailable because the mock keeps no overdub layers', () {
       expect(engine.peel(), EngineResult.notRunning);
       expect(engine.start(engine.defaultConfig), EngineResult.ok);
