@@ -4799,11 +4799,14 @@ class SegnoEngineBindings {
   late final _le_perf_disarm = _le_perf_disarmPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
-  /// Free bytes on the volume holding `path`, into `*out_bytes`. Returns LE_OK,
-  /// LE_ERR_INVALID (null/empty `path` or null `out_bytes`), or LE_ERR_DEVICE if
-  /// the platform refused to answer (a path that does not exist, a filesystem that
-  /// cannot report). Engine-free: it is a question about a directory, not about a
-  /// running capture, so it is also the check made BEFORE arming one.
+  /// Total and available bytes of the volume holding `path`, into
+  /// `*out_total_bytes` and `*out_free_bytes`. Returns LE_OK, LE_ERR_INVALID
+  /// (null/empty `path` or a null output), or LE_ERR_DEVICE if the platform
+  /// refused to answer (a path that does not exist, a filesystem that cannot
+  /// report). Both outputs are zeroed on failure so a stale read cannot leak.
+  /// Engine-free: it is a question about a directory, not about a running
+  /// capture, so it is also the check made BEFORE arming one, and the figure the
+  /// Storage page draws for Internal and for each removable volume (#1177).
   ///
   /// It is here rather than in the caller because the caller is Dart, which has no
   /// free-space API at all — and the shell-out that filled that gap turned out to
@@ -4824,25 +4827,35 @@ class SegnoEngineBindings {
   /// has never applied there. It does now. That is the behaviour the floor was
   /// written for, but it is a change on a platform the click work did not
   /// otherwise touch, so it is stated here rather than left to be discovered.
-  int le_perf_volume_free_bytes(
+  int le_volume_space(
     ffi.Pointer<ffi.Char> path,
-    ffi.Pointer<ffi.Uint64> out_bytes,
+    ffi.Pointer<ffi.Uint64> out_total_bytes,
+    ffi.Pointer<ffi.Uint64> out_free_bytes,
   ) {
-    return _le_perf_volume_free_bytes(
+    return _le_volume_space(
       path,
-      out_bytes,
+      out_total_bytes,
+      out_free_bytes,
     );
   }
 
-  late final _le_perf_volume_free_bytesPtr =
+  late final _le_volume_spacePtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Uint64>)
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Uint64>,
+            ffi.Pointer<ffi.Uint64>,
+          )
         >
-      >('le_perf_volume_free_bytes');
-  late final _le_perf_volume_free_bytes = _le_perf_volume_free_bytesPtr
+      >('le_volume_space');
+  late final _le_volume_space = _le_volume_spacePtr
       .asFunction<
-        int Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Uint64>)
+        int Function(
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Uint64>,
+          ffi.Pointer<ffi.Uint64>,
+        )
       >();
 
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns

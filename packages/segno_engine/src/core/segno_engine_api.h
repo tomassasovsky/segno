@@ -2981,11 +2981,14 @@ LE_EXPORT int32_t le_perf_arm(le_engine* engine, const char* capture_dir);
  * le_engine_destroy). */
 LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
 
-/* Free bytes on the volume holding `path`, into `*out_bytes`. Returns LE_OK,
- * LE_ERR_INVALID (null/empty `path` or null `out_bytes`), or LE_ERR_DEVICE if
- * the platform refused to answer (a path that does not exist, a filesystem that
- * cannot report). Engine-free: it is a question about a directory, not about a
- * running capture, so it is also the check made BEFORE arming one.
+/* Total and available bytes of the volume holding `path`, into
+ * `*out_total_bytes` and `*out_free_bytes`. Returns LE_OK, LE_ERR_INVALID
+ * (null/empty `path` or a null output), or LE_ERR_DEVICE if the platform
+ * refused to answer (a path that does not exist, a filesystem that cannot
+ * report). Both outputs are zeroed on failure so a stale read cannot leak.
+ * Engine-free: it is a question about a directory, not about a running
+ * capture, so it is also the check made BEFORE arming one, and the figure the
+ * Storage page draws for Internal and for each removable volume (#1177).
  *
  * It is here rather than in the caller because the caller is Dart, which has no
  * free-space API at all — and the shell-out that filled that gap turned out to
@@ -3006,8 +3009,8 @@ LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
  * has never applied there. It does now. That is the behaviour the floor was
  * written for, but it is a change on a platform the click work did not
  * otherwise touch, so it is stated here rather than left to be discovered. */
-LE_EXPORT int32_t le_perf_volume_free_bytes(const char* path,
-                                            uint64_t* out_bytes);
+LE_EXPORT int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
+                                  uint64_t* out_free_bytes);
 
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's

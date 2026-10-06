@@ -1,0 +1,20 @@
+# Serves the app's USB eject requests without the app starting a process
+# (#1177; see #806 for why a fork from the app is not acceptable while audio
+# runs). The app renames a request into /run/segno/usb/requests/<id>.json;
+# this unit starts segno-usb-eject.service for as long as such a file exists,
+# and the service deletes every request it serves, which is what makes the
+# condition a queue rather than a one-shot trigger.
+#
+# PathExistsGlob= on *.json rather than DirectoryNotEmpty=: the glob skips the
+# app's .<id>.json.tmp dotfiles, so a temporary left behind by a crash
+# between the app's write and its rename cannot keep re-triggering the
+# service until the unit hits its trigger limit and stops serving ejects.
+[Unit]
+Description=Segno: watch for USB eject requests
+
+[Path]
+PathExistsGlob=/run/segno/usb/requests/*.json
+Unit=segno-usb-eject.service
+
+[Install]
+WantedBy=multi-user.target
