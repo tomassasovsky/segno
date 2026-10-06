@@ -483,6 +483,64 @@ void main() {
     await tester.pump(const Duration(seconds: 10));
   });
 
+  testWidgets('Peel shows its surface and says why a press peeled nothing', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+      ),
+    );
+    await pump(tester);
+    control.setMode(InteractionMode.peel);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('foot_peel_view')), findsOneWidget);
+    control.peelFootPeelTrack(0);
+    await tester.pumpAndSettle();
+    expect(
+      find
+          .text('Only the original take remains: there is no overdub to peel.')
+          .hitTestable(),
+      findsOneWidget,
+    );
+    verifyNever(() => repository.peel(channel: any(named: 'channel')));
+    expect(tester.takeException(), isNull);
+    dismissAppToast(AppToastId.footPeelRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  testWidgets('the layer badge drops by one when a Peel removes a layer', (
+    tester,
+  ) async {
+    final states = StreamController<LooperState>.broadcast();
+    addTearDown(states.close);
+    LooperState peeled(int depth) => LooperState(
+      tracks: [
+        Track(state: TrackState.playing, lengthFrames: 48000, peelDepth: depth),
+      ],
+    );
+    when(() => bloc.state).thenReturn(peeled(2));
+    when(() => repository.state).thenReturn(peeled(2));
+    whenListen(bloc, states.stream, initialState: peeled(2));
+    await pump(tester);
+    Finder layers(String figure) => find.descendant(
+      of: find.byKey(const Key('tracks_layers_0')),
+      matching: find.text(figure),
+    );
+    expect(layers('3'), findsOneWidget);
+    // A peel leaves the undo depth alone; the audible layer count drops.
+    when(() => bloc.state).thenReturn(peeled(1));
+    states.add(peeled(1));
+    await tester.pump();
+    await tester.pump();
+    expect(layers('2'), findsOneWidget);
+  });
+
   testWidgets('renders a tile per track', (tester) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);

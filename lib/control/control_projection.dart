@@ -15,6 +15,7 @@ import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/invariants.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 /// Whether the play transport is PARKED: content exists but none of it is
@@ -100,6 +101,10 @@ PedalTrackLed projectTrackLed(
       return (track != null && track.hasContent && track.fade.attenuated)
           ? PedalTrackLed.blue
           : PedalTrackLed.off;
+    case InteractionMode.peel:
+      // Lit while a press would remove a layer, so "none remain" and a busy
+      // track are visible by foot.
+      return (track?.canPeel ?? false) ? PedalTrackLed.blue : PedalTrackLed.off;
     case InteractionMode.custom:
       return customFunctions[channel] ?? false
           ? PedalTrackLed.blue
@@ -201,7 +206,8 @@ PedalStateFrame projectFrame(
       InteractionMode.fx => PedalMode.fx,
       InteractionMode.custom ||
       InteractionMode.mixer ||
-      InteractionMode.fade => PedalMode.custom,
+      InteractionMode.fade ||
+      InteractionMode.peel => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -232,6 +238,13 @@ PedalStateFrame projectFrame(
   return frame;
 }
 
+/// Whether [button] is a slot-less pedal on a hold-less performance surface.
+bool _slotless(InteractionMode mode, PedalButton button) => switch (mode) {
+  InteractionMode.fade => FootFadeProjection.pedalRoles[button]!.slot == null,
+  InteractionMode.peel => FootPeelProjection.pedalRoles[button]!.slot == null,
+  _ => false,
+};
+
 int _physicalButtonMask(
   ControlState overlay,
   List<PedalTrackLed> trackLeds, {
@@ -252,10 +265,11 @@ int _physicalButtonMask(
                       FootMixerProjection.pedalRoles[button]!.slot!
             : acceptedContacts.contains(button),
       PedalButton.bank => overlay.activeBank == 1,
-      _
-          when overlay.mode == InteractionMode.fade &&
-              FootFadeProjection.pedalRoles[button]!.slot == null =>
-        acceptedContacts.contains(button),
+      // Slot-less pedals on the hold-less performance surfaces light only
+      // for an accepted contact.
+      _ when _slotless(overlay.mode, button) => acceptedContacts.contains(
+        button,
+      ),
       _ when overlay.mode == InteractionMode.custom =>
         physicalCustomStates[button] ?? false,
       PedalButton.track1 ||

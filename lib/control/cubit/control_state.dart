@@ -22,6 +22,8 @@ class ControlState extends Equatable {
     this.footMixerFailure = 0,
     this.footFade = const FootFadeSelection(),
     this.footFadeFailure = 0,
+    this.footPeelFailure = 0,
+    this.footPeelRefusal = FootPeelRefusal.failed,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -114,6 +116,13 @@ class ControlState extends Equatable {
 
   /// Each refused Fade gesture notifies the current flow once.
   final int footFadeFailure;
+
+  /// Each refused Peel press notifies the current flow once; the notice
+  /// reads [footPeelRefusal].
+  final int footPeelFailure;
+
+  /// Why the latest refused Peel press removed nothing.
+  final FootPeelRefusal footPeelRefusal;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -228,6 +237,8 @@ class ControlState extends Equatable {
     int? footMixerFailure,
     FootFadeSelection? footFade,
     int? footFadeFailure,
+    int? footPeelFailure,
+    FootPeelRefusal? footPeelRefusal,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -260,6 +271,8 @@ class ControlState extends Equatable {
     footMixerFailure: footMixerFailure ?? this.footMixerFailure,
     footFade: footFade ?? this.footFade,
     footFadeFailure: footFadeFailure ?? this.footFadeFailure,
+    footPeelFailure: footPeelFailure ?? this.footPeelFailure,
+    footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -294,6 +307,8 @@ class ControlState extends Equatable {
     footMixerFailure,
     footFade,
     footFadeFailure,
+    footPeelFailure,
+    footPeelRefusal,
     cursor,
     activeBank,
     excluded,

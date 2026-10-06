@@ -1,6 +1,6 @@
 # Foot Peel: remove the latest overdub layer as a recoverable history entry
 
-<!-- cspell:ignore plog evt lanei hist acks -->
+<!-- cspell:ignore plog evt lanei hist acks slotless voseo Probá nuevo -->
 
 Status: plan for owner review (merging this plan approves its direction); implementation not started.
 Tracking: #1164 (parent #1026, M4 operations), `autonomy:merge-gate`.
@@ -546,6 +546,81 @@ NON-GOALS:
 - Queued peels, hold gestures, new owners, native changes beyond label plumbing.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
+
+#### Part 3 as built
+
+Status: built on branch `claude/peel-1164-p3`, from Part 2
+(`claude/peel-1164-p2`). It follows the Reverse surface (#1162 Part 3,
+PR #1209) and avoids the findings of that PR's review.
+
+- **Mode and vocabulary.**
+  - `InteractionMode.peel` is not a boot default; the mode chip and
+    `toggleMode` return to Tracks.
+  - `ModeAction` token `peel`.
+  - `TrackOperation.peel`, with `allowsAllTracks` false, like Clear.
+  - Labels in English and Spanish.
+- **Model and actions.**
+  - `lib/control/model/foot_peel.dart` holds the role table: every role
+    fires on contact, and Undo and Clear are `none`.
+  - A `FootPeelTrack` keeps `hasContent`, `layers` (`Track.layers`) and
+    `busy` (capturing, layer in flight, or Count-in launch) apart.
+    `available` is `Track.canPeel`.
+  - A busy recorded track therefore reads its real layer count, dimmed,
+    never "Empty" (Reverse review, Medium 2).
+  - The stateless `FootPeelActions.peel` returns null when a layer was
+    removed, or a `FootPeelRefusal`: `empty`, `originalOnly`, `busy` or
+    `failed`. The surface and every assigned Peel share it.
+- **Every refusal gets a notice.**
+  - A press that removes nothing raises
+    `ControlState.footPeelFailure`/`footPeelRefusal`. Tracks shows one
+    toast with the reason: a warning, or an error for `failed`.
+  - This applies to the surface and to assigned Peel actions in any mode
+    (Custom, CTRL, MIDI).
+  - It departs from §3 ("returning `invalid` for an unavailable track
+    without a notice"), by rule 3 and the Reverse review's Medium 2.
+  - Peel completes on the control thread, so the report always belongs to
+    the press that caused it. It needs none of Reverse's visit or session
+    checks for a late result.
+- **Surface pedals.**
+  - Every on-screen track pedal takes a press, so a refusal can say why.
+  - The selection bar and the physical LED light only while `canPeel`.
+- **Gating.**
+  - `_peelEditable` checks `_takeLocked()`, input retirement and the
+    Session transition. It covers contacts, `peelFootPeelTrack` and
+    semantic activation; Exit bypasses it.
+  - Assigned paths keep their existing `_takeLocked()` gates (Custom,
+    External/CTRL, MIDI).
+- **`trackPressed` is inert in Peel mode**, as in Mixer and Fade (Reverse
+  review, Low 3).
+- **LED.**
+  - Blue while `canPeel`, so "none remain", the drain window, capture and
+    a pending launch are visible by foot.
+  - The physical mask treats slot-less Fade and Peel pedals alike through
+    `_slotless`; Reverse Part 3 adds the same helper.
+  - The wire mode is `PedalMode.custom`.
+- **No Tracks status marker.** The layer badge already reports
+  `Track.layers`, which Part 1 makes drop on a peel, so nothing new paints
+  in the meta row (Reverse review, Medium 1).
+- **Overview wording.**
+  - The overview heading is "Layers", and counts include the original, as
+    the badge does.
+  - One layer reads "Original only".
+  - The Spanish keeps "Peel" in English, like "Fade", and uses Argentine
+    voseo ("Probá de nuevo").
+- **Test helper fix.** The root `FakeAudioEngine` snapshot wrapper now
+  forwards `peelDepth` and `pendingLaunch`, which it had dropped since
+  Part 1.
+- **Pen.** `segno-ui.pen` has no Peel performance screen. It lists the mode
+  in the external function picker ("Peel", "Remove an overdub layer") and
+  uses "Hold · Peel" as a Custom assignment example.
+  - The surface follows the Fade and Reverse layout.
+  - Write-back: add a Peel performance frame beside 13 (Reverse) with the
+    overview heading "Layers", the "Original only" and "Empty" words, and
+    the four refusal notices.
+- **Collision.** Reverse Part 3 edits the same mode switches and adds the
+  same `_slotless` helper. Whichever lands second merges both arms.
+- **Outstanding:** the appliance hardware evidence (the last success
+  criterion).
 
 ## 5. Decisions taken under the standing rules
 

@@ -31,6 +31,7 @@ abstract final class AppToastId {
   static const undoClearAllAction = 'app_undoClearAll_snackbar_action';
   static const footMixerFailure = 'app_footMixerFailure_error';
   static const footFadeFailure = 'app_footFadeFailure_error';
+  static const footPeelRefused = 'app_footPeelRefused_toast';
   static const mixSettings = 'app_mixSettings_error';
   static const clickSettings = 'app_clickSettings_error';
   static const decaySettings = 'app_decaySettings_error';
