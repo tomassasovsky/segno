@@ -41,18 +41,26 @@ class LoopPenCanvas extends StatelessWidget {
 class LoopSettingsFrame extends StatelessWidget {
   /// Creates a [LoopSettingsFrame].
   const LoopSettingsFrame({
-    required this.crumb,
     required this.title,
     required this.onBack,
     required this.onStage,
     required this.children,
+    this.crumb,
+    this.tabs,
     this.titleLeft = 36,
     this.actions,
     super.key,
-  });
+  }) : assert(
+         (crumb == null) != (tabs == null),
+         'a page shows a breadcrumb or section tabs, not both',
+       );
 
   /// The breadcrumb over the title.
-  final String crumb;
+  final String? crumb;
+
+  /// Section tabs drawn where the breadcrumb goes (the Library's Sessions
+  /// and Audio), for a page whose sections are peers rather than a path.
+  final Widget? tabs;
 
   /// The page title (the pen's h1).
   final String title;
@@ -102,18 +110,21 @@ class LoopSettingsFrame extends StatelessWidget {
                     onTap: onBack,
                   ),
                 ),
-                Positioned(
-                  left: 124,
-                  top: 36,
-                  child: AppText(
-                    crumb,
-                    style: TextStyle(
-                      color: surface.textSecondary,
-                      fontSize: 20,
-                      height: 1,
+                if (tabs case final tabs?)
+                  Positioned(left: 124, top: 16, child: tabs),
+                if (crumb case final crumb?)
+                  Positioned(
+                    left: 124,
+                    top: 36,
+                    child: AppText(
+                      crumb,
+                      style: TextStyle(
+                        color: surface.textSecondary,
+                        fontSize: 20,
+                        height: 1,
+                      ),
                     ),
                   ),
-                ),
                 Positioned(
                   left: 1771,
                   top: 16,

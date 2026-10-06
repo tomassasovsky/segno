@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/appliance/power_off/power_off_host.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
@@ -51,6 +50,7 @@ class SettingsHomePage extends StatelessWidget {
             ? LoopOutlinedButton(
                 key: const Key('settings_power'),
                 width: 64,
+                borderColor: context.surface.menuPowerLine,
                 icon: LucideIcons.power,
                 semanticLabel: l10n.settingsPower,
                 onTap: () => requestPowerOff(context),
@@ -107,55 +107,73 @@ class SettingsTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final label = destination.label(context.l10n);
-    return FocusableTapTarget(
+    // Decoded at the size it is drawn, not at the 480 px the art ships at.
+    final artPixels = (artSize * MediaQuery.devicePixelRatioOf(context))
+        .round();
+    void open() => unawaited(destination.open());
+    // Merged, so the focus stop, the tap and the name are one button.
+    return MergeSemantics(
       key: Key('settings_tile_${destination.key}'),
-      semanticLabel: label,
-      borderRadius: radius,
-      // The encoder's amber, as every focusable Settings control has it.
-      focusColor: surface.warning,
-      autofocus: autofocus,
-      onTap: () => unawaited(destination.open()),
-      child: Container(
-        width: size.width,
-        height: size.height,
-        decoration: BoxDecoration(
-          color: surface.menuArtGround,
-          borderRadius: BorderRadius.circular(radius),
-        ),
-        // In front, as the pen strokes it inside the tile: a border in the
-        // decoration would inset the picture and the name by its width.
-        foregroundDecoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: surface.borderStrong),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              left: artOffset.dx,
-              top: artOffset.dy,
-              width: artSize,
-              height: artSize,
-              child: Image.asset(
-                destination.artAsset,
-                key: Key('settings_tile_art_${destination.key}'),
-                fit: BoxFit.contain,
+      child: Semantics(
+        button: true,
+        label: label,
+        // The Loop settings focus stop: the encoder's 3 px amber drawn inside
+        // the tile, in front of it, as the pen's `e7kzxk` draws it.
+        child: LoopFocusable(
+          autofocus: autofocus,
+          onActivate: open,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: open,
+            child: Container(
+              width: size.width,
+              height: size.height,
+              decoration: BoxDecoration(
+                color: surface.menuArtGround,
+                borderRadius: BorderRadius.circular(radius),
               ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              top: nameTop,
-              child: AppText(
-                label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: surface.textPrimary,
-                  fontSize: 32,
-                  height: 1,
+              // In front, as the pen strokes it inside the tile: a border in
+              // the decoration would inset the picture and the name by its
+              // width.
+              foregroundDecoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(radius),
+                border: Border.all(color: surface.menuArtLine),
+              ),
+              child: ExcludeSemantics(
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: artOffset.dx,
+                      top: artOffset.dy,
+                      width: artSize,
+                      height: artSize,
+                      child: Image.asset(
+                        destination.artAsset,
+                        key: Key('settings_tile_art_${destination.key}'),
+                        fit: BoxFit.contain,
+                        cacheWidth: artPixels,
+                        cacheHeight: artPixels,
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: nameTop,
+                      child: AppText(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: surface.textPrimary,
+                          fontSize: 32,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

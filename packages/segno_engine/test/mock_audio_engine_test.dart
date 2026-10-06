@@ -32,6 +32,17 @@ void main() {
       expect(before.tracks.first.peelDepth, 0);
     });
 
+    test('keeps no history to export; finalize needs a running engine', () {
+      const history = TrackHistory([
+        HistoryEntry(HistoryKind.layer),
+      ], undoCount: 1);
+      expect(engine.exportHistory(0), TrackHistory.none);
+      expect(engine.finalizeHistory(0, history), EngineResult.notRunning);
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      expect(engine.finalizeHistory(0, history), EngineResult.ok);
+      expect(engine.exportHistory(0), TrackHistory.none);
+    });
+
     test('restores exact internal tempo and clears an unset grid', () {
       expect(
         engine.restoreTempo(bpm: 120, source: TempoSource.tapped),

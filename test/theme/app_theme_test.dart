@@ -390,6 +390,9 @@ List<Color> _colors(SurfaceTheme s) => [
   s.meterTrack,
   s.pageGlow,
   s.menuArtGround,
+  s.menuArtLine,
+  s.menuPowerLine,
+  s.encoderFocus,
   s.knobFaceTop,
   s.knobFaceBottom,
 ];
