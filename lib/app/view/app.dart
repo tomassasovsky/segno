@@ -29,10 +29,9 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/looper/model/click_mode.dart';
-import 'package:segno/looper/model/click_volume.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
@@ -185,8 +184,10 @@ class _AppState extends State<App> {
   PowerKeySource? _powerKeySource;
   final _controlNotices = ControlSettingsNotices();
   late final TempoCubit _tempoView;
-  StreamSubscription<ClickVolumeOutcome>? _clickFailureSubscription;
-  StreamSubscription<ClickModeOutcome>? _clickModeFailureSubscription;
+  StreamSubscription<SettingOutcome>? _clickFailureSubscription;
+  StreamSubscription<SettingOutcome>? _clickModeFailureSubscription;
+  StreamSubscription<void>? _clickRecoveredSubscription;
+  StreamSubscription<void>? _clickModeRecoveredSubscription;
   StreamSubscription<RecordStartOutcome>? _recordStartFailureSubscription;
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   late final PlaybackOptionsCubit _playbackView;
@@ -218,12 +219,16 @@ class _AppState extends State<App> {
     );
     _mixFailureSubscription = _runtime.mix.failures.listen(_showMixFailure);
     _tempoView = TempoCubit(settings: _runtime.tempo);
-    _clickFailureSubscription = _runtime.tempo.clickVolumeFailures.listen(
+    _clickFailureSubscription = _runtime.tempo.clickVolumeOwner.failures.listen(
       _showClickFailure,
     );
-    _clickModeFailureSubscription = _runtime.tempo.clickModeFailures.listen(
-      _showClickModeFailure,
-    );
+    _clickModeFailureSubscription = _runtime.tempo.clickModeOwner.failures
+        .listen(_showClickModeFailure);
+    // A restart replay can resolve an owed value without Retry.
+    _clickRecoveredSubscription = _runtime.tempo.clickVolumeOwner.recovered
+        .listen((_) => _controlNotices.dismiss(AppToastId.clickSettings));
+    _clickModeRecoveredSubscription = _runtime.tempo.clickModeOwner.recovered
+        .listen((_) => _controlNotices.dismiss(AppToastId.clickModeSettings));
     _recordStartFailureSubscription = _runtime.tempo.recordStartFailures.listen(
       _showRecordStartFailure,
     );
@@ -266,6 +271,8 @@ class _AppState extends State<App> {
     unawaited(_mixFailureSubscription?.cancel());
     unawaited(_clickFailureSubscription?.cancel());
     unawaited(_clickModeFailureSubscription?.cancel());
+    unawaited(_clickRecoveredSubscription?.cancel());
+    unawaited(_clickModeRecoveredSubscription?.cancel());
     unawaited(_recordStartFailureSubscription?.cancel());
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_decayFailureSubscription?.cancel());
@@ -294,9 +301,9 @@ class _AppState extends State<App> {
     ]);
   }
 
-  void _showClickFailure(ClickVolumeOutcome outcome) {
-    if (!mounted || outcome.status == ClickVolumeStatus.superseded) return;
-    final recovery = outcome.status == ClickVolumeStatus.recoveryRequired;
+  void _showClickFailure(SettingOutcome outcome) {
+    if (!mounted || outcome.status == SettingStatus.superseded) return;
+    final recovery = outcome.status == SettingStatus.recoveryRequired;
     AppLog.error('Click: ${outcome.status.name} ${outcome.error ?? ''}');
     _controlNotices.show(
       ControlSettingsNotice(
@@ -310,16 +317,18 @@ class _AppState extends State<App> {
             ? (context) => Text(context.l10n.clickSettingsRecoveryBody)
             : null,
         retry: recovery
-            ? () async => (await _runtime.tempo.recoverClickVolume()).isOk
+            ? () async => (await _runtime.tempo.clickVolumeOwner.recover()).isOk
             : null,
-        needsRecovery: recovery ? () => !_runtime.tempo.state.clickReady : null,
+        needsRecovery: recovery
+            ? () => !_runtime.tempo.clickVolumeOwner.ready
+            : null,
       ),
     );
   }
 
-  void _showClickModeFailure(ClickModeOutcome outcome) {
-    if (!mounted || outcome.status == ClickModeStatus.superseded) return;
-    final recovery = outcome.status == ClickModeStatus.recoveryRequired;
+  void _showClickModeFailure(SettingOutcome outcome) {
+    if (!mounted || outcome.status == SettingStatus.superseded) return;
+    final recovery = outcome.status == SettingStatus.recoveryRequired;
     AppLog.error('ClickMode: ${outcome.status.name} ${outcome.error ?? ''}');
     _controlNotices.show(
       ControlSettingsNotice(
@@ -333,10 +342,10 @@ class _AppState extends State<App> {
             ? (context) => Text(context.l10n.clickModeSettingsRecoveryBody)
             : null,
         retry: recovery
-            ? () async => (await _runtime.tempo.recoverClickMode()).isOk
+            ? () async => (await _runtime.tempo.clickModeOwner.recover()).isOk
             : null,
         needsRecovery: recovery
-            ? () => !_runtime.tempo.state.clickModeReady
+            ? () => !_runtime.tempo.clickModeOwner.ready
             : null,
       ),
     );

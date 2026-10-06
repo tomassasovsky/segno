@@ -16,7 +16,7 @@ import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
-import 'package:segno/looper/model/click_volume.dart';
+import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:settings_repository/settings_repository.dart';
@@ -125,8 +125,8 @@ class _Rig {
       performance: performance,
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: looper),
-      clickVolumeControl: tempo,
-      clickModeControl: tempo,
+      clickVolumeControl: tempo.clickVolumeControl,
+      clickModeControl: tempo.clickModeControl,
       recordStartControl: tempo,
       takeLocked: () => powerUp,
       controller: controller,
@@ -152,7 +152,7 @@ class _Rig {
   late final PerformanceRepository performance;
   late final ControlCubit cubit;
   double get live => looper.state.transport.clickVolume;
-  double get durable => tempo.durableClickVolume;
+  double get durable => tempo.clickVolumeOwner.durable;
   void pump() {
     for (var i = 0; i < 20; i++) {
       clock.flushMicrotasks();
@@ -221,7 +221,7 @@ class _Rig {
   }
 
   void ordinary(double value) {
-    unawaited(tempo.setClickVolume(value));
+    unawaited(tempo.clickVolumeOwner.set(value));
     pump();
   }
 
@@ -285,7 +285,7 @@ void main() {
       ..bind()
       ..note(127, settle: false);
     expect(r.live, .5);
-    expect(r.tempo.clickVolume, .5);
+    expect(r.tempo.clickVolumeOwner.value, .5);
     expect(r.store.values['tempo.click_volume'], .25);
     r.pump();
     expect(r.live, 1.5);
@@ -525,8 +525,8 @@ void main() {
       );
       r.pump();
       expect(cleanupFailure, isA<ControlCleanupPending>());
-      ClickVolumeOutcome? outcome;
-      unawaited(r.tempo.flushClickVolume().then((v) => outcome = v));
+      SettingOutcome? outcome;
+      unawaited(r.tempo.clickVolumeOwner.flush().then((v) => outcome = v));
       r.pump();
       // Exact compensation leaves the value owner healthy (M3.16 F1).
       // Retained release debt belongs to Control and still blocks halt (F3).
@@ -544,12 +544,12 @@ void main() {
       expect(cleanupFailure, isA<ControlCleanupPending>());
       expect(r.live, closeTo(midi ? 1.5 : .75, 1e-6));
       engine.refuseClick = false;
-      unawaited(r.tempo.recoverClickVolume());
+      unawaited(r.tempo.clickVolumeOwner.recover());
       r.pump();
       unawaited(r.cubit.flushMidiConfiguration(retireControls: true));
       r.pump();
       expect(r.live, closeTo(midi ? .25 : .4, 1e-6));
-      unawaited(r.tempo.flushClickVolume().then((v) => outcome = v));
+      unawaited(r.tempo.clickVolumeOwner.flush().then((v) => outcome = v));
       r.pump();
       expect(outcome!.isOk, isTrue);
     });

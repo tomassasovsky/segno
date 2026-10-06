@@ -215,7 +215,7 @@ void main() {
       await playback.setDefaultOneShot(value: false);
       final timingEdit = quantize.setEnabled(value: false);
       await record.setRecDub(value: false);
-      await tempo.setClickMode(ClickMode.off);
+      await tempo.clickModeOwner.set(ClickMode.off);
       // Recording start has its own owner. Editing it must preserve the
       // independent Tempo preference read that is still pending.
       await tempo.setCountInBars(0);
@@ -263,11 +263,12 @@ void main() {
       final loading = tempo.load();
       await Future<void>.delayed(Duration.zero);
 
-      expect((await tempo.setClickMode(ClickMode.off)).isOk, isTrue);
-      expect(tempo.clickModeSnapshot?.mode, ClickMode.off);
+      expect((await tempo.clickModeOwner.set(ClickMode.off)).isOk, isTrue);
+      expect(tempo.clickModeControl.clickModeSnapshot?.mode, ClickMode.off);
       expect(tempo.state.bpm, 0);
       expect(tempo.state.countInBars, 2);
-      expect(tempo.state.clickReady, isFalse);
+      // Click volume loads independently of the delayed tempo grid.
+      expect(tempo.state.clickReady, isTrue);
 
       delayed.ready.complete();
       await loading;

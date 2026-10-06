@@ -22,11 +22,11 @@ class TempoCubit extends Cubit<TempoState> {
       _settings.setTimeSignature(num, den);
   Future<void> setClickOutput(int mask) => _settings.setClickOutput(mask);
   Future<void> setClickVolume(double volume) async {
-    await _settings.setClickVolume(volume);
+    await _settings.clickVolumeOwner.set(volume);
   }
 
   Future<void> setClickMode(ClickMode mode) async {
-    await _settings.setClickMode(mode);
+    await _settings.clickModeOwner.set(mode);
   }
 
   Future<void> setCountInBars(int bars) async {

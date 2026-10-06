@@ -75,8 +75,8 @@ class AppRuntime {
       oneShotControl: playback,
       recordLengthControl: record,
       recordTimingControl: timing,
-      clickVolumeControl: tempo,
-      clickModeControl: tempo,
+      clickVolumeControl: tempo.clickVolumeControl,
+      clickModeControl: tempo.clickModeControl,
       recordStartControl: tempo,
       fadeSettings: fade,
       pedal: pedal,
@@ -180,11 +180,11 @@ class AppRuntime {
       }
       final mixResult = await mix.recover();
       if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);
-      final click = await tempo.recoverClickVolume();
+      final click = await tempo.clickVolumeOwner.recover();
       if (!click.isOk) {
         throw StateError('Click settings still need recovery');
       }
-      final clickMode = await tempo.recoverClickMode();
+      final clickMode = await tempo.clickModeOwner.recover();
       if (!clickMode.isOk) {
         throw StateError('Hear click still needs recovery');
       }
@@ -219,11 +219,11 @@ class AppRuntime {
     await receipt.future;
     final mixResult = await mix.flush();
     if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);
-    final click = await tempo.flushClickVolume();
+    final click = await tempo.clickVolumeOwner.flush();
     if (!click.isOk) {
       throw StateError('Click settings were not confirmed');
     }
-    final clickMode = await tempo.flushClickMode();
+    final clickMode = await tempo.clickModeOwner.flush();
     if (!clickMode.isOk) {
       throw StateError('Hear click was not confirmed');
     }

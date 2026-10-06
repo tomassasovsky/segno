@@ -13,6 +13,7 @@ import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
@@ -78,15 +79,25 @@ const _session = Session(
   tracks: [],
 );
 
+class _ClickVolumeOwner extends Fake implements SettingsOwner<double, double?> {
+  @override
+  double get durable => 1;
+}
+
+class _ClickModeOwner extends Fake implements SettingsOwner<ClickMode, int?> {
+  @override
+  ClickMode get durable => ClickMode.off;
+}
+
 class _TempoOwner extends Fake implements TempoSettings {
   @override
   Future<T> runTempoExclusive<T>(Future<T> Function() operation) => operation();
 
   @override
-  double get durableClickVolume => 1;
+  final clickVolumeOwner = _ClickVolumeOwner();
 
   @override
-  ClickMode get durableClickMode => ClickMode.off;
+  final clickModeOwner = _ClickModeOwner();
 
   @override
   RecordStartSettings get durableRecordStartSettings =>

@@ -203,7 +203,7 @@ void main() {
             if (pass == 1) {
               // A changed field proves Save wrote a new bundle; rereading the
               // earlier Save As file must not pass if the second write fails.
-              expect((await tempo.setClickVolume(.4)).isOk, isTrue);
+              expect((await tempo.clickVolumeOwner.set(.4)).isOk, isTrue);
               await session.save();
               expect(
                 session.state.status,

@@ -100,6 +100,9 @@ void main() {
     when(() => repository.clickModeFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
+    when(() => repository.clickVolumeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
     when(() => repository.clickModeSettled).thenReturn(true);
     when(() => repository.recordStartSettingsFailures).thenAnswer(

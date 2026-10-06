@@ -137,7 +137,7 @@ void main() {
         ),
         exportDirectory: () async => directory.path,
       );
-      expect((await tempo.setClickVolume(.4)).isOk, isTrue);
+      expect((await tempo.clickVolumeOwner.set(.4)).isOk, isTrue);
       expect(looper.record(), EngineResult.ok);
       engine.pump(frames: 256, input: .5);
       expect(looper.record(), EngineResult.ok);
@@ -166,10 +166,10 @@ void main() {
       'Save As and Save capture Released without changing held audio',
       () async {
         expect(
-          (await tempo.setControllerClickVolume(
+          (await tempo.clickVolumeControl.setControllerClickVolume(
             1.6,
             releasedVolume: .4,
-            lifetime: tempo.clickVolumeLifetime,
+            lifetime: tempo.clickVolumeOwner.lifetime,
           )).isOk,
           isTrue,
         );
@@ -179,19 +179,19 @@ void main() {
           await sessions.bundlePath('Click held'),
         );
         expect(bundle.session.clickVolume, closeTo(.4, 1e-6));
-        expect(tempo.clickVolume, closeTo(1.6, 1e-6));
+        expect(tempo.clickVolumeOwner.value, closeTo(1.6, 1e-6));
         expect(looper.sessionTransport.clickVolume, closeTo(1.6, 1e-6));
         await session.save();
         bundle = await sessions.read(await sessions.bundlePath('Click held'));
         expect(bundle.session.clickVolume, closeTo(.4, 1e-6));
-        expect(tempo.clickVolume, closeTo(1.6, 1e-6));
-        expect(await settings.loadClickVolume(), closeTo(.4, 1e-6));
+        expect(tempo.clickVolumeOwner.value, closeTo(1.6, 1e-6));
+        expect(await settings.readClickVolumeCheckpoint(), closeTo(.4, 1e-6));
       },
     );
 
     test('Save waits for an earlier ordinary Click write', () async {
       store.pendingWrite = Completer<void>();
-      final edit = tempo.setClickVolume(1.2);
+      final edit = tempo.clickVolumeOwner.set(1.2);
       for (var attempt = 0; attempt < 50 && !store.writeEntered; attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 1));
       }
@@ -210,13 +210,13 @@ void main() {
     });
 
     test('Hear click Save As and Save retain Released, not Held', () async {
-      expect((await tempo.setClickMode(ClickMode.off)).isOk, isTrue);
+      expect((await tempo.clickModeOwner.set(ClickMode.off)).isOk, isTrue);
       expect(
-        (await tempo.setControllerClickMode(
+        (await tempo.clickModeControl.setControllerClickMode(
           ClickMode.playRec,
           releasedMode: ClickMode.off,
-          lifetime: tempo.clickModeLifetime,
-          revision: tempo.clickModeRevision,
+          lifetime: tempo.clickModeOwner.lifetime,
+          revision: tempo.clickModeOwner.revision,
         )).isOk,
         isTrue,
       );
@@ -225,9 +225,9 @@ void main() {
       var bundle = await sessions.read(await sessions.bundlePath('Held mode'));
       expect(bundle.session.clickMode, ClickMode.off);
       expect(engine.snapshot().clickMode, ClickMode.playRec);
-      expect(tempo.clickModeSnapshot?.mode, ClickMode.playRec);
+      expect(tempo.clickModeControl.clickModeSnapshot?.mode, ClickMode.playRec);
       expect(bundle.session.clickVolume, closeTo(.4, 1e-6));
-      expect((await tempo.setClickVolume(.7)).isOk, isTrue);
+      expect((await tempo.clickVolumeOwner.set(.7)).isOk, isTrue);
       await session.save();
       expect(session.state.status, SessionStatus.success);
       bundle = await sessions.read(await sessions.bundlePath('Held mode'));
@@ -243,7 +243,7 @@ void main() {
         store
           ..delayMode = true
           ..pendingWrite = Completer<void>();
-        final edit = tempo.setClickMode(ClickMode.rec);
+        final edit = tempo.clickModeOwner.set(ClickMode.rec);
         for (var attempt = 0; attempt < 50 && !store.writeEntered; attempt++) {
           await Future<void>.delayed(const Duration(milliseconds: 1));
         }
@@ -268,13 +268,16 @@ void main() {
     test(
       'recall restores explicit Off without rewriting startup mode',
       () async {
-        expect((await tempo.setClickMode(ClickMode.off)).isOk, isTrue);
+        expect((await tempo.clickModeOwner.set(ClickMode.off)).isOk, isTrue);
         await session.saveAs('No click');
-        expect((await tempo.setClickMode(ClickMode.playRec)).isOk, isTrue);
+        expect(
+          (await tempo.clickModeOwner.set(ClickMode.playRec)).isOk,
+          isTrue,
+        );
         await session.loadNamed('No click');
         expect(session.state.status, SessionStatus.success);
-        expect(tempo.clickModeSnapshot?.mode, ClickMode.off);
-        expect(tempo.durableClickMode, ClickMode.off);
+        expect(tempo.clickModeControl.clickModeSnapshot?.mode, ClickMode.off);
+        expect(tempo.clickModeOwner.durable, ClickMode.off);
         expect(engine.snapshot().clickMode, ClickMode.off);
         expect(await settings.readClickModeCheckpoint(), 3);
       },
@@ -284,12 +287,12 @@ void main() {
       'recall restores saved Click without rewriting startup gain',
       () async {
         await session.saveAs('Quiet');
-        expect((await tempo.setClickVolume(1.4)).isOk, isTrue);
+        expect((await tempo.clickVolumeOwner.set(1.4)).isOk, isTrue);
         await session.loadNamed('Quiet');
         expect(session.state.status, SessionStatus.success);
-        expect(tempo.clickVolume, closeTo(.4, 1e-6));
-        expect(tempo.durableClickVolume, closeTo(.4, 1e-6));
-        expect(await settings.loadClickVolume(), closeTo(1.4, 1e-6));
+        expect(tempo.clickVolumeOwner.value, closeTo(.4, 1e-6));
+        expect(tempo.clickVolumeOwner.durable, closeTo(.4, 1e-6));
+        expect(await settings.readClickVolumeCheckpoint(), closeTo(1.4, 1e-6));
       },
     );
   });

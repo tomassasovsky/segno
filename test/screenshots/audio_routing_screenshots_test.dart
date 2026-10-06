@@ -101,6 +101,9 @@ void main() {
     when(() => repository.clickModeFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
+    when(() => repository.clickVolumeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     when(() => repository.recordTimingFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
