@@ -66,7 +66,6 @@ class App extends StatefulWidget {
     required this.waveformWindow,
     required this.sessionRepository,
     required this.performanceRepository,
-    required this.exportDirectory,
     this.pedalRepository,
     this.displayCount,
     this.waveformWindowOpenDelay = Duration.zero,
@@ -162,9 +161,6 @@ class App extends StatefulWidget {
   /// The shared performance-recording repository, sharing the engine.
   final PerformanceRepository performanceRepository;
 
-  /// Resolves the directory a mixdown / stems export is written to.
-  final Future<String> Function() exportDirectory;
-
   @override
   State<App> createState() => _AppState();
 }
@@ -199,7 +195,6 @@ class _AppState extends State<App> {
       pedal: _pedal,
       performance: widget.performanceRepository,
       sessions: widget.sessionRepository,
-      exportDirectory: widget.exportDirectory,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
     );
     _powerNoticeSubscription = _runtime.power.stream.listen(

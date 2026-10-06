@@ -78,16 +78,30 @@ class SessionCorruptLayers extends SessionException {
       'session track $channel lane $lane has a corrupt layer stack: $reason';
 }
 
-/// A save-as / rename targeted a name whose folder [slug] already exists in the
-/// sessions catalog. Named sessions never silently overwrite, so the caller
-/// must pick another name.
+/// A save-as, rename, duplicate or new folder targeted a name another session
+/// or folder already carries (compared case-insensitively on the sanitized
+/// [slug]). The catalog never silently overwrites, so the caller must pick
+/// another name.
 class SessionNameCollision extends SessionException {
   /// Creates a [SessionNameCollision] for the colliding [slug].
   const SessionNameCollision({required this.slug});
 
-  /// The folder slug (the sanitized name) that already exists.
+  /// The sanitized name that already exists.
   final String slug;
 
   @override
   String toString() => 'a session named "$slug" already exists';
+}
+
+/// A folder delete targeted a folder that still holds sessions. Move or delete
+/// them first; the catalog never removes audio as a side effect.
+class SessionFolderNotEmpty extends SessionException {
+  /// Creates a [SessionFolderNotEmpty] for [folder].
+  const SessionFolderNotEmpty({required this.folder});
+
+  /// The folder that still holds sessions.
+  final String folder;
+
+  @override
+  String toString() => 'folder "$folder" still holds sessions';
 }

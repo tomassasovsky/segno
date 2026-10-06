@@ -1,41 +1,77 @@
 import 'package:meta/meta.dart';
 
-/// One entry in the named-session catalog — a bundle under the `sessions/`
-/// root, identified by its [name].
+/// A session's identity: its bundle directory's name under the sessions root
+/// (or under one folder of it). Stable for the bundle's whole life; a rename
+/// changes the manifest's display name and never this.
+typedef SessionId = String;
+
+/// One entry in the session catalog, read from a bundle's directory and a
+/// lenient look at its manifest, without decoding any audio.
 ///
-/// The [name] IS the folder slug (there is no separate persisted display name);
-/// it is read straight from the directory listing, so a summary is produced
-/// without ever parsing a manifest. Kept name-only on purpose: the picker needs
-/// only the name to list, load, rename, and delete; richer metadata would force
-/// a manifest read (and a parse-failure mode) per row for no acceptance need.
+/// Identity ([==] / [hashCode]) is the [id] alone. Everything else describes
+/// the bundle at listing time and is not part of equality, so a re-listed
+/// catalog compares row for row by identity.
 @immutable
 class SessionSummary {
   /// Creates a [SessionSummary].
-  const SessionSummary({required this.name, this.modifiedAt});
+  const SessionSummary({
+    required this.id,
+    required this.name,
+    this.folder,
+    this.modifiedAt,
+    this.trackCount = 0,
+    this.tempoBpm = 0,
+    this.tsNum = 4,
+    this.tsDen = 4,
+    this.fxCount = 0,
+    this.unreadable = false,
+  });
 
-  /// The session's name — also its folder slug under the sessions root.
+  /// The bundle directory's name — the session's identity.
+  final SessionId id;
+
+  /// The display name: the manifest's `name`, or the [id] for a bundle saved
+  /// before names were metadata, or for one whose manifest cannot be read.
   final String name;
 
+  /// The one-level folder the bundle sits in, or `null` when it is directly
+  /// under the sessions root ("Unfiled").
+  final String? folder;
+
   /// When the session's manifest was last written, or null when unknown (a
-  /// stat failure, or a summary built without one). The sessions dialog's
-  /// date column reads this — "today 14:02", "yesterday", "3 Aug".
-  ///
-  /// Deliberately NOT part of [==]/[hashCode]: a summary's identity is its
-  /// name. (List rebuilds do not hinge on this either way — a re-listed
-  /// catalog is a new `List`, and `buildWhen`'s `a.sessions != b.sessions`
-  /// compares list identity, not elements.)
+  /// stat failure). The Library's date column reads this.
   final DateTime? modifiedAt;
+
+  /// Tracks holding recorded audio, per the manifest's `tracks` list.
+  final int trackCount;
+
+  /// The saved tempo in BPM; 0 when the session has none.
+  final double tempoBpm;
+
+  /// Time-signature numerator.
+  final int tsNum;
+
+  /// Time-signature denominator.
+  final int tsDen;
+
+  /// Effect entries across every chain stage the manifest carries.
+  final int fxCount;
+
+  /// Whether the manifest could not be decoded as JSON at listing time. The
+  /// row still lists (by directory name) so the session is never hidden; the
+  /// typed refusal surfaces when it is previewed or opened.
+  final bool unreadable;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is SessionSummary &&
           runtimeType == other.runtimeType &&
-          name == other.name;
+          id == other.id;
 
   @override
-  int get hashCode => name.hashCode;
+  int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'SessionSummary($name)';
+  String toString() => 'SessionSummary($id, "$name")';
 }
