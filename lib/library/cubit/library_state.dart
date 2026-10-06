@@ -78,7 +78,6 @@ class LibraryState extends Equatable {
     this.location = LibraryLocation.internal,
     this.query = '',
     this.folderFilter = const AllSessions(),
-    this.folders = const [],
     this.selectedId,
     this.preview,
     this.previewError,
@@ -94,9 +93,6 @@ class LibraryState extends Equatable {
 
   /// The folder chip that is down.
   final LibraryFolderFilter folderFilter;
-
-  /// The one-level folders under the root, for the chips.
-  final List<String> folders;
 
   /// The selected session, or null when none is.
   final SessionId? selectedId;
@@ -145,7 +141,6 @@ class LibraryState extends Equatable {
     LibraryLocation? location,
     String? query,
     LibraryFolderFilter? folderFilter,
-    List<String>? folders,
     SessionId? selectedId,
     SessionPreview? preview,
     LibraryPreviewError? previewError,
@@ -156,7 +151,6 @@ class LibraryState extends Equatable {
     location: location ?? this.location,
     query: query ?? this.query,
     folderFilter: folderFilter ?? this.folderFilter,
-    folders: folders ?? this.folders,
     selectedId: selectedId ?? this.selectedId,
     preview: clearPreview ? null : (preview ?? this.preview),
     previewError: clearPreview ? null : (previewError ?? this.previewError),
@@ -169,7 +163,6 @@ class LibraryState extends Equatable {
     location,
     query,
     folderFilter,
-    folders,
     selectedId,
     preview,
     previewError,

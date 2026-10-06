@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -216,6 +217,7 @@ void main() {
   setUp(() async {
     repository = _MockSessionRepository();
     when(repository.newSessionId).thenAnswer((_) async => 'new');
+    when(repository.listFolders).thenAnswer((_) async => const []);
     when(
       () => repository.releaseSessionId(any()),
     ).thenAnswer((_) async {});
@@ -900,7 +902,7 @@ void main() {
         ),
         isA<SessionState>()
             .having((s) => s.status, 'st', SessionStatus.success)
-            .having((s) => s.outcome, 'outcome', SessionOutcome.saved)
+            .having((s) => s.outcome, 'outcome', SessionOutcome.savedAs)
             .having((s) => s.currentSessionId, 'id', 'new')
             .having((s) => s.currentSessionName, 'current', 'New')
             .having((s) => s.sessions, 'sessions', summaries),
@@ -997,25 +999,105 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
-      'save with no open session signals saveAsRequested and does not save',
-      setUp: stubCatalog,
+      'save with no open session saves under the next automatic name and '
+      'makes it current (D4)',
+      setUp: () {
+        stubCatalog();
+        when(
+          () => repository.nextAutomaticName(any()),
+        ).thenAnswer((_) async => 'New loop 2');
+      },
       build: build,
       act: (cubit) => cubit.save(),
+      skip: 1,
       expect: () => [
         isA<SessionState>()
-            .having((s) => s.outcome, 'outcome', SessionOutcome.saveAsRequested)
-            .having((s) => s.currentSessionName, 'current', isNull),
+            .having((s) => s.status, 'st', SessionStatus.success)
+            .having((s) => s.outcome, 'outcome', SessionOutcome.savedAs)
+            .having((s) => s.currentSessionId, 'id', 'new')
+            .having((s) => s.currentSessionName, 'name', 'New loop 2'),
       ],
-      verify: (_) => verifyNever(
-        () => repository.save(
-          any(),
-          chains: any(named: 'chains'),
-          settings: any(named: 'settings'),
+      verify: (_) {
+        verify(
+          () => repository.nextAutomaticName(SessionCubit.automaticNamePrefix),
+        ).called(1);
+        verify(
+          () => repository.save(
+            '/root/new',
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: 'New loop 2',
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        ).called(1);
+      },
+    );
 
-          name: any(named: 'name'),
-          captureStillValid: any(named: 'captureStillValid'),
-        ),
+    blocTest<SessionCubit, SessionState>(
+      'a failed write-back reports saveFailed and leaves the open session '
+      'and catalog as they were (19/05)',
+      setUp: () {
+        stubCatalog();
+        when(
+          () => repository.save(
+            any(),
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        ).thenThrow(const FileSystemException('disk full'));
+      },
+      seed: () => const SessionState(
+        currentSessionId: 'A',
+        currentSessionName: 'A',
+        sessions: summaries,
       ),
+      build: build,
+      act: (cubit) => cubit.save(),
+      skip: 1,
+      expect: () => [
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.failure)
+            .having((s) => s.error, 'error', SessionError.saveFailed)
+            .having((s) => s.currentSessionId, 'id', 'A')
+            .having((s) => s.sessions, 'sessions', summaries),
+      ],
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'a failed Save as reports saveFailed, gives the id back and keeps the '
+      'open session',
+      setUp: () {
+        stubCatalog();
+        when(
+          () => repository.save(
+            any(),
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        ).thenThrow(const FileSystemException('disk full'));
+      },
+      seed: () => const SessionState(
+        currentSessionId: 'A',
+        currentSessionName: 'A',
+        sessions: summaries,
+      ),
+      build: build,
+      act: (cubit) => cubit.saveAs('Fresh'),
+      skip: 1,
+      expect: () => [
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.failure)
+            .having((s) => s.error, 'error', SessionError.saveFailed)
+            .having((s) => s.currentSessionId, 'id', 'A'),
+      ],
+      verify: (_) => verify(() => repository.releaseSessionId('new')).called(1),
     );
 
     blocTest<SessionCubit, SessionState>(
@@ -1243,11 +1325,45 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
-      'deleteSession clears the current pointer and never touches the rig',
+      'deleteSession deletes a saved session, keeps the open one and never '
+      'touches the rig',
       setUp: () {
         stubCatalog(
-          list: const [SessionSummary(id: 'B', name: 'B')],
+          list: const [SessionSummary(id: 'A', name: 'A')],
         );
+        when(() => repository.deleteSession(any())).thenAnswer((_) async {});
+      },
+      seed: () => const SessionState(
+        currentSessionId: 'A',
+        currentSessionName: 'A',
+        sessions: summaries,
+      ),
+      build: build,
+      act: (cubit) => cubit.deleteSession('B'),
+      expect: () => [
+        isA<SessionState>().having(
+          (s) => s.status,
+          'st',
+          SessionStatus.working,
+        ),
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.success)
+            .having((s) => s.outcome, 'outcome', SessionOutcome.deleted)
+            .having((s) => s.currentSessionId, 'current', 'A')
+            .having((s) => s.sessions, 'sessions', const [
+              SessionSummary(id: 'A', name: 'A'),
+            ]),
+      ],
+      verify: (_) {
+        verify(() => repository.deleteSession('B')).called(1);
+        verifyNever(() => looper.applySession(any()));
+      },
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'deleteSession refuses the open session and deletes nothing (D6)',
+      setUp: () {
+        stubCatalog();
         when(() => repository.deleteSession(any())).thenAnswer((_) async {});
       },
       seed: () => const SessionState(
@@ -1264,17 +1380,111 @@ void main() {
           SessionStatus.working,
         ),
         isA<SessionState>()
-            .having((s) => s.status, 'st', SessionStatus.success)
-            .having((s) => s.outcome, 'outcome', SessionOutcome.deleted)
-            .having((s) => s.currentSessionName, 'current', isNull)
-            .having((s) => s.sessions, 'sessions', const [
-              SessionSummary(id: 'B', name: 'B'),
-            ]),
+            .having((s) => s.status, 'st', SessionStatus.failure)
+            .having(
+              (s) => s.error,
+              'error',
+              SessionError.currentSessionProtected,
+            )
+            .having((s) => s.currentSessionId, 'current', 'A')
+            .having((s) => s.sessions, 'sessions', summaries),
       ],
-      verify: (_) {
-        verify(() => repository.deleteSession('A')).called(1);
-        verifyNever(() => looper.applySession(any()));
+      verify: (_) => verifyNever(() => repository.deleteSession(any())),
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'moveSession moves the bundle and re-lists sessions and folders',
+      setUp: () {
+        stubCatalog();
+        when(
+          () => repository.moveSession(any(), folder: any(named: 'folder')),
+        ).thenAnswer((_) async {});
+        when(repository.listFolders).thenAnswer((_) async => ['Gigs']);
       },
+      seed: () => const SessionState(
+        currentSessionId: 'A',
+        currentSessionName: 'A',
+        sessions: summaries,
+      ),
+      build: build,
+      act: (cubit) => cubit.moveSession('A', folder: 'Gigs'),
+      skip: 1,
+      expect: () => [
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.success)
+            .having((s) => s.outcome, 'outcome', SessionOutcome.moved)
+            .having((s) => s.currentSessionId, 'current', 'A')
+            .having((s) => s.folders, 'folders', ['Gigs']),
+      ],
+      verify: (_) =>
+          verify(() => repository.moveSession('A', folder: 'Gigs')).called(1),
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'moveSession with no folder moves to Unfiled',
+      setUp: () {
+        stubCatalog();
+        when(
+          () => repository.moveSession(any(), folder: any(named: 'folder')),
+        ).thenAnswer((_) async {});
+      },
+      build: build,
+      act: (cubit) => cubit.moveSession('B'),
+      verify: (_) => verify(() => repository.moveSession('B')).called(1),
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'createFolder creates it and the folders re-list',
+      setUp: () {
+        stubCatalog();
+        when(() => repository.createFolder(any())).thenAnswer((_) async {});
+        when(repository.listFolders).thenAnswer((_) async => ['Gigs']);
+      },
+      build: build,
+      act: (cubit) => cubit.createFolder('Gigs'),
+      skip: 1,
+      expect: () => [
+        isA<SessionState>()
+            .having((s) => s.outcome, 'outcome', SessionOutcome.folderCreated)
+            .having((s) => s.folders, 'folders', ['Gigs']),
+      ],
+      verify: (_) => verify(() => repository.createFolder('Gigs')).called(1),
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'createFolder on a taken name fails with nameCollision',
+      setUp: () {
+        stubCatalog();
+        when(
+          () => repository.createFolder(any()),
+        ).thenThrow(const SessionNameCollision(slug: 'Gigs'));
+      },
+      build: build,
+      act: (cubit) => cubit.createFolder('Gigs'),
+      skip: 1,
+      expect: () => [
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.failure)
+            .having((s) => s.error, 'error', SessionError.nameCollision),
+      ],
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'an unreadable folder list keeps the folders already in state',
+      setUp: () {
+        stubCatalog();
+        when(
+          repository.listFolders,
+        ).thenThrow(const FileSystemException('denied'));
+      },
+      seed: () => const SessionState(folders: ['Gigs']),
+      build: build,
+      act: (cubit) => cubit.refreshSessions(),
+      expect: () => [
+        isA<SessionState>()
+            .having((s) => s.sessions, 'sessions', summaries)
+            .having((s) => s.folders, 'folders', ['Gigs']),
+      ],
     );
 
     blocTest<SessionCubit, SessionState>(
@@ -1300,7 +1510,7 @@ void main() {
         ),
         isA<SessionState>()
             .having((s) => s.status, 'st', SessionStatus.success)
-            .having((s) => s.outcome, 'outcome', SessionOutcome.saved)
+            .having((s) => s.outcome, 'outcome', SessionOutcome.duplicated)
             // The open session is unchanged — a duplicate is a disk copy.
             .having((s) => s.currentSessionName, 'current', 'A')
             .having((s) => s.sessions, 'sessions', summaries),

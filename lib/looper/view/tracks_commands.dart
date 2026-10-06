@@ -363,19 +363,6 @@ class TracksCommands {
   }
 }
 
-/// Reacts to a settled [SessionCubit] transition: a quick Save with no open
-/// session asks the cubit to request Save-As, which surfaces here as
-/// [SessionOutcome.saveAsRequested] — open the name dialog. Every other
-/// settled outcome flows to [showSessionOutcome]'s SnackBar. Wired as the
-/// `TracksView`'s session [BlocListener].
-void onSessionState(BuildContext context, SessionState state) {
-  if (state.outcome == SessionOutcome.saveAsRequested) {
-    unawaited(promptSaveAs(context));
-    return;
-  }
-  showSessionOutcome(context, state);
-}
-
 /// Shows a transient SnackBar surfacing the last session action's outcome —
 /// a localized success line, or a localized, human-readable error for the
 /// known refusals (sample-rate mismatch, newer manifest version), falling
@@ -387,21 +374,30 @@ void showSessionOutcome(BuildContext context, SessionState state) {
   final message = switch (state.status) {
     SessionStatus.success => switch (state.outcome) {
       SessionOutcome.saved => l10n.sessionSaved,
+      // A quick Save with no open session names the session itself (plan
+      // D4); the toast says which name it took.
+      SessionOutcome.savedAs => l10n.sessionSavedAs(
+        state.currentSessionName ?? '',
+      ),
       SessionOutcome.loaded => l10n.sessionLoaded,
-      // The named-session outcomes surface through the Library (a
-      // later part), which gives them their own messaging; no legacy SnackBar.
+      // The catalog outcomes happen in the Library, which shows its own
+      // result; no SnackBar behind it.
       SessionOutcome.renamed ||
       SessionOutcome.deleted ||
-      SessionOutcome.saveAsRequested ||
+      SessionOutcome.duplicated ||
+      SessionOutcome.moved ||
+      SessionOutcome.folderCreated ||
       null => null,
     },
     SessionStatus.failure => switch (state.error) {
       SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
       SessionError.unsupportedVersion => l10n.sessionErrorUnsupportedVersion,
-      // App recovery notices remain actionable above the Sessions dialog.
+      // App recovery notices remain actionable above the Library.
       SessionError.bootPersistence => null,
-      // nameCollision gets a dedicated inline message in the manager UI; here
-      // (legacy path) it falls back to the generic error. corruptLayers is a
+      SessionError.saveFailed => l10n.librarySaveFailed,
+      SessionError.currentSessionProtected => l10n.libraryDeleteCurrentRefused,
+      // nameCollision is answered inside the Library's name sheet; here it
+      // falls back to the generic error. corruptLayers is a
       // rare corrupt/foreign-bundle refusal — the generic message (carrying the
       // exception's own description) is sufficient.
       SessionError.nameCollision ||

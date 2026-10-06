@@ -307,7 +307,7 @@ void main() {
         store.fadeWrite!.complete();
         await edit;
         await save;
-        expect(runtime.session.state.outcome, SessionOutcome.saved);
+        expect(runtime.session.state.outcome, SessionOutcome.savedAs);
         expect(saved!.defaultFadeDurationMs, 4000);
         expect(saved!.trackFadeDurationOverrides, {7: 4000});
       },
