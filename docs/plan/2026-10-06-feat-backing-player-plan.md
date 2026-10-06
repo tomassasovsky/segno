@@ -958,3 +958,113 @@ second decoder, a second lease registry or a second selection owner. Each
 part gets independent architecture, test-quality and adversarial review
 before publication; CI on the published head, `/code-review` and the human
 merge gate remain separate.
+
+## 11. Engine numbering (central ledger)
+
+Numbers come from the main session's ledger, not from scanning branches.
+Backing owns commands 88-95, perf-log facts 340-343 and `LE_ERR` -12 and -13.
+Taken so far: `LE_CMD_BACKING_LOAD` 88, `LE_CMD_BACKING_STAGE_NEXT` 89,
+`LE_CMD_BACKING_CLEAR` 90, `LE_CMD_BACKING_TRANSPORT` 91,
+`LE_CMD_BACKING_SEEK` 92 (Part 1); `LE_ERR_TOO_LONG` -12 (Part 2). Commands
+93-95, `LE_ERR` -13 and all four facts are unused: the backing is never
+perf-logged, so no fact is needed. The Session schema bump (Part 5) takes the
+next free version at landing and adds its step to the #1196 migration chain.
+
+## 12. Build record
+
+### Part 1 (`claude/backing-1200-p1`)
+
+Built as specified in section 4.1 except where noted. Production diff about
+780 added lines over `packages/segno_engine` (about 160 of them the API
+header's contract comments), slightly over the 700 ceiling; the voice, its
+lifetimes and the click pan did not split along a reviewable seam.
+
+- **Buffers travel through the command ring, not atomic slots.** LOAD and
+  STAGE_NEXT carry the buffer pointer, so a load and a following seek or
+  transport command apply in the order they were posted (an atomic slot
+  publication would race the ring and make "load, then seek" order-dependent).
+  A control-thread registry (`backing_owned`, at most
+  `LE_BACKING_MAX_BUFFERS` = 4) owns every accepted buffer, so a buffer still
+  queued when configure or reopen resets the ring is freed rather than
+  lost; the callback hands finished buffers back through four
+  `a_backing_dead` return slots, which `le_engine_backing_state` (the collect
+  point) and every load or stage drain. Nothing allocates or frees on the
+  audio thread. The `engine_voice.h` helper shared with the Library audition
+  was therefore not created: the audition (its Part 6a) has no ordering
+  constraint with transport commands and can keep its own slot.
+- **New translation unit `src/core/engine_backing.c`** for the buffers, the
+  registry and the control API (`engine*.c` glob in the native runner, CMake,
+  and the two macOS forwarders). The audio-thread voice stays in
+  `engine_process.c`.
+- **A replace overlaps.** The outgoing file fades out over 5 ms on the fade
+  voice while the new file starts at its frame 0 (section 4.1 described a
+  fade-out followed by the new file); a seek while playing is the same
+  crossfade within one buffer. Overlap needs no queued action and leaves no
+  gap.
+- **Settings are direct stores that persist across configure**, seeded at
+  create like the click settings (mask, level, pan, End, click pan), rather
+  than reset by the runtime reset; only the transport resets. The owner's
+  epoch replay (Part 4) still works and simply rewrites the same values.
+- **Raw posts of 88-92 are refused** (LOAD carries a pointer a raw
+  `{arg_i, arg_f}` post cannot express).
+- The stale click comments (`segno_engine_api.h:242-246`, `:2218-2226`) are
+  corrected.
+
+Tests: `src/test/test_engine_backing.h`, 13 cases with exact-sample oracles
+(ramp buffers, `==` comparisons computed with the voice's own float
+operations), including the master-capture and stem-render legs. Every new
+behaviour was checked against a reverting mutation (17 mutations: Cut sound,
+Repeat, Next, pause/resume/replace ramps, seek clamp, level, pan, click pan,
+output gate, retained reopen, epoch, restaging, perf logging, the registry
+bound, raw posts); each fails at least one oracle.
+
+### Part 2 (`claude/backing-1200-p2`, stacked on Part 1)
+
+- **The converter is the repo's own polyphase windowed sinc, not
+  Signalsmith's kernel (D3 changed).** Measured: the vendored
+  `InterpolatorKaiserSincN` forces exact zeros at integer offsets, which is
+  only right when its cutoff is the input Nyquist; built with a cutoff below
+  it (any reduction) its DC gain is 1 at phase 0 and 1.09 to 2.0 elsewhere
+  (48 to 44.1 kHz read DC with 4 % ripple and a -43 dB residual; 96 to 48 kHz
+  halved the level). The replacement in `engine_backing.c` is a Kaiser
+  (beta 10.06) windowed `r * sinc(r x)` of half-width `ceil(32 / r)` input
+  samples with exact rational phases (`out / gcd`, refused above 8192) and
+  per-phase unity DC; `le_resample_frames`/`le_resample_offline` are internal
+  (`engine_core.h`), not part of the FFI. Reductions below one half halve
+  first through `le_halfband_decimate`.
+- **Measured oracles** (dev machine; all literal): DC within 1e-6 for
+  44.1/48, 48/44.1, 96/48, 44.1/96, 48/96 and 88.2/48; a 1 kHz tone within
+  0.01 dB with a residual below -90 dB for each; an 18 kHz alias of a 30 kHz
+  tone (96 to 48 kHz) and a 34.1 kHz image of a 10 kHz tone (44.1 to 96 kHz)
+  each below -80 dB; a 192 kHz file decoded at 48 kHz keeps a 1 kHz tone and
+  leaves no 8 kHz alias of a 40 kHz tone (below -80 dB); an impulse at 1000
+  lands at 2000 when doubling.
+- **MP3 encoder delay and padding stay in.** miniaudio's MP3 decoder does not
+  read the LAME gapless tag: the one-second fixture decodes to 47232 frames at
+  44.1 kHz (ffmpeg trims to 44100), about 25 ms of leading and 45 ms of
+  trailing silence. Gapless End = Next is sample-exact over the decoded
+  buffers, so an MP3 set carries those gaps; WAV and FLAC do not. Recorded as
+  a finding, not worked around (no second decoder).
+- Fixtures: `src/test/fixtures/backing/` (a stereo MP3 and a mono FLAC,
+  generated by the ffmpeg commands in its README); WAV cases are written by
+  the tests.
+- Decode cost on the dev machine (Apple silicon, the test library): a
+  five-minute 44.1 kHz stereo MP3 decodes and converts in 0.58 s at 48 kHz
+  and 1.01 s at 96 kHz. The Pi 5 figure is still the hardware criterion.
+  Peak memory during a decode is about twice the decoded size at the source
+  rate (the interleaved read, then the planes), before conversion.
+- Mutations: removing the window, the band limit, the per-phase
+  normalization, the halving, the stated-length cap, the channel refusal or
+  the decoders, or shifting the taps by one, each fails an oracle (the
+  channel refusal one by crashing the run).
+
+### Verification (both parts, on their pushed heads)
+
+Native suite plain, ASan and telemetry-off, each in its own `TMPDIR`: all
+pass (Part 1: 13 backing cases; Part 2: 20). `dart analyze --fatal-infos lib
+test packages` clean; `bloc lint lib test packages` 0 issues; the app suite
+(3341 passed, 49 skipped) and the `segno_engine` suite (370) pass against the
+freshly built test library; bindings regenerated and formatted; every bound
+symbol is exported by the built library (only the MIDI entry points, which
+the test library does not link, are absent, as before); the C++ shim repro
+compiles with the changed headers.
