@@ -376,7 +376,7 @@ void main() {
             await session.saveAs('Bad');
             expect(session.state.status, SessionStatus.success);
             final manifest = File(
-              '${await sessions.bundlePath('Bad')}/${Session.manifestName}',
+              '${await sessions.bundlePathOf(await idOf('Bad'))}/${Session.manifestName}',
             );
             final json =
                 jsonDecode(await manifest.readAsString())
@@ -385,7 +385,7 @@ void main() {
             await manifest.writeAsString(jsonEncode(json));
             final before = engine.snapshot().tracks.first;
             expect(before.state, TrackState.playing);
-            await session.loadNamed('Bad');
+            await session.open(await idOf('Bad'));
             expect(session.state.status, isNot(SessionStatus.success));
             // The live take is untouched: the decode refused the file.
             final after = engine.snapshot().tracks.first;
