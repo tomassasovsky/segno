@@ -9,6 +9,9 @@
 
 #define INS_SR 48000
 
+/* The origin the engine gives a control-thread note (its tag bit set). */
+static uint32_t ins_origin(uint32_t o) { return o | LE_INST_CONTROL_ORIGIN; }
+
 static le_engine* ins_engine(int32_t sr) {
   le_engine* e = le_engine_create();
   CHECK(e != NULL);
@@ -114,7 +117,7 @@ static void test_instrument_rings_order_and_release_lane(void) {
   ins_run(e, 64, 64, 0, NULL);
   CHECK(le_synth_active(s, 0) == 1); /* releasing, not held */
   ins_run(e, 38400 + 128, 64, 0, NULL); /* sub's 0.80 s release */
-  CHECK(!le_synth_has_origin(s, 7));
+  CHECK(!le_synth_has_origin(s, ins_origin(7)));
   CHECK(le_synth_active(s, 0) == 0);
 
   /* 300 note-ons: 247 fit (one slot kept empty, eight kept for patch
@@ -138,7 +141,7 @@ static void test_instrument_rings_order_and_release_lane(void) {
   CHECK(snap.instrument_events_refused == 53);
   ins_run(e, 64, 64, 0, NULL);
   CHECK(le_synth_active(s, -1) == 32); /* the voice limit holds the rest */
-  CHECK(!le_synth_has_origin(s, 1001)); /* stolen or released, never held */
+  CHECK(!le_synth_has_origin(s, ins_origin(1001))); /* stolen or released, never held */
   ins_run(e, 38400 + 128, 64, 0, NULL);
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.voices_stolen > 0);
@@ -331,7 +334,7 @@ static void test_instrument_release_before_note_keeps_it(void) {
   CHECK(le_engine_instrument_note_off(e, 5) == LE_OK);
   CHECK(le_engine_instrument_note_on(e, 0, 5, 60, 100) == LE_OK);
   ins_run(e, 64, 64, 0, NULL);
-  CHECK(le_synth_has_origin(s, 5));
+  CHECK(le_synth_has_origin(s, ins_origin(5)));
   CHECK(s->voices[0].state == 1 /* held */);
   le_engine_destroy(e);
 }
@@ -638,6 +641,623 @@ static void test_source_perf_tap(void) {
   free(out);
 }
 
+/* ---- Part 2c: MIDI routing from the shared input sink ---- */
+
+/* A capture stand-in: the engine reaches a capture through the le_midi_sink
+ * at its start (le_midi_port.h), so no OS MIDI backend is needed. */
+typedef struct ins_capture {
+  le_midi_sink sink;
+} ins_capture;
+
+static void ins_attach(le_engine* e, ins_capture* c, int32_t port) {
+  memset(c, 0, sizeof(*c));
+  CHECK(le_engine_attach_midi_input(e, (le_midi*)(void*)c, port) == LE_OK);
+}
+
+static void ins_send(ins_capture* c, uint8_t status, uint8_t d1, uint8_t d2) {
+  CHECK(le_midi_sink_push(&c->sink, status, d1, d2, 1) == 1);
+}
+
+/* An empty table with instrument k listening on `port`/`channel` (0: any)
+ * over the whole keyboard. */
+static void ins_route(le_inst_routes* r, int32_t k, int32_t port,
+                      int32_t channel) {
+  r->inst[k].midi_enabled = 1;
+  r->inst[k].port = port;
+  r->inst[k].channel = channel;
+  r->inst[k].low = 0;
+  r->inst[k].high = 127;
+}
+
+static int32_t ins_voices(le_engine* e, int32_t k) {
+  return le_synth_active((le_synth*)e->synth, k);
+}
+
+static int32_t ins_held(le_engine* e, int32_t k) {
+  le_synth* s = (le_synth*)e->synth;
+  int32_t n = 0;
+  for (int i = 0; i < s->voice_count; ++i) {
+    n += s->voices[i].state == 1 && s->voices[i].inst == k;
+  }
+  return n;
+}
+
+static void test_midi_routing_splits_layers_ranges(void) {
+  printf("test_midi_routing_splits_layers_ranges\n");
+  le_engine* e = ins_engine(INS_SR);
+  ins_capture c;
+  ins_attach(e, &c, 2);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("keys"), NULL) == LE_OK);
+  CHECK(le_engine_set_instrument(e, 1, syn_patch("drums"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 2, 1);  /* keys on channel 1 */
+  ins_route(&r, 1, 2, 10); /* drums on channel 10 */
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  /* split */
+  ins_send(&c, 0x90, 60, 100);
+  ins_send(&c, 0x99, 36, 100);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_voices(e, 0) == 1 && ins_voices(e, 1) == 1);
+  CHECK(((le_synth*)e->synth)->voices[0].note == 60);
+  ins_send(&c, 0x80, 60, 0);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 0);
+  /* layer: both on any channel */
+  ins_route(&r, 1, 2, 0);
+  ins_route(&r, 0, 2, 0);
+  CHECK(le_engine_set_instrument(e, 1, syn_patch("pad"), NULL) == LE_OK);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0x93, 64, 90);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 1 && ins_held(e, 1) == 1);
+  ins_send(&c, 0x93, 64, 0); /* Note On at velocity 0 is a Note Off */
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 0 && ins_held(e, 1) == 0);
+  /* range 48..72: 47 and 73 are not played */
+  r.inst[1].midi_enabled = 0;
+  r.inst[0].low = 48;
+  r.inst[0].high = 72;
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0x90, 47, 90);
+  ins_send(&c, 0x90, 73, 90);
+  ins_send(&c, 0x90, 48, 90);
+  ins_send(&c, 0x90, 72, 90);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 2);
+  le_engine_destroy(e);
+}
+
+/* A Note Off releases its note whatever the routes say by then (review M1). */
+static void test_midi_routing_note_off_survives_route_edits(void) {
+  printf("test_midi_routing_note_off_survives_route_edits\n");
+  for (int edit = 0; edit < 4; ++edit) {
+    le_engine* e = ins_engine(INS_SR);
+    ins_capture c;
+    ins_attach(e, &c, 0);
+    CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+    le_inst_routes r;
+    memset(&r, 0, sizeof(r));
+    ins_route(&r, 0, 0, 1);
+    r.inst[0].remap_count = 1;
+    r.inst[0].remaps[0] = (le_inst_remap){0, 1, LE_INST_REMAP_NOTE, 40, 2, {52, 55}};
+    CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+    ins_run(e, 64, 64, 0, NULL);
+    ins_send(&c, 0x90, 60, 100); /* ordinary */
+    ins_send(&c, 0x90, 40, 100); /* remapped chord */
+    ins_run(e, 64, 64, 0, NULL);
+    CHECK(ins_held(e, 0) == 3);
+    switch (edit) {
+      case 0: r.inst[0].midi_enabled = 0; break;
+      case 1: r.inst[0].channel = 5; break;
+      case 2: r.inst[0].remap_count = 0; break;
+      default: r.inst[0].low = 61; break;
+    }
+    CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+    ins_run(e, 64, 64, 0, NULL);
+    ins_send(&c, 0x80, 60, 0);
+    ins_send(&c, 0x80, 40, 0);
+    ins_run(e, 64, 64, 0, NULL);
+    CHECK(ins_held(e, 0) == 0);
+    le_engine_destroy(e);
+  }
+}
+
+/* A remap plays a chord with one identity, released together, instead of
+ * the ordinary note; a remapped CC64 plays its chord and does not sustain,
+ * an unmapped CC64 sustains. */
+static void test_midi_routing_remaps(void) {
+  printf("test_midi_routing_remaps\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  ins_capture c;
+  ins_attach(e, &c, 1);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("keys"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 1, 0);
+  r.inst[0].remap_count = 5;
+  r.inst[0].remaps[0] = (le_inst_remap){1, 10, LE_INST_REMAP_NOTE, 36, 3, {48, 52, 55}};
+  r.inst[0].remaps[1] = (le_inst_remap){1, 2, LE_INST_REMAP_CC, 64, 2, {60, 67}};
+  r.inst[0].remaps[2] = (le_inst_remap){1, 0, LE_INST_REMAP_NOTE, 37, 1, {90}};
+  /* one note, two channels: each channel finds its own remap */
+  r.inst[0].remaps[3] = (le_inst_remap){1, 3, LE_INST_REMAP_NOTE, 40, 1, {80}};
+  r.inst[0].remaps[4] = (le_inst_remap){1, 5, LE_INST_REMAP_NOTE, 40, 1, {81}};
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0x99, 36, 100);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 3);
+  int notes = 0;
+  for (int i = 0; i < s->voice_count; ++i) {
+    if (s->voices[i].state == 1) notes |= 1 << (s->voices[i].note - 48);
+  }
+  CHECK(notes == ((1 << 0) | (1 << 4) | (1 << 7))); /* 48, 52, 55; never 36 */
+  ins_send(&c, 0x89, 36, 0);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 0);
+  /* note 36 on another channel is not remapped; a remap on All matches any */
+  ins_send(&c, 0x90, 36, 100);
+  ins_send(&c, 0x9E, 37, 100);
+  ins_run(e, 64, 64, 0, NULL);
+  notes = 0;
+  for (int i = 0; i < s->voice_count; ++i) {
+    if (s->voices[i].state == 1) notes += s->voices[i].note;
+  }
+  CHECK(ins_held(e, 0) == 2 && notes == 36 + 90);
+  ins_send(&c, 0x80, 36, 0);
+  ins_send(&c, 0x8E, 37, 0);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 0);
+  ins_send(&c, 0x92, 40, 100); /* channel 3 */
+  ins_send(&c, 0x94, 40, 100); /* channel 5 */
+  ins_run(e, 64, 64, 0, NULL);
+  notes = 0;
+  for (int i = 0; i < s->voice_count; ++i) {
+    if (s->voices[i].state == 1) notes += s->voices[i].note;
+  }
+  CHECK(ins_held(e, 0) == 2 && notes == 80 + 81);
+  ins_send(&c, 0x82, 40, 0);
+  ins_send(&c, 0x84, 40, 0);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 0);
+  /* remapped CC64 on channel 2: a chord, no sustain */
+  ins_send(&c, 0xB1, 64, 127);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 2 && s->inst[0].sustain_n == 0);
+  ins_send(&c, 0xB1, 64, 127); /* already held: no second strike */
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 2 && le_synth_fading(s) == 0);
+  ins_send(&c, 0xB1, 64, 0);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 0);
+  /* unmapped CC64 (channel 1): sustains */
+  ins_send(&c, 0xB0, 64, 127);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(s->inst[0].sustain_n == 1);
+  le_engine_destroy(e);
+}
+
+/* Released notes ring until every contributor lets go; repeated strikes
+ * under sustain stay distinct voices; a 17th contributor is refused. */
+static void test_midi_routing_sustain_contributors(void) {
+  printf("test_midi_routing_sustain_contributors\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  ins_capture c;
+  ins_attach(e, &c, 0);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 0, 0);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0xB0, 64, 127);                            /* port 0 CC64 */
+  CHECK(le_engine_instrument_sustain(e, 0, 77, 1) == LE_OK); /* a pedal */
+  ins_send(&c, 0x90, 60, 100);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0x80, 60, 0);
+  ins_send(&c, 0x90, 60, 100); /* struck again under sustain */
+  ins_send(&c, 0x80, 60, 0);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(le_synth_active(s, 0) == 2); /* two distinct voices, both sustained */
+  CHECK(ins_held(e, 0) == 0);
+  ins_send(&c, 0xB0, 64, 0); /* the CC64 lets go, the pedal still holds */
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(s->voices[0].state == 4 && s->voices[1].state == 4);
+  CHECK(le_engine_instrument_sustain(e, 0, 77, 0) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(s->voices[0].state == 2 && s->voices[1].state == 2); /* releasing */
+  /* sixteen contributors fit, the seventeenth is refused and counted */
+  for (uint32_t o = 1; o <= 17; ++o) le_engine_instrument_sustain(e, 0, o, 1);
+  ins_run(e, 64, 64, 0, NULL);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(s->inst[0].sustain_n == 16);
+  CHECK(snap.instrument_sustain_refused == 1);
+  /* drums ignore sustain */
+  CHECK(le_engine_set_instrument(e, 1, syn_patch("drums"), NULL) == LE_OK);
+  ins_route(&r, 1, 0, 10);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0xB9, 64, 127);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(s->inst[1].sustain_n == 0);
+  le_engine_destroy(e);
+}
+
+/* Pitch bend and channel pressure reach the voice. */
+static void test_midi_routing_expression(void) {
+  printf("test_midi_routing_expression\n");
+  const int32_t n = INS_SR;
+  float* a = (float*)calloc((size_t)n, sizeof(float));
+  float* b = (float*)calloc((size_t)n, sizeof(float));
+  le_engine* e = ins_engine(INS_SR);
+  ins_capture c;
+  ins_attach(e, &c, 0);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("sub"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 0, 0);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0xE0, 0x7F, 0x7F); /* 16383: two semitones up */
+  ins_send(&c, 0x90, 69, 127);
+  ins_run(e, n, 64, 0, a);
+  const int32_t crossings = syn_crossings(a, n);
+  const float want = 2.0f * 440.0f * powf(2.0f, 2.0f / 12.0f); /* 987.8 */
+  CHECK(fabsf((float)crossings - want) <= 3.0f);
+  le_engine_destroy(e);
+  /* pressure 127 raises the level by 25 % */
+  for (int pass = 0; pass < 2; ++pass) {
+    le_engine* f = ins_engine(INS_SR);
+    ins_attach(f, &c, 0);
+    le_engine_set_instrument(f, 0, syn_patch("sub"), NULL);
+    le_engine_set_instrument_routes(f, &r);
+    ins_run(f, 64, 64, 0, NULL);
+    if (pass) ins_send(&c, 0xD0, 127, 0);
+    ins_send(&c, 0x90, 57, 100);
+    ins_run(f, n / 4, 64, 0, pass ? b : a);
+    le_engine_destroy(f);
+  }
+  const float ratio = syn_peak(b, n / 4) / syn_peak(a, n / 4);
+  CHECK(fabsf(ratio - 1.25f) < 0.0125f);
+  free(a);
+  free(b);
+}
+
+/* A Note On queued before a Note Off lost to a full ring is played, then
+ * released with the port's other voices at the loss; nothing sticks, and
+ * other ports and control notes are untouched (review H3, delta D2). */
+static void test_midi_routing_overflow_releases_after_queue(void) {
+  printf("test_midi_routing_overflow_releases_after_queue\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  ins_capture c0, c1;
+  ins_attach(e, &c0, 0);
+  ins_attach(e, &c1, 1);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("keys"), NULL) == LE_OK);
+  CHECK(le_engine_set_instrument(e, 1, syn_patch("keys"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 0, 0);
+  ins_route(&r, 1, 1, 0);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c1, 0x90, 50, 100);                                 /* other port */
+  CHECK(le_engine_instrument_note_on(e, 1, 9, 52, 100) == LE_OK); /* control */
+  ins_send(&c0, 0x90, 60, 100);                                 /* X on */
+  for (int i = 0; i < 254; ++i) ins_send(&c0, 0xB0, 7, 100);   /* filler */
+  CHECK(le_midi_sink_push(&c0.sink, 0x80, 60, 0, 1) == 0);      /* X off lost */
+  ins_run(e, 64, 64, 0, NULL);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.midi_in_overflows == 1u);
+  CHECK(ins_held(e, 0) == 0);                /* X was played, then released */
+  CHECK(le_synth_active(s, 0) == 1);         /* ... and is releasing */
+  CHECK(ins_held(e, 1) == 2);                /* port 1 and the control note */
+  ins_run(e, INS_SR * 3, 512, 0, NULL);
+  CHECK(le_synth_active(s, 0) == 0);         /* nothing stuck */
+  le_engine_destroy(e);
+}
+
+/* The release happens at the loss's position in the stream: a note queued
+ * before the gap is let go, one queued after it keeps sounding. */
+static void test_midi_routing_gap_releases_at_its_position(void) {
+  printf("test_midi_routing_gap_releases_at_its_position\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  ins_capture c;
+  ins_attach(e, &c, 5);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 5, 0);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0x90, 60, 100);
+  CHECK(le_midi_sink_mark_gap(&c.sink) == 1); /* e.g. an OS overrun */
+  ins_send(&c, 0x90, 64, 100);
+  ins_run(e, 64, 64, 0, NULL);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.midi_in_overflows == 1u);
+  CHECK(ins_held(e, 0) == 1);
+  for (int i = 0; i < s->voice_count; ++i) {
+    if (s->voices[i].note == 60) CHECK(s->voices[i].state == 2);
+    if (s->voices[i].note == 64) CHECK(s->voices[i].state == 1);
+  }
+  le_engine_destroy(e);
+}
+
+/* Detach, rebind and loss end the port's notes; a control note rings on; an
+ * old binding's queued event never plays; a fresh note after re-attach does. */
+static void test_midi_routing_detach_and_loss(void) {
+  printf("test_midi_routing_detach_and_loss\n");
+  le_engine* e = ins_engine(INS_SR);
+  ins_capture c;
+  ins_attach(e, &c, 3);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 3, 0);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0x90, 60, 100);
+  CHECK(le_engine_instrument_note_on(e, 0, 5, 64, 100) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 2);
+  ins_send(&c, 0x90, 62, 100); /* queued, then the capture is detached */
+  CHECK(le_engine_detach_midi_input(e, 3) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 1); /* only the control note */
+  CHECK(le_synth_held((le_synth*)e->synth, -1, ins_origin(5)));
+  ins_attach(e, &c, 3);
+  ins_send(&c, 0x90, 67, 100);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 2);
+  /* the device goes away */
+  CHECK(le_midi_sink_mark_lost(&c.sink) == 1);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 1);
+  le_engine_destroy(e);
+}
+
+/* A port that goes away takes its sustain and its expression with it; a
+ * control-thread sustain on the same instrument holds on. */
+static void test_midi_routing_gone_ends_sustain_and_expression(void) {
+  printf("test_midi_routing_gone_ends_sustain_and_expression\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  ins_capture c;
+  ins_attach(e, &c, 4);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  CHECK(le_engine_set_instrument(e, 1, syn_patch("keys"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 4, 0);
+  ins_route(&r, 1, 4, 0);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  CHECK(le_engine_instrument_sustain(e, 0, 3, 1) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0xB0, 64, 127);
+  ins_send(&c, 0xB0, 1, 127);
+  ins_send(&c, 0xE0, 0, 0x60);
+  ins_send(&c, 0x90, 60, 100);
+  ins_send(&c, 0x80, 60, 0);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(s->voices[0].state == 4 && s->voices[1].state == 4);
+  CHECK(s->inst[1].mod == 1.0f && s->inst[1].bend > 0.4f);
+  CHECK(le_engine_detach_midi_input(e, 4) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  int sustained = 0, releasing = 0;
+  for (int i = 0; i < 2; ++i) {
+    sustained += s->voices[i].state == 4 && s->voices[i].inst == 0;
+    releasing += s->voices[i].state == 2 && s->voices[i].inst == 1;
+  }
+  CHECK(sustained == 1 && releasing == 1);
+  CHECK(s->inst[0].sustain_n == 1 && s->inst[1].sustain_n == 0);
+  for (int k = 0; k < 2; ++k) {
+    CHECK(s->inst[k].mod == 0.0f && s->inst[k].bend == 0.0f);
+  }
+  le_engine_destroy(e);
+}
+
+/* Turning an instrument's MIDI off, or moving it to another port or
+ * channel, ends that port's notes on it and its bend, modulation and
+ * pressure (review M1, the reference's silenceController). */
+static void test_midi_routing_route_change_clears_expression(void) {
+  printf("test_midi_routing_route_change_clears_expression\n");
+  for (int edit = 0; edit < 3; ++edit) {
+    le_engine* e = ins_engine(INS_SR);
+    le_synth* s = (le_synth*)e->synth;
+    ins_capture c;
+    ins_attach(e, &c, 2);
+    CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+    CHECK(le_engine_set_instrument(e, 1, syn_patch("keys"), NULL) == LE_OK);
+    le_inst_routes r;
+    memset(&r, 0, sizeof(r));
+    ins_route(&r, 0, 2, 1);
+    ins_route(&r, 1, 2, 1); /* a layer that stays as it is */
+    CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+    ins_run(e, 64, 64, 0, NULL);
+    ins_send(&c, 0xE0, 0x7F, 0x7F);
+    ins_send(&c, 0xB0, 1, 127);
+    ins_send(&c, 0xD0, 127, 0);
+    ins_send(&c, 0x90, 60, 100);
+    ins_run(e, 64, 64, 0, NULL);
+    CHECK(s->inst[0].bend > 0.99f && s->inst[0].mod == 1.0f);
+    CHECK(ins_held(e, 0) == 1);
+    switch (edit) {
+      case 0: r.inst[0].midi_enabled = 0; break;
+      case 1: r.inst[0].port = 3; break;
+      default: r.inst[0].channel = 2; break;
+    }
+    CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+    ins_run(e, 64, 64, 0, NULL);
+    CHECK(s->inst[0].bend == 0.0f && s->inst[0].mod == 0.0f &&
+          s->inst[0].pressure == 0.0f);
+    CHECK(ins_held(e, 0) == 0);
+    /* the other instrument on that port keeps its note and expression */
+    CHECK(ins_held(e, 1) == 1 && s->inst[1].mod == 1.0f);
+    le_engine_destroy(e);
+  }
+  /* a range edit keeps both: the note ends at its own release */
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  ins_capture c;
+  ins_attach(e, &c, 2);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 2, 0);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0xB0, 1, 127);
+  ins_send(&c, 0x90, 60, 100);
+  ins_run(e, 64, 64, 0, NULL);
+  r.inst[0].low = 70;
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(s->inst[0].mod == 1.0f && ins_held(e, 0) == 1);
+  le_engine_destroy(e);
+}
+
+/* A held remapped controller suppresses its repeat on that instrument only:
+ * another instrument's ordinary handling of the same controller goes on
+ * (review L1). */
+static void test_midi_routing_held_remap_is_per_instrument(void) {
+  printf("test_midi_routing_held_remap_is_per_instrument\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  ins_capture c;
+  ins_attach(e, &c, 0);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  CHECK(le_engine_set_instrument(e, 1, syn_patch("keys"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 0, 0);
+  ins_route(&r, 1, 0, 0);
+  /* the remap sits on the lower instrument, so a check that stopped the
+   * whole message would also starve the higher one */
+  r.inst[0].remap_count = 1;
+  r.inst[0].remaps[0] = (le_inst_remap){0, 0, LE_INST_REMAP_CC, 1, 2, {60, 64}};
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0xB0, 1, 80);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 2);
+  CHECK(fabsf(s->inst[1].mod - 80.0f / 127.0f) < 1e-6f);
+  ins_send(&c, 0xB0, 1, 127);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(s->inst[1].mod == 1.0f); /* the mod wheel still reaches instrument 1 */
+  CHECK(ins_held(e, 0) == 2 && le_synth_fading(s) == 0); /* no re-strike */
+  le_engine_destroy(e);
+}
+
+/* A patch posted before a MIDI note in the same block plays that note
+ * (review L2): the control rings are applied before the MIDI drain. */
+static void test_midi_routing_note_meets_patch_posted_before_it(void) {
+  printf("test_midi_routing_note_meets_patch_posted_before_it\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  ins_capture c;
+  ins_attach(e, &c, 0);
+  CHECK(le_engine_set_instrument(e, 2, syn_patch("organ"), NULL) == LE_OK);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 2, 0, 0);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(le_engine_set_instrument(e, 2, syn_patch("lead"), NULL) == LE_OK);
+  ins_send(&c, 0x90, 60, 100);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 2) == 1);
+  CHECK(le_synth_fading(s) == 0);
+  for (int i = 0; i < s->voice_count; ++i) {
+    if (s->voices[i].state == 1) CHECK(s->voices[i].patch == syn_patch("lead"));
+  }
+  le_engine_destroy(e);
+}
+
+/* A chord from one control origin sounds every note and ends together;
+ * a single note-on for a held origin replaces it (one origin, one sounding
+ * note); a chord is all or nothing (#1197 Part 3a review M1). */
+static void test_instrument_chord_on(void) {
+  printf("test_instrument_chord_on\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  const int32_t triad[3] = {60, 64, 67};
+  CHECK(le_engine_instrument_chord_on(e, 0, 7, triad, 3, 100) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 3);
+  CHECK(le_engine_instrument_note_off(e, 7) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 0);
+  /* separate note-ons for one origin: the last replaces the first */
+  CHECK(le_engine_instrument_note_on(e, 0, 8, 60, 100) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 0, 8, 64, 100) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 1);
+  /* a chord for a held origin replaces it too, then sounds whole */
+  CHECK(le_engine_instrument_chord_on(e, 0, 8, triad, 3, 100) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 3 && le_synth_fading(s) >= 1);
+  /* refusals */
+  const int32_t bad[2] = {60, 128};
+  CHECK(le_engine_instrument_chord_on(e, 0, 9, triad, 0, 100) == LE_ERR_INVALID);
+  CHECK(le_engine_instrument_chord_on(e, 0, 9, triad, LE_INST_CHORD_NOTES + 1,
+                                      100) == LE_ERR_INVALID);
+  CHECK(le_engine_instrument_chord_on(e, 0, 9, bad, 2, 100) == LE_ERR_INVALID);
+  CHECK(le_engine_instrument_chord_on(e, 3, 9, triad, 3, 100) ==
+        LE_ERR_NO_INSTRUMENT);
+  /* all or nothing: find how many single notes fit, take two back, and a
+   * triad is refused whole while a pair still fits */
+  ins_run(e, 64, 64, 0, NULL);
+  int32_t fit = 0;
+  while (le_engine_instrument_note_on(e, 0, 100u + (uint32_t)fit, 30, 50) ==
+         LE_OK) {
+    ++fit;
+  }
+  ins_run(e, 64, 64, 0, NULL); /* drains them */
+  for (int32_t n = 0; n < fit - 2; ++n) {
+    CHECK(le_engine_instrument_note_on(e, 0, 400u + (uint32_t)n, 30, 50) == LE_OK);
+  }
+  CHECK(le_engine_instrument_chord_on(e, 0, 9, triad, 3, 100) == LE_ERR_CAPACITY);
+  CHECK(le_engine_instrument_chord_on(e, 0, 9, triad, 2, 100) == LE_OK);
+  le_engine_destroy(e);
+}
+
+/* Route tables switch at a block: a second publish before the callback has
+ * acknowledged the first is refused while running; stopped, they switch at
+ * once. */
+static void test_midi_routing_publish(void) {
+  printf("test_midi_routing_publish\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK); /* stopped */
+  r.inst[0].high = 200;
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_ERR_INVALID);
+  r.inst[0].high = 127;
+  r.inst[0].remap_count = 1;
+  r.inst[0].remaps[0] = (le_inst_remap){0, 0, LE_INST_REMAP_NOTE, 1, 9, {0}};
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_ERR_INVALID);
+  r.inst[0].remap_count = 0;
+  store_i32(&e->a_running, 1); /* as if the callback ran */
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_ERR_NOT_READY);
+  ins_run(e, 64, 64, 0, NULL); /* the callback acknowledges */
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  store_i32(&e->a_running, 0);
+  le_engine_destroy(e);
+}
+
 static void run_instrument_tests(void) {
   test_instrument_bus_matches_offline_render();
   test_instrument_params_reach_first_note();
@@ -655,4 +1275,18 @@ static void run_instrument_tests(void) {
   test_source_sound_start_is_frame_exact();
   test_source_mix_transaction();
   test_source_perf_tap();
+  test_midi_routing_splits_layers_ranges();
+  test_midi_routing_note_off_survives_route_edits();
+  test_midi_routing_remaps();
+  test_midi_routing_sustain_contributors();
+  test_midi_routing_expression();
+  test_midi_routing_overflow_releases_after_queue();
+  test_midi_routing_gap_releases_at_its_position();
+  test_midi_routing_detach_and_loss();
+  test_midi_routing_gone_ends_sustain_and_expression();
+  test_midi_routing_publish();
+  test_instrument_chord_on();
+  test_midi_routing_route_change_clears_expression();
+  test_midi_routing_held_remap_is_per_instrument();
+  test_midi_routing_note_meets_patch_posted_before_it();
 }

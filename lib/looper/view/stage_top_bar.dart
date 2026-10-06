@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/pen_icons.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -51,7 +52,7 @@ class StageTopBar extends StatelessWidget {
           _StageIconButton(
             key: const Key('stage_library'),
             semanticLabel: l10n.stageLibrary,
-            onTap: () => unawaited(showSessionsManager(context)),
+            onTap: () => unawaited(openLibrary()),
             child: PenIconView(
               icon: PenIcon.library,
               size: 28,

@@ -86,18 +86,6 @@ static int le_peel_target(const le_track* t, int32_t* skipped) {
   return -1;
 }
 
-/* How many LAYER entries Peel can still consume: those above the highest entry
- * that is neither LAYER nor PEEL (the whole stack when there is none). */
-static int32_t le_peel_depth(const le_track* t) {
-  int32_t depth = 0;
-  for (int i = t->undo_count - 1; i >= 0; --i) {
-    const int32_t kind = t->undo_stack[i].kind;
-    if (kind == LE_HIST_LAYER) ++depth;
-    else if (kind != LE_HIST_PEEL) break;
-  }
-  return depth;
-}
-
 static void le_publish_undo_depth(le_track* t) {
   /* A frozen take's restore point is still to be filed: the layers kept
    * beneath it are not peelable yet (the track reads EMPTY), and the restore
@@ -333,16 +321,6 @@ static int le_redo_push(le_track* t, le_hist_entry e) {
  * swap (D5); the stem then fails truthfully (323/0). */
 static uint32_t le_stage_source_image(le_engine* engine, int32_t channel,
                                       int32_t slot, int32_t len);
-
-/* A history entry of `kind` naming `slot`; `skipped` is meaningful for PEEL
- * only and zero otherwise. Same zero-filling aggregate shape as le_hist_layer. */
-static le_hist_entry le_hist_kind_entry(int32_t kind, int32_t slot,
-                                        int32_t skipped) {
-  le_hist_entry e = le_hist_layer(slot);
-  e.kind = kind;
-  e.skipped = skipped;
-  return e;
-}
 
 static void le_undo_swap(le_engine* engine, le_track* t) {
   const le_hist_entry top = t->undo_stack[--t->undo_count];
@@ -3314,6 +3292,27 @@ int32_t le_engine_toggle_section(le_engine* engine, int32_t channel) {
    * empties. Covers the ARM's block; the firing block is autonomous. */
   if (rc == LE_OK && st == LE_TRACK_RECORDING) le_ticket_emptying(engine, channel);
   return rc;
+}
+
+/* ---- the native MIDI input sink (#1228 Part 1; segno_engine_api.h) ----
+ * The capture handle begins with its le_midi_sink (pinned by a static
+ * assertion in midi.c), so the engine binds it without linking midi.c. */
+
+int32_t le_engine_attach_midi_input(le_engine* engine, le_midi* m,
+                                    int32_t port) {
+  if (engine == NULL || m == NULL || port < 0 || port >= LE_MAX_MIDI_PORTS) {
+    return LE_ERR_INVALID;
+  }
+  le_midi_sink_bind((le_midi_sink*)(void*)m, &engine->midi_ports[port]);
+  return LE_OK;
+}
+
+int32_t le_engine_detach_midi_input(le_engine* engine, int32_t port) {
+  if (engine == NULL || port < 0 || port >= LE_MAX_MIDI_PORTS) {
+    return LE_ERR_INVALID;
+  }
+  le_midi_port_unbind(&engine->midi_ports[port]);
+  return LE_OK;
 }
 
 /* ---- MIDI clock (Phase C/E, D15; see segno_engine_api.h's MIDI-clock

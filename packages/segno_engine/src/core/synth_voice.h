@@ -42,6 +42,9 @@ extern "C" {
 #define LE_SYNTH_FADE_SLOTS LE_SYNTH_MAX_VOICES
 #define LE_SYNTH_FADE_MS 3
 #define LE_SYNTH_CTRL_FRAMES 32
+/* Independent sustain contributors per instrument (a CC64 per port and
+ * channel, a pedal binding ...); one more is refused and counted. */
+#define LE_SYNTH_SUSTAIN_MAX 16
 #define LE_SYNTH_SINE_SIZE 2048
 
 /* Families (le_synth_family) and parameter units (le_synth_param_unit) are
@@ -135,7 +138,14 @@ typedef struct le_synth_voice {
 typedef struct le_synth_instrument {
   int32_t patch; /* -1: none */
   float params[LE_SYNTH_FAMILY_PARAMS];
+  /* sustain: released voices ring while any contributor holds */
+  uint32_t sustain[LE_SYNTH_SUSTAIN_MAX];
+  int32_t sustain_n;
+  /* expression: bend -1..1 (two semitones), modulation and pressure 0..1 */
+  float bend, mod, pressure;
 } le_synth_instrument;
+
+#define LE_SYNTH_HELD_BUCKETS 256
 
 typedef struct le_synth {
   int32_t sample_rate;
@@ -151,6 +161,12 @@ typedef struct le_synth {
   le_synth_voice fades[LE_SYNTH_FADE_SLOTS];
   uint32_t stolen;      /* voices taken for a new note (faded) */
   uint32_t stolen_hard; /* voices or fades cut without a fade (no room) */
+  uint32_t sustain_refused; /* contributors refused: the table was full */
+  /* Per origin hash bucket, an upper bound on the HELD voices with an origin
+   * in it: a note-on adds one (saturating), every render recounts exactly. A release
+   * whose bucket is empty skips the voice scan (the routing cost, #1197
+   * Part 2c review H1). Never below the truth, so nothing is ever missed. */
+  uint8_t held_hint[LE_SYNTH_HELD_BUCKETS];
 } le_synth;
 
 /* Prepares `s` for `sample_rate` with a pool of `voices` (1..64). No
@@ -174,8 +190,43 @@ int32_t le_synth_set_param(le_synth* s, int32_t inst, int32_t index, float v);
 int32_t le_synth_note_on(le_synth* s, int32_t inst, uint32_t origin,
                          int32_t note, int32_t velocity);
 
-/* Releases every held voice started for `origin` (drums ignore it). */
+/* Like le_synth_note_on, without the repeated-strike rule: the second and
+ * later notes of one chord share their origin with the first. */
+int32_t le_synth_note_on_chord(le_synth* s, int32_t inst, uint32_t origin,
+                               int32_t note, int32_t velocity);
+
+/* Releases every held voice started for `origin`, on every instrument. A
+ * voice whose instrument has a sustain contributor rings on (sustained)
+ * until the last contributor lets go. Drum hits ring to their end. */
 void le_synth_note_off(le_synth* s, uint32_t origin);
+
+/* Adds (on) or removes (off) sustain contributor `origin` on `inst`. Drums
+ * ignore sustain. Removing the last contributor releases every sustained
+ * voice. Returns 0, or -1 when the table is full (counted) or the arguments
+ * are bad. */
+int32_t le_synth_sustain(le_synth* s, int32_t inst, uint32_t origin, int on);
+
+/* Removes contributor `origin` from every instrument. */
+void le_synth_sustain_off(le_synth* s, uint32_t origin);
+
+/* Sets one expression value of `inst`: kind LE_SYNTH_BEND (-1..1, two
+ * semitones), LE_SYNTH_MOD or LE_SYNTH_PRESSURE (0..1); clamped. Applies
+ * from the next control block. */
+enum { LE_SYNTH_BEND = 0, LE_SYNTH_MOD = 1, LE_SYNTH_PRESSURE = 2 };
+void le_synth_expression(le_synth* s, int32_t inst, int32_t kind, float value);
+
+/* A device gone, a binding retired or an instrument's MIDI route changed:
+ * on instrument `inst` (-1: every instrument) removes the sustain
+ * contributors whose origin, masked by `mask`, equals `value`, lets go of
+ * the matching held voices (sustained if the instrument is still sustained,
+ * as for a Note Off) and releases the sustained voices nothing sustains any
+ * more. */
+void le_synth_release_matching(le_synth* s, int32_t inst, uint32_t mask,
+                               uint32_t value);
+
+/* Whether a held voice (not released or sustained) exists for `origin` on
+ * instrument `inst` (-1: any instrument). */
+int32_t le_synth_held(const le_synth* s, int32_t inst, uint32_t origin);
 
 /* Cut all sound: every sounding voice of `inst` (-1: every instrument) fades
  * to silence over LE_SYNTH_FADE_MS in place. */

@@ -752,6 +752,55 @@ static void test_synth_block_size_independent(void) {
   }
 }
 
+/* The held-origin hint lets a release skip the voice scan; it must never
+ * hide a held voice. A random mix of notes, releases, steals, limits, cuts
+ * and renders, checking after every release that no voice of that origin is
+ * still held (#1197 Part 2c review H1). */
+static void test_synth_held_hint_never_misses(void) {
+  printf("test_synth_held_hint_never_misses\n");
+  le_synth* s = &g_syn_a;
+  CHECK(le_synth_init(s, 48000, LE_SYNTH_MAX_VOICES, 3) == 0);
+  CHECK(le_synth_set_instrument(s, 0, syn_patch("pad")) == 0);
+  CHECK(le_synth_set_instrument(s, 1, syn_patch("drums")) == 0);
+  uint32_t r = 12345u;
+  int misses = 0;
+  for (int step = 0; step < 200000; ++step) {
+    r = r * 1664525u + 1013904223u;
+    const uint32_t origin = (r >> 8) % 600u;
+    switch ((r >> 24) % 8u) {
+      case 0: case 1: case 2:
+        le_synth_note_on(s, (int32_t)((r >> 4) & 1u), origin,
+                         (r & 1u) ? 36 + (int32_t)(origin % 8u) : 60, 90);
+        break;
+      case 3: case 4:
+        le_synth_note_off(s, origin);
+        for (int i = 0; i < s->voice_count; ++i) {
+          misses += s->voices[i].state == 1 && s->voices[i].origin == origin;
+        }
+        break;
+      case 5:
+        le_synth_render(s, NULL, 0, (int32_t)((r >> 3) % 70u));
+        break;
+      case 6:
+        le_synth_set_voice_limit(s, 1 + (int32_t)((r >> 2) % 64u));
+        break;
+      default:
+        if ((r & 63u) == 0u) le_synth_cut(s, -1);
+        break;
+    }
+  }
+  CHECK(misses == 0);
+  /* 256 strikes of one origin with no render in between: the bound must
+   * not wrap to zero */
+  CHECK(le_synth_init(s, 48000, LE_SYNTH_MAX_VOICES, 3) == 0);
+  CHECK(le_synth_set_instrument(s, 0, syn_patch("pad")) == 0);
+  for (int n = 0; n < 256; ++n) le_synth_note_on(s, 0, 77, 60, 90);
+  le_synth_note_off(s, 77);
+  int held = 0;
+  for (int i = 0; i < s->voice_count; ++i) held += s->voices[i].state == 1;
+  CHECK(held == 0 && le_synth_active(s, 0) == 1);
+}
+
 static void run_synth_tests(void) {
   test_synth_patch_table();
   test_synth_arg_guards();
@@ -769,4 +818,5 @@ static void run_synth_tests(void) {
   test_synth_voice_limit();
   test_synth_top_note_bounded();
   test_synth_block_size_independent();
+  test_synth_held_hint_never_misses();
 }

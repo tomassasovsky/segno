@@ -1401,6 +1401,23 @@ typedef struct le_snapshot {
   uint32_t synth_epoch;
   uint32_t instrument_events_refused;
   uint32_t instrument_fallback_blocks;
+  /* sustain contributors refused because an instrument already had
+   * LE_SYNTH_SUSTAIN_MAX (16) (#1197 Part 2c) */
+  uint32_t instrument_sustain_refused;
+  /* ---- native MIDI input (#1228 Part 1; trailing). Totals across all
+   * LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
+   * from the current binding, events dropped as stale (pushed by a binding
+   * that has since ended), gaps (places where a full ring or an OS overrun
+   * lost messages), ports that went lost, and binding changes (an attach,
+   * detach, rebind or close, counted once per drain that sees the
+   * generation move). midi_in_attached_mask has bit p set while a capture is
+   * attached to p. */
+  uint32_t midi_in_events;
+  uint32_t midi_in_stale;
+  uint32_t midi_in_overflows;
+  uint32_t midi_in_lost;
+  uint32_t midi_in_attached_mask;
+  uint32_t midi_in_rebinds;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -3054,6 +3071,54 @@ LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
 LE_EXPORT int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
                                   uint64_t* out_free_bytes);
 
+/* fsync(2) on the directory at `path`, so the entries in it — a file renamed
+ * into it, a file created in it — survive a power cut or a pulled drive. A
+ * file's own fsync makes its bytes durable but not its name: on ext4 a copy
+ * that returned within the commit interval could otherwise come back after a
+ * power cut as a part file with no final name (#1177, #1195). Dart has no way
+ * to open a directory, so the storage repository asks here.
+ *
+ * LE_ERR_INVALID on a NULL or empty path; LE_ERR_DEVICE when the path cannot
+ * be opened as a directory or the sync fails. LE_OK on Windows without doing
+ * anything: NTFS journals its directory entries. Control thread only; it can
+ * take as long as the device's flush. */
+LE_EXPORT int32_t le_sync_dir(const char* path);
+
+/* ---- recorded-audio identity and durable publication (#1198) ----
+ * Engine-free, like le_volume_space: questions about bytes and paths, safe to
+ * call from any thread and from a Dart background isolate with no engine.
+ *
+ * Recorded audio is identified by the SHA-256 of its sample payload, so an
+ * intact copy is recognised wherever it is and whatever it is called, and a
+ * damaged or different file never passes for it (accepted behaviour 6.10:
+ * "same name is not enough"). `out` receives the 32-byte digest. */
+
+/* SHA-256 of `length` bytes at `data` (`data` may be NULL only when `length`
+ * is 0). Returns LE_OK, or LE_ERR_INVALID for a NULL `out`, a NULL `data`
+ * with a non-zero length, or a length this platform cannot address. */
+LE_EXPORT int32_t le_digest_bytes(const void* data, uint64_t length,
+                                  uint8_t* out);
+
+/* SHA-256 of `length` bytes of the regular file at `path` (UTF-8) starting at
+ * byte `offset`; `length` = UINT64_MAX means through the end of the file.
+ * Reads in 64 KiB chunks, so a multi-gigabyte recording costs no memory.
+ * Returns LE_OK; LE_ERR_INVALID for a NULL or empty `path` or NULL `out`;
+ * LE_ERR_DEVICE when the file cannot be opened, is not a regular file, is
+ * shorter than `offset` + `length` (a damaged file never yields a digest of
+ * what happens to be left), or a read fails. */
+LE_EXPORT int32_t le_digest_file(const char* path, uint64_t offset,
+                                 uint64_t length, uint8_t* out);
+
+/* Makes the directory entries of `path` durable: open + fsync on POSIX, which
+ * is what makes a rename into that directory survive a power cut (fsync on
+ * the renamed file does not cover its name). Dart cannot open a directory, so
+ * the atomic publication of a bundle (tmp, fsync, rename, then this) needs it
+ * here. On Windows there is no directory handle to flush; it reports only
+ * whether the directory exists. Returns LE_OK; LE_ERR_INVALID for a NULL or
+ * empty `path`; LE_ERR_DEVICE when the directory cannot be opened or the sync
+ * fails. */
+LE_EXPORT int32_t le_fs_sync_dir(const char* path);
+
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's
  * `performance.json` + `events.log` + `loops/` + retired-layer PCM), on a
@@ -3177,44 +3242,56 @@ LE_EXPORT int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel
                                               int32_t frames);
 
 /* ---- overdub-layer (undo/redo) persistence ---- *
- * A track's full history is the ordered set of pool buffers per lane:
- * undo_stack[0..undo_depth) (oldest first) then the live buffer then the redo
- * stack. le_engine_export_layer reads them by a linear `ordinal`, and
- * le_engine_import_layer + le_engine_finalize_layers rebuild them. The stacks
- * are track-owned and shared across lanes in lockstep, so every lane carries
- * the same layer count at the same ordinals. */
+ * A track's full history is its list of entries (le_engine_export_history)
+ * plus the ordered set of pool buffers per lane they name:
+ * undo_stack[0..undo_count) (oldest first), then the live buffer, then the
+ * redo stack read top-down. le_engine_export_layer reads the buffers by a
+ * linear image `ordinal`, and le_engine_import_layer + le_engine_finalize_history
+ * rebuild them with their kinds. The stacks are track-owned and shared across
+ * lanes in lockstep, so every lane carries the same image count at the same
+ * ordinals. */
 
-/* Copies up to `max_frames` frames of track `channel`'s lane `lane` layer at
- * `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_depth)` are the
- * undo snapshots, `undo_depth` is the live buffer, and the next `redo_depth`
- * are the redo snapshots. Returns the frames written (the loop length, clamped
- * to `max_frames`), 0 for an empty layer, or LE_ERR_INVALID for an out-of-range
- * channel/lane/ordinal or non-positive `max_frames`. Control thread; call when
- * the track is not capturing. */
+/* Copies up to `max_frames` frames of track `channel`'s lane `lane` image at
+ * `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_count)` are the
+ * undo snapshots, `undo_count` is the live buffer, and the redo snapshots
+ * follow, newest-adjacent first; a redo-side peel marker holds no image and
+ * takes no ordinal (le_engine_export_history). Returns the frames written (the
+ * loop length, clamped to `max_frames`), 0 for an empty layer, or
+ * LE_ERR_INVALID for an out-of-range channel/lane/ordinal or non-positive
+ * `max_frames`. Control thread; call when the track is not capturing. */
 LE_EXPORT int32_t le_engine_export_layer(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t ordinal,
                                          float* out, int32_t max_frames);
 
-/* Loads `frames` mono frames into track `channel`'s lane `lane` at layer
+/* Loads `frames` mono frames into track `channel`'s lane `lane` at image
  * `ordinal` (which becomes the pool slot index), staging a reconstruction into
  * an EMPTY track. Call once per (lane, ordinal) — ordinals contiguous from 0 —
- * then le_engine_finalize_layers, then le_engine_commit_session. Importing a
+ * then le_engine_finalize_history, then le_engine_commit_session. Importing a
  * lane >= the active count activates it. Returns LE_OK, or LE_ERR_INVALID for a
  * non-EMPTY track, an `ordinal` past the pool cap, or an oversized `frames`. */
 LE_EXPORT int32_t le_engine_import_layer(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t ordinal,
                                          const float* pcm, int32_t frames);
 
-/* Publishes a track reconstructed by le_engine_import_layer: rebuilds the
- * undo/redo stacks (slot index == ordinal), points a_live at the live buffer
- * (slot `undo_count`), and republishes the undo/redo depths — every active lane
- * in lockstep. `undo_count + 1 + redo_count` layers must already be staged on
- * every active lane at the same loop length. Returns LE_OK, or LE_ERR_INVALID
- * for a non-EMPTY track, a layer count past LE_POOL_SLOTS, or a torn/partial
- * reconstruction (a missing slot or mismatched lane length). */
-LE_EXPORT int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
-                                            int32_t undo_count,
-                                            int32_t redo_count);
+/* Publishes a track reconstructed by le_engine_import_layer with its history
+ * (#1164): `count` entries in le_engine_export_history order (`kinds[i]`,
+ * `skipped[i]`), the first `undo_count` of them on the undo stack and the rest
+ * on the redo stack top-down. Image-bearing entries take slot == image ordinal,
+ * the live buffer is slot `undo_count`, and a redo-side peel entry becomes a
+ * marker without an image; every active lane is republished in lockstep with
+ * its undo, redo and peel depths. Strict: LE_ERR_INVALID for a non-EMPTY
+ * track, an unknown kind, a `skipped` outside [0, LE_POOL_SLOTS) or nonzero on
+ * a kind other than peel, a clear restore point anywhere but the last entry
+ * on the redo side, an undo-side peel whose `skipped` exceeds the run of peel
+ * entries directly beneath it (unless that run reaches the bottom: pool
+ * eviction), a redo-side peel marker that would find no layer to peel when
+ * Redo reaches it, more images than LE_POOL_SLOTS, or a torn reconstruction
+ * (an image ordinal not staged on every active lane, or lanes at different
+ * lengths). Returns LE_OK otherwise. */
+LE_EXPORT int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
+                                             const int32_t* kinds,
+                                             const int32_t* skipped,
+                                             int32_t count, int32_t undo_count);
 
 /* Lists track `channel`'s history entries in image-ordinal order (#1164):
  * the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the
@@ -3223,12 +3300,17 @@ LE_EXPORT int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
  * redo-side peel entry is a marker without an image: le_engine_export_layer's
  * ordinals count image-bearing entries only, so a track's image count is
  * `undo_count + 1 + (redo entries that are not peel markers)`. Writes at most
- * `max` entries and returns the track's TOTAL entry count (which may exceed
- * `max`), or LE_ERR_INVALID for a bad handle, channel, NULL array or negative
- * `max`. Control thread. */
+ * `max` entries, stores the undo stack's entry count in `*undo_count` (the
+ * first `*undo_count` entries are the undo side and ordinal `*undo_count` is
+ * the live image), and returns the track's TOTAL entry count (which may exceed
+ * `max`), or LE_ERR_INVALID for a bad handle, channel, NULL pointer or
+ * negative `max`. `*undo_count` is the raw stack count, not the snapshot's
+ * undo_depth: that one reads 0 while a content-giving command (a clear
+ * restore) is in flight, so a Session capture must split by this value.
+ * Control thread. */
 LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
                                            int32_t* kinds, int32_t* skipped,
-                                           int32_t max);
+                                           int32_t max, int32_t* undo_count);
 
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple
@@ -3354,8 +3436,54 @@ LE_EXPORT int32_t le_midi_open(le_midi* m, const char* id,
 
 /* Stops capture and closes the open port. Idempotent (a no-op when nothing is
  * open). After it returns the callback registered by le_midi_open is guaranteed
- * not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle). */
+ * not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle).
+ * A capture attached to an engine port (le_engine_attach_midi_input) is
+ * detached first: the port's generation advances and it reads lost. Because
+ * le_midi_open closes the current port before opening another, re-opening also
+ * detaches; attach again after opening. */
 LE_EXPORT int32_t le_midi_close(le_midi* m);
+
+/* Whether the capture's backend thread runs at real-time priority (#1228):
+ * 1 granted, -1 refused by the OS (no RTPRIO), 0 not applicable (no port
+ * open, or a backend whose OS owns the thread, as CoreMIDI does). */
+LE_EXPORT int32_t le_midi_priority_state(le_midi* m);
+
+/* ---- the native MIDI input sink (#1228 Part 1; shared with #1197) ----
+ *
+ * An open capture can be attached to one of LE_MAX_MIDI_PORTS engine input
+ * ports. Its OS MIDI thread then pushes every note, CC, pitch bend, channel
+ * pressure, Timing Clock, Start, Continue, Stop and Song Position message,
+ * stamped with a CLOCK_MONOTONIC time, into that port's ring, and the audio
+ * thread drains the ring at the start of every block. Nothing in this path
+ * passes through Dart; the Dart callback keeps receiving Note, CC and Program
+ * exactly as before.
+ *
+ * Generations: each attach and detach advances the port's generation; events
+ * pushed under an older one are dropped by the audio thread and counted
+ * (le_snapshot.midi_in_stale). A push into a full ring sets the port's
+ * overflow flag, counted once per block that finds it
+ * (le_snapshot.midi_in_overflows), so a consumer can release whatever the
+ * dropped messages would have released. A capture whose device disappears, or
+ * that is closed while attached, marks its port lost (midi_in_lost counts
+ * each such edge).
+ *
+ * Threading: attach, detach, le_midi_close/destroy and le_engine_destroy run
+ * on one control thread and are not called concurrently. Detach and close
+ * wait until no push is in flight, so when they return the capture can no
+ * longer write the port; le_engine_destroy detaches every port first. */
+#define LE_MAX_MIDI_PORTS 8
+
+/* Attaches capture `m` to engine input port `port` (0..LE_MAX_MIDI_PORTS-1).
+ * A capture already attached elsewhere moves; a capture already on `port` is
+ * detached first. Returns LE_OK, or LE_ERR_INVALID for a null handle or a port
+ * out of range. Valid whether or not the engine is configured or running. */
+LE_EXPORT int32_t le_engine_attach_midi_input(le_engine* engine, le_midi* m,
+                                              int32_t port);
+
+/* Detaches whatever capture is on `port`. Returns LE_OK (also when nothing
+ * was attached) or LE_ERR_INVALID for a null engine or a port out of range. */
+LE_EXPORT int32_t le_engine_detach_midi_input(le_engine* engine,
+                                              int32_t port);
 
 /* ---- native USB MIDI output (foot-pedal LED feedback) ---- *
  *
@@ -3443,8 +3571,11 @@ LE_EXPORT int32_t le_engine_set_instrument(le_engine* engine, int32_t slot,
 LE_EXPORT int32_t le_engine_set_instrument_param(le_engine* engine, int32_t slot,
                                                  int32_t param, float value);
 
+/* The voice pool: the highest voice limit. */
+#define LE_INST_MAX_VOICES 64
+
 /* Limits the sounding voices of all instruments together to `limit`
- * (1..64): lowering it fades the excess, the overload
+ * (1..LE_INST_MAX_VOICES): lowering it fades the excess, the overload
  * control. The default after configure is 32. Returns LE_OK, LE_ERR_INVALID
  * or LE_ERR_NOT_RUNNING. */
 LE_EXPORT int32_t le_engine_set_voice_limit(le_engine* engine, int32_t limit);
@@ -3463,11 +3594,95 @@ LE_EXPORT int32_t le_engine_instrument_note_on(le_engine* engine, int32_t slot,
                                                uint32_t origin, int32_t note,
                                                int32_t velocity);
 
+/* One origin, one sounding note: a note-on for an origin whose voice is
+ * still held on that slot replaces it (the repeated-strike rule; a voice
+ * held on only by sustain rings on). A chord with one identity goes through
+ * here instead: `count` (1..LE_INST_CHORD_NOTES) notes started together
+ * for `origin`, released together by its note-off. All or nothing: returns
+ * LE_OK, LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT, LE_ERR_CAPACITY (no room
+ * for every note; nothing is played, one refusal is counted) or
+ * LE_ERR_NOT_RUNNING. */
+#define LE_INST_CHORD_NOTES 8
+LE_EXPORT int32_t le_engine_instrument_chord_on(le_engine* engine,
+                                                int32_t slot, uint32_t origin,
+                                                const int32_t* notes,
+                                                int32_t count,
+                                                int32_t velocity);
+
 /* Releases every voice started for `origin`, on every instrument. Rides the
  * reserved release lane. Returns LE_OK, LE_ERR_CAPACITY (the release lane is
  * full: the caller must retry, never drop it) or LE_ERR_NOT_RUNNING. */
 LE_EXPORT int32_t le_engine_instrument_note_off(le_engine* engine,
                                                 uint32_t origin);
+
+/* Adds (`on` 1) or removes (0) sustain contributor `origin` on `slot`: a
+ * pedal or external switch holding sustain. Released notes ring until every
+ * contributor, these and each port's CC64, lets go. Adding rides the note-on
+ * ring (LE_ERR_CAPACITY like a note-on), removing rides the release lane
+ * (LE_ERR_CAPACITY only when it is full: retry, never drop). Returns LE_OK,
+ * LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (adding on an empty slot) or
+ * LE_ERR_NOT_RUNNING. Control-thread origins share a space of their own:
+ * they never collide with a MIDI port's notes. */
+LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
+                                               uint32_t origin, int32_t on);
+
+/* ---- Instrument MIDI routes (#1197 Part 2c) ---------------------------------
+ * Which MIDI each instrument plays, from the ports of the shared input sink
+ * (le_engine_attach_midi_input). Routing runs on the audio thread, in the
+ * sink's drain: a Note Off (or Note On at velocity 0) releases every voice
+ * that note started, on every instrument, before any table is read, so
+ * editing a route never strands a held note; CC64 below 64 likewise removes
+ * that port and channel's sustain everywhere. Otherwise each message goes to
+ * every instrument it matches (layers), and channels and ranges make splits:
+ *   - a remap matching the message's port, channel (0: any) and kind/number
+ *     plays its notes (a chord with one identity) instead of the ordinary
+ *     handling of that message on that instrument (so a remapped CC64 does
+ *     not also sustain);
+ *   - otherwise, with MIDI enabled and the port and channel matching: Note
+ *     On within [low, high] plays the incoming note and velocity; CC64 >= 64
+ *     sustains; CC1 sets modulation; pitch bend (two semitones) and channel
+ *     pressure set expression.
+ * A port whose capture is detached, replaced, lost or overran its ring
+ * releases every voice it started, after the events queued before the loss
+ * have been played; nothing from an old binding replays. */
+
+#define LE_INST_MAX_REMAPS 32
+#define LE_INST_REMAP_NOTES 8
+#define LE_INST_REMAP_NOTE 0
+#define LE_INST_REMAP_CC 1
+
+typedef struct le_inst_remap {
+  int32_t port;    /* 0..LE_MAX_MIDI_PORTS-1 */
+  int32_t channel; /* 0: any, 1..16 */
+  int32_t kind;    /* LE_INST_REMAP_NOTE or LE_INST_REMAP_CC */
+  int32_t number;  /* the note or controller, 0..127 */
+  int32_t count;   /* notes to play, 1..LE_INST_REMAP_NOTES */
+  int32_t notes[LE_INST_REMAP_NOTES];
+} le_inst_remap;
+
+typedef struct le_inst_route {
+  int32_t midi_enabled; /* 0/1: ordinary notes and controllers */
+  int32_t port;         /* 0..LE_MAX_MIDI_PORTS-1 */
+  int32_t channel;      /* 0: any, 1..16 */
+  int32_t low, high;    /* note range, 0 <= low <= high <= 127 */
+  int32_t remap_count;  /* 0..LE_INST_MAX_REMAPS; remaps, like ordinary
+                         * notes, need midi_enabled */
+  le_inst_remap remaps[LE_INST_MAX_REMAPS];
+} le_inst_route;
+
+typedef struct le_inst_routes {
+  le_inst_route inst[LE_MAX_INSTRUMENTS];
+} le_inst_routes;
+
+/* Publishes a complete routing table (copied; the caller keeps its own).
+ * While the audio callback runs, a table is switched in at the next block
+ * and acknowledged there; a second publish before that acknowledgement
+ * returns LE_ERR_NOT_READY (retry on the next snapshot, latest wins). While
+ * the engine is stopped the table switches at once. Returns LE_OK,
+ * LE_ERR_INVALID (a field out of range), LE_ERR_NOT_READY or
+ * LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_set_instrument_routes(le_engine* engine,
+                                                  const le_inst_routes* routes);
 
 /* ---- Instrument synthesis catalogue (#1197) ------------------------------ *
  *

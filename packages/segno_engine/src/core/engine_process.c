@@ -6367,6 +6367,137 @@ void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
 
 /* ---- the real-time DSP core ---- */
 
+/* Running totals of one drain (published once, after every port). */
+typedef struct le_midi_drain_counts {
+  uint32_t events, stale, gaps, lost, rebinds;
+} le_midi_drain_counts;
+
+/* The one place the drain hands something to its consumers, in the order
+ * this is called. Instrument routing (#1197 Part 2c) plays an event and ends
+ * the port's notes, sustain and expression on a GAP, LOST or REBOUND; MIDI
+ * clock (#1228 Part 2) acts here too. */
+static void le_midi_port_dispatch(le_engine* e, int port, int kind,
+                                  const le_midi_port_event* ev,
+                                  le_midi_drain_counts* n) {
+  switch (kind) {
+    case LE_MIDI_DISPATCH_EVENT:
+      n->events++;
+      le_instruments_midi_event(e, port, ev);
+      break;
+    case LE_MIDI_DISPATCH_GAP:
+      n->gaps++;
+      le_instruments_midi_gone(e, port);
+      break;
+    case LE_MIDI_DISPATCH_LOST:
+      n->lost++;
+      le_instruments_midi_gone(e, port);
+      break;
+    case LE_MIDI_DISPATCH_REBOUND:
+      n->rebinds++;
+      le_instruments_midi_gone(e, port);
+      break;
+    default: break;
+  }
+#ifdef LE_NATIVE_TESTS
+  if (le_test_midi_dispatch_hook) le_test_midi_dispatch_hook(e, port, kind, ev);
+#else
+  (void)e;
+  (void)port;
+  (void)ev;
+#endif
+}
+
+/* The native MIDI input sink (#1228 Part 1; le_midi_port.h): drains every
+ * port ring once per block, right after the command drain, so a message is
+ * at most one block old when it is applied. It is the only consumer of the
+ * ports: it alone clears a port's gap and observes lost and binding edges,
+ * and dispatches everything (le_midi_port_dispatch) in stream order:
+ *   1. REBOUND when the port's generation moved since the last drain (a
+ *      detach, a rebind, or a close followed at once by an attach): whatever
+ *      the earlier binding started is over. Its queued events are dropped as
+ *      stale and counted, never applied.
+ *   2. The current binding's events in ring order. A gap (a full ring
+ *      dropped messages) is dispatched at its exact position: after the
+ *      last event queued before the loss. A binding that changes during the
+ *      drain is dispatched as REBOUND at the first event of the new
+ *      generation.
+ *   3. LOST after the events: the lost flag is read (acquire) before the
+ *      pops, and the producer marks it after pushing everything it read
+ *      before the device went away, so those events come first.
+ * Instruments release a port's voices on GAP, LOST and REBOUND (review H3);
+ * the clock follower counts pulses across a GAP and goes Lost on LOST.
+ * Bounded: at most LE_MIDI_PORT_RING_CAP events per port per block, no
+ * allocation, no lock. */
+static void le_midi_ports_drain(le_engine* e) {
+  le_midi_drain_counts n = {0u, 0u, 0u, 0u, 0u};
+  le_instruments_midi_begin(e); /* this block's route table (#1197 Part 2c) */
+  for (int p = 0; p < LE_MAX_MIDI_PORTS; ++p) {
+    le_midi_port* port = &e->midi_ports[p];
+    const int32_t is_lost =
+        atomic_load_explicit(&port->a_lost, memory_order_acquire);
+    uint32_t gen = atomic_load_explicit(&port->a_gen, memory_order_acquire);
+    if (gen != e->midi_port_gen_seen[p]) {
+      e->midi_port_gen_seen[p] = gen;
+      le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_REBOUND, NULL, &n);
+    }
+    /* Read before popping: every event queued below the gap index precedes
+     * the loss, so the gap is dispatched when the pop reaches that index. */
+    const size_t gap = le_midi_port_gap(port);
+    int gap_reported = 0;
+    le_midi_port_event ev;
+    size_t index = 0;
+    for (uint32_t k = 0;
+         k < LE_MIDI_PORT_RING_CAP && le_midi_port_pop(port, &ev, &index); ++k) {
+      if (gap != 0 && !gap_reported && index + 1u >= gap) {
+        le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_GAP, NULL, &n);
+        gap_reported = 1;
+      }
+      if (ev.gen != gen) {
+        /* A binding made while this drain runs pushes a newer generation
+         * (generations only increase): that is a rebind, not staleness. */
+        const uint32_t now_gen =
+            atomic_load_explicit(&port->a_gen, memory_order_acquire);
+        if (ev.gen != now_gen) {
+          n.stale++;
+          continue;
+        }
+        gen = now_gen;
+        e->midi_port_gen_seen[p] = gen;
+        le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_REBOUND, NULL, &n);
+      }
+      le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_EVENT, &ev, &n);
+    }
+    if (gap != 0) {
+      if (!gap_reported) {
+        /* The loss follows every queued event. */
+        le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_GAP, NULL, &n);
+      }
+      le_midi_port_clear_gap(port, gap);
+    }
+    if (is_lost && !e->midi_port_lost_seen[p]) {
+      le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_LOST, NULL, &n);
+    }
+    e->midi_port_lost_seen[p] = is_lost;
+  }
+  if (n.events) {
+    atomic_fetch_add_explicit(&e->a_midi_in_events, n.events, memory_order_relaxed);
+  }
+  if (n.stale) {
+    atomic_fetch_add_explicit(&e->a_midi_in_stale, n.stale, memory_order_relaxed);
+  }
+  if (n.gaps) {
+    atomic_fetch_add_explicit(&e->a_midi_in_overflows, n.gaps,
+                              memory_order_relaxed);
+  }
+  if (n.lost) {
+    atomic_fetch_add_explicit(&e->a_midi_in_lost, n.lost, memory_order_relaxed);
+  }
+  if (n.rebinds) {
+    atomic_fetch_add_explicit(&e->a_midi_in_rebinds, n.rebinds,
+                              memory_order_relaxed);
+  }
+}
+
 void le_engine_process(le_engine* e, float* output, const float* input,
                        uint32_t frames) {
   le_flush_denormals(); /* per-thread; cheap to reassert every callback */
@@ -6391,9 +6522,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     e->commands_applied++; /* rejected and no-op commands settle too */
   }
 
-  /* Instruments (#1197): parameter changes, the note rings in posting order,
-   * then this block of every instrument's bus, ahead of the frame loop. */
-  le_instruments_block(e, frames);
+  /* Instruments (#1197): parameter changes and the note rings in posting
+   * order before the MIDI drain, so a MIDI note meets a patch posted ahead
+   * of it (review L2); then this block of every instrument's bus, ahead of
+   * the frame loop. */
+  le_instruments_apply(e);
+  le_midi_ports_drain(e);
+  le_instruments_render(e, frames);
 
   /* Close the count-in cancel-race grace window (code-review fix) right
    * after this block's command drain: it is open for exactly one block's

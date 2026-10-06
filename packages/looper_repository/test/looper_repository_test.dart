@@ -6255,7 +6255,7 @@ void main() {
             'clear',
             'clear',
             'importLayer',
-            'finalizeLayers',
+            'finalizeHistory',
             'commitSession',
             'setLaneMute',
             'setMix',
@@ -7202,6 +7202,13 @@ void main() {
         final undo0 = Float32List.fromList([1, 1, 1, 1]);
         final live = Float32List.fromList([2, 2, 2, 2]);
         final redo0 = Float32List.fromList([3, 3, 3, 3]);
+        // An overdub beneath the live image; above it a Peel marker (no
+        // image) and then a restoration image (#1164).
+        const history = TrackHistory([
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.peel),
+          HistoryEntry(HistoryKind.processed),
+        ], undoCount: 1);
         await repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
@@ -7217,8 +7224,7 @@ void main() {
                     muted: false,
                     outputMask: 0x3,
                     inputChannel: 0,
-                    undoCount: 1,
-                    redoCount: 1,
+                    history: history,
                   ),
                 ],
               ),
@@ -7230,8 +7236,9 @@ void main() {
         expect(engine.importedLayers[(0, 0, 0)], undo0);
         expect(engine.importedLayers[(0, 0, 1)], live);
         expect(engine.importedLayers[(0, 0, 2)], redo0);
-        // The reconstructed stacks are published with the shared depths.
-        expect(engine.finalizedLayers[0], (1, 1));
+        expect(engine.importedLayers.containsKey((0, 0, 3)), isFalse);
+        // The reconstructed stacks are published with their kinds.
+        expect(engine.finalizedHistory[0], history);
       },
     );
   });

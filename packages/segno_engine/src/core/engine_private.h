@@ -84,6 +84,16 @@ inline T le_cxx_atomic_exchange(T* slot, V value) {
 #include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
+#include "le_midi_port.h"      /* le_midi_port (the native MIDI input sink, #1228) */
+
+/* What le_midi_ports_drain hands its consumers, in ring order (#1228). */
+typedef enum le_midi_dispatch_kind {
+  LE_MIDI_DISPATCH_EVENT = 0,   /* one message of the current binding */
+  LE_MIDI_DISPATCH_GAP = 1,     /* messages were lost here (a full ring) */
+  LE_MIDI_DISPATCH_LOST = 2,    /* the bound device went away */
+  LE_MIDI_DISPATCH_REBOUND = 3, /* the binding ended or changed: everything
+                                 * earlier from this port is over */
+} le_midi_dispatch_kind;
 #include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
 #include "engine_direction.h"
 #include "engine_fade.h"
@@ -1099,7 +1109,7 @@ typedef struct le_track {
    *   clear-restore (#219)         | control | le_restore_clear (the a_live
    *                                |         | swap; the audio flip follows)
    *   session load (import)        | control | le_engine_import_track_lane
-   *   session load (layered)       | control | le_engine_finalize_layers
+   *   session load (layered)       | control | le_engine_finalize_history
    *                                |         | (covers le_engine_import_layer:
    *                                |         | layers fill while EMPTY and
    *                                |         | publish only at finalize)
@@ -1630,6 +1640,31 @@ struct le_engine {
   _Atomic uint32_t a_synth_epoch;
   _Atomic uint32_t a_inst_events_refused;
   _Atomic uint32_t a_inst_fallback_blocks;
+  _Atomic uint32_t a_inst_sustain_refused;
+  /* MIDI routes (#1197 Part 2c): two tables, the control thread writes the
+   * one the callback is not using and flips `a_inst_routes_live`; the
+   * callback acknowledges in `a_inst_routes_seen` at block start. */
+  le_inst_routes inst_routes[2];
+  /* Per table, which channels any remap covers for each port, kind (note,
+   * CC) and number (bit c: MIDI channel c + 1). Built with its table on the
+   * control thread, so a message no remap can match skips the remap scan of
+   * every instrument. */
+  uint16_t inst_remap_index[2][LE_MAX_MIDI_PORTS][2][128];
+  /* and which instruments carry such a remap (bit k: instrument k), and
+   * where in each instrument's list the first one sits, so an admitted
+   * message starts its scan there on those instruments only */
+  uint8_t inst_remap_insts[2][LE_MAX_MIDI_PORTS][2][128];
+  uint8_t inst_remap_first[2][LE_MAX_INSTRUMENTS][LE_MAX_MIDI_PORTS][2][128];
+  _Atomic int32_t a_inst_routes_live;
+  _Atomic int32_t a_inst_routes_seen;
+  /* audio thread: this block's table and remap index, and the port that
+   * last set each instrument's bend, modulation and pressure (-1: none), so
+   * a port that goes away resets only its own */
+  const le_inst_routes* inst_routes_active;
+  const uint16_t (*inst_remap_active)[2][128];
+  const uint8_t (*inst_remap_insts_active)[2][128];
+  const uint8_t (*inst_remap_first_active)[LE_MAX_MIDI_PORTS][2][128];
+  int8_t inst_expr_port[LE_MAX_INSTRUMENTS][3];
 
   /* ---- Input clip ("HOT") detector (input clip, S2) ---- *
    * Always on, no params, RAW path (see the LE_CLIP_* doc in
@@ -1982,6 +2017,24 @@ struct le_engine {
    * like the click/count-in running state above — its SETTING twin
    * (a_clock_mode) is seeded once in le_engine_create and persists. */
   le_midi_clock_gen midi_clock;
+
+  /* The native MIDI input sink (#1228 Part 1; le_midi_port.h). Each port is
+   * fed by the capture attached to it (le_engine_attach_midi_input) and
+   * drained by the audio thread at block start (le_midi_ports_drain). The
+   * bindings live in the ports themselves (a_owner), never in Dart. */
+  le_midi_port midi_ports[LE_MAX_MIDI_PORTS];
+  /* Audio-thread only: each port's lost flag and generation as of the last
+   * drain, so a loss and a binding change are each dispatched once per edge
+   * (a close followed at once by an attach moves the generation even though
+   * the lost flag is already clear again). */
+  int32_t midi_port_lost_seen[LE_MAX_MIDI_PORTS];
+  uint32_t midi_port_gen_seen[LE_MAX_MIDI_PORTS];
+  /* Published totals (le_snapshot.midi_in_*). */
+  _Atomic uint32_t a_midi_in_rebinds;
+  _Atomic uint32_t a_midi_in_events;
+  _Atomic uint32_t a_midi_in_stale;
+  _Atomic uint32_t a_midi_in_overflows;
+  _Atomic uint32_t a_midi_in_lost;
 
   /* Quantized recording (control-thread-owned). When `quantize` is set, a record
    * press over an existing master arms `armed[ch]` (and does the one-time prep
