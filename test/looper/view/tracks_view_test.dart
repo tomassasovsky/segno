@@ -2416,15 +2416,25 @@ void main() {
         tester.getSize(find.byKey(const Key('mixer_mute_0'))).width,
         greaterThan(35),
       );
-      for (final key in ['mixer_mute_0', 'mixer_solo_0']) {
-        final label = tester.renderObject<RenderParagraph>(
-          find.descendant(
-            of: find.byKey(Key(key)),
-            matching: find.byType(Text),
-          ),
+      final sizes = <double>{};
+      for (final key in ['mixer_mute_0', 'mixer_solo_0', 'mixer_fx_edit_0']) {
+        final text = find.descendant(
+          of: find.byKey(Key(key)),
+          matching: find.byType(Text),
         );
+        final label = tester.renderObject<RenderParagraph>(text);
         expect(label.size.height, lessThan(35));
+        // Every label fits on one line inside its button, at one shared
+        // size: a narrow strip shrinks the row together.
+        expect(label.didExceedMaxLines, isFalse, reason: key);
+        expect(
+          label.size.width,
+          lessThanOrEqualTo(tester.getSize(find.byKey(Key(key))).width),
+          reason: key,
+        );
+        sizes.add(tester.widget<Text>(text).style!.fontSize!);
       }
+      expect(sizes, hasLength(1));
       expect(
         meter.top,
         closeTo(scale.top + MixerColumn.meterTopInset * factor, 0.05),
