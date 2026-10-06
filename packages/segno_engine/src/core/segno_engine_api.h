@@ -3067,6 +3067,8 @@ LE_EXPORT int32_t le_digest_file(const char* path, uint64_t offset,
  * LE_ERR_INVALID for a NULL state or out, a `state_bytes` below
  * LE_DIGEST_STATE_BYTES, NULL `data` with a non-zero length, or a length this
  * platform cannot address. */
+/* Keep this a plain number: ffigen only exports a macro that is a literal,
+ * and the Dart side sizes its state buffer from the generated constant. */
 #define LE_DIGEST_STATE_BYTES 128
 LE_EXPORT int32_t le_digest_begin(void* state, uint64_t state_bytes);
 LE_EXPORT int32_t le_digest_update(void* state, const void* data,
