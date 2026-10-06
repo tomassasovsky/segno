@@ -792,6 +792,95 @@ void main() {
     });
   }
 
+  testWidgets('Custom shows its face, and an on-screen press on an '
+      'assignment this build cannot run says so', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(const LooperState(tracks: [Track()]));
+    pedalLink.hello();
+    await tester.runAsync(
+      () => control.setPedalSetup(
+        const PedalSetup().withCustom(
+          PedalButton.clear,
+          bank: 0,
+          pair: const ControlGesturePair(
+            press: UnavailableAction('future:thing'),
+          ),
+        ),
+      ),
+    );
+    await pump(tester);
+    control.setMode(InteractionMode.custom);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('foot_custom_view')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('foot_custom_pedal_clear')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('future:thing is unavailable right now.').hitTestable(),
+      findsOneWidget,
+    );
+    expect(control.state.assignedActionFailure, 1);
+    dismissAppToast(AppToastId.assignedActionRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  testWidgets('a refused assignment is named in its notice', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+      ),
+    );
+    when(
+      () => repository.undo(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.invalid);
+    const undo = TrackOperationAction(
+      operation: TrackOperation.undo,
+      scope: FixedTrackScope(0),
+    );
+    pedalLink.hello();
+    await tester.runAsync(
+      () => control.setPedalSetup(
+        const PedalSetup().withCustom(
+          PedalButton.clear,
+          bank: 0,
+          pair: const ControlGesturePair(press: undo),
+        ),
+      ),
+    );
+    await pump(tester);
+    control.setMode(InteractionMode.custom);
+    await tester.pumpAndSettle();
+    pedalLink.press(PedalButton.clear, down: true);
+    await tester.pump(const Duration(milliseconds: 50));
+    pedalLink.press(PedalButton.clear, down: false);
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expect(
+      find
+          .text(
+            l10n.assignedActionRefused(
+              controlActionLabel(l10n, const [], undo),
+            ),
+          )
+          .hitTestable(),
+      findsOneWidget,
+    );
+    expect(control.state.assignedActionFailure, 1);
+    dismissAppToast(AppToastId.assignedActionRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
   testWidgets('the layer badge drops by one when a Peel removes a layer', (
     tester,
   ) async {

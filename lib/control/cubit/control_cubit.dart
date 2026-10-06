@@ -2143,6 +2143,53 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  /// Admits a screen contact on the Custom face into the shared ledger.
+  void footCustomPressed(PedalButton button, Object contact) {
+    if (state.mode != InteractionMode.custom || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the admitted screen contact may complete its Custom gesture.
+  void footCustomReleased(PedalButton button, Object contact) =>
+      footMixerReleased(button, contact);
+
+  /// Cancels an abandoned Custom contact without its short action.
+  void footCustomCancelled(PedalButton button, Object contact) {
+    if (isClosed ||
+        _inputRetired ||
+        !identical(_pressedButtons[button], contact)) {
+      return;
+    }
+    _bindingGestures[button]?.cancel();
+    _pressedButtons.remove(button);
+    _acceptedContacts.remove(button);
+    _customActiveKeys.remove(button);
+    _pushProjected();
+  }
+
+  /// Accessible semantic activation: [button]'s Press, or its Hold when
+  /// [hold] is set, as the foot would run it.
+  void activateFootCustomPedal(PedalButton button, {bool hold = false}) {
+    if (state.mode != InteractionMode.custom || isClosed || _takeLocked()) {
+      return;
+    }
+    switch (button) {
+      case PedalButton.mode:
+        setMode(InteractionMode.record);
+      case PedalButton.bank:
+        if (!hold) toggleBankWithCursor();
+      case PedalButton.recPlay ||
+          PedalButton.stop ||
+          PedalButton.undo ||
+          PedalButton.clear ||
+          PedalButton.track1 ||
+          PedalButton.track2 ||
+          PedalButton.track3 ||
+          PedalButton.track4:
+        _fireCustomAction(button, hold: hold);
+    }
+  }
+
   /// Admits a screen contact on the Peel surface into the shared ledger.
   void footPeelPressed(PedalButton button, Object contact) {
     if (state.mode != InteractionMode.peel || isClosed) return;
@@ -2502,7 +2549,13 @@ class ControlCubit extends Cubit<ControlState> {
     final bank = state.activeBank;
     final pair = state.pedalSetup.customFor(button, bank: bank);
     final action = hold ? pair.hold : pair.press;
-    if (action == null || action is UnavailableAction) return;
+    if (action == null) return;
+    if (action is UnavailableAction) {
+      // A saved assignment this build cannot honour says so, as any refused
+      // assignment does (#1229).
+      _reportAssignedAction(action, _looper.sessionRevision);
+      return;
+    }
     _syncCustomSession();
     final key = PedalBindingKey(
       button: button,
@@ -2589,7 +2642,50 @@ class ControlCubit extends Cubit<ControlState> {
   };
 
   /// One dispatcher for the current supported catalogue actions.
+  /// Runs an ASSIGNED [action] (a Custom switch, a CTRL switch or a MIDI
+  /// control) and says so once when it is refused (#1229, notice policy rule
+  /// 3). Actions with a notice of their own keep it and add none: Fade,
+  /// Reverse and Peel report from any mode, and a refused performance arm has
+  /// its own toast.
   FutureOr<bool> _runAction(ControlAction action, List<int> channels) {
+    final session = _looper.sessionRevision;
+    final result = _runAssigned(action, channels);
+    if (_hasOwnRefusalNotice(action)) return result;
+    if (result is Future<bool>) {
+      return result.then((accepted) {
+        if (!accepted) _reportAssignedAction(action, session);
+        return accepted;
+      });
+    }
+    if (!result) _reportAssignedAction(action, session);
+    return result;
+  }
+
+  static bool _hasOwnRefusalNotice(ControlAction action) => switch (action) {
+    TrackOperationAction(
+      operation: TrackOperation.fade ||
+          TrackOperation.reverse ||
+          TrackOperation.peel,
+    ) =>
+      true,
+    CommandAction(command: ControlCommand.recordPerformance) => true,
+    _ => false,
+  };
+
+  /// Notifies one refused assigned [action], unless the Session it was fired
+  /// in has since been replaced (the refusal then belongs to a rig that is
+  /// gone).
+  void _reportAssignedAction(ControlAction action, int session) {
+    if (isClosed || _closing || _looper.sessionRevision != session) return;
+    emit(
+      state.copyWith(
+        assignedActionFailure: state.assignedActionFailure + 1,
+        assignedActionRefusal: action,
+      ),
+    );
+  }
+
+  FutureOr<bool> _runAssigned(ControlAction action, List<int> channels) {
     switch (action) {
       case UnavailableAction():
         return false;
@@ -3364,6 +3460,13 @@ class ControlCubit extends Cubit<ControlState> {
     // until some audio activity happened to push a state.
     final looperState = _l;
     final customFunctions = _customFunctionStates(looperState);
+    final physicalCustom = _physicalCustomStates(looperState, customFunctions);
+    // The Custom face reads the same values the switch LEDs do, so the screen
+    // and the plate can never disagree (#1229). Published only on change; the
+    // frame below already reflects it.
+    if (!isClosed && !_sameLit(state.customLit, physicalCustom)) {
+      super.emit(state.copyWith(customLit: physicalCustom));
+    }
     final frame = projectFrame(
       looperState,
       state,
@@ -3372,11 +3475,15 @@ class ControlCubit extends Cubit<ControlState> {
       masterGain: _masterGain,
       boundChains: _boundChains(),
       customFunctions: customFunctions,
-      physicalCustomStates: _physicalCustomStates(looperState, customFunctions),
+      physicalCustomStates: physicalCustom,
       acceptedContacts: _acceptedContacts,
     );
     _pedal.pushState(frame);
   }
+
+  static bool _sameLit(Map<PedalButton, bool> a, Map<PedalButton, bool> b) =>
+      a.length == b.length &&
+      a.entries.every((entry) => b[entry.key] == entry.value);
 
   void _syncCustomSession() {
     final session = _looper.sessionRevision;

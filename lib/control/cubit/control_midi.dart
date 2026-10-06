@@ -586,7 +586,12 @@ extension MidiControlEditing on ControlCubit {
             case MidiActionRun(:final key, :final expectsEnd):
               if (_takeLocked()) continue;
               final action = ControlAction.tryParse(key);
-              if (action == null) continue;
+              if (action == null) {
+                // A mapping this build cannot honour says so, as any
+                // refused assignment does (#1229).
+                _reportAssignedAction(UnavailableAction(key), session);
+                continue;
+              }
               final channels = List<int>.unmodifiable(
                 _channelsForAction(action),
               );

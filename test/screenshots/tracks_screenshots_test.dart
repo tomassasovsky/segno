@@ -45,6 +45,25 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
     implements TransportClockCubit {}
 
+/// A performance repository whose capture status a scene sets, so the
+/// Control owner's armed LED follows the recorder the scene shows.
+class _ScenePerformance extends PerformanceRepository {
+  _ScenePerformance()
+    : super(
+        guards: GuardRegistry(),
+        engine: FakeAudioEngine(),
+        exportsRoot: () async => '.',
+      );
+
+  final status = StreamController<PerformanceCaptureStatus>.broadcast();
+
+  @override
+  Stream<PerformanceCaptureStatus> get captureStatus async* {
+    yield PerformanceCaptureStatus.idle;
+    yield* status.stream;
+  }
+}
+
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
@@ -112,7 +131,7 @@ void main() {
   late LooperRepository repository;
   late SettingsRepository settings;
   late SessionCubit session;
-  late PerformanceRepository performance;
+  late _ScenePerformance performance;
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
@@ -180,11 +199,8 @@ void main() {
     ).thenAnswer((_) => const Stream.empty());
     final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
-    performance = PerformanceRepository(
-      guards: GuardRegistry(),
-      engine: FakeAudioEngine(),
-      exportsRoot: () async => '.',
-    );
+    performance = _ScenePerformance();
+    addTearDown(performance.status.close);
     fxPersistence = FxChainPersistence(looper: repository);
     mixSettings = testMixSettings(repository, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
@@ -550,6 +566,137 @@ void main() {
       await expectLater(
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_peel_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // Foot Custom (pen 10 `uEukr`, and 20/03 `E7kQV` while a performance
+  // records). The build dims only unassigned switches (`MV9wz`); the pen
+  // also dims assigned Record / Play and Undo (write-back W2).
+  for (final scene in ['default', 'recording']) {
+    testWidgets('Foot Custom $scene scene', (tester) async {
+      const selected = SelectedTrackScope();
+      var setup = const PedalSetup()
+          .withCustom(
+            PedalButton.clear,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: TrackOperationAction(
+                operation: TrackOperation.mute,
+                scope: selected,
+              ),
+            ),
+          )
+          .withCustom(
+            PedalButton.recPlay,
+            bank: 0,
+            pair: const ControlGesturePair(
+              hold: TrackOperationAction(
+                operation: TrackOperation.peel,
+                scope: selected,
+              ),
+            ),
+          )
+          .withCustom(
+            PedalButton.undo,
+            bank: 0,
+            pair: const ControlGesturePair(
+              hold: CommandAction(ControlCommand.redo),
+            ),
+          )
+          .withCustom(
+            PedalButton.track1,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: UnavailableAction('instrument:transpose'),
+              hold: TrackOperationAction(
+                operation: TrackOperation.reverse,
+                scope: selected,
+              ),
+            ),
+          )
+          .withCustom(
+            PedalButton.track2,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: ModeAction(InteractionMode.fx),
+              hold: UnavailableAction('tuner'),
+            ),
+          )
+          .withCustom(
+            PedalButton.track3,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: TrackOperationAction(
+                operation: TrackOperation.fade,
+                scope: selected,
+              ),
+              hold: TrackOperationAction(
+                operation: TrackOperation.peel,
+                scope: selected,
+              ),
+            ),
+          )
+          .withCustom(
+            PedalButton.track4,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: ModeAction(InteractionMode.mixer),
+              hold: UnavailableAction('instrument:speed'),
+            ),
+          );
+      if (scene == 'recording') {
+        setup = setup.withCustom(
+          PedalButton.stop,
+          bank: 0,
+          pair: const ControlGesturePair(
+            press: CommandAction(ControlCommand.recordPerformance),
+          ),
+        );
+        when(() => performanceRecorder.state).thenReturn(
+          const PerformanceRecorderArmed(
+            elapsed: Duration(minutes: 1, seconds: 23),
+            overrun: false,
+          ),
+        );
+      }
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            for (var channel = 0; channel < 8; channel++)
+              Track(
+                channel: channel,
+                state: channel < 3 ? TrackState.playing : TrackState.empty,
+                lengthFrames: channel < 3 ? 48000 : 0,
+              ),
+          ],
+        ),
+      );
+      await tester.runAsync(() => control.setPedalSetup(setup));
+      control.setMode(InteractionMode.custom);
+      if (scene == 'recording') {
+        performance.status.add(PerformanceCaptureStatus.armed);
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      }
+      await pump(tester);
+      expect(tester.takeException(), isNull);
+      if (scene == 'recording') {
+        expect(control.state.customLit[PedalButton.stop], isTrue);
+      }
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile(
+          scene == 'default'
+              ? 'goldens/foot_custom.png'
+              : 'goldens/foot_custom_recording.png',
+        ),
       );
     }, skip: !hasScreenshotFonts);
   }
