@@ -398,6 +398,7 @@ class _Card extends StatelessWidget {
                     semanticLabel: '${card.label} $lowCaption',
                     readout: (value) => _valueLabel(l10n, key, value),
                     enabled: editable,
+                    max: lengthTarget?.mappingTop ?? 1,
                     keyboardStep: lengthTarget is RecordLengthValueTarget
                         ? 1 / 64
                         : lengthTarget is RecordTimingValueTarget
@@ -417,6 +418,7 @@ class _Card extends StatelessWidget {
                   semanticLabel: '${card.label} ${captions.high}',
                   readout: (value) => _valueLabel(l10n, key, value),
                   enabled: editable,
+                  max: lengthTarget?.mappingTop ?? 1,
                   keyboardStep: lengthTarget is RecordLengthValueTarget
                       ? 1 / 64
                       : lengthTarget is RecordTimingValueTarget
@@ -483,11 +485,13 @@ class _Range extends StatelessWidget {
     required this.onDoubleTap,
     required this.onEditCancel,
     this.keyboardStep = 0.01,
+    this.max = 1,
     super.key,
   });
 
   final String caption;
   final double value;
+  final double max;
   final double width;
   final String semanticLabel;
   final String Function(double) readout;
@@ -535,6 +539,7 @@ class _Range extends StatelessWidget {
             // mapping dispatches nothing.
             enabled: enabled,
             keyboardStep: keyboardStep,
+            max: max,
             onChanged: onChanged,
             onDoubleTap: onDoubleTap,
             onEditCancel: onEditCancel,
