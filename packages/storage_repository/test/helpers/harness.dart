@@ -1,5 +1,9 @@
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:segno_engine/segno_engine.dart'
+    as engine
+    show FileDigest, RenameOutcome, StorageIo;
 import 'package:storage_repository/storage_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 
@@ -14,8 +18,11 @@ class Harness {
   final Directory root;
   final spaces = <String, VolumeSpace?>{};
 
+  /// The engine's storage primitives, over the real filesystem.
+  final io = FakeStorageIo();
+
   /// Every directory the repository synced, in order.
-  final synced = <String>[];
+  List<String> get synced => io.synced;
   late FakeUsbStorageClient client;
 
   String get exports => '${root.path}/exports';
@@ -59,10 +66,7 @@ class Harness {
       client: client,
       exportsRoot: () async => exports,
       volumeSpace: (path) => spaces[path],
-      syncDirectory: (directory) {
-        synced.add(directory);
-        return true;
-      },
+      storageIo: io,
       copyBytes: copyBytes,
       volumeLossGrace: volumeLossGrace,
     );
@@ -84,6 +88,56 @@ class Harness {
   }
 
   void dispose() => root.deleteSync(recursive: true);
+}
+
+/// [engine.StorageIo] over the real filesystem: the rename without
+/// replacement is check-then-rename (enough for one isolate), and it can
+/// play a filesystem that cannot refuse a replacement, and a directory whose
+/// sync fails.
+class FakeStorageIo implements engine.StorageIo {
+  /// Every directory synced, in order.
+  final synced = <String>[];
+
+  /// Directories whose sync fails, as the engine reports it.
+  final failingSyncs = <String>{};
+
+  /// False plays a filesystem without `RENAME_NOREPLACE`.
+  bool canRefuseReplacement = true;
+
+  /// Every rename without replacement asked for, and whether anything stood
+  /// at the new name when it was asked.
+  final renames = <({String from, String to, bool taken})>[];
+
+  @override
+  void syncDirectory(String path) {
+    if (failingSyncs.contains(path)) {
+      throw FileSystemException(
+        'could not sync the directory',
+        path,
+        const OSError('Input/output error', 5),
+      );
+    }
+    synced.add(path);
+  }
+
+  @override
+  engine.RenameOutcome renameWithoutReplacing(String from, String to) {
+    final taken =
+        FileSystemEntity.typeSync(to, followLinks: false) !=
+        FileSystemEntityType.notFound;
+    renames.add((from: from, to: to, taken: taken));
+    if (!canRefuseReplacement) return engine.RenameOutcome.unsupported;
+    if (taken) return engine.RenameOutcome.nameTaken;
+    File(from).renameSync(to);
+    return engine.RenameOutcome.renamed;
+  }
+
+  @override
+  String digestBytes(Uint8List bytes) => throw UnimplementedError();
+
+  @override
+  engine.FileDigest digestFile(String path, {int offset = 0, int? length}) =>
+      throw UnimplementedError();
 }
 
 /// The exception a write meets for OS error [code].

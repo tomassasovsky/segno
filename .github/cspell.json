@@ -527,6 +527,7 @@
     "NOMINMAX",
     "nonint",
     "nopi",
+    "noreplace",
     "normalisation",
     "normalise",
     "notarization",
