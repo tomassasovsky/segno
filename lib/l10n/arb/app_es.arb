@@ -2,8 +2,6 @@
     "@@locale": "es",
     "appMenuLabel": "Segno",
     "settingsMenuItem": "Ajustes…",
-    "settingsSectionUpdates": "Actualizaciones",
-    "updatesIntro": "Mantén Segno al día. La comprobación es de solo lectura; descargar e instalar una actualización siempre es tu decisión.",
     "updatesInstalledVersionLabel": "Versión instalada",
     "updatesChannelLabel": "Canal",
     "updatesVersionValue": "v{version}",
@@ -16,16 +14,10 @@
     "updatesCheckingLabel": "Buscando actualizaciones…",
     "updatesUpToDateTitle": "Estás al día",
     "updatesUpToDateSubtitle": "Esta es la última versión del canal {channel}.",
-    "updatesAvailableTitle": "Actualización disponible: v{version}",
-    "updatesNotesFallback": "Hay una nueva versión disponible.",
     "updatesDownloadTitle": "Descargar e instalar",
-    "updatesDownloadSubtitle": "Prepara la v{version} en el sistema en espera. Nada se reinicia hasta que tú lo decidas.",
-    "updatesDownloadingLabel": "Descargando… {percent}%",
-    "updatesStagedTitle": "Reiniciar para aplicar",
     "updatesStagedSubtitle": "La v{version} está instalada y lista. Reinicia cuando no estés en mitad de una sesión.",
     "updatesRestartBusySubtitle": "Detén la grabación y limpia tu sesión antes de reiniciar.",
     "updatesErrorTitle": "La comprobación de actualizaciones falló",
-    "updatesSizeMb": "{mb} MB",
     "updateBannerTitle": "Actualización disponible — v{version}",
     "updateBannerUpdateAction": "Actualizar…",
     "updateBannerDismissAction": "Ahora no",
@@ -43,26 +35,24 @@
     "singleDisplayNotice": "Solo se detectó una pantalla: la pantalla de forma de onda no está disponible.",
     "audioRecoveryWaitingBanner": "Esperando la interfaz de audio: se iniciará automáticamente al reconectarse.",
     "close": "Cerrar",
-    "mixdownExported": "Mezcla exportada",
-    "stemsExported": "Pistas exportadas",
-    "exportMixdown": "Exportar mezcla",
-    "exportStems": "Exportar pistas",
     "sessionMenuTooltip": "Sesión",
     "a11ySessionMenu": "Menú de sesión",
     "sessionSaved": "Sesión guardada",
     "sessionLoaded": "Sesión cargada",
+    "sessionLoadedConverted": "Sesión convertida desde una versión anterior de Segno. El original se conservó junto a ella.",
+    "sessionLoadedConvertedUnsaved": "Sesión convertida por ahora desde una versión anterior de Segno. No se pudo guardar convertida, así que el archivo original no cambió.",
+    "sessionConvertedMasterMoved": "Sus efectos Master, y los pedales asignados a ellos, ahora actúan en Todas las pistas.",
+    "sessionConvertedMonitorLowered": "Una entrada en vivo por encima del 100% se bajó al 100%.",
+    "sessionConvertedTempoFromLoop": "No guardaba tempo, así que su tempo se tomó de la duración del loop.",
     "sessionSave": "Guardar",
-    "sessionManage": "Sesiones…",
     "sessionSaveAs": "Guardar como…",
     "sessionRename": "Renombrar",
     "sessionDelete": "Eliminar",
     "sessionDuplicate": "Duplicar",
     "sessionDuplicateTitle": "Duplicar como…",
     "sessionUnsaved": "Sin guardar",
-    "sessionsManagerTitle": "Sesiones",
     "sessionDateToday": "hoy {time}",
     "sessionDateYesterday": "ayer",
-    "sessionsEmpty": "Aún no hay sesiones guardadas. Usa «Guardar como…» para crear una.",
     "sessionNewTitle": "Guardar como sesión nueva",
     "sessionRenameTitle": "Renombrar sesión",
     "sessionNameHint": "Nombre de la sesión",
@@ -102,6 +92,7 @@
     },
     "sessionErrorSampleRate": "No se pudo cargar la sesión: se grabó a una frecuencia de muestreo distinta a la del dispositivo actual. Vuelve a abrir el dispositivo a la frecuencia de la sesión e inténtalo de nuevo.",
     "sessionErrorUnsupportedVersion": "No se pudo cargar la sesión: se guardó con una versión más reciente de Segno. Actualiza la aplicación e inténtalo de nuevo.",
+    "sessionErrorUnconvertible": "No se pudo cargar la sesión: se guardó con una versión anterior de Segno que esta versión no puede convertir. La sesión quedó sin cambios.",
     "sessionBootRecoveryTitle": "Hay que recuperar los ajustes de la sesión",
     "sessionBootRecoveryBody": "La sesión cargada está detenida. Reintenta confirmar sus ajustes antes de continuar.",
     "sessionErrorGeneric": "La acción de sesión falló: {details}",
@@ -169,36 +160,17 @@
     "save": "Guardar",
     "trackRoutingTitle": "Enrutamiento de {trackName}",
     "trackSettingsTooltip": "Ajustes de pista",
-    "quantizeRecording": "Cuantizar grabación",
     "done": "Listo",
     "defaultWithState": "Predeterminado ({state})",
     "toggleOn": "Sí",
     "toggleOff": "No",
     "auto": "Auto",
-    "settingsSectionView": "Vista",
-    "settingsSectionAudio": "Audio",
-    "settingsSectionTracks": "Pistas",
-    "settingsKicker": "AJUSTES",
-    "settingsTitle": "Segno",
-    "settingsViewIntro": "Cambia diseños, ajusta los valores predeterminados del looper y activa la pantalla de la pista seleccionada.",
     "viewGroupLabel": "VISTA",
     "waveformWindowTitle": "Pantalla de la pista seleccionada",
     "waveformWindowSubtitle": "Abre una segunda ventana con la pista seleccionada y su forma de onda",
     "highContrastTitle": "Alto contraste",
     "highContrastSubtitle": "Fuerza una paleta más brillante y de mayor contraste. En escritorio, el ajuste de contraste del sistema no se aplica automáticamente.",
-    "looperGroupLabel": "LOOPER",
-    "defaultModeIntro": "Modo en el que inicia el looper: lo que hace una pulsación de pista, desde el pedal, el teclado o la pantalla. Las teclas numéricas seleccionan pistas; en modo Grabar R/P arman y reproducen la selección, en modo Silenciar silencian / activan sonido. El modo FX (donde las pulsaciones de pista alternan las cadenas de FX) no se ofrece aquí: se entra en él en vivo, nunca al iniciar.",
-    "recordModeLabel": "Grabar",
-    "recordModeSub": "Armar y capturar",
-    "muteModeLabel": "Silenciar",
-    "muteModeSub": "Silenciar / activar sonido",
-    "refreshRateIntro": "Frecuencia de actualización de la interfaz — con qué frecuencia se actualizan formas de onda y medidores. Más alto es más fluido pero usa más CPU.",
     "refreshRateHz": "{hz} Hz",
-    "refreshRateLowCpu": "Bajo CPU",
-    "refreshRateSmoothest": "Más fluido",
-    "defaultLabel": "Predeterminado",
-    "tracksIntro": "Renombra las pistas.",
-    "tracksGroupLabel": "PISTAS",
     "lengthPresetBars": "{bars, plural, one{1 compás} other{{bars} compases}}",
     "inputChannelLabel": "Ent {channelNumber}",
     "outputChannelLabel": "Sal {channelNumber}",
@@ -422,30 +394,8 @@
         }
     },
     "startEngine": "Iniciar motor",
-    "sampleRateGroup": "Frecuencia de muestreo",
-    "bufferSizeGroup": "Tamaño del búfer",
-    "asioDriverGroup": "Controlador ASIO",
-    "asioChannelCounts": "{inputs} ent / {outputs} sal",
-    "@asioChannelCounts": {
-        "placeholders": {
-            "inputs": {
-                "type": "int"
-            },
-            "outputs": {
-                "type": "int"
-            }
-        }
-    },
-    "noAsioDriverTitle": "No se encontró ningún controlador ASIO",
-    "noAsioDriverMessage": "Segno usa ASIO en Windows. Instala el controlador ASIO de tu interfaz, u obtén uno genérico de ASIO4ALL, y vuelve a abrir la configuración.",
-    "downloadAsio4all": "Obtener ASIO4ALL",
-    "sampleRateLabel": "Frecuencia de muestreo",
-    "bufferLabel": "Búfer",
     "roundTripLatencyLabel": "Latencia de ida y vuelta",
-    "recordOffsetLabel": "Desplazamiento de grabación",
-    "applyLabel": "Aplicar",
     "measuringEllipsis": "Midiendo…",
-    "measureRoundTripLatency": "Medir latencia de ida y vuelta",
     "stopEngine": "Detener motor",
     "setupBlurbEngine": "Elige la resolución y el equilibrio entre latencia y estabilidad.",
     "setupBlurbInput": "Elige cómo se monitoriza y enruta tu señal entrante.",
@@ -462,32 +412,17 @@
     "noSignalDetected": "Sin señal detectada",
     "latencyMs": "{milliseconds} ms",
     "bufferFrames": "{frames} fotogramas",
-    "sampleRateHz": "{rate} Hz",
     "loopbackDetectedNote": "Loopback detectado{deviceClause} — la latencia se mide automáticamente al iniciar como estimación de ruta digital. Usa un cable para la cifra analógica real.",
     "loopbackAvailableNote": "Hay un loopback {kind} disponible{deviceClause} pero no se puede enrutar automáticamente; usa un cable loopback físico para medir la latencia.",
     "loopbackKindBackend": "loopback",
     "loopbackKindMonitor": "monitor",
     "loopbackKindVirtualDevice": "virtual",
     "failedToOpenDevice": "Error al abrir el dispositivo: {errorName}",
-    "audioSettingsIntro": "Elige el dispositivo de audio y comprueba la latencia de ida y vuelta medida.",
-    "outputDeviceGroupUpper": "DISPOSITIVO DE SALIDA",
-    "inputDeviceGroupUpper": "DISPOSITIVO DE ENTRADA",
     "recordingGroupLabel": "GRABACIÓN",
-    "maxLoopLengthIntro": "Duración máxima del bucle por pista. Un límite mayor reserva más memoria por pista. Cambiarlo reabre el dispositivo.",
     "maxLoopDefault30s": "Predeterminado (30 s)",
     "maxLoopMinutes": "{minutes} min",
-    "quantizeRecordingSubtitle": "Ajusta inicio/fin de grabación a la cuadrícula del bucle. El predeterminado para todas las pistas; anúlalo por pista desde su diálogo de enrutamiento.",
-    "overdubOnSecondPressTitle": "Sobregrabar en segunda pulsación",
-    "overdubOnSecondPressSubtitle": "Una segunda pulsación de grabar sigue superponiendo (rec/dub) en lugar de detener y reproducir.",
-    "soundActivatedRecordingTitle": "Grabación activada por sonido",
-    "soundActivatedRecordingSubtitle": "Tras pulsar grabar, la captura comienza cuando la señal de entrada empieza, en lugar de inmediatamente.",
-    "defaultLoopLengthIntro": "Duración predeterminada del bucle para nuevas grabaciones. Auto redondea a bucles base completos; una duración fija graba exactamente esa cantidad. Anúlalo por pista desde su diálogo de enrutamiento.",
-    "statusGroupLabel": "ESTADO",
     "deviceLabel": "Dispositivo",
-    "notRunning": "No en ejecución",
-    "measureLatencySubtitle": "Volver a ejecutar la medición de latencia loopback",
     "systemDefault": "Predeterminado del sistema",
-    "systemDefaultNamed": "Predeterminado del sistema ({deviceName})",
     "effectNone": "Ninguno",
     "effectDrive": "Drive",
     "effectFilter": "Filtro",
@@ -608,13 +543,6 @@
             }
         }
     },
-    "@sampleRateHz": {
-        "placeholders": {
-            "rate": {
-                "type": "int"
-            }
-        }
-    },
     "@loopbackDetectedNote": {
         "placeholders": {
             "deviceClause": {
@@ -643,13 +571,6 @@
         "placeholders": {
             "minutes": {
                 "type": "int"
-            }
-        }
-    },
-    "@systemDefaultNamed": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
             }
         }
     },
@@ -749,32 +670,6 @@
     "pedalSimPanelTitle": "Pedal",
     "pedalSimExpandTooltip": "Mostrar el pedal en pantalla",
     "pedalSimCollapseTooltip": "Ocultar el pedal en pantalla",
-    "pedalSimFootswitchSemantics": "Pulsador {control}",
-    "@pedalSimFootswitchSemantics": {
-        "placeholders": {
-            "control": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalSimTrackSemantics": "{trackName}, {state}",
-    "@pedalSimTrackSemantics": {
-        "placeholders": {
-            "trackName": {
-                "type": "String"
-            },
-            "state": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalSimLedOff": "apagado",
-    "pedalSimLedArmed": "armado",
-    "pedalSimLedRecording": "grabando",
-    "pedalSimLedChainEnabled": "cadena de FX activada",
-    "pedalSimLedChainDisabled": "cadena de FX en bypass",
-    "pedalSimHoldHint": "mantén para su segunda acción, o pulsa Mayús+Espacio o Mayús+Intro",
-    "pedalSimStopFxSemantics": "Interruptor STOP, pánico de FX: pulsa para omitir todas las cadenas de FX, mantén para restaurarlas",
     "pedalSimBankSemantics": "Banco {bank}",
     "@pedalSimBankSemantics": {
         "placeholders": {
@@ -791,7 +686,6 @@
             }
         }
     },
-    "pedalSimEncoderSemantics": "Encoder, volumen general",
     "pedalSimNoLoop": "—",
     "perfArm": "Armar grabación de actuación",
     "perfDisarm": "Desarmar grabación de actuación",
@@ -877,7 +771,6 @@
         "description": "Error message shown when re-export fails."
     },
     "timeSignatureNoteValueLabel": "Valor de nota",
-    "clickGroupLabel": "CLIC",
     "clickModeOffLabel": "Desactivado",
     "clickModeRecLabel": "Grabación",
     "clickModeRecFirstLabel": "Primera toma",
@@ -941,10 +834,6 @@
     "@trayWifiLabel": {
         "description": "Label for the settings tray's WiFi shortcut button (stub — no real functionality yet)."
     },
-    "trayBluetoothLabel": "Bluetooth",
-    "@trayBluetoothLabel": {
-        "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
-    },
     "trayBrightnessPercent": "{percent}%",
     "trayBrightLabel": "Brillo",
     "@trayBrightLabel": {
@@ -986,17 +875,7 @@
     "@trayBrightnessLabel": {
         "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
     },
-    "pedalAssignTitle": "Asignaciones del pedal",
-    "pedalLinkGroup": "PEDAL DE LA CONSOLA",
     "pedalStatusDisconnected": "Placa de la consola no conectada.",
-    "pedalStatusConnected": "Placa de la consola conectada · firmware {firmwareVersion}",
-    "@pedalStatusConnected": {
-        "placeholders": {
-            "firmwareVersion": {
-                "type": "String"
-            }
-        }
-    },
     "pedalStatusIncompatible": "El firmware {firmwareVersion} de la placa de la consola habla otro protocolo de enlace que esta versión. Actualiza el firmware de la placa.",
     "@pedalStatusIncompatible": {
         "placeholders": {
@@ -1005,21 +884,6 @@
             }
         }
     },
-    "pedalAssignIntro": "Elegí un pedal en la placa y después qué controla en modo FX. Los pedales sin asignar conservan su comportamiento normal.",
-    "pedalAssignSelectPrompt": "Seleccioná un pedal para asignarlo.",
-    "pedalAssignUnbindable": "MODE y BANK no se pueden reasignar: son la única salida del modo FX y el único acceso al otro banco.",
-    "pedalAssignBankLabel": "Banco {bank}",
-    "pedalAssignTarget": "Controla",
-    "pedalAssignBehavior": "Comportamiento",
-    "pedalAssignToggle": "Conmutar",
-    "pedalAssignMomentary": "Momentáneo",
-    "pedalAssignToggleHint": "Al pisarlo cambia y queda así.",
-    "pedalAssignMomentaryHint": "Activo mientras lo mantenés; al soltarlo vuelve como estaba.",
-    "pedalAssignRebind": "Reasignar",
-    "pedalAssignClear": "Quitar",
-    "pedalAssignUnassigned": "Sin asignar",
-    "pedalAssignStale": "Destino ausente",
-    "pedalAssignStaleDetail": "La cadena o el efecto al que apuntaba ya no existe. Pisarlo no hace nada hasta que lo reasignes o lo quites.",
     "pedalAssignNoTargets": "Todavía no hay cadenas FX para asignar. Agregá un efecto primero.",
     "pedalAssignChainTarget": "Cadena de {stage}",
     "pedalAssignStageInput": "Entrada {number}",
@@ -1035,8 +899,6 @@
             }
         }
     },
-    "a11yPedalAssignRow": "{button}: {target}",
-    "a11yPedalAssignSelected": "{button} seleccionado",
     "fxStompBound": "Pedal",
     "a11yFxStompBound": "Asignado al pedal {button}",
     "a11yFxStompBoundHeld": "Asignado al pedal {button}, mantenido",
@@ -1089,10 +951,6 @@
     "fxEditorChainOut": "SAL",
     "fxEditorEmptySelection": "Selecciona un bloque para editar sus controles.",
     "octaverLatencyHint": "El vocoder de fase añade ~{ms} ms — usa PSOLA para monitoreo en vivo",
-    "trayBackLabel": "Atrás",
-    "@trayBackLabel": {
-        "description": "Back control on an in-tray WiFi/Bluetooth expand panel — returns to the Control Center tiles without dismissing the tray."
-    },
     "wifiUnsupportedBody": "WiFi solo está disponible en la consola Segno.",
     "@wifiUnsupportedBody": {
         "description": "Shown on the WiFi page when segno-wifi-ctl is not present (desktop builds)."
@@ -1100,22 +958,6 @@
     "wifiStatusLabel": "Estado",
     "@wifiStatusLabel": {
         "description": "WiFi status table label."
-    },
-    "wifiStatusConnected": "Conectado",
-    "@wifiStatusConnected": {
-        "description": "WiFi connected status value."
-    },
-    "wifiStatusDisconnected": "Sin conexión",
-    "@wifiStatusDisconnected": {
-        "description": "WiFi disconnected status value."
-    },
-    "wifiStatusDisconnecting": "Desconectando…",
-    "@wifiStatusDisconnecting": {
-        "description": "WiFi status while dropping the current association."
-    },
-    "wifiConnectingLabel": "Conectando…",
-    "@wifiConnectingLabel": {
-        "description": "Shown while joining a WiFi network (status strip and row)."
     },
     "wifiConnectFailedPassword": "No se pudo unir — revisá la contraseña e intentá de nuevo.",
     "@wifiConnectFailedPassword": {
@@ -1149,10 +991,6 @@
     "@wifiDisconnectSubtitle": {
         "description": "WiFi disconnect action subtitle."
     },
-    "wifiForgetTitle": "Olvidar red",
-    "@wifiForgetTitle": {
-        "description": "WiFi forget action title."
-    },
     "wifiForgetSubtitle": "Eliminar las credenciales guardadas de {ssid}",
     "@wifiForgetSubtitle": {
         "description": "WiFi forget action subtitle.",
@@ -1162,19 +1000,6 @@
             }
         }
     },
-    "wifiForgetConfirm": "¿Olvidar “{ssid}” y eliminar su contraseña guardada?",
-    "@wifiForgetConfirm": {
-        "description": "WiFi forget confirmation dialog body.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiScanTitle": "Buscar redes",
-    "@wifiScanTitle": {
-        "description": "WiFi scan action title."
-    },
     "wifiScanSubtitle": "Actualizar la lista de redes cercanas",
     "@wifiScanSubtitle": {
         "description": "WiFi scan action subtitle when idle."
@@ -1183,44 +1008,13 @@
     "@wifiScanningSubtitle": {
         "description": "WiFi scan action subtitle while scanning."
     },
-    "wifiNetworksGroup": "Redes",
-    "@wifiNetworksGroup": {
-        "description": "Group label above the WiFi scan results list."
-    },
     "wifiEmptyNetworks": "No se encontraron redes. Toca buscar para reintentar.",
     "@wifiEmptyNetworks": {
         "description": "Empty state when a WiFi scan returns no SSIDs."
     },
-    "wifiSavedLabel": "Guardada",
-    "wifiSavedOutOfRange": "Guardada · fuera de alcance",
-    "wifiSecuredLabel": "Protegida",
-    "@wifiSecuredLabel": {
-        "description": "Subtitle fragment for a password-protected WiFi network."
-    },
-    "wifiOpenLabel": "Abierta",
-    "@wifiOpenLabel": {
-        "description": "Subtitle fragment for an open WiFi network."
-    },
-    "wifiPasswordTitle": "Contraseña de {ssid}",
-    "@wifiPasswordTitle": {
-        "description": "WiFi password dialog title.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiPasswordHint": "Contraseña de la red",
-    "@wifiPasswordHint": {
-        "description": "Hint for the WiFi password field."
-    },
     "wifiJoinAction": "Unirse",
     "@wifiJoinAction": {
         "description": "Confirm button on the WiFi password dialog."
-    },
-    "bluetoothUnsupportedBody": "Bluetooth solo está disponible en la consola Segno.",
-    "@bluetoothUnsupportedBody": {
-        "description": "Shown on the Bluetooth page when segno-bt-ctl is not present."
     },
     "bluetoothIntro": "Haz que esta consola sea visible para que un teléfono o sidecar la encuentre. El emparejamiento llega después.",
     "@bluetoothIntro": {
@@ -1234,49 +1028,9 @@
     "@bluetoothPoweredLabel": {
         "description": "Bluetooth powered table label."
     },
-    "bluetoothOn": "Encendido",
-    "@bluetoothOn": {
-        "description": "Bluetooth adapter on value."
-    },
-    "bluetoothOff": "Apagado",
-    "@bluetoothOff": {
-        "description": "Bluetooth adapter off value."
-    },
-    "bluetoothDiscoverableTitle": "Visible",
-    "@bluetoothDiscoverableTitle": {
-        "description": "Toggle title for classic Bluetooth discoverable."
-    },
-    "bluetoothDiscoverableSubtitle": "Otros dispositivos pueden ver esta consola",
-    "@bluetoothDiscoverableSubtitle": {
-        "description": "Toggle subtitle for classic Bluetooth discoverable."
-    },
-    "bluetoothAdvertiseTitle": "Transmitir",
-    "@bluetoothAdvertiseTitle": {
-        "description": "Toggle title for BLE advertising."
-    },
-    "bluetoothAdvertiseSubtitle": "Anunciar como Segno por Bluetooth LE",
-    "@bluetoothAdvertiseSubtitle": {
-        "description": "Toggle subtitle for BLE advertising."
-    },
-    "bluetoothScanTitle": "Buscar dispositivos",
-    "@bluetoothScanTitle": {
-        "description": "Bluetooth scan action title."
-    },
     "bluetoothScanSubtitle": "Encontrar dispositivos Bluetooth cercanos",
     "@bluetoothScanSubtitle": {
         "description": "Bluetooth scan action subtitle when idle."
-    },
-    "bluetoothScanningSubtitle": "Buscando…",
-    "@bluetoothScanningSubtitle": {
-        "description": "Bluetooth scan action subtitle while scanning."
-    },
-    "bluetoothDevicesGroup": "Dispositivos cercanos",
-    "@bluetoothDevicesGroup": {
-        "description": "Group label above Bluetooth scan results."
-    },
-    "bluetoothEmptyDevices": "Aún no hay dispositivos. Toca buscar para explorar.",
-    "@bluetoothEmptyDevices": {
-        "description": "Empty state when a Bluetooth scan returns nothing."
     },
     "trayNetworkLabel": "Red",
     "@trayNetworkLabel": {
@@ -1293,10 +1047,6 @@
     "networkStateOpen": "abierta",
     "@networkStateOpen": {
         "description": "State word for a WiFi network that needs no passphrase."
-    },
-    "networkStatePaired": "emparejado",
-    "@networkStatePaired": {
-        "description": "State word for a Bluetooth device this console holds a pairing for."
     },
     "consoleKeepIt": "Conservar",
     "@consoleKeepIt": {
@@ -1389,98 +1139,6 @@
     "wifiForgetConfirmAction": "Olvidar red",
     "@wifiForgetConfirmAction": {
         "description": "Destructive action on the forget-network confirmation."
-    },
-    "bluetoothNotInRange": "fuera de alcance",
-    "@bluetoothNotInRange": {
-        "description": "Row subtitle for a paired device the last discovery did not see."
-    },
-    "bluetoothDiscoverableState": "detectable",
-    "@bluetoothDiscoverableState": {
-        "description": "Row subtitle for a device the scan can see but bluez reports no kind for."
-    },
-    "bluetoothKindHeadphones": "auriculares",
-    "@bluetoothKindHeadphones": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindSpeaker": "altavoz",
-    "@bluetoothKindSpeaker": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindPhone": "teléfono",
-    "@bluetoothKindPhone": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindComputer": "ordenador",
-    "@bluetoothKindComputer": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindKeyboard": "teclado",
-    "@bluetoothKindKeyboard": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindMouse": "ratón",
-    "@bluetoothKindMouse": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindGamepad": "mando",
-    "@bluetoothKindGamepad": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothConnectAction": "Conectar",
-    "@bluetoothConnectAction": {
-        "description": "Action inside an opened Bluetooth row: links an already-paired device."
-    },
-    "bluetoothDisconnectAction": "Desconectar",
-    "@bluetoothDisconnectAction": {
-        "description": "Action inside an opened Bluetooth row: drops the link but keeps the pairing."
-    },
-    "bluetoothForgetAction": "Olvidar",
-    "@bluetoothForgetAction": {
-        "description": "Destructive action inside an opened Bluetooth row."
-    },
-    "bluetoothPairingShort": "emparejando con {name}",
-    "@bluetoothPairingShort": {
-        "description": "Live-state line beside the Bluetooth face's title while a pairing is in flight.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothPairFailedShort": "no se pudo emparejar con {name}",
-    "@bluetoothPairFailedShort": {
-        "description": "Live-state line beside the Bluetooth face's title after a pairing failed.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothPairingBanner": "Emparejando con {name}… confírmalo en el dispositivo.",
-    "@bluetoothPairingBanner": {
-        "description": "In-flight banner while a pairing waits on a human at the far device.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothForgetTitleNamed": "¿Olvidar “{name}”?",
-    "@bluetoothForgetTitleNamed": {
-        "description": "Title of the forget-device confirmation.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothForgetBody": "El emparejamiento se elimina de esta consola. El dispositivo tendrá que volver a ponerse en modo de emparejamiento.",
-    "@bluetoothForgetBody": {
-        "description": "Body of the forget-device confirmation — says what is actually destroyed."
-    },
-    "bluetoothForgetConfirmAction": "Olvidar dispositivo",
-    "@bluetoothForgetConfirmAction": {
-        "description": "Destructive action on the forget-device confirmation."
     },
     "trayControlLabel": "Control",
     "@trayControlLabel": {
@@ -2019,6 +1677,54 @@
     "powerOffSaveFailedBody": "La sesión no se escribió. No se apagó nada — los loops siguen en RAM.",
     "a11yPowerOffMark": "Segno",
     "stageLibrary": "Biblioteca",
+    "libraryManageSaveOpen": "Guardar {name}",
+    "libraryManageSaveOpenAs": "Guardar {name} como…",
+    "libraryCurrentLoop": "el loop actual",
+    "libraryFolderNotEmpty": "Esa carpeta todavía tiene sesiones. Muévelas antes.",
+    "libraryRenameFolder": "Renombrar carpeta",
+    "libraryDeleteFolder": "Eliminar carpeta",
+    "libraryDeleteFolderTitle": "¿Eliminar «{name}»?",
+    "libraryDeleteFolderBody": "La carpeta está vacía. No se elimina ninguna sesión.",
+    "libraryManage": "Gestionar",
+    "libraryNewFolder": "Nueva carpeta",
+    "libraryMoveToFolder": "Mover a carpeta…",
+    "libraryMoveTitle": "Mover a carpeta",
+    "libraryNewFolderOption": "Nueva carpeta…",
+    "libraryFolderName": "Nombre de la carpeta",
+    "libraryFolderNameTaken": "Ya existe una carpeta o sesión llamada «{name}».",
+    "librarySaveFailed": "No se pudo guardar el loop actual. No se cambió nada.",
+    "libraryDeleteCurrentRefused": "La sesión abierta no se puede eliminar.",
+    "libraryActionFailed": "No funcionó. Inténtalo de nuevo.",
+    "sessionSavedAs": "Guardado como {name}",
+    "libraryUsbUnusable": "Esta unidad USB no se puede usar",
+    "libraryUsbUnsupported": "{fsType} no es compatible. Formatea la unidad como exFAT.",
+    "libraryUsbMountFailed": "No se pudo abrir. Desconéctala y vuelve a conectarla.",
+    "libraryTitle": "Biblioteca",
+    "librarySessions": "Sesiones",
+    "libraryInternal": "Interno",
+    "libraryUsb": "USB",
+    "libraryNewLoop": "Nuevo loop",
+    "librarySearchSessions": "Buscar sesiones",
+    "libraryFolderAll": "Todas",
+    "libraryFolderUnfiled": "Sin carpeta",
+    "libraryCurrentSession": "Sesión actual",
+    "librarySessionMeta": "{date} · {tracks}",
+    "libraryTrackCount": "{count, plural, =0{sin pistas} =1{1 pista} other{{count} pistas}}",
+    "libraryTempo": "{bpm} BPM",
+    "libraryTrackName": "Pista {number}",
+    "librarySecondsUnit": "s",
+    "libraryTrackFx": "FX {count}",
+    "libraryFooterFacts": "{fx} FX · {backing}",
+    "libraryBackingCount": "{count, plural, =1{1 pista de acompañamiento} other{{count} pistas de acompañamiento}}",
+    "libraryReturnToTracks": "Volver a las pistas",
+    "libraryOpenSession": "Abrir sesión",
+    "libraryConnectUsb": "Conecta una unidad USB",
+    "libraryConnectUsbBody": "Tus sesiones internas siguen disponibles.",
+    "libraryNoSessions": "Aún no hay sesiones guardadas.",
+    "libraryNoMatches": "Ninguna sesión coincide.",
+    "libraryNoSelection": "Elige una sesión para verla.",
+    "libraryPreviewUnreadable": "No se pudo leer esta sesión.",
+    "libraryNoTracks": "No hay pistas grabadas.",
     "stageSettings": "Ajustes",
     "stageViewMenu": "Vista de actuación",
     "stageViewTrack": "Pista",
@@ -2171,7 +1877,6 @@
     "loopAudioNoteOff": "Mantiene su velocidad grabada aunque cambie el tempo.",
     "loopAudioNotePitchUnchanged": "El tono no cambia a la velocidad grabada.",
     "loopAudioUnavailable": "Seguir el tempo aún no está disponible. Cada pista mantiene su velocidad grabada.",
-    "settingsSectionLoop": "Ajustes de loop",
     "loopSettingsRefused": "No se pudo aplicar el cambio. Prueba una duración menor o detén la grabación y vuelve a intentarlo.",
     "@loopSettingsRefused": {
         "description": "Feedback when the engine refuses a Loop settings change."
@@ -2200,7 +1905,6 @@
     "routingSignal": "Señal de grabación",
     "routingClipNote": "La entrada satura. Baja el nivel de la fuente.",
     "routingLockedFormat": "Termina la grabación para cambiar entre mono y estéreo.",
-    "settingsSectionRouting": "Enrutamiento",
     "routingRecordFrom": "Grabar desde",
     "routingLockedInputs": "Termina la grabación para cambiar las entradas.",
     "routingNoInputs": "No hay entradas seleccionadas para esta pista.",
@@ -2386,8 +2090,6 @@
     "pedalColorPercent": "{value}%",
     "a11yModeCustom": "Controles personalizados",
     "a11yTrackTileCustom": "{name}, {state}, activá para seleccionar",
-    "pedalSimLedActive": "acción activa",
-    "pedalSimLedInactive": "acción inactiva",
     "readoutFunctionCustom": "Personalizado",
     "actionNone": "Ninguna",
     "actionModeExit": "Salir",
@@ -2687,8 +2389,39 @@
     "footFadeHoldDefaultTime": "Mantener · Tiempo predeterminado",
     "footFadeHoldTime": "Mantener · Tiempo",
     "footFadeFailure": "No se pudo iniciar el Fade. Inténtalo de nuevo.",
+    "actionModePeel": "Peel",
+    "actionOperationPeel": "Peel",
+    "footPeelLayers": "Capas",
+    "footPeelOriginalOnly": "Solo la original",
+    "footPeelSwitchBank": "Cambiar banco",
+    "footPeelRefusedEmpty": "La pista está vacía: no hay ninguna capa para quitar.",
+    "footPeelRefusedOriginalOnly": "Solo queda la toma original: no hay ninguna sobregrabación para quitar.",
+    "footPeelRefusedBusy": "Peel no está disponible mientras la pista graba o está por grabar. Inténtalo de nuevo cuando esté sonando.",
+    "footPeelFailure": "No se pudo quitar la capa. Inténtalo de nuevo.",
     "mixerFading": "En Fade",
     "mixerFadeLevel": "Fade {value}%",
     "fadeDurationLabel": "Duración de Fade",
-    "fadeDurationReadout": "{value} s"
+    "fadeDurationReadout": "{value} s",
+    "actionModeReverse": "Reversa",
+    "actionOperationReverse": "Reversa",
+    "footReversePlaybackDirection": "Sentido de reproducción",
+    "footReverseForward": "Normal",
+    "footReverseReversed": "Reversa",
+    "footReverseSwitchBank": "Cambiar banco",
+    "footReverseFailure": "No se pudo cambiar el sentido de la pista. Inténtalo de nuevo.",
+    "footReverseOverdubRefused": "No se puede sobregrabar mientras la pista suena al revés",
+    "stageReverseMarker": "REV",
+    "a11yStageReversed": "La pista se reproduce al revés",
+    "settingsCrumb": "AJUSTES / {page}",
+    "settingsDeviceTitle": "Dispositivo",
+    "settingsNetworkTitle": "Red",
+    "settingsDisplaysTitle": "Pantallas",
+    "settingsStorageTitle": "Almacenamiento",
+    "settingsUpdatesTitle": "Actualizaciones",
+    "settingsAboutTitle": "Acerca de Segno",
+    "settingsAboutSubtitle": "Nombre, versión, controlador y licencias",
+    "settingsMidiTitle": "MIDI",
+    "settingsPower": "Apagado",
+    "bootModeRetiredNotice": "Segno ahora siempre inicia en modo Grabar. Pulsa Modo para pasar a Silenciar.",
+    "bluetoothRetiredNotice": "{count, plural, =1{Bluetooth ya no está disponible. El dispositivo emparejado con esta consola no volverá a conectarse.} other{Bluetooth ya no está disponible. Los {count} dispositivos emparejados con esta consola no volverán a conectarse.}}"
 }

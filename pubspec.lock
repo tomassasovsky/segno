@@ -73,20 +73,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.0-dev.24"
-  bluetooth_client:
-    dependency: "direct dev"
-    description:
-      path: "packages/bluetooth_client"
-      relative: true
-    source: path
-    version: "0.1.0"
-  bluetooth_repository:
-    dependency: "direct main"
-    description:
-      path: "packages/bluetooth_repository"
-      relative: true
-    source: path
-    version: "0.1.0"
   boolean_selector:
     dependency: transitive
     description:
@@ -936,6 +922,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.12.1"
+  storage_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/storage_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
   stream_channel:
     dependency: transitive
     description:
@@ -1079,6 +1072,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.5"
+  usb_storage_client:
+    dependency: "direct main"
+    description:
+      path: "packages/usb_storage_client"
+      relative: true
+    source: path
+    version: "0.1.0"
   uuid:
     dependency: transitive
     description:

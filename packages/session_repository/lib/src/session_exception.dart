@@ -32,8 +32,9 @@ class SessionSampleRateMismatch extends SessionException {
       '$deviceRate Hz';
 }
 
-/// The session manifest declares schema [version], not this build's required
-/// schema [supported].
+/// The session manifest declares schema [version], newer than the schema
+/// [supported] this build reads and converts to. [Session.fromJson] alone
+/// also refuses an older schema this way; opening a bundle converts those.
 class SessionUnsupportedVersion extends SessionException {
   /// Creates a [SessionUnsupportedVersion].
   const SessionUnsupportedVersion({
@@ -52,10 +53,29 @@ class SessionUnsupportedVersion extends SessionException {
       'unsupported session version $version (requires $supported)';
 }
 
-/// A track lane's overdub-layer stack is structurally invalid — its declared
-/// `undoCount + 1 + redoCount` does not match its layer list, or the count
-/// exceeds the engine's per-lane pool cap. A corrupt or foreign bundle fails
-/// loudly on load rather than mid-apply.
+/// The manifest was written by an older schema this build cannot convert:
+/// one older than [oldestConvertibleSessionVersion], or one whose conversion
+/// failed. The bundle is left exactly as it was.
+class SessionUnconvertible extends SessionException {
+  /// Creates a [SessionUnconvertible].
+  const SessionUnconvertible({required this.version, required this.reason});
+
+  /// The manifest's declared schema version.
+  final int version;
+
+  /// What stopped the conversion.
+  final String reason;
+
+  @override
+  String toString() => 'session schema $version cannot be converted: $reason';
+}
+
+/// A track lane's audio history is structurally invalid (#1164): its stored
+/// counts disagree with its entries, the engine could not hold the entries
+/// (`TrackHistory.malformation`), its layer list is not one image per
+/// image-bearing entry plus the live buffer (`TrackHistory.imageCount`), or
+/// two lanes of one track carry different histories. A corrupt or foreign
+/// bundle fails loudly on load rather than mid-apply.
 class SessionCorruptLayers extends SessionException {
   /// Creates a [SessionCorruptLayers].
   const SessionCorruptLayers({
@@ -78,16 +98,31 @@ class SessionCorruptLayers extends SessionException {
       'session track $channel lane $lane has a corrupt layer stack: $reason';
 }
 
-/// A save-as / rename targeted a name whose folder [slug] already exists in the
-/// sessions catalog. Named sessions never silently overwrite, so the caller
-/// must pick another name.
+/// A save-as, rename, duplicate or new folder targeted a name another session
+/// or folder already carries (compared case-sensitively on the sanitized
+/// [slug], as on the appliance's case-sensitive file system). The catalog
+/// never silently overwrites, so the caller must pick another name.
 class SessionNameCollision extends SessionException {
   /// Creates a [SessionNameCollision] for the colliding [slug].
   const SessionNameCollision({required this.slug});
 
-  /// The folder slug (the sanitized name) that already exists.
+  /// The sanitized name that already exists.
   final String slug;
 
   @override
   String toString() => 'a session named "$slug" already exists';
+}
+
+/// A folder delete targeted a folder that still holds sessions or an
+/// interrupted save. Move or delete them first; the catalog never removes
+/// audio as a side effect.
+class SessionFolderNotEmpty extends SessionException {
+  /// Creates a [SessionFolderNotEmpty] for [folder].
+  const SessionFolderNotEmpty({required this.folder});
+
+  /// The folder that still holds sessions.
+  final String folder;
+
+  @override
+  String toString() => 'folder "$folder" still holds sessions';
 }

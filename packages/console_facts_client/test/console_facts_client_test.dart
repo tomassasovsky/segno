@@ -34,6 +34,7 @@ void main() {
       expect(await client.facts(), ConsoleFacts.unknown);
       expect(await client.exportDestination(), isEmpty);
       expect(await client.deleteCapturesOlderThan(30), 0);
+      expect(await client.retiredBluetoothPairings(), 0);
     });
   });
 
@@ -151,7 +152,9 @@ void main() {
     }) => LocalConsoleFactsClient(
       sessionsRoot: () async => sessionsDir,
       capturesRoot: () async => capturesDir,
-      diskSpace: diskSpace,
+      diskSpace:
+          diskSpace ??
+          (_) async => const DiskSpace(totalBytes: 1 << 40, freeBytes: 1 << 39),
     );
 
     void seed(String dir, int bytes) {
@@ -177,46 +180,43 @@ void main() {
       expect(usage.systemBytes, 300000 - 13000);
     });
 
-    test('df targets the captures directory, i.e. the data volume', () async {
-      seed(sessionsDir, 1);
-      seed(capturesDir, 1);
+    test(
+      'the reading targets the captures directory, i.e. the data volume',
+      () async {
+        seed(sessionsDir, 1);
+        seed(capturesDir, 1);
+        String? measured;
+        final client = build(
+          diskSpace: (path) async {
+            measured = path;
+            return const DiskSpace(totalBytes: 10, freeBytes: 5);
+          },
+        );
+
+        await client.storage();
+
+        expect(measured, capturesDir);
+      },
+    );
+
+    test('a directory that does not exist yet sizes to 0, and the reader is '
+        'handed the nearest EXISTING ancestor', () async {
+      // Fresh install: neither sessions nor captures written yet. A statvfs on
+      // a missing path fails, so the client walks up to an ancestor that is
+      // there (the temp root here) before asking; the walk itself is 0.
       String? measured;
-      final client = build(
+      final usage = await build(
         diskSpace: (path) async {
           measured = path;
-          return const DiskSpace(totalBytes: 10, freeBytes: 5);
+          return const DiskSpace(totalBytes: 500, freeBytes: 500);
         },
-      );
-
-      await client.storage();
-
-      expect(measured, capturesDir);
-    });
-
-    test('free/total come straight from df on that path (real df)', () async {
-      seed(sessionsDir, 2048);
-      seed(capturesDir, 3072);
-      // No injected diskSpace: exercises the real `df` reader end to end, so a
-      // regression in the parse or the ancestor walk is caught here.
-      final usage = await build().storage();
-
-      expect(usage.known, isTrue);
-      expect(usage.sessionBytes, 2048);
-      expect(usage.captureBytes, 3072);
-      expect(usage.totalIsPlausible, isTrue);
-    });
-
-    test('a directory that does not exist yet sizes to 0', () async {
-      // Fresh install: neither sessions nor captures written yet. df still
-      // answers (it walks up to an existing ancestor), and the walk is 0.
-      final usage = await build(
-        diskSpace: (_) async =>
-            const DiskSpace(totalBytes: 500, freeBytes: 500),
       ).storage();
 
       expect(usage.known, isTrue);
       expect(usage.sessionBytes, 0);
       expect(usage.captureBytes, 0);
+      expect(measured, temp.path);
+      expect(Directory(measured!).existsSync(), isTrue);
     });
 
     test('system bytes clamp at 0 rather than going negative', () async {
@@ -252,63 +252,55 @@ void main() {
     });
   });
 
-  group('parseDfKP', () {
-    // Real `df -k -P` output has the header first and one filesystem per line;
-    // the parser reads total (1024-blocks) and available off the last line and
-    // scales to bytes. The live-df test above covers the happy path end to end;
-    // these pin the branches a running df would never hand you on demand.
+  group('LocalConsoleFactsClient.retiredBluetoothPairings', () {
+    late Directory temp;
 
-    test('parses a valid Linux df -k -P block', () {
-      const stdout =
-          'Filesystem     1024-blocks       Used Available '
-          'Capacity Mounted on\n'
-          '/dev/nvme0n1p7   940191048   64512000  827764736       8% /data\n';
+    setUp(() {
+      temp = Directory.systemTemp.createTempSync('retired_bluetooth');
+    });
+    tearDown(() => temp.deleteSync(recursive: true));
 
-      final space = parseDfKP(stdout);
+    LocalConsoleFactsClient build(String state) => LocalConsoleFactsClient(
+      sessionsRoot: () async => temp.path,
+      capturesRoot: () async => temp.path,
+      diskSpace: (_) async => null,
+      bluetoothState: state,
+    );
 
-      expect(space, isNotNull);
-      expect(space!.totalBytes, 940191048 * 1024);
-      expect(space.freeBytes, 827764736 * 1024);
+    void record(String path) {
+      Directory(path).createSync(recursive: true);
+      File('$path/info').writeAsStringSync('[General]\n');
+    }
+
+    test('counts each device record under each adapter', () async {
+      final state = '${temp.path}/bluetooth';
+      record('$state/AA:BB:CC:DD:EE:FF/11:22:33:44:55:66');
+      record('$state/AA:BB:CC:DD:EE:FF/22:33:44:55:66:77');
+      record('$state/00:11:22:33:44:55/66:77:88:99:AA:BB');
+      // What BlueZ keeps beside the records is not a pairing.
+      Directory('$state/AA:BB:CC:DD:EE:FF/cache').createSync();
+      File('$state/AA:BB:CC:DD:EE:FF/settings').writeAsStringSync('');
+      Directory(
+        '$state/AA:BB:CC:DD:EE:FF/33:44:55:66:77:88',
+      ).createSync(); // no info file
+      expect(await build(state).retiredBluetoothPairings(), 3);
     });
 
-    test('parses a macOS df -k -P block with its extra columns', () {
-      // macOS prints iused/ifree/%iused between Capacity and Mounted-on; the
-      // total/available columns are still 1 and 3, so the parse is unchanged.
-      const stdout =
-          'Filesystem 1024-blocks Used Available Capacity iused '
-          'ifree %iused Mounted on\n'
-          '/dev/disk3s5 1948455240 1082619684 801731620 58% 501 999 1% '
-          '/System/Volumes/Data\n';
-
-      final space = parseDfKP(stdout);
-
-      expect(space, isNotNull);
-      expect(space!.totalBytes, 1948455240 * 1024);
-      expect(space.freeBytes, 801731620 * 1024);
+    test('is 0 for an empty or missing tree', () async {
+      final state = '${temp.path}/bluetooth';
+      expect(await build(state).retiredBluetoothPairings(), 0);
+      Directory(state).createSync();
+      expect(await build(state).retiredBluetoothPairings(), 0);
     });
 
-    test('a header-only output has no data line and is null', () {
-      const stdout =
-          'Filesystem 1024-blocks Used Available Capacity '
-          'Mounted on\n';
-      expect(parseDfKP(stdout), isNull);
+    test('ignores a device record outside an adapter directory', () async {
+      final state = '${temp.path}/bluetooth';
+      record('$state/not-an-adapter/11:22:33:44:55:66');
+      expect(await build(state).retiredBluetoothPairings(), 0);
     });
 
-    test('empty output is null', () {
-      expect(parseDfKP(''), isNull);
-    });
-
-    test('a short data line (too few columns) is null', () {
-      const stdout = 'Filesystem 1024-blocks Used Available\n/dev/sda1 100\n';
-      expect(parseDfKP(stdout), isNull);
-    });
-
-    test('non-numeric size fields are null, not a throw', () {
-      const stdout =
-          'Filesystem 1024-blocks Used Available Capacity '
-          'Mounted on\n'
-          '/dev/sda1 lots some plenty 8% /data\n';
-      expect(parseDfKP(stdout), isNull);
+    test('defaults to the appliance data volume', () {
+      expect(kRetiredBluetoothState, '/data/bluetooth');
     });
   });
 
@@ -322,18 +314,13 @@ void main() {
       expect(kFakeConsoleFacts, isFalse);
       expect(Platform.isLinux || Platform.isMacOS, isTrue);
       expect(
-        createConsoleFactsClient(sessionsRoot: noRoot, capturesRoot: noRoot),
+        createConsoleFactsClient(
+          sessionsRoot: noRoot,
+          capturesRoot: noRoot,
+          diskSpace: (_) async => null,
+        ),
         isA<LocalConsoleFactsClient>(),
       );
     });
   });
-}
-
-extension on StorageUsage {
-  /// A real df reading: the volume has a size, and free never exceeds it.
-  bool get totalIsPlausible {
-    final total =
-        sessionBytes + captureBytes + pluginBytes + systemBytes + freeBytes;
-    return total > 0 && freeBytes <= total;
-  }
 }

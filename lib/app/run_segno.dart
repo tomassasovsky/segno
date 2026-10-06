@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
@@ -51,6 +50,9 @@ Future<void> runSegno(
     'inject all three repositories together or none',
   );
   WidgetsFlutterBinding.ensureInitialized();
+  // The engine's vendored native code (Signalsmith Stretch, RNNoise,
+  // miniaudio, VST3, CLAP) for System > About's open-source notices.
+  registerVendoredLicenses();
 
   final windowController = await WindowController.fromCurrentEngine();
   if (WaveformWindowArgs.isWaveformWindow(windowController.arguments)) {
@@ -147,14 +149,24 @@ Future<void> runSegno(
   // are wired, so the update UI stays hidden on unsupported builds.
   final updates = UpdateRepository(backend: createPlatformUpdateBackend());
   final wifi = WifiRepository(client: createWifiClient());
-  final bluetooth = BluetoothRepository(client: createBluetoothClient());
   final brightness = createBrightnessClient();
   // The same directory resolvers the session and performance repositories are
   // wired with, so the real client's disk accounting measures the app's own
   // data volume (`/data` on the appliance) by construction (#656).
+  // Capacity comes from the engine's statvfs through the performance
+  // repository, never from a `df` subprocess (#806); the client's own type is
+  // filled from the engine's reading so the client stays engine-free (#1177).
   final consoleFacts = createConsoleFactsClient(
     sessionsRoot: defaultSessionsRoot,
     capturesRoot: defaultExportDirectory,
+    diskSpace: (path) async {
+      final space = performance.volumeSpace(path);
+      if (space == null) return null;
+      return DiskSpace(
+        totalBytes: space.totalBytes,
+        freeBytes: space.freeBytes,
+      );
+    },
   );
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
@@ -212,11 +224,9 @@ Future<void> runSegno(
       ),
       sessionRepository: session,
       performanceRepository: performance,
-      exportDirectory: defaultExportDirectory,
       initialAsioDrivers: asioDrivers,
       updates: updates,
       wifi: wifi,
-      bluetooth: bluetooth,
       brightness: brightness,
       consoleFacts: consoleFacts,
     ),

@@ -7,6 +7,7 @@ import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
@@ -15,6 +16,7 @@ import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
+import 'package:segno_engine/src/volume_space.dart';
 
 /// In-memory [AudioEngine] that simulates a multichannel interface for UI
 /// development and manual testing without real hardware.
@@ -1634,7 +1636,10 @@ class MockAudioEngine implements AudioEngine {
   ) => _requireRunning();
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
+  TrackHistory exportHistory(int channel) => TrackHistory.none;
+
+  @override
+  EngineResult finalizeHistory(int channel, TrackHistory history) =>
       _requireRunning();
 
   @override
@@ -1668,13 +1673,26 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  /// What [volumeFreeBytes] reports. `null` models a platform that cannot
-  /// answer; set a number to model a volume with that much room left.
-  int? volumeFreeBytesValue = 1 << 40; // 1 TiB: plenty, by default
+  /// What [volumeSpace] reports. `null` models a platform that cannot
+  /// answer; set a reading to model a volume of that size with that much room.
+  VolumeSpace? volumeSpaceValue = const VolumeSpace(
+    totalBytes: 2 << 40, // 2 TiB, half of it
+    freeBytes: 1 << 40, // free: plenty, by default
+  );
 
   @override
-  int? volumeFreeBytes(String path) =>
-      path.isEmpty ? null : volumeFreeBytesValue;
+  VolumeSpace? volumeSpace(String path) =>
+      path.isEmpty ? null : volumeSpaceValue;
+
+  /// Every directory [syncDirectory] was asked to sync, in order.
+  final List<String> syncedDirectories = [];
+
+  @override
+  bool syncDirectory(String path) {
+    if (path.isEmpty) return false;
+    syncedDirectories.add(path);
+    return true;
+  }
 
   /// The `captureDir` passed to the most recent [renderBegin] call, for test
   /// assertions. `null` until the first render.

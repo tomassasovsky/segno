@@ -108,8 +108,12 @@ void main() {
     link.hello();
     await pumpEventQueue();
     sessions = _Sessions();
-    when(() => sessions.bundlePath(any())).thenAnswer((_) async => '/test');
+    when(() => sessions.bundlePathOf(any())).thenAnswer((_) async => '/test');
     when(sessions.listSessions).thenAnswer((_) async => []);
+    when(sessions.newSessionId).thenAnswer((_) async => 'new');
+    when(
+      () => sessions.releaseSessionId(any()),
+    ).thenAnswer((_) async {});
     exportsDirectory = '.';
     performance = PerformanceRepository(
       engine: engine,
@@ -125,7 +129,6 @@ void main() {
       pedal: pedal,
       performance: performance,
       sessions: sessions,
-      exportDirectory: () async => '.',
       powerOff: () async => halts++,
     );
     addTearDown(() async {
@@ -144,11 +147,15 @@ void main() {
   Future<(Future<void>, Completer<SessionBundle>)> holdSessionRead() async {
     final entered = Completer<void>();
     final read = Completer<SessionBundle>();
-    when(() => sessions.read(any())).thenAnswer((_) {
-      entered.complete();
-      return read.future;
-    });
-    final loading = runtime.session.loadNamed('Incoming');
+    when(
+      () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+    ).thenAnswer(
+      _opened((_) {
+        entered.complete();
+        return read.future;
+      }),
+    );
+    final loading = runtime.session.open('Incoming');
     await entered.future;
     return (loading, read);
   }
@@ -175,58 +182,64 @@ void main() {
           isRunning: true,
           devicePresent: true,
         );
-        when(() => sessions.read(any())).thenAnswer(
-          (_) async => (
-            session: const Session(
-              sampleRate: 48000,
-              channels: 1,
-              baseLengthFrames: 128,
-              tracks: [
-                SessionTrack(
-                  channel: 0,
-                  multiple: 1,
-                  lengthFrames: 128,
-                  fadeAmount: .25,
-                  reversed: false,
-                  lanes: [
-                    SessionLane(
-                      lane: 0,
-                      volume: 1,
-                      muted: false,
-                      outputMask: 1,
-                      inputChannel: 0,
-                      layers: [SessionLayer(file: 'track0.wav')],
-                    ),
-                  ],
-                ),
-                SessionTrack(
-                  channel: 1,
-                  multiple: 1,
-                  lengthFrames: 128,
-                  fadeAmount: 0,
-                  reversed: false,
-                  lanes: [
-                    SessionLane(
-                      lane: 0,
-                      volume: 1,
-                      muted: false,
-                      outputMask: 1,
-                      inputChannel: 0,
-                      layers: [SessionLayer(file: 'track1.wav')],
-                    ),
-                  ],
-                ),
-              ],
-              defaultFadeDurationMs: 12000,
+        when(
+          () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: const Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 128,
+                tracks: [
+                  SessionTrack(
+                    channel: 0,
+                    multiple: 1,
+                    lengthFrames: 128,
+                    fadeAmount: .25,
+                    reversed: false,
+                    lanes: [
+                      SessionLane(
+                        lane: 0,
+                        volume: 1,
+                        muted: false,
+                        outputMask: 1,
+                        inputChannel: 0,
+                        layers: [SessionLayer(file: 'track0.wav')],
+                        history: TrackHistory.none,
+                      ),
+                    ],
+                  ),
+                  SessionTrack(
+                    channel: 1,
+                    multiple: 1,
+                    lengthFrames: 128,
+                    fadeAmount: 0,
+                    reversed: false,
+                    lanes: [
+                      SessionLane(
+                        lane: 0,
+                        volume: 1,
+                        muted: false,
+                        outputMask: 1,
+                        inputChannel: 0,
+                        layers: [SessionLayer(file: 'track1.wav')],
+                        history: TrackHistory.none,
+                      ),
+                    ],
+                  ),
+                ],
+                defaultFadeDurationMs: 12000,
+              ),
+              laneStems: {
+                (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
+                (1, 0): [Float32List(128)..fillRange(0, 128, .5)],
+              },
             ),
-            laneStems: {
-              (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
-              (1, 0): [Float32List(128)..fillRange(0, 128, .5)],
-            },
           ),
         );
         store.refuseFade = true;
-        await runtime.session.loadNamed('Incoming');
+        await runtime.session.open('Incoming');
         expect(runtime.session.state.bootRecoveryRequired, isTrue);
         expect(repository.sessionBootRecoveryRequired, isTrue);
         // This fake's snapshot is scripted independently of stop(). Publish the
@@ -280,6 +293,7 @@ void main() {
             chains: any(named: 'chains'),
             settings: any(named: 'settings'),
             pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
             captureStillValid: any(named: 'captureStillValid'),
           ),
         ).thenAnswer((call) async {
@@ -305,7 +319,7 @@ void main() {
         store.fadeWrite!.complete();
         await edit;
         await save;
-        expect(runtime.session.state.outcome, SessionOutcome.saved);
+        expect(runtime.session.state.outcome, SessionOutcome.savedAs);
         expect(saved!.defaultFadeDurationMs, 4000);
         expect(saved!.trackFadeDurationOverrides, {7: 4000});
       },
@@ -331,29 +345,34 @@ void main() {
           expect(capture, isNotNull);
           expect(engine.snapshot().isPerfArmed, isTrue);
           final disarms = engine.perfDisarmCalls;
-          when(() => sessions.read(any())).thenAnswer(
-            (_) async => (
-              session: Session(
-                sampleRate: 48000,
-                channels: 1,
-                baseLengthFrames: 0,
-                tracks: [
-                  if (amount != null)
-                    SessionTrack(
-                      channel: 0,
-                      multiple: 1,
-                      lengthFrames: 128,
-                      fadeAmount: amount,
-                      reversed: false,
-                      lanes: const [],
-                    ),
-                ],
-                defaultFadeDurationMs: amount == null ? 501 : 4000,
+          when(
+            () =>
+                sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+          ).thenAnswer(
+            _opened(
+              (_) async => (
+                session: Session(
+                  sampleRate: 48000,
+                  channels: 1,
+                  baseLengthFrames: 0,
+                  tracks: [
+                    if (amount != null)
+                      SessionTrack(
+                        channel: 0,
+                        multiple: 1,
+                        lengthFrames: 128,
+                        fadeAmount: amount,
+                        reversed: false,
+                        lanes: const [],
+                      ),
+                  ],
+                  defaultFadeDurationMs: amount == null ? 501 : 4000,
+                ),
+                laneStems: <(int, int), List<Float32List>>{},
               ),
-              laneStems: <(int, int), List<Float32List>>{},
             ),
           );
-          await runtime.session.loadNamed('invalid');
+          await runtime.session.open('invalid');
           expect(runtime.session.state.status, SessionStatus.failure);
           expect(repository.sessionRevision, oldRevision);
           expect(engine.perfDisarmCalls, disarms);
@@ -378,38 +397,43 @@ void main() {
     addTearDown(() {
       if (!store.bootWrite!.isCompleted) store.bootWrite!.complete();
     });
-    when(() => sessions.read(any())).thenAnswer(
-      (_) async => (
-        session: const Session(
-          sampleRate: 48000,
-          channels: 1,
-          baseLengthFrames: 128,
-          tracks: [
-            SessionTrack(
-              fadeAmount: 1,
-              reversed: false,
-              channel: 0,
-              multiple: 1,
-              lengthFrames: 128,
-              lanes: [
-                SessionLane(
-                  lane: 0,
-                  volume: .4,
-                  muted: false,
-                  outputMask: 1,
-                  inputChannel: 0,
-                  layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
-                ),
-              ],
-            ),
-          ],
+    when(
+      () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+    ).thenAnswer(
+      _opened(
+        (_) async => (
+          session: const Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 128,
+            tracks: [
+              SessionTrack(
+                fadeAmount: 1,
+                reversed: false,
+                channel: 0,
+                multiple: 1,
+                lengthFrames: 128,
+                lanes: [
+                  SessionLane(
+                    lane: 0,
+                    volume: .4,
+                    muted: false,
+                    outputMask: 1,
+                    inputChannel: 0,
+                    layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                    history: TrackHistory.none,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          laneStems: {
+            (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
+          },
         ),
-        laneStems: {
-          (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
-        },
       ),
     );
-    final loading = runtime.session.loadNamed('Incoming');
+    final loading = runtime.session.open('Incoming');
     await store.bootWriteEntered.future;
     expect(repository.state.tracks[0].state, TrackState.stopped);
     final before = (
@@ -823,3 +847,9 @@ void main() {
     await expectLater(started, completes);
   });
 }
+
+/// Answers a stubbed `open` with a bundle that needed no conversion.
+Future<OpenedSession> Function(Invocation) _opened(
+  FutureOr<SessionBundle> Function(Invocation) answer,
+) =>
+    (invocation) async => (bundle: await answer(invocation), conversion: null);

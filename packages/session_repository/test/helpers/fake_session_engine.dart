@@ -9,9 +9,9 @@ class _FakeLane {
   bool muted = false;
   double pan = 0;
 
-  /// Ordinal-ordered layer buffers (undo… live … redo). Its length matches the
-  /// owning track's `undoDepth + 1 + redoDepth`; a single-layer lane holds just
-  /// the live buffer.
+  /// Ordinal-ordered layer buffers (undo… live … redo). Its length is the
+  /// owning track's image count; a single-layer lane holds just the live
+  /// buffer.
   List<Float32List> layers = [Float32List(0)];
 }
 
@@ -19,13 +19,24 @@ class _FakeTrack {
   TrackState state = TrackState.empty;
   int multiple = 1;
   int lengthFrames = 0;
-  int undoDepth = 0;
+
+  /// The raw undo stack count: the split of [history] and the live ordinal.
+  int undoCount = 0;
   int redoDepth = 0;
+
+  /// The undo depth the snapshot publishes when it differs from [undoCount]
+  /// (the engine reads 0 while a Clear restore is in flight); null publishes
+  /// [undoCount].
+  int? publishedUndoDepth;
+
+  /// The track's history entries ([AudioEngine.exportHistory] order); its
+  /// length is `undoCount + redoDepth`.
+  List<HistoryEntry> history = const [];
   bool solo = false;
   bool reversed = false;
   final List<_FakeLane> lanes = [_FakeLane()];
 
-  int get liveIndex => undoDepth;
+  int get liveIndex => undoCount;
 
   // Lane-0 conveniences (the single-lane accessors the setters/seed use).
   double volume = 1;
@@ -112,8 +123,10 @@ class FakeSessionEngine implements AudioEngine {
       ..state = TrackState.playing
       ..multiple = multiple
       ..lengthFrames = frames
-      ..undoDepth = 0
-      ..redoDepth = 0;
+      ..undoCount = 0
+      ..redoDepth = 0
+      ..publishedUndoDepth = null
+      ..history = const [];
     track.lanes[0]
       ..layers = [pcm]
       ..volume = volume
@@ -124,12 +137,18 @@ class FakeSessionEngine implements AudioEngine {
 
   /// Seeds a playing single-lane track with an ordinal-ordered [layers] stack
   /// and its shared [undoDepth] / [redoDepth] — exercises overdub-layer capture.
-  /// The live buffer is `layers[undoDepth]`.
+  /// The live buffer is `layers[undoDepth]`. [history] defaults to one overdub
+  /// layer per undo/redo entry; a history with redo-side Peel markers names
+  /// fewer images than entries. [publishedUndoDepth] makes the snapshot
+  /// publish a different undo depth than the raw [undoDepth], as the engine
+  /// does while a Clear restore is in flight.
   void seedLayers(
     int channel,
     List<Float32List> layers, {
     int undoDepth = 0,
     int redoDepth = 0,
+    int? publishedUndoDepth,
+    List<HistoryEntry>? history,
     int multiple = 1,
     double volume = 1,
     bool muted = false,
@@ -139,8 +158,15 @@ class FakeSessionEngine implements AudioEngine {
       ..state = TrackState.playing
       ..multiple = multiple
       ..lengthFrames = frames
-      ..undoDepth = undoDepth
-      ..redoDepth = redoDepth;
+      ..undoCount = undoDepth
+      ..redoDepth = redoDepth
+      ..publishedUndoDepth = publishedUndoDepth
+      ..history =
+          history ??
+          List.filled(
+            undoDepth + redoDepth,
+            const HistoryEntry(HistoryKind.layer),
+          );
     track.lanes[0]
       ..layers = List.of(layers)
       ..volume = volume
@@ -212,7 +238,7 @@ class FakeSessionEngine implements AudioEngine {
           volume: t.volume,
           muted: t.muted,
           lengthFrames: t.lengthFrames,
-          undoDepth: t.undoDepth,
+          undoDepth: t.publishedUndoDepth ?? t.undoCount,
           redoDepth: t.redoDepth,
           rms: 0,
           peak: 0,
@@ -295,7 +321,13 @@ class FakeSessionEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
+  TrackHistory exportHistory(int channel) => TrackHistory(
+    _tracks[channel].history,
+    undoCount: _tracks[channel].undoCount,
+  );
+
+  @override
+  EngineResult finalizeHistory(int channel, TrackHistory history) =>
       EngineResult.ok;
 
   @override
@@ -318,8 +350,10 @@ class FakeSessionEngine implements AudioEngine {
       ..state = TrackState.empty
       ..multiple = 1
       ..lengthFrames = 0
-      ..undoDepth = 0
+      ..undoCount = 0
       ..redoDepth = 0
+      ..publishedUndoDepth = null
+      ..history = const []
       ..lanes.clear();
     _tracks[channel].lanes.add(_FakeLane());
     if (_tracks.every((t) => t.state == TrackState.empty)) masterLength = 0;
@@ -861,11 +895,19 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult perfDisarm() => EngineResult.ok;
 
   @override
-  int? volumeFreeBytes(String path) => freeBytes;
+  bool syncDirectory(String path) => path.isNotEmpty;
 
-  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
-  /// answer.
+  @override
+  VolumeSpace? volumeSpace(String path) => freeBytes == null
+      ? null
+      : VolumeSpace(totalBytes: totalBytes, freeBytes: freeBytes!);
+
+  /// What [volumeSpace] reports as free; `null` models a platform that
+  /// cannot answer.
   int? freeBytes = 1 << 40;
+
+  /// What [volumeSpace] reports as the volume's size.
+  int totalBytes = 2 << 40;
   @override
   EngineResult renderBegin(String captureDir) => EngineResult.ok;
   @override

@@ -25,7 +25,7 @@ import 'package:segno_engine/segno_engine.dart'
         PluginFormat,
         TrackEffectType;
 import 'package:segno_engine/segno_engine.dart'
-    show EngineSnapshot, LaneSnapshot, TrackSnapshot;
+    show EngineSnapshot, HistoryEntry, HistoryKind, LaneSnapshot, TrackSnapshot;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -779,6 +779,7 @@ void main() {
       outputMask: 0x3,
       inputChannel: index,
       layers: [SessionLayer(file: file)],
+      history: TrackHistory.none,
     );
 
     Session sessionWith(List<SessionTrack> tracks) => Session(
@@ -1107,15 +1108,18 @@ void main() {
 
     test('maps a multi-lane track with per-lane overdub history', () {
       // Two lanes, each a 3-layer stack (undo 1, live, redo 1) — the per-lane
-      // layer zip must keep each lane's ordered layers + undo/redo counts.
+      // layer zip must keep each lane's ordered layers, history and counts.
+      const history = TrackHistory([
+        HistoryEntry(HistoryKind.processed),
+        HistoryEntry(HistoryKind.layer),
+      ], undoCount: 1);
       SessionLane historyLane(int index, List<String> files) => SessionLane(
         lane: index,
         volume: 1,
         muted: false,
         outputMask: 0x3,
         inputChannel: index,
-        undoCount: 1,
-        redoCount: 1,
+        history: history,
         layers: [for (final f in files) SessionLayer(file: f)],
       );
       final l0 = [
@@ -1149,6 +1153,7 @@ void main() {
       final lanes = rig.tracks.single.lanes;
       expect(lanes, hasLength(2));
       expect(lanes[0].layers, l0);
+      expect(lanes[0].history, history);
       expect(lanes[0].undoCount, 1);
       expect(lanes[0].redoCount, 1);
       expect(lanes[0].liveIndex, 1);

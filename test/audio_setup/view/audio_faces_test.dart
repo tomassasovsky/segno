@@ -905,24 +905,21 @@ void main() {
       expect(find.byKey(const Key('audio_default_length_0')), findsNothing);
     });
 
-    testWidgets('its two openable rows also open one at a time', (
+    testWidgets('the loop cap lives on Device, not on Recording', (
       tester,
     ) async {
       await pump(tester, tab: AudioTab.recording);
-      await tester.tap(find.byKey(const Key('audio_max_loop_row')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_max_loop_5')), findsOneWidget);
+      expect(find.byKey(const Key('audio_max_loop_row')), findsNothing);
+      expect(find.byKey(const Key('audio_default_length_row')), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('audio_default_length_row')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_max_loop_5')), findsNothing);
-      expect(find.byKey(const Key('audio_default_length_2')), findsOneWidget);
+      await pump(tester);
+      expect(find.byKey(const Key('audio_max_loop_row')), findsOneWidget);
     });
 
     testWidgets('the loop cap chooser GROWS open rather than appearing', (
       tester,
     ) async {
-      await pump(tester, tab: AudioTab.recording);
+      await pump(tester);
       final chooser = find.byKey(const Key('audio_max_loop_chooser'));
       expect(tester.getSize(chooser).height, 0);
 
@@ -937,115 +934,13 @@ void main() {
     });
 
     testWidgets('the loop cap opens in place and writes', (tester) async {
-      await pump(tester, tab: AudioTab.recording);
+      await pump(tester);
       await tester.tap(find.byKey(const Key('audio_max_loop_row')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('audio_max_loop_5')));
       await tester.pumpAndSettle();
       expect(audio.state.maxLoopMinutes, 5);
-    });
-
-    testWidgets('the three switches write through their own cubits', (
-      tester,
-    ) async {
-      await pump(tester, tab: AudioTab.recording);
-
-      await tester.tap(find.byKey(const Key('audio_quantize_switch')));
-      await tester.pumpAndSettle();
-      expect(quantize.state.defaultTiming.quantize, isTrue);
-
-      await tester.tap(find.byKey(const Key('audio_rec_dub_switch')));
-      await tester.pumpAndSettle();
-      expect(options.state.recDub, isTrue);
-
-      await tester.tap(find.byKey(const Key('audio_auto_record_switch')));
-      await tester.pumpAndSettle();
-      await tester.runAsync(tempoOwner.recordStartOwner.flush);
-      await tester.pump();
-      expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
-      expect(tempo.state.confirmedRecordStart?.countInBars, 0);
-    });
-
-    testWidgets('unknown Sound is a dash, never a provisional Off switch', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        tab: AudioTab.recording,
-        loadRecordStart: false,
-      );
-      final row = rowOf(tester, const Key('audio_auto_record_row'));
-      expect(tempo.state.confirmedRecordStart, isNull);
-      expect(row.trailing, isA<Semantics>());
-      expect(
-        find.byKey(const Key('audio_auto_record_unavailable')),
-        findsOneWidget,
-      );
-      expect(find.byKey(const Key('audio_auto_record_switch')), findsNothing);
-      verifyNever(
-        () => repository.setRecordStartSettings(
-          countInBars: any(named: 'countInBars'),
-          soundStart: any(named: 'soundStart'),
-          editKind: any(named: 'editKind'),
-          releasedSettings: any(named: 'releasedSettings'),
-        ),
-      );
-    });
-
-    testWidgets('recovery retains Sound while blocking its switch', (
-      tester,
-    ) async {
-      await pump(tester, tab: AudioTab.recording);
-      final control = find.byKey(const Key('audio_auto_record_switch'));
-      await tester.tap(control);
-      await tester.pumpAndSettle();
-      expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
-
-      startRecovering = true;
-      engine.add(const LooperState());
-      await tester.pumpAndSettle();
-      expect(tempo.state.recordStartSnapshot, isNull);
-      final row = rowOf(tester, const Key('audio_auto_record_row'));
-      expect(row.subtitle, l10nOf(tester).recordStartUnavailable);
-      final toggle = tester.widget<ConsoleSwitch>(control);
-      expect(toggle.value, isTrue);
-      expect(toggle.onChanged, isNull);
-      clearInteractions(repository);
-      await tester.tap(control);
-      await tester.pumpAndSettle();
-      verifyNever(
-        () => repository.setRecordStartSettings(
-          countInBars: any(named: 'countInBars'),
-          soundStart: any(named: 'soundStart'),
-          editKind: any(named: 'editKind'),
-          releasedSettings: any(named: 'releasedSettings'),
-        ),
-      );
-    });
-
-    testWidgets('capture retains Off and disables Sound', (tester) async {
-      await pump(tester, tab: AudioTab.recording);
-      startCaptureLocked = true;
-      engine.add(const LooperState());
-      await tester.pumpAndSettle();
-      final row = rowOf(tester, const Key('audio_auto_record_row'));
-      expect(row.subtitle, l10nOf(tester).recordStartCaptureLocked);
-      final control = find.byKey(const Key('audio_auto_record_switch'));
-      final toggle = tester.widget<ConsoleSwitch>(control);
-      expect(toggle.value, isFalse);
-      expect(toggle.onChanged, isNull);
-      clearInteractions(repository);
-      await tester.tap(control);
-      await tester.pumpAndSettle();
-      verifyNever(
-        () => repository.setRecordStartSettings(
-          countInBars: any(named: 'countInBars'),
-          soundStart: any(named: 'soundStart'),
-          editKind: any(named: 'editKind'),
-          releasedSettings: any(named: 'releasedSettings'),
-        ),
-      );
     });
 
     testWidgets('the default length is a chip grid that shuts on a pick', (
