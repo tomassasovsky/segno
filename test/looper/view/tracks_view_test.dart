@@ -696,6 +696,56 @@ void main() {
     await tester.pump(const Duration(seconds: 10));
   });
 
+  for (final (operation, notice, toast) in [
+    (
+      TrackOperation.fade,
+      'The fade could not be started. Try again.',
+      AppToastId.footFadeFailure,
+    ),
+    (
+      TrackOperation.reverse,
+      'The track could not be turned around. Try again.',
+      AppToastId.footReverseFailure,
+    ),
+  ]) {
+    testWidgets('an assigned ${operation.name} that reaches no track says so '
+        'outside its surface', (tester) async {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      seed(const LooperState(tracks: [Track()]));
+      pedalLink.hello();
+      await tester.runAsync(
+        () => control.setPedalSetup(
+          const PedalSetup().withCustom(
+            PedalButton.clear,
+            bank: 0,
+            pair: ControlGesturePair(
+              press: TrackOperationAction(
+                operation: operation,
+                scope: const SelectedTrackScope(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await pump(tester);
+      control.setMode(InteractionMode.custom);
+      await tester.pumpAndSettle();
+      pedalLink.press(PedalButton.clear, down: true);
+      await tester.pump(const Duration(milliseconds: 50));
+      pedalLink.press(PedalButton.clear, down: false);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      expect(control.state.mode, InteractionMode.custom);
+      expect(find.text(notice).hitTestable(), findsOneWidget);
+      dismissAppToast(toast);
+      await tester.pump(const Duration(seconds: 10));
+    });
+  }
+
   testWidgets('the layer badge drops by one when a Peel removes a layer', (
     tester,
   ) async {

@@ -2625,15 +2625,21 @@ class ControlCubit extends Cubit<ControlState> {
         selectTrack(channels.single);
         return true;
       case TrackOperationAction(:final operation):
-        if ((operation == TrackOperation.fade ||
-                operation == TrackOperation.reverse) &&
-            channels.length > 1) {
+        if (operation == TrackOperation.fade ||
+            operation == TrackOperation.reverse) {
           // Each recorded track fades or turns around independently; one
-          // stomp, every one.
+          // stomp, every one. A stomp that reaches no track says so, in any
+          // mode: the control is away from the track, so silence would read
+          // as a dead pedal.
+          final session = _looper.sessionRevision;
           return Future.wait([
             for (final channel in channels)
               Future.value(_runTrackOperation(operation, channel)),
-          ]).then((results) => results.any((accepted) => accepted));
+          ]).then((results) {
+            final accepted = results.any((accepted) => accepted);
+            if (!accepted) _reportAssignedRefusal(operation, session);
+            return accepted;
+          });
         }
         if (operation == TrackOperation.solo && channels.length > 1) {
           return _mixSettings
@@ -2650,6 +2656,18 @@ class ControlCubit extends Cubit<ControlState> {
         }
         return accepted;
     }
+  }
+
+  /// Reports an assigned Fade or Reverse that reached no track, unless the
+  /// Session it was fired in has since been replaced.
+  void _reportAssignedRefusal(TrackOperation operation, int session) {
+    if (isClosed || _looper.sessionRevision != session) return;
+    emit(switch (operation) {
+      TrackOperation.fade => state.copyWith(
+        footFadeFailure: state.footFadeFailure + 1,
+      ),
+      _ => state.copyWith(footReverseFailure: state.footReverseFailure + 1),
+    });
   }
 
   FutureOr<bool> _runCommand(ControlCommand command, int selectedChannel) {

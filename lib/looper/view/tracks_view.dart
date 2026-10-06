@@ -141,9 +141,9 @@ class _TracksViewState extends State<TracksView> {
             ),
           ),
           BlocListener<ControlCubit, ControlState>(
+            // The Fade surface and an assigned Fade in any mode.
             listenWhen: (before, after) =>
-                before.footFadeFailure != after.footFadeFailure &&
-                after.mode == InteractionMode.fade,
+                before.footFadeFailure != after.footFadeFailure,
             listener: (context, _) => showAppToast(
               id: AppToastId.footFadeFailure,
               type: ToastificationType.error,
@@ -152,9 +152,9 @@ class _TracksViewState extends State<TracksView> {
             ),
           ),
           BlocListener<ControlCubit, ControlState>(
+            // The Reverse surface and an assigned Reverse in any mode.
             listenWhen: (before, after) =>
-                before.footReverseFailure != after.footReverseFailure &&
-                after.mode == InteractionMode.reverse,
+                before.footReverseFailure != after.footReverseFailure,
             listener: (context, _) => showAppToast(
               id: AppToastId.footReverseFailure,
               type: ToastificationType.error,
