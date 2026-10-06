@@ -689,6 +689,7 @@ typedef struct le_pr_segment {
   int reversed;
   double rate;
   int32_t turn_frames;
+  int32_t turn_into0; /* frames of the window already mixed at start_frame */
   le_read_head turn;
 } le_pr_segment;
 
@@ -746,6 +747,7 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   seg->reversed = reversed;
   seg->rate = b->rate;
   seg->turn_frames = 0;
+  seg->turn_into0 = 0;
   seg->turn = (le_read_head){0, 0.0, 1.0};
 }
 
@@ -783,11 +785,23 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
   if (b->segment_count == 0) return;
   const le_pr_segment* last = &b->segments[b->segment_count - 1];
   if (last->image == NULL || last->image_len <= 0) return;
-  const double old_index = le_pr_build_phase_at(b, frame);
+  double old_index = le_pr_build_phase_at(b, frame);
   le_read_head old = {last->reversed, 0.0, last->rate};
   const int silent = last->silent;
   float* image = last->image;
   const int32_t image_len = last->image_len;
+  /* A change inside a window still mixing (the callback's le_turn_begin)
+   * keeps that window and the head it fades out. */
+  const int64_t into0 =
+      (int64_t)(frame - last->start_frame) + last->turn_into0;
+  const int carry = turn_frames > 0 && last->turn_frames > 0 &&
+                    into0 < last->turn_frames;
+  if (carry) {
+    old = last->turn;
+    old_index = le_head_index(&last->turn,
+                              (int64_t)(frame - last->start_frame), image_len);
+    turn_frames = last->turn_frames;
+  }
   old.origin = le_head_origin(&old, old_index, 0, image_len);
   /* The image stays owned by the segment that loaded it: hand the append no
    * image, so a full segment table frees nothing here, and borrow it after,
@@ -802,6 +816,7 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
   seg->silent = silent;
   seg->reversed = reversed;
   seg->turn_frames = turn_frames;
+  seg->turn_into0 = carry ? (int32_t)into0 : 0;
   seg->turn = old;
 }
 
@@ -1230,9 +1245,10 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       const int64_t into = (int64_t)(f - seg->start_frame);
       stem[f] = le_head_read(seg->image, seg->image_len, &head,
                              le_head_index(&head, into, seg->image_len));
-      if (seg->turn_frames > 0 && into < seg->turn_frames) {
+      const int64_t mixed = into + seg->turn_into0;
+      if (seg->turn_frames > 0 && mixed < seg->turn_frames) {
         const double old = le_head_index(&seg->turn, into, seg->image_len);
-        const float x = le_head_turn_mix((int32_t)into, seg->turn_frames, 0);
+        const float x = le_head_turn_mix((int32_t)mixed, seg->turn_frames, 0);
         stem[f] = stem[f] * x +
                   le_head_read(seg->image, seg->image_len, &seg->turn, old) *
                       (1.0f - x);

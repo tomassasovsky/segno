@@ -189,8 +189,10 @@ typedef enum le_perf_log_code {
   /* 326 is held by Multiply/Divide's LE_PLOG_LENGTH (#1168 plan). */
   LE_PLOG_SPEED = 327, /* speed_log: a track's head rate (#1179, events.log
                         * version 8) with the exact index in Q32.32 — at every
-                        * accepted Speed change, at PERF_ARM for a track not
-                        * at 1x and at every material reset of such a track. */
+                        * accepted Speed change (each track), at PERF_ARM and
+                        * at a material reset for a track not at 1x, and after
+                        * every 322/323 a track logs while reading off whole
+                        * samples, whose phase is only the integral part. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's

@@ -384,12 +384,13 @@ static void test_speed_render_parity(void) {
   le_engine_destroy(e);
 }
 
-/* A step disengages the Pre print and it never re-engages at 2x; inside the
- * step's turn window the print is retracted and freed (a chain edit) on the
- * cached twin, and the window keeps reading the lane's live material only —
- * ASAN-clean and in parity with the uncached twin. Normal re-engages. */
-static void test_speed_print_and_turn_source(void) {
-  printf("test_speed_print_and_turn_source\n");
+/* A step disengages the Pre print and it never re-engages at 2x; a chain edit
+ * inside the step's window retracts the print on the cached twin, which stays
+ * in parity with the uncached twin (both heads read the lane's dry take, so
+ * the window holds no pointer to the print; Part 3a's source swaps are where
+ * a turn pins another buffer). Normal re-engages. */
+static void test_speed_print_disengages_and_parity(void) {
+  printf("test_speed_print_disengages_and_parity\n");
   le_engine *cached, *live;
   cache_pair_prepare(&cached, &live, LE_FX_DRIVE);
   pump_frames(cached, 0, CACHE_LOOP);
@@ -423,18 +424,20 @@ static void test_speed_print_and_turn_source(void) {
   le_engine_destroy(live);
 }
 
-/* A Clear at 1/2x resets direction and origin with the material, logs the
- * reset, and the global rate survives: an undo brings the take back at 1/2x
- * from index 0 of the held transport. Two lanes read the same index. */
+/* A Clear at 1/2x resets direction and origin with the material and the
+ * global rate survives while another track holds material: an undo brings the
+ * take back at 1/2x, reading where the song position is. Two lanes read the
+ * same index. Track 1 holds silence, so the output is track 0's alone. */
 static void test_speed_material_reset_and_lanes(void) {
   printf("test_speed_material_reset_and_lanes\n");
   const int len = 1000;
   le_engine* e = le_engine_create();
   CHECK(le_engine_configure(e, 48000, 1, 1, 4000) == LE_OK);
-  float pcm[1000];
+  float pcm[1000], silence[1000] = {0};
   for (int i = 0; i < len; ++i) pcm[i] = (float)i;
   CHECK(le_engine_import_track(e, 0, pcm, len) == LE_OK);
   CHECK(le_engine_import_track_lane(e, 0, 1, pcm, len) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, silence, len) == LE_OK);
   CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
   drain(e);
   const uint64_t id = speed_set(e, 1, 2);
@@ -451,9 +454,304 @@ static void test_speed_material_reset_and_lanes(void) {
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY && s.speed_numer == 1 &&
         s.speed_denom == 2 && s.tracks[0].head_rate_milli == 500);
   CHECK(le_engine_undo(e, 0) == LE_OK);
-  CHECK(le_engine_play(e, 0) == LE_OK);
   rev_process(e, out, 400, 512);
-  for (int k = 0; k < 400; ++k) CHECK(fabs(out[k] - 2 * 0.5 * k) < 4e-3);
+  for (int k = 0; k < 400; ++k) {
+    CHECK(fabs(out[k] - 2 * speed_ramp_at(0.5 * (365 + k), len)) < 4e-3);
+  }
+  le_engine_destroy(e);
+}
+
+/* H1: Normal after 1/2x on an odd song frame lands on a whole sample, so
+ * every read after the window is the take's own sample (not a two-tap
+ * average), and a Pre print re-engages at the next lap start. */
+static void test_speed_normal_lands_on_whole_sample(void) {
+  printf("test_speed_normal_lands_on_whole_sample\n");
+  const int len = 1000, F = 480;
+  le_engine* e = reverse_fixture(48000, len, len);
+  static float out[4096];
+  rev_process(e, out, 37, 64);
+  uint64_t id = speed_set(e, 1, 2);
+  /* past the step's own window; the next frame reads 37 + 240.5 = 277.5 */
+  rev_process(e, out, 481, 64);
+  fade_result(e, id, LE_OK);
+  id = speed_set(e, 1, 1);
+  rev_process(e, out, 2400, 64);
+  fade_result(e, id, LE_OK);
+  for (int k = 0; k < F; ++k) {
+    const double x = (double)k / F;
+    CHECK(fabs(out[k] - ((278 + k) % len * x +
+                         speed_ramp_at(277.5 + 0.5 * k, len) * (1 - x))) < 2e-3);
+  }
+  for (int k = F; k < 2400; ++k) CHECK(out[k] == (float)((278 + k) % len));
+  le_engine_destroy(e);
+  /* The print: off at 1/2x, back at the first lap start after Normal. */
+  le_engine *cached, *twin;
+  cache_pair_prepare(&cached, &twin, LE_FX_DRIVE);
+  pump_frames(cached, 0, CACHE_LOOP);
+  CHECK(cache_engaged(cached, 0, 0) == 1);
+  id = speed_set(cached, 1, 2);
+  pump_frames(cached, 0, 481);
+  fade_result(cached, id, LE_OK);
+  CHECK(cache_engaged(cached, 0, 0) == 0);
+  id = speed_set(cached, 1, 1);
+  pump_frames(cached, 0, 3 * CACHE_LOOP);
+  fade_result(cached, id, LE_OK);
+  CHECK(cache_engaged(cached, 0, 0) == 1);
+  le_engine_destroy(cached);
+  le_engine_destroy(twin);
+}
+
+/* M1: a Clear and its Undo at 1/2x on an odd frame keep the stem exact — the
+ * restored image's 322 carries only the integral phase, and the 327 beside
+ * it the exact index. Track 1 holds silence so the rig never empties. */
+static void test_speed_clear_undo_stem_exact(void) {
+  printf("test_speed_clear_undo_stem_exact\n");
+  const int len = 1000;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 4000) == LE_OK);
+  float pcm[1000], silence[1000] = {0};
+  for (int i = 0; i < len; ++i) pcm[i] = (float)i;
+  CHECK(le_engine_import_track(e, 0, pcm, len) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, silence, len) == LE_OK);
+  CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  const char* dir = render_test_dir("speed-clear-undo");
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+  static float live[2600], replay[2600];
+  rev_process(e, live, 37, 512);
+  const uint64_t id = speed_set(e, 1, 2);
+  rev_process(e, live + 37, 400, 512);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  rev_process(e, live + 437, 64, 512);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  rev_process(e, live + 501, 2001, 512);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  int fractional = 0;
+  for (int i = 501; i < 2502; ++i) fractional += live[i] != (float)(int)live[i];
+  CHECK(fractional > 500); /* the restore landed between samples */
+  rev_render_track_wav(e, dir, len);
+  const int frames = test_read_wet_stem(dir, 0, replay, 2600);
+  CHECK(frames == 2502);
+  int bad = 0;
+  for (int i = 0; i < frames; ++i) bad += fabsf(replay[i] - live[i]) >= 2e-3f;
+  CHECK(bad == 0);
+  le_engine_destroy(e);
+}
+
+/* M2: an empty loop has no speed. Clearing the only track at 1/2x returns
+ * Speed to 1x (published, so the host shows it), and the next loop records. */
+static void test_speed_empty_loop_resets(void) {
+  printf("test_speed_empty_loop_resets\n");
+  le_engine* e = reverse_fixture(48000, 1000, 1000);
+  const uint64_t id = speed_set(e, 1, 2);
+  drain(e);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_record(e, 1) == LE_ERR_TRANSFORMED);
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 0);
+  CHECK(s.speed_numer == 1 && s.speed_denom == 1);
+  CHECK(s.tracks[0].head_rate_milli == 1000 &&
+        s.tracks[1].head_rate_milli == 1000);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  le_engine_destroy(e);
+}
+
+/* L1: a second step inside the first step's window keeps that window and the
+ * head it fades out — 1x -> 2x, then 4x 100 frames later never jumps (the
+ * blend's slope stays under 4 on the ramp) — two presses in one drain answer
+ * two receipts, and the stem follows all of it. */
+static void test_speed_step_inside_window(void) {
+  printf("test_speed_step_inside_window\n");
+  const int len = 1000;
+  le_engine* e = reverse_fixture(48000, len, len);
+  const char* dir = render_test_dir("speed-double-step");
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+  static float live[1200], replay[1200];
+  rev_process(e, live, 37, 64);
+  uint64_t a = speed_set(e, 2, 1);
+  rev_process(e, live + 37, 100, 64);
+  uint64_t b = speed_set(e, 4, 1);
+  rev_process(e, live + 137, 150, 64);
+  fade_result(e, a, LE_OK);
+  fade_result(e, b, LE_OK);
+  for (int k = 37; k < 286; ++k) CHECK(fabsf(live[k + 1] - live[k]) <= 4.01f);
+  a = speed_set(e, 1, 2);
+  b = speed_set(e, 8, 1);
+  rev_process(e, live + 287, 713, 64);
+  fade_result(e, a, LE_OK);
+  fade_result(e, b, LE_OK);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.speed_numer == 8 && s.speed_denom == 1);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  rev_render_track_wav(e, dir, len);
+  const int frames = test_read_wet_stem(dir, 0, replay, 1200);
+  CHECK(frames == 1000);
+  for (int i = 0; i < frames; ++i) CHECK(fabsf(replay[i] - live[i]) < 2e-3f);
+  le_engine_destroy(e);
+}
+
+/* L2: refused while OVERDUBBING; the callback's recheck refuses a request
+ * admitted while a punch-out tail still writes; refused during a count-in. */
+static void test_speed_refusals_while_writing(void) {
+  printf("test_speed_refusals_while_writing\n");
+  le_engine* e = reverse_fixture(48000, 1000, 1000);
+  float out[64];
+  uint64_t id;
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_speed(e, 2, 1, &id) == LE_ERR_NOT_READY && id == 0);
+  process_const(e, 0.0f, 64, out); /* the punch envelope rises */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch out: the tail still writes */
+  drain(e);
+  id = speed_set(e, 2, 1); /* admitted: the state reads PLAYING */
+  process_const(e, 0.0f, 1, out);
+  fade_result(e, id, LE_ERR_NOT_READY); /* refused by the callback */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.speed_numer == 1 && s.speed_denom == 1);
+  le_engine_destroy(e);
+  e = tg_make_engine_cap(1000, 100000);
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_record(e, 0); /* the count-in, not RECORDING yet */
+  tg_advance(e, 10);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(le_engine_set_speed(e, 2, 1, &id) == LE_ERR_NOT_READY);
+  le_engine_destroy(e);
+}
+
+/* L2: a capture armed while sped up anchors from PERF_ARM's 327, and a Fade
+ * keeps its own envelope through a step. */
+static void test_speed_arm_while_sped_up_and_fade(void) {
+  printf("test_speed_arm_while_sped_up_and_fade\n");
+  const int len = 1000, sr = 48000;
+  le_engine* e = reverse_fixture(sr, len, len);
+  static float live[1100], replay[1100];
+  rev_process(e, live, 37, 512);
+  uint64_t id = speed_set(e, 1, 2);
+  rev_process(e, live, 601, 512); /* the window is over: index 37 + 300.5 */
+  fade_result(e, id, LE_OK);
+  const char* dir = render_test_dir("speed-armed");
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+  rev_process(e, live, 1024, 512);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  CHECK(fabsf(live[0] - 337.5f) < 1e-3f);
+  rev_render_track_wav(e, dir, len);
+  CHECK(test_read_wet_stem(dir, 0, replay, 1100) == 1024);
+  for (int i = 0; i < 1024; ++i) CHECK(fabsf(replay[i] - live[i]) < 2e-3f);
+  le_engine_destroy(e);
+  e = reverse_fixture(sr, len, len);
+  uint64_t fade_id;
+  CHECK(le_engine_toggle_fade(e, 0, 0.5f, &fade_id) == LE_OK);
+  rev_process(e, live, 100, 512);
+  id = speed_set(e, 2, 1);
+  rev_process(e, live, 900, 512);
+  fade_result(e, id, LE_OK);
+  for (int k = 480; k < 900; ++k) {
+    const double amount = 1 - 2.0 * (100 + k) / sr;
+    CHECK(fabs(live[k] - speed_box_at((100 + 2 * k) % len, 2, len) * amount) <
+          2e-2);
+  }
+  le_engine_destroy(e);
+}
+
+/* L2: shared-clock Once at 1/2x needs a whole lap at the head's rate: a track
+ * launched a quarter into its take does not stop at the first wrap (0.75 of a
+ * lap later) but plays on to the next. Track 1 (silence) keeps the clock. */
+static void test_speed_shared_once_full_lap(void) {
+  printf("test_speed_shared_once_full_lap\n");
+  const int len = 1000;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 4000) == LE_OK);
+  float pcm[1000], silence[1000] = {0};
+  for (int i = 0; i < len; ++i) pcm[i] = (float)i + 1.0f; /* never 0 */
+  CHECK(le_engine_import_track(e, 0, pcm, len) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, silence, len) == LE_OK);
+  CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
+  drain(e);
+  const uint64_t id = speed_set(e, 1, 2);
+  drain(e);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  static float out[4096];
+  rev_process(e, out, 500, 512); /* track 0 would read index 250 now */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  rev_process(e, out, 1600, 512); /* past the first wrap, 1500 frames on */
+  le_track_snapshot snap;
+  le_engine_get_track(e, 0, &snap);
+  CHECK(snap.state == LE_TRACK_PLAYING);
+  CHECK(out[1550] != 0.0f);
+  rev_process(e, out, 2010, 512); /* the next wrap, 2000 frames later */
+  le_engine_get_track(e, 0, &snap);
+  CHECK(snap.state == LE_TRACK_STOPPED);
+  le_engine_destroy(e);
+}
+
+/* L2: the whole-track Pre print never engages at a fractional head, and an
+ * undo to empty and an import at 1/2x reset the head and log it (324 forward
+ * and the re-origined index in 327). */
+static void test_speed_track_print_and_resets(void) {
+  printf("test_speed_track_print_and_resets\n");
+  static float out[2 * 64];
+  le_engine* e = wt_engine_two_parts(0.5f, LE_CACHE_DEFAULT_CAP_BYTES);
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 1) == LE_OK);
+  drain(e);
+  CHECK(wt_wait_engaged(e, out));
+  uint64_t id = speed_set(e, 1, 2);
+  wt_pump(e, 64, out);
+  fade_result(e, id, LE_OK);
+  le_lane_cache_info info;
+  for (int k = 0; k < 6; ++k) {
+    wt_pump(e, WT_LOOP, out);
+    le_engine_get_track_cache(e, 0, &info);
+    CHECK(info.engaged == 0);
+  }
+  le_engine_destroy(e);
+  const int len = 1000;
+  e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 4000) == LE_OK);
+  float pcm[1000], silence[1000] = {0};
+  for (int i = 0; i < len; ++i) pcm[i] = (float)i;
+  CHECK(le_engine_import_track(e, 0, pcm, len) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, silence, len) == LE_OK);
+  CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  const char* dir = render_test_dir("speed-resets");
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+  id = speed_set(e, 1, 2);
+  rev_process(e, out, 64, 64);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* its only layer: to empty */
+  rev_process(e, out, 64, 64);
+  CHECK(le_engine_import_track(e, 2, pcm, len) == LE_OK);
+  rev_process(e, out, 64, 64);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_log_entry first;
+  CHECK(speed_count_facts(dir, LE_PLOG_REVERSE, 0, &first) == 1);
+  CHECK(first.cmd.reverse_log.read_index == -1);
+  CHECK(speed_count_facts(dir, LE_PLOG_REVERSE, 2, &first) == 1);
+  CHECK(speed_count_facts(dir, LE_PLOG_SPEED, 0, NULL) == 2);
+  CHECK(speed_count_facts(dir, LE_PLOG_SPEED, 2, NULL) == 2);
   le_engine_destroy(e);
 }
 
@@ -467,6 +765,14 @@ static void run_speed_tests(void) {
   test_speed_capture_guards();
   test_speed_no_spurious_transport_facts();
   test_speed_render_parity();
-  test_speed_print_and_turn_source();
+  test_speed_print_disengages_and_parity();
   test_speed_material_reset_and_lanes();
+  test_speed_normal_lands_on_whole_sample();
+  test_speed_clear_undo_stem_exact();
+  test_speed_empty_loop_resets();
+  test_speed_step_inside_window();
+  test_speed_refusals_while_writing();
+  test_speed_arm_while_sped_up_and_fade();
+  test_speed_shared_once_full_lap();
+  test_speed_track_print_and_resets();
 }

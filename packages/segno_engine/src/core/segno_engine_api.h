@@ -3255,7 +3255,9 @@ LE_EXPORT int32_t le_engine_install_reverse(le_engine* engine, int32_t channel,
  * is free (the callback refuses the same states with receipt
  * LE_ERR_NOT_READY, plus a punch-out tail still writing); LE_ERR_NOT_RUNNING
  * when not configured. While Speed is not 1x le_engine_record refuses a
- * record or punch-in with LE_ERR_TRANSFORMED. */
+ * record or punch-in with LE_ERR_TRANSFORMED. An empty loop has no speed:
+ * when the last track becomes empty, Speed returns to 1x (le_snapshot shows
+ * it), so the next loop records. */
 LE_EXPORT int32_t le_engine_set_speed(le_engine* engine, int32_t numer,
                                      int32_t denom, uint64_t* request);
 /* Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
