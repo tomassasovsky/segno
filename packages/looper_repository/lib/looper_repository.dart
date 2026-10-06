@@ -26,6 +26,9 @@ export 'package:segno_engine/segno_engine.dart'
         PluginScanProgress,
         RecordStartEditKind,
         RecordTiming,
+        RenderJobState,
+        RenderTails,
+        RenderTarget,
         ReopenOutcome,
         TempoSource,
         TrackHistory,
@@ -87,6 +90,7 @@ export 'src/models/mix_settings_snapshot.dart';
 export 'src/models/output_setup.dart';
 export 'src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginFormat, PluginParamInfo;
+export 'src/models/selected_render.dart';
 export 'src/models/session_rig.dart';
 export 'src/models/track.dart';
 // Domain effect models replace the engine's raw effect types in the UI. The
@@ -121,6 +125,7 @@ export 'src/models/tuner_reading.dart';
 // is exported above with the other domain models.
 export 'src/plugin_catalog.dart'
     show PluginCacheKey, PluginCatalog, PluginCatalogCache, PluginFileStat;
+export 'src/render_job.dart';
 
 /// The iteration ceiling for the structural output gate's bootstrap reapply
 /// scan.

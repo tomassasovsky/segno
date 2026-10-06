@@ -12,6 +12,7 @@ import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
+import 'package:segno_engine/src/selected_render.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
@@ -53,7 +54,15 @@ enum EngineResult {
 
   /// A punch-in on a reversed track: overdub is unavailable while Reverse is
   /// on (`LE_ERR_REVERSED`). Play, Stop, Mute, Fade and history stay available.
-  reversed;
+  reversed,
+
+  /// The tracks selected for a render share no common cycle within the cap
+  /// (`LE_ERR_NO_COMMON_CYCLE`); a chosen length is required.
+  noCommonCycle,
+
+  /// A render source's material changed after the render froze it
+  /// (`LE_ERR_TRACKS_CHANGED`).
+  tracksChanged;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -69,6 +78,8 @@ enum EngineResult {
     -7 => EngineResult.modeMismatch,
     -8 => EngineResult.notReady,
     -9 => EngineResult.reversed,
+    -16 => EngineResult.noCommonCycle,
+    -17 => EngineResult.tracksChanged,
     _ => EngineResult.invalid,
   };
 
@@ -1527,6 +1538,39 @@ abstract interface class EnginePerformanceCapture {
   EngineResult renderCancel();
 }
 
+/// The shared render recipe (#1202) behind Bounce and Save selected audio:
+/// the selected recorded tracks rendered offline over their common cycle or a
+/// chosen bar length, regardless of transport, Mute and Solo, with their
+/// levels, Pre (as printed) and Post processing, optionally the All tracks
+/// chain, and never live inputs, click, outputs or the master. One job at a
+/// time; [pollRender] is also the job's staging heartbeat, so a caller polls
+/// it until the job ends.
+abstract interface class EngineSelectedRender {
+  /// The verdict and plan for [request], with no job: [EngineResult.ok] with
+  /// the plan, or [EngineResult.noCommonCycle], [EngineResult.capacity],
+  /// [EngineResult.invalid], [EngineResult.notReady] or
+  /// [EngineResult.notRunning] with none.
+  RenderMeasurement measureRender(RenderRequest request);
+
+  /// Starts a job: any [measureRender] refusal, [EngineResult.alreadyRunning]
+  /// while a job runs, [EngineResult.capacity] when its bytes do not fit,
+  /// [EngineResult.unsupported] without a render worker, or [EngineResult.ok]
+  /// with the job id.
+  RenderAdmission beginRender(RenderRequest request);
+
+  /// The job's status, or `null` for a job the engine no longer holds
+  /// (cancelled, or replaced by a newer job).
+  RenderJobStatus? pollRender(int job);
+
+  /// A finished memory job's interleaved stereo result (at most [maxFrames]
+  /// frames), or `null` when the job is unknown, not finished or not a memory
+  /// job.
+  Float32List? copyRender(int job, {required int maxFrames});
+
+  /// Cancels and releases [job]. A file job leaves no partial file.
+  EngineResult cancelRender(int job);
+}
+
 /// The data-layer boundary over the native audio engine, composed from the
 /// role interfaces above (interface-segregation: a consumer can depend on the
 /// slice it needs — [SessionIo], [EngineMetering], … — instead of the whole
@@ -1549,4 +1593,5 @@ abstract interface class AudioEngine
         InputConditioningControl,
         EnginePluginHosting,
         EnginePerformanceCapture,
+        EngineSelectedRender,
         SessionIo {}
