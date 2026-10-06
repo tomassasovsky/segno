@@ -90,4 +90,36 @@ void main() {
       expect(fingerprint(pedalBindings: 'remap'), isNot(before));
     });
   });
+
+  group('liveSession', () {
+    test('is the manifest a save would write, without tracks, audio or '
+        'name', () {
+      final engine = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final repository = SessionRepository(
+        engine: engine,
+        guards: GuardRegistry(),
+      );
+
+      final live = repository.liveSession(
+        settings: const SessionSettings(
+          defaultFadeDurationMs: 1000,
+          countInBars: 2,
+        ),
+        chains: const SessionChains(
+          trackChains: [SessionTrackChain(channel: 0, encoded: '[]')],
+        ),
+        pedalBindings: 'remap',
+      );
+
+      expect(live.tracks, isEmpty);
+      expect(live.baseLengthFrames, 0);
+      expect(live.name, isNull);
+      expect(live.defaultFadeDurationMs, 1000);
+      expect(live.countInBars, 2);
+      expect(live.trackChains.single.channel, 0);
+      expect(live.pedalBindings, 'remap');
+      expect(engine.exportedLayers, 0);
+    });
+  });
 }

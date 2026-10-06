@@ -28,6 +28,10 @@ enum SessionOutcome {
   /// A [SessionCubit.open] succeeded.
   loaded,
 
+  /// A [SessionCubit.newLoop] started an empty loop under the next automatic
+  /// name, which is now current.
+  newLoop,
+
   /// A session was renamed.
   renamed,
 
@@ -92,6 +96,10 @@ enum SessionError {
   /// An Open or New loop ended a take in progress, and it did not finish in
   /// time; nothing was saved, opened or cleared.
   captureInProgress,
+
+  /// A New loop started and is current, but its empty bundle could not be
+  /// written yet: the first Save writes it.
+  newLoopNotSaved,
 }
 
 /// State of the [SessionCubit].

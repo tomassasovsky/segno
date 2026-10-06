@@ -8,6 +8,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
+import 'package:segno/library/view/new_loop_sheet.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
@@ -128,6 +129,17 @@ class _LibraryViewState extends State<LibraryView> {
               current.status == SessionStatus.success,
           listener: _reselect,
         ),
+        // A new loop is played on the stage (19/06), which names it; one
+        // that started but could not be saved yet goes there too, where the
+        // stage says so.
+        BlocListener<SessionCubit, SessionState>(
+          listenWhen: (previous, current) =>
+              previous.status != current.status &&
+              ((current.status == SessionStatus.success &&
+                      current.outcome == SessionOutcome.newLoop) ||
+                  current.error == SessionError.newLoopNotSaved),
+          listener: (_, _) => _toTracks(),
+        ),
       ],
       child: Material(
         type: MaterialType.transparency,
@@ -188,6 +200,9 @@ enum LibraryFailure {
   /// An Open or New loop ended a take that did not finish in time.
   captureInProgress,
 
+  /// A New loop started but could not be saved yet.
+  newLoopNotSaved,
+
   /// Any other catalog action failed.
   actionFailed,
 
@@ -219,6 +234,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
     SessionError.folderNotEmpty => LibraryFailure.folderNotEmpty,
     SessionError.busy => LibraryFailure.busy,
     SessionError.captureInProgress => LibraryFailure.captureInProgress,
+    SessionError.newLoopNotSaved => LibraryFailure.newLoopNotSaved,
     SessionError.nameCollision ||
     SessionError.corruptLayers ||
     SessionError.unknown ||
@@ -251,6 +267,9 @@ class LibraryFailureLine extends StatelessWidget {
       LibraryFailure.deleteCurrentRefused => l10n.libraryDeleteCurrentRefused,
       LibraryFailure.folderNotEmpty => l10n.libraryFolderNotEmpty,
       LibraryFailure.captureInProgress => l10n.libraryTakeStillRunning,
+      LibraryFailure.newLoopNotSaved => l10n.sessionNewLoopNotSaved(
+        context.read<SessionCubit>().state.currentSessionName ?? '',
+      ),
       LibraryFailure.actionFailed => l10n.libraryActionFailed,
       LibraryFailure.busy => l10n.operationBusy(refusedBy?.name ?? 'other'),
     };
@@ -273,10 +292,8 @@ class LibraryFailureLine extends StatelessWidget {
 }
 
 /// The title row's actions: the `Internal` / `USB` location segment and
-/// `New loop`.
-///
-/// `New loop` is drawn disabled until it is built (plan Part 5): the one
-/// stand-in the plan allows, because the row's geometry needs it.
+/// `New loop`, which asks first (19/02) and is inert while another session
+/// action runs.
 class LibraryActions extends StatelessWidget {
   /// Creates the Library's title-row actions.
   const LibraryActions({super.key});
@@ -286,6 +303,9 @@ class LibraryActions extends StatelessWidget {
     final l10n = context.l10n;
     final location = context.select<LibraryCubit, LibraryLocation>(
       (c) => c.state.location,
+    );
+    final busy = context.select<SessionCubit, bool>(
+      (c) => c.state.status == SessionStatus.working,
     );
     final cubit = context.read<LibraryCubit>();
     return Row(
@@ -310,13 +330,14 @@ class LibraryActions extends StatelessWidget {
         ),
         const SizedBox(width: 40),
         Opacity(
-          opacity: context.surface.disabledOpacity,
+          // Inert while another session action runs, and drawn so.
+          opacity: busy ? context.surface.disabledOpacity : 1,
           child: LoopOutlinedButton(
             key: const Key('library_new_loop'),
             width: 157,
             tone: LoopButtonTone.accent,
             label: l10n.libraryNewLoop,
-            onTap: null,
+            onTap: busy ? null : () => unawaited(startNewLoop(context)),
           ),
         ),
       ],
