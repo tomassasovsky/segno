@@ -91,6 +91,7 @@ void main() {
         );
         await timing.load();
         final fade = FadeSettings(
+          repository: looper,
           settings: settings,
           blocked: () => false,
           sessionBlocked: () => false,
@@ -109,6 +110,7 @@ void main() {
               ...playback.owners,
               ...record.owners,
               ...timing.owners,
+              ...fade.owners,
             ]),
             tempo: tempo,
             playback: playback,

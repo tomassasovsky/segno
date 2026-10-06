@@ -96,6 +96,7 @@ class _Rig {
         .encode();
     settings = SettingsRepository(store: store);
     fade = FadeSettings(
+      repository: looper,
       settings: settings,
       blocked: () => false,
       sessionBlocked: () => false,

@@ -45,18 +45,20 @@ class AppRuntime {
     tempo = TempoSettings(repository: repository, settings: settings);
     playback = PlaybackSettings(repository: repository, settings: settings);
     record = RecordSettings(repository: repository, settings: settings);
+    fade = FadeSettings(
+      repository: repository,
+      settings: settings,
+      blocked: () => takeLocked,
+      sessionBlocked: () => fxPersistence.sessionTransitionActive,
+    );
     timing = RecordTimingSettings(repository: repository, settings: settings);
     owners = SettingsOwners([
       ...tempo.owners,
       ...playback.owners,
       ...record.owners,
       ...timing.owners,
+      ...fade.owners,
     ]);
-    fade = FadeSettings(
-      settings: settings,
-      blocked: () => takeLocked,
-      sessionBlocked: () => fxPersistence.sessionTransitionActive,
-    );
     power = PowerOffCubit(
       flush: prepareShutdown,
       pedalGoodbye: pedal.goodbye,
@@ -182,9 +184,6 @@ class AppRuntime {
       if (!retry) rethrow;
     }
     if (retry) {
-      if (!await fade.recover()) {
-        throw StateError('Fade duration settings still need recovery');
-      }
       final mixResult = await mix.recover();
       if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);
       if (await owners.recover() case final failure?) {
@@ -194,7 +193,6 @@ class AppRuntime {
         retireControls: true,
       );
     }
-    await fade.flush();
     await fxPersistence.flush();
     final mixResult = await mix.flush();
     if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);

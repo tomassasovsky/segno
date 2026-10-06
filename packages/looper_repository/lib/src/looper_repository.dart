@@ -445,8 +445,19 @@ class LooperRepository {
     ];
   }
 
-  _PendingMix? _pendingMix;
-  EngineResult _lastMixResult = EngineResult.ok;
+  late final _mix =
+      SettingsReceipt<_MixIntent>(
+          _mixIntent(),
+          send: _sendMix,
+          running: () => _intendRunning,
+          publish: () => _reproject(forcePublication: true),
+          accepted: _acceptMix,
+        )
+        // Receipt refusals and uncertainty join the admission refusals.
+        ..failures.listen(_mixFailure);
+
+  /// Whether the next mix command replays every control, not only changes.
+  bool _mixReplay = false;
   int _mixRevision = 0;
   int _mixGeneration = 0;
 
@@ -569,7 +580,21 @@ class LooperRepository {
   Stream<EngineResult> get mixSettingsFailures => _mixSettingsFailures.stream;
 
   /// Whether the last accepted edit has a published result.
-  bool get mixSettingsSettled => _pendingMix == null;
+  bool get mixSettingsSettled => _mix.settled;
+
+  /// An uncertain mix receipt owes its vector until Retry or a restart lands
+  /// it. Audio keeps running.
+  bool get mixRecoveryRequired => _mix.recoveryRequired;
+
+  /// Retry: running, re-sends the owed vector in full; stopped, stages it.
+  /// Never stops audio.
+  EngineResult recoverMixSettings() {
+    _mixReplay = true;
+    final result = _mix.recover();
+    _mixReplay = false;
+    _reproject();
+    return result;
+  }
 
   EngineResult _mixFailure(EngineResult result) {
     if (!_mixSettingsFailures.isClosed) _mixSettingsFailures.add(result);
@@ -717,52 +742,32 @@ class LooperRepository {
     );
   }
 
-  EngineResult _requestMix(
-    _MixIntent next, {
-    bool replay = false,
-    bool startup = false,
-  }) {
-    if (_pendingMix != null) return _mixFailure(EngineResult.notReady);
+  EngineResult _requestMix(_MixIntent next, {bool replay = false}) {
     if (!next.input.isValid || !next.output.isValid) {
       return _mixFailure(EngineResult.invalid);
     }
-    if (!_intendRunning) {
-      _acceptMix(next);
-      _lastMixResult = EngineResult.ok;
-      _reproject();
-      return EngineResult.ok;
-    }
-    final payload = _mixPayload(next, replay: replay);
-    final result = _engine.setMix(payload);
+    _mixReplay = replay;
+    final result = _mix.request(next);
+    _mixReplay = false;
     if (!result.isOk) return _mixFailure(result);
-    final pending = _PendingMix(next, payload.revision, startup: startup);
-    _pendingMix = pending;
-    _watchReceipt(
-      pending.observation,
-      settle: _settlePendingMix,
-      expire: () => _failMix(pending),
-    );
     _reproject();
-    return _pendingMix == null ? _lastMixResult : EngineResult.ok;
+    return _mix.settled ? _mix.lastResult : result;
   }
 
-  bool _settlePendingMix() {
-    final pending = _pendingMix;
-    if (pending == null || !_engine.commandsSettled) return false;
-    final snapshot = _engine.snapshot();
-    final result = snapshot.mixRevision == pending.revision
-        ? EngineResult.ok
-        : EngineResult.invalid;
-    _pendingMix = null;
-    _lastMixResult = result;
-    if (result.isOk) {
-      _acceptMix(pending.intent);
-    } else {
-      if (pending.startup) stopEngine();
-      _mixFailure(result);
-    }
-    pending.observation.complete(result);
-    return true;
+  ({EngineResult result, ReceiptCheck? check}) _sendMix(_MixIntent next) {
+    final payload = _mixPayload(next, replay: _mixReplay);
+    final result = _engine.setMix(payload);
+    return (
+      result: result,
+      // The callback publishes the revision it applied; another revision
+      // means the engine refused this one and kept the prior controls.
+      check: () {
+        if (!_engine.commandsSettled) return null;
+        return _engine.snapshot().mixRevision == payload.revision
+            ? (verdict: ReceiptVerdict.accepted, result: EngineResult.ok)
+            : (verdict: ReceiptVerdict.refused, result: EngineResult.invalid);
+      },
+    );
   }
 
   /// Retires every pending settings receipt before replacing engine ownership.
@@ -782,44 +787,21 @@ class LooperRepository {
       _oneShot,
       _timing,
       _length,
+      _mix,
     ]) {
       receipt.cancel();
     }
-    _cancelMix();
     _mixGeneration++;
     if (_pendingImages.isNotEmpty) _snapshotAndSettleImages();
     _pendingImages.clear();
   }
 
-  void _cancelMix() {
-    final pending = _pendingMix;
-    _pendingMix = null;
-    if (pending != null) {
-      _lastMixResult = EngineResult.notReady;
-      pending.observation.complete(EngineResult.notReady);
-    }
-  }
-
-  void _failMix(_PendingMix pending) {
-    if (!identical(_pendingMix, pending)) return;
-    stopEngine();
-    _mixFailure(EngineResult.notReady);
-  }
-
-  /// Waits for callback publication independently of UI polling. Only confirmed
-  /// state is safe to persist. Timeout stops the engine before returning, so a
-  /// queued edit cannot apply later behind the confirmed choice.
+  /// Waits for callback publication independently of UI polling. A timeout
+  /// leaves the vector owed ([mixRecoveryRequired]) and audio running.
   Future<EngineResult> settleMixSettings({
     Duration pollInterval = const Duration(milliseconds: 10),
     int attempts = 50,
-  }) async {
-    final pending = _pendingMix;
-    if (pending == null) return _lastMixResult;
-    return pending.observation.wait(
-      pollInterval: pollInterval,
-      attempts: attempts,
-    );
-  }
+  }) => _mix.settle(pollInterval: pollInterval, attempts: attempts);
 
   /// Whether every admitted structural recipe is callback-confirmed.
   /// Reading readiness never submits queued Clear/Undo work; explicit
@@ -1050,8 +1032,8 @@ class LooperRepository {
         _laneBalance.addAll(entry.value.balances);
         // A published take changes only source metadata. A concurrently
         // accepted fader edit still owns its independent live level/offset.
-        _pendingMix?.intent.images.addAll(entry.value.images);
-        _pendingMix?.intent.balances.addAll(entry.value.balances);
+        _mix.pending?.images.addAll(entry.value.images);
+        _mix.pending?.balances.addAll(entry.value.balances);
         if (pending.clearOnCommit) {
           if (_pendingClearUndo.remove(ch)) _clearRestore.remove(ch);
           if (_pendingClearAllUndo.contains(ch)) {
@@ -1975,7 +1957,7 @@ class LooperRepository {
       _recordStart.observation,
       _timing.observation,
       _length.observation,
-      _pendingMix?.observation,
+      _mix.observation,
     ]) {
       if (observation?.check() ?? false) changed = true;
     }
@@ -2438,7 +2420,14 @@ class LooperRepository {
         ..clear()
         ..addAll(_restartTrackOverdubDecay);
       // Replay routes, lane activation and live controls together.
-      final mixResult = _requestMix(_mixIntent(), replay: true, startup: true);
+      // An owed vector replays here, so a reconnect resolves it.
+      if (!_mix.recoveryRequired) _mix.adopt(_mixIntent());
+      _mixReplay = true;
+      final mixResult = _mix.replay();
+      _mixReplay = false;
+      // As before: observe the replay at once, so an edit right after start
+      // is not refused behind an already published receipt.
+      if (mixResult.isOk) _reproject();
       if (!mixResult.isOk) {
         stopEngine();
         return mixResult;
@@ -2784,7 +2773,11 @@ class LooperRepository {
         recordStartRecoveryRequired) {
       return EngineResult.notReady;
     }
-    if (_pendingMix != null) return _mixFailure(EngineResult.notReady);
+    // A take records through the mix's routes: wait for them, and refuse
+    // while they are owed.
+    if (!_mix.settled || _mix.recoveryRequired) {
+      return _mixFailure(EngineResult.notReady);
+    }
     if (_recordStart.live.soundStart && state == TrackState.empty) {
       if (!_engine.commandsSettled) return EngineResult.notReady;
       final applied = _engine.snapshot();
@@ -3655,6 +3648,7 @@ class LooperRepository {
     }
 
     _length.reset();
+    _mix.reset();
     _timing.reset();
     _clickMode.reset();
     _clickVolume.reset();
@@ -7653,6 +7647,7 @@ class LooperRepository {
     await _recordStart.dispose();
     await _recordingInputRequired.close();
     await _mixSettingsFailures.close();
+    await _mix.dispose();
     await _controller.close();
   }
 }
@@ -7783,14 +7778,6 @@ class _MixIntent {
     gain: (monitorLevels[i] ?? 1) * input.balanceGainOf(i),
     pan: input.effectivePanOf(i),
   );
-}
-
-class _PendingMix {
-  _PendingMix(this.intent, this.revision, {required this.startup});
-  final _MixIntent intent;
-  final int revision;
-  final bool startup;
-  final observation = ReceiptObservation();
 }
 
 class _PendingImage {

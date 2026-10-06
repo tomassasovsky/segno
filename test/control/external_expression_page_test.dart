@@ -103,6 +103,7 @@ void main() {
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.mixSettingsSettled).thenReturn(true);
+    when(() => looper.mixRecoveryRequired).thenReturn(false);
     when(() => looper.mixSettingsSnapshot).thenAnswer((_) => currentMix);
     when(() => looper.laneCount(any())).thenReturn(1);
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());

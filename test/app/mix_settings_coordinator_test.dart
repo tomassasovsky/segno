@@ -699,6 +699,33 @@ void main() {
     },
   );
 
+  test(
+    'an uncertain mix receipt keeps storage and audio, and Retry lands it',
+    () async {
+      audio
+        ..publishMixCommands = false
+        ..commandsAreSettled = false;
+      final result = await coordinator.setTrackPan(.4);
+      expect(result.status, MixSettingsStatus.recoveryRequired);
+      // The repository owes the candidate, so storage keeps it; nothing stops.
+      expect(repository.mixRecoveryRequired, isTrue);
+      expect(persistence.durable, 'candidate 1 for rig A');
+      expect(persistence.restores, 0);
+      expect(audio.calls, isNot(contains('stop')));
+      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(coordinator.recoveryRequired, isTrue);
+      expect(coordinator.stoppedForRecovery, isFalse);
+      audio
+        ..publishMixCommands = true
+        ..publishMix()
+        ..commandsAreSettled = true;
+      expect((await coordinator.recover()).isOk, isTrue);
+      expect(coordinator.recoveryRequired, isFalse);
+      expect(repository.trackPan(0), .4);
+      expect(audio.calls, isNot(contains('stop')));
+    },
+  );
+
   test('failed output rollback stops audio until recovery succeeds', () async {
     persistence.refuseRestore = true;
     audio.mixResult = EngineResult.notReady;

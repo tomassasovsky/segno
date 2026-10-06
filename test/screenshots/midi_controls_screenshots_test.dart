@@ -150,6 +150,7 @@ void main() {
     when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
     when(() => looper.fxRecipesSettled).thenReturn(true);
     when(() => looper.mixSettingsSettled).thenReturn(true);
+    when(() => looper.mixRecoveryRequired).thenReturn(false);
     when(() => looper.allMonitors()).thenReturn(const {});
     when(() => looper.allLaneChains()).thenReturn(const {});
     when(() => looper.allTracksEffects).thenReturn(const []);
