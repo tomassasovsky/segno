@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/owned_value_port.dart';
@@ -40,6 +41,7 @@ class AppRuntime {
     required SessionRepository sessions,
     required Future<String> Function() exportDirectory,
     required Future<void> Function() powerOff,
+    GuardRegistry? guards,
   }) {
     fxPersistence = FxChainPersistence(looper: repository);
     mixPersistence = SettingsMixPersistence(settings);
@@ -120,6 +122,7 @@ class AppRuntime {
       onPedalBindings: (encoded) =>
           control.applySessionBindings(PedalBindingSet.decode(encoded)),
       releaseHeldBindings: control.releaseAllMomentary,
+      guards: guards,
     );
   }
 

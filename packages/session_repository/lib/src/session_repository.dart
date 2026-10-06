@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/src/models/session.dart';
 import 'package:session_repository/src/models/session_summary.dart';
@@ -287,7 +288,9 @@ class SessionRepository {
     Future<String> Function()? sessionsRoot,
     Duration clearPollInterval = const Duration(milliseconds: 8),
     int clearPollAttempts = 64,
+    GuardRegistry? guards,
   }) : _engine = engine,
+       _guards = guards ?? GuardRegistry(),
        _sessionsRoot = sessionsRoot,
        _clearPollInterval = clearPollInterval,
        _clearPollAttempts = clearPollAttempts;
@@ -296,6 +299,15 @@ class SessionRepository {
   final Future<String> Function()? _sessionsRoot;
   final Duration _clearPollInterval;
   final int _clearPollAttempts;
+
+  /// The app's one guard table (accepted behaviour 6.12). A save holds a
+  /// `sessionWrite` guard on its bundle while it writes, so a second write
+  /// of the same bundle and a shutdown are refused at their commits, and the
+  /// save itself is refused once a shutdown has begun.
+  final GuardRegistry _guards;
+
+  /// What a refusal names a session write by.
+  static const String writePurpose = 'saving a session';
 
   /// The mixdown filename within a session bundle.
   static const String mixdownName = 'mixdown.wav';
@@ -462,6 +474,33 @@ class SessionRepository {
       throw StateError('session changed before save capture');
     }
     final captured = _capture(savedSettings);
+    // The commit: the guard is taken where the bundle starts to change, and
+    // a refusal leaves it untouched.
+    final guard = _guards.enter(
+      GuardKind.sessionWrite,
+      GuardScope.internal(item: directory),
+      purpose: writePurpose,
+    );
+    try {
+      return await _writeBundle(
+        directory,
+        captured,
+        chains,
+        savedSettings,
+        pedalBindings,
+      );
+    } finally {
+      guard.release();
+    }
+  }
+
+  Future<Session> _writeBundle(
+    String directory,
+    _Capture captured,
+    SessionChains chains,
+    SessionSettings savedSettings,
+    String pedalBindings,
+  ) async {
     await Directory(directory).create(recursive: true);
 
     final written = <String>{};

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
 import 'package:performance_repository/src/models/performance_manifest.dart';
 import 'package:performance_repository/src/models/unfinalized_capture.dart';
@@ -39,7 +40,9 @@ class PerformanceRepository {
     DateTime Function() now = DateTime.now,
     Duration bootRecoveryPollInterval = const Duration(milliseconds: 200),
     Duration bootRecoveryRenderTimeout = defaultBootRecoveryRenderTimeout,
+    GuardRegistry? guards,
   }) : _engine = engine,
+       _guards = guards ?? GuardRegistry(),
        _exportsRoot = exportsRoot,
        _now = now,
        _bootRecoveryPollInterval = bootRecoveryPollInterval,
@@ -50,6 +53,25 @@ class PerformanceRepository {
   final DateTime Function() _now;
   final Duration _bootRecoveryPollInterval;
   final Duration _bootRecoveryRenderTimeout;
+
+  /// The app's one guard table (accepted behaviour 6.12). A take holds a
+  /// `capture` guard from the commit of [arm] until it is finalized or its
+  /// failed arm is cancelled, so a device change, a calibration, a session
+  /// apply or a shutdown sees it at their own commits, and [arm] itself is
+  /// refused while one of them is in flight.
+  final GuardRegistry _guards;
+  OperationGuard? _captureGuard;
+
+  final StreamController<GuardRefused> _armRefusals =
+      StreamController<GuardRefused>.broadcast();
+
+  /// Every [arm] the guard table refused, with what refused it. [arm] keeps
+  /// its silent-ok contract (the pedal calls it with nothing in front of
+  /// it), so this is where the reason goes; the recorder cubit listens.
+  Stream<GuardRefused> get armRefusals => _armRefusals.stream;
+
+  /// What the Storage page and the recorder name a take by.
+  static const String capturePurpose = 'recording';
 
   /// The `exports/` root new bundles are created under.
   ///
@@ -358,8 +380,24 @@ class PerformanceRepository {
       return EngineResult.ok;
     }
 
+    // The commit point (accepted behaviour 6.12): the guard is taken here,
+    // after every await of this arm, never when a control was pressed.
+    try {
+      _captureGuard = _guards.enter(
+        GuardKind.capture,
+        const GuardScope.internal(),
+        purpose: capturePurpose,
+      );
+    } on GuardRefused catch (refusal) {
+      final created = Directory(dir);
+      if (created.existsSync()) created.deleteSync(recursive: true);
+      _armRefusals.add(refusal);
+      return EngineResult.ok;
+    }
+
     final result = _engine.perfArm(dir);
     if (!result.isOk) {
+      _releaseCaptureGuard();
       final created = Directory(dir);
       if (created.existsSync()) created.deleteSync(recursive: true);
       return result;
@@ -476,6 +514,7 @@ class PerformanceRepository {
       _armedDir = null;
       _armSnapshot = null;
       _armedAt = null;
+      _releaseCaptureGuard();
       if (_status != PerformanceCaptureStatus.idle) {
         _setStatus(PerformanceCaptureStatus.idle);
       }
@@ -572,6 +611,7 @@ class PerformanceRepository {
     _armedDir = null;
     _armSnapshot = null;
     _armedAt = null;
+    _releaseCaptureGuard();
     _setStatus(PerformanceCaptureStatus.done);
     return EngineResult.ok;
   }
@@ -1170,6 +1210,11 @@ class PerformanceRepository {
     );
   }
 
+  void _releaseCaptureGuard() {
+    _captureGuard?.release();
+    _captureGuard = null;
+  }
+
   String _basename(String path) =>
       path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
 
@@ -1177,5 +1222,6 @@ class PerformanceRepository {
   /// engine lifecycle are responsible for disarming before disposal.
   void dispose() {
     unawaited(_statusController.close());
+    unawaited(_armRefusals.close());
   }
 }

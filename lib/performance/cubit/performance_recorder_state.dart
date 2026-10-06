@@ -84,6 +84,7 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   const PerformanceRecorderIdle({
     this.lowDiskBlocked = false,
     this.recovering = false,
+    this.refusedBy,
   });
 
   /// An arm was refused because the export volume is already below the
@@ -103,8 +104,14 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// dead control.
   final bool recovering;
 
+  /// The operation in flight that refused the last arm at its commit (a
+  /// session being opened, an audio change, a calibration, a shutdown), or
+  /// null. The guard table is checked when the take would start, not when
+  /// the control was pressed (accepted behaviour 6.12).
+  final GuardKind? refusedBy;
+
   @override
-  List<Object?> get props => [lowDiskBlocked, recovering];
+  List<Object?> get props => [lowDiskBlocked, recovering, refusedBy];
 }
 
 /// Armed: the engine's capture taps are running. [elapsed] and [overrun]

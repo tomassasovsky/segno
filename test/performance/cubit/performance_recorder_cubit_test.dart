@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -1640,5 +1641,78 @@ void main() {
         expect(cubit.state, const PerformanceRecorderIdle());
       },
     );
+  });
+
+  group('guard table (#1198)', () {
+    late GuardRegistry guards;
+    late PerformanceRepository guarded;
+
+    setUp(() {
+      guards = GuardRegistry();
+      guarded = PerformanceRepository(
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        guards: guards,
+      );
+    });
+
+    tearDown(() => guarded.dispose());
+
+    PerformanceRecorderCubit buildGuarded() => PerformanceRecorderCubit(
+      performance: guarded,
+      armedTickInterval: const Duration(milliseconds: 10),
+      renderPollInterval: const Duration(milliseconds: 10),
+      now: () => clock,
+      freeSpaceBytes: (_) async => null,
+    );
+
+    test('an arm refused at its commit lands on idle naming what refused '
+        'it, from the toggle and from a direct call alike', () async {
+      final cubit = buildGuarded();
+      addTearDown(cubit.close);
+      final apply = guards.enter(
+        GuardKind.sessionApply,
+        const GuardScope.internal(),
+        purpose: 'opening a session',
+      );
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(refusedBy: GuardKind.sessionApply),
+      );
+      expect(engine.perfArmCalls, 0);
+
+      // The pedal reaches the repository directly, with no cubit in front.
+      await guarded.arm();
+      await pumpEventQueue();
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(refusedBy: GuardKind.sessionApply),
+      );
+      expect(engine.perfArmCalls, 0);
+
+      apply.release();
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+      expect(engine.perfArmCalls, 1);
+    });
+
+    test('a refusal does not stomp the recovering idle', () async {
+      final cubit = buildGuarded()
+        ..emit(const PerformanceRecorderIdle(recovering: true));
+      addTearDown(cubit.close);
+      guards.enter(
+        GuardKind.restart,
+        const GuardScope.internal(),
+        purpose: 'power off',
+      );
+      await guarded.arm();
+      await pumpEventQueue();
+      expect(cubit.state, const PerformanceRecorderIdle(recovering: true));
+    });
   });
 }
