@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:segno_engine/segno_engine.dart';
 
 /// A controllable in-memory [AudioEngine] for repository tests.
-class FakeAudioEngine implements AudioEngine {
+class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   /// Snapshot returned by [snapshot] (mutate between ticks in tests).
   EngineSnapshot _nextSnapshot = const EngineSnapshot.initial().copyWith(
     tracks: List.generate(8, (_) => const TrackSnapshot.empty()),

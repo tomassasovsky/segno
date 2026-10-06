@@ -29,7 +29,7 @@ import 'package:segno_engine/src/volume_space.dart';
 /// Owns a single native engine handle. Exactly one instance should own the
 /// audio device at a time (the main isolate); the visualizer window consumes
 /// pushed frames rather than sharing this handle.
-class NativeAudioEngine implements AudioEngine, InstrumentHost, MidiInputSink {
+class NativeAudioEngine implements AudioEngine {
   /// Creates a [NativeAudioEngine], loading the bundled native library and
   /// allocating the underlying engine.
   ///
