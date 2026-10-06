@@ -256,6 +256,29 @@ else
   fail "SPM le_stretch.cpp forwarder should compile; $(cat "$tmp/le_stretch_spm.err")"
 fi
 
+# The instrument voice TUs (#1197) are pure C listed explicitly, like the
+# restore DSP: every build that compiles the engine must list both, and the
+# macOS SPM and CocoaPods targets each need a forwarder that resolves.
+echo "== macOS instrument synth wiring =="
+readonly BUILD_TEST_LIB="$PLUGIN/tool/build_test_lib.sh"
+for tu in synth_voice.c synth_patch.c; do
+  for list in "$CMAKE" "$NATIVE_TESTS" "$BUILD_TEST_LIB"; do
+    if grep -q "core/$tu" "$list"; then
+      pass "$(basename "$list") lists core/$tu"
+    else
+      fail "$(basename "$list") does not list core/$tu"
+    fi
+  done
+  for fwd in "$SPM_SRC/$tu" "$CLASSES/$tu"; do
+    if [ -f "$fwd" ] && target="$(resolve_include "$fwd")" && \
+       [ "$target" -ef "$PLUGIN/src/core/$tu" ]; then
+      pass "$(basename "$(dirname "$fwd")")/$tu forwards to src/core/$tu"
+    else
+      fail "forwarder $fwd missing or not resolving to src/core/$tu"
+    fi
+  done
+done
+
 if [ "$fails" -eq 0 ]; then
   echo "ALL PASSED"
   exit 0
