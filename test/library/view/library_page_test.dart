@@ -9,6 +9,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
 import 'package:segno/library/application/removable_volumes.dart';
+import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -101,7 +102,6 @@ void main() {
     when(session.refreshSessions).thenAnswer((_) async {});
     when(() => session.open(any())).thenAnswer((_) async {});
     repository = _MockSessionRepository();
-    when(repository.listFolders).thenAnswer((_) async => ['Gigs']);
     when(() => repository.readPreview(any())).thenAnswer(
       (call) async => _previewOf(call.positionalArguments.first as String),
     );
@@ -134,6 +134,7 @@ void main() {
             currentSessionId: 's-cur',
             currentSessionName: 'Evening loop',
             sessions: _catalog,
+            folders: const ['Gigs'],
           ),
     );
     await tester.pumpApp(
@@ -826,6 +827,615 @@ void main() {
       await tester.tap(find.byKey(const Key('loop_settings_back')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('library_page')), findsNothing);
+    });
+  });
+
+  group('manage', () {
+    late StreamController<SessionState> states;
+
+    setUp(() {
+      states = StreamController<SessionState>.broadcast();
+      when(session.save).thenAnswer((_) async {});
+      when(() => session.saveAs(any())).thenAnswer((_) async {});
+      when(
+        () => session.duplicateSession(any(), any()),
+      ).thenAnswer((_) async {});
+      when(() => session.renameSession(any(), any())).thenAnswer((_) async {});
+      when(
+        () => session.moveSession(any(), folder: any(named: 'folder')),
+      ).thenAnswer((_) async {});
+      when(() => session.deleteSession(any())).thenAnswer((_) async {});
+      when(() => session.createFolder(any())).thenAnswer((_) async {});
+    });
+
+    tearDown(() => states.close());
+
+    SessionState current({
+      SessionStatus status = SessionStatus.idle,
+      SessionOutcome? outcome,
+      SessionError? error,
+      String currentId = 's-cur',
+      List<SessionSummary>? sessions,
+    }) => SessionState(
+      status: status,
+      outcome: outcome,
+      error: error,
+      currentSessionId: currentId,
+      currentSessionName: currentId,
+      sessions: sessions ?? _catalog,
+      folders: const ['Gigs'],
+    );
+
+    Future<void> open(WidgetTester tester, {SessionState? state}) =>
+        openLibrary(tester, state: state ?? current(), states: states.stream);
+
+    /// Moves the mocked cubit to [next] the way a real action settles.
+    Future<void> settle(SessionState next) async {
+      states.add(next);
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    Future<void> manage(WidgetTester tester, {String? select}) async {
+      if (select != null) {
+        await tester.tap(row(select));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byKey(const Key('library_manage')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> choose(WidgetTester tester, String option) async {
+      await tester.tap(find.byKey(Key('fx_option_$option')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('lists Save, Save as, Duplicate, Rename, Move and Delete, '
+        'with Delete disabled on the open session', (tester) async {
+      await open(tester);
+      await manage(tester);
+
+      for (final label in [
+        l10n.sessionSave,
+        l10n.sessionSaveAs,
+        l10n.sessionDuplicate,
+        l10n.sessionRename,
+        l10n.libraryMoveToFolder,
+        l10n.sessionDelete,
+      ]) {
+        expect(find.text(label), findsOneWidget);
+      }
+      await tester.tap(find.byKey(const Key('fx_option_delete')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('fx_options_sheet')), findsOneWidget);
+      verifyNever(() => session.deleteSession(any()));
+    });
+
+    testWidgets('Save writes the live rig back', (tester) async {
+      await open(tester);
+      await manage(tester);
+      await choose(tester, 'save');
+      verify(session.save).called(1);
+    });
+
+    testWidgets('Save as names a new session on the keyboard sheet', (
+      tester,
+    ) async {
+      await open(tester);
+      await manage(tester);
+      await choose(tester, 'saveAs');
+
+      expect(find.text(l10n.sessionNameHint), findsWidgets);
+      await type(tester, 'Bridge');
+
+      verify(() => session.saveAs('Bridge')).called(1);
+      expect(find.byKey(const Key('console_rename_sheet')), findsNothing);
+    });
+
+    testWidgets('Save as on a taken name answers in the sheet and saves '
+        'nothing', (tester) async {
+      await open(tester);
+      await manage(tester);
+      await choose(tester, 'saveAs');
+      await type(tester, 'Night set!');
+
+      expect(find.text(l10n.sessionNameDuplicate('Night set')), findsOneWidget);
+      expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
+      verifyNever(() => session.saveAs(any()));
+    });
+
+    testWidgets('a name the cubit refuses keeps the sheet open with the '
+        'reason', (tester) async {
+      when(() => session.saveAs(any())).thenAnswer(
+        (_) => settle(
+          current(
+            status: SessionStatus.failure,
+            error: SessionError.nameCollision,
+          ),
+        ),
+      );
+      await open(tester);
+      await manage(tester);
+      await choose(tester, 'saveAs');
+      await type(tester, 'Raced');
+
+      expect(find.text(l10n.sessionNameDuplicate('Raced')), findsOneWidget);
+      expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
+    });
+
+    testWidgets('Duplicate copies the selected session under a new name', (
+      tester,
+    ) async {
+      await open(tester);
+      await manage(tester, select: 's-gig');
+      await choose(tester, 'duplicate');
+      await type(tester, 'Night set copy');
+
+      verify(
+        () => session.duplicateSession('s-gig', 'Night set copy'),
+      ).called(1);
+    });
+
+    testWidgets('Rename renames the selected session and may keep its own '
+        'name', (tester) async {
+      await open(tester);
+      await manage(tester, select: 's-gig');
+      await choose(tester, 'rename');
+      await type(tester, 'Night set');
+
+      verify(() => session.renameSession('s-gig', 'Night set')).called(1);
+    });
+
+    testWidgets('Move to folder moves into a folder, with where it is '
+        'disabled', (tester) async {
+      await open(tester);
+      await manage(tester);
+      await choose(tester, 'move');
+
+      // Evening loop is Unfiled already.
+      await tester.tap(find.byKey(const Key('fx_option_\u0000unfiled')));
+      await tester.pumpAndSettle();
+      verifyNever(
+        () => session.moveSession(any(), folder: any(named: 'folder')),
+      );
+
+      await choose(tester, 'Gigs');
+      verify(() => session.moveSession('s-cur', folder: 'Gigs')).called(1);
+    });
+
+    testWidgets('Move to Unfiled moves out of a folder', (tester) async {
+      await open(tester);
+      await manage(tester, select: 's-gig');
+      await choose(tester, 'move');
+      await choose(tester, '\u0000unfiled');
+
+      verify(() => session.moveSession('s-gig')).called(1);
+    });
+
+    testWidgets('Move to a new folder creates it, then moves', (tester) async {
+      await open(tester);
+      await manage(tester);
+      await choose(tester, 'move');
+      await choose(tester, '\u0000new');
+      await type(tester, 'Demos');
+
+      verifyInOrder([
+        () => session.createFolder('Demos'),
+        () => session.moveSession('s-cur', folder: 'Demos'),
+      ]);
+    });
+
+    testWidgets('Delete asks first, then deletes the selected session', (
+      tester,
+    ) async {
+      await open(tester);
+      await manage(tester, select: 's-gig');
+      await choose(tester, 'delete');
+
+      expect(
+        find.text(l10n.sessionDeleteConfirmTitle('Night set')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
+      await tester.pumpAndSettle();
+      verify(() => session.deleteSession('s-gig')).called(1);
+    });
+
+    testWidgets('cancelling the delete question deletes nothing', (
+      tester,
+    ) async {
+      await open(tester);
+      await manage(tester, select: 's-gig');
+      await choose(tester, 'delete');
+      await tester.tap(find.byKey(const Key('console_confirm_cancel')));
+      await tester.pumpAndSettle();
+      verifyNever(() => session.deleteSession(any()));
+    });
+
+    testWidgets('Manage is there for a session whose preview cannot be read', (
+      tester,
+    ) async {
+      when(
+        () => repository.readPreview('s-gig'),
+      ).thenThrow(const FormatException('bad'));
+      await open(tester);
+      await manage(tester, select: 's-gig');
+      await choose(tester, 'delete');
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
+      await tester.pumpAndSettle();
+      verify(() => session.deleteSession('s-gig')).called(1);
+    });
+
+    testWidgets('Manage and New folder wait while an action runs', (
+      tester,
+    ) async {
+      await open(tester, state: current(status: SessionStatus.working));
+      await tester.tap(find.byKey(const Key('library_manage')));
+      await tester.tap(find.byKey(const Key('library_new_folder')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('fx_options_sheet')), findsNothing);
+      expect(find.byKey(const Key('console_rename_sheet')), findsNothing);
+    });
+
+    testWidgets('New folder creates a folder; a taken name answers in the '
+        'sheet', (tester) async {
+      await open(tester);
+      await tester.tap(find.byKey(const Key('library_new_folder')));
+      await tester.pumpAndSettle();
+      await type(tester, 'Gigs');
+      expect(find.text(l10n.libraryFolderNameTaken('Gigs')), findsOneWidget);
+      verifyNever(() => session.createFolder(any()));
+
+      await type(tester, 'Demos');
+      verify(() => session.createFolder('Demos')).called(1);
+      expect(find.byKey(const Key('console_rename_sheet')), findsNothing);
+    });
+
+    testWidgets('the chips are the catalog folders', (tester) async {
+      await open(tester);
+      expect(find.byKey(const Key('library_folder_Gigs')), findsOneWidget);
+    });
+  });
+
+  group('after an action', () {
+    late StreamController<SessionState> states;
+
+    setUp(() => states = StreamController<SessionState>.broadcast());
+    tearDown(() => states.close());
+
+    testWidgets('a Save as selects the new current session', (tester) async {
+      await openLibrary(tester, states: states.stream);
+      states.add(
+        SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.savedAs,
+          currentSessionId: 's-gig',
+          currentSessionName: 'Night set',
+          sessions: _catalog,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(inPreview(find.text('Night set')), findsOneWidget);
+      expect(find.byKey(const Key('library_return_to_tracks')), findsOneWidget);
+    });
+
+    testWidgets('a deleted selection falls back to the open session', (
+      tester,
+    ) async {
+      await openLibrary(tester, states: states.stream);
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+
+      states.add(
+        SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.deleted,
+          currentSessionId: 's-cur',
+          sessions: [_catalog[0], _catalog[2]],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(inPreview(find.text('Evening loop')), findsOneWidget);
+    });
+
+    testWidgets('with no open session a deleted selection clears the card', (
+      tester,
+    ) async {
+      await openLibrary(
+        tester,
+        state: SessionState(sessions: _catalog),
+        states: states.stream,
+      );
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+
+      states.add(
+        SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.deleted,
+          sessions: [_catalog[0]],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(inPreview(find.text(l10n.libraryNoSelection)), findsOneWidget);
+      expect(
+        tester
+            .element(find.byType(LibraryView))
+            .read<LibraryCubit>()
+            .state
+            .selectedId,
+        isNull,
+      );
+    });
+
+    testWidgets('a rename re-reads the selected preview', (tester) async {
+      await openLibrary(tester, states: states.stream);
+      clearInteractions(repository);
+
+      states.add(
+        SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.renamed,
+          currentSessionId: 's-cur',
+          sessions: _catalog,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      verify(() => repository.readPreview('s-cur')).called(1);
+    });
+  });
+
+  group('the 19/05 line', () {
+    late StreamController<SessionState> states;
+
+    setUp(() => states = StreamController<SessionState>.broadcast());
+    tearDown(() => states.close());
+
+    SessionState failed(SessionError error, {String? failedSessionId}) =>
+        SessionState(
+          status: SessionStatus.failure,
+          error: error,
+          failedSessionId: failedSessionId,
+          currentSessionId: 's-cur',
+          sessions: _catalog,
+        );
+
+    /// Opens the Library, then fails an action taken on it.
+    Future<void> failWith(
+      WidgetTester tester,
+      SessionError error, {
+      String? failedSessionId,
+    }) async {
+      await openLibrary(tester, states: states.stream);
+      states.add(failed(error, failedSessionId: failedSessionId));
+      await tester.pump();
+      await tester.pump();
+    }
+
+    testWidgets('a failed save says nothing was changed, under a shorter '
+        'layout', (tester) async {
+      await failWith(tester, SessionError.saveFailed);
+
+      expect(find.text(l10n.librarySaveFailed), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byKey(const Key('library_failure'))).dy,
+        closeTo(96 + 916, 8),
+      );
+      expect(
+        tester.getSize(find.byKey(const Key('library_preview'))).height,
+        760,
+      );
+    });
+
+    testWidgets('a refused delete has its own words', (tester) async {
+      await failWith(tester, SessionError.currentSessionProtected);
+      expect(find.text(l10n.libraryDeleteCurrentRefused), findsOneWidget);
+    });
+
+    testWidgets('a folder that still holds sessions says so', (tester) async {
+      await failWith(tester, SessionError.folderNotEmpty);
+      expect(find.text(l10n.libraryFolderNotEmpty), findsOneWidget);
+    });
+
+    testWidgets('any other failed action says it did not work', (
+      tester,
+    ) async {
+      await failWith(tester, SessionError.unknown);
+      expect(find.text(l10n.libraryActionFailed), findsOneWidget);
+    });
+
+    testWidgets('an Open refused for any reason stays off the line', (
+      tester,
+    ) async {
+      await failWith(tester, SessionError.unknown, failedSessionId: 's-gig');
+      expect(find.byKey(const Key('library_failure')), findsNothing);
+    });
+
+    testWidgets('an open refusal stays on the preview card, not the line', (
+      tester,
+    ) async {
+      await failWith(
+        tester,
+        SessionError.sampleRateMismatch,
+        failedSessionId: 's-gig',
+      );
+      expect(find.byKey(const Key('library_failure')), findsNothing);
+      expect(
+        tester.getSize(find.byKey(const Key('library_preview'))).height,
+        820,
+      );
+    });
+
+    testWidgets('a failure from before the Library opened is not shown', (
+      tester,
+    ) async {
+      await openLibrary(tester, state: failed(SessionError.saveFailed));
+      expect(find.byKey(const Key('library_failure')), findsNothing);
+    });
+
+    testWidgets('another failure goes once another row is selected', (
+      tester,
+    ) async {
+      await failWith(tester, SessionError.unknown);
+      expect(find.byKey(const Key('library_failure')), findsOneWidget);
+
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library_failure')), findsNothing);
+    });
+
+    testWidgets('a failed save stays through a selection', (tester) async {
+      await failWith(tester, SessionError.saveFailed);
+
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.librarySaveFailed), findsOneWidget);
+    });
+  });
+
+  group('folders', () {
+    late StreamController<SessionState> states;
+
+    setUp(() {
+      states = StreamController<SessionState>.broadcast();
+      when(() => session.deleteFolder(any())).thenAnswer((_) async {});
+      when(() => session.renameFolder(any(), any())).thenAnswer((_) async {});
+    });
+    tearDown(() => states.close());
+
+    SessionState withFolders(
+      List<String> folders, {
+      List<SessionSummary>? sessions,
+    }) => SessionState(
+      currentSessionId: 's-cur',
+      currentSessionName: 'Evening loop',
+      sessions: sessions ?? _catalog,
+      folders: folders,
+    );
+
+    Future<void> longPressChip(WidgetTester tester, String folder) async {
+      await tester.longPress(find.byKey(Key('library_folder_$folder')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a folder holding a session can be renamed, not deleted', (
+      tester,
+    ) async {
+      await openLibrary(tester, state: withFolders(const ['Gigs']));
+      await longPressChip(tester, 'Gigs');
+
+      await tester.tap(find.byKey(const Key('fx_option_delete')));
+      await tester.pumpAndSettle();
+      verifyNever(() => session.deleteFolder(any()));
+
+      await tester.tap(find.byKey(const Key('fx_option_rename')));
+      await tester.pumpAndSettle();
+      await type(tester, 'Shows');
+      verify(() => session.renameFolder('Gigs', 'Shows')).called(1);
+    });
+
+    testWidgets('an empty folder is deleted after asking', (tester) async {
+      await openLibrary(
+        tester,
+        state: withFolders(const ['Gigs', 'Spare']),
+      );
+      await longPressChip(tester, 'Spare');
+      await tester.tap(find.byKey(const Key('fx_option_delete')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.libraryDeleteFolderTitle('Spare')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
+      await tester.pumpAndSettle();
+      verify(() => session.deleteFolder('Spare')).called(1);
+    });
+
+    testWidgets('All and Unfiled have no options', (tester) async {
+      await openLibrary(tester, state: withFolders(const ['Gigs']));
+      await longPressChip(tester, 'unfiled');
+      expect(find.byKey(const Key('fx_options_sheet')), findsNothing);
+    });
+
+    testWidgets('a folder name shaped like an id is answered in the sheet', (
+      tester,
+    ) async {
+      when(() => session.createFolder(any())).thenAnswer((_) async {});
+      await openLibrary(tester, state: withFolders(const ['Gigs']));
+      await tester.tap(find.byKey(const Key('library_new_folder')));
+      await tester.pumpAndSettle();
+      await type(tester, 's-20261006-120000');
+
+      expect(find.text(l10n.sessionNameInvalid), findsOneWidget);
+      verifyNever(() => session.createFolder(any()));
+    });
+
+    testWidgets('a chip whose folder went away puts All down', (tester) async {
+      await openLibrary(
+        tester,
+        state: withFolders(const ['Gigs']),
+        states: states.stream,
+      );
+      await tester.tap(find.byKey(const Key('library_folder_Gigs')));
+      await tester.pumpAndSettle();
+      expect(row('s-cur'), findsNothing);
+
+      states.add(
+        SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.folderRenamed,
+          currentSessionId: 's-cur',
+          sessions: _catalog,
+          folders: const ['Shows'],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(row('s-cur'), findsOneWidget);
+    });
+  });
+
+  group('Manage on another session', () {
+    testWidgets('its Save rows name the open session they save', (
+      tester,
+    ) async {
+      when(session.save).thenAnswer((_) async {});
+      await openLibrary(tester);
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('library_manage')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(l10n.libraryManageSaveOpen('Evening loop')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(l10n.libraryManageSaveOpenAs('Evening loop')),
+        findsOneWidget,
+      );
+      expect(find.text(l10n.sessionSave), findsNothing);
+      await tester.tap(find.byKey(const Key('fx_option_save')));
+      await tester.pumpAndSettle();
+      verify(session.save).called(1);
+    });
+
+    testWidgets('with no open session they name the current loop', (
+      tester,
+    ) async {
+      await openLibrary(tester, state: SessionState(sessions: _catalog));
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('library_manage')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(l10n.libraryManageSaveOpen(l10n.libraryCurrentLoop)),
+        findsOneWidget,
+      );
     });
   });
 }

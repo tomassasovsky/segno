@@ -3074,6 +3074,107 @@
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."
     },
+    "libraryManageSaveOpen": "Save {name}",
+    "@libraryManageSaveOpen": {
+        "description": "Manage row on another session: saves the open session (or the current loop) named here.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryManageSaveOpenAs": "Save {name} as…",
+    "@libraryManageSaveOpenAs": {
+        "description": "Manage row on another session: saves the open session (or the current loop) under a new name.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryCurrentLoop": "the current loop",
+    "@libraryCurrentLoop": {
+        "description": "Names the live rig in a Save row when no session is open."
+    },
+    "libraryFolderNotEmpty": "That folder still holds sessions. Move them out first.",
+    "@libraryFolderNotEmpty": {
+        "description": "Library line when a folder that holds sessions was asked to be deleted."
+    },
+    "libraryRenameFolder": "Rename folder",
+    "@libraryRenameFolder": {
+        "description": "Folder options row and the keyboard sheet's subtitle."
+    },
+    "libraryDeleteFolder": "Delete folder",
+    "@libraryDeleteFolder": {
+        "description": "Folder options row and its confirmation, for an empty folder."
+    },
+    "libraryDeleteFolderTitle": "Delete “{name}”?",
+    "@libraryDeleteFolderTitle": {
+        "description": "Asked before deleting a folder.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryDeleteFolderBody": "The folder is empty. No session is deleted.",
+    "@libraryDeleteFolderBody": {
+        "description": "Under the delete-folder question."
+    },
+    "libraryManage": "Manage",
+    "@libraryManage": {
+        "description": "Preview action that opens the options for the selected session."
+    },
+    "libraryNewFolder": "New folder",
+    "@libraryNewFolder": {
+        "description": "Library action that creates a folder."
+    },
+    "libraryMoveToFolder": "Move to folder…",
+    "@libraryMoveToFolder": {
+        "description": "Manage option that moves the session to a folder."
+    },
+    "libraryMoveTitle": "Move to folder",
+    "@libraryMoveTitle": {
+        "description": "Title of the folder choice for a move."
+    },
+    "libraryNewFolderOption": "New folder…",
+    "@libraryNewFolderOption": {
+        "description": "Folder choice that creates a folder and moves the session into it."
+    },
+    "libraryFolderName": "Folder name",
+    "@libraryFolderName": {
+        "description": "Keyboard sheet title and field label for a folder name."
+    },
+    "libraryFolderNameTaken": "A folder or session named “{name}” already exists.",
+    "@libraryFolderNameTaken": {
+        "description": "Inline error when a new folder name is taken.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "librarySaveFailed": "Could not save your current loop. Nothing was changed.",
+    "@librarySaveFailed": {
+        "description": "Library banner (pen 19/05) and toast when a save fails."
+    },
+    "libraryDeleteCurrentRefused": "The open session cannot be deleted.",
+    "@libraryDeleteCurrentRefused": {
+        "description": "Refusal when deleting the session that is open on the stage."
+    },
+    "libraryActionFailed": "That did not work. Try again.",
+    "@libraryActionFailed": {
+        "description": "Library banner when a catalog action fails for another reason."
+    },
+    "sessionSavedAs": "Saved as {name}",
+    "@sessionSavedAs": {
+        "description": "Toast after a save created a new session, naming it.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
     "libraryUsbUnusable": "This USB drive can't be used",
     "@libraryUsbUnusable": {
         "description": "USB location with a drive that is plugged in but cannot be read."

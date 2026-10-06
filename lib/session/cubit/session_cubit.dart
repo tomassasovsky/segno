@@ -95,8 +95,8 @@ class SessionCubit extends Cubit<SessionState> {
 
   // ---- the session catalog (the document model) ----
 
-  /// Reloads the saved-session catalog into state (for the picker). A quiet
-  /// update — no working/success cycle.
+  /// Reloads the saved-session catalog and its folders into state (for the
+  /// Library). A quiet update — no working/success cycle.
   Future<void> refreshSessions() async {
     if (_closing || isClosed) return;
     final operation = _refreshSessions();
@@ -106,32 +106,92 @@ class SessionCubit extends Cubit<SessionState> {
 
   Future<void> _refreshSessions() async {
     final sessions = await _repository.listSessions();
+    final folders = await _listFolders();
     if (_closing || isClosed) return;
-    emit(state.copyWith(sessions: sessions));
+    emit(state.copyWith(sessions: sessions, folders: folders));
   }
+
+  /// The catalog's folders, or the ones already in state when they cannot be
+  /// read: an unreadable folder list must not fail the action that re-lists.
+  Future<List<String>> _listFolders() async {
+    try {
+      return await _repository.listFolders();
+    } on Object {
+      return state.folders;
+    }
+  }
+
+  /// The name a save with no identity takes: `New loop N`, the smallest N no
+  /// catalog name carries (plan D4). A name is the session's data, not UI
+  /// copy, so it is the same in every language.
+  static const String automaticNamePrefix = 'New loop';
 
   /// Saves the live rig as a NEW session under a fresh id, named [name], and
   /// makes it current. Rejects a name another session carries exactly
   /// (case-sensitively, as the appliance always has) with
   /// [SessionError.nameCollision] and writes nothing.
-  Future<void> saveAs(String name) {
+  Future<void> saveAs(String name) => _saveNew(name);
+
+  /// Writes the live rig back to the open session with no prompt. With no
+  /// open session it saves under the next automatic name ([automaticNamePrefix]
+  /// `N`) and makes that current; naming stays optional (plan D4).
+  Future<void> save() {
+    if (_closing || isClosed) return Future<void>.value();
+    final id = state.currentSessionId;
+    final name = state.currentSessionName;
+    if (id == null) return _saveNew(null);
     final revision = _looper.sessionRevision;
     final generation = _looper.mixGeneration;
     final device = _looper.state.status.deviceName;
     return _run(
       () => _captureSettings.runExclusive(() async {
-        final slug = _slugOf(name);
-        if ((await _repository.listSessions()).any((s) => s.name == slug)) {
-          throw SessionNameCollision(slug: slug);
-        }
-        final id = await _repository.newSessionId();
-        try {
-          await _saveCurrentRig(
+        await _asSaveFailure(
+          () async => _saveCurrentRig(
             await _repository.bundlePathOf(id),
-            slug,
+            name,
             revision,
             generation,
             device,
+          ),
+        );
+        // Re-list, like every other mutation: the Library stays open, and its
+        // date column reads the catalog — without this a just-saved session
+        // goes on saying "yesterday".
+        return _ActionResult(
+          SessionOutcome.saved,
+          sessions: await _repository.listSessions(),
+        );
+      }),
+    );
+  }
+
+  /// Saves the live rig under a fresh id, named [name] or, when null, the
+  /// next automatic name, and makes it current.
+  Future<void> _saveNew(String? name) {
+    final revision = _looper.sessionRevision;
+    final generation = _looper.mixGeneration;
+    final device = _looper.state.status.deviceName;
+    return _run(
+      () => _captureSettings.runExclusive(() async {
+        final String slug;
+        if (name == null) {
+          slug = await _repository.nextAutomaticName(automaticNamePrefix);
+        } else {
+          slug = _slugOf(name);
+          if ((await _repository.listSessions()).any((s) => s.name == slug)) {
+            throw SessionNameCollision(slug: slug);
+          }
+        }
+        final id = await _repository.newSessionId();
+        try {
+          await _asSaveFailure(
+            () async => _saveCurrentRig(
+              await _repository.bundlePathOf(id),
+              slug,
+              revision,
+              generation,
+              device,
+            ),
           );
         } on Object {
           // A save refused before it wrote anything leaves the reserved
@@ -140,7 +200,7 @@ class SessionCubit extends Cubit<SessionState> {
           rethrow;
         }
         return _ActionResult(
-          SessionOutcome.saved,
+          SessionOutcome.savedAs,
           currentId: id,
           currentName: slug,
           sessions: await _repository.listSessions(),
@@ -149,43 +209,17 @@ class SessionCubit extends Cubit<SessionState> {
     );
   }
 
-  /// Writes the live rig back to the open session with no prompt. With no open
-  /// session, signals the UI to open Save-As ([SessionOutcome.saveAsRequested])
-  /// rather than silently picking a name.
-  Future<void> save() {
-    if (_closing || isClosed) return Future<void>.value();
-    final id = state.currentSessionId;
-    final name = state.currentSessionName;
-    if (id == null) {
-      emit(
-        state.copyWith(
-          status: SessionStatus.idle,
-          outcome: SessionOutcome.saveAsRequested,
-        ),
-      );
-      return Future<void>.value();
+  /// Runs a save's write and reports any failure that is not a typed
+  /// session refusal as [SessionError.saveFailed], the 19/05 banner's
+  /// "Could not save your current loop. Nothing was changed."
+  static Future<void> _asSaveFailure(Future<void> Function() write) async {
+    try {
+      await write();
+    } on SessionException {
+      rethrow;
+    } on Object catch (error) {
+      throw _SessionRefusal(SessionError.saveFailed, error);
     }
-    final revision = _looper.sessionRevision;
-    final generation = _looper.mixGeneration;
-    final device = _looper.state.status.deviceName;
-    return _run(
-      () => _captureSettings.runExclusive(() async {
-        await _saveCurrentRig(
-          await _repository.bundlePathOf(id),
-          name,
-          revision,
-          generation,
-          device,
-        );
-        // Re-list, like every other mutation: the sessions dialog stays open by
-        // design, and its date column reads the catalog — without this a
-        // just-saved session goes on saying "yesterday".
-        return _ActionResult(
-          SessionOutcome.saved,
-          sessions: await _repository.listSessions(),
-        );
-      }),
-    );
   }
 
   Future<void> _saveCurrentRig(
@@ -438,13 +472,17 @@ class SessionCubit extends Cubit<SessionState> {
     );
   });
 
-  /// Deletes session [id]. If it is the open session, the current pointer is
-  /// cleared — the live rig keeps playing (the engine is never touched here).
+  /// Deletes the saved session [id]. The open session is protected: deleting
+  /// it is refused with [SessionError.currentSessionProtected] and nothing is
+  /// removed (plan D6; the cubit is the authority, the Manage sheet's
+  /// disabled row is fast feedback).
   Future<void> deleteSession(SessionId id) => _run(() async {
+    if (state.currentSessionId == id) {
+      throw const _SessionRefusal(SessionError.currentSessionProtected);
+    }
     await _repository.deleteSession(id);
     return _ActionResult(
       SessionOutcome.deleted,
-      clearCurrent: state.currentSessionId == id,
       sessions: await _repository.listSessions(),
     );
   });
@@ -456,7 +494,50 @@ class SessionCubit extends Cubit<SessionState> {
   Future<void> duplicateSession(SessionId id, String name) => _run(() async {
     await _repository.duplicateSession(id, name);
     return _ActionResult(
-      SessionOutcome.saved,
+      SessionOutcome.duplicated,
+      sessions: await _repository.listSessions(),
+    );
+  });
+
+  /// Moves the saved session [id] into [folder], or to the root (Unfiled)
+  /// when [folder] is null. Its id, name and audio stay as they are, so the
+  /// open session can move too.
+  Future<void> moveSession(SessionId id, {String? folder}) => _run(() async {
+    await _repository.moveSession(id, folder: folder);
+    return _ActionResult(
+      SessionOutcome.moved,
+      sessions: await _repository.listSessions(),
+    );
+  });
+
+  /// Deletes the folder [name]. One that still holds a session, or an
+  /// interrupted save, is refused with [SessionError.folderNotEmpty] and
+  /// nothing is removed: the catalog never deletes audio as a side effect.
+  Future<void> deleteFolder(String name) => _run(() async {
+    await _repository.deleteFolder(name);
+    return _ActionResult(
+      SessionOutcome.folderDeleted,
+      sessions: await _repository.listSessions(),
+    );
+  });
+
+  /// Renames the folder [name] to [to]; its sessions move with it and keep
+  /// their ids, so the open session stays open. A taken name surfaces as
+  /// [SessionError.nameCollision].
+  Future<void> renameFolder(String name, String to) => _run(() async {
+    await _repository.renameFolder(name, to);
+    return _ActionResult(
+      SessionOutcome.folderRenamed,
+      sessions: await _repository.listSessions(),
+    );
+  });
+
+  /// Creates the folder [name]. A name a folder or session directory already
+  /// has surfaces as [SessionError.nameCollision].
+  Future<void> createFolder(String name) => _run(() async {
+    await _repository.createFolder(name);
+    return _ActionResult(
+      SessionOutcome.folderCreated,
       sessions: await _repository.listSessions(),
     );
   });
@@ -553,6 +634,8 @@ class SessionCubit extends Cubit<SessionState> {
     emit(state.copyWith(status: SessionStatus.working));
     try {
       final result = await action();
+      // Every action that re-lists the sessions re-lists the folders too.
+      final folders = result.sessions == null ? null : await _listFolders();
       if (isClosed) return;
       emit(
         state.copyWith(
@@ -560,9 +643,18 @@ class SessionCubit extends Cubit<SessionState> {
           outcome: result.outcome,
           currentSessionId: result.currentId,
           currentSessionName: result.currentName,
-          clearCurrentSession: result.clearCurrent,
           sessions: result.sessions,
+          folders: folders,
           bootRecoveryRequired: false,
+        ),
+      );
+    } on _SessionRefusal catch (refusal) {
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          status: SessionStatus.failure,
+          error: refusal.error,
+          errorMessage: '${refusal.cause ?? refusal.error.name}',
         ),
       );
     } on _SessionBootException catch (error) {
@@ -616,8 +708,17 @@ class SessionCubit extends Cubit<SessionState> {
     SessionUnsupportedVersion() => SessionError.unsupportedVersion,
     SessionNameCollision() => SessionError.nameCollision,
     SessionCorruptLayers() => SessionError.corruptLayers,
-    SessionFolderNotEmpty() => SessionError.unknown,
+    SessionFolderNotEmpty() => SessionError.folderNotEmpty,
   };
+}
+
+/// A refusal the cubit itself decides ([SessionError.currentSessionProtected])
+/// or classifies ([SessionError.saveFailed], with the write's own [cause]).
+class _SessionRefusal implements Exception {
+  const _SessionRefusal(this.error, [this.cause]);
+
+  final SessionError error;
+  final Object? cause;
 }
 
 class _SessionBootException implements Exception {
@@ -633,13 +734,11 @@ class _ActionResult {
     this.outcome, {
     this.currentId,
     this.currentName,
-    this.clearCurrent = false,
     this.sessions,
   });
 
   final SessionOutcome outcome;
   final SessionId? currentId;
   final String? currentName;
-  final bool clearCurrent;
   final List<SessionSummary>? sessions;
 }
