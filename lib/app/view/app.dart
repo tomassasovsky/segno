@@ -1110,6 +1110,16 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
+  /// Where the Tuner went once the tray stopped carrying it (#1229, D11):
+  /// said once, the boot `Hold · Tuner` was added to Custom pedal 2.
+  void _showTunerSeededNotice() {
+    showAppToast(
+      id: AppToastId.tunerSeeded,
+      title: AppText(_l10n.footTunerSeeded),
+      icon: const Icon(Icons.info_outline),
+    );
+  }
+
   /// Only one display on the dual-display console.
   void _showSingleDisplayNotice() {
     final l10n = _l10n;
@@ -1235,6 +1245,11 @@ class _AppViewState extends State<_AppView> {
               previous.retiredBootMode == null &&
               current.retiredBootMode != null,
           listener: (_, _) => _showBootModeRetiredNotice(),
+        ),
+        BlocListener<ControlCubit, ControlState>(
+          listenWhen: (previous, current) =>
+              !previous.tunerDefaultSeeded && current.tunerDefaultSeeded,
+          listener: (_, _) => _showTunerSeededNotice(),
         ),
         BlocListener<TracksCubit, TracksState>(
           listener: (_, _) => _updateDisplayContext(),

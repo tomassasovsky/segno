@@ -8,8 +8,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/pen_icons.dart';
+import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/tray/tray_metrics.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -42,7 +44,8 @@ enum TrayRailEntry {
   /// The Audio face.
   audio,
 
-  /// The Tuner face.
+  /// The foot Tuner: a row that enters the Tuner mode (#1229), so there is
+  /// one tuner surface.
   tuner,
 
   /// The Network face.
@@ -58,7 +61,7 @@ enum TrayRailEntry {
     TrayRailEntry.loop => null,
     TrayRailEntry.tracks => SettingsTrayDestination.tracks,
     TrayRailEntry.audio => SettingsTrayDestination.audio,
-    TrayRailEntry.tuner => SettingsTrayDestination.tuner,
+    TrayRailEntry.tuner => null,
     TrayRailEntry.network => SettingsTrayDestination.network,
     TrayRailEntry.system => SettingsTrayDestination.system,
   };
@@ -135,7 +138,6 @@ class TrayNavigationRail extends StatelessWidget {
       // A cone with two arcs, which is `volume-2`. The component says
       // `speaker` — lucide's cabinet-with-drivers — and no screen draws it.
       SettingsTrayDestination.audio => fontIcon(LucideIcons.volume2),
-      SettingsTrayDestination.tuner => pen(PenIcon.tuner),
       SettingsTrayDestination.network => fontIcon(CupertinoIcons.wifi),
       // A square in a square with eight pins — a chip, not a gear.
       SettingsTrayDestination.system => fontIcon(LucideIcons.cpu),
@@ -157,6 +159,11 @@ class TrayNavigationRail extends StatelessWidget {
       size: iconSize,
       color: color,
     ),
+    TrayRailEntry.tuner => (color) => PenIconView(
+      icon: PenIcon.tuner,
+      size: iconSize,
+      color: color,
+    ),
     _ => (color) => Icon(LucideIcons.repeat, size: iconSize, color: color),
   };
 
@@ -164,6 +171,7 @@ class TrayNavigationRail extends StatelessWidget {
   static String _routeLabel(AppLocalizations l10n, TrayRailEntry entry) =>
       switch (entry) {
         TrayRailEntry.effects => l10n.fxTitle,
+        TrayRailEntry.tuner => l10n.trayTunerLabel,
         _ => l10n.trayLoopLabel,
       };
 
@@ -175,10 +183,18 @@ class TrayNavigationRail extends StatelessWidget {
     TrayRailEntry.effects => openFx(
       onStage: context.read<SettingsTrayCubit>().closeTray,
     ),
+    TrayRailEntry.tuner => _enterTuner(context),
     _ => openLoopSettings(
       onStage: context.read<SettingsTrayCubit>().closeTray,
     ),
   };
+
+  /// Enters the foot Tuner over the stage: the tray closes so the face it
+  /// opens is in view.
+  static Future<void> _enterTuner(BuildContext context) async {
+    context.read<SettingsTrayCubit>().closeTray();
+    context.read<ControlCubit>().setMode(InteractionMode.tuner);
+  }
 
   /// The caption for [destination]. Exhaustive for the same reason as
   /// [_glyphFor].
@@ -189,7 +205,6 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination.control => l10n.trayControlLabel,
     SettingsTrayDestination.tracks => l10n.trayTracksLabel,
     SettingsTrayDestination.audio => l10n.trayAudioLabel,
-    SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
     SettingsTrayDestination.system => l10n.traySystemLabel,
   };

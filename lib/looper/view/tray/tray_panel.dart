@@ -10,7 +10,6 @@ import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/network/network_tray_panel.dart';
 import 'package:segno/system/view/system_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:segno/tuner/view/tuner_tray_panel.dart';
 
 /// The tray's contents once open — near-fullscreen frosted sheet, split into
 /// a persistent [TrayNavigationRail] and the face it selects.
@@ -139,8 +138,6 @@ class _TrayPanelState extends State<TrayPanel> {
                                 const _TrayFaceFrame(child: TracksTrayPanel()),
                               SettingsTrayDestination.audio =>
                                 const _TrayFaceFrame(child: AudioTrayPanel()),
-                              SettingsTrayDestination.tuner =>
-                                const _TrayFaceFrame(child: TunerTrayPanel()),
                               SettingsTrayDestination.network =>
                                 const _TrayFaceFrame(child: NetworkTrayPanel()),
                               SettingsTrayDestination.system =>

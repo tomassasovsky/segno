@@ -95,7 +95,8 @@ class WaveTrackRow extends StatelessWidget {
         InteractionMode.mixer ||
         InteractionMode.fade ||
         InteractionMode.reverse ||
-        InteractionMode.peel => l10n.a11yTrackTileCustom(name, stateWord),
+        InteractionMode.peel ||
+        InteractionMode.tuner => l10n.a11yTrackTileCustom(name, stateWord),
       },
       selected: selected,
       borderRadius: 17,
@@ -113,6 +114,7 @@ class WaveTrackRow extends StatelessWidget {
           case InteractionMode.fade:
           case InteractionMode.reverse:
           case InteractionMode.peel:
+          case InteractionMode.tuner:
           case InteractionMode.custom:
             // Selection only — see the track column's own arm.
             break;
