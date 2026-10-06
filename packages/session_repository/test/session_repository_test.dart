@@ -35,6 +35,7 @@ void main() {
         tracks: [
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -696,6 +697,16 @@ void main() {
     expect(bundle.laneStems[(1, 0)], [
       Float32List.fromList([2, 2, 2, 2, 3, 3, 3, 3]),
     ]);
+  });
+
+  test("save captures each track's playback direction", () async {
+    final source = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]), reversed: true)
+      ..seedTrack(1, Float32List.fromList([2, 2, 2, 2]));
+    final dir = '${tempDir.path}/s';
+    await repoFor(source).save(dir, settings: const SessionSettings());
+    final bundle = await repoFor(FakeSessionEngine()).read(dir);
+    expect([for (final t in bundle.session.tracks) t.reversed], [true, false]);
   });
 
   test('save then read round-trips a multi-lane track per lane', () async {
