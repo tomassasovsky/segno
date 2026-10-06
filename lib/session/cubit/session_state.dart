@@ -59,6 +59,10 @@ enum SessionError {
   /// The session was written by a newer, incompatible version of the app.
   unsupportedVersion,
 
+  /// The session was written by an older version of the app that this one
+  /// cannot convert; the bundle was left untouched.
+  unconvertible,
+
   /// A save-as / rename / duplicate targeted a name another session carries.
   nameCollision,
 
@@ -104,6 +108,7 @@ class SessionState extends Equatable {
     this.sessions = const [],
     this.folders = const [],
     this.bootRecoveryRequired = false,
+    this.conversion,
   });
 
   /// The current action status.
@@ -142,13 +147,18 @@ class SessionState extends Equatable {
   /// The new rig was accepted but boot settings or bindings still need Retry.
   final bool bootRecoveryRequired;
 
+  /// What the player is told about a session that was just converted from
+  /// an older version, or null. A per-transition result, like [outcome].
+  final SessionConversionNotice? conversion;
+
   /// Returns a copy for the next emit.
   ///
   /// The **result** fields ([outcome] / [error] / [errorMessage] /
-  /// [failedSessionId]) are per-transition: they default to `null` (cleared)
-  /// unless passed, so a fresh status never carries a stale result. The
-  /// **durable** fields ([currentSessionId] / [currentSessionName] /
-  /// [sessions] / [folders]) are preserved unless overridden.
+  /// [failedSessionId] / [conversion]) are per-transition: they default to
+  /// `null` (cleared) unless passed, so a fresh status never carries a stale
+  /// result. The **durable** fields ([currentSessionId] /
+  /// [currentSessionName] / [sessions] / [folders]) are preserved unless
+  /// overridden.
   SessionState copyWith({
     SessionStatus? status,
     SessionOutcome? outcome,
@@ -160,6 +170,7 @@ class SessionState extends Equatable {
     List<SessionSummary>? sessions,
     List<String>? folders,
     bool? bootRecoveryRequired,
+    SessionConversionNotice? conversion,
   }) => SessionState(
     status: status ?? this.status,
     outcome: outcome,
@@ -171,6 +182,7 @@ class SessionState extends Equatable {
     sessions: sessions ?? this.sessions,
     folders: folders ?? this.folders,
     bootRecoveryRequired: bootRecoveryRequired ?? this.bootRecoveryRequired,
+    conversion: conversion,
   );
 
   @override
@@ -185,5 +197,29 @@ class SessionState extends Equatable {
     sessions,
     folders,
     bootRecoveryRequired,
+    conversion,
   ];
+}
+
+/// The notice for a session converted on open from an older version.
+class SessionConversionNotice extends Equatable {
+  /// Creates a [SessionConversionNotice].
+  const SessionConversionNotice({
+    required this.fromVersion,
+    required this.written,
+    this.changes = const {},
+  });
+
+  /// The schema the session was saved with.
+  final int fromVersion;
+
+  /// Whether the converted session was written back with the original kept
+  /// beside it. When false the original file is unchanged on disk.
+  final bool written;
+
+  /// The audible changes the conversion made, each told to the player.
+  final Set<SessionConversionChange> changes;
+
+  @override
+  List<Object?> get props => [fromVersion, written, changes];
 }
