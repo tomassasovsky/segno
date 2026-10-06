@@ -137,7 +137,10 @@ void main() {
         await _until(() => events.length == 1, timeout);
 
         expect(generations(events[0]), [1]);
-        expect(logged.single, contains('2.json'));
+        // At least once: macOS's FSEvents can report the files written just
+        // before the watch began, and each re-list says it again.
+        expect(logged, isNotEmpty);
+        expect(logged, everyElement(contains('2.json')));
 
         place('3.json', record(3));
         await _until(() => events.length == 2, timeout);
