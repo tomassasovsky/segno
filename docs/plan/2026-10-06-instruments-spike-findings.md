@@ -33,7 +33,10 @@ see "Changes from the plan review".
     fall silent.
   - Drums: GM 35/36 kick (135 to 47 Hz, electronic 180 to 38 Hz), 38/40
     snare, 39 clap, 42/44 hat; xorshift noise seeded per voice from the
-    synth seed; any other note plays nothing; note-off is ignored.
+    synth seed; any other note plays nothing. A note-off leaves the sound
+    alone but releases the hit from the held set, so a later strike of the
+    same pad overlaps it, as the reference does; only a strike while the pad
+    is still down replaces the hit (PR #1224 review M1).
   - Release is an exponential with a time constant of release / 5 aimed just
     below zero, so it reaches exactly zero at the release time and the voice
     ends there.
@@ -123,6 +126,8 @@ see "Changes from the plan review".
 | `test_synth_full_pool_burst_fades_all` | 32 held, then 32 new notes: 32 sounding, 32 fading, 32 stolen, none hard; every old origin gone; 145 frames later nothing fades |
 | `test_synth_cut_fades_in_place` | Cut on instrument 0 with 16 organ voices: none sounding, 16 fading in place; its bus is heard for 144 frames then exactly 0; instrument 1's bus is byte-identical to its solo render; with both slots of a 2-voice pool fading, a new note sounds and counts one hard steal |
 | `test_synth_voice_limit` | limits 0 and 33 refused; 16 held, limit 8: 8 sounding (origins 9-16), 8 fading; a new note steals origin 9; limit 32 lets a ninth sound |
+| `test_synth_drum_restrike_overlaps` | snare struck, released after 50 ms, struck again at 150 ms: nothing fades, two hits sound, and the mix equals the two solo renders within 1e-6; a strike while the pad is down replaces the hit |
+| `test_synth_fade_slot_overflow` | pool 64: with fades A (slots 0-31, finished), B (32-63, 10 frames old) and C (0-31, fresh), one more steal overwrites one of B, counts one hard steal, and every C fade stays fresh |
 | `test_synth_top_note_bounded` | note 127 on every melodic patch with the filter open: finite, at most 1.0, audible, phases in [0, 1) |
 | `test_synth_block_size_independent` | a scripted sequence (four instruments, LFO patches, events at frames 0, 3000, 7001, 9000, 15000) renders byte-identically at 1, 64, 127 and 512 frames per call |
 
@@ -159,6 +164,10 @@ was run and the sources left untouched):
 | Cut ignores the instrument | killed (7) |
 | voice limit not enforced on new notes | killed (7) |
 | fade ends at fade ≤ 0 (a rounding tail sample) | killed (6) |
+| drum note-off releases the envelope | killed |
+| a released drum hit stays held (re-strike chokes it) | killed |
+| a full-fade-slot overwrite not counted | killed |
+| the overwrite always takes `fades[0]` | killed |
 
 ## Method
 
@@ -349,3 +358,13 @@ for later runs.
   the joint scenario on p99.9 ≤ 75 % with no late period.
   `le_synth_set_voice_limit` is the overload control the plan's policy uses.
 - **M4.** The Pi run gates Part 2a, not Part 6, and covers both benches.
+
+## Changes from the Part 1 review (PR #1224)
+
+- **M1.** A drum hit is no longer choked by the next strike of the same pad
+  after the pad was released (see "What was built"); tested.
+- **L1.** The fade-slot overflow path has its own test and two mutations.
+- **L2.** Drums' Decay is the kit's decay setting, from which each piece
+  derives its hit length (kick 0.72 s, snare 0.39 s, hat 0.175 s at the
+  default 40), as in the reference; `le_synth_param_desc`'s comment now says
+  so instead of claiming every readout is exact.

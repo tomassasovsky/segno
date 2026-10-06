@@ -3595,7 +3595,10 @@ typedef struct le_synth_patch_desc {
  *   at_min + (at_max - at_min) * v / 100            when exponential == 0,
  *   at_min * (at_max / at_min) ^ (v / 100)          when exponential == 1,
  * in `unit` (percent parameters map 0..100 to 0..100). The voice uses exactly
- * this value. */
+ * this value, with one exception kept from the reference: Drums' decay (d,
+ * 0.08..2.48 s) sets each piece's hit length through the piece's own formula
+ * (kick 0.15 + 0.55 d, snare and clap 0.08 + 0.3 d, hat 0.04 + 0.13 d), so
+ * the readout names the kit's decay setting, not one hit's length. */
 typedef struct le_synth_param_desc {
   char key[LE_SYNTH_KEY_CHARS];
   int32_t unit; /* le_synth_param_unit */
