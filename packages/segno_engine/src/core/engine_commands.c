@@ -1612,6 +1612,16 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   if (image && !le_record_capacity(engine, 1)) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
   const int32_t st = le_effective_state(t);
+  /* Overdub is unavailable while Reverse is on (#1162, the RC-300/RC-505
+   * rule): a punch-in on a track that reads — or will read, once its posted
+   * toggles land — reversed is refused before any preparation. Presses that
+   * finish a capture or cancel an arm or launch are not punch-ins and pass. */
+  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) &&
+      le_effective_reversed(t) &&
+      !(engine->armed[channel] && load_i32(&t->a_pending)) &&
+      !load_i32(&t->a_pending_launch)) {
+    return LE_ERR_REVERSED;
+  }
   /* The track's length (k * base) — all lanes share it, so lane 0 is canonical.
    * Kept coherent with the effective state: the undo-to-empty / redo-from-empty
    * paths store it control-side when they post. */
@@ -2565,6 +2575,31 @@ static int le_fade_image_valid(const le_fade_image* v) {
        (v->full_travel_seconds >= 0.5f && v->full_travel_seconds <= 30));
 }
 
+/* Reserves a receipt slot, writes it into the command through `slot_in_cmd`,
+ * posts, and hands back the request id. Shared by every checked per-track
+ * request with a callback verdict (Fade, Reverse); the caller has already
+ * validated the payload. NOT_READY when every slot is owned. */
+static int32_t le_request_admit(le_engine* e, le_command* cmd,
+                                int32_t* slot_in_cmd, uint64_t* request) {
+  if (e->next_request == UINT64_MAX) return LE_ERR_INVALID;
+  int slot = 0;
+  while (slot < LE_RING_CAPACITY && e->receipts[slot].request) ++slot;
+  if (slot == LE_RING_CAPACITY) return LE_ERR_NOT_READY;
+  const uint64_t id = ++e->next_request;
+  e->receipts[slot].request = id;
+  atomic_store_explicit(&e->receipts[slot].result, LE_ERR_NOT_READY,
+                         memory_order_relaxed);
+  *slot_in_cmd = slot;
+  const int32_t result = le_push_cmd(e, *cmd);
+  if (result != LE_OK) {
+    e->receipts[slot].request = 0;
+    return result;
+  }
+  e->receipts[slot].command = e->commands_posted;
+  *request = id;
+  return LE_OK;
+}
+
 static int32_t le_fade_admit(le_engine* e, int32_t channel,
                              le_fade_image image, int install,
                              uint64_t* request) {
@@ -2572,24 +2607,45 @@ static int32_t le_fade_admit(le_engine* e, int32_t channel,
   if (!e || !request || channel < 0 || channel >= e->track_count ||
       !le_fade_image_valid(&image)) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
-  if (image.lifetime != e->fade_lifetime || e->fade_next_request == UINT64_MAX)
-    return LE_ERR_INVALID;
-  int slot = 0;
-  while (slot < LE_RING_CAPACITY && e->fade_receipts[slot].request) ++slot;
-  if (slot == LE_RING_CAPACITY) return LE_ERR_NOT_READY;
-  const uint64_t id = ++e->fade_next_request;
-  e->fade_receipts[slot].request = id;
-  atomic_store_explicit(&e->fade_receipts[slot].result, LE_ERR_NOT_READY,
-                         memory_order_relaxed);
-  const int32_t result = le_push_cmd(e, (le_command){.code = LE_CMD_FADE,
-      .fade = {channel, slot, install, image}});
-  if (result != LE_OK) {
-    e->fade_receipts[slot].request = 0;
-    return result;
-  }
-  e->fade_receipts[slot].command = e->commands_posted;
-  *request = id;
+  if (image.lifetime != e->fade_lifetime) return LE_ERR_INVALID;
+  le_command cmd = {.code = LE_CMD_FADE, .fade = {channel, 0, install, image}};
+  return le_request_admit(e, &cmd, &cmd.fade.slot, request);
+}
+
+/* Reverse admission (#1162): see le_engine_toggle_reverse's contract. The
+ * state read is the effective one (a posted Clear or Undo to empty already
+ * counts); a pending arm or Count-in launch may fire into OVERDUBBING before
+ * the toggle lands, so the request waits rather than racing it. */
+static int32_t le_reverse_admit(le_engine* e, int32_t channel, int install,
+                                int32_t target, uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  if (channel < 0 || channel >= e->track_count) return LE_ERR_INVALID;
+  le_track* t = &e->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+      (!install && st == LE_TRACK_EMPTY)) return LE_ERR_INVALID;
+  if (load_i32(&t->a_pending) || e->armed[channel] ||
+      load_i32(&t->a_pending_launch)) return LE_ERR_NOT_READY;
+  const int predicted = install ? target != 0 : !le_effective_reversed(t);
+  le_command cmd = {.code = LE_CMD_REVERSE,
+                    .reverse = {channel, 0, install, target != 0}};
+  const int32_t result = le_request_admit(e, &cmd, &cmd.reverse.slot, request);
+  if (result != LE_OK) return result;
+  t->reverse_pending = predicted;
+  t->reverse_posted++;
   return LE_OK;
+}
+
+int32_t le_engine_toggle_reverse(le_engine* e, int32_t channel,
+                                 uint64_t* request) {
+  return le_reverse_admit(e, channel, 0, 0, request);
+}
+
+int32_t le_engine_install_reverse(le_engine* e, int32_t channel,
+                                  int32_t reversed, uint64_t* request) {
+  return le_reverse_admit(e, channel, 1, reversed, request);
 }
 
 int32_t le_engine_toggle_fade(le_engine* e, int32_t channel, float seconds,
@@ -2608,14 +2664,15 @@ int32_t le_engine_install_fade(le_engine* e, int32_t channel,
   return le_fade_admit(e, channel, *image, 1, request);
 }
 
-int32_t le_engine_read_fade_result(le_engine* e, uint64_t request, int32_t* result) {
+int32_t le_engine_read_request_result(le_engine* e, uint64_t request,
+                                      int32_t* result) {
   if (!e || !request || !result) return LE_ERR_INVALID;
   for (int i = 0; i < LE_RING_CAPACITY; ++i) {
-    if (e->fade_receipts[i].request != request) continue;
-    if (e->fade_receipts[i].command > atomic_load_explicit(
+    if (e->receipts[i].request != request) continue;
+    if (e->receipts[i].command > atomic_load_explicit(
           &e->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
-    *result = atomic_load_explicit(&e->fade_receipts[i].result, memory_order_relaxed);
-    e->fade_receipts[i].request = 0;
+    *result = atomic_load_explicit(&e->receipts[i].result, memory_order_relaxed);
+    e->receipts[i].request = 0;
     return LE_OK;
   }
   return LE_ERR_INVALID;
