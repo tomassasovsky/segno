@@ -310,6 +310,38 @@ class LooperRepository {
   /// Playback refusals and autonomous restart uncertainty.
   Stream<EngineResult> get oneShotFailures => _oneShot.failures;
 
+  /// Follow tempo and Pitch (#1179 Audio & tempo follow): Loop settings
+  /// with the inherit grammar, a default every track inherits and per-track
+  /// overrides, each a callback-confirmed vector like One Shot.
+  late final _followTempo = SettingsReceipt<_InheritIntent<bool>>(
+    _InheritIntent(const {}, defaultValue: false),
+    send: (intent) => _sendInherit(
+      intent,
+      published: (s) => (
+        s.followTempo,
+        [for (final t in s.tracks) t.followTempoOverride],
+      ),
+      post: (channel, value) =>
+          _engine.setFollowTempo(channel: channel, follow: value),
+    ),
+    running: () => _intendRunning,
+    publish: () => _reproject(forcePublication: true),
+  );
+  late final _pitchMode = SettingsReceipt<_InheritIntent<PitchMode>>(
+    _InheritIntent(const {}, defaultValue: PitchMode.unchanged),
+    send: (intent) => _sendInherit(
+      intent,
+      published: (s) => (
+        s.pitchMode,
+        [for (final t in s.tracks) t.pitchModeOverride],
+      ),
+      post: (channel, value) =>
+          _engine.setPitchMode(channel: channel, mode: value),
+    ),
+    running: () => _intendRunning,
+    publish: () => _reproject(forcePublication: true),
+  );
+
   /// Per-track forced loop multiples (absent => auto). The global rec/dub and
   /// auto-record (sound-activated) flags. All re-applied on every (re)start.
   final Map<int, int> _trackMultiple = {};
@@ -811,6 +843,8 @@ class LooperRepository {
       _clickVolume,
       _recordStart,
       _oneShot,
+      _followTempo,
+      _pitchMode,
       _timing,
       _length,
       _mix,
@@ -2070,6 +2104,8 @@ class LooperRepository {
     var changed = _drainReceipts();
     for (final observation in [
       _oneShot.observation,
+      _followTempo.observation,
+      _pitchMode.observation,
       _clickVolume.observation,
       _clickMode.observation,
       _recordStart.observation,
@@ -2305,6 +2341,9 @@ class LooperRepository {
               fade: s.tracks[i].fade,
               reversed: s.tracks[i].reversed,
               transpose: s.tracks[i].transpose,
+              followTempoOverride: _followTempo.live.overrides[i],
+              pitchModeOverride: _pitchMode.live.overrides[i],
+              pitchEffectiveCents: s.tracks[i].pitchEffectiveCents,
               // An untouched live fader is unity. Native volume already
               // includes
               // source balance, which must never become a second saved level.
@@ -2375,6 +2414,10 @@ class LooperRepository {
     }),
     speed: s.speed,
     transposeBypass: s.transposeBypass,
+    recordedTempoBpm: s.recordedTempoBpm,
+    tempoFollow: s.tempoFollow,
+    defaultFollowTempo: _followTempo.live.defaultValue,
+    defaultPitchMode: _pitchMode.live.defaultValue,
     outputBusCount: s.outputBusCount,
     tailResetRev: s.tailResetRev,
     // Sized by the engine to the channels the device has.
@@ -2623,6 +2666,16 @@ class LooperRepository {
       if (!onceResult.isOk) {
         stopEngine();
         return onceResult;
+      }
+      for (final receipt in <SettingsReceipt<Object>>[
+        _followTempo,
+        _pitchMode,
+      ]) {
+        final replayed = receipt.replay();
+        if (!replayed.isOk) {
+          stopEngine();
+          return replayed;
+        }
       }
       var decayReplay = _engine.setOverdubFeedback(
         feedbackOfDecay(_restartOverdubDecay),
@@ -3925,6 +3978,8 @@ class LooperRepository {
     _clickVolume.reset();
     _recordStart.reset();
     _oneShot.reset();
+    _followTempo.reset();
+    _pitchMode.reset();
     // Own the settings before the first await. Callers may reuse their maps.
     final recordTimingOverrides = Map.of(rig.trackRecordTimingOverrides);
     final overdubDecayOverrides = Map.of(rig.trackOverdubDecayOverrides);
@@ -7934,6 +7989,161 @@ class LooperRepository {
     );
   }
 
+  /// The accepted Follow tempo default and per-track overrides (#1179).
+  bool get defaultFollowTempo => _followTempo.live.defaultValue;
+
+  /// The accepted per-track Follow tempo overrides; absent inherits.
+  Map<int, bool> get trackFollowTempoOverrides => _followTempo.live.overrides;
+
+  /// The accepted Pitch default (#1179).
+  PitchMode get defaultPitchMode => _pitchMode.live.defaultValue;
+
+  /// The accepted per-track Pitch overrides; absent inherits.
+  Map<int, PitchMode> get trackPitchModeOverrides => _pitchMode.live.overrides;
+
+  /// Stages a stopped Follow tempo vector or requests one callback-confirmed
+  /// vector (#1179): [defaultFollow] every track inherits, [trackOverrides]
+  /// per track (absent inherits). With content on a bar grid and a
+  /// following track, a song-tempo change retimes the recorded tracks
+  /// ([LooperState.tempoFollow]).
+  EngineResult setFollowTempoSettings({
+    required bool defaultFollow,
+    required Map<int, bool> trackOverrides,
+  }) => _requestInherit(
+    _followTempo,
+    _InheritIntent(trackOverrides, defaultValue: defaultFollow),
+  );
+
+  /// Stages or requests the Pitch vector (#1179): what a retime does to a
+  /// following track's pitch, [defaultMode] inherited, [trackOverrides] per
+  /// track.
+  EngineResult setPitchModeSettings({
+    required PitchMode defaultMode,
+    required Map<int, PitchMode> trackOverrides,
+  }) => _requestInherit(
+    _pitchMode,
+    _InheritIntent(trackOverrides, defaultValue: defaultMode),
+  );
+
+  EngineResult _requestInherit<V extends Object>(
+    SettingsReceipt<_InheritIntent<V>> receipt,
+    _InheritIntent<V> intent,
+  ) {
+    if (intent.overrides.keys.any((c) => c < 0 || c >= 8)) {
+      return EngineResult.invalid;
+    }
+    final result = receipt.request(intent);
+    _reproject();
+    return result.isOk && receipt.settled ? receipt.lastResult : result;
+  }
+
+  /// Sends the parts of an inherit vector the engine does not already hold:
+  /// the default, then each track's override (null inherits). Accepted once
+  /// every request's callback result is OK; a refusal after a part was
+  /// admitted, or a failed result, leaves the vector owed.
+  ({EngineResult result, ReceiptCheck? check}) _sendInherit<V extends Object>(
+    _InheritIntent<V> intent, {
+    required (V, List<V?>) Function(EngineSnapshot) published,
+    required RequestAdmission Function(int? channel, V? value) post,
+  }) {
+    final (current, overrides) = published(_engine.snapshot());
+    final sends = <(int?, V?)>[
+      if (current != intent.defaultValue) (null, intent.defaultValue),
+      for (var c = 0; c < overrides.length && c < 8; c++)
+        if (overrides[c] != intent.overrides[c]) (c, intent.overrides[c]),
+    ];
+    final results = <int, EngineResult?>{};
+    for (final (channel, value) in sends) {
+      final admission = post(channel, value);
+      if (!admission.result.isOk) {
+        return results.isEmpty
+            ? (result: admission.result, check: null)
+            : (
+                result: EngineResult.ok,
+                check: () => (
+                  verdict: ReceiptVerdict.uncertain,
+                  result: admission.result,
+                ),
+              );
+      }
+      results[admission.request] = null;
+    }
+    return (
+      result: EngineResult.ok,
+      check: () {
+        for (final request in results.keys) {
+          results[request] ??= _engine.readRequestResult(request);
+        }
+        if (results.values.any((r) => r == null)) return null;
+        return results.values.every((r) => r!.isOk)
+            ? (verdict: ReceiptVerdict.accepted, result: EngineResult.ok)
+            : (verdict: ReceiptVerdict.uncertain, result: EngineResult.invalid);
+      },
+    );
+  }
+
+  /// No Follow tempo vector is awaiting its callback receipt (#1179).
+  bool get followTempoSettingsSettled => _followTempo.settled;
+
+  /// An uncertain Follow tempo receipt owes its vector until Retry or a
+  /// restart.
+  bool get followTempoRecoveryRequired => _followTempo.recoveryRequired;
+
+  /// Follow tempo refusals and autonomous restart uncertainty.
+  Stream<EngineResult> get followTempoFailures => _followTempo.failures;
+
+  /// The durable Follow tempo vector a restart replays and a session captures.
+  ({bool defaultFollow, Map<int, bool> trackOverrides})
+  get followTempoRestartIntent => (
+    defaultFollow: _followTempo.restart.defaultValue,
+    trackOverrides: _followTempo.restart.overrides,
+  );
+
+  /// Waits for the Follow tempo callback receipt, with a lifetime-bound
+  /// timeout.
+  Future<EngineResult> settleFollowTempo({
+    Duration pollInterval = const Duration(milliseconds: 10),
+    int attempts = 50,
+  }) => _followTempo.settle(pollInterval: pollInterval, attempts: attempts);
+
+  /// Retry re-requests the owed Follow tempo vector while running and stages it
+  /// stopped.
+  EngineResult recoverFollowTempoSettings() {
+    final result = _followTempo.recover();
+    _reproject();
+    return result;
+  }
+
+  /// No Pitch vector is awaiting its callback receipt (#1179).
+  bool get pitchModeSettingsSettled => _pitchMode.settled;
+
+  /// An uncertain Pitch receipt owes its vector until Retry or a restart.
+  bool get pitchModeRecoveryRequired => _pitchMode.recoveryRequired;
+
+  /// Pitch refusals and autonomous restart uncertainty.
+  Stream<EngineResult> get pitchModeFailures => _pitchMode.failures;
+
+  /// The durable Pitch vector a restart replays and a session captures.
+  ({PitchMode defaultMode, Map<int, PitchMode> trackOverrides})
+  get pitchModeRestartIntent => (
+    defaultMode: _pitchMode.restart.defaultValue,
+    trackOverrides: _pitchMode.restart.overrides,
+  );
+
+  /// Waits for the Pitch callback receipt, with a lifetime-bound timeout.
+  Future<EngineResult> settlePitchMode({
+    Duration pollInterval = const Duration(milliseconds: 10),
+    int attempts = 50,
+  }) => _pitchMode.settle(pollInterval: pollInterval, attempts: attempts);
+
+  /// Retry re-requests the owed Pitch vector while running and stages it
+  /// stopped.
+  EngineResult recoverPitchModeSettings() {
+    final result = _pitchMode.recover();
+    _reproject();
+    return result;
+  }
+
   /// No playback vector is awaiting its callback receipt.
   bool get oneShotSettingsSettled => _oneShot.settled;
 
@@ -7981,6 +8191,8 @@ class LooperRepository {
     await _clickMode.dispose();
     await _clickVolume.dispose();
     await _recordStart.dispose();
+    await _followTempo.dispose();
+    await _pitchMode.dispose();
     await _recordingInputRequired.close();
     await _recordRefusals.close();
     await _overdubRefusals.close();
@@ -8153,6 +8365,15 @@ class _FxPreparationRefused implements Exception {
   const _FxPreparationRefused(this.result);
 
   final EngineResult result;
+}
+
+/// A Loop setting with the inherit grammar (#1179 Follow tempo and Pitch):
+/// the default every track inherits and per-track overrides.
+final class _InheritIntent<V extends Object> {
+  _InheritIntent(Map<int, V> overrides, {required this.defaultValue})
+    : overrides = Map.unmodifiable(overrides);
+  final V defaultValue;
+  final Map<int, V> overrides;
 }
 
 final class _OneShotIntent {
