@@ -38,7 +38,6 @@ class AppRuntime {
     required PedalRepository pedal,
     required PerformanceRepository performance,
     required SessionRepository sessions,
-    required Future<String> Function() exportDirectory,
     required Future<void> Function() powerOff,
   }) {
     fxPersistence = FxChainPersistence(looper: repository);
@@ -115,7 +114,6 @@ class AppRuntime {
         timing: timing,
         fade: fade,
       ),
-      exportDirectory: exportDirectory,
       currentPedalBindings: () => control.state.bindings.encode(),
       onPedalBindings: (encoded) =>
           control.applySessionBindings(PedalBindingSet.decode(encoded)),

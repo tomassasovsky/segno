@@ -388,8 +388,6 @@ void showSessionOutcome(BuildContext context, SessionState state) {
     SessionStatus.success => switch (state.outcome) {
       SessionOutcome.saved => l10n.sessionSaved,
       SessionOutcome.loaded => l10n.sessionLoaded,
-      SessionOutcome.mixdownExported => l10n.mixdownExported,
-      SessionOutcome.stemsExported => l10n.stemsExported,
       // The named-session outcomes surface through the Sessions manager UI (a
       // later part), which gives them their own messaging; no legacy SnackBar.
       SessionOutcome.renamed ||

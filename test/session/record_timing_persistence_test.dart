@@ -62,6 +62,10 @@ void main() {
       late FxChainPersistence projection;
       late SessionCubit session;
       late SessionRepository sessions;
+
+      /// The id the catalog gave the session saved as [name].
+      Future<SessionId> idOf(String name) async =>
+          (await sessions.listSessions()).singleWhere((s) => s.name == name).id;
       late PerformanceRepository performance;
       late MixSettingsCoordinator mix;
       late _TimingSaveStore store;
@@ -147,7 +151,6 @@ void main() {
             record: record,
             timing: timing,
           ),
-          exportDirectory: () async => directory.path,
         );
         expect(looper.record(), EngineResult.ok);
         engine.pump(frames: 256, input: .5);
@@ -221,7 +224,7 @@ void main() {
               );
             }
             final bundle = await sessions.read(
-              await sessions.bundlePath('Record timing held'),
+              await sessions.bundlePathOf(await idOf('Record timing held')),
             );
             expect(bundle.session.clickVolume, pass == 0 ? 1 : .4);
             expect(bundle.session.recordTiming, RecordTiming.immediately);
@@ -269,7 +272,7 @@ void main() {
             reason: session.state.errorMessage,
           );
           final bundle = await sessions.read(
-            await sessions.bundlePath('Record timing pending'),
+            await sessions.bundlePathOf(await idOf('Record timing pending')),
           );
           expect(bundle.session.trackRecordTimingOverrides, {
             7: RecordTiming.immediately,

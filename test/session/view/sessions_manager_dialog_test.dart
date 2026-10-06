@@ -27,13 +27,16 @@ void main() {
     late SessionCubit session;
     late PedalRepository defaultPedal;
 
-    const two = [SessionSummary(name: 'A'), SessionSummary(name: 'B')];
+    const two = [
+      SessionSummary(id: 'A', name: 'A'),
+      SessionSummary(id: 'B', name: 'B'),
+    ];
     const five = [
-      SessionSummary(name: 'A'),
-      SessionSummary(name: 'B'),
-      SessionSummary(name: 'C'),
-      SessionSummary(name: 'D'),
-      SessionSummary(name: 'E'),
+      SessionSummary(id: 'A', name: 'A'),
+      SessionSummary(id: 'B', name: 'B'),
+      SessionSummary(id: 'C', name: 'C'),
+      SessionSummary(id: 'D', name: 'D'),
+      SessionSummary(id: 'E', name: 'E'),
     ];
 
     setUp(() {
@@ -43,7 +46,7 @@ void main() {
         () => defaultPedal.events,
       ).thenAnswer((_) => const Stream<PedalEvent>.empty());
       when(session.refreshSessions).thenAnswer((_) async {});
-      when(() => session.loadNamed(any())).thenAnswer((_) async {});
+      when(() => session.open(any())).thenAnswer((_) async {});
       when(() => session.renameSession(any(), any())).thenAnswer((_) async {});
       when(() => session.deleteSession(any())).thenAnswer((_) async {});
       when(
@@ -51,8 +54,6 @@ void main() {
       ).thenAnswer((_) async {});
       when(() => session.saveAs(any())).thenAnswer((_) async {});
       when(session.save).thenAnswer((_) async {});
-      when(() => session.exportMixdown()).thenAnswer((_) async {});
-      when(() => session.exportStems()).thenAnswer((_) async {});
     });
 
     Future<AppLocalizations> l10n() =>
@@ -160,7 +161,11 @@ void main() {
     testWidgets('the open session is the highlighted row', (tester) async {
       await openManager(
         tester,
-        state: const SessionState(currentSessionName: 'A', sessions: two),
+        state: const SessionState(
+          currentSessionId: 'A',
+          currentSessionName: 'A',
+          sessions: two,
+        ),
       );
       // The old header line said which session was open; the pen says it with
       // the row itself. The tint is the visible fact, so the tint is what is
@@ -183,7 +188,7 @@ void main() {
       await openManager(
         tester,
         state: SessionState(
-          sessions: [SessionSummary(name: 'A', modifiedAt: at)],
+          sessions: [SessionSummary(id: 'A', name: 'A', modifiedAt: at)],
         ),
       );
       expect(find.text(strings.sessionDateToday('14:02')), findsOneWidget);
@@ -195,7 +200,7 @@ void main() {
       await openManager(tester, state: const SessionState(sessions: two));
       await tester.tap(find.byKey(const Key('sessions_card_A')));
       await tester.pumpAndSettle();
-      verify(() => session.loadNamed('A')).called(1);
+      verify(() => session.open('A')).called(1);
       // Open, deliberately: the action row below targets the open session,
       // and a dialog that closed on load would make Rename one reopen more
       // expensive than the pen draws it.
@@ -223,7 +228,11 @@ void main() {
     testWidgets('renaming the open session fires the cubit', (tester) async {
       await openManager(
         tester,
-        state: const SessionState(currentSessionName: 'A', sessions: two),
+        state: const SessionState(
+          currentSessionId: 'A',
+          currentSessionName: 'A',
+          sessions: two,
+        ),
       );
       await tester.tap(find.byKey(const Key('sessions_rename')));
       await tester.pumpAndSettle();
@@ -236,7 +245,11 @@ void main() {
     ) async {
       await openManager(
         tester,
-        state: const SessionState(currentSessionName: 'A', sessions: two),
+        state: const SessionState(
+          currentSessionId: 'A',
+          currentSessionName: 'A',
+          sessions: two,
+        ),
       );
       await tester.tap(find.byKey(const Key('sessions_duplicate')));
       await tester.pumpAndSettle();
@@ -249,7 +262,11 @@ void main() {
     ) async {
       await openManager(
         tester,
-        state: const SessionState(currentSessionName: 'A', sessions: two),
+        state: const SessionState(
+          currentSessionId: 'A',
+          currentSessionName: 'A',
+          sessions: two,
+        ),
       );
       await tester.tap(find.byKey(const Key('sessions_delete')));
       await tester.pumpAndSettle();
@@ -263,7 +280,11 @@ void main() {
     ) async {
       await openManager(
         tester,
-        state: const SessionState(currentSessionName: 'A', sessions: two),
+        state: const SessionState(
+          currentSessionId: 'A',
+          currentSessionName: 'A',
+          sessions: two,
+        ),
       );
       await tester.tap(find.byKey(const Key('sessions_delete')));
       await tester.pumpAndSettle();
@@ -277,7 +298,11 @@ void main() {
     testWidgets('cancelling the delete confirm does nothing', (tester) async {
       await openManager(
         tester,
-        state: const SessionState(currentSessionName: 'A', sessions: two),
+        state: const SessionState(
+          currentSessionId: 'A',
+          currentSessionName: 'A',
+          sessions: two,
+        ),
       );
       await tester.tap(find.byKey(const Key('sessions_delete')));
       await tester.pumpAndSettle();
@@ -289,7 +314,11 @@ void main() {
     testWidgets('a rename collision shows an inline error', (tester) async {
       await openManager(
         tester,
-        state: const SessionState(currentSessionName: 'A', sessions: two),
+        state: const SessionState(
+          currentSessionId: 'A',
+          currentSessionName: 'A',
+          sessions: two,
+        ),
       );
       await tester.tap(find.byKey(const Key('sessions_rename')));
       await tester.pumpAndSettle();
@@ -309,8 +338,8 @@ void main() {
         tester,
         state: SessionState(
           sessions: [
-            SessionSummary(name: 'A', modifiedAt: yesterday),
-            SessionSummary(name: 'B', modifiedAt: older),
+            SessionSummary(id: 'A', name: 'A', modifiedAt: yesterday),
+            SessionSummary(id: 'B', name: 'B', modifiedAt: older),
           ],
         ),
       );
@@ -345,7 +374,11 @@ void main() {
     ) async {
       await openManager(
         tester,
-        state: const SessionState(currentSessionName: 'A', sessions: two),
+        state: const SessionState(
+          currentSessionId: 'A',
+          currentSessionName: 'A',
+          sessions: two,
+        ),
       );
       await tester.tap(find.byKey(const Key('sessions_rename')));
       await tester.pumpAndSettle();
@@ -357,7 +390,11 @@ void main() {
     testWidgets('cancelling the name prompt renames nothing', (tester) async {
       await openManager(
         tester,
-        state: const SessionState(currentSessionName: 'A', sessions: two),
+        state: const SessionState(
+          currentSessionId: 'A',
+          currentSessionName: 'A',
+          sessions: two,
+        ),
       );
       await tester.tap(find.byKey(const Key('sessions_rename')));
       await tester.pumpAndSettle();
@@ -392,7 +429,11 @@ void main() {
     testWidgets('Save writes back when a session is open', (tester) async {
       await openManager(
         tester,
-        state: const SessionState(currentSessionName: 'A', sessions: two),
+        state: const SessionState(
+          currentSessionId: 'A',
+          currentSessionName: 'A',
+          sessions: two,
+        ),
       );
       await tester.tap(find.byKey(const Key('sessions_save')));
       await tester.pumpAndSettle();
@@ -449,7 +490,7 @@ void main() {
         await tester.tap(find.byKey(const Key('sessions_card_E')));
         await tester.pump();
 
-        verify(() => session.loadNamed('E')).called(1);
+        verify(() => session.open('E')).called(1);
       });
     });
 
@@ -464,7 +505,11 @@ void main() {
         final requested = statuses();
         await openView(
           tester,
-          state: const SessionState(currentSessionName: 'A', sessions: two),
+          state: const SessionState(
+            currentSessionId: 'A',
+            currentSessionName: 'A',
+            sessions: two,
+          ),
           statuses: requested.stream,
         );
         await tester.tap(find.byKey(const Key('sessions_delete')));
@@ -488,7 +533,11 @@ void main() {
         final requested = statuses();
         await openView(
           tester,
-          state: const SessionState(currentSessionName: 'A', sessions: two),
+          state: const SessionState(
+            currentSessionId: 'A',
+            currentSessionName: 'A',
+            sessions: two,
+          ),
           statuses: requested.stream,
         );
         await tester.tap(find.byKey(const Key('sessions_rename')));

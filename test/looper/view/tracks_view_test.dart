@@ -207,8 +207,6 @@ void main() {
     when(session.save).thenAnswer((_) async {});
     when(session.refreshSessions).thenAnswer((_) async {});
     when(() => session.saveAs(any())).thenAnswer((_) async {});
-    when(() => session.exportMixdown()).thenAnswer((_) async {});
-    when(() => session.exportStems()).thenAnswer((_) async {});
     performanceRecorder = _MockPerformanceRecorderCubit();
     when(
       () => performanceRecorder.state,

@@ -152,10 +152,6 @@
         "description": "Banner shown when the console booted with its pinned audio interface absent and is waiting to auto-start it."
     },
     "close": "Close",
-    "mixdownExported": "Mixdown exported",
-    "stemsExported": "Stems exported",
-    "exportMixdown": "Export mixdown",
-    "exportStems": "Export stems",
     "sessionMenuTooltip": "Session",
     "a11ySessionMenu": "Session menu",
     "sessionSaved": "Session saved",

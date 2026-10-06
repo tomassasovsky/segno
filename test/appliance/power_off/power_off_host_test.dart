@@ -256,7 +256,7 @@ void main() {
         session,
         const Stream<SessionState>.empty(),
         initialState: const SessionState(
-          sessions: [SessionSummary(name: 'jam')],
+          sessions: [SessionSummary(id: 'jam', name: 'jam')],
         ),
       );
       await openConfirm(tester);
@@ -324,7 +324,10 @@ void main() {
       whenListen(
         session,
         const Stream<SessionState>.empty(),
-        initialState: const SessionState(currentSessionName: 'set'),
+        initialState: const SessionState(
+          currentSessionId: 'set',
+          currentSessionName: 'set',
+        ),
       );
       await openConfirm(tester);
 
@@ -345,7 +348,10 @@ void main() {
         whenListen(
           session,
           const Stream<SessionState>.empty(),
-          initialState: const SessionState(currentSessionName: 'set'),
+          initialState: const SessionState(
+            currentSessionId: 'set',
+            currentSessionName: 'set',
+          ),
         );
         when(() => session.save()).thenAnswer((_) async {
           when(() => session.state).thenReturn(

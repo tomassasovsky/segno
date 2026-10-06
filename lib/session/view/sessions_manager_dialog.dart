@@ -67,8 +67,13 @@ Future<void> promptSaveAs(BuildContext context) async {
   await cubit.saveAs(name);
 }
 
-/// Prompts for a name and duplicates saved session [from] to a new copy.
-Future<void> promptDuplicate(BuildContext context, String from) async {
+/// Prompts for a name and duplicates the saved session [id] (shown as
+/// [from]) to a new copy.
+Future<void> promptDuplicate(
+  BuildContext context,
+  SessionId id,
+  String from,
+) async {
   final cubit = context.read<SessionCubit>();
   final l10n = context.l10n;
   final to = await _promptName(
@@ -78,7 +83,7 @@ Future<void> promptDuplicate(BuildContext context, String from) async {
     taken: cubit.state.sessions.map((s) => s.name).toSet(),
   );
   if (to == null) return;
-  await cubit.duplicateSession(from, to);
+  await cubit.duplicateSession(id, to);
 }
 
 /// One name prompt, two keyboards: the console has no physical keys, so it
@@ -112,7 +117,7 @@ Future<String?> _promptName(
     ).showSnackBar(SnackBar(content: AppText(l10n.sessionNameInvalid)));
     return null;
   }
-  if (taken.contains(slug)) {
+  if (taken.map((n) => n.toLowerCase()).contains(slug.toLowerCase())) {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: AppText(l10n.sessionNameDuplicate(slug))));
@@ -158,6 +163,7 @@ class SessionsManagerView extends StatelessWidget {
       child: BlocBuilder<SessionCubit, SessionState>(
         buildWhen: (a, b) =>
             a.sessions != b.sessions ||
+            a.currentSessionId != b.currentSessionId ||
             a.currentSessionName != b.currentSessionName ||
             a.error != b.error,
         builder: (context, state) {
@@ -224,8 +230,7 @@ class SessionsManagerView extends StatelessWidget {
                             for (final (i, summary) in state.sessions.indexed)
                               _SessionRow(
                                 summary: summary,
-                                isCurrent:
-                                    summary.name == state.currentSessionName,
+                                isCurrent: summary.id == state.currentSessionId,
                                 isLast: i == state.sessions.length - 1,
                               ),
                           ],
@@ -284,7 +289,7 @@ class _SessionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final cubit = context.read<SessionCubit>();
     return ConsoleRow(
-      key: Key('sessions_card_${summary.name}'),
+      key: Key('sessions_card_${summary.id}'),
       title: summary.name,
       state: _dateLabel(context, summary.modifiedAt),
       // The open session's row is a selected row, and `accentSurface` is the
@@ -294,7 +299,7 @@ class _SessionRow extends StatelessWidget {
       fill: isCurrent ? context.surface.accentSurface : null,
       showDisclosure: false,
       showDivider: !isLast,
-      onTap: () => unawaited(cubit.loadNamed(summary.name)),
+      onTap: () => unawaited(cubit.open(summary.id)),
     );
   }
 }
@@ -311,7 +316,8 @@ class _ActionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final cubit = context.read<SessionCubit>();
-    final current = state.currentSessionName;
+    final current = state.currentSessionId;
+    final currentName = state.currentSessionName ?? current ?? '';
     return Row(
       spacing: 10,
       children: [
@@ -320,21 +326,21 @@ class _ActionRow extends StatelessWidget {
           label: l10n.sessionRename,
           onPressed: current == null
               ? null
-              : () => unawaited(_rename(context, cubit, current)),
+              : () => unawaited(_rename(context, cubit, current, currentName)),
         ),
         ConsoleSmallButton(
           key: const Key('sessions_duplicate'),
           label: l10n.sessionDuplicate,
           onPressed: current == null
               ? null
-              : () => unawaited(promptDuplicate(context, current)),
+              : () => unawaited(promptDuplicate(context, current, currentName)),
         ),
         ConsoleSmallButton(
           key: const Key('sessions_delete'),
           label: l10n.sessionDelete,
           onPressed: current == null
               ? null
-              : () => unawaited(_delete(context, cubit, current)),
+              : () => unawaited(_delete(context, cubit, current, currentName)),
         ),
         const Spacer(),
         ConsoleSmallButton(
@@ -358,32 +364,34 @@ class _ActionRow extends StatelessWidget {
   Future<void> _rename(
     BuildContext context,
     SessionCubit cubit,
-    String current,
+    SessionId id,
+    String currentName,
   ) async {
     final l10n = context.l10n;
     final to = await _promptName(
       context,
       title: l10n.sessionRenameTitle,
-      initial: current,
+      initial: currentName,
       // Every other name is taken; the session's own name is allowed (a
       // no-op).
       taken: cubit.state.sessions
+          .where((s) => s.id != id)
           .map((s) => s.name)
-          .where((n) => n != current)
           .toSet(),
     );
     if (to == null) return;
-    await cubit.renameSession(current, to);
+    await cubit.renameSession(id, to);
   }
 
   Future<void> _delete(
     BuildContext context,
     SessionCubit cubit,
-    String current,
+    SessionId id,
+    String currentName,
   ) async {
-    final confirmed = await _confirmDelete(context, current);
+    final confirmed = await _confirmDelete(context, currentName);
     if (!confirmed) return;
-    await cubit.deleteSession(current);
+    await cubit.deleteSession(id);
   }
 }
 
