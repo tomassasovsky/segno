@@ -203,6 +203,9 @@ void main() {
     ).thenAnswer((_) async => EngineResult.ok);
     when(() => repository.mixSettingsSettled).thenReturn(true);
     when(() => repository.mixRecoveryRequired).thenReturn(false);
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.mixSettingsSnapshot).thenAnswer((_) => currentMix);
     when(

@@ -441,6 +441,9 @@ void main() {
       (_) => const Stream<int>.empty(),
     );
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
+    when(
+      () => looper.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.state).thenReturn(
       LooperState(

@@ -151,6 +151,9 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     fade = FadeSettings(
       repository: repository,
       settings: settings,
@@ -170,6 +173,9 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(

@@ -674,14 +674,22 @@ the two repository transactions and the two holders.
 
 Decisions taken under the owner rules (2026-10-06):
 
-31. A Fade edit during Session exclusion queues behind it and applies after
-    it, as every owned family's does, instead of being refused. Rule 4.
+31. A Fade edit during Session exclusion queues behind it, as every owned
+    family's does, instead of being refused. Behind a Session Save it applies
+    after the save. Behind a Session load it carries the old lifetime, so the
+    load's values supersede it and it is dropped with no notice, as for the
+    other families. It used to be refused with an error. Rule 4.
 32. A Fade write still in flight when Fade closes is superseded and its
     storage rolled back, as for every owner. Shutdown flushes Fade through
     the registry before it closes, so admitted edits still land. Rule 4.
 33. Fade's controller fence is the shared lifetime (Session revision and
     device generation), so a device restart also supersedes queued
-    controller Fade work, as for the other families. Rule 4.
+    controller Fade work, as for the other families. A lifetime change also
+    returns Fade's live durations to the durable ones
+    (`SettingsFamily.retireLive`), so a value held across a restart does not
+    outlive the release that is now refused: the next gesture uses Released.
+    That is the same recovery the receipt families get from their restart
+    replay. Rules 1 and 4.
 34. Session Save captures Fade's durable durations even while Fade is
     unavailable, as decision 30 states for every family; Save no longer
     refuses there. Rules 2 and 4.
@@ -695,10 +703,21 @@ Decisions taken under the owner rules (2026-10-06):
 37. A Session file whose Count-in or per-track override key cannot be
     applied is refused when it is read, so the live rig is never cleared for
     it. Rule 2.
+38. A Mixer edit while the repository owes a vector is refused with
+    `recoveryRequired` before storage is touched, as the owners refuse writes
+    while a value is owed. Storage keeps the owed vector, so Retry and the
+    next start land the value storage holds. Rules 2 and 3.
+39. An owed Mixer vector that no edit of the coordinator's caused (an
+    unconfirmed restart or reconnect replay) is reported once through the
+    coordinator's failures as `recoveryRequired`, so the Mixer Retry notice
+    shows instead of Record refusing silently. Rule 3.
 
 Deviations: `FadeSettings` is kept as a thin holder, as the other holders
 are. The registry builds Fade's owner from a `LooperRepository`, so
-`FadeSettings` now takes one. Production change: +454 / -419.
+`FadeSettings` now takes one. Production change: +454 / -419, then +75 / -2
+for the review fixes (decisions 33, 38 and 39). Fade is not in the shared
+contract suite: its cases are built on a receipt being withheld and
+delivered, and Fade has none; `fade_settings_test` pins decision 33.
 
 
 ### Part 3: Control dispatch collapse

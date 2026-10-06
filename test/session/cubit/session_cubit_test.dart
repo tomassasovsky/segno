@@ -244,6 +244,9 @@ void main() {
     when(() => looper.lengthSettingsSettled).thenReturn(true);
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.mixRecoveryRequired).thenReturn(false);
+    when(
+      () => looper.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());

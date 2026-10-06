@@ -175,8 +175,30 @@ class MixSettingsCoordinator {
        _persistence = persistence,
        _device = device {
     _syncControllerTopology();
-    _topologySub = repository.looperState.listen(
-      (_) => _syncControllerTopology(),
+    _topologySub = repository.looperState.listen((_) {
+      if (_owedReported && !_repository.mixRecoveryRequired) {
+        _owedReported = false;
+      }
+      _syncControllerTopology();
+    });
+    _owedSub = repository.mixSettingsFailures.listen((_) => _reportOwed());
+  }
+
+  late final StreamSubscription<EngineResult> _owedSub;
+
+  /// Whether the current owed vector already has a notice. Cleared once the
+  /// repository no longer owes one.
+  bool _owedReported = false;
+
+  /// A restart or reconnect replay that goes unconfirmed owes the vector with
+  /// no edit of ours to report it; this surfaces it with the Retry notice.
+  void _reportOwed() {
+    if (_closed || _owedReported || !_repository.mixRecoveryRequired) return;
+    _report(
+      const MixSettingsOutcome(
+        MixSettingsStatus.recoveryRequired,
+        engineResult: EngineResult.notReady,
+      ),
     );
   }
 
@@ -413,6 +435,10 @@ class MixSettingsCoordinator {
   Stream<MixSettingsOutcome> get failures => _failures.stream;
 
   MixSettingsOutcome _report(MixSettingsOutcome result) {
+    if (result.status == MixSettingsStatus.recoveryRequired &&
+        _repository.mixRecoveryRequired) {
+      _owedReported = true;
+    }
     if (!result.isOk && !_failures.isClosed) _failures.add(result);
     return result;
   }
@@ -584,6 +610,15 @@ class MixSettingsCoordinator {
     Map<MixValueTarget, double>? releasedProjection,
     MixSettingsSnapshot? priorDurable,
   }) async {
+    // Storage holds the owed vector, which Retry and the next start land. A
+    // new candidate written now would leave storage and the engine apart, so
+    // it is refused, as the owners refuse writes while a value is owed.
+    if (_repository.mixRecoveryRequired) {
+      return const MixSettingsOutcome(
+        MixSettingsStatus.recoveryRequired,
+        engineResult: EngineResult.notReady,
+      );
+    }
     final durableCurrent = priorDurable ?? durableSnapshot;
     final nextReleased =
         Map<MixValueTarget, double>.of(
@@ -800,6 +835,7 @@ class MixSettingsCoordinator {
     await flush();
     await _exclusiveTail;
     await _topologySub.cancel();
+    await _owedSub.cancel();
     await _failures.close();
   }
 

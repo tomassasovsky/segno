@@ -73,6 +73,11 @@ abstract interface class SettingsFamily<V extends Object, C> {
 
   /// Re-requests the owed durable value.
   EngineResult recover();
+
+  /// The session or device lifetime moved on, which retires every held
+  /// controller value: live returns to durable. A family whose restart
+  /// replays the durable value through its receipt has nothing to do.
+  void retireLive();
 }
 
 /// Stages [family]'s stored value into the stopped engine before audio
@@ -711,6 +716,7 @@ class SettingsOwner<V extends Object, C> {
     if (_lifetime != lifetime) {
       _lifetime = lifetime;
       _revisions.clear();
+      _family.retireLive();
       _changed();
     }
     if (_recoveryReported && ready) {
