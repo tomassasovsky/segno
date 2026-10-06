@@ -3551,6 +3551,72 @@ LE_EXPORT int32_t le_midi_out_close(le_midi_out* m);
 LE_EXPORT int32_t le_midi_out_send(le_midi_out* m, const uint8_t* data,
                                    int32_t len);
 
+/* ---- Instrument synthesis catalogue (#1197) ------------------------------ *
+ *
+ * The nineteen Segno synthesis patches the instrument voices play (synth_voice.h,
+ * synth_patch.c). The engine owns the definitions; the app reads them here and
+ * keeps only presentation (names, art) keyed by the patch id, so a readout can
+ * never drift from what the voice does. Pure reads of static tables: safe from
+ * any thread, no engine handle. */
+
+#define LE_SYNTH_PATCHES 19
+#define LE_SYNTH_FAMILIES 7
+#define LE_SYNTH_FAMILY_PARAMS 3
+#define LE_SYNTH_ID_CHARS 24  /* patch id, NUL-terminated */
+#define LE_SYNTH_KEY_CHARS 16 /* parameter key, NUL-terminated */
+
+/* Instrument families, in catalogue order. */
+typedef enum le_synth_family {
+  LE_SYNTH_KEYS = 0,
+  LE_SYNTH_ORGANS = 1,
+  LE_SYNTH_SYNTHS = 2,
+  LE_SYNTH_BASS = 3,
+  LE_SYNTH_STRINGS = 4,
+  LE_SYNTH_DRUMS = 5,
+  LE_SYNTH_PERCUSSION = 6,
+} le_synth_family;
+
+/* The unit a family parameter's value is shown in. */
+typedef enum le_synth_param_unit {
+  LE_SYNTH_UNIT_PERCENT = 0,
+  LE_SYNTH_UNIT_SECONDS = 1,
+  LE_SYNTH_UNIT_HERTZ = 2,
+} le_synth_param_unit;
+
+/* One patch. `defaults` are the three family parameters on the 0..100 scale
+ * every surface edits. */
+typedef struct le_synth_patch_desc {
+  char id[LE_SYNTH_ID_CHARS];
+  int32_t family; /* le_synth_family */
+  float defaults[LE_SYNTH_FAMILY_PARAMS];
+} le_synth_patch_desc;
+
+/* One family parameter. A setting v in 0..100 means
+ *   at_min + (at_max - at_min) * v / 100            when exponential == 0,
+ *   at_min * (at_max / at_min) ^ (v / 100)          when exponential == 1,
+ * in `unit` (percent parameters map 0..100 to 0..100). The voice uses exactly
+ * this value. */
+typedef struct le_synth_param_desc {
+  char key[LE_SYNTH_KEY_CHARS];
+  int32_t unit; /* le_synth_param_unit */
+  float at_min;
+  float at_max;
+  int32_t exponential;
+} le_synth_param_desc;
+
+/* Number of patches (LE_SYNTH_PATCHES). */
+LE_EXPORT int32_t le_synth_patch_count(void);
+
+/* Fills *out with patch `index` (0..count-1). Returns LE_OK, or
+ * LE_ERR_INVALID for a NULL `out` or an index out of range. */
+LE_EXPORT int32_t le_synth_patch_info(int32_t index, le_synth_patch_desc* out);
+
+/* Fills *out with parameter `param` (0..2) of `family`. Returns LE_OK, or
+ * LE_ERR_INVALID for a NULL `out`, an unknown family or a parameter out of
+ * range. */
+LE_EXPORT int32_t le_synth_param_info(int32_t family, int32_t param,
+                                      le_synth_param_desc* out);
+
 #ifdef __cplusplus
 }
 #endif

@@ -33894,12 +33894,15 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_peel.h"
 #include "test_engine_tuner.h"
 #include "test_engine_midi_in.h"
+#include "test_engine_synth.h"
 
 int main(void) {
   if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
     test_fade_restore_staging_and_manifest_capacity();
     return g_failures ? 1 : 0;
   }
+  run_synth_tests();
+  if (getenv("SEGNO_SYNTH_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_reverse_tests();
   run_tuner_mute_tests();
   if (getenv("SEGNO_REVERSE_TESTS_ONLY")) return g_failures ? 1 : 0;

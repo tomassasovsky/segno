@@ -6205,6 +6205,65 @@ class SegnoEngineBindings {
       .asFunction<
         int Function(ffi.Pointer<le_midi_out>, ffi.Pointer<ffi.Uint8>, int)
       >();
+
+  /// Number of patches (LE_SYNTH_PATCHES).
+  int le_synth_patch_count() {
+    return _le_synth_patch_count();
+  }
+
+  late final _le_synth_patch_countPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function()>>('le_synth_patch_count');
+  late final _le_synth_patch_count = _le_synth_patch_countPtr
+      .asFunction<int Function()>();
+
+  /// Fills *out with patch `index` (0..count-1). Returns LE_OK, or
+  /// LE_ERR_INVALID for a NULL `out` or an index out of range.
+  int le_synth_patch_info(
+    int index,
+    ffi.Pointer<le_synth_patch_desc> out,
+  ) {
+    return _le_synth_patch_info(
+      index,
+      out,
+    );
+  }
+
+  late final _le_synth_patch_infoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Int32, ffi.Pointer<le_synth_patch_desc>)
+        >
+      >('le_synth_patch_info');
+  late final _le_synth_patch_info = _le_synth_patch_infoPtr
+      .asFunction<int Function(int, ffi.Pointer<le_synth_patch_desc>)>();
+
+  /// Fills *out with parameter `param` (0..2) of `family`. Returns LE_OK, or
+  /// LE_ERR_INVALID for a NULL `out`, an unknown family or a parameter out of
+  /// range.
+  int le_synth_param_info(
+    int family,
+    int param,
+    ffi.Pointer<le_synth_param_desc> out,
+  ) {
+    return _le_synth_param_info(
+      family,
+      param,
+      out,
+    );
+  }
+
+  late final _le_synth_param_infoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<le_synth_param_desc>,
+          )
+        >
+      >('le_synth_param_info');
+  late final _le_synth_param_info = _le_synth_param_infoPtr
+      .asFunction<int Function(int, int, ffi.Pointer<le_synth_param_desc>)>();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -8203,6 +8262,85 @@ final class le_midi extends ffi.Opaque {}
 
 final class le_midi_out extends ffi.Opaque {}
 
+/// Instrument families, in catalogue order.
+enum le_synth_family {
+  LE_SYNTH_KEYS(0),
+  LE_SYNTH_ORGANS(1),
+  LE_SYNTH_SYNTHS(2),
+  LE_SYNTH_BASS(3),
+  LE_SYNTH_STRINGS(4),
+  LE_SYNTH_DRUMS(5),
+  LE_SYNTH_PERCUSSION(6);
+
+  final int value;
+  const le_synth_family(this.value);
+
+  static le_synth_family fromValue(int value) => switch (value) {
+    0 => LE_SYNTH_KEYS,
+    1 => LE_SYNTH_ORGANS,
+    2 => LE_SYNTH_SYNTHS,
+    3 => LE_SYNTH_BASS,
+    4 => LE_SYNTH_STRINGS,
+    5 => LE_SYNTH_DRUMS,
+    6 => LE_SYNTH_PERCUSSION,
+    _ => throw ArgumentError('Unknown value for le_synth_family: $value'),
+  };
+}
+
+/// The unit a family parameter's value is shown in.
+enum le_synth_param_unit {
+  LE_SYNTH_UNIT_PERCENT(0),
+  LE_SYNTH_UNIT_SECONDS(1),
+  LE_SYNTH_UNIT_HERTZ(2);
+
+  final int value;
+  const le_synth_param_unit(this.value);
+
+  static le_synth_param_unit fromValue(int value) => switch (value) {
+    0 => LE_SYNTH_UNIT_PERCENT,
+    1 => LE_SYNTH_UNIT_SECONDS,
+    2 => LE_SYNTH_UNIT_HERTZ,
+    _ => throw ArgumentError('Unknown value for le_synth_param_unit: $value'),
+  };
+}
+
+/// One patch. `defaults` are the three family parameters on the 0..100 scale
+/// every surface edits.
+final class le_synth_patch_desc extends ffi.Struct {
+  @ffi.Array.multi([24])
+  external ffi.Array<ffi.Char> id;
+
+  /// le_synth_family
+  @ffi.Int32()
+  external int family;
+
+  @ffi.Array.multi([3])
+  external ffi.Array<ffi.Float> defaults;
+}
+
+/// One family parameter. A setting v in 0..100 means
+/// at_min + (at_max - at_min) * v / 100            when exponential == 0,
+/// at_min * (at_max / at_min) ^ (v / 100)          when exponential == 1,
+/// in `unit` (percent parameters map 0..100 to 0..100). The voice uses exactly
+/// this value.
+final class le_synth_param_desc extends ffi.Struct {
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Char> key;
+
+  /// le_synth_param_unit
+  @ffi.Int32()
+  external int unit;
+
+  @ffi.Float()
+  external double at_min;
+
+  @ffi.Float()
+  external double at_max;
+
+  @ffi.Int32()
+  external int exponential;
+}
+
 const int LE_MAX_CHANNELS = 32;
 
 const int LE_COUNT_IN_MAX_BARS = 4;
@@ -8242,3 +8380,13 @@ const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;
 const int LE_DIGEST_STATE_BYTES = 128;
 
 const int LE_MAX_MIDI_PORTS = 8;
+
+const int LE_SYNTH_PATCHES = 19;
+
+const int LE_SYNTH_FAMILIES = 7;
+
+const int LE_SYNTH_FAMILY_PARAMS = 3;
+
+const int LE_SYNTH_ID_CHARS = 24;
+
+const int LE_SYNTH_KEY_CHARS = 16;
