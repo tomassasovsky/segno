@@ -39,6 +39,7 @@ class Track extends Equatable {
     this.state = TrackState.empty,
     this.volume = 1,
     this.fade = const FadeImage(),
+    this.reversed = false,
     this.muted = false,
     this.pan = 0,
     this.solo = false,
@@ -79,6 +80,13 @@ class Track extends Equatable {
 
   /// Native Fade image, separate from saved Mixer gain.
   final FadeImage fade;
+
+  /// Whether the track reads its recorded material backward (Reverse,
+  /// #1162): a callback-owned performance transform like [fade], never an
+  /// audio edit. Toggled by `LooperRepository.toggleReverse`; reset to forward
+  /// with the material. A reversed track refuses punch-ins
+  /// (`EngineResult.reversed`).
+  final bool reversed;
 
   /// Whether the track is muted.
   final bool muted;
@@ -312,6 +320,7 @@ class Track extends Equatable {
     state,
     volume,
     fade,
+    reversed,
     muted,
     pan,
     solo,
@@ -358,6 +367,7 @@ class Track extends Equatable {
     state,
     volume,
     fade,
+    reversed,
     muted,
     pan,
     solo,

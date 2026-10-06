@@ -20,7 +20,7 @@ import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show EngineSnapshot, FadeAdmission, TrackSnapshot;
+    show EngineSnapshot, RequestAdmission, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -31,15 +31,15 @@ class _Engine extends FakeAudioEngine {
   final _results = <int, EngineResult>{};
 
   @override
-  FadeAdmission toggleFade({required int channel, required double seconds}) {
+  RequestAdmission toggleFade({required int channel, required double seconds}) {
     toggles.add((channel, seconds));
     _results[toggles.length] = EngineResult.ok;
     return (result: EngineResult.ok, request: toggles.length);
   }
 
   @override
-  EngineResult? readFadeResult(int request) =>
-      _results.remove(request) ?? super.readFadeResult(request);
+  EngineResult? readRequestResult(int request) =>
+      _results.remove(request) ?? super.readRequestResult(request);
 }
 
 class _Midi extends MidiDeviceRepository {

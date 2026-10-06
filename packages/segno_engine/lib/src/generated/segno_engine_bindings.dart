@@ -5409,21 +5409,93 @@ class SegnoEngineBindings {
         )
       >();
 
-  /// Consumes one completed result. Returns NOT_READY before callback publication,
-  /// INVALID for an absent/consumed/retired id; otherwise OK and fills result.
-  int le_engine_read_fade_result(
+  /// Reverse (#1162): flips, or installs, the read direction of track
+  /// [channel]'s recorded material at its current position, click-free. Speed
+  /// and pitch are unchanged; a STOPPED track stays stopped and plays reversed
+  /// from its re-entry coordinate. Admission returns a nonzero request id only on
+  /// LE_OK; the callback decides and the receipt below carries its verdict.
+  /// Toggle refusals: LE_ERR_INVALID for a bad channel or a track that reads
+  /// EMPTY, RECORDING or OVERDUBBING; LE_ERR_NOT_READY while an arm or Count-in
+  /// launch is pending on the track (it may fire into OVERDUBBING before the
+  /// toggle lands) or when no receipt slot is free; LE_ERR_NOT_RUNNING when not
+  /// configured. Install accepts an EMPTY track that already holds imported
+  /// material (Session recall, before the commit) and otherwise refuses like
+  /// toggle. The callback refuses either (receipt LE_ERR_INVALID) while a punch
+  /// tail is still writing or the loop has no length. Overdubbing into a
+  /// reversed track is refused by le_engine_record with LE_ERR_REVERSED.
+  int le_engine_toggle_reverse(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_toggle_reverse(
+      engine,
+      channel,
+      request,
+    );
+  }
+
+  late final _le_engine_toggle_reversePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_toggle_reverse');
+  late final _le_engine_toggle_reverse = _le_engine_toggle_reversePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  int le_engine_install_reverse(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int reversed,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_install_reverse(
+      engine,
+      channel,
+      reversed,
+      request,
+    );
+  }
+
+  late final _le_engine_install_reversePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_install_reverse');
+  late final _le_engine_install_reverse = _le_engine_install_reversePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  /// Consumes one completed Fade or Reverse result. Returns NOT_READY before
+  /// callback publication, INVALID for an absent/consumed/retired id; otherwise
+  /// OK and fills result.
+  int le_engine_read_request_result(
     ffi.Pointer<le_engine> engine,
     int request,
     ffi.Pointer<ffi.Int32> result,
   ) {
-    return _le_engine_read_fade_result(
+    return _le_engine_read_request_result(
       engine,
       request,
       result,
     );
   }
 
-  late final _le_engine_read_fade_resultPtr =
+  late final _le_engine_read_request_resultPtr =
       _lookup<
         ffi.NativeFunction<
           ffi.Int32 Function(
@@ -5432,8 +5504,8 @@ class SegnoEngineBindings {
             ffi.Pointer<ffi.Int32>,
           )
         >
-      >('le_engine_read_fade_result');
-  late final _le_engine_read_fade_result = _le_engine_read_fade_resultPtr
+      >('le_engine_read_request_result');
+  late final _le_engine_read_request_result = _le_engine_read_request_resultPtr
       .asFunction<
         int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Int32>)
       >();
@@ -5742,7 +5814,11 @@ enum le_result {
   LE_ERR_MODE_MISMATCH(-7),
 
   /// a pending command/report prevents a safe decision
-  LE_ERR_NOT_READY(-8);
+  LE_ERR_NOT_READY(-8),
+
+  /// a punch-in on a reversed track (#1162): overdub
+  /// is unavailable while Reverse is on
+  LE_ERR_REVERSED(-9);
 
   final int value;
   const le_result(this.value);
@@ -5757,6 +5833,7 @@ enum le_result {
     -6 => LE_ERR_CAPACITY,
     -7 => LE_ERR_MODE_MISMATCH,
     -8 => LE_ERR_NOT_READY,
+    -9 => LE_ERR_REVERSED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -6194,8 +6271,12 @@ enum le_command_code {
   /// checked internal Fade request; never raw-posted
   LE_CMD_FADE(81),
 
-  /// internal material-import invalidation
-  LE_CMD_RESET_FADE(82);
+  /// internal material-import transform reset
+  /// (Fade and direction); never raw-posted
+  LE_CMD_RESET_TRANSFORMS(82),
+
+  /// checked internal Reverse request; never raw-posted
+  LE_CMD_REVERSE(83);
 
   final int value;
   const le_command_code(this.value);
@@ -6281,7 +6362,8 @@ enum le_command_code {
     79 => LE_CMD_STOP_RECORD_CONTROL,
     80 => LE_CMD_CANCEL_COUNT_IN,
     81 => LE_CMD_FADE,
-    82 => LE_CMD_RESET_FADE,
+    82 => LE_CMD_RESET_TRANSFORMS,
+    83 => LE_CMD_REVERSE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -6828,6 +6910,14 @@ final class le_track_snapshot extends ffi.Struct {
   /// This is cancellation authority, not pending membership or fresh admission.
   @ffi.Int32()
   external int count_in_cancel_grace;
+
+  /// Trailing (#1162, Reverse): 0 forward, 1 reversed — the callback-owned
+  /// read direction of the track's recorded material, published with every
+  /// accepted le_engine_toggle_reverse / le_engine_install_reverse and reset to
+  /// forward with the material (Clear, Undo to empty, a new capture, import).
+  /// A performance transform, not an audio edit: never in the undo history.
+  @ffi.Int32()
+  external int reversed;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
