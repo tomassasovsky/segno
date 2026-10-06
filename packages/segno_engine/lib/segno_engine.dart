@@ -9,6 +9,7 @@ export 'src/audio_device.dart' show AudioDevice;
 export 'src/audio_engine.dart'
     show
         AudioEngine,
+        BackingControl,
         EffectsControl,
         EngineException,
         EngineLifecycle,
@@ -27,6 +28,19 @@ export 'src/audio_engine.dart'
         RequestAdmission,
         SessionIo,
         TempoControl;
+export 'src/backing.dart'
+    show
+        AudioDecoder,
+        AudioFileInfo,
+        AudioProbe,
+        BackingEnd,
+        BackingEndEvent,
+        BackingState,
+        BackingTransport,
+        BackingTransportOp,
+        DecodedAudio,
+        DecodedAudioOwnership,
+        DecodedAudioPayload;
 export 'src/engine_config.dart' show AudioBackend, EngineConfig;
 export 'src/engine_snapshot.dart'
     show
@@ -69,7 +83,9 @@ export 'src/mix_settings.dart'
         kInputTrimStepDb,
         kMaxInputTrimDb,
         kMinInputTrimDb;
+export 'src/mock_audio_decoder.dart' show MockAudioDecoder, MockAudioFile;
 export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
+export 'src/native_audio_decoder.dart' show DecodeRunner, NativeAudioDecoder;
 export 'src/native_audio_engine.dart'
     show NativeAudioEngine, PumpedNativeEngine;
 export 'src/output_fx_snapshot.dart';
