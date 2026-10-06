@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -30,6 +31,7 @@ void main() {
   tearDown(() => tempDir.deleteSync(recursive: true));
 
   SessionRepository repo() => SessionRepository(
+    guards: GuardRegistry(),
     engine: FakeSessionEngine(),
     clearPollInterval: Duration.zero,
     clearPollAttempts: 4,
@@ -223,6 +225,7 @@ void main() {
       ('v9_trunk_623a5a7ba', 9, 1),
       ('v10_trunk_a921bd9a9', 10, 1),
       ('v11_trunk_5c163d11f', 11, 1),
+      ('v12_peel_097e1ef68', 12, 1),
     ]) {
       test('$name opens with its saved values', () async {
         final dir = copyFixture(name);
@@ -233,7 +236,8 @@ void main() {
         );
         final session = bundle.session;
         expect(conversion!.fromVersion, version);
-        expect(session.tracks.map((t) => t.multiple), [1, 2, 1]);
+        // Schema 12's fixture adds a fourth track holding a Peel entry.
+        expect(session.tracks.map((t) => t.multiple).take(3), [1, 2, 1]);
         expect(session.tracks[1].lanes[1].pan, 0.5);
         expect(session.tracks[1].lanes[1].balance, 0.75);
         expect(session.tracks[2].lanes.single.redoCount, 1);
@@ -263,11 +267,18 @@ void main() {
           'index': 0,
         });
         expect(session.defaultFadeDurationMs, version >= 10 ? 6000 : 4000);
+        // No schema before 13 saved a direction: every track comes back
+        // forward, as it always recalled.
+        expect(session.tracks.map((t) => t.reversed), everyElement(isFalse));
+        expect(
+          conversion.notes,
+          contains('tracks[0].reversed: defaulted to forward'),
+        );
         expect(
           session.tracks[0].lanes.single.history.entries.map((e) => e.kind),
           [HistoryKind.layer, HistoryKind.layer],
         );
-        if (name.contains('trunk')) {
+        if (!name.contains('slices')) {
           // Saved explicitly from schema 8 on; the slices kept them global.
           expect(session.recDub, isTrue);
           expect(session.syncTempo, isFalse);
@@ -282,7 +293,7 @@ void main() {
     }
 
     test('the current schema opens with no conversion', () async {
-      final dir = copyFixture('v12_peel_097e1ef68');
+      final dir = copyFixture('v13_reverse_576826cfa');
       final before = snapshotOf(dir);
       final (:bundle, :conversion) = await repo().open(dir);
       expect(conversion, isNull);
@@ -290,7 +301,23 @@ void main() {
         bundle.session,
         Session.fromJson(manifestOf(dir)),
       );
+      expect(bundle.session.tracks.map((t) => t.reversed), [
+        false,
+        true,
+        false,
+        false,
+      ]);
       expect(snapshotOf(dir), before);
+    });
+
+    test('the current schema stays strict: a track without a direction is '
+        'refused, not defaulted', () {
+      final manifest = manifestOf(copyFixture('v13_reverse_576826cfa'));
+      ((manifest['tracks'] as List)[1] as Map).remove('reversed');
+      expect(
+        () => decodeSessionManifest(jsonEncode(manifest)),
+        throwsFormatException,
+      );
     });
   });
 
@@ -366,6 +393,7 @@ void main() {
     }) async {
       final before = snapshotOf(dir);
       final repository = SessionRepository(
+        guards: GuardRegistry(),
         engine: engine ?? FakeSessionEngine(),
       );
       await expectLater(
@@ -384,7 +412,7 @@ void main() {
     }
 
     test('newer than this build', () async {
-      final dir = copyFixture('v12_peel_097e1ef68');
+      final dir = copyFixture('v13_reverse_576826cfa');
       rewrite(dir, (m) => m['version'] = Session.formatVersion + 1);
       await expectRefused(dir, isA<SessionUnsupportedVersion>());
     });
@@ -453,6 +481,7 @@ void main() {
       );
 
       await SessionRepository(
+        guards: GuardRegistry(),
         engine: newTake(),
       ).save(dir, settings: const SessionSettings());
 
@@ -461,6 +490,7 @@ void main() {
       expect(manifestOf(dir)['version'], Session.formatVersion);
       // A second save keeps the backup folder as it is.
       await SessionRepository(
+        guards: GuardRegistry(),
         engine: newTake(),
       ).save(dir, settings: const SessionSettings());
       await expectOriginalOpens('$dir/session.v7', 'v7_master_full');
@@ -470,6 +500,7 @@ void main() {
       final dir = copyFixture('v7_master_full');
 
       await SessionRepository(
+        guards: GuardRegistry(),
         engine: newTake(),
       ).save(dir, settings: const SessionSettings());
 
@@ -481,6 +512,7 @@ void main() {
       final dir = copyFixture('v1_loopy_8547affe7');
 
       await SessionRepository(
+        guards: GuardRegistry(),
         engine: newTake(),
       ).save(dir, settings: const SessionSettings());
 
@@ -505,6 +537,7 @@ void main() {
       });
 
       SessionRepository catalog() => SessionRepository(
+        guards: GuardRegistry(),
         engine: FakeSessionEngine(),
         sessionsRoot: () async => root,
       );
@@ -514,6 +547,7 @@ void main() {
         // new save in place and the previous bundle still beside it.
         Directory(bundle).renameSync('$bundle.old');
         await SessionRepository(
+          guards: GuardRegistry(),
           engine: newTake(),
         ).save(bundle, settings: const SessionSettings());
 
@@ -534,6 +568,7 @@ void main() {
         addTearDown(() => SessionRepository.debugOnKeepOriginal = null);
 
         await SessionRepository(
+          guards: GuardRegistry(),
           engine: newTake(),
         ).save(bundle, settings: const SessionSettings());
         expect(Directory('$bundle.old/session.v7').existsSync(), isTrue);
@@ -558,6 +593,7 @@ void main() {
 
       await expectLater(
         SessionRepository(
+          guards: GuardRegistry(),
           engine: newTake(),
         ).save(dir, settings: const SessionSettings()),
         throwsA(isA<FileSystemException>()),

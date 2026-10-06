@@ -6,6 +6,7 @@ import 'package:bloc/bloc.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:daw_export/daw_export.dart';
 import 'package:equatable/equatable.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 
 part 'performance_recorder_state.dart';
@@ -84,6 +85,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
        _takeLocked = takeLocked,
        super(const PerformanceRecorderIdle()) {
     _statusSubscription = _performance.captureStatus.listen(_onStatus);
+    _refusalSubscription = _performance.armRefusals.listen(_onArmRefused);
   }
 
   /// The default `currentChains`: an empty rig, which is what
@@ -145,6 +147,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final Duration _renderPollInterval;
 
   late final StreamSubscription<PerformanceCaptureStatus> _statusSubscription;
+  late final StreamSubscription<GuardRefused> _refusalSubscription;
   Timer? _armedTicker;
   Timer? _renderPoller;
   Timer? _recoveringPoller;
@@ -171,6 +174,9 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// over the manifest's marker, which only the engine's own self-stop writes.
   PerformanceStopReason? _stopReason;
   bool _loaded = false;
+
+  /// Refused arms so far; see [PerformanceRecorderIdle.refusal].
+  int _refusals = 0;
 
   /// Silently salvages any capture a crash left unfinalized (D-SALVAGE,
   /// #679): [PerformanceRepository.runBootRecovery] finalizes + renders each
@@ -305,12 +311,35 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       case PerformanceRecorderIdle():
       case PerformanceRecorderCompleted():
         if (await _volumeTooFullToArm()) {
-          _emit(const PerformanceRecorderIdle(lowDiskBlocked: true));
+          _emit(
+            PerformanceRecorderIdle(lowDiskBlocked: true, refusal: ++_refusals),
+          );
           return;
         }
         await _performance.arm(chains: _currentChains());
       case PerformanceRecorderArmed():
         await _performance.disarm();
+      case PerformanceRecorderFinalizing():
+      case PerformanceRecorderRendering():
+        break;
+    }
+  }
+
+  /// An arm the guard table refused at its commit, from this cubit's toggle
+  /// or the pedal's direct call alike: land on idle with the reason, so the
+  /// refusal is visible rather than a dead control.
+  void _onArmRefused(GuardRefused refusal) {
+    switch (state) {
+      case PerformanceRecorderIdle(recovering: false):
+      case PerformanceRecorderCompleted():
+        _emit(
+          PerformanceRecorderIdle(
+            refusedBy: refusal.blockers.first.kind,
+            refusal: ++_refusals,
+          ),
+        );
+      case PerformanceRecorderIdle():
+      case PerformanceRecorderArmed():
       case PerformanceRecorderFinalizing():
       case PerformanceRecorderRendering():
         break;
@@ -688,6 +717,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     _renderPoller?.cancel();
     _recoveringPoller?.cancel();
     unawaited(_statusSubscription.cancel());
+    unawaited(_refusalSubscription.cancel());
     return super.close();
   }
 }

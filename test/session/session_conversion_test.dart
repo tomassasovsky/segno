@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/control/binding/pedal_binding_set.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -52,6 +53,7 @@ void main() {
   test('a schema-7 bundle from master maps with its chains, monitors and '
       'bindings', () async {
     final opened = await SessionRepository(
+      guards: GuardRegistry(),
       engine: engine,
     ).open(copyFixture('v7_master_full'));
     final rig = rigFromBundle(opened.bundle);
@@ -102,16 +104,18 @@ void main() {
     'v10_trunk_a921bd9a9',
     'v11_trunk_5c163d11f',
     'v12_peel_097e1ef68',
+    'v13_reverse_576826cfa',
   ]) {
     test('$name maps to a valid rig', () async {
       final opened = await SessionRepository(
+        guards: GuardRegistry(),
         engine: engine,
       ).open(copyFixture(name));
       final rig = rigFromBundle(opened.bundle);
       expect(MixSettingsSnapshot.fromRig(rig).isValid, isTrue);
       expect(
         opened.conversion?.fromVersion,
-        name.startsWith('v12') ? isNull : isNotNull,
+        name.startsWith('v13') ? isNull : isNotNull,
       );
     });
   }
@@ -155,6 +159,7 @@ void main() {
     test('a converted schema-7 bundle applies with its audio, history, '
         'chains and monitors', () async {
       final opened = await SessionRepository(
+        guards: GuardRegistry(),
         engine: native,
       ).open(copyFixture('v7_master_full'));
 
@@ -185,6 +190,7 @@ void main() {
     ]) {
       test('$name applies with its tracks', () async {
         final opened = await SessionRepository(
+          guards: GuardRegistry(),
           engine: native,
         ).open(copyFixture(name));
 

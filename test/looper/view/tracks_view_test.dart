@@ -9,6 +9,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -172,6 +173,7 @@ void main() {
     pedalRepo = PedalRepository(pedalLink);
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
     );
@@ -2920,6 +2922,50 @@ void main() {
         expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
       },
     );
+
+    testWidgets('every refused arm shows its own toast (#1198, #640)', (
+      tester,
+    ) async {
+      final controller = StreamController<PerformanceRecorderState>();
+      addTearDown(controller.close);
+      whenListen(
+        performanceRecorder,
+        controller.stream,
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      const refused = Key('tracks_perfArmRefused_snackbar');
+      const lowDisk = Key('tracks_perfLowDiskBlocked_snackbar');
+
+      controller.add(
+        const PerformanceRecorderIdle(
+          refusedBy: GuardKind.sessionApply,
+          refusal: 1,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(refused), findsOneWidget);
+      // Let the first toast time out, so the next one is a new toast.
+      await tester.pumpAndSettle(const Duration(seconds: 10));
+      expect(find.byKey(refused), findsNothing);
+
+      controller.add(
+        const PerformanceRecorderIdle(
+          refusedBy: GuardKind.sessionApply,
+          refusal: 2,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(refused), findsOneWidget);
+      await tester.pumpAndSettle(const Duration(seconds: 10));
+
+      controller.add(
+        const PerformanceRecorderIdle(lowDiskBlocked: true, refusal: 3),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(lowDisk), findsOneWidget);
+    });
 
     testWidgets(
       'renaming (re-emitting Completed with a different path) does not '

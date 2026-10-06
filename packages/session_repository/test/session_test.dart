@@ -12,6 +12,7 @@ void main() {
     tracks: [
       SessionTrack(
         fadeAmount: 1,
+        reversed: false,
         channel: 0,
         multiple: 1,
         lengthFrames: 96000,
@@ -38,6 +39,7 @@ void main() {
       ),
       SessionTrack(
         fadeAmount: 1,
+        reversed: false,
         channel: 1,
         multiple: 2,
         lengthFrames: 192000,
@@ -159,6 +161,40 @@ void main() {
         }
       },
     );
+  });
+
+  group('SessionTrack playback direction', () {
+    test('round-trips and takes part in value identity', () {
+      final original = session.tracks.first;
+      final json = {...original.toJson(), 'reversed': true};
+      final decoded = SessionTrack.fromJson(json);
+      expect(decoded.reversed, isTrue);
+      expect(decoded.toJson()['reversed'], isTrue);
+      expect(SessionTrack.fromJson(decoded.toJson()), decoded);
+      expect(decoded, isNot(original));
+      expect(decoded.hashCode, isNot(original.hashCode));
+    });
+
+    test('rejects a missing or malformed direction rather than assuming '
+        'forward', () {
+      final json = session.tracks.first.toJson()..remove('reversed');
+      expect(() => SessionTrack.fromJson(json), throwsFormatException);
+      for (final invalid in [null, 0, 1, 'true', 'reversed']) {
+        expect(
+          () => SessionTrack.fromJson({...json, 'reversed': invalid}),
+          throwsFormatException,
+        );
+      }
+    });
+
+    test('the schema that carries direction is version 13', () {
+      expect(Session.formatVersion, 13);
+      final json = session.toJson()..['version'] = 11;
+      expect(
+        () => Session.fromJson(json),
+        throwsA(isA<SessionUnsupportedVersion>()),
+      );
+    });
   });
 
   group('Session', () {
@@ -298,10 +334,10 @@ void main() {
       );
     });
 
-    test('serializes the manifest version (v12)', () {
+    test('serializes the manifest version (v13)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 12);
+      expect(json['version'], 13);
       expect(json['baseLengthFrames'], 96000);
     });
 
@@ -735,6 +771,7 @@ void main() {
         'lengthFrames': 96000,
         'stem': 'track0.wav',
         'fadeAmount': 1,
+        'reversed': false,
       };
       expect(() => SessionTrack.fromJson(track), throwsA(isA<TypeError>()));
     });
