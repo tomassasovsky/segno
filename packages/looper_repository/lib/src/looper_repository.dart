@@ -294,8 +294,18 @@ class LooperRepository {
   EngineConfig? _lastEngineConfig;
 
   /// The last reconnect's verdict on the recorded loops, projected onto
-  /// [EngineStatus.reopen]; `null` from a deliberate [startEngine] on.
+  /// [EngineStatus.reopen]. `null` from a deliberate [startEngine] on, and
+  /// from the moment a NEW device loss is observed: a verdict belongs to the
+  /// reopen that produced it, never to a later return the engine handles by
+  /// itself (a reroute or interruption the backend absorbs without a reopen).
   EngineReopened? _lastReopen;
+
+  /// The last reopen's rig replay was refused and rolled back through
+  /// [stopEngine], so no device return will ever show its verdict. The next
+  /// successful [startEngine] carries it instead of clearing it, so the
+  /// player is still told what happened to the loops (rule 3: no silent
+  /// changes). One start only; the one after clears as usual.
+  bool _reopenVerdictPending = false;
 
   /// Whether the user intends the engine to be running (set on a successful
   /// [startEngine], cleared on [stopEngine]). The reconnect supervisor only
@@ -2328,6 +2338,13 @@ class LooperRepository {
 
   void _startReconnectPolling() {
     _lastAttemptSignature = null; // a fresh loss may retry immediately
+    // A new loss episode: whatever the previous reopen decided about the
+    // loops is not what THIS return will mean. A return the backend produces
+    // on its own (a reroute, an interruption ending) reopens nothing and must
+    // read as a plain restore, not re-raise a stale "tracks dropped" or
+    // "loops cleared" notice over an intact rig.
+    _lastReopen = null;
+    _reopenVerdictPending = false;
     final ticker = _reconnectTicker;
     if (ticker != null) {
       _reconnectSub = ticker.listen((_) => _attemptReconnect());
@@ -2609,7 +2626,10 @@ class LooperRepository {
     final replayedPriorEngine = _hasOpenedEngine;
     final result = _engine.start(engineConfigToEngine(config));
     if (!result.isOk) return result;
-    _lastReopen = null; // a deliberate start, not a reconnect
+    // A deliberate start, not a reconnect — unless the last reconnect's
+    // replay rolled back before its verdict could be shown.
+    if (!_reopenVerdictPending) _lastReopen = null;
+    _reopenVerdictPending = false;
     if (_audioCleared(_engine.snapshot())) _importTracks = null;
     final foldedHistory = _foldHistoryFxAtQuiescence();
     return _replayRig(
@@ -2636,6 +2656,12 @@ class LooperRepository {
   /// settings waiters complete `notReady` once; `mixGeneration` steps once;
   /// `sessionRevision` is untouched (only a Session load moves it);
   /// [fxReplayConfirmed] fires after the replayed recipes confirm.
+  ///
+  /// The verdict rides [EngineStatus.reopen] for the device return that
+  /// follows. A replay refusal rolls the start back through [stopEngine], so
+  /// no such return comes; the verdict is then carried through the next
+  /// successful [startEngine] (see [_reopenVerdictPending]) and surfaced by
+  /// the audio setup's re-apply instead.
   EngineResult _reopenEngine(EngineConfig config) {
     if (_startRefused) return EngineResult.notReady;
     // The stopped engine still reports the rate the loops were recorded at.
@@ -2670,6 +2696,9 @@ class LooperRepository {
     // The surviving tracks' pending history recipes publish on top of the
     // replayed chains, now that no replay target is pending on them.
     if (result.isOk && verdict.keepsMaterial) _drainHistoryFx();
+    // Rolled back: the device will not read present again until a deliberate
+    // start, which must still tell the player what this reopen did.
+    if (!result.isOk) _reopenVerdictPending = true;
     return result;
   }
 

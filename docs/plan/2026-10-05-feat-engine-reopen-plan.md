@@ -318,15 +318,21 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
    group now asserts `reopen` (not a second `start`); new tests for the
    suppression fix (a boot-fenced attempt neither reopens, raw-stops nor
    consumes the device list; the same list reopens once the fence lifts), the
-   verdict riding `EngineStatus.reopen` until the next deliberate start, and
-   a refused reopen leaving no verdict. `audio_setup_cubit_test`: retained →
+   verdict riding `EngineStatus.reopen` until the next deliberate start, a
+   refused reopen leaving no verdict, the stale-notice repro (a reopen-less
+   return after a partial reconnect carries no verdict), and a rolled-back
+   reopen's verdict carried through exactly one start. `audio_setup_cubit_test`: retained →
    `restored`, partial → `restoredPartial` with no `restored` in between,
    cleared → standing `restoredCleared` until `dismissReopenNotice`, which
-   leaves a `lost` condition alone. `connectivity_banners_test`: the cleared
-   banner's text (both rates / the cap variant), Sessions action and record-red
-   tokens; a partial retention renders no bar. `app_test`: a reconnect that
-   dropped a track registers the partial warning toast, not the restored
-   snack, and raises no bar.
+   leaves a `lost` condition alone; a later verdict-less return after a
+   partial reconnect is plain `restored`; a re-apply after a rolled-back
+   reopen raises the carried verdict, an ordinary re-apply none.
+   `connectivity_banners_test`: the cleared banner's text (both rates / the
+   cap variant), Sessions action and record-red tokens; tapping the action
+   dismisses the notice and opens the Sessions manager; a partial retention
+   renders no bar. `app_test`: a reconnect that dropped a track registers the
+   partial warning toast, not the restored snack, and raises no bar; a later
+   reopen-less return re-raises neither the stale toast nor a bar.
 
 ### Deviations from the plan, and decisions taken under the standing rules
 
@@ -334,10 +340,17 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
   `Stream<EngineReopened>`.** Every consumer of a device transition already
   reads `looperState.status`, and the restored transition is the one moment
   the notice is decided; a second stream would have had to be stubbed in every
-  mock-repository test and read in lockstep with the status anyway. `null`
-  from a deliberate start on; set by the reconnect; survives a failed replay
-  (so a reopen that stopped the engine still reports what happened to the
-  loops once the device reads present).
+  mock-repository test and read in lockstep with the status anyway. Its
+  lifetime (review of PR #1167): set by the reconnect; `null` from a deliberate
+  start on AND from the moment a new device loss is observed
+  (`_startReconnectPolling`), so a return the backend produces on its own — a
+  reroute, an interruption ending, which miniaudio absorbs without any reopen
+  — reads as a plain restore and never re-raises a stale "tracks dropped" or
+  "loops cleared" notice over an intact rig. A reopen whose rig replay is
+  refused rolls back through `stopEngine`, so no return follows; its verdict is
+  carried through the NEXT successful `startEngine` (one start only) and the
+  audio setup's re-apply raises the matching notice itself in place of its
+  usual "no connectivity condition" reset — rule 3, no silent changes.
 - **`clearedCap` is unreachable through the supervisor** (it reopens with the
   last config, so the cap never changes) but is handled with its own banner
   text rather than mislabelling it a rate change.
@@ -350,9 +363,10 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
   dismiss; re-applying the audio settings also ends it, as it ends every
   connectivity condition.
 - **No pinned-device hook beyond the pump.** `PumpedNativeEngine.simulatedDevices`
-  (what `enumerateDevices` reports) and `simulatedSampleRate` (what the
-  simulated device negotiates on `start`/`reopen`) are the two seams the
-  actual-native supervisor test needed; nothing was added to the repository.
+  (what its `enumerateDevices` override reports) and `simulatedSampleRate`
+  (what the simulated device negotiates on `start`/`reopen`) are the two seams
+  the actual-native supervisor test needed, both on the pumped engine only;
+  nothing was added to the repository or the production engine.
 - **A refused reconnect does not raw-stop the dead device.** The old order
   stopped first and refused second, leaving the engine stopped with
   `_intendRunning` still true; the new order leaves the running-but-lost

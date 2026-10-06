@@ -6,16 +6,24 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart'
     show EngineReopened, EngineStatus, ReopenOutcome;
+import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
+import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
+
+class _MockSessionCubit extends MockCubit<SessionState>
+    implements SessionCubit {}
+
+class _MockPedalRepository extends Mock implements PedalRepository {}
 
 /// The device-lost coverage (#453), written against the persistent surface
 /// that replaces the D1 lost-toast. Only the AUDIO interface has a standing
@@ -136,6 +144,51 @@ void main() {
       await pump(tester);
       expect(find.text(l10n.deviceRestoredClearedCapBanner), findsOneWidget);
     });
+
+    testWidgets(
+      'its action ends the notice and opens the Sessions manager',
+      (tester) async {
+        whenListen(
+          audioSetup,
+          const Stream<AudioSetupState>.empty(),
+          initialState: clearedState,
+        );
+        when(audioSetup.dismissReopenNotice).thenReturn(null);
+        final session = _MockSessionCubit();
+        whenListen(
+          session,
+          const Stream<SessionState>.empty(),
+          initialState: const SessionState(),
+        );
+        when(session.refreshSessions).thenAnswer((_) async {});
+        final pedal = _MockPedalRepository();
+        when(
+          () => pedal.events,
+        ).thenAnswer((_) => const Stream<PedalEvent>.empty());
+        await tester.pumpApp(
+          RepositoryProvider<PedalRepository>.value(
+            value: pedal,
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+                BlocProvider<SettingsTrayCubit>.value(value: tray),
+                BlocProvider<SessionCubit>.value(value: session),
+              ],
+              child: const Scaffold(body: ConnectivityBanners()),
+            ),
+          ),
+        );
+
+        await tester.tap(
+          find.byKey(const Key('connectivity_banner_material_action')),
+        );
+        await tester.pumpAndSettle();
+
+        verify(audioSetup.dismissReopenNotice).called(1);
+        verify(session.refreshSessions).called(1);
+        expect(find.byType(SessionsManagerView), findsOneWidget);
+      },
+    );
 
     testWidgets('a partial retention is never a bar', (tester) async {
       whenListen(

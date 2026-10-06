@@ -228,18 +228,11 @@ class NativeAudioEngine implements AudioEngine {
   @override
   List<AudioDevice> enumerateDevices() {
     _checkAlive();
-    final simulated = simulatedDevices;
-    if (simulated != null) return List.unmodifiable(simulated);
     return [
       ..._enumerate(isInput: false),
       ..._enumerate(isInput: true),
     ];
   }
-
-  /// When set, what [enumerateDevices] reports instead of the host's devices.
-  /// Only [PumpedNativeEngine] honours it: a device-free harness drives a
-  /// pinned-device reconnect by unplugging and re-plugging this list.
-  List<AudioDevice>? simulatedDevices;
 
   /// Reads one direction's devices via the matching native enumeration call.
   /// Capacity is fixed; any devices beyond [_maxDevices] are not reported.
@@ -2423,6 +2416,21 @@ class PumpedNativeEngine extends NativeAudioEngine {
   EngineResult stop() => EngineResult.ok;
 
   bool _deviceLost = false;
+
+  /// When set, what [enumerateDevices] reports instead of the host's devices:
+  /// a device-free harness drives a pinned-device reconnect by unplugging and
+  /// re-plugging this list.
+  List<AudioDevice>? simulatedDevices;
+
+  @override
+  List<AudioDevice> enumerateDevices() {
+    final simulated = simulatedDevices;
+    if (simulated != null) {
+      _checkAlive();
+      return List.unmodifiable(simulated);
+    }
+    return super.enumerateDevices();
+  }
 
   /// When set, the sample rate the simulated device negotiates on [start]
   /// and [reopen] regardless of the requested one — the way a real interface

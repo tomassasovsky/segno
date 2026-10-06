@@ -3595,6 +3595,31 @@ void main() {
         expect(find.byKey(materialBanner), findsNothing);
         expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isTrue);
         expect(debugAppToastActive(AppToastId.deviceRestored), isFalse);
+        // Retire the warning toast before the next episode (its auto-close
+        // runs on the overlay the harness does not render), so a re-raise
+        // below would register anew.
+        dismissAppToast(AppToastId.deviceRestoredPartial, animate: false);
+        await tester.pump(const Duration(seconds: 12));
+        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isFalse);
+
+        // A later return the backend produces on its own (present 0 then 1,
+        // no reconnect tick, nothing reopened) is a plain restore: the stale
+        // "tracks dropped" toast must not come back, and no bar appears
+        // (#1167).
+        engine.nextSnapshot = snapshot(devicePresent: false);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(find.byKey(deviceBanner), findsOneWidget);
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(engine.reopenCalls, 1);
+        expect(find.byKey(deviceBanner), findsNothing);
+        expect(find.byKey(materialBanner), findsNothing);
+        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isFalse);
+        expect(debugAppToastActive(AppToastId.deviceRestored), isTrue);
 
         await tester.pump(const Duration(seconds: 12));
         await tester.pumpWidget(const SizedBox.shrink());

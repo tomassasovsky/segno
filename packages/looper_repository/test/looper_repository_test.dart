@@ -7818,6 +7818,124 @@ void main() {
       },
     );
 
+    test(
+      'a return the engine produces on its own, after an earlier partial '
+      'reconnect, carries no verdict (the stale-notice repro, #1167)',
+      () async {
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 8,
+        );
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+
+        // Episode 1: unplug, replug, partial reopen (track 2 dropped).
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 8,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..devices = const [pinned]
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retainedPartial,
+            droppedTracks: 1 << 2,
+          );
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(reopenCount(), 1);
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 8,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(repo.state.status.reopen?.droppedChannels, [2]);
+
+        // Episode 2: the backend flips present 0 then 1 by itself (a reroute,
+        // an interruption ending) and the poll sees the return before any
+        // reconnect tick — nothing reopened for THIS return.
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 8,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(repo.state.status.devicePresent, isFalse);
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 8,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(reopenCount(), 1);
+        expect(repo.state.status.devicePresent, isTrue);
+        expect(
+          repo.state.status.reopen,
+          isNull,
+          reason: 'a verdict belongs to the reopen that produced it',
+        );
+      },
+    );
+
+    test(
+      'a reopen whose rig replay rolls back carries its verdict through the '
+      'next deliberate start, and only that one',
+      () async {
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 8,
+        );
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 8,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        // The device comes back at another rate (every loop cleared) and the
+        // replay's mix step is refused: the start rolls back.
+        engine
+          ..devices = const [pinned]
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.clearedRate,
+            droppedTracks: 0,
+          )
+          ..mixResult = EngineResult.invalid;
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(reopenCount(), 1);
+        expect(repo.sessionTransport.isRunning, isFalse);
+        expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
+
+        // The player re-applies: the start that opens the rig again still
+        // carries what the reopen did to the loops...
+        engine.mixResult = EngineResult.ok;
+        expect(
+          repo.startEngine(const EngineConfig(playbackDeviceId: 'out-1')),
+          EngineResult.ok,
+        );
+        expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
+        // ...and the start after that is an ordinary one.
+        repo.stopEngine();
+        expect(
+          repo.startEngine(const EngineConfig(playbackDeviceId: 'out-1')),
+          EngineResult.ok,
+        );
+        expect(repo.state.status.reopen, isNull);
+      },
+    );
+
     test('a reopen the engine refuses leaves no verdict', () async {
       engine.nextSnapshot = runningSnapshot(devicePresent: true);
       final repo = buildSupervised()
