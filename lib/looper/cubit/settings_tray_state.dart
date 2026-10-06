@@ -54,11 +54,7 @@ enum SettingsTrayDestination {
   /// implemented, and this face says so.
   tuner,
 
-  /// In-tray Network domain — WiFi and Bluetooth as tabs of one entry.
-  ///
-  /// One destination, not two: two rail slots for two radios was the same
-  /// waste as one Settings bucket for twelve groups (#498). Which radio is
-  /// showing is [SettingsTrayState.networkTab], not a destination of its own.
+  /// In-tray Network domain — the Wi-Fi face.
   network,
 
   /// In-tray System domain — what the screens do, what build is running, what
@@ -78,7 +74,6 @@ class SettingsTrayState extends Equatable {
   const SettingsTrayState({
     this.dragProgress = 0,
     this.destination = SettingsTrayDestination.control,
-    this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
     this.audioTab = AudioTab.device,
     this.systemTab = SystemTab.display,
@@ -96,36 +91,29 @@ class SettingsTrayState extends Equatable {
   /// it opens a popover over whichever face is showing.
   final SettingsTrayDestination destination;
 
-  /// Which FX stage the Signal domain shows.
-  ///
-  /// Which tab the Network domain shows.
+  /// Which tab the Control domain shows.
   ///
   /// Survives leaving and returning to the domain — closing the tray resets
-  /// [destination] and deliberately not this, so Network lands where it was
+  /// [destination] and deliberately not this, so Control lands where it was
   /// left.
-  final NetworkTab networkTab;
-
-  /// Which tab the Control domain shows. Same rule as [networkTab].
   final ControlTab controlTab;
 
-  /// Which tab the Audio domain shows. Same rule as [networkTab].
+  /// Which tab the Audio domain shows. Same rule as [controlTab].
   final AudioTab audioTab;
 
-  /// Which tab the System domain shows. Same rule as [networkTab].
+  /// Which tab the System domain shows. Same rule as [controlTab].
   final SystemTab systemTab;
 
   /// Returns a copy with the given fields replaced.
   SettingsTrayState copyWith({
     double? dragProgress,
     SettingsTrayDestination? destination,
-    NetworkTab? networkTab,
     ControlTab? controlTab,
     AudioTab? audioTab,
     SystemTab? systemTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
     destination: destination ?? this.destination,
-    networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
     audioTab: audioTab ?? this.audioTab,
     systemTab: systemTab ?? this.systemTab,
@@ -135,7 +123,6 @@ class SettingsTrayState extends Equatable {
   List<Object?> get props => [
     dragProgress,
     destination,
-    networkTab,
     controlTab,
     audioTab,
     systemTab,

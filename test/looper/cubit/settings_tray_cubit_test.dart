@@ -1,7 +1,7 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/control/control_tab.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/network/network_tab.dart';
 
 void main() {
   SettingsTrayCubit buildCubit() => SettingsTrayCubit();
@@ -44,23 +44,18 @@ void main() {
       build: buildCubit,
       act: (cubit) => cubit
         ..open()
-        ..showDestination(SettingsTrayDestination.network)
-        ..showNetworkTab(NetworkTab.bluetooth)
+        ..showDestination(SettingsTrayDestination.control)
+        ..showControlTab(ControlTab.controllers)
         ..closeTray(),
       expect: () => [
         const SettingsTrayState(dragProgress: 1),
         const SettingsTrayState(
           dragProgress: 1,
-          destination: SettingsTrayDestination.network,
-        ),
-        const SettingsTrayState(
-          dragProgress: 1,
-          destination: SettingsTrayDestination.network,
-          networkTab: NetworkTab.bluetooth,
+          controlTab: ControlTab.controllers,
         ),
         // Closing puts the destination back to the landing face and leaves
-        // the tab where it was: reopening Network lands on Bluetooth.
-        const SettingsTrayState(networkTab: NetworkTab.bluetooth),
+        // the tab where it was: reopening Control lands on Controllers.
+        const SettingsTrayState(controlTab: ControlTab.controllers),
       ],
     );
 
@@ -96,15 +91,15 @@ void main() {
     );
 
     blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'showNetworkTab moves the tab and does NOT touch the destination — the '
-      'strip is only reachable while Network is already showing',
+      'showControlTab moves the tab and does NOT touch the destination — the '
+      'strip is only reachable while Control is already showing',
       build: buildCubit,
       seed: () => const SettingsTrayState(dragProgress: 1),
-      act: (cubit) => cubit.showNetworkTab(NetworkTab.bluetooth),
+      act: (cubit) => cubit.showControlTab(ControlTab.controllers),
       expect: () => [
         const SettingsTrayState(
           dragProgress: 1,
-          networkTab: NetworkTab.bluetooth,
+          controlTab: ControlTab.controllers,
         ),
       ],
     );
