@@ -516,14 +516,16 @@ class SessionCubit extends Cubit<SessionState> {
   /// applied through the one apply path an Open uses; the transforms reset
   /// with the clear inside it. A failed preservation applies nothing. When
   /// the empty rig cannot be written after it is applied, the new loop is
-  /// started and current under its new name, the failure is reported, and
-  /// the first Save writes it.
+  /// started and current under its new name, the failure is
+  /// [SessionError.newLoopNotSaved], and the first Save writes it. A take in
+  /// progress is ended first and saved with the outgoing rig, as for Open.
   Future<void> newLoop() => _run(
     () async {
       SessionId? reserved;
       var applied = false;
       try {
         return await _captureSettings.runExclusive(() async {
+          await _endCaptures();
           await _preserveOutgoing();
           // A held momentary belongs to the outgoing rig, not to the chains
           // the new loop keeps.
@@ -571,8 +573,8 @@ class SessionCubit extends Cubit<SessionState> {
           } on Object catch (error) {
             // Not a failed save of the outgoing loop, which is safe: the new
             // loop is started and named, and only its empty bundle is
-            // missing.
-            throw _SessionRefusal(SessionError.unknown, error);
+            // missing. The first Save writes it.
+            throw _SessionRefusal(SessionError.newLoopNotSaved, error);
           }
           return _ActionResult(
             SessionOutcome.newLoop,

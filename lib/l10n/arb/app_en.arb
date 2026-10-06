@@ -2668,6 +2668,15 @@
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."
     },
+    "sessionNewLoopNotSaved": "{name} started, but it could not be saved yet. Save it to keep it.",
+    "@sessionNewLoopNotSaved": {
+        "description": "A New loop cleared the tracks and took its name, but its empty bundle could not be written; the first Save writes it.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
     "libraryNewLoopStays": "{name} stays in your Library.",
     "@libraryNewLoopStays": {
         "description": "The New loop sheet (19/02): the outgoing session, by name, is kept. The name is drawn brighter than the rest of the line.",

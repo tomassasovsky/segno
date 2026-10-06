@@ -66,6 +66,20 @@ void main() {
       expect(find.text(l10n.librarySaveFailed), findsOneWidget);
     });
 
+    testWidgets('a new loop that could not be saved names itself', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        const SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.newLoopNotSaved,
+          currentSessionName: 'New loop 2',
+        ),
+      );
+      expect(find.text(l10n.sessionNewLoopNotSaved('New loop 2')), findsOne);
+    });
+
     testWidgets('an unfinished take says so', (tester) async {
       await show(
         tester,
