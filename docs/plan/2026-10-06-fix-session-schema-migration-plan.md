@@ -64,13 +64,19 @@ and 9 accept both spellings.
   `session.v<N>/` folder in the new one, which opens as a bundle of its own.
   Later saves move that folder along. The move happens after the swap; until
   it finishes the previous bundle is kept as `<id>.old`, and the catalog's
-  recovery finishes the move before deleting it. A save over a bundle whose
+  recovery finishes the move before deleting it. The folder is assembled
+  inside `<id>.old` (layer files first, the manifest last) and then renamed
+  into the new bundle in one step, so a power cut never splits a backup: a
+  folder without its manifest is an unfinished assembly, and the next run
+  reuses it. A save over a bundle whose
   write-back failed does the same with its own older manifest. A failed save
   leaves the previous bundle, original included, as it was.
 - The notice says the session was converted and the original kept, or, when
   the write-back failed, that the original file is unchanged. It adds a
   sentence for each audible change: the Master effects (and their pedals) now
-  on All tracks, and a live input lowered to 100%. The conversion notes go to
+  on All tracks, a live input lowered to 100%, and a tempo set from the loop
+  length for a session that saved none. The notice only claims the backup
+  when `commitConversion` reports that it wrote it. The conversion notes go to
   the log.
 - A newer schema is refused as before (`SessionUnsupportedVersion`). A
   manifest older than schema 1, or one a step or the strict decoder refuses,

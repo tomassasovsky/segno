@@ -1243,7 +1243,7 @@ void main() {
           stubConvertedOpen();
           when(
             () => repository.commitConversion(any(), any()),
-          ).thenAnswer((_) async {});
+          ).thenAnswer((_) async => true);
         },
         build: build,
         act: (cubit) => cubit.open('A'),
@@ -1297,6 +1297,26 @@ void main() {
               .having((s) => s.status, 'st', SessionStatus.success)
               .having((s) => s.outcome, 'outcome', SessionOutcome.loaded)
               .having((s) => s.conversion?.written, 'written', isFalse),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'whose manifest changed before the write-back says nothing was written',
+        setUp: () {
+          stubConvertedOpen();
+          when(
+            () => repository.commitConversion(any(), any()),
+          ).thenAnswer((_) async => false);
+        },
+        build: build,
+        act: (cubit) => cubit.open('A'),
+        skip: 2,
+        expect: () => [
+          isA<SessionState>().having(
+            (s) => s.conversion?.written,
+            'written',
+            isFalse,
+          ),
         ],
       );
 

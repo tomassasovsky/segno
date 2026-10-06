@@ -20,6 +20,9 @@ enum SessionConversionChange {
 
   /// A live input above unity was lowered to unity.
   monitorLevelLowered,
+
+  /// A session that saved no tempo took the one its loop length defines.
+  tempoFromLoop,
 }
 
 /// What a conversion step may read besides the manifest, and where it records
@@ -255,7 +258,9 @@ void _v3ToV4(Map<String, dynamic> m, SessionMigrationContext c) {
         ..['tempoBpm'] = derived.bpm
         ..['tempoSource'] = 'derived'
         ..['loopBars'] = derived.bars;
-      c.note('tempoBpm', 'derived from the loop: ${derived.bars} bars');
+      c
+        ..note('tempoBpm', 'derived from the loop: ${derived.bars} bars')
+        ..change(SessionConversionChange.tempoFromLoop);
     } else {
       m
         ..['tempoBpm'] = 0.0
