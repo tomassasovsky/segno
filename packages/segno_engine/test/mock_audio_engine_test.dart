@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 
@@ -394,12 +396,20 @@ void main() {
 
     group('performance recording capture', () {
       test('requires the engine to be running', () {
-        expect(engine.perfArm('test-capture'), EngineResult.notRunning);
+        expect(
+          engine.perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          ),
+          EngineResult.notRunning,
+        );
       });
 
       test('rejects an empty capture directory', () {
         engine.start(engine.defaultConfig);
-        expect(engine.perfArm(''), EngineResult.invalid);
+        expect(
+          engine.perfArm(PerfTarget(captureDir: '', takeId: Uint8List(16))),
+          EngineResult.invalid,
+        );
         expect(engine.snapshot().isPerfArmed, isFalse);
       });
 
@@ -407,10 +417,17 @@ void main() {
         engine.start(engine.defaultConfig);
         expect(engine.snapshot().isPerfArmed, isFalse);
 
-        expect(engine.perfArm('test-capture'), EngineResult.ok);
+        expect(
+          engine.perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          ),
+          EngineResult.ok,
+        );
         expect(engine.snapshot().isPerfArmed, isTrue);
         expect(
-          engine.perfArm('test-capture'),
+          engine.perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          ),
           EngineResult.ok,
         ); // already armed: no-op
 
@@ -424,7 +441,9 @@ void main() {
         expect(engine.snapshot().perfFrames, 0);
 
         engine
-          ..perfArm('test-capture')
+          ..perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          )
           ..snapshot(); // advances frames by one buffer
         expect(engine.snapshot().perfFrames, greaterThan(0));
 
@@ -437,7 +456,9 @@ void main() {
       test('the mock models no ring capacity: overruns stay 0', () {
         engine
           ..start(engine.defaultConfig)
-          ..perfArm('test-capture');
+          ..perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          );
         for (var i = 0; i < 5; i++) {
           engine.snapshot();
         }
@@ -447,7 +468,9 @@ void main() {
       test('a fresh start disarms and resets frames', () {
         engine
           ..start(engine.defaultConfig)
-          ..perfArm('test-capture')
+          ..perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          )
           ..snapshot()
           ..stop()
           ..start(engine.defaultConfig);
@@ -700,7 +723,10 @@ void main() {
         expect(engine.snapshot().perfFollowOutput, isFalse);
         expect(engine.setPerfFollowOutput(follow: true), EngineResult.ok);
         expect(engine.snapshot().perfFollowOutput, isTrue);
-        expect(engine.perfArm('take'), EngineResult.ok);
+        expect(
+          engine.perfArm(PerfTarget(captureDir: 'take', takeId: Uint8List(16))),
+          EngineResult.ok,
+        );
         engine.setPerfFollowOutput(follow: false); // too late for this take
         expect(engine.snapshot().perfFollowOutput, isTrue);
         engine.perfDisarm();

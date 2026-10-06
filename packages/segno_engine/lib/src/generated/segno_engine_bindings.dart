@@ -4744,34 +4744,38 @@ class SegnoEngineBindings {
   /// Arms performance-recording capture: allocates the master + per-monitor
   /// rings, freezes the captured input set from whichever inputs are currently
   /// monitored, publishes them to the audio thread, and starts the drain thread
-  /// writing into `capture_dir` (created if it does not already exist).
+  /// writing `target` (copied; its strings need not outlive the call).
   /// Idempotent (a second call while already armed is a no-op success — the
-  /// armed session's original `capture_dir` keeps draining; the repeat call's
-  /// `capture_dir` argument is still required to be non-null/non-empty but is
-  /// otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING (not configured),
-  /// LE_ERR_INVALID (null/empty `capture_dir`, no output enabled to capture, or
-  /// ring allocation failure), or LE_ERR_DEVICE (the drain thread could not be
-  /// started — e.g. the directory could not be created — or a previous disarm's
-  /// quiescent wait bailed out and left a stale drain session still live).
+  /// armed session keeps its original target; the repeat call's target must
+  /// still be valid but is otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING
+  /// (not configured), LE_ERR_INVALID (null target, null/empty `capture_dir`, a
+  /// `part_bytes` with no room for a frame or past the RIFF limit, a negative
+  /// `ring_seconds`, no output enabled to capture, or ring allocation failure),
+  /// or LE_ERR_DEVICE (the drain thread could not be started — e.g. a directory
+  /// could not be created — or a previous disarm's quiescent wait bailed out and
+  /// left a stale drain session still live).
   int le_perf_arm(
     ffi.Pointer<le_engine> engine,
-    ffi.Pointer<ffi.Char> capture_dir,
+    ffi.Pointer<le_perf_target> target,
   ) {
     return _le_perf_arm(
       engine,
-      capture_dir,
+      target,
     );
   }
 
   late final _le_perf_armPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Char>)
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_perf_target>,
+          )
         >
       >('le_perf_arm');
   late final _le_perf_arm = _le_perf_armPtr
       .asFunction<
-        int Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Char>)
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_perf_target>)
       >();
 
   /// Disarms performance-recording capture: tells the audio thread to stop
@@ -7929,6 +7933,42 @@ final class le_lane_cache_info extends ffi.Struct {
   external int audio_rev;
 }
 
+/// Where and how one take is written (#1198).
+final class le_perf_target extends ffi.Struct {
+  /// The take's directory on its destination (created if missing).
+  external ffi.Pointer<ffi.Char> capture_dir;
+
+  /// Where performance.json is rewritten every drain cycle: the capture
+  /// directory for an Internal take, an Internal mirror directory for a take
+  /// on a removable volume (whose filesystem must not be touched every cycle).
+  /// NULL means capture_dir.
+  external ffi.Pointer<ffi.Char> live_sidecar_dir;
+
+  /// The take's identity, written into every part's `sgno` chunk and the
+  /// sidecar.
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Uint8> take_id;
+
+  /// The removable volume generation the take is armed on, or -1 for Internal;
+  /// recorded in the sidecar so recovery can tell whether the volume stayed
+  /// mounted for the whole take.
+  @ffi.Int64()
+  external int volume_generation;
+
+  /// The most one part file may hold, header included; 0 means
+  /// LE_PERF_PART_BYTES. Must leave room for at least one stereo frame and fit
+  /// the 32-bit RIFF size field.
+  @ffi.Uint64()
+  external int part_bytes;
+
+  /// Seconds of audio each capture ring holds; 0 means
+  /// LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default) so that
+  /// every ring together stays within LE_PERF_RING_BYTES_MAX; the sidecar's
+  /// `ring_seconds` reports what was granted.
+  @ffi.Int32()
+  external int ring_seconds;
+}
+
 /// A MIDI input port discovered by le_midi_enumerate.
 ///
 /// `id` is a per-OS stable token for re-selecting the same device across replug:
@@ -8008,3 +8048,11 @@ const int LE_CB_BUCKETS = 8;
 const int LE_XRUN_KINDS = 4;
 
 const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;
+
+const int LE_PERF_PART_BYTES = 2000000000;
+
+const int LE_PERF_PART_HEADER_BYTES = 84;
+
+const int LE_PERF_RING_SECONDS_DEFAULT = 2;
+
+const int LE_PERF_RING_BYTES_MAX = 67108864;

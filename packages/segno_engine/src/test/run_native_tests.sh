@@ -136,6 +136,15 @@ $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_fx_recipe_plugins.c \
   $RECIPE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_recipe_tests.exe"
 "$OUT/segno_fx_recipe_tests.exe"
 
+echo "== building capture drain race tests =="
+# The drain thread rolling parts against a running callback and a snapshot
+# reader (#1198). Production engine, no test hooks: before the races-only exit
+# so the TSAN job covers it.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_perf_drain_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_perf_drain_race_tests.exe"
+"$OUT/segno_perf_drain_race_tests.exe"
+
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
   exit 0
 fi

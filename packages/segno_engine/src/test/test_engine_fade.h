@@ -341,7 +341,7 @@ static void test_fade_actual_arm_render(void) {
   CHECK(le_engine_toggle_fade(e, 0, .5f, &id) == LE_OK);
   fade_process(e, 12000, 512, 1, -1.0 / 24000, .5f);
   const char* dir = render_test_dir("fade-arm");
-  CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+  CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
   float input[256] = {0}, live[512], replay[512], pcm[128];
   le_engine_process(e, live, input, 128);
   CHECK(le_engine_toggle_fade(e, 0, 2, &id) == LE_OK);
@@ -654,7 +654,7 @@ static void test_fade_restore_capture_lifetime(void) {
     uint64_t id = fade_install_at(e, .25f, .25f, 0); drain(e); fade_result(e, id, LE_OK);
     CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
     const char* dir = render_test_dir(capture ? "fade-rearm" : "fade-pending-arm");
-    CHECK(le_perf_arm(e, dir) == LE_OK); // deliberately leave ARM queued
+    CHECK(perf_arm_dir(e, dir) == LE_OK); // deliberately leave ARM queued
     le_test_fade_hook = fade_restore_interleave;
     CHECK(le_engine_undo(e, 0) == LE_OK);
     float in[128] = {0}, live[265], replay[265];
@@ -729,7 +729,7 @@ static void test_fade_restore_history_replacement(void) {
     CHECK(e->tracks[0].undo_count > 0);
     CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
     const char* dir = render_test_dir(redo ? "fade-restore-redo" : "fade-restore-undo");
-    CHECK(le_perf_arm(e, dir) == LE_OK);
+    CHECK(perf_arm_dir(e, dir) == LE_OK);
     float live[8] = {0}, replay[8];
     int n = 0;
     CHECK(le_engine_undo(e, 0) == LE_OK);
@@ -763,7 +763,7 @@ static void test_fade_restore_frozen_render(void) {
   le_engine_process(e, live, input, 64);
   CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
   const char* dir = render_test_dir("fade-frozen-render");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   le_engine_process(e, live, input, 128);
   CHECK(le_engine_play(e, 0) == LE_OK);
@@ -796,7 +796,7 @@ static void test_fade_restore_surviving_grid_phase(void) {
   le_engine_process(e, live, zero, 13); // sibling preserves the advancing grid
   CHECK(e->clock.position == 50);
   const char* dir = render_test_dir("fade-restored-phase");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   le_engine_process(e, live, zero, 128);
   CHECK(le_perf_disarm(e) == LE_OK);
@@ -831,7 +831,7 @@ static void test_fade_restore_source_end_edges(void) {
     }
     CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
     const char* dir = render_test_dir(racing_swap ? "fade-selected-slot-race" : "fade-undo-empty");
-    CHECK(le_perf_arm(e, dir) == LE_OK);
+    CHECK(perf_arm_dir(e, dir) == LE_OK);
     float live[2], replay[2];
     CHECK(le_engine_undo(e, 0) == LE_OK);
     le_engine_process(e, live, input, 1);
@@ -870,7 +870,7 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
     fade_drain_gate gate = {0};
     le_perf_drain_set_mid_cycle_hook_for_test(fade_hold_drain, &gate);
     const char* dir = render_test_dir(manifest_full ? "fade-manifest-capacity" : "fade-staging-refusal");
-    CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+    CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
     for (int i = 0; i < 5000 && !atomic_load(&gate.entered); ++i) test_sleep_ms(1);
     CHECK(atomic_load(&gate.entered));
     const unsigned capacity = manifest_full ? LE_LAYER_STAGING_RING_CAPACITY : 2;
@@ -931,10 +931,10 @@ static void test_fade_restore_staging_and_manifest_capacity(void) {
       free(json);
     }
     // Master keeps every processed frame, including those after the drop.
-    snprintf(path, sizeof(path), "%s/master.pcm", dir);
+    snprintf(path, sizeof(path), "%s/master-001.wav", dir);
     const int frames_processed = manifest_full ? 4 : 1;
     float recorded[4] = {0};
-    CHECK(read_binary_file_for_test(path, (unsigned char*)recorded,
+    CHECK(read_payload_file_for_test(path, (unsigned char*)recorded,
         sizeof(float) * frames_processed) == (int)(sizeof(float) * frames_processed));
     for (int i = 0; i < frames_processed; ++i) CHECK(recorded[i] == .125f);
     fade_finalize_manifest(dir, "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[]}");
@@ -962,7 +962,7 @@ static void test_fade_grouped_muted_restore_stems(void) {
   CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
   CHECK(le_engine_clear_undoable(e, 1) == LE_OK); drain(e);
   const char* dir = render_test_dir("fade-group-muted");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   CHECK(le_engine_history_mode_gate(e, 3, 0) == LE_OK);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   CHECK(le_engine_undo(e, 1) == LE_OK);
@@ -993,7 +993,7 @@ static void test_fade_restore_overdub_source_end(void) {
     le_engine_process(e, output, input, 64);
     CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
     const char* dir = render_test_dir(before_first_sample ? "fade-first-fact-invalid" : "fade-stopped-overdub");
-    CHECK(le_perf_arm(e, dir) == LE_OK);
+    CHECK(perf_arm_dir(e, dir) == LE_OK);
     CHECK(le_engine_undo(e, 0) == LE_OK); drain(e);
     if (!before_first_sample) {
       le_engine_process(e, output, input, 1);

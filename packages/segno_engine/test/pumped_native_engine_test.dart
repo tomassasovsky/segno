@@ -675,7 +675,22 @@ void main() {
       );
       addTearDown(() => captureDir.deleteSync(recursive: true));
 
-      expect(engine.perfArm(captureDir.path), EngineResult.ok);
+      // Every field of the target crosses FFI: the take id lands in the
+      // part's sgno chunk, the generation and ring seconds in the sidecar.
+      final takeId = Uint8List.fromList(List.generate(16, (i) => i));
+      expect(
+        engine.perfArm(
+          PerfTarget(
+            captureDir: captureDir.path,
+            takeId: takeId,
+            liveSidecarDir: '${captureDir.path}/live',
+            volumeGeneration: 7,
+            partBytes: 84 + 4 * 100, // mono master: 100 frames a part
+            ringSeconds: 3,
+          ),
+        ),
+        EngineResult.ok,
+      );
       engine.pump(frames: 0); // drain the arm command
       var s = engine.snapshot();
       expect(s.isPerfArmed, isTrue);
@@ -696,11 +711,29 @@ void main() {
       engine.pump(frames: 0); // drain the disarm command (no device: no wait)
       expect(engine.snapshot().isPerfArmed, isFalse);
 
+      final sidecar = File(
+        '${captureDir.path}/live/performance.json',
+      ).readAsStringSync();
+      expect(
+        sidecar,
+        contains('"take_id": "000102030405060708090a0b0c0d0e0f"'),
+      );
+      expect(sidecar, contains('"volume_generation": 7,'));
+      expect(sidecar, contains('"ring_seconds": 3,'));
       expect(
         File('${captureDir.path}/performance.json').existsSync(),
-        isTrue,
+        isFalse,
       );
-      expect(File('${captureDir.path}/master.pcm').existsSync(), isTrue);
+      // 256 frames in parts of at most 100 frames: 100, 100, 56.
+      final header = File(
+        '${captureDir.path}/master-003.wav',
+      ).readAsBytesSync().sublist(0, 84);
+      expect(header.sublist(44, 60), takeId);
+      expect(header[62], 3); // part index
+      expect(
+        File('${captureDir.path}/master-004.wav').existsSync(),
+        isFalse,
+      );
     },
     skip: skip,
   );

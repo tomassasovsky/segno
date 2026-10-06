@@ -35,6 +35,12 @@ int le_wav_open(le_wav_writer* w, const char* path, int32_t sample_rate,
 /* Appends `frames` interleaved frames. Returns 1 while every write landed. */
 int le_wav_append(le_wav_writer* w, const float* samples, uint64_t frames);
 
+/* Credits `frames` more whole frames written to w->file by the caller's own
+ * write path. For the capture drain (perf_drain.c), which writes through its
+ * write-budget test seam and floors a short write to whole frames itself;
+ * le_wav_seal then patches the sizes from the credited count. */
+void le_wav_note_frames(le_wav_writer* w, uint64_t frames);
+
 /* Patches the RIFF and data sizes, flushes, optionally fsyncs, and closes.
  * Returns 1 when the whole file (header, samples, sizes) is on disk. A data
  * size beyond 32 bits fails rather than writing a wrapped size. */
