@@ -1615,6 +1615,7 @@ void main() {
         'tunerHz',
         'tunerConfidence',
         'tunerInput',
+        'tunerMuteMask',
         'inputRms',
         'inputPeak',
         'outputRms',

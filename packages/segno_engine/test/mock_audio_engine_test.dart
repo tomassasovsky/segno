@@ -3,6 +3,28 @@ import 'package:segno_engine/segno_engine.dart';
 
 void main() {
   group('MockAudioEngine', () {
+    test('the tuner mute follows the native rules', () {
+      final engine = MockAudioEngine(inputChannels: 4);
+      // Disarmed: refused, stored as 0.
+      expect(engine.setTunerMute(inputMask: 0x1), EngineResult.ok);
+      expect(engine.snapshot().tunerMuteMask, 0);
+
+      engine.setTunerInput(input: 2);
+      expect(engine.setTunerMute(inputMask: 0xC), EngineResult.ok);
+      expect(engine.snapshot().tunerMuteMask, 0xC);
+      // Absent inputs are dropped.
+      engine.setTunerMute(inputMask: 0xFF);
+      expect(engine.snapshot().tunerMuteMask, 0xF);
+
+      // Every arm, move or disarm clears it.
+      engine.setTunerInput(input: 3);
+      expect(engine.snapshot().tunerMuteMask, 0);
+      engine
+        ..setTunerMute(inputMask: 0x8)
+        ..setTunerInput(input: -1);
+      expect(engine.snapshot().tunerMuteMask, 0);
+    });
+
     late MockAudioEngine engine;
 
     setUp(() => engine = MockAudioEngine());

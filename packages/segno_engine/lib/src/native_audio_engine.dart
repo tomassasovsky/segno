@@ -2123,6 +2123,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setTunerMute({required int inputMask}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_tuner_mute(_engine, inputMask),
+    );
+  }
+
+  @override
   EngineResult setMonitorInputEnabled({
     required int input,
     required bool enabled,

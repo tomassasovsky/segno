@@ -1191,6 +1191,15 @@ class FakeAudioEngine implements AudioEngine {
   /// test can assert that a closed face leaves nothing running.
   int tunerInput = -1;
 
+  /// The last tuner mute mask sent.
+  int tunerMuteMask = 0;
+
+  @override
+  EngineResult setTunerMute({required int inputMask}) {
+    tunerMuteMask = inputMask;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setTunerInput({required int input}) {
     tunerInput = input;
@@ -1787,6 +1796,7 @@ class _LengthSnapshot extends EngineSnapshot {
          tunerHz: source.tunerHz,
          tunerConfidence: source.tunerConfidence,
          tunerInput: source.tunerInput,
+         tunerMuteMask: source.tunerMuteMask,
          activeBackend: source.activeBackend,
          outputEnabledMask: source.outputEnabledMask,
          isPerfArmed: perfArmed ?? source.isPerfArmed,

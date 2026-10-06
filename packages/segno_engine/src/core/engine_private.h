@@ -1596,6 +1596,9 @@ struct le_engine {
    * first null on the decimated rate, which is where aliasing would fold in
    * from — cheap and self-anti-aliasing. */
   _Atomic int32_t a_tuner_input;   /* hardware channel, or -1 = off */
+  /* Inputs whose monitors the tuner silences (LE_CMD_SET_TUNER_MUTE); 0
+   * whenever a_tuner_input < 0. Written by the audio thread only. */
+  _Atomic uint32_t a_tuner_mute_mask;
   _Atomic uint32_t a_tuner_hz_bits;   /* float: 0 = no pitch this frame */
   _Atomic uint32_t a_tuner_conf_bits; /* float 0..1 */
   /* RT-only decimation + analysis state; touched on the audio thread alone. */
