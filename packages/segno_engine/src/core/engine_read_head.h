@@ -34,6 +34,18 @@ typedef struct le_read_head {
   double rate;      /* source frames per song frame = speed * (len_src / play_len) */
 } le_read_head;
 
+/* The Speed factor as one published word (#1179): numer << 8 | denom, both
+ * 1..8, so the pair is stored and loaded in one access and never torn. */
+static inline int32_t le_speed_pack(int32_t numer, int32_t denom) {
+  return (numer << 8) | denom;
+}
+static inline int32_t le_speed_numer_of(int32_t packed) {
+  return packed >> 8;
+}
+static inline int32_t le_speed_denom_of(int32_t packed) {
+  return packed & 0xff;
+}
+
 /* x reduced into [0, len) without fmod: an int64 quotient and one correction. */
 static inline double le_head_wrap(double x, int32_t len) {
   const double l = (double)len;

@@ -424,8 +424,7 @@ static int le_engine_reset_material(le_engine* engine,
   /* Speed resets with the material (#1179, plan decision 9). */
   engine->speed_numer = 1;
   engine->speed_denom = 1;
-  store_i32(&engine->a_speed_numer, 1);
-  store_i32(&engine->a_speed_denom, 1);
+  store_i32(&engine->a_speed_ratio, le_speed_pack(1, 1));
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
     /* Track transport: one lane active by default, empty, one base loop. */

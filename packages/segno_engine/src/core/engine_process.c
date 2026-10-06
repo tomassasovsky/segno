@@ -2796,8 +2796,7 @@ static void le_speed_reset_if_empty(le_engine* e, uint64_t frame) {
   for (int c = 0; c < e->track_count; ++c) {
     le_head_set_rate(e, &e->tracks[c], 1.0, frame);
   }
-  store_i32(&e->a_speed_numer, 1);
-  store_i32(&e->a_speed_denom, 1);
+  store_i32(&e->a_speed_ratio, le_speed_pack(1, 1));
 }
 
 static void le_head_set_rate(le_engine* e, le_track* t, double rate,
@@ -3462,8 +3461,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         for (int c = 0; c < e->track_count; ++c) {
           le_head_set_rate(e, &e->tracks[c], (double)numer / denom, frame);
         }
-        store_i32(&e->a_speed_numer, numer);
-        store_i32(&e->a_speed_denom, denom);
+        store_i32(&e->a_speed_ratio, le_speed_pack(numer, denom));
       }
       atomic_store_explicit(&e->receipts[cmd->speed.slot].result,
                              accepted ? LE_OK

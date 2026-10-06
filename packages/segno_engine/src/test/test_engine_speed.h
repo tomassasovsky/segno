@@ -672,6 +672,12 @@ static void test_speed_step_inside_window(void) {
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.speed_numer == 8 && s.speed_denom == 1);
+  /* The factor is published as one word (2b L-D1): a snapshot taken between
+   * two stores of the old two-atomic layout could pair 1/2's numerator with
+   * 8x's denominator. One store per factor, read back whole. */
+  CHECK(load_i32(&e->a_speed_ratio) == le_speed_pack(8, 1));
+  CHECK(le_speed_numer_of(le_speed_pack(1, 2)) == 1 &&
+        le_speed_denom_of(le_speed_pack(1, 2)) == 2);
   CHECK(le_perf_disarm(e) == LE_OK);
   rev_render_track_wav(e, dir, len);
   const int frames = test_read_wet_stem(dir, 0, replay, 1200);

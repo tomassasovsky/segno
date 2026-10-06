@@ -1794,9 +1794,12 @@ struct le_engine {
    * 8), published for the snapshot. Control's view while SET_SPEED commands
    * are in flight, like Reverse's: the count posted, the factor they predict
    * (speed_pending_one: whether it is 1x) and the callback's count processed
-   * (accepted or refused), released after the published factor. */
+   * (accepted or refused), released after the published factor. The
+   * published factor is ONE atomic, numer << 8 | denom (le_speed_pack), so
+   * a reader never sees the numerator of one factor with the denominator of
+   * another. */
   int32_t speed_numer, speed_denom;
-  _Atomic int32_t a_speed_numer, a_speed_denom;
+  _Atomic int32_t a_speed_ratio;
   uint32_t speed_posted;
   int32_t speed_pending_one;
   _Atomic uint32_t a_speed_applied;
