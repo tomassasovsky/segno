@@ -92,9 +92,9 @@ void main() {
       expect(kMaxChannels, LE_MAX_CHANNELS);
     });
 
-    test('every openable input can be monitored (slice 3)', () {
+    test('every openable input and instrument can be monitored', () {
       expect(kMaxMonitoredInputs, LE_MAX_MONITORED_INPUTS);
-      expect(kMaxMonitoredInputs, kMaxChannels);
+      expect(kMaxMonitoredInputs, kMaxChannels + LE_MAX_INSTRUMENTS);
     });
   });
 

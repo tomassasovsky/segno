@@ -827,7 +827,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
    * device is closed during configure, so both the seed and the realloc are
    * race-free. A failed allocation leaves cond_buf NULL — the audio thread
    * then simply keeps the raw path (conditioning silently off). */
-  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+  for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
     le_cond_seed_defaults(&engine->cond[c], sample_rate);
   }
   free(engine->cond_buf);
@@ -843,7 +843,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   /* Input clip ("HOT") detector (input clip, S2): fresh session, no input is
    * HOT and no rail-run is in progress. Plain fields are race-free here (the
    * device is closed during configure), same as the cond seeds above. */
-  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+  for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
     engine->clip_run[c] = 0;
     engine->clip_hold_until[c] = 0;
   }

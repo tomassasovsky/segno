@@ -358,6 +358,9 @@ static void drain_events(le_engine* e, le_synth* s) {
 
 void le_instruments_block(le_engine* e, uint32_t frames) {
   le_synth* s = (le_synth*)e->synth;
+  /* The buses hold this block's audio (silence included) unless the block
+   * is larger than the scratch; instrument sources read silence then. */
+  e->inst_bus_live = s != NULL && frames <= LE_COND_SCRATCH_FRAMES;
   if (s == NULL) return;
   apply_params(e, s);
   drain_events(e, s);
