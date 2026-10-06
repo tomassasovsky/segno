@@ -136,6 +136,15 @@ $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_fx_recipe_plugins.c \
   $RECIPE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_recipe_tests.exe"
 "$OUT/segno_fx_recipe_tests.exe"
 
+echo "== building backing handoff race tests =="
+# The backing player's buffer handoff (#1200): the audio thread advances End =
+# Next inside blocks while the control thread loads, stages and clears. Before
+# the races-only exit so the TSAN job covers it; ASan covers it in its job.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_backing_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_backing_race_tests.exe"
+"$OUT/segno_backing_race_tests.exe"
+
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
   exit 0
 fi
