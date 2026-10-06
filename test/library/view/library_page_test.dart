@@ -10,8 +10,10 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
+import 'package:segno/library/view/library_sessions_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -116,6 +118,7 @@ void main() {
     WidgetTester tester, {
     SessionState? state,
     Stream<SessionState> states = const Stream.empty(),
+    RemovableVolumes volumes = const InternalOnlyVolumes(),
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -139,7 +142,7 @@ void main() {
           RepositoryProvider<SessionRepository>.value(value: repository),
           RepositoryProvider<PedalRepository>.value(value: pedal),
           RepositoryProvider<RemovableVolumes>.value(
-            value: const InternalOnlyVolumes(),
+            value: volumes,
           ),
         ],
         child: BlocProvider<SessionCubit>.value(
@@ -175,6 +178,19 @@ void main() {
     of: find.byKey(const Key('library_preview')),
     matching: finder,
   );
+
+  /// Types [text] into the open keyboard sheet and confirms.
+  Future<void> type(WidgetTester tester, String text) async {
+    for (var i = 0; i < 40; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    }
+    for (final ch in text.split('')) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: ch);
+    }
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+  }
 
   group('the shell', () {
     testWidgets('draws the title, the Sessions tab, the locations and a '
@@ -369,6 +385,7 @@ void main() {
         SessionState(
           status: SessionStatus.failure,
           error: SessionError.sampleRateMismatch,
+          failedSessionId: 's-gig',
           currentSessionId: 's-cur',
           sessions: _catalog,
         ),
@@ -378,6 +395,232 @@ void main() {
 
       expect(find.byKey(const Key('library_open_refused')), findsOneWidget);
       expect(find.text(l10n.sessionErrorSampleRate), findsOneWidget);
+
+      // The refusal belongs to Night set, not to whatever is selected next.
+      await tester.tap(row('s-new'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('library_open_refused')), findsNothing);
+    });
+
+    testWidgets('an Open refused for any other reason says why in the '
+        'Library', (tester) async {
+      final states = StreamController<SessionState>();
+      addTearDown(states.close);
+      await openLibrary(tester, states: states.stream);
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+
+      // What SessionCubit.open emits when the audio device is not running.
+      const reason =
+          'Bad state: audio device must be running before session '
+          'load';
+      states.add(
+        SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.unknown,
+          errorMessage: reason,
+          failedSessionId: 's-gig',
+          currentSessionId: 's-cur',
+          sessions: _catalog,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        inPreview(find.text(l10n.sessionErrorGeneric(reason))),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a failure of another action shows no Open refusal', (
+      tester,
+    ) async {
+      final states = StreamController<SessionState>();
+      addTearDown(states.close);
+      await openLibrary(tester, states: states.stream);
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+
+      states.add(
+        SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.unknown,
+          errorMessage: 'disk full',
+          currentSessionId: 's-cur',
+          sessions: _catalog,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('library_open_refused')), findsNothing);
+    });
+
+    testWidgets('Open session is dimmed while a session action runs', (
+      tester,
+    ) async {
+      await openLibrary(
+        tester,
+        state: SessionState(
+          status: SessionStatus.working,
+          currentSessionId: 's-cur',
+          sessions: _catalog,
+        ),
+      );
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+
+      final opacity = tester.widget<Opacity>(
+        find
+            .ancestor(
+              of: find.byKey(const Key('library_open_session')),
+              matching: find.byType(Opacity),
+            )
+            .first,
+      );
+      expect(opacity.opacity, lessThan(1));
+    });
+
+    testWidgets('a selection the search hides is not previewed', (
+      tester,
+    ) async {
+      await openLibrary(tester);
+      await tester.tap(find.byKey(const Key('library_search')));
+      await tester.pumpAndSettle();
+      await type(tester, 'night');
+
+      expect(inPreview(find.text(l10n.libraryNoSelection)), findsOneWidget);
+      expect(find.byKey(const Key('library_return_to_tracks')), findsNothing);
+    });
+  });
+
+  group('type', () {
+    TextStyle styleOf(WidgetTester tester, Finder text) =>
+        tester.widget<Text>(text).style!;
+
+    testWidgets('the musical facts and track figures are in the mono face', (
+      tester,
+    ) async {
+      await openLibrary(tester);
+
+      for (final fact in ['84 BPM', '4/4', '3 tracks']) {
+        expect(
+          styleOf(tester, inPreview(find.text(fact))).fontFamily,
+          SurfaceTheme.monoFont,
+        );
+      }
+      expect(
+        styleOf(
+          tester,
+          find
+              .descendant(
+                of: find.byKey(const Key('library_track_1')),
+                matching: find.text('4'),
+              )
+              .first,
+        ).fontFamily,
+        SurfaceTheme.monoFont,
+      );
+    });
+
+    testWidgets('the search placeholder is drawn like a query, as the pen '
+        'draws it', (tester) async {
+      await openLibrary(tester);
+      final context = tester.element(find.byKey(const Key('library_search')));
+      expect(
+        styleOf(
+          tester,
+          find.descendant(
+            of: find.byKey(const Key('library_search')),
+            matching: find.text(l10n.librarySearchSessions),
+          ),
+        ).color,
+        context.surface.textPrimary,
+      );
+    });
+  });
+
+  group('saved date', () {
+    Future<BuildContext> contextOf(WidgetTester tester) async {
+      await tester.pumpApp(const SizedBox.shrink());
+      return tester.element(find.byType(SizedBox));
+    }
+
+    // Not the wall clock's day, so the label must read [now].
+    final now = DateTime(2025, 3, 4, 15, 30);
+
+    testWidgets('a session saved today reads as today, with the time', (
+      tester,
+    ) async {
+      final context = await contextOf(tester);
+      expect(
+        savedDateLabel(context, DateTime(2025, 3, 4, 9, 5), now: now),
+        l10n.sessionDateToday('09:05'),
+      );
+    });
+
+    testWidgets('older saves read as yesterday, then as a short date', (
+      tester,
+    ) async {
+      final context = await contextOf(tester);
+      expect(
+        savedDateLabel(context, DateTime(2025, 3, 3, 23, 59), now: now),
+        l10n.sessionDateYesterday,
+      );
+      expect(
+        savedDateLabel(context, DateTime(2025, 2, 7, 10), now: now),
+        '7 Feb',
+      );
+      expect(savedDateLabel(context, null, now: now), isEmpty);
+    });
+  });
+
+  group('USB with a drive that cannot be read', () {
+    RemovableVolume volume(RemovableVolumeStatus status) => RemovableVolume(
+      generation: 1,
+      fingerprint: 'f',
+      label: 'MAC DRIVE',
+      fsType: 'hfsplus',
+      sizeBytes: 1,
+      status: status,
+    );
+
+    testWidgets('an unsupported filesystem says so, not "connect a drive"', (
+      tester,
+    ) async {
+      await openLibrary(
+        tester,
+        volumes: _OneDrive(volume(RemovableVolumeStatus.unsupported)),
+      );
+      await tester.tap(find.byKey(const Key('library_location_usb')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library_unusable_usb')), findsOneWidget);
+      expect(find.text(l10n.libraryUsbUnsupported('hfsplus')), findsOneWidget);
+      expect(find.text(l10n.libraryConnectUsb), findsNothing);
+    });
+
+    testWidgets('a failed mount says so', (tester) async {
+      await openLibrary(
+        tester,
+        volumes: _OneDrive(volume(RemovableVolumeStatus.mountFailed)),
+      );
+      await tester.tap(find.byKey(const Key('library_location_usb')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.libraryUsbMountFailed), findsOneWidget);
+    });
+
+    testWidgets('an ejected drive reads as no drive', (tester) async {
+      await openLibrary(
+        tester,
+        volumes: _OneDrive(volume(RemovableVolumeStatus.ejected)),
+      );
+      await tester.tap(find.byKey(const Key('library_location_usb')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library_connect_usb')), findsOneWidget);
     });
   });
 
@@ -469,19 +712,6 @@ void main() {
   });
 
   group('search and folders', () {
-    /// Types [text] into the open keyboard sheet and confirms.
-    Future<void> type(WidgetTester tester, String text) async {
-      for (var i = 0; i < 40; i++) {
-        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
-      }
-      for (final ch in text.split('')) {
-        await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: ch);
-      }
-      await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.pumpAndSettle();
-    }
-
     testWidgets('search filters by a case-insensitive substring', (
       tester,
     ) async {
@@ -598,4 +828,35 @@ void main() {
       expect(find.byKey(const Key('library_page')), findsNothing);
     });
   });
+}
+
+/// A port reporting one drive, as the storage service would.
+class _OneDrive implements RemovableVolumes {
+  _OneDrive(this.drive);
+
+  final RemovableVolume drive;
+
+  @override
+  List<RemovableVolume> get current => [drive];
+
+  @override
+  Stream<List<RemovableVolume>> get volumes => const Stream.empty();
+
+  @override
+  Future<VolumeSpace?> space(StorageDestination destination) async => null;
+
+  @override
+  Future<T> withWriteLease<T>(
+    StorageDestination target,
+    String purpose,
+    Future<T> Function(String mountPoint) body,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<String> copyFile(
+    String sourcePath,
+    StorageDestination destination,
+    String relativePath, {
+    required ConflictPolicy onConflict,
+  }) => throw UnimplementedError();
 }

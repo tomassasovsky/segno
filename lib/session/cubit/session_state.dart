@@ -73,6 +73,7 @@ class SessionState extends Equatable {
     this.outcome,
     this.error,
     this.errorMessage,
+    this.failedSessionId,
     this.currentSessionId,
     this.currentSessionName,
     this.sessions = const [],
@@ -90,6 +91,10 @@ class SessionState extends Equatable {
 
   /// The raw failure message, for diagnostics / the unknown-error fallback.
   final String? errorMessage;
+
+  /// The session a failed action addressed (an Open's target), or null when
+  /// the failure concerns no one session. A per-action result, like [error].
+  final SessionId? failedSessionId;
 
   /// The bundle id of the session currently open (the document model), or
   /// `null` when none is loaded. A runtime pointer — never persisted. The id
@@ -109,17 +114,18 @@ class SessionState extends Equatable {
 
   /// Returns a copy for the next emit.
   ///
-  /// The **result** fields ([outcome] / [error] / [errorMessage]) are
-  /// per-transition: they default to `null` (cleared) unless passed, so a fresh
-  /// status never carries a stale result. The **durable** fields
-  /// ([currentSessionId] / [currentSessionName] / [sessions]) are preserved
-  /// unless overridden; [clearCurrentSession] sets the open-session pointer
-  /// (id and name) back to `null`.
+  /// The **result** fields ([outcome] / [error] / [errorMessage] /
+  /// [failedSessionId]) are per-transition: they default to `null` (cleared)
+  /// unless passed, so a fresh status never carries a stale result. The
+  /// **durable** fields ([currentSessionId] / [currentSessionName] /
+  /// [sessions]) are preserved unless overridden; [clearCurrentSession] sets
+  /// the open-session pointer (id and name) back to `null`.
   SessionState copyWith({
     SessionStatus? status,
     SessionOutcome? outcome,
     SessionError? error,
     String? errorMessage,
+    SessionId? failedSessionId,
     SessionId? currentSessionId,
     String? currentSessionName,
     bool clearCurrentSession = false,
@@ -130,6 +136,7 @@ class SessionState extends Equatable {
     outcome: outcome,
     error: error,
     errorMessage: errorMessage,
+    failedSessionId: failedSessionId,
     currentSessionId: clearCurrentSession
         ? null
         : (currentSessionId ?? this.currentSessionId),
@@ -146,6 +153,7 @@ class SessionState extends Equatable {
     outcome,
     error,
     errorMessage,
+    failedSessionId,
     currentSessionId,
     currentSessionName,
     sessions,

@@ -10,8 +10,16 @@ import 'package:equatable/equatable.dart';
 /// Until that package lands, the model types live here with the service's
 /// field names. When it lands, this file imports them from there and these
 /// declarations go: one commit, no behaviour change.
+///
+/// #1177's plan names the sealed families' members only as factories
+/// (`StorageDestination.internal()`, `StorageFailure.full()`, ...). The
+/// subclass names here (`InternalDestination`, `StorageFull`, ...) are this
+/// file's own; callers use the factories, so a rename at the swap touches
+/// only this file.
 abstract interface class RemovableVolumes {
-  /// The mounted, readable drives; empty when none. Emits on every change.
+  /// Every drive the storage service reports, in any state (mounted,
+  /// read-only, unsupported, failed, ejecting, ejected); empty when none.
+  /// Emits on every change. Readers filter with [RemovableVolume.readable].
   Stream<List<RemovableVolume>> get volumes;
 
   /// The drives as of now.
@@ -295,6 +303,11 @@ final class StorageIo extends StorageFailure {
 /// storage service stands behind the port. No drive is ever reported and
 /// every removable operation is refused as unsupported, so the Library shows
 /// "Connect a USB drive" and never a fake drive.
+///
+/// It refuses the internal destination too, deliberately: the Library writes
+/// Internal through its own repositories, which own the internal roots, and
+/// nothing routes an internal write through the port. A port that accepted
+/// one would need a root this class does not have.
 class InternalOnlyVolumes implements RemovableVolumes {
   /// Creates an [InternalOnlyVolumes].
   const InternalOnlyVolumes();

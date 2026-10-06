@@ -116,6 +116,16 @@ class LibraryState extends Equatable {
   /// Whether a drive is mounted and readable.
   bool get hasReadableVolume => volumes.any((v) => v.readable);
 
+  /// A drive that is plugged in but cannot be read (an unsupported
+  /// filesystem or a failed mount), or null.
+  RemovableVolume? get unusableVolume => volumes
+      .where(
+        (v) =>
+            v.status == RemovableVolumeStatus.unsupported ||
+            v.status == RemovableVolumeStatus.mountFailed,
+      )
+      .firstOrNull;
+
   /// The rows of [all] that pass the folder chip and the search (a
   /// case-insensitive substring of the name), in catalog order.
   List<SessionSummary> filter(List<SessionSummary> all) {

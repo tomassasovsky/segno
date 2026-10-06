@@ -3,12 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:looper_repository/looper_repository.dart' show kMaxTracks;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_preview_card.dart';
-import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -28,6 +29,9 @@ class LibrarySessionsTab extends StatelessWidget {
     final readable = context.select<LibraryCubit, bool>(
       (c) => c.state.hasReadableVolume,
     );
+    final unusable = context.select<LibraryCubit, RemovableVolume?>(
+      (c) => c.state.unusableVolume,
+    );
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -38,6 +42,9 @@ class LibrarySessionsTab extends StatelessWidget {
             // Backups on a drive are listed in Part 8; until then a mounted
             // drive shows an empty list rather than a fake one.
             LibraryLocation.usb when readable => const SizedBox.shrink(),
+            LibraryLocation.usb when unusable != null => LibraryUnusableUsb(
+              volume: unusable,
+            ),
             LibraryLocation.usb => const LibraryConnectUsb(),
           },
         ),
@@ -115,7 +122,8 @@ class LibrarySearchBox extends StatelessWidget {
   /// What the box shows: the query, or the placeholder.
   final String text;
 
-  /// Whether [text] is the placeholder, drawn quieter than a query.
+  /// Whether [text] is the placeholder. It is drawn like a query, as the
+  /// pen draws it, and announced as the field's name only.
   final bool placeholder;
 
   /// The field's accessible name.
@@ -156,9 +164,7 @@ class LibrarySearchBox extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: placeholder
-                          ? surface.textSecondary
-                          : surface.textPrimary,
+                      color: surface.textPrimary,
                       fontSize: 22,
                       height: 1,
                     ),
@@ -443,8 +449,7 @@ class LibraryTrackStrip extends StatelessWidget {
   /// The channels (0-based) holding audio.
   final List<int> channels;
 
-  static const int _slots =
-      TracksState.tracksPerBank * TracksState.bankCountMax;
+  static const int _slots = kMaxTracks;
 
   @override
   Widget build(BuildContext context) {
@@ -483,12 +488,13 @@ class LibraryTrackStrip extends StatelessWidget {
 }
 
 /// The pen's saved-date label: `today 14:02`, `yesterday`, then `7 Sep`;
-/// empty when the date is unknown.
-String savedDateLabel(BuildContext context, DateTime? at) {
+/// empty when the date is unknown. [now] is the clock (the wall clock when
+/// omitted).
+String savedDateLabel(BuildContext context, DateTime? at, {DateTime? now}) {
   if (at == null) return '';
   final l10n = context.l10n;
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
+  final clock = now ?? DateTime.now();
+  final today = DateTime(clock.year, clock.month, clock.day);
   final day = DateTime(at.year, at.month, at.day);
   if (day == today) {
     final hh = at.hour.toString().padLeft(2, '0');
@@ -533,6 +539,53 @@ class LibraryConnectUsb extends StatelessWidget {
           const SizedBox(height: 20),
           AppText(
             l10n.libraryConnectUsbBody,
+            style: TextStyle(
+              color: surface.textSecondary,
+              fontSize: 23,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The USB location with a drive that is there but cannot be read: an
+/// unsupported filesystem or a failed mount (#1177's states), worded as the
+/// storage service words it.
+class LibraryUnusableUsb extends StatelessWidget {
+  /// Creates the notice for [volume].
+  const LibraryUnusableUsb({required this.volume, super.key});
+
+  /// The drive that cannot be read.
+  final RemovableVolume volume;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    return Padding(
+      key: const Key('library_unusable_usb'),
+      padding: const EdgeInsets.only(top: 92),
+      child: Column(
+        children: [
+          Icon(LucideIcons.usb, size: 68, color: surface.textSecondary),
+          const SizedBox(height: 20),
+          AppText(
+            l10n.libraryUsbUnusable,
+            style: TextStyle(
+              color: surface.textPrimary,
+              fontSize: 32,
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 20),
+          AppText(
+            volume.status == RemovableVolumeStatus.unsupported
+                ? l10n.libraryUsbUnsupported(volume.fsType)
+                : l10n.libraryUsbMountFailed,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: surface.textSecondary,
               fontSize: 23,

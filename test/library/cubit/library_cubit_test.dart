@@ -315,6 +315,36 @@ void main() {
       );
     });
 
+    test('an unsupported or failed drive is the unusable one', () {
+      RemovableVolume drive(RemovableVolumeStatus status) => RemovableVolume(
+        generation: 3,
+        fingerprint: 'h',
+        label: 'Y',
+        fsType: 'hfsplus',
+        sizeBytes: 1,
+        status: status,
+      );
+      expect(const LibraryState().unusableVolume, isNull);
+      expect(
+        LibraryState(
+          volumes: [drive(RemovableVolumeStatus.unsupported)],
+        ).unusableVolume?.status,
+        RemovableVolumeStatus.unsupported,
+      );
+      expect(
+        LibraryState(
+          volumes: [drive(RemovableVolumeStatus.mountFailed)],
+        ).unusableVolume?.status,
+        RemovableVolumeStatus.mountFailed,
+      );
+      expect(
+        LibraryState(
+          volumes: [drive(RemovableVolumeStatus.ejecting)],
+        ).unusableVolume,
+        isNull,
+      );
+    });
+
     test('an ejected drive is not readable; a mounted one is', () {
       expect(const LibraryState().hasReadableVolume, isFalse);
       expect(

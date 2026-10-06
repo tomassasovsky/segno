@@ -3074,6 +3074,23 @@
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."
     },
+    "libraryUsbUnusable": "This USB drive can't be used",
+    "@libraryUsbUnusable": {
+        "description": "USB location with a drive that is plugged in but cannot be read."
+    },
+    "libraryUsbUnsupported": "{fsType} isn't supported. Format the drive as exFAT.",
+    "@libraryUsbUnsupported": {
+        "description": "Why a plugged-in drive cannot be read: its filesystem (the storage service copy, #1177).",
+        "placeholders": {
+            "fsType": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryUsbMountFailed": "It could not be opened. Unplug it and connect it again.",
+    "@libraryUsbMountFailed": {
+        "description": "Why a plugged-in drive cannot be read: its mount failed."
+    },
     "libraryTitle": "Library",
     "@libraryTitle": {
         "description": "Title of the full-screen Library page."

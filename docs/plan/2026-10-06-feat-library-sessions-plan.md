@@ -149,10 +149,19 @@ a design change; this plan does not edit the pen):
      `Search sessions`, since the console has no keys.
    - The empty catalog, a search with no match, nothing selected, a session
      without audio and an unreadable session each get one line of copy that
-     the pen does not draw.
+     the pen does not draw. A selection the search or a chip hides reads as
+     nothing selected.
+   - A refused Open shows a failure banner above the lanes of the session
+     that refused, and only there: the sample-rate and newer-version texts,
+     or the generic session error with its reason (the pen draws none).
    - The USB location without a drive uses 18/06's notice with
      "Your internal sessions are still available." and Lucide's `usb`
-     glyph, and the preview card keeps the internal selection.
+     glyph, and the preview card keeps the internal selection. A drive that
+     is plugged in but unreadable gets "This USB drive can't be used" with
+     #1177's reason ("`HFS+` isn't supported. Format the drive as exFAT.",
+     or a failed mount).
+   - `New loop` is drawn disabled until Part 5 builds it; the pen draws it
+     enabled.
    - The preview card sits at x 765 but is 1027 wide: the pen's 1028 runs
      one pixel past its own 1792 layout.
    - Saved dates read `7 Sep` (the English locale data), not the pen's `7 Sept`.
