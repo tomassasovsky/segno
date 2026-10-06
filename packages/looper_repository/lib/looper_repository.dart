@@ -16,6 +16,8 @@ export 'package:segno_engine/segno_engine.dart'
         EngineResult,
         FadeImage,
         GridDivision,
+        HistoryEntry,
+        HistoryKind,
         InputConditioningParam,
         LaneCacheState,
         LooperMode,

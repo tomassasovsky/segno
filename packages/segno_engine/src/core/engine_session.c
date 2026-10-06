@@ -217,7 +217,7 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  /* The slot index IS the ordinal (le_engine_finalize_layers rebuilds the
+  /* The slot index IS the ordinal (le_engine_finalize_history rebuilds the
    * stacks on the same numbering), so it must fit the pool (R1 cap). */
   if (ordinal < 0 || ordinal >= LE_POOL_SLOTS) return LE_ERR_INVALID;
   if (frames <= 0 || frames > engine->max_loop_frames) return LE_ERR_INVALID;
@@ -261,16 +261,40 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
   return LE_OK;
 }
 
-int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
-                                  int32_t undo_count, int32_t redo_count) {
+int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
+                                   const int32_t* kinds,
+                                   const int32_t* skipped, int32_t count,
+                                   int32_t undo_count) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  if (undo_count < 0 || redo_count < 0) return LE_ERR_INVALID;
-  const int32_t total = undo_count + 1 + redo_count;
-  if (total > LE_POOL_SLOTS) return LE_ERR_INVALID; /* R1 cap */
+  if (count < 0 || undo_count < 0 || undo_count > count) return LE_ERR_INVALID;
+  if (count > 0 && (kinds == NULL || skipped == NULL)) return LE_ERR_INVALID;
+  const int32_t redo_count = count - undo_count;
+  if (undo_count >= LE_POOL_SLOTS || redo_count > LE_POOL_SLOTS) {
+    return LE_ERR_INVALID; /* the stacks' capacity */
+  }
+  /* Strict (#1164): every entry must be one the live engine can hold where it
+   * sits. A PEEL on the redo side is a marker without an image; everywhere
+   * else every entry names one image. A CLEAR restore point is only ever
+   * captured on the redo side (on the undo side it empties the track), and its
+   * redo needs no payload: it re-clears from the live state (le_clear_track). */
+  int32_t images = undo_count + 1;
+  for (int32_t i = 0; i < count; ++i) {
+    const int32_t kind = kinds[i];
+    const int redo = i >= undo_count;
+    if (kind != LE_HIST_LAYER && kind != LE_HIST_CLEAR &&
+        kind != LE_HIST_PEEL && kind != LE_HIST_PROCESSED) {
+      return LE_ERR_INVALID;
+    }
+    if (skipped[i] < 0) return LE_ERR_INVALID;
+    if (kind != LE_HIST_PEEL && skipped[i] != 0) return LE_ERR_INVALID;
+    if (kind == LE_HIST_CLEAR && !redo) return LE_ERR_INVALID;
+    if (redo && kind != LE_HIST_PEEL) ++images;
+  }
+  if (images > LE_POOL_SLOTS) return LE_ERR_INVALID; /* R1 cap */
   /* A queued shrink still owns its old buffers until the callback finishes
    * the complete block. EMPTY alone cannot release that lifetime. */
   if (engine->lane_growth_command > atomic_load_explicit(
@@ -284,12 +308,12 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
   const int32_t lanes = le_lanes_active(t);
   const int32_t len = load_i32(&t->lanes[0].a_len);
   if (len <= 0) return LE_ERR_INVALID;
-  /* Every active lane must hold the full layer set at the same length (the
+  /* Every active lane must hold every image ordinal at the same length (the
    * stacks are shared in lockstep) — reject a torn/partial reconstruction
    * rather than publish it. */
   for (int32_t l = 0; l < lanes; ++l) {
     if (load_i32(&t->lanes[l].a_len) != len) return LE_ERR_INVALID;
-    for (int32_t s = 0; s < total; ++s) {
+    for (int32_t s = 0; s < images; ++s) {
       /* Every restored slot must be allocated AND large enough to hold the loop
        * length: a mismatched-length stage (differing frames per ordinal) could
        * leave a slot shorter than `len`, which playback/export would then read
@@ -299,13 +323,20 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
     }
   }
   if (!le_import_fade_room(engine)) return LE_ERR_NOT_READY;
-  /* Slot index == ordinal: undo layers occupy [0, undo_count), the live buffer
-   * sits at undo_count, and the redo layers occupy the top slots newest-last
-   * (mirror of le_layer_slot_for_ordinal). */
-  for (int32_t i = 0; i < undo_count; ++i) t->undo_stack[i] = le_hist_layer(i);
+  /* Slot index == image ordinal: the undo entries occupy [0, undo_count), the
+   * live buffer sits at undo_count, and the redo images follow top-down
+   * (mirror of le_layer_slot_for_ordinal); a redo marker names slot -1. */
+  int32_t image = 0;
+  for (int32_t i = 0; i < undo_count; ++i) {
+    t->undo_stack[i] = le_hist_kind_entry(kinds[i], image++, skipped[i]);
+  }
   t->undo_count = undo_count;
-  for (int32_t k = 0; k < redo_count; ++k) {
-    t->redo_stack[k] = le_hist_layer(undo_count + redo_count - k);
+  const int32_t live = image++;
+  for (int32_t j = 0; j < redo_count; ++j) {
+    const int32_t i = undo_count + j;
+    const int32_t slot = kinds[i] == LE_HIST_PEEL ? -1 : image++;
+    t->redo_stack[redo_count - 1 - j] =
+        le_hist_kind_entry(kinds[i], slot, skipped[i]);
   }
   t->redo_count = redo_count;
   t->empty_len = 0;
@@ -317,9 +348,9 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
    * Image 0 (#1143): imported PCM has no staged copy in a running capture, so
    * a stem that reaches it fails truthfully (323/0) rather than guessing. */
   le_forget_slot_images(engine, channel);
-  le_publish_live_image(engine, t, undo_count, 0);
+  le_publish_live_image(engine, t, live, 0);
   store_i32(&t->a_undo_depth, undo_count);
-  store_i32(&t->a_peel_depth, undo_count); /* every rebuilt entry is a LAYER */
+  store_i32(&t->a_peel_depth, le_peel_depth(t));
   store_i32(&t->a_redo_depth, redo_count);
   (void)le_push(engine, LE_CMD_RESET_FADE, channel, 0);
   return LE_OK;

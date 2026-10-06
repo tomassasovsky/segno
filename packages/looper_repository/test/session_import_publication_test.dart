@@ -26,8 +26,12 @@ class _ImportEngine extends PumpedNativeEngine {
   int? refusedFadeChannel;
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
-    final result = super.finalizeLayers(channel, undoCount, redoCount);
+  EngineResult finalizeHistory(
+    int channel,
+    List<HistoryEntry> history,
+    int undoCount,
+  ) {
+    final result = super.finalizeHistory(channel, history, undoCount);
     if (result.isOk) finalized = true;
     return result;
   }

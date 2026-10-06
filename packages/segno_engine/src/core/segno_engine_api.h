@@ -3122,44 +3122,52 @@ LE_EXPORT int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel
                                               int32_t frames);
 
 /* ---- overdub-layer (undo/redo) persistence ---- *
- * A track's full history is the ordered set of pool buffers per lane:
- * undo_stack[0..undo_depth) (oldest first) then the live buffer then the redo
- * stack. le_engine_export_layer reads them by a linear `ordinal`, and
- * le_engine_import_layer + le_engine_finalize_layers rebuild them. The stacks
- * are track-owned and shared across lanes in lockstep, so every lane carries
- * the same layer count at the same ordinals. */
+ * A track's full history is its list of entries (le_engine_export_history)
+ * plus the ordered set of pool buffers per lane they name:
+ * undo_stack[0..undo_depth) (oldest first), then the live buffer, then the
+ * redo stack read top-down. le_engine_export_layer reads the buffers by a
+ * linear image `ordinal`, and le_engine_import_layer + le_engine_finalize_history
+ * rebuild them with their kinds. The stacks are track-owned and shared across
+ * lanes in lockstep, so every lane carries the same image count at the same
+ * ordinals. */
 
-/* Copies up to `max_frames` frames of track `channel`'s lane `lane` layer at
+/* Copies up to `max_frames` frames of track `channel`'s lane `lane` image at
  * `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_depth)` are the
- * undo snapshots, `undo_depth` is the live buffer, and the next `redo_depth`
- * are the redo snapshots. Returns the frames written (the loop length, clamped
- * to `max_frames`), 0 for an empty layer, or LE_ERR_INVALID for an out-of-range
- * channel/lane/ordinal or non-positive `max_frames`. Control thread; call when
- * the track is not capturing. */
+ * undo snapshots, `undo_depth` is the live buffer, and the redo snapshots
+ * follow, newest-adjacent first; a redo-side peel marker holds no image and
+ * takes no ordinal (le_engine_export_history). Returns the frames written (the
+ * loop length, clamped to `max_frames`), 0 for an empty layer, or
+ * LE_ERR_INVALID for an out-of-range channel/lane/ordinal or non-positive
+ * `max_frames`. Control thread; call when the track is not capturing. */
 LE_EXPORT int32_t le_engine_export_layer(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t ordinal,
                                          float* out, int32_t max_frames);
 
-/* Loads `frames` mono frames into track `channel`'s lane `lane` at layer
+/* Loads `frames` mono frames into track `channel`'s lane `lane` at image
  * `ordinal` (which becomes the pool slot index), staging a reconstruction into
  * an EMPTY track. Call once per (lane, ordinal) — ordinals contiguous from 0 —
- * then le_engine_finalize_layers, then le_engine_commit_session. Importing a
+ * then le_engine_finalize_history, then le_engine_commit_session. Importing a
  * lane >= the active count activates it. Returns LE_OK, or LE_ERR_INVALID for a
  * non-EMPTY track, an `ordinal` past the pool cap, or an oversized `frames`. */
 LE_EXPORT int32_t le_engine_import_layer(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t ordinal,
                                          const float* pcm, int32_t frames);
 
-/* Publishes a track reconstructed by le_engine_import_layer: rebuilds the
- * undo/redo stacks (slot index == ordinal), points a_live at the live buffer
- * (slot `undo_count`), and republishes the undo/redo depths — every active lane
- * in lockstep. `undo_count + 1 + redo_count` layers must already be staged on
- * every active lane at the same loop length. Returns LE_OK, or LE_ERR_INVALID
- * for a non-EMPTY track, a layer count past LE_POOL_SLOTS, or a torn/partial
- * reconstruction (a missing slot or mismatched lane length). */
-LE_EXPORT int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
-                                            int32_t undo_count,
-                                            int32_t redo_count);
+/* Publishes a track reconstructed by le_engine_import_layer with its history
+ * (#1164): `count` entries in le_engine_export_history order (`kinds[i]`,
+ * `skipped[i]`), the first `undo_count` of them on the undo stack and the rest
+ * on the redo stack top-down. Image-bearing entries take slot == image ordinal,
+ * the live buffer is slot `undo_count`, and a redo-side peel entry becomes a
+ * marker without an image; every active lane is republished in lockstep with
+ * its undo, redo and peel depths. Strict: LE_ERR_INVALID for a non-EMPTY
+ * track, an unknown kind, a negative `skipped` or a nonzero one on a kind other
+ * than peel, a clear restore point on the undo side, more images than
+ * LE_POOL_SLOTS, or a torn reconstruction (an image ordinal not staged on every
+ * active lane, or lanes at different lengths). Returns LE_OK otherwise. */
+LE_EXPORT int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
+                                             const int32_t* kinds,
+                                             const int32_t* skipped,
+                                             int32_t count, int32_t undo_count);
 
 /* Lists track `channel`'s history entries in image-ordinal order (#1164):
  * the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the

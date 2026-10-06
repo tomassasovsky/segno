@@ -5203,13 +5203,14 @@ class SegnoEngineBindings {
         )
       >();
 
-  /// Copies up to `max_frames` frames of track `channel`'s lane `lane` layer at
+  /// Copies up to `max_frames` frames of track `channel`'s lane `lane` image at
   /// `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_depth)` are the
-  /// undo snapshots, `undo_depth` is the live buffer, and the next `redo_depth`
-  /// are the redo snapshots. Returns the frames written (the loop length, clamped
-  /// to `max_frames`), 0 for an empty layer, or LE_ERR_INVALID for an out-of-range
-  /// channel/lane/ordinal or non-positive `max_frames`. Control thread; call when
-  /// the track is not capturing.
+  /// undo snapshots, `undo_depth` is the live buffer, and the redo snapshots
+  /// follow, newest-adjacent first; a redo-side peel marker holds no image and
+  /// takes no ordinal (le_engine_export_history). Returns the frames written (the
+  /// loop length, clamped to `max_frames`), 0 for an empty layer, or
+  /// LE_ERR_INVALID for an out-of-range channel/lane/ordinal or non-positive
+  /// `max_frames`. Control thread; call when the track is not capturing.
   int le_engine_export_layer(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -5253,10 +5254,10 @@ class SegnoEngineBindings {
         )
       >();
 
-  /// Loads `frames` mono frames into track `channel`'s lane `lane` at layer
+  /// Loads `frames` mono frames into track `channel`'s lane `lane` at image
   /// `ordinal` (which becomes the pool slot index), staging a reconstruction into
   /// an EMPTY track. Call once per (lane, ordinal) — ordinals contiguous from 0 —
-  /// then le_engine_finalize_layers, then le_engine_commit_session. Importing a
+  /// then le_engine_finalize_history, then le_engine_commit_session. Importing a
   /// lane >= the active count activates it. Returns LE_OK, or LE_ERR_INVALID for a
   /// non-EMPTY track, an `ordinal` past the pool cap, or an oversized `frames`.
   int le_engine_import_layer(
@@ -5302,40 +5303,59 @@ class SegnoEngineBindings {
         )
       >();
 
-  /// Publishes a track reconstructed by le_engine_import_layer: rebuilds the
-  /// undo/redo stacks (slot index == ordinal), points a_live at the live buffer
-  /// (slot `undo_count`), and republishes the undo/redo depths — every active lane
-  /// in lockstep. `undo_count + 1 + redo_count` layers must already be staged on
-  /// every active lane at the same loop length. Returns LE_OK, or LE_ERR_INVALID
-  /// for a non-EMPTY track, a layer count past LE_POOL_SLOTS, or a torn/partial
-  /// reconstruction (a missing slot or mismatched lane length).
-  int le_engine_finalize_layers(
+  /// Publishes a track reconstructed by le_engine_import_layer with its history
+  /// (#1164): `count` entries in le_engine_export_history order (`kinds[i]`,
+  /// `skipped[i]`), the first `undo_count` of them on the undo stack and the rest
+  /// on the redo stack top-down. Image-bearing entries take slot == image ordinal,
+  /// the live buffer is slot `undo_count`, and a redo-side peel entry becomes a
+  /// marker without an image; every active lane is republished in lockstep with
+  /// its undo, redo and peel depths. Strict: LE_ERR_INVALID for a non-EMPTY
+  /// track, an unknown kind, a negative `skipped` or a nonzero one on a kind other
+  /// than peel, a clear restore point on the undo side, more images than
+  /// LE_POOL_SLOTS, or a torn reconstruction (an image ordinal not staged on every
+  /// active lane, or lanes at different lengths). Returns LE_OK otherwise.
+  int le_engine_finalize_history(
     ffi.Pointer<le_engine> engine,
     int channel,
+    ffi.Pointer<ffi.Int32> kinds,
+    ffi.Pointer<ffi.Int32> skipped,
+    int count,
     int undo_count,
-    int redo_count,
   ) {
-    return _le_engine_finalize_layers(
+    return _le_engine_finalize_history(
       engine,
       channel,
+      kinds,
+      skipped,
+      count,
       undo_count,
-      redo_count,
     );
   }
 
-  late final _le_engine_finalize_layersPtr =
+  late final _le_engine_finalize_historyPtr =
       _lookup<
         ffi.NativeFunction<
           ffi.Int32 Function(
             ffi.Pointer<le_engine>,
             ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
             ffi.Int32,
             ffi.Int32,
           )
         >
-      >('le_engine_finalize_layers');
-  late final _le_engine_finalize_layers = _le_engine_finalize_layersPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+      >('le_engine_finalize_history');
+  late final _le_engine_finalize_history = _le_engine_finalize_historyPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+          int,
+          int,
+        )
+      >();
 
   /// Lists track `channel`'s history entries in image-ordinal order (#1164):
   /// the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the

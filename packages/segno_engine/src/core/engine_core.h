@@ -106,6 +106,31 @@ static inline int32_t le_effective_state(le_track* t) {
   return atomic_load_explicit(&t->a_state, memory_order_acquire);
 }
 
+/* A history entry of `kind` naming `slot`; `skipped` is meaningful for PEEL
+ * only and zero otherwise. Same zero-filling aggregate shape as le_hist_layer.
+ * Shared by the history motions (engine_commands.c) and the Session rebuild
+ * (engine_session.c). */
+static inline le_hist_entry le_hist_kind_entry(int32_t kind, int32_t slot,
+                                               int32_t skipped) {
+  le_hist_entry e = le_hist_layer(slot);
+  e.kind = kind;
+  e.skipped = skipped;
+  return e;
+}
+
+/* How many LAYER entries Peel can still consume (#1164): those above the
+ * highest entry that is neither LAYER nor PEEL (the whole stack when there is
+ * none). */
+static inline int32_t le_peel_depth(const le_track* t) {
+  int32_t depth = 0;
+  for (int i = t->undo_count - 1; i >= 0; --i) {
+    const int32_t kind = t->undo_stack[i].kind;
+    if (kind == LE_HIST_LAYER) ++depth;
+    else if (kind != LE_HIST_PEEL) break;
+  }
+  return depth;
+}
+
 /* Publishes pool slot [slot] as every active lane's live buffer AND bumps the
  * track's content revision in the same motion — the STRUCTURAL half of the
  * a_audio_rev bump-site table (engine_private.h): every control-side history

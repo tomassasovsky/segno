@@ -610,6 +610,12 @@ void main() {
     expect(l0, everyElement(closeTo(0.5, 1e-6)));
     expect(l1, everyElement(closeTo(0.75, 1e-6)));
     expect(l2, everyElement(closeTo(1.0, 1e-6)));
+    final history = engine.exportHistory(0);
+    expect(history, const [
+      HistoryEntry(HistoryKind.layer),
+      HistoryEntry(HistoryKind.layer),
+    ]);
+    expect(HistoryEntry.imageCount(history, undoCount: 1), 3);
 
     // Rebuild the track from the exported layers and commit.
     expect(engine.clear(), EngineResult.ok);
@@ -617,7 +623,7 @@ void main() {
     expect(engine.importLayer(0, 0, 0, l0), EngineResult.ok);
     expect(engine.importLayer(0, 0, 1, l1), EngineResult.ok);
     expect(engine.importLayer(0, 0, 2, l2), EngineResult.ok);
-    expect(engine.finalizeLayers(0, 1, 1), EngineResult.ok);
+    expect(engine.finalizeHistory(0, history, 1), EngineResult.ok);
     expect(engine.commitSession(256, loopBars: 0), EngineResult.ok);
     engine.pump(frames: 0);
 

@@ -384,8 +384,8 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           inputChannel: lane.inputChannel,
           pan: lane.pan,
           balance: lane.balance,
+          history: lane.history,
           undoCount: lane.undoCount,
-          redoCount: lane.redoCount,
         ),
       );
     }

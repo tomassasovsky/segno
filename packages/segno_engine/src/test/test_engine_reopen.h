@@ -711,6 +711,80 @@ static void test_reopen_files_two_complete_passes(void) {
   le_engine_destroy(e);
 }
 
+/* Builds [L0(base), PEEL] with a redo marker on track 0: two passes, two
+ * peels, one undo. Live = base + one pass. */
+static void reopen_peel_history(le_engine* e, float pass) {
+  reopen_overdub_pass(e, pass);
+  reopen_overdub_pass(e, pass);
+  CHECK(le_engine_peel(e, 0) == LE_OK);
+  CHECK(le_engine_peel(e, 0) == LE_OK);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  const le_track* t = &e->tracks[0];
+  CHECK(t->undo_count == 2 && t->undo_stack[0].kind == LE_HIST_LAYER &&
+        t->undo_stack[1].kind == LE_HIST_PEEL);
+  CHECK(t->redo_count == 1 && t->redo_stack[0].kind == LE_HIST_PEEL &&
+        t->redo_stack[0].slot == -1 && t->redo_stack[0].skipped == 1);
+}
+
+/* #1164 Part 2: Peel history is material. A retained track keeps its PEEL
+ * entries and redo markers across a reopen, so Undo restores the peeled layer
+ * and Redo re-peels; a track dropped for a Session commit the device never
+ * applied loses them with its material. */
+static void test_reopen_keeps_peel_history(void) {
+  printf("test_reopen_keeps_peel_history\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  record_base_loop(e, 1.0f);
+  reopen_peel_history(e, 0.5f); /* [L0(1.0), Pa(2.0)], live 1.5, [M] */
+  /* Track 1 is a Session recall of the same history shape whose commit the
+   * device never applied: finalized, still EMPTY with a length. */
+  const float images[3] = {2.0f, 2.5f, 2.25f};
+  for (int32_t o = 0; o < 3; ++o) {
+    float pcm[LOOP_N];
+    for (int i = 0; i < LOOP_N; ++i) pcm[i] = images[o];
+    CHECK(le_engine_import_layer(e, 1, 0, o, pcm, LOOP_N) == LE_OK);
+  }
+  const int32_t kinds[3] = {LE_HIST_LAYER, LE_HIST_PEEL, LE_HIST_PEEL};
+  const int32_t skipped[3] = {0, 0, 1};
+  CHECK(le_engine_finalize_history(e, 1, kinds, skipped, 3, 2) == LE_OK);
+  CHECK(e->tracks[1].undo_count == 2 && e->tracks[1].redo_count == 1 &&
+        e->tracks[1].redo_stack[0].slot == -1);
+  int32_t mask;
+  CHECK(reopen_same_mask(e, &mask) == LE_REOPEN_RETAINED_PARTIAL);
+  CHECK(mask == 0x2);
+
+  const le_track* t = &e->tracks[0];
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].undo_depth == 2 && s.tracks[0].redo_depth == 1);
+  CHECK(s.tracks[0].peel_depth == 1);
+  CHECK(t->undo_count == 2 && t->undo_stack[1].kind == LE_HIST_PEEL);
+  CHECK(t->redo_count == 1 && t->redo_stack[0].kind == LE_HIST_PEEL &&
+        t->redo_stack[0].slot == -1);
+  reopen_check_const(e, 0, 1.5f, LOOP_N);
+  /* Undo after the reopen restores the peeled layer ... */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  reopen_check_const(e, 0, 2.0f, LOOP_N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].peel_depth == 2 && s.tracks[0].redo_depth == 2);
+  /* ... and both markers re-peel in order, down to the original. */
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  reopen_check_const(e, 0, 1.5f, LOOP_N);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  reopen_check_const(e, 0, 1.0f, LOOP_N);
+  CHECK(le_engine_peel(e, 0) == LE_ERR_INVALID);
+
+  /* The dropped track lost its history with its material. */
+  const le_track* t1 = &e->tracks[1];
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY && s.tracks[1].length_frames == 0);
+  CHECK(s.tracks[1].undo_depth == 0 && s.tracks[1].redo_depth == 0 &&
+        s.tracks[1].peel_depth == 0 && s.tracks[1].clear_restore == 0);
+  CHECK(t1->undo_count == 0 && t1->redo_count == 0);
+  CHECK(le_engine_peel(e, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_redo(e, 1) == LE_ERR_INVALID);
+  le_engine_destroy(e);
+}
+
 /* A device with fewer channels keeps the material; a lane routed to an input
  * or output the device lacks records silence and writes nothing (an output
  * buffer sized exactly to the device makes any stray write an ASAN error). */

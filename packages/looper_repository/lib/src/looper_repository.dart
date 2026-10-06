@@ -4337,13 +4337,12 @@ class LooperRepository {
             }
           }
         }
-        // undo/redo depths are track-wide (shared across lanes) — take lane
-        // 0's.
+        // The history is track-wide (shared across lanes) — take lane 0's.
         final primary = track.lanes.first;
-        final finalized = _engine.finalizeLayers(
+        final finalized = _engine.finalizeHistory(
           track.channel,
+          primary.history,
           primary.undoCount,
-          primary.redoCount,
         );
         if (!finalized.isOk) {
           throw StateError(

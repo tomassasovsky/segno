@@ -35,18 +35,33 @@ A track's undo history is not a set of deltas — each overdub pass snapshots th
 full-length buffers. A save persists every one:
 
 ```
-ordinal:   0 .. undoCount-1     undoCount        undoCount+1 .. undoCount+redoCount
+ordinal:   0 .. undoCount-1     undoCount        undoCount+1 ..
 buffer:    undo snapshots       live (playing)   redo snapshots (newest last)
 ```
 
-- `liveIndex == undoCount`; `layers.length == undoCount + 1 + redoCount`.
+- Since schema 12 (#1164) each lane also stores `history`: the track's
+  `undoCount + redoCount` entries in the same order (undo oldest first, then
+  redo newest-adjacent first), each `{ "kind": …, "skipped": n }`. Kinds are
+  `layer` (an overdub pass), `processed` (a loop-close restoration's raw take),
+  `peel` and `clear` (a Clear restore point, redo side only; Redo re-clears).
+  `skipped` is nonzero only on a `peel` entry.
+- A `peel` entry on the undo side holds the image the Peel removed; on the redo
+  side it is a **marker without an image**. So
+  `layers.length == undoCount + 1 + (redo entries that are not peel)`, and
+  `liveIndex == undoCount`.
 - The ordering is the linear timeline oldest→newest, matching the engine's
-  `le_engine_export_layer` walk (`undo_stack[0..) → a_live → redo stack`,
-  newest-adjacent first). On load, `le_engine_import_layer` + `finalizeLayers`
-  rebuild the pool + undo/redo stacks so `undo`/`redo` reproduce every take.
-- The undo/redo depths are **track-wide** (the stacks are shared across lanes in
+  `le_engine_export_history` / `le_engine_export_layer` walk
+  (`undo_stack[0..) → a_live → redo stack`, newest-adjacent first, markers
+  skipped). On load, `le_engine_import_layer` + `le_engine_finalize_history`
+  rebuild the pool and both stacks with their kinds, so Undo, Redo and Peel
+  behave exactly as they did before the save.
+- Decode is strict: the counts must match the entries, every lane of a track
+  must carry the same history, a `clear` may not sit on the undo side, and the
+  layer count must match the history, or the read fails with
+  `SessionCorruptLayers` before any audio is decoded.
+- The history is **track-wide** (the stacks are shared across lanes in
   lockstep), so every lane of a track carries the same layer count.
-- Capacity: a track cannot exceed `LE_POOL_SLOTS` (256) total layers; the engine
+- Capacity: a track cannot exceed `LE_POOL_SLOTS` (256) images; the engine
   rejects an over-cap import.
 
 ## The four FX stages
@@ -131,6 +146,10 @@ string per chain.
           "muted": false,
           "outputMask": 3,
           "inputChannel": 0,
+          "history": [                // v12: one entry per undo/redo step
+            { "kind": "layer", "skipped": 0 },
+            { "kind": "layer", "skipped": 0 }
+          ],
           "undoCount": 1,
           "redoCount": 1,
           "layers": [

@@ -11,6 +11,7 @@ import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/ffi_strings.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
@@ -1204,16 +1205,77 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
+  List<HistoryEntry> exportHistory(int channel) {
     _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_finalize_layers(
+    final empty = calloc<Int32>();
+    try {
+      // A zero-capacity call returns the entry count (or a negative error).
+      final count = _bindings.le_engine_export_history(
         _engine,
         channel,
-        undoCount,
-        redoCount,
-      ),
-    );
+        empty,
+        empty,
+        0,
+      );
+      if (count <= 0) return const [];
+      final kinds = calloc<Int32>(count);
+      final skipped = calloc<Int32>(count);
+      try {
+        final n = _bindings.le_engine_export_history(
+          _engine,
+          channel,
+          kinds,
+          skipped,
+          count,
+        );
+        if (n != count) {
+          throw StateError('history of track $channel changed while read');
+        }
+        return [
+          for (var i = 0; i < count; i++)
+            HistoryEntry(HistoryKind.values[kinds[i]], skipped: skipped[i]),
+        ];
+      } finally {
+        calloc
+          ..free(kinds)
+          ..free(skipped);
+      }
+    } finally {
+      calloc.free(empty);
+    }
+  }
+
+  @override
+  EngineResult finalizeHistory(
+    int channel,
+    List<HistoryEntry> history,
+    int undoCount,
+  ) {
+    _checkAlive();
+    final count = history.length;
+    // One element at least: the allocator refuses a zero-byte request.
+    final kinds = calloc<Int32>(count == 0 ? 1 : count);
+    final skipped = calloc<Int32>(count == 0 ? 1 : count);
+    try {
+      for (var i = 0; i < count; i++) {
+        kinds[i] = history[i].kind.index;
+        skipped[i] = history[i].skipped;
+      }
+      return EngineResult.fromCode(
+        _bindings.le_engine_finalize_history(
+          _engine,
+          channel,
+          kinds,
+          skipped,
+          count,
+          undoCount,
+        ),
+      );
+    } finally {
+      calloc
+        ..free(kinds)
+        ..free(skipped);
+    }
   }
 
   @override

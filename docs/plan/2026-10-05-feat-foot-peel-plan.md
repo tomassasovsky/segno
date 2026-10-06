@@ -322,6 +322,12 @@ Base take `1.0`, three passes adding `0.5` (fixture of `test_per_pass_undo_layer
     schema number (12, or 13 if the Reverse Session part lands first; current-schema
     decode only, AGENTS.md), captured at `session_repository.dart:652-695` and
     replayed at `looper_repository.dart:4360-4411`.
+  - Note (Part 2 build): a Clear restore point sits on the redo side after Clear
+    then Undo. It is persisted as kind `clear` with an image of its own, and its
+    Redo re-clears from the live state, which needs none of the CLEAR payload.
+    A cleared track is EMPTY and never captured, so `finalize_history` refuses
+    a CLEAR on the undo side. The in-memory `SessionRigLane` derives `redoCount`
+    from its history instead of storing it twice.
 - Reopen (#1158): the stacks are material (its table keeps `undo_count`,
   `redo_count`, `a_undo_depth`, `a_redo_depth` for retained tracks). Peel has no
   pending shape: it completes on the control thread and the only cross-thread
