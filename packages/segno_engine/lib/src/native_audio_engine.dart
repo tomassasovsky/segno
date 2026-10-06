@@ -5,6 +5,7 @@ import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/audio_engine.dart';
+import 'package:segno_engine/src/backing.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_library.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
@@ -16,6 +17,7 @@ import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
+import 'package:segno_engine/src/native_audio_decoder.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
@@ -1802,6 +1804,144 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  // ---- backing player (#1200) ----
+
+  /// The native buffer behind [audio], or null when it is not a native
+  /// decode the caller still owns.
+  static Pointer<le_backing_buffer>? _ownedBuffer(DecodedAudio audio) {
+    final payload = audio.payload;
+    if (!audio.isOwned || payload is! NativeDecodedAudioPayload) return null;
+    return payload.buffer;
+  }
+
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) {
+    _checkAlive();
+    final buffer = _ownedBuffer(audio);
+    if (buffer == null) return EngineResult.invalid;
+    final result = EngineResult.fromCode(
+      _bindings.le_engine_backing_load(_engine, buffer, item, play ? 1 : 0),
+    );
+    if (result.isOk) audio.markTransferred();
+    return result;
+  }
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) {
+    _checkAlive();
+    if (audio == null) {
+      return EngineResult.fromCode(
+        _bindings.le_engine_backing_stage_next(_engine, nullptr, item),
+      );
+    }
+    final buffer = _ownedBuffer(audio);
+    if (buffer == null) return EngineResult.invalid;
+    final result = EngineResult.fromCode(
+      _bindings.le_engine_backing_stage_next(_engine, buffer, item),
+    );
+    if (result.isOk) audio.markTransferred();
+    return result;
+  }
+
+  @override
+  EngineResult backingClear() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_backing_clear(_engine));
+  }
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_transport(_engine, op.index),
+    );
+  }
+
+  @override
+  EngineResult backingSeek(int frame) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_seek(_engine, frame),
+    );
+  }
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_end(_engine, mode.index),
+    );
+  }
+
+  @override
+  EngineResult setBackingOutput(int mask) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_output(_engine, mask),
+    );
+  }
+
+  @override
+  EngineResult setBackingLevel(double gain) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_level(_engine, gain),
+    );
+  }
+
+  @override
+  EngineResult setBackingPan(double pan) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_pan(_engine, pan),
+    );
+  }
+
+  @override
+  EngineResult setClickPan(double pan) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_click_pan(_engine, pan),
+    );
+  }
+
+  @override
+  BackingState backingState() {
+    _checkAlive();
+    final out = calloc<le_backing_state>();
+    try {
+      if (!EngineResult.fromCode(
+        _bindings.le_engine_backing_state(_engine, out),
+      ).isOk) {
+        return const BackingState();
+      }
+      final s = out.ref;
+      return BackingState(
+        epoch: s.epoch,
+        item: s.item,
+        nextItem: s.next_item,
+        transport: BackingTransport.fromCode(s.transport),
+        position: s.position,
+        frames: s.frames,
+        endCount: s.end_count,
+        lastEnd: BackingEndEvent.fromCode(s.last_end),
+        endMode: BackingEnd.fromCode(s.end_mode),
+        outputMask: s.mask,
+        level: s.level,
+        pan: s.pan,
+        clickPan: s.click_pan,
+        owned: s.owned,
+        ownedBytes: s.owned_bytes,
+      );
+    } finally {
+      calloc.free(out);
+    }
+  }
+
   @override
   EngineResult setRecordStartSettings({
     required int countInBars,
@@ -2604,7 +2744,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
   /// because the native side treats input/output as interleaved across the
   /// engine's configured channel counts (set in [start]); `input` is
   /// broadcast as a constant across every input channel.
-  void pump({int frames = 512, double input = 0}) {
+  void pump({int frames = 512, double input = 0, Float32List? output}) {
     _checkAlive();
     if (frames < 0) return;
     final inPtr = calloc<Float>(frames == 0 ? 1 : frames * _inputChannels);
@@ -2614,6 +2754,16 @@ class PumpedNativeEngine extends NativeAudioEngine {
         inPtr[i] = input;
       }
       _bindings.le_engine_process(_engine, outPtr, inPtr, frames);
+      // A test that reads what the engine played passes [output]: the block's
+      // interleaved frames, as many as fit.
+      if (output != null) {
+        final n = frames * _outputChannels;
+        output.setRange(
+          0,
+          n < output.length ? n : output.length,
+          outPtr.asTypedList(n == 0 ? 1 : n),
+        );
+      }
     } finally {
       calloc
         ..free(inPtr)
