@@ -67,13 +67,10 @@ class SessionSettingsCoordinator {
   Future<({SessionChains chains, SessionSettings settings})> capture({
     required bool Function() stillOwned,
   }) async {
+    // Every owned family's pending receipt settled inside [runExclusive].
+    // Save writes each durable requested value, also one owed after an
+    // uncertain receipt: storage holds it and a restart or recall replays it.
     if (!stillOwned()) throw StateError('session changed before save');
-    if (!_looper.lengthSettingsSettled) {
-      final result = await _looper.settleLengthSettings();
-      if (!result.isOk || !stillOwned()) {
-        throw StateError('length settings did not settle before session save');
-      }
-    }
     if (!_looper.mixSettingsSettled) {
       final result = await _looper.settleMixSettings();
       if (!result.isOk || !stillOwned()) {

@@ -605,19 +605,25 @@ Decisions taken under the owner rules (2026-10-05):
     during a take. Rule 1.
 26. A refused length or timing write whose rollback succeeded no longer
     blocks power-off (decision 20). A failed rollback still does. Rule 4.
-27. Session capture still waits for a pending length receipt and fails if it
-    does not confirm, as before; the registry's exclusion alone would capture
-    the owed value. Rule 1.
+27. Superseded by decision 30. (Was: Session capture waits for a pending
+    length receipt and fails if it does not confirm.)
 28. A released default record timing without a gate takes the durable
     remembered division, as `setRecordTiming` did, so a released hold does
     not keep the held division. Rule 1.
 29. A write whose checkpoint read fails after the lifetime moved on reports
     superseded, not rejected, for every owner. Rule 3.
+30. One Save rule for every family (owner decision on #1159, after the
+    review of PR #1176). Session Save writes each family's durable requested
+    value. It waits for pending receipts (the registry settles each family
+    before capture), but never refuses because a value is owed after an
+    uncertain receipt: that value is what storage holds and what a restart
+    or Session recall replays, so the file matches the rig's intent. The
+    length-only check in `SessionSettingsCoordinator.capture` is removed.
+    Rules 2 and 4, and the uncertain-receipt rule (decision 1).
 
 Deviations: `RecordTimingSettings` is kept as a thin holder (owner, port,
 projection) instead of being deleted, as `PlaybackSettings` was in 2b: about
-30 test files construct it. The capture-time length settle in
-`SessionSettingsCoordinator` stays (decision 27). Production change:
+30 test files construct it. Production change:
 +1,154 / -1,679, past the 1,000-line split threshold; most additions rewrite
 the two repository transactions and the two holders.
 
