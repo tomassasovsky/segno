@@ -1484,6 +1484,14 @@ void main() {
     });
   });
 
+  group('Bluetooth retirement notice', () {
+    test('is not shown until recorded, then stays shown', () async {
+      expect(await repository.loadBluetoothRetiredNoticeShown(), isFalse);
+      await repository.saveBluetoothRetiredNoticeShown();
+      expect(await repository.loadBluetoothRetiredNoticeShown(), isTrue);
+    });
+  });
+
   group('refresh rate', () {
     test('defaults to 60 Hz when unset', () async {
       expect(await repository.loadRefreshHz(), 60);

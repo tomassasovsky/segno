@@ -36,7 +36,6 @@ IMAGE_INSTALL:append = " \
     ddcutil \
     networkmanager-nmcli \
     networkmanager-wifi \
-    bluez5 \
     "
 # tryboot-cmdline.bbclass edits cmdline.txt inside the .wic (mtools) and regenerates
 # the bmap (bmaptool) — both are native build tools its task needs.
@@ -48,6 +47,12 @@ do_update_tryboot_cmdline[depends] += "mtools-native:do_populate_sysroot bmaptoo
 IMAGE_INSTALL:remove = "psplash psplash-raspberrypi"
 BAD_RECOMMENDATIONS += "psplash psplash-raspberrypi"
 PACKAGE_EXCLUDE += "psplash psplash-raspberrypi"
+# Bluetooth was retired (#1199): no BlueZ, so nothing powers the controller,
+# advertises or reconnects a paired device. Excluded rather than only left out,
+# so a package that hard-depends on it fails the build instead of quietly
+# pulling it back. The pairings an earlier image kept stay on /data/bluetooth,
+# where a fallback to the previous slot finds them again.
+PACKAGE_EXCLUDE += "bluez5"
 # Audio: DIRECT ALSA, no PipeWire/JACK/Pulse. This is a single-app appliance that
 # owns the sound card, so the engine drives ALSA directly (SEGNO_ALSA_ONLY, set by
 # segno-kiosk-launch) for the lowest latency and zero IPC — the textbook mono-app

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -689,9 +690,11 @@ void main() {
       PowerKeySource? powerKeySource,
       Duration waveformWindowOpenDelay = Duration.zero,
       bool settle = true,
+      ConsoleFactsClient consoleFacts = const UnsupportedConsoleFactsClient(),
     }) async {
       await tester.pumpWidget(
         App(
+          consoleFacts: consoleFacts,
           mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
@@ -3637,6 +3640,39 @@ void main() {
 
       // The layout never swaps — Tracks is the only mode.
       expect(find.byType(TracksView), findsOneWidget);
+    });
+
+    testWidgets('an install with paired Bluetooth devices is told once', (
+      tester,
+    ) async {
+      final facts = FakeConsoleFactsClient(
+        latency: Duration.zero,
+        bluetoothPairings: 2,
+      );
+      await pumpApp(tester, NoopWaveformWindowService(), consoleFacts: facts);
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isTrue);
+      expect(await settings.loadBluetoothRetiredNoticeShown(), isTrue);
+
+      // The next start has nothing to say, though the pairings are still
+      // there for a fallback to the previous system.
+      dismissAppToast(AppToastId.bluetoothRetired);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService(), consoleFacts: facts);
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isFalse);
+    });
+
+    testWidgets('an install with no Bluetooth pairings is told nothing', (
+      tester,
+    ) async {
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        consoleFacts: FakeConsoleFactsClient(latency: Duration.zero),
+      );
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isFalse);
+      expect(await settings.loadBluetoothRetiredNoticeShown(), isFalse);
     });
 
     testWidgets('the S key opens the settings page', (tester) async {
