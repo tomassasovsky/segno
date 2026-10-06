@@ -28,6 +28,10 @@ enum SessionOutcome {
   /// A [SessionCubit.open] succeeded.
   loaded,
 
+  /// A [SessionCubit.newLoop] started an empty loop under the next automatic
+  /// name, which is now current.
+  newLoop,
+
   /// A session was renamed.
   renamed,
 

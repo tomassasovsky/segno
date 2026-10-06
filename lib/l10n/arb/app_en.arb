@@ -2668,6 +2668,27 @@
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."
     },
+    "libraryNewLoopStays": "{name} stays in your Library.",
+    "@libraryNewLoopStays": {
+        "description": "The New loop sheet (19/02): the outgoing session, by name, is kept. The name is drawn brighter than the rest of the line.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryNewLoopStaysUnnamed": "Your current loop stays in your Library.",
+    "@libraryNewLoopStaysUnnamed": {
+        "description": "The New loop sheet when the current loop has no name yet: it is saved under the next automatic name if it changed."
+    },
+    "libraryNewLoopKeeps": "Keep your effects, tempo and pedal setup.",
+    "@libraryNewLoopKeeps": {
+        "description": "The New loop sheet: what a new loop keeps from the current one."
+    },
+    "libraryNewLoopStart": "Start new loop",
+    "@libraryNewLoopStart": {
+        "description": "Confirms New loop."
+    },
     "libraryTakeStillRunning": "The take has not finished yet. Nothing was changed; try again when it has.",
     "@libraryTakeStillRunning": {
         "description": "An Open or New loop ended a take in progress and it did not finish in time; nothing was saved, opened or cleared."

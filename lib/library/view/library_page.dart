@@ -8,6 +8,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
+import 'package:segno/library/view/new_loop_sheet.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
@@ -127,6 +128,14 @@ class _LibraryViewState extends State<LibraryView> {
               previous.status != current.status &&
               current.status == SessionStatus.success,
           listener: _reselect,
+        ),
+        // A new loop is played on the stage (19/06), which names it.
+        BlocListener<SessionCubit, SessionState>(
+          listenWhen: (previous, current) =>
+              previous.status != current.status &&
+              current.status == SessionStatus.success &&
+              current.outcome == SessionOutcome.newLoop,
+          listener: (_, _) => _toTracks(),
         ),
       ],
       child: Material(
@@ -273,10 +282,8 @@ class LibraryFailureLine extends StatelessWidget {
 }
 
 /// The title row's actions: the `Internal` / `USB` location segment and
-/// `New loop`.
-///
-/// `New loop` is drawn disabled until it is built (plan Part 5): the one
-/// stand-in the plan allows, because the row's geometry needs it.
+/// `New loop`, which asks first (19/02) and is inert while another session
+/// action runs.
 class LibraryActions extends StatelessWidget {
   /// Creates the Library's title-row actions.
   const LibraryActions({super.key});
@@ -286,6 +293,9 @@ class LibraryActions extends StatelessWidget {
     final l10n = context.l10n;
     final location = context.select<LibraryCubit, LibraryLocation>(
       (c) => c.state.location,
+    );
+    final busy = context.select<SessionCubit, bool>(
+      (c) => c.state.status == SessionStatus.working,
     );
     final cubit = context.read<LibraryCubit>();
     return Row(
@@ -310,13 +320,14 @@ class LibraryActions extends StatelessWidget {
         ),
         const SizedBox(width: 40),
         Opacity(
-          opacity: context.surface.disabledOpacity,
+          // Inert while another session action runs, and drawn so.
+          opacity: busy ? context.surface.disabledOpacity : 1,
           child: LoopOutlinedButton(
             key: const Key('library_new_loop'),
             width: 157,
             tone: LoopButtonTone.accent,
             label: l10n.libraryNewLoop,
-            onTap: null,
+            onTap: busy ? null : () => unawaited(startNewLoop(context)),
           ),
         ),
       ],

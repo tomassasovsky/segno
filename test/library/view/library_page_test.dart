@@ -209,8 +209,8 @@ void main() {
   }
 
   group('the shell', () {
-    testWidgets('draws the title, the Sessions tab, the locations and a '
-        'disabled New loop', (tester) async {
+    testWidgets('draws the title, the Sessions tab, the locations and New '
+        'loop', (tester) async {
       await openLibrary(tester);
 
       expect(find.byKey(const Key('library_page')), findsOneWidget);
@@ -221,7 +221,29 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const Key('library_location_usb')), findsOneWidget);
-      // Drawn for the row's geometry, inert until New loop is built.
+      expect(
+        tester
+            .widget<LoopOutlinedButton>(
+              find.byKey(const Key('library_new_loop')),
+            )
+            .onTap,
+        isNotNull,
+      );
+    });
+
+    testWidgets('New loop is inert while a session action runs', (
+      tester,
+    ) async {
+      await openLibrary(
+        tester,
+        state: SessionState(
+          status: SessionStatus.working,
+          currentSessionId: 's-cur',
+          currentSessionName: 'Evening loop',
+          sessions: _catalog,
+        ),
+      );
+
       expect(
         tester
             .widget<LoopOutlinedButton>(
@@ -1417,6 +1439,153 @@ void main() {
 
       expect(find.text(l10n.librarySaveFailed), findsOneWidget);
       expect(find.byKey(const Key('library_open_refused')), findsNothing);
+    });
+  });
+
+  group('New loop (19/02)', () {
+    Future<void> tapNewLoop(
+      WidgetTester tester, {
+      SessionState? state,
+      Stream<SessionState> states = const Stream.empty(),
+      LooperState looperState = const LooperState(),
+    }) async {
+      when(session.newLoop).thenAnswer((_) async {});
+      await openLibrary(
+        tester,
+        state: state,
+        states: states,
+        looperState: looperState,
+      );
+      await tester.tap(find.byKey(const Key('library_new_loop')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('always asks, naming the session that stays and drawing its '
+        'tracks giving way to empty ones', (tester) async {
+      await tapNewLoop(
+        tester,
+        looperState: LooperState(
+          tracks: [
+            const Track(state: TrackState.stopped, lengthFrames: 48000),
+            for (var c = 1; c < 8; c++)
+              Track(
+                channel: c,
+                state: c == 2 ? TrackState.stopped : TrackState.empty,
+                lengthFrames: c == 2 ? 48000 : 0,
+              ),
+          ],
+        ),
+      );
+
+      expect(find.byKey(const Key('new_loop_sheet')), findsOneWidget);
+      expect(
+        find.text(
+          l10n.libraryNewLoopStays('Evening loop'),
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      expect(find.text(l10n.libraryNewLoopKeeps), findsOneWidget);
+      Finder slot(String strip, int channel, String fill) => find.descendant(
+        of: find.byKey(Key(strip)),
+        matching: find.byKey(Key('library_strip_${channel}_$fill')),
+      );
+      expect(slot('new_loop_before', 0, 'filled'), findsOneWidget);
+      expect(slot('new_loop_before', 1, 'empty'), findsOneWidget);
+      expect(slot('new_loop_before', 2, 'filled'), findsOneWidget);
+      for (var c = 0; c < 8; c++) {
+        expect(slot('new_loop_after', c, 'empty'), findsOneWidget);
+      }
+      verifyNever(session.newLoop);
+    });
+
+    testWidgets('a loop with no name yet is the current loop', (tester) async {
+      await tapNewLoop(
+        tester,
+        state: SessionState(sessions: _catalog),
+      );
+
+      expect(find.text(l10n.libraryNewLoopStaysUnnamed), findsOneWidget);
+    });
+
+    testWidgets('Cancel changes nothing', (tester) async {
+      await tapNewLoop(tester);
+
+      await tester.tap(find.byKey(const Key('new_loop_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('new_loop_sheet')), findsNothing);
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
+      verifyNever(session.newLoop);
+    });
+
+    testWidgets('Start new loop starts it', (tester) async {
+      await tapNewLoop(tester);
+
+      await tester.tap(find.byKey(const Key('new_loop_start')));
+      await tester.pumpAndSettle();
+
+      verify(session.newLoop).called(1);
+    });
+
+    testWidgets('a started new loop is played on the stage (19/06)', (
+      tester,
+    ) async {
+      final states = StreamController<SessionState>.broadcast();
+      addTearDown(states.close);
+      await tapNewLoop(tester, states: states.stream);
+      await tester.tap(find.byKey(const Key('new_loop_start')));
+      await tester.pumpAndSettle();
+
+      states
+        ..add(
+          SessionState(
+            status: SessionStatus.working,
+            currentSessionId: 's-cur',
+            currentSessionName: 'Evening loop',
+            sessions: _catalog,
+          ),
+        )
+        ..add(
+          SessionState(
+            status: SessionStatus.success,
+            outcome: SessionOutcome.newLoop,
+            currentSessionId: 's-new',
+            currentSessionName: 'New loop 2',
+            sessions: _catalog,
+          ),
+        );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library_page')), findsNothing);
+      expect(find.text('stage'), findsOneWidget);
+    });
+
+    testWidgets('an Open stays in the Library', (tester) async {
+      final states = StreamController<SessionState>.broadcast();
+      addTearDown(states.close);
+      await openLibrary(tester, states: states.stream);
+
+      states
+        ..add(
+          SessionState(
+            status: SessionStatus.working,
+            currentSessionId: 's-cur',
+            sessions: _catalog,
+          ),
+        )
+        ..add(
+          SessionState(
+            status: SessionStatus.success,
+            outcome: SessionOutcome.loaded,
+            currentSessionId: 's-gig',
+            currentSessionName: 'Night set',
+            sessions: _catalog,
+          ),
+        );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
     });
   });
 
