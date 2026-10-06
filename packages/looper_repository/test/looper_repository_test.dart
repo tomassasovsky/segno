@@ -1746,6 +1746,9 @@ void main() {
         'recordOffsetFrames',
         'fxAddedLatencyFrames',
         'activeBackend',
+        // Set once per reconnect, cleared by the next deliberate start: it
+        // moves at human pace, like a dropout count, never per callback.
+        'reopen',
       };
 
       final actual = _declaredFinalFields(
@@ -7415,6 +7418,7 @@ void main() {
 
     int startCount() => engine.calls.where((c) => c == 'start').length;
     int stopCount() => engine.calls.where((c) => c == 'stop').length;
+    int reopenCount() => engine.calls.where((c) => c == 'reopen').length;
 
     for (final modeRequest in [false, true]) {
       test('reconnect cancels pending settings and replays confirmed rig '
@@ -7465,7 +7469,8 @@ void main() {
           0: 8,
           for (var i = 1; i < 8; i++) i: 4,
         });
-        expect(startCount(), 2);
+        expect(startCount(), 1);
+        expect(reopenCount(), 1);
         expect(stopCount(), 1);
       });
     }
@@ -7495,12 +7500,22 @@ void main() {
         engine.devices = const [pinned];
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
-        expect(startCount(), 2);
+        expect(startCount(), 1);
+        expect(reopenCount(), 1);
         expect(stopCount(), 1);
         expect(states, isNotEmpty);
         expect(states.every((state) => state.status.isConnected), isTrue);
         final after = states.last;
-        expect(after.status, before.status);
+        // The status is the same device status plus the reconnect's verdict
+        // (the only field a reopen adds): everything else is identical.
+        expect(after.status.reopen?.outcome, ReopenOutcome.retained);
+        expect(
+          after.status.toString().replaceAll(
+            after.status.reopen.toString(),
+            'null',
+          ),
+          before.status.toString(),
+        );
         expect(after.transport, before.transport);
         expect(after.tracks, before.tracks);
         expect(after.mixGeneration, greaterThan(before.mixGeneration));
@@ -7524,19 +7539,20 @@ void main() {
       ticker.add(null);
       await Future<void>.delayed(Duration.zero);
 
-      // Still absent from enumeration → no restart yet.
+      // Still absent from enumeration → no reopen yet.
       engine.devices = const [];
       reconnectTicker.add(null);
       await Future<void>.delayed(Duration.zero);
-      expect(startCount(), 1);
+      expect(reopenCount(), 0);
 
-      // Reappears → stop + restart on the same device.
+      // Reappears → stop + material-preserving reopen on the same device.
       engine.devices = const [pinned];
       reconnectTicker.add(null);
       await Future<void>.delayed(Duration.zero);
 
-      expect(engine.calls, containsAllInOrder(<String>['stop', 'start']));
-      expect(startCount(), 2);
+      expect(engine.calls, containsAllInOrder(<String>['stop', 'reopen']));
+      expect(startCount(), 1);
+      expect(reopenCount(), 1);
       expect(engine.lastConfig?.playbackDeviceId, 'out-1');
     });
 
@@ -7574,9 +7590,9 @@ void main() {
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
 
-        expect(startCount(), 2); // reconnected
-        // The reconnect went through startEngine, so the freshly-started engine
-        // received the remembered rig again — it did not come back at defaults.
+        expect(reopenCount(), 1); // reconnected
+        // The reconnect replayed the remembered rig onto the reopened engine
+        // — it did not come back at defaults.
         expect(
           engine.calls.where((c) => c == 'setMonitorInputEnabled').length,
           greaterThan(monitorReapplyBefore),
@@ -7662,7 +7678,7 @@ void main() {
       engine.devices = const [pinned, captureDevice];
       reconnectTicker.add(null);
       await Future<void>.delayed(Duration.zero);
-      expect(startCount(), 2);
+      expect(reopenCount(), 1);
       expect(engine.lastConfig?.captureDeviceId, 'in-1');
     });
 
@@ -7683,28 +7699,147 @@ void main() {
         // Device present, but the engine refuses to open it.
         engine
           ..devices = const [pinned]
-          ..startResult = EngineResult.device;
+          ..reopenResult = (
+            result: EngineResult.device,
+            outcome: ReopenOutcome.retained,
+            droppedTracks: 0,
+          );
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
         final stopsAfterFirst = stopCount();
-        final startsAfterFirst = startCount();
-        expect(startsAfterFirst, 2); // one failed reopen attempt
+        expect(reopenCount(), 1); // one failed reopen attempt
 
         // Same device list → no further thrash.
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
         expect(stopCount(), stopsAfterFirst);
-        expect(startCount(), startsAfterFirst);
+        expect(reopenCount(), 1);
 
         // The list changes (a re-plug) → retry, and this time it succeeds.
         engine
-          ..startResult = EngineResult.ok
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retained,
+            droppedTracks: 0,
+          )
           ..devices = const [pinned, otherDevice];
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
-        expect(startCount(), startsAfterFirst + 1);
+        expect(reopenCount(), 2);
+        expect(startCount(), 1);
       },
     );
+
+    test(
+      'a refused attempt neither reopens nor consumes the device list; the '
+      'next admissible tick reopens on the same list',
+      () async {
+        engine.nextSnapshot = runningSnapshot(devicePresent: true);
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+
+        engine.nextSnapshot = runningSnapshot(devicePresent: false);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+
+        // The device is back, but a Session boot fence holds the engine: the
+        // attempt is refused outright — no raw stop, no reopen, and the device
+        // list is NOT recorded as tried.
+        repo.blockStartForSessionBoot();
+        engine.devices = const [pinned];
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(reopenCount(), 0);
+        expect(stopCount(), 0);
+        expect(repo.sessionTransport.isRunning, isTrue);
+
+        // The fence lifts. The SAME device list now reopens — the refusal must
+        // not have burned the one attempt this list gets.
+        repo.clearSessionBootStartBlock();
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.calls, containsAllInOrder(<String>['stop', 'reopen']));
+        expect(reopenCount(), 1);
+        expect(stopCount(), 1);
+      },
+    );
+
+    test(
+      'the reconnect verdict rides the status until the next deliberate start',
+      () async {
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 2,
+        );
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+        expect(repo.state.status.reopen, isNull);
+
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 2,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..devices = const [pinned]
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retainedPartial,
+            droppedTracks: 1 << 1,
+          );
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        final verdict = repo.state.status.reopen;
+        expect(
+          verdict,
+          const EngineReopened(
+            outcome: ReopenOutcome.retainedPartial,
+            droppedTracks: 2,
+            previousSampleRate: 48000,
+            sampleRate: 48000,
+          ),
+        );
+        expect(verdict!.droppedChannels, [1]);
+        expect(verdict.keepsMaterial, isTrue);
+        expect(verdict.retainedAll, isFalse);
+
+        // A deliberate start is not a reconnect: the verdict is gone.
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        expect(repo.state.status.reopen, isNull);
+      },
+    );
+
+    test('a reopen the engine refuses leaves no verdict', () async {
+      engine.nextSnapshot = runningSnapshot(devicePresent: true);
+      final repo = buildSupervised()
+        ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      engine.nextSnapshot = runningSnapshot(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      engine
+        ..devices = const [pinned]
+        ..reopenResult = (
+          result: EngineResult.device,
+          outcome: ReopenOutcome.retained,
+          droppedTracks: 0,
+        );
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(reopenCount(), 1);
+      expect(repo.state.status.reopen, isNull);
+    });
 
     test('devices() forwards to the engine enumeration, mapped to domain', () {
       engine.devices = const [pinned];

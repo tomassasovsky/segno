@@ -4,6 +4,8 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart'
+    show EngineReopened, EngineStatus, ReopenOutcome;
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -73,6 +75,88 @@ void main() {
     await pump(tester);
 
     expect(find.byKey(deviceKey), findsNothing);
+  });
+
+  group('material cleared on reconnect (#1140)', () {
+    const materialKey = Key('connectivity_banner_material');
+    const clearedState = AudioSetupState(
+      deviceConnectivity: DeviceConnectivity.restoredCleared,
+      connectivityDeviceName: 'Scarlett 2i2',
+      engineStatus: EngineStatus(
+        reopen: EngineReopened(
+          outcome: ReopenOutcome.clearedRate,
+          droppedTracks: 0,
+          previousSampleRate: 48000,
+          sampleRate: 44100,
+        ),
+      ),
+    );
+
+    testWidgets(
+      'holds a standing banner naming both rates with the Sessions action',
+      (tester) async {
+        whenListen(
+          audioSetup,
+          const Stream<AudioSetupState>.empty(),
+          initialState: clearedState,
+        );
+        await pump(tester);
+
+        expect(find.byKey(materialKey), findsOneWidget);
+        expect(find.byKey(deviceKey), findsNothing);
+        expect(
+          find.text(l10n.deviceRestoredClearedBanner(44100, 48000)),
+          findsOneWidget,
+        );
+        expect(find.text(l10n.sessionManage), findsOneWidget);
+        await tester.pump(const Duration(seconds: 30));
+        expect(find.byKey(materialKey), findsOneWidget);
+        expect(find.byType(Dialog), findsNothing);
+        final s = surface(tester);
+        expect(decorationOf(tester, materialKey).color, s.recTint);
+      },
+    );
+
+    testWidgets('a cap mismatch names the limit, not rates', (tester) async {
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: const AudioSetupState(
+          deviceConnectivity: DeviceConnectivity.restoredCleared,
+          engineStatus: EngineStatus(
+            reopen: EngineReopened(
+              outcome: ReopenOutcome.clearedCap,
+              droppedTracks: 0,
+              previousSampleRate: 48000,
+              sampleRate: 48000,
+            ),
+          ),
+        ),
+      );
+      await pump(tester);
+      expect(find.text(l10n.deviceRestoredClearedCapBanner), findsOneWidget);
+    });
+
+    testWidgets('a partial retention is never a bar', (tester) async {
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: const AudioSetupState(
+          deviceConnectivity: DeviceConnectivity.restoredPartial,
+          engineStatus: EngineStatus(
+            reopen: EngineReopened(
+              outcome: ReopenOutcome.retainedPartial,
+              droppedTracks: 2,
+              previousSampleRate: 48000,
+              sampleRate: 48000,
+            ),
+          ),
+        ),
+      );
+      await pump(tester);
+      expect(find.byKey(materialKey), findsNothing);
+      expect(find.byKey(deviceKey), findsNothing);
+    });
   });
 
   testWidgets(
