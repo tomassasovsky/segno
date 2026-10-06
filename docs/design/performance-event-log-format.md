@@ -299,7 +299,9 @@ lanes. IDs never repeat within a capture; exhaustion marks capture incomplete.
 The manifest is bounded (`LE_LAYER_STAGING_RING_CAPACITY` entries per capture).
 Once it is full the drain drops later retired images instead of writing them,
 reports the count as `"layers_dropped": N` (omitted while zero) and keeps
-capturing master and monitors. In such a capture any stem whose logged retire
+capturing master and monitors. A retired image the callback could not hand to
+the staging ring is reported the same way, as `"layer_overruns": N`. In a
+capture with either count any stem whose logged retire
 (`LAYER_RETIRED`) has no manifest entry fails to render instead of replaying the
 previous image; a restoration without its entry always fails. Without drops, an
 unlisted retire keeps the existing edge tolerance (a retire handled after a
