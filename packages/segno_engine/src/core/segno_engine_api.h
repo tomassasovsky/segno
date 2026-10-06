@@ -3017,19 +3017,6 @@ LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
 LE_EXPORT int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
                                   uint64_t* out_free_bytes);
 
-/* fsync(2) on the directory at `path`, so the entries in it — a file renamed
- * into it, a file created in it — survive a power cut or a pulled drive. A
- * file's own fsync makes its bytes durable but not its name: on ext4 a copy
- * that returned within the commit interval could otherwise come back after a
- * power cut as a part file with no final name (#1177, #1195). Dart has no way
- * to open a directory, so the storage repository asks here.
- *
- * LE_ERR_INVALID on a NULL or empty path; LE_ERR_DEVICE when the path cannot
- * be opened as a directory or the sync fails. LE_OK on Windows without doing
- * anything: NTFS journals its directory entries. Control thread only; it can
- * take as long as the device's flush. */
-LE_EXPORT int32_t le_sync_dir(const char* path);
-
 /* ---- recorded-audio identity and durable publication (#1198) ----
  * Engine-free, like le_volume_space: questions about bytes and paths, safe to
  * call from any thread and from a Dart background isolate with no engine.
@@ -3084,6 +3071,20 @@ LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
  * empty `path`; LE_ERR_DEVICE when the directory cannot be opened or the sync
  * fails. */
 LE_EXPORT int32_t le_fs_sync_dir(const char* path);
+
+/* Renames `from` to `to` (both UTF-8) only if nothing is at `to`, as one
+ * atomic step: renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL)
+ * on macOS, MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows. A copy
+ * publishes its part this way, so a name another writer took meanwhile is
+ * never overwritten and no empty placeholder ever stands at the final name
+ * (#1177, #1195).
+ *
+ * Returns LE_OK with *out_errno = 0; LE_ERR_INVALID for a NULL or empty path
+ * or a NULL `out_errno`; LE_ERR_UNSUPPORTED when this kernel or filesystem
+ * cannot refuse a replacement (the caller then falls back); LE_ERR_DEVICE
+ * with *out_errno set to the OS error otherwise, EEXIST when `to` is taken. */
+LE_EXPORT int32_t le_fs_rename_noreplace(const char* from, const char* to,
+                                         int32_t* out_errno);
 
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's
