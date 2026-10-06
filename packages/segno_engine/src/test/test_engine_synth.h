@@ -565,6 +565,96 @@ static void test_synth_voice_limit(void) {
   CHECK(le_synth_active(&g_syn_a, -1) == 9);
 }
 
+/* A drum pad struck, released and struck again: both hits ring (the first is
+ * not choked), and the first is exactly its solo render. A strike while the
+ * pad is still down replaces the hit, as for any held voice. */
+static void test_synth_drum_restrike_overlaps(void) {
+  printf("test_synth_drum_restrike_overlaps\n");
+  const int32_t n = SYN_SR / 2;
+  float* both = (float*)calloc((size_t)n, sizeof(float));
+  float* first = (float*)calloc((size_t)n, sizeof(float));
+  float* second = (float*)calloc((size_t)n, sizeof(float));
+  const int32_t gap = SYN_SR * 150 / 1000; /* 50 ms held + 100 ms released */
+  le_synth_init(&g_syn_a, SYN_SR, 32, 1);
+  le_synth_set_instrument(&g_syn_a, 0, syn_patch("drums"));
+  le_synth_note_on(&g_syn_a, 0, 38, 38, 127);
+  float* oa[1] = {both};
+  syn_render(&g_syn_a, oa, 1, SYN_SR / 20, 64);
+  le_synth_note_off(&g_syn_a, 38);
+  float* ob[1] = {both + SYN_SR / 20};
+  syn_render(&g_syn_a, ob, 1, gap - SYN_SR / 20, 64);
+  CHECK(le_synth_note_on(&g_syn_a, 0, 38, 38, 127) == 0);
+  CHECK(le_synth_fading(&g_syn_a) == 0); /* nothing choked */
+  CHECK(le_synth_active(&g_syn_a, 0) == 2);
+  float* oc[1] = {both + gap};
+  syn_render(&g_syn_a, oc, 1, n - gap, 64);
+  /* the same two hits rendered separately (same serials: same noise) */
+  le_synth_init(&g_syn_b, SYN_SR, 32, 1);
+  le_synth_set_instrument(&g_syn_b, 0, syn_patch("drums"));
+  le_synth_note_on(&g_syn_b, 0, 1, 38, 127);
+  float* f1[1] = {first};
+  syn_render(&g_syn_b, f1, 1, n, 64);
+  le_synth_init(&g_syn_b, SYN_SR, 32, 1);
+  le_synth_set_instrument(&g_syn_b, 0, syn_patch("drums"));
+  g_syn_b.serial = 1;
+  float* skip[1] = {NULL};
+  syn_render(&g_syn_b, skip, 1, gap, 64);
+  le_synth_note_on(&g_syn_b, 0, 2, 38, 127);
+  float* f2[1] = {second + gap};
+  syn_render(&g_syn_b, f2, 1, n - gap, 64);
+  float worst = 0.0f;
+  for (int32_t i = 0; i < n; ++i) {
+    const float d = fabsf(both[i] - (first[i] + second[i]));
+    if (d > worst) worst = d;
+  }
+  CHECK(worst < 1e-6f);
+  CHECK(syn_peak(first + gap, SYN_SR / 10) > 0.01f); /* still ringing then */
+  /* a strike while the pad is down replaces the held hit */
+  le_synth_init(&g_syn_a, SYN_SR, 32, 1);
+  le_synth_set_instrument(&g_syn_a, 0, syn_patch("drums"));
+  le_synth_note_on(&g_syn_a, 0, 38, 38, 127);
+  le_synth_note_on(&g_syn_a, 0, 38, 38, 127);
+  CHECK(le_synth_active(&g_syn_a, 0) == 1);
+  CHECK(le_synth_fading(&g_syn_a) == 1);
+  free(both);
+  free(first);
+  free(second);
+}
+
+/* More steals than fade slots within 3 ms: the most finished fade is
+ * overwritten, without a fade, and counted. */
+static void test_synth_fade_slot_overflow(void) {
+  printf("test_synth_fade_slot_overflow\n");
+  le_synth_init(&g_syn_a, SYN_SR, 64, 1);
+  le_synth_set_instrument(&g_syn_a, 0, syn_patch("organ"));
+  uint32_t o = 1;
+  for (int i = 0; i < 64; ++i, ++o) le_synth_note_on(&g_syn_a, 0, o, 30 + i % 60, 90);
+  float* none[1] = {NULL};
+  /* A: 32 steals into slots 0..31; nearly finished 140 frames later */
+  for (int i = 0; i < 32; ++i, ++o) le_synth_note_on(&g_syn_a, 0, o, 30 + i, 90);
+  syn_render(&g_syn_a, none, 1, 140, 1);
+  /* B: 32 steals into slots 32..63 */
+  for (int i = 0; i < 32; ++i, ++o) le_synth_note_on(&g_syn_a, 0, o, 40 + i, 90);
+  syn_render(&g_syn_a, none, 1, 10, 1); /* A ends: slots 0..31 free */
+  /* C: 32 fresh steals into slots 0..31; B (32..63) is the most finished */
+  for (int i = 0; i < 32; ++i, ++o) le_synth_note_on(&g_syn_a, 0, o, 50 + i, 90);
+  CHECK(le_synth_fading(&g_syn_a) == 64);
+  CHECK(g_syn_a.stolen_hard == 0);
+  int fresh_before = 0;
+  for (int i = 0; i < LE_SYNTH_FADE_SLOTS; ++i) fresh_before += g_syn_a.fades[i].fade == 1.0f;
+  CHECK(fresh_before == 32);
+  /* one more steal: no free fade slot */
+  le_synth_note_on(&g_syn_a, 0, o, 90, 90);
+  CHECK(g_syn_a.stolen_hard == 1);
+  CHECK(g_syn_a.stolen == 32 * 3 + 1);
+  int fresh = 0, older = 0;
+  for (int i = 0; i < LE_SYNTH_FADE_SLOTS; ++i) {
+    if (g_syn_a.fades[i].fade == 1.0f) fresh++; else older++;
+  }
+  CHECK(fresh == 33 && older == 31); /* one of B was overwritten, not C */
+  for (int i = 0; i < 32; ++i) CHECK(g_syn_a.fades[i].fade == 1.0f);
+}
+
 /* Note 127 puts upper partials past Nyquist (bells' 5.4x is 67.7 kHz): they
  * fall silent instead of aliasing or running their phase away. */
 static void test_synth_top_note_bounded(void) {
@@ -673,6 +763,8 @@ static void run_synth_tests(void) {
   test_synth_cutoff_parameter();
   test_synth_deterministic_and_bounded();
   test_synth_full_pool_burst_fades_all();
+  test_synth_drum_restrike_overlaps();
+  test_synth_fade_slot_overflow();
   test_synth_cut_fades_in_place();
   test_synth_voice_limit();
   test_synth_top_note_bounded();

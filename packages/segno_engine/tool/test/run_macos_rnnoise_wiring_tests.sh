@@ -261,8 +261,13 @@ fi
 # macOS SPM and CocoaPods targets each need a forwarder that resolves.
 echo "== macOS instrument synth wiring =="
 readonly BUILD_TEST_LIB="$PLUGIN/tool/build_test_lib.sh"
+# The two CPU benches link the real engine sources too: a TU missing from one
+# breaks that bench's CI step as soon as an engine*.c file calls into it.
+readonly BENCH_PITCH_TIME="$PLUGIN/src/test/bench/bench_pitch_time.sh"
+readonly BENCH_INSTRUMENTS="$PLUGIN/src/test/bench/bench_instruments.sh"
 for tu in synth_voice.c synth_patch.c; do
-  for list in "$CMAKE" "$NATIVE_TESTS" "$BUILD_TEST_LIB"; do
+  for list in "$CMAKE" "$NATIVE_TESTS" "$BUILD_TEST_LIB" "$BENCH_PITCH_TIME" \
+              "$BENCH_INSTRUMENTS"; do
     if grep -q "core/$tu" "$list"; then
       pass "$(basename "$list") lists core/$tu"
     else
