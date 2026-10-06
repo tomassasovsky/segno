@@ -27,9 +27,11 @@ import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:toastification/toastification.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../../helpers/helpers.dart';
+import 'destination_extra_providers.dart';
 
 /// A mock for the destination harness.
 class MockAudioSetupCubit extends MockCubit<AudioSetupState>
@@ -194,14 +196,19 @@ class DestinationHarness {
             BlocProvider.value(value: tracks),
             BlocProvider.value(value: pedal),
             BlocProvider.value(value: facts),
+            ...extraProviders(),
           ],
-          child: MaterialApp(
-            navigatorKey: segnoNavigatorKey,
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.neon,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: Scaffold(body: home),
+          // The app's own toast overlay, so a page's toasts can be shown
+          // and dismissed here as they are on the console.
+          child: ToastificationWrapper(
+            child: MaterialApp(
+              navigatorKey: segnoNavigatorKey,
+              debugShowCheckedModeBanner: false,
+              theme: AppTheme.neon,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              home: Scaffold(body: home),
+            ),
           ),
         ),
       ),

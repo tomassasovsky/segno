@@ -224,7 +224,6 @@ Future<void> runSegno(
       ),
       sessionRepository: session,
       performanceRepository: performance,
-      exportDirectory: defaultExportDirectory,
       initialAsioDrivers: asioDrivers,
       updates: updates,
       wifi: wifi,

@@ -89,6 +89,16 @@ jobs:
       working_directory: packages/session_repository
       run_bloc_lint: false
       min_coverage: 89
+  # storage_repository (#1177): destinations, leases, eject, capacity and the
+  # part-then-rename copy. It takes VolumeSpace from segno_engine, a Flutter
+  # plugin, so it runs on flutter_package.yml.
+  storage-repository:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    with:
+      flutter_version: "3.47.x"
+      working_directory: packages/storage_repository
+      run_bloc_lint: false
+      min_coverage: 100
   performance-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
     with:

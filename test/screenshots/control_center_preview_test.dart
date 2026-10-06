@@ -991,7 +991,12 @@ void main() {
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_audio_recording.png'),
     );
+  }, skip: !hasFonts);
 
+  testWidgets('audio domain, the loop cap open on the device tab', (
+    tester,
+  ) async {
+    await pumpAudio(tester, AudioTab.device);
     await tester.tap(find.byKey(const Key('audio_max_loop_row')));
     await tester.pumpAndSettle();
     await expectLater(

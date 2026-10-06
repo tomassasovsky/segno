@@ -64,6 +64,10 @@ void main() {
       late FxChainPersistence projection;
       late SessionCubit session;
       late SessionRepository sessions;
+
+      /// The id the catalog gave the session saved as [name].
+      Future<SessionId> idOf(String name) async =>
+          (await sessions.listSessions()).singleWhere((s) => s.name == name).id;
       late PerformanceRepository performance;
       late MixSettingsCoordinator mix;
       late SettingsRepository settings;
@@ -153,7 +157,6 @@ void main() {
             record: record,
             timing: timing,
           ),
-          exportDirectory: () async => directory.path,
         );
         expect(looper.record(), EngineResult.ok);
         engine.pump(frames: 256, input: .5);
@@ -189,7 +192,7 @@ void main() {
           await session.saveAs('Start pair');
           expect(session.state.status, SessionStatus.success);
           var bundle = await sessions.read(
-            await sessions.bundlePath('Start pair'),
+            await sessions.bundlePathOf(await idOf('Start pair')),
           );
           expect(bundle.session.countInBars, 0);
           expect(bundle.session.autoRecord, isTrue);
@@ -201,7 +204,9 @@ void main() {
           );
           await session.save();
           expect(session.state.status, SessionStatus.success);
-          bundle = await sessions.read(await sessions.bundlePath('Start pair'));
+          bundle = await sessions.read(
+            await sessions.bundlePathOf(await idOf('Start pair')),
+          );
           expect(bundle.session.countInBars, 4);
           expect(bundle.session.autoRecord, isFalse);
           expect(engine.snapshot().countInBars, 4);
@@ -234,7 +239,7 @@ void main() {
           await save;
           expect(session.state.status, SessionStatus.success);
           final bundle = await sessions.read(
-            await sessions.bundlePath('Pending pair'),
+            await sessions.bundlePathOf(await idOf('Pending pair')),
           );
           expect(bundle.session.countInBars, 0);
           expect(bundle.session.autoRecord, isTrue);
@@ -254,7 +259,7 @@ void main() {
             (await tempo.recordStartControl.setSoundStart(enabled: true)).isOk,
             isTrue,
           );
-          await session.loadNamed('Two bars');
+          await session.open(await idOf('Two bars'));
           expect(session.state.status, SessionStatus.success);
           expect(
             tempo.recordStartControl.recordStartSnapshot?.settings.countInBars,
@@ -280,7 +285,7 @@ void main() {
           await session.saveAs('Protected');
           expect(session.state.status, SessionStatus.success);
           final manifest = File(
-            '${await sessions.bundlePath('Protected')}/${Session.manifestName}',
+            '${await sessions.bundlePathOf(await idOf('Protected'))}/${Session.manifestName}',
           );
           final before = await manifest.readAsBytes();
           // Both keys were explicitly Off before the attempted Sound edit. The
@@ -300,7 +305,7 @@ void main() {
           expect(session.state.status, SessionStatus.success);
           expect(await manifest.readAsBytes(), before);
           final saved = await sessions.read(
-            await sessions.bundlePath('Protected'),
+            await sessions.bundlePathOf(await idOf('Protected')),
           );
           expect(saved.session.countInBars, 0);
           expect(saved.session.autoRecord, isFalse);
@@ -309,7 +314,7 @@ void main() {
           await session.save();
           expect(session.state.status, SessionStatus.success);
           final bundle = await sessions.read(
-            await sessions.bundlePath('Protected'),
+            await sessions.bundlePathOf(await idOf('Protected')),
           );
           expect(bundle.session.countInBars, 0);
           expect(bundle.session.autoRecord, isFalse);
@@ -336,7 +341,7 @@ void main() {
           await session.saveAs('Owed pair');
           expect(session.state.status, SessionStatus.success);
           final bundle = await sessions.read(
-            await sessions.bundlePath('Owed pair'),
+            await sessions.bundlePathOf(await idOf('Owed pair')),
           );
           expect(bundle.session.countInBars, 4);
           expect(bundle.session.autoRecord, isFalse);
@@ -348,7 +353,7 @@ void main() {
             isTrue,
           );
           expect(engine.snapshot().countInBars, 1);
-          await session.loadNamed('Owed pair');
+          await session.open(await idOf('Owed pair'));
           expect(session.state.status, SessionStatus.success);
           expect(looper.recordStartRecoveryRequired, isFalse);
           expect(looper.recordStartSettingsSettled, isTrue);
@@ -371,7 +376,7 @@ void main() {
             await session.saveAs('Bad');
             expect(session.state.status, SessionStatus.success);
             final manifest = File(
-              '${await sessions.bundlePath('Bad')}/${Session.manifestName}',
+              '${await sessions.bundlePathOf(await idOf('Bad'))}/${Session.manifestName}',
             );
             final json =
                 jsonDecode(await manifest.readAsString())
@@ -380,7 +385,7 @@ void main() {
             await manifest.writeAsString(jsonEncode(json));
             final before = engine.snapshot().tracks.first;
             expect(before.state, TrackState.playing);
-            await session.loadNamed('Bad');
+            await session.open(await idOf('Bad'));
             expect(session.state.status, isNot(SessionStatus.success));
             // The live take is untouched: the decode refused the file.
             final after = engine.snapshot().tracks.first;
