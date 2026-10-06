@@ -33767,6 +33767,10 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_peel.h"
 
 int main(void) {
+  if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
+    test_fade_restore_staging_and_manifest_capacity();
+    return g_failures ? 1 : 0;
+  }
   run_reverse_tests();
   if (getenv("SEGNO_REVERSE_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_reopen_same_rate_retains_material();
