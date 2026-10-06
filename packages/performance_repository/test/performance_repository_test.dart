@@ -196,18 +196,23 @@ void main() {
     expect(await repo.exportsRoot(), '${tempDir.path}/exports');
   });
 
-  group('freeSpaceBytes (#806)', () {
+  group('volumeSpace (#806, #1177)', () {
     // A capture re-checks the volume it is filling. Asking the engine keeps
     // that a syscall; the `df` it replaced was a fork() of the whole app,
     // twelve times a minute, for the length of a take.
-    test('reports what the engine measured', () {
-      engine.freeBytes = 4096;
-      expect(repo.freeSpaceBytes('/data'), 4096);
+    test('reports what the engine measured, total and free', () {
+      engine
+        ..totalBytes = 65536
+        ..freeBytes = 4096;
+      expect(
+        repo.volumeSpace('/data'),
+        const VolumeSpace(totalBytes: 65536, freeBytes: 4096),
+      );
     });
 
     test('passes a platform that cannot answer straight through as null', () {
       engine.freeBytes = null;
-      expect(repo.freeSpaceBytes('/data'), isNull);
+      expect(repo.volumeSpace('/data'), isNull);
     });
   });
 

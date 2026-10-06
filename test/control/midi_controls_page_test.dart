@@ -13,6 +13,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
@@ -316,21 +317,25 @@ void main() {
     final fade = testFadeSettings();
     addTearDown(() => unawaited(fade.close()));
     control = ControlCubit(
-      fadeSettings: fade,
       looper: looper,
-      clickVolumeControl: tempo,
-      clickModeControl: tempo,
-      recordStartControl: tempo,
-      decayControl: playback,
-      oneShotControl: playback,
-      recordLengthControl: record,
-      recordTimingControl: timingOwner,
       pedal: pedal,
       settings: settings,
       performance: performance,
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: looper),
       midiDevices: devices,
+      fadeSettings: fade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: tempo,
+        clickMode: tempo,
+        recordStart: tempo,
+        decay: playback,
+        oneShot: playback,
+        recordLength: record,
+        recordTiming: timingOwner,
+        fade: fade,
+      ),
     );
     final tracks = TracksCubit(settings: settings);
     final midi = MidiSetupCubit(repository: devices);
@@ -825,7 +830,11 @@ void main() {
         control.state.midiMappings.byId('m1')!.controls.single
             as MidiParameterControl;
     expect(repaired.key, const TrackVolumeTarget(2).canonicalString());
-    expect((repaired.low, repaired.high), (1, 0));
+    // A literal 1.0 on a level fader is unity (decision 46).
+    expect(
+      (repaired.low, repaired.high),
+      (const TrackVolumeTarget(2).mappingTop, 0),
+    );
   });
 
   testWidgets('Add chooses an explicit format before Learn begins', (
@@ -973,14 +982,18 @@ void main() {
           bank: scenario.bank,
         ),
       );
+      // A new level mapping tops out at unity gain (0 dB), not +6 dB.
+      const target = TrackVolumeTarget(2);
       expect(
         saved.controls.single,
         MidiParameterControl(
-          key: const TrackVolumeTarget(2).canonicalString(),
+          key: target.canonicalString(),
           low: 0,
-          high: 1,
+          high: target.mappingTop,
         ),
       );
+      final top = (saved.controls.single as MidiParameterControl).high;
+      expect(target.toDomain(top), closeTo(1.0, 1e-9));
       final persisted =
           jsonDecode(
                 (await store.getString('midi.configuration'))!,
@@ -1647,7 +1660,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(high);
     await tester.pumpAndSettle();
-    expect(tester.widget<LoopSlider>(high).value, 1);
+    // The level fader's default top is unity, not +6 dB.
+    final top = const TrackVolumeTarget(0).mappingTop;
+    expect(tester.widget<LoopSlider>(high).value, top);
     expect(
       (control.state.midiMappings.byId('m1')!.controls.single
               as MidiParameterControl)
@@ -1659,7 +1674,63 @@ void main() {
     final saved =
         control.state.midiMappings.byId('m1')!.controls.single
             as MidiParameterControl;
-    expect((saved.low, saved.high), (0, 1));
+    expect((saved.low, saved.high), (0, top));
+  });
+
+  testWidgets('level faders cap the top endpoint at unity, others do not', (
+    tester,
+  ) async {
+    const track = TrackVolumeTarget(0);
+    const lane = LaneVolumeTarget(0, 0);
+    const master = MasterGainTarget();
+    final unity = track.mappingTop;
+    expect(unity, lessThan(1));
+    final mapping = MidiMapping(
+      id: 'm1',
+      source: _source,
+      behavior: MidiBehavior.continuous,
+      controls: [
+        // A stored top between unity and full travel plays as before.
+        MidiParameterControl(
+          key: track.canonicalString(),
+          low: 0,
+          high: 0.95,
+        ),
+        MidiParameterControl(key: lane.canonicalString(), low: 0, high: 0.95),
+        MidiParameterControl(key: master.canonicalString(), low: 0, high: 0.5),
+      ],
+    );
+    await pump(tester, savedMapping: mapping);
+    await tap(tester, 'midi_row_edit_m1');
+    Finder high(ControlValueTarget target) => find.descendant(
+      of: find.byKey(Key('midi_range_high_${target.canonicalString()}')),
+      matching: find.byType(LoopSlider),
+    );
+    final expected = {track: unity, lane: lane.mappingTop, master: 1.0};
+    expect(lane.mappingTop, unity);
+    for (final MapEntry(key: target, value: max) in expected.entries) {
+      await tester.ensureVisible(high(target));
+      await tester.pumpAndSettle();
+      expect(tester.widget<LoopSlider>(high(target)).max, max);
+      final rect = tester.getRect(high(target));
+      // A touch near the right end lands at the max, not past it.
+      await tester.tapAt(Offset(rect.left + rect.width * 0.97, rect.center.dy));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        tester.widget<LoopSlider>(high(target)).value,
+        max < 1 ? max : closeTo(0.97, 0.01),
+      );
+      // Drag well past the right edge: the slider stops at its max.
+      await tester.dragFrom(rect.center, const Offset(2000, 0));
+      await tester.pumpAndSettle();
+      expect(tester.widget<LoopSlider>(high(target)).value, max);
+    }
+    await tap(tester, 'midi_save');
+    final saved = control.state.midiMappings
+        .byId('m1')!
+        .controls
+        .cast<MidiParameterControl>();
+    expect(saved.map((control) => control.high), [unity, unity, 1]);
   });
 
   testWidgets('Escape and focus loss restore unfinished range preview', (

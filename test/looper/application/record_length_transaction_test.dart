@@ -448,7 +448,10 @@ void main() {
         engine.commandsAreSettled = false;
         expect((await hold()).status, RecordLengthStatus.recoveryRequired);
         expect(store.values['tempo.length_preset.0'], 4);
-        expect((await owner.owner.flush()).isOk, isFalse);
+        // Owed, not blocking: storage holds the value the next start replays.
+        final flushed = await owner.owner.flush();
+        expect((flushed.isOk, flushed.deferred), (true, true));
+        expect(owner.owner.ready, isFalse);
         expect(engine.stopCalls, 0);
         engine.commandsAreSettled = true;
         expect((await owner.owner.recover()).isOk, isTrue);
