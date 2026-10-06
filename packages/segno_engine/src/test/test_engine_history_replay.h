@@ -448,22 +448,29 @@ static void test_history_staging_refusal_fails_stem_keeps_undo(void) {
     history_layer_patterns(a, b, c);
     if (!snapshot) { CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e); }
     fade_drain_gate gate = {0};
-    le_perf_drain_set_mid_cycle_hook_for_test(fade_hold_drain, &gate);
     const char* dir = render_test_dir(snapshot ? "history-refusal-snapshot" : "history-refusal-image");
     const char* arm = snapshot ? history_arm_image(e, dir) : HISTORY_ARM_EMPTY;
+    if (snapshot) le_perf_drain_set_mid_cycle_hook_for_test(fade_hold_drain, &gate);
     CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
-    for (int i = 0; i < 5000 && !atomic_load(&gate.entered); ++i) test_sleep_ms(1);
-    CHECK(atomic_load(&gate.entered));
     float input = 0, output[8] = {0};
     int frames = 0;
     if (!snapshot) {
       /* An exact restoration first, so the refusal below replaces a staged
-       * image rather than the arm snapshot. */
+       * image rather than the arm snapshot. The drain is still running here
+       * and consumes (writes and frees) that image; only then is it parked, so
+       * the ring re-initialized below is empty and no staged copy is orphaned. */
       CHECK(le_engine_undo(e, 0) == LE_OK);
       le_engine_process(e, output + frames++, &input, 1);
       for (int i = 0; i < 5000 && atomic_load(&e->perf.layer_staging_ring.head) !=
            atomic_load(&e->perf.layer_staging_ring.tail); ++i) test_sleep_ms(1);
+      CHECK(atomic_load(&e->perf.layer_staging_ring.head) ==
+            atomic_load(&e->perf.layer_staging_ring.tail));
+      le_perf_drain_set_mid_cycle_hook_for_test(fade_hold_drain, &gate);
     }
+    for (int i = 0; i < 5000 && !atomic_load(&gate.entered); ++i) test_sleep_ms(1);
+    CHECK(atomic_load(&gate.entered));
+    /* Consumer parked and the ring empty: a small valid ring proves refusal
+     * without exhausting the manifest. */
     CHECK(le_layer_staging_ring_init(&e->perf.layer_staging_ring,
         e->perf.layer_staging_ring.buffer, 2) == 1);
     le_staged_layer entry = {.channel = 1, .slot = 0, .frame = 0, .frame_count = 1, .lane_count = 1};
