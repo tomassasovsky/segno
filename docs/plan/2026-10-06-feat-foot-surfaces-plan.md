@@ -1234,3 +1234,87 @@ human merge gate stays.
     before it resolved.
 - Not verified: the hardware criterion (enter Custom with MODE Hold; each
   assigned switch acts and the face matches the LEDs).
+
+### Part 5 (branch `claude/foot-surfaces-1229-p5`, `2cb34176d`, on the trunk at `c4b5cf909`)
+
+- Built as planned:
+  - `SettingsRepository` gains the reference (440 Hz, clamped to 420–460)
+    and the input (`-1` for the first available).
+  - `TunerSettings` owns both: one live value, written through, and a failed
+    write restores the previous value and completes false.
+  - `TunerCubit` names readings against the stored reference and follows the
+    stored input. A reading tagged with another input clears in the same
+    emit, and nothing is pushed back on a mismatch (P4 review L1).
+  - The pure foot model (`foot_tuner.dart`) and the stateless actions
+    (`foot_tuner_actions.dart`).
+- **Departures:**
+  - `TunerSettings` is a plain owner with a change stream, not the
+    `SettingsOwner` transaction `FadeSettings` uses. These are appliance
+    preferences with no Session image, controller claims or recovery state.
+  - With no device open, "first available" reads as input 1, as the old
+    default did.
+  - The actions return a `FootTunerRefusal` (`limit`, `saveFailed`,
+    `armFailed`) rather than a bare bool, so Part 6's notices name the cause.
+  - `nextPage` returns the new selection and the input to tune, because the
+    selection lives in `ControlState`.
+- Verification:
+  - App suite: 3482 passed, 56 skipped.
+  - `settings_repository`: 205 passed.
+  - analyze, Bloc lint and format clean.
+  - Mutations: 14 run, all killed.
+
+### Part 6 (branch `claude/foot-surfaces-1229-p6`, `4350826f8`, stacked on Part 5)
+
+- Built as planned:
+  - **Mode:** `InteractionMode.tuner` is added at every exhaustive site.
+  - **Control (`control_foot_tuner.dart`):**
+    - Arming: entry arms muted on the source's page. Control re-arms when
+      the source or the mute changes. Exit, any `setMode` and close disarm.
+    - Pedals: contact actions on the track pedals, Stop and Bank; holds on
+      Undo and Clear.
+    - Settings: `ControlState.tunerPreferences` mirrors `TunerSettings`.
+  - **LEDs:** each switch is lit or dark exactly as the face draws it.
+  - **Face:** `FootTunerView` draws pen 23/x. The face's Settings button
+    opens Settings (`openSegnoSettings`).
+  - **Tray:** `TunerTrayPanel`, its test and `SettingsTrayDestination.tuner`
+    are deleted. The tray's Tuner row now closes the tray and enters the
+    mode.
+  - **Default:** the one-shot `Hold · Tuner` default and its toast (D11).
+  - **Notices:** all three of §3's notices.
+- **Departures:**
+  - **Seeding is opt-in.** Only the app turns on the `Hold · Tuner` seeding
+    (`ControlCubit(seedTunerDefault: true)` from `AppRuntime`).
+    - Every other cubit leaves the setup alone. On by default, it changed the
+      Custom map and the store in about 70 existing tests that are about
+      other things.
+    - The app tests that assert exact store contents preset the flag.
+  - **Seeding order.** The seeding runs after the restore returns, since its
+    `setPedalSetup` waits for the load.
+  - **Fresh-install toast.** A fresh install also gets the toast: on the
+    default MODE pair, "hold MODE, then hold pedal 2" is true for it too.
+  - **Shared title options.** `PerformancePedal` gains Part 3's
+    `titleMuted` and `titleMaxLines`, copied byte for byte so the two parts
+    merge cleanly. Two-line input names wrap as 23/1 draws "Lead vocal /
+    microphone".
+  - **Removed strings.** The tray's tuner strings that nothing reads any
+    more are removed (`tunerCentsAndHz`, `tunerListening`, `tunerNoDevice`).
+  - **Test engine.** The fake engine's `setTunerInput` now clears the mute
+    mask, as the native command does (D12).
+  - **Pending Hold cue.** Part 1's cue is not wired into this face; whichever
+    of #1247 and this part lands second passes `holdPending`.
+- Verification:
+  - App suite: 3506 passed, 56 skipped.
+  - `settings_repository`: 206 passed.
+  - analyze, Bloc lint and format clean.
+  - No `TrayPanel` remains under `lib/tuner` or `test/tuner`.
+  - The #912 port is in the base.
+  - Six goldens are new (`foot_tuner_tune`, `_in_tune`, `_no_signal`,
+    `_monitoring`, `_18_inputs`, `_spanish`). `pedal_setup_picker.png`
+    gains the Tuner choice.
+  - Mutations: 22 run, all killed once four tests were tightened (no retry
+    after a refused arm, the Session-load guard, a cancelled hold, and leaving
+    by `setMode`).
+- Not verified:
+  - The two HARDWARE criteria: tuning on the device with the monitor silent,
+    and callback p99 on the Pi 5.
+  - Line coverage was not measured.
