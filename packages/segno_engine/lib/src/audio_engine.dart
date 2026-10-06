@@ -6,12 +6,14 @@ import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
+import 'package:segno_engine/src/instruments.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
+import 'package:segno_engine/src/synth_catalogue.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
@@ -53,7 +55,15 @@ enum EngineResult {
 
   /// A punch-in on a reversed track: overdub is unavailable while Reverse is
   /// on (`LE_ERR_REVERSED`). Play, Stop, Mute, Fade and history stay available.
-  reversed;
+  reversed,
+
+  /// A note or sustain for an instrument slot with no patch
+  /// (`LE_ERR_NO_INSTRUMENT`).
+  noInstrument,
+
+  /// A patch index this engine build does not define
+  /// (`LE_ERR_UNKNOWN_PATCH`).
+  unknownPatch;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -69,6 +79,8 @@ enum EngineResult {
     -7 => EngineResult.modeMismatch,
     -8 => EngineResult.notReady,
     -9 => EngineResult.reversed,
+    -14 => EngineResult.noInstrument,
+    -15 => EngineResult.unknownPatch,
     _ => EngineResult.invalid,
   };
 
@@ -1525,6 +1537,110 @@ abstract interface class EnginePerformanceCapture {
   /// actually stopped, leaving no partial stem file for whichever track was
   /// in flight.
   EngineResult renderCancel();
+}
+
+/// Instrument slots (#1197): up to [kMaxInstruments] synthesized mono
+/// sources, slot `k` being source `kInstrumentSourceBase + k` wherever a
+/// source is named. Notes and patch changes reach the audio thread in the
+/// order they were posted, and a release can never be crowded out by notes.
+/// Control-thread calls, like every other command.
+abstract interface class InstrumentHost {
+  /// The engine's synthesis catalogue: every patch and every family's
+  /// parameters. A pure read; the same for the life of the build.
+  SynthCatalogue synthCatalogue();
+
+  /// Gives instrument [slot] patch [patch] (an index into [synthCatalogue],
+  /// or `null` for none) with [params] (three 0..100 settings, or `null` for
+  /// the patch's defaults). A changed patch fades the slot's voices out.
+  /// Returns [EngineResult.unknownPatch] for an index the build does not
+  /// define, [EngineResult.capacity] when the event ring is full (nothing
+  /// changed: retry), [EngineResult.notRunning] before the engine is
+  /// configured.
+  EngineResult setInstrument({
+    required int slot,
+    required int? patch,
+    List<double>? params,
+  });
+
+  /// Sets family parameter [param] (`0..2`) of [slot] to [value] (0..100,
+  /// clamped), applied from the next block. [EngineResult.noInstrument] when
+  /// the slot has no patch.
+  EngineResult setInstrumentParam({
+    required int slot,
+    required int param,
+    required double value,
+  });
+
+  /// Limits the sounding voices of all instruments together to [limit]
+  /// (`1..kMaxVoiceLimit`); lowering it fades the excess. 32 after configure.
+  EngineResult setVoiceLimit(int limit);
+
+  /// Fades every voice of [slot] out: its definition was removed.
+  EngineResult resetInstrument(int slot);
+
+  /// Starts [note] (`0..127`) at [velocity] (`1..127`) on [slot] for
+  /// [origin], the caller's identity for the note: [instrumentRelease] with
+  /// the same origin ends it. One origin, one sounding note: a note-on for
+  /// an origin still held on [slot] replaces that voice (a voice held on
+  /// only by sustain rings on); a chord uses [instrumentChordOn].
+  /// [EngineResult.noInstrument] for an empty slot; [EngineResult.capacity]
+  /// when the event ring is full (the note is not played and is counted in
+  /// `InstrumentsSnapshot.eventsRefused`). Control-thread origins never
+  /// collide with MIDI notes.
+  EngineResult instrumentNoteOn({
+    required int slot,
+    required int origin,
+    required int note,
+    required int velocity,
+  });
+
+  /// Starts [notes] (1..`kMaxChordNotes`, each `0..127`) together on [slot]
+  /// for one [origin]: a chord with one identity, ended together by
+  /// [instrumentRelease]. All or nothing: [EngineResult.capacity] when the
+  /// ring cannot take every note (nothing plays).
+  EngineResult instrumentChordOn({
+    required int slot,
+    required int origin,
+    required List<int> notes,
+    required int velocity,
+  });
+
+  /// Releases every voice started for [origin], on every instrument.
+  /// [EngineResult.capacity] only when the release lane is full: the caller
+  /// must retry, never drop a release.
+  EngineResult instrumentRelease(int origin);
+
+  /// Adds ([on]) or removes a sustain contributor [origin] on [slot] (a pedal
+  /// or switch holding sustain). Released notes ring until every contributor,
+  /// these and each MIDI port's CC64, lets go. Removing has the same
+  /// never-drop rule as [instrumentRelease].
+  EngineResult instrumentSustain({
+    required int slot,
+    required int origin,
+    required bool on,
+  });
+
+  /// Publishes which MIDI every slot plays: [routes] has one entry per slot
+  /// (missing entries play no MIDI). The engine switches tables at a block
+  /// boundary; a second publish before the first was picked up returns
+  /// [EngineResult.notReady] (retry on the next snapshot, latest wins).
+  /// [EngineResult.invalid] when a field is out of range or there are more
+  /// than [kMaxInstruments] entries.
+  EngineResult setInstrumentRoutes(List<InstrumentRoute> routes);
+}
+
+/// The engine's MIDI input ports, shared by instrument routing and clock
+/// sync (#1197, #1228): an open capture attached to a port is read by the
+/// audio thread directly, without passing through Dart.
+abstract interface class MidiInputSink {
+  /// Attaches [capture] to engine MIDI input [port]
+  /// (`0..kMaxMidiPorts-1`). A capture attached elsewhere moves; whatever was
+  /// on [port] is detached first, and its notes end.
+  EngineResult attachMidiInput(MidiCaptureHandle capture, {required int port});
+
+  /// Detaches whatever capture is on [port]; its notes end. [EngineResult.ok]
+  /// also when nothing was attached.
+  EngineResult detachMidiInput(int port);
 }
 
 /// The data-layer boundary over the native audio engine, composed from the
