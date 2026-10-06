@@ -4,12 +4,14 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/src/models/session.dart';
 import 'package:session_repository/src/models/session_preview.dart';
 import 'package:session_repository/src/models/session_summary.dart';
 import 'package:session_repository/src/session_exception.dart';
 import 'package:session_repository/src/session_id.dart';
+import 'package:session_repository/src/session_migration.dart';
 import 'package:session_repository/src/session_name.dart';
 import 'package:wav_codec/wav_codec.dart';
 
@@ -19,6 +21,14 @@ import 'package:wav_codec/wav_codec.dart';
 typedef SessionBundle = ({
   Session session,
   Map<(int, int), List<Float32List>> laneStems,
+});
+
+/// A bundle opened for loading: its decoded [SessionBundle] and, when the
+/// manifest was written by an older schema, the in-memory conversion that
+/// [SessionRepository.commitConversion] writes back once the load succeeds.
+typedef OpenedSession = ({
+  SessionBundle bundle,
+  SessionConversion? conversion,
 });
 
 /// The effect-chain data a [SessionRepository.save] persists that the engine
@@ -78,6 +88,7 @@ class SessionSettings {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    int? loopBeats,
     this.recordTiming = RecordTiming.immediately,
     this.overdubDecay = 0,
     this.defaultOneShot = false,
@@ -105,7 +116,7 @@ class SessionSettings {
     this.laneCounts = const {},
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
-  });
+  }) : loopBeats = loopBeats ?? loopBars * tsNum;
 
   SessionSettings._detached(SessionSettings source)
     : tempoBpm = source.tempoBpm,
@@ -115,6 +126,7 @@ class SessionSettings {
       syncTempo = source.syncTempo,
       quantizeDiv = source.quantizeDiv,
       loopBars = source.loopBars,
+      loopBeats = source.loopBeats,
       recordTiming = source.recordTiming,
       overdubDecay = source.overdubDecay,
       defaultOneShot = source.defaultOneShot,
@@ -178,8 +190,12 @@ class SessionSettings {
   /// The musical grid division.
   final GridDivision quantizeDiv;
 
-  /// Saved master-loop grid relationship; zero preserves a grid-free loop.
+  /// Saved master-loop grid relationship; zero preserves a grid-free loop
+  /// or one whose beats do not make whole bars ([loopBeats]).
   final int loopBars;
+
+  /// The same grid in beats (#1168); the bars' beats when not given.
+  final int loopBeats;
 
   /// The default record timing.
   final RecordTiming recordTiming;
@@ -288,11 +304,13 @@ class SessionRepository {
   /// these.
   SessionRepository({
     required AudioEngine engine,
+    required GuardRegistry guards,
     Future<String> Function()? sessionsRoot,
     DateTime Function() now = DateTime.now,
     Duration clearPollInterval = const Duration(milliseconds: 8),
     int clearPollAttempts = 64,
   }) : _engine = engine,
+       _guards = guards,
        _sessionsRoot = sessionsRoot,
        _now = now,
        _clearPollInterval = clearPollInterval,
@@ -303,6 +321,15 @@ class SessionRepository {
   final DateTime Function() _now;
   final Duration _clearPollInterval;
   final int _clearPollAttempts;
+
+  /// The app's one guard table (accepted behaviour 6.12). A save holds a
+  /// `sessionWrite` guard on its bundle while it writes, so a second write
+  /// of the same bundle and a shutdown are refused at their commits, and the
+  /// save itself is refused once a shutdown has begun.
+  final GuardRegistry _guards;
+
+  /// What a refusal names a session write by.
+  static const String writePurpose = 'saving a session';
 
   /// The mixdown filename within a session bundle.
   static const String mixdownName = 'mixdown.wav';
@@ -553,7 +580,10 @@ class SessionRepository {
   /// array (`docs/design/session-bundle-format.md`), and the Library's row
   /// shows the count. Anything else reads as zero.
   static int _fxCountOf(Map<String, dynamic> json) {
-    var count = _chainEntries(json['allTracksChain']);
+    // `masterChain` is the older schemas' spelling of a bus-stage chain.
+    var count =
+        _chainEntries(json['allTracksChain']) +
+        _chainEntries(json['masterChain']);
     for (final key in const [
       'laneChains',
       'monitors',
@@ -609,10 +639,9 @@ class SessionRepository {
     final dir = Directory(path);
     final folder = dir.parent.path == root ? null : _basename(dir.parent.path);
     final summary = _summaryOf(dir, folder: folder);
-    final session = Session.fromJson(
-      jsonDecode(await File('$path/${Session.manifestName}').readAsString())
-          as Map<String, dynamic>,
-    );
+    final session = decodeSessionManifest(
+      await File('$path/${Session.manifestName}').readAsString(),
+    ).session;
     final laneFx = <int, int>{};
     for (final chain in session.laneChains) {
       laneFx[chain.channel] =
@@ -935,10 +964,9 @@ class SessionRepository {
     _requireId(id);
     final path = _locate(await _rootPath(), id);
     if (path == null) throw StateError('no session with id "$id"');
-    final session = Session.fromJson(
-      jsonDecode(await File('$path/${Session.manifestName}').readAsString())
-          as Map<String, dynamic>,
-    );
+    final session = decodeSessionManifest(
+      await File('$path/${Session.manifestName}').readAsString(),
+    ).session;
     await Directory(directory).create(recursive: true);
     for (final track in session.tracks) {
       for (final lane in track.lanes) {
@@ -998,6 +1026,35 @@ class SessionRepository {
       throw StateError('session changed before save capture');
     }
     final captured = _capture(savedSettings);
+    // The commit: the guard is taken where the bundle starts to change, and
+    // a refusal leaves it untouched.
+    final guard = _guards.enter(
+      GuardKind.sessionWrite,
+      GuardScope.internal(item: directory),
+      purpose: writePurpose,
+    );
+    try {
+      return await _saveCaptured(
+        directory,
+        captured,
+        chains,
+        savedSettings,
+        pedalBindings,
+        name,
+      );
+    } finally {
+      guard.release();
+    }
+  }
+
+  Future<Session> _saveCaptured(
+    String directory,
+    _Capture captured,
+    SessionChains chains,
+    SessionSettings savedSettings,
+    String pedalBindings,
+    String? name,
+  ) async {
     final target = Directory(directory);
     // A save over an existing bundle never edits it in place: it writes a
     // whole new bundle beside it and swaps the two, so a failure (a full
@@ -1137,13 +1194,20 @@ class SessionRepository {
     required Directory from,
     required Directory to,
   }) {
+    // Files an older-schema original names move with it (_keepOriginals).
+    final originals = {
+      for (final manifest in _originalManifests(from))
+        ..._layerFilesOf(File('${from.path}/$manifest').readAsStringSync()),
+    };
     for (final entity in from.listSync()) {
       if (entity is! File) continue;
       final name = _basename(entity.path);
-      if (name == Session.manifestName ||
+      if (originals.contains(name) ||
+          name == Session.manifestName ||
           name == '${Session.manifestName}.tmp' ||
           name == mixdownName ||
-          _layerFilePattern.hasMatch(name)) {
+          _layerFilePattern.hasMatch(name) ||
+          _backupManifestPattern.hasMatch(name)) {
         continue;
       }
       entity.copySync('${to.path}/$name');
@@ -1167,12 +1231,148 @@ class SessionRepository {
       retired.renameSync(target.path);
       rethrow;
     }
+    _retire(retired, live: target);
+  }
+
+  /// Removes the previous save [retired] once [live] has replaced it, after
+  /// moving its kept originals into [live] (see [_keepOriginals]). If that
+  /// move fails, [retired] stays for the next catalog read to finish.
+  static void _retire(Directory retired, {required Directory live}) {
     try {
+      _keepOriginals(from: retired, to: live);
       retired.deleteSync(recursive: true);
     } on FileSystemException {
-      // Left for the next catalog read to remove.
+      // Left for the next catalog read to finish.
     }
   }
+
+  /// Keeps every original of an older schema that the previous save
+  /// [from] held, as a whole bundle folder inside [to] that opens on its
+  /// own. A backup manifest (`session.v<N>.json`) and, when [from] was
+  /// itself never converted, its own older manifest are first each
+  /// assembled into a `session.v<N>/` folder inside [from], with the layer
+  /// WAVs they name and the manifest last; then every complete folder moves
+  /// into [to] in one rename. Moves, never copies: [from] is about to be
+  /// deleted.
+  ///
+  /// Resumable: a folder without its manifest is an assembly a power cut
+  /// interrupted, and the manifest it was for is still in [from], so the
+  /// next run reuses that folder and finishes it. A folder is only ever
+  /// moved whole, so a backup never ends up split across two folders.
+  static void _keepOriginals({
+    required Directory from,
+    required Directory to,
+  }) {
+    for (final name in _originalManifests(from)..sort()) {
+      final manifest = File('${from.path}/$name');
+      final source = manifest.readAsStringSync();
+      // A kept backup assembles under its own name; the bundle's own older
+      // manifest under the first backup name its schema has free.
+      final stem = name == Session.manifestName
+          ? _assemblyStem(from, _versionOf(source)!)
+          : name.substring(0, name.length - '.json'.length);
+      final folder = Directory('${from.path}/$stem')..createSync();
+      for (final file in _layerFilesOf(source)) {
+        final layer = File('${from.path}/$file');
+        if (layer.existsSync()) layer.renameSync('${folder.path}/$file');
+      }
+      debugOnKeepOriginal?.call(folder.path);
+      manifest.renameSync('${folder.path}/${Session.manifestName}');
+    }
+    for (final entity in from.listSync()) {
+      final name = _basename(entity.path);
+      if (entity is Directory &&
+          _backupFolderPattern.hasMatch(name) &&
+          _isBundle(entity.path)) {
+        entity.renameSync('${to.path}/${_freeBackupStem(to, name)}');
+      }
+    }
+  }
+
+  /// Called with each backup folder once its layer files are in and before
+  /// its manifest is; a test throws from it to stand for a power cut there.
+  @visibleForTesting
+  static void Function(String folder)? debugOnKeepOriginal;
+
+  /// The folder in [dir] to assemble a bundle's own schema-[version]
+  /// manifest in: an unfinished one (no manifest yet) if there is one, else
+  /// the first backup name no file or folder holds.
+  static String _assemblyStem(Directory dir, int version) {
+    for (var attempt = 1; ; attempt++) {
+      final candidate = backupName(version, attempt).replaceAll('.json', '');
+      final folder = Directory('${dir.path}/$candidate');
+      if (folder.existsSync() && !_isBundle(folder.path)) return candidate;
+      if (!folder.existsSync() &&
+          !File('${dir.path}/$candidate.json').existsSync()) {
+        return candidate;
+      }
+    }
+  }
+
+  /// The older-schema manifests in [dir]: its kept backups and, when it was
+  /// never converted, its own `session.json`.
+  static List<String> _originalManifests(Directory dir) {
+    final names = [
+      for (final entity in dir.listSync())
+        if (entity is File &&
+            _backupManifestPattern.hasMatch(_basename(entity.path)))
+          _basename(entity.path),
+    ];
+    final own = File('${dir.path}/${Session.manifestName}');
+    if (own.existsSync()) {
+      final version = _versionOf(own.readAsStringSync());
+      if (version != null && version < Session.formatVersion) {
+        names.add(Session.manifestName);
+      }
+    }
+    return names;
+  }
+
+  /// [stem], or the next numbered stem when [dir] already holds it as a
+  /// backup file or folder.
+  static String _freeBackupStem(Directory dir, String stem) {
+    final match = RegExp(r'^session\.v(\d+)(?:\.(\d+))?$').firstMatch(stem)!;
+    final version = int.parse(match.group(1)!);
+    for (var attempt = int.parse(match.group(2) ?? '1'); ; attempt++) {
+      final candidate = backupName(version, attempt).replaceAll('.json', '');
+      if (!File('${dir.path}/$candidate.json').existsSync() &&
+          !Directory('${dir.path}/$candidate').existsSync()) {
+        return candidate;
+      }
+    }
+  }
+
+  /// The layer files a manifest [source] of any schema names.
+  static Iterable<String> _layerFilesOf(String source) sync* {
+    final Object? json;
+    try {
+      json = jsonDecode(source);
+    } on FormatException {
+      return;
+    }
+    if (json is! Map<String, dynamic>) return;
+    for (final track in json['tracks'] as List<dynamic>? ?? const []) {
+      if (track is! Map<String, dynamic>) continue;
+      final stem = track['stem'];
+      if (stem is String) yield stem;
+      for (final lane in track['lanes'] as List<dynamic>? ?? const []) {
+        if (lane is! Map<String, dynamic>) continue;
+        for (final layer in lane['layers'] as List<dynamic>? ?? const []) {
+          if (layer is Map<String, dynamic> && layer['file'] is String) {
+            yield layer['file'] as String;
+          }
+        }
+      }
+    }
+  }
+
+  /// A kept original manifest, `session.v<N>.json` or `session.v<N>.<k>.json`.
+  static final RegExp _backupManifestPattern = RegExp(
+    r'^session\.v\d+(\.\d+)?\.json$',
+  );
+
+  /// A kept original bundle folder, `session.v<N>` or `session.v<N>.<k>`.
+  static final RegExp _backupFolderPattern = RegExp(r'^session\.v\d+(\.\d+)?$');
 
   /// Finishes or undoes write-backs a power cut interrupted, under [dir]
   /// (the root, then one folder down): a retired `<id>.old` with no `<id>`
@@ -1192,7 +1392,7 @@ class SessionRepository {
         if (path.endsWith(_retiredSuffix)) {
           final live = path.substring(0, path.length - _retiredSuffix.length);
           if (Directory(live).existsSync()) {
-            entity.deleteSync(recursive: true);
+            _retire(entity, live: Directory(live));
           } else {
             entity.renameSync(live);
           }
@@ -1232,36 +1432,50 @@ class SessionRepository {
   }
 
   /// Reads and validates the `.segno` bundle [directory]: decodes the manifest
-  /// and every lane's live-buffer WAV. Pure I/O — the engine is never driven;
-  /// the caller (the bloc layer) hands the result to the looper repository's
-  /// `applySession`, the one apply path.
+  /// and every lane's layer WAVs. Pure I/O — the engine is never driven and
+  /// nothing is written; the caller (the bloc layer) hands the result to the
+  /// looper repository's `applySession`, the one apply path. A manifest from
+  /// an older schema is converted in memory with every formerly global
+  /// setting at its default; [open] is the load path that keeps the player's.
+  Future<SessionBundle> read(String directory) async =>
+      (await open(directory)).bundle;
+
+  /// Reads and validates the `.segno` bundle [directory] for loading, as
+  /// [read] does, and converts a manifest written by an older schema in
+  /// memory (see [decodeSessionManifest]). [liveSettings] supplies the
+  /// player's current settings and is asked only for such a manifest. The
+  /// bundle on disk is never touched here: [commitConversion] writes the
+  /// conversion back once the caller has loaded it. Every refusal leaves the
+  /// bundle byte-identical.
   ///
   /// The stems are raw PCM at the saved rate; loading them on a device running
   /// a different rate would play the session back at the wrong pitch (there is
   /// no resampling), so this refuses with [SessionSampleRateMismatch] rather
   /// than decode something unusable. A session without audio can restore its
   /// settings at any device sample rate.
-  Future<SessionBundle> read(String directory) async {
-    final manifest = await File(
+  Future<OpenedSession> open(
+    String directory, {
+    FutureOr<SessionSettings> Function()? liveSettings,
+  }) async {
+    final source = await File(
       '$directory/${Session.manifestName}',
     ).readAsString();
-    final session = Session.fromJson(
-      jsonDecode(manifest) as Map<String, dynamic>,
-    );
-
-    if (session.loopBars < 0 || session.loopBars > 0x7fffffff ~/ 15) {
-      throw const FormatException('session contains an invalid bar grid');
-    }
-
-    final validTempo = switch (session.tempoSource) {
-      TempoSource.none => session.tempoBpm == 0,
-      TempoSource.manual ||
-      TempoSource.tapped ||
-      TempoSource.derived => session.tempoBpm >= 30 && session.tempoBpm <= 300,
-      TempoSource.external => false,
-    };
-    if (!validTempo) {
-      throw const FormatException('session contains an unsupported tempo pair');
+    final version = _versionOf(source);
+    final live =
+        version != null &&
+            version < Session.formatVersion &&
+            liveSettings != null
+        ? await liveSettings()
+        : const SessionSettings();
+    final (:session, :conversion) = decodeSessionManifest(source, live: live);
+    try {
+      _validateMusicalGrid(session);
+    } on FormatException catch (error) {
+      if (conversion == null) rethrow;
+      throw SessionUnconvertible(
+        version: conversion.fromVersion,
+        reason: error.message,
+      );
     }
 
     final current = _engine.snapshot();
@@ -1302,11 +1516,158 @@ class SessionRepository {
             reason: reason,
           );
         }
+        // The live image is a whole multiple of the base or exactly half or
+        // a quarter of it (a Sync division); the engine would read past a
+        // shorter slot. Free and Song keep independent lengths, and a
+        // bundle without a base commits no loop.
+        final live = lengths.isEmpty ? 0 : lengths[lane.undoCount];
+        final base = session.baseLengthFrames;
+        if (session.looperMode != LooperMode.free &&
+            session.looperMode != LooperMode.song &&
+            base > 0 &&
+            live % base != 0 &&
+            live * 2 != base &&
+            live * 4 != base) {
+          throw SessionCorruptLayers(
+            channel: track.channel,
+            lane: lane.lane,
+            reason:
+                'live length $live is neither a whole multiple of the '
+                'base $base nor half or a quarter of it',
+          );
+        }
         trackLengths ??= lengths;
         laneStems[(track.channel, lane.lane)] = layers;
       }
     }
-    return (session: session, laneStems: laneStems);
+    return (
+      bundle: (session: session, laneStems: laneStems),
+      conversion: conversion,
+    );
+  }
+
+  /// Writes an opened bundle's [conversion] back to [directory]: the original
+  /// manifest is kept byte for byte beside it as `session.v<N>.json` (see
+  /// [backupName]), then the converted manifest replaces `session.json`
+  /// atomically. Does nothing when the manifest on disk is no longer the one
+  /// that was converted. Until the next save the audio files are shared with
+  /// the converted manifest, so the backup opens by putting it back as
+  /// `session.json`; that save moves the backup and the original layer files
+  /// into a `session.v<N>/` folder that opens as a bundle of its own.
+  ///
+  /// Returns whether the conversion was written: false when the manifest had
+  /// changed, so nothing was.
+  Future<bool> commitConversion(
+    String directory,
+    SessionConversion conversion,
+  ) async {
+    final manifest = File('$directory/${Session.manifestName}');
+    if (await manifest.readAsString() != conversion.original) return false;
+    await _keepOriginal(directory, conversion.fromVersion, conversion.original);
+    await _replaceManifest(
+      directory,
+      const JsonEncoder.withIndent('  ').convert(conversion.manifest),
+    );
+    return true;
+  }
+
+  /// The backup name for an original manifest of schema [version]: a name no
+  /// bundle file uses (`session.json`, `mixdown.wav`, the layer WAVs).
+  /// [attempt] numbers further backups when one already holds other bytes.
+  @visibleForTesting
+  static String backupName(int version, [int attempt = 1]) => attempt == 1
+      ? 'session.v$version.json'
+      : 'session.v$version.$attempt.json';
+
+  /// Keeps [original] under the first free backup name, or confirms an
+  /// existing backup already holds exactly those bytes. Never overwrites.
+  Future<void> _keepOriginal(
+    String directory,
+    int version,
+    String original,
+  ) async {
+    for (var attempt = 1; ; attempt++) {
+      final name = backupName(version, attempt);
+      final backup = File('$directory/$name');
+      final folder = File(
+        '$directory/${name.replaceAll('.json', '')}/${Session.manifestName}',
+      );
+      if (folder.existsSync()) {
+        if (await folder.readAsString() == original) return;
+        continue;
+      }
+      if (backup.existsSync()) {
+        if (await backup.readAsString() == original) return;
+        continue;
+      }
+      try {
+        await backup.create(exclusive: true);
+      } on FileSystemException {
+        if (backup.existsSync()) continue;
+        rethrow;
+      }
+      await backup.writeAsString(original, flush: true);
+      return;
+    }
+  }
+
+  /// Called with the written temporary manifest before it is renamed into
+  /// place; a test throws from it to stand for a failed rename.
+  @visibleForTesting
+  static void Function(String path)? debugOnReplaceManifest;
+
+  /// Replaces the bundle's manifest with [contents] through a temporary file
+  /// and a rename, so a crash leaves either the old or the new manifest.
+  Future<void> _replaceManifest(String directory, String contents) async {
+    final temporary = File('$directory/${Session.manifestName}.tmp');
+    try {
+      await temporary.writeAsString(contents, flush: true);
+      debugOnReplaceManifest?.call(temporary.path);
+      await temporary.rename('$directory/${Session.manifestName}');
+    } on Object {
+      if (temporary.existsSync()) temporary.deleteSync();
+      rethrow;
+    }
+  }
+
+  /// The integer `version` of a manifest [source], or null when it has none.
+  static int? _versionOf(String source) {
+    try {
+      final json = jsonDecode(source);
+      if (json is Map<String, dynamic>) {
+        final version = json['version'];
+        if (version is int) return version;
+      }
+    } on FormatException {
+      return null;
+    }
+    return null;
+  }
+
+  static void _validateMusicalGrid(Session session) {
+    if (session.loopBars < 0 || session.loopBars > 0x7fffffff ~/ 15) {
+      throw const FormatException('session contains an invalid bar grid');
+    }
+    // The beats are the grid; the bars restate them only when whole (#1168).
+    final beats = session.loopBeats;
+    if (beats < 0 ||
+        beats > 0x7fffffff ~/ 15 ||
+        session.tsNum <= 0 ||
+        session.loopBars !=
+            (beats % session.tsNum == 0 ? beats ~/ session.tsNum : 0)) {
+      throw const FormatException('session contains an invalid beat grid');
+    }
+
+    final validTempo = switch (session.tempoSource) {
+      TempoSource.none => session.tempoBpm == 0,
+      TempoSource.manual ||
+      TempoSource.tapped ||
+      TempoSource.derived => session.tempoBpm >= 30 && session.tempoBpm <= 300,
+      TempoSource.external => false,
+    };
+    if (!validTempo) {
+      throw const FormatException('session contains an unsupported tempo pair');
+    }
   }
 
   /// Reads the engine snapshot and each settled track's per-lane overdub layers
@@ -1390,6 +1751,7 @@ class SessionRepository {
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
           fadeAmount: track.fade.amount,
+          reversed: track.reversed,
           lanes: lanes,
         ),
       );
@@ -1441,6 +1803,11 @@ class SessionRepository {
       syncTempo: settings.syncTempo,
       quantizeDiv: settings.quantizeDiv,
       loopBars: snapshot.isRunning ? snapshot.loopBars : settings.loopBars,
+      loopBeats: snapshot.isRunning
+          ? (snapshot.loopBeats > 0 || snapshot.loopBars == 0
+                ? snapshot.loopBeats
+                : snapshot.loopBars * snapshot.tsNum)
+          : settings.loopBeats,
       recordTiming: settings.recordTiming,
       overdubDecay: settings.overdubDecay,
       defaultOneShot: settings.defaultOneShot,

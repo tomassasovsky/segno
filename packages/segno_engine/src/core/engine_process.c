@@ -427,6 +427,21 @@ static int le_launch_defer(le_engine* e, int32_t ch, int action) {
   return 1;
 }
 
+/* Publishes the master loop's musical grid (#1168): `beats` whole beats
+ * (denominator notes) over the loop, 0 for none. The beat count is the grid's
+ * own measure; the bar count is published only when the beats make whole bars
+ * in the current signature (a Divide of a sole 1- or 3-bar loop keeps the
+ * tempo with 2 or 6 beats) and reads 0 otherwise. Every grid write goes
+ * through here, so the two counts and grid_total_beats never disagree. */
+static void le_set_loop_grid(le_engine* e, int32_t beats) {
+  int32_t num = load_i32(&e->a_ts_num);
+  if (num <= 0) num = 4;
+  if (beats < 0) beats = 0;
+  store_i32(&e->a_loop_beats, beats);
+  store_i32(&e->a_loop_bars, beats % num == 0 ? beats / num : 0);
+  e->grid_total_beats = beats;
+}
+
 /* The D6 tempo lock: manual tempo / signature changes (and taps) are ignored
  * while any track has content AND a grid exists (loop_bars > 0 or
  * tempo_source != none). Only clearing every track releases it — a paused or
@@ -465,7 +480,7 @@ static int le_tempo_locked(le_engine* e) {
     }
   }
   if (!any_content) return 0;
-  return load_i32(&e->a_loop_bars) > 0 ||
+  return load_i32(&e->a_loop_beats) > 0 ||
          load_i32(&e->a_tempo_source) != LE_TEMPO_SOURCE_NONE;
 }
 
@@ -537,9 +552,8 @@ static void le_apply_mode_switch(le_engine* e, int32_t m) {
     /* The grid dies with the master it measured: a shared bar count means
      * nothing once every take runs its own clock. The TEMPO and its source
      * survive, exactly as at handle_clear's all-empty reset (D6). */
-    store_i32(&e->a_loop_bars, 0);
+    le_set_loop_grid(e, 0);
     store_i32(&e->a_current_beat, 0);
-    e->grid_total_beats = 0;
     e->grid_prev_beat = -1;
     e->loop_viz_bucket = -1;
   }
@@ -638,8 +652,7 @@ static void handle_tap(le_engine* e) {
 static void sync_grid_to_loop(le_engine* e, int32_t len) {
   e->grid_prev_beat = -1; /* re-arm beat publication at the next frame */
   if (!load_i32(&e->a_sync_tempo) || len <= 0) {
-    e->grid_total_beats = 0;
-    store_i32(&e->a_loop_bars, 0);
+    le_set_loop_grid(e, 0);
     return;
   }
   const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
@@ -649,8 +662,7 @@ static void sync_grid_to_loop(le_engine* e, int32_t len) {
   if (load_i32(&e->a_tempo_source) == LE_TEMPO_SOURCE_NONE) {
     const float bpm = le_grid_derive_bpm(len, num, sr, &bars);
     if (bpm <= 0.0f || bars < 1) { /* degenerate input: stay grid-free */
-      e->grid_total_beats = 0;
-      store_i32(&e->a_loop_bars, 0);
+      le_set_loop_grid(e, 0);
       return;
     }
     store_f32(&e->a_tempo_bpm_bits, bpm);
@@ -661,16 +673,14 @@ static void sync_grid_to_loop(le_engine* e, int32_t len) {
     bars = le_grid_bars_for_loop(&g, len);
     if (bars < 1) bars = 1;
   }
-  store_i32(&e->a_loop_bars, bars);
-  e->grid_total_beats = bars * num;
+  le_set_loop_grid(e, bars * num);
 }
 
-/* Bar count is part of the recorded musical grid. It cannot be inferred
+/* The beat count is part of the recorded musical grid. It cannot be inferred
  * from a tempo that may have clamped, or from a future-capture preference. */
-static void le_restore_musical_grid(le_engine* e, int32_t bars) {
+static void le_restore_musical_grid(le_engine* e, int32_t beats) {
   e->grid_prev_beat = -1;
-  store_i32(&e->a_loop_bars, bars);
-  e->grid_total_beats = bars * load_i32(&e->a_ts_num);
+  le_set_loop_grid(e, beats);
   store_i32(&e->a_current_beat, 0);
 }
 
@@ -750,8 +760,7 @@ static void le_apply_length_preset_tempo(le_engine* e, int32_t len,
                                          int32_t bars) {
   e->grid_prev_beat = -1; /* re-arm beat publication at the next frame */
   if (!load_i32(&e->a_sync_tempo) || len <= 0 || bars <= 0) {
-    e->grid_total_beats = 0;
-    store_i32(&e->a_loop_bars, 0);
+    le_set_loop_grid(e, 0);
     return;
   }
   int32_t num = load_i32(&e->a_ts_num);
@@ -759,14 +768,12 @@ static void le_apply_length_preset_tempo(le_engine* e, int32_t len,
   const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   const float bpm = le_grid_bpm_for_length(len, bars, num, sr);
   if (bpm <= 0.0f) { /* degenerate input: stay grid-free, like sync_grid_to_loop */
-    e->grid_total_beats = 0;
-    store_i32(&e->a_loop_bars, 0);
+    le_set_loop_grid(e, 0);
     return;
   }
   store_f32(&e->a_tempo_bpm_bits, bpm);
   store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_DERIVED);
-  store_i32(&e->a_loop_bars, bars);
-  e->grid_total_beats = bars * num;
+  le_set_loop_grid(e, bars * num);
 }
 
 /* Per-frame beat publication, loop-driven: once a grid exists the beat index
@@ -871,16 +878,26 @@ static int le_live_subdiv_ratio(le_engine* e, int32_t ch, int64_t* num,
  * new value. Deliberately bypasses sync_grid_to_loop: the sync toggle only
  * governs future finalizes and must never destroy a live grid. */
 static void regrid_surviving_master(le_engine* e) {
-  if (e->clock.length <= 0 || load_i32(&e->a_loop_bars) <= 0) return;
+  if (e->clock.length <= 0 || load_i32(&e->a_loop_beats) <= 0) return;
   const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   int32_t num = load_i32(&e->a_ts_num);
   if (num <= 0) num = 4;
   const le_tempo_grid g = {load_f32(&e->a_tempo_bpm_bits), num,
                            load_i32(&e->a_ts_den), sr};
-  int32_t bars = le_grid_bars_for_loop(&g, e->clock.length);
-  if (bars < 1) bars = 1;
-  store_i32(&e->a_loop_bars, bars);
-  e->grid_total_beats = bars * num;
+  /* A whole-bar grid stays whole bars (D7). A sub-bar grid, left by a
+   * Divide of a sole loop (#1168), counts the nearest whole beats instead,
+   * so it never claims a bar the loop does not hold. */
+  if (load_i32(&e->a_loop_bars) > 0) {
+    int32_t bars = le_grid_bars_for_loop(&g, e->clock.length);
+    if (bars < 1) bars = 1;
+    le_set_loop_grid(e, bars * num);
+  } else {
+    const double fpb = le_grid_frames_per_beat_unit(&g);
+    int64_t beats = fpb > 0.0 ? llround((double)e->clock.length / fpb) : 1;
+    if (beats < 1) beats = 1;
+    if (beats > INT32_MAX / 15) beats = INT32_MAX / 15;
+    le_set_loop_grid(e, (int32_t)beats);
+  }
   e->grid_prev_beat = -1;
 }
 
@@ -1863,8 +1880,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
     if (all_empty) {
       le_loop_clock_reset(&e->clock);
       store_i32(&e->a_master_len, 0);
-      store_i32(&e->a_loop_bars, 0);
-      e->grid_total_beats = 0;
+      le_set_loop_grid(e, 0);
     }
   }
   /* A rig that kept content keeps (or, lacking one, gains) its crown; a
@@ -2421,9 +2437,8 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
      * value and its source survive (D6 dead-tempo survival: the next defining
      * loop rounds to the surviving tempo instead of re-deriving), and this
      * all-empty reset is also exactly what releases the D6 tempo lock. */
-    store_i32(&e->a_loop_bars, 0);
+    le_set_loop_grid(e, 0);
     store_i32(&e->a_current_beat, 0);
-    e->grid_total_beats = 0;
     e->grid_prev_beat = -1;
     /* The tap pair dies with the lock: a tap latched before the D6 lock
      * engaged must not pair with the first tap after this release (a
@@ -2729,7 +2744,7 @@ static void le_length_apply(le_engine* e, le_track* t, const le_command* cmd,
     e->loop_iteration = 0;
     t->start_iter = 0;
     store_i32(&e->a_master_len, len);
-    le_restore_musical_grid(e, fit->bars); /* the verdict kept the tempo */
+    le_restore_musical_grid(e, fit->beats); /* the verdict kept the tempo */
     e->loop_viz_bucket = -1;
   } else if (cmd->length.divisor == 0 && e->clock.length > 0) {
     /* The segment the mapped position sits in, counted from the current
@@ -3401,7 +3416,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         }
         verdict = le_length_fit_check(load_i32(&e->a_looper_mode),
                                       e->clock.length,
-                                      load_i32(&e->a_loop_bars), others,
+                                      load_i32(&e->a_loop_beats), others,
                                       load_i32(&e->a_primary_track) == ch,
                                       cmd->length.len, e->max_loop_frames,
                                       &fit);
@@ -3631,6 +3646,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       e->tuner_acc = 0.0f;
       e->tuner_acc_n = 0;
       e->tuner_raw_fill = 0;
+      e->tuner_raw_pos = 0;
+      /* An in-flight sliced detection is abandoned for the same reason: it is
+       * mid-way through a window of the PREVIOUS input. */
+      e->tuner_pass.phase = LE_TUNER_PHASE_IDLE;
       store_f32(&e->a_tuner_hz_bits, 0.0f);
       store_f32(&e->a_tuner_conf_bits, 0.0f);
       break;
@@ -4106,8 +4125,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       break;
     case LE_CMD_COMMIT_SESSION: {
       const int32_t base = cmd->session.base_frames;
-      const int32_t bars = cmd->session.loop_bars;
-      if (base <= 0 || bars < 0 || bars > INT32_MAX / 15) break;
+      const int32_t beats = cmd->session.loop_beats;
+      if (base <= 0 || beats < 0 || beats > INT32_MAX / 15) break;
       /* KNOWN GAP (B2b; B4 extends the same guard to SONG), guarded
        * (adversarial-review BUG 2 fix): this command establishes ONE shared
        * `base` length for every imported track via a whole-loop multiple —
@@ -4156,13 +4175,17 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       e->loop_iteration = 0;
       store_i32(&e->a_master_len, base);
       /* Restore the actual saved grid, including an explicitly grid-free
-       * loop and a bar count whose derived BPM reached the tempo clamp. */
-      le_restore_musical_grid(e, bars);
+       * loop, a beat count whose derived BPM reached the tempo clamp, and a
+       * sub-bar loop a Divide left (#1168). */
+      le_restore_musical_grid(e, beats);
       for (int32_t t = 0; t < e->track_count; ++t) {
         le_track* tr = &e->tracks[t];
         if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
         const int32_t len = load_i32(&tr->lanes[0].a_len);
         if (len <= 0) continue;
+        /* The control wrapper refused any other length; a raw post that
+         * slipped one through leaves the track unpublished (#1168). */
+        if (!le_session_length_fits(base, len)) continue;
         /* A saved base/2 or base/4 track is the Sync division it was (#1168,
          * closing the B5c gap a Divide would otherwise expose); any other
          * length is the whole multiple it always was. */
@@ -5285,77 +5308,230 @@ static inline void snapshot_track_cache(le_engine* e, int tc,
  * firing, and the loopback latency harness. Returns 1 when the latency harness
  * owns this frame (it has written `out`; the caller must skip the rest of the
  * frame), else 0. */
-/* Refines a coarse period (in DEVICE-rate samples) against the undecimated
- * ring, by walking the plain difference function over a narrow window of lags
- * around it and interpolating the minimum.
+/* ---- Chromatic tuner (LE_CMD_SET_TUNER_INPUT) ------------------------------
+ *
+ * Boxcar-decimate the armed input, run YIN over the decimated window, then
+ * refine the coarse lag against a device-rate ring. Two structural rules keep
+ * the whole thing off the callback's critical path, because the Tuner face
+ * being open is an ordinary thing for a performer to do and a missed deadline
+ * is an audible click:
+ *
+ * 1. NOTHING here is O(window) per frame. The device-rate ring is circular
+ *    (see tuner_raw in engine_private.h); the decimated window still slides by
+ *    a whole hop, but only once per hop.
+ * 2. NO analysis runs to completion inside one callback. Both difference
+ *    functions are resumable and are advanced by a per-frame budget
+ *    (tuner_slice), so the ~184k serial double accumulates one detection costs
+ *    at 96 kHz are spread over the ~30 blocks of its own hop instead of
+ *    landing in one 333 us period.
+ *
+ * The needle sees the same numbers, roughly half a hop later — a pass is
+ * 36-47% of its hop's budget, so ~10 ms at 96 kHz and ~16 ms at 48 kHz — on
+ * top of the ~128 ms window the estimate already averages over. Against a
+ * result consumed at a ~43 ms cadence that is invisible. */
+
+/* Copies the tuner's device-rate ring into `out` (LE_TUNER_RAW floats), oldest
+ * sample first — the contiguous chronological window the shifting FIFO used to
+ * hand out directly. Returns 0, leaving `out` untouched, until the ring has
+ * filled once. Audio thread; also the seam the ring's wrap is tested through. */
+int le_tuner_raw_window(const le_engine* e, float* out) {
+  if (e->tuner_raw_fill < LE_TUNER_RAW) return 0;
+  /* Full, so the next write index is also the oldest sample. */
+  const size_t head = (size_t)(LE_TUNER_RAW - e->tuner_raw_pos);
+  memcpy(out, e->tuner_raw + e->tuner_raw_pos, sizeof(float) * head);
+  if (e->tuner_raw_pos > 0) {
+    memcpy(out + head, e->tuner_raw, sizeof(float) * (size_t)e->tuner_raw_pos);
+  }
+  return 1;
+}
+
+static inline void tuner_publish(le_engine* e, float hz, float conf) {
+  store_f32(&e->a_tuner_hz_bits, hz);
+  store_f32(&e->a_tuner_conf_bits, conf);
+}
+
+/* Refines a coarse period (in DEVICE-rate samples) against the frozen
+ * device-rate window, by walking the plain difference function over a narrow
+ * window of lags around it and interpolating the minimum.
  *
  * Plain difference rather than YIN's normalized form: the octave decision has
  * already been made by the coarse pass, and cumulative-mean normalization
  * exists to make that decision. All this pass has to do is locate a minimum it
  * is already sitting next to.
  *
- * Declines (returns the input) when the lag is too long for the ring to hold
- * enough of it — which is the low end, where the coarse estimate is already
- * sub-cent. */
-static float tuner_refine(const float* x, int n, float coarse) {
-  const int lo = (int)coarse - LE_TUNER_DECIM;
-  const int hi = (int)coarse + LE_TUNER_DECIM + 1;
-  if (lo < 2 || hi >= n / 2) return coarse;
+ * Declines (begin returns 0, and the caller publishes the coarse estimate)
+ * when the lag is too long for the ring to hold enough of it — which is the
+ * low end, where the coarse estimate is already sub-cent. */
+static int tuner_refine_begin(le_tuner_pass* p) {
+  const int n = LE_TUNER_RAW;
+  const int lo = (int)p->coarse - LE_TUNER_DECIM;
+  const int hi = (int)p->coarse + LE_TUNER_DECIM + 1;
+  if (lo < 2 || hi >= n / 2) return 0;
   const int integ = n - hi;
-  if (integ < hi) return coarse; /* fewer than two periods: not worth it */
+  if (integ < hi) return 0; /* fewer than two periods: not worth it */
+  p->lo = lo;
+  p->hi = hi;
+  p->integ = integ;
+  p->tau = lo;
+  p->best = 0;
+  return 1;
+}
 
-  float d[2 * LE_TUNER_DECIM + 2];
-  int best = 0;
-  for (int tau = lo; tau <= hi; ++tau) {
+/* Accumulates lags until at least `budget` inner iterations are spent (one
+ * whole lag always runs). Returns 1 once every lag is in. */
+static int tuner_refine_step(le_tuner_pass* p, long budget) {
+  const float* x = p->raw;
+  while (p->tau <= p->hi) {
+    const int tau = p->tau;
     double sum = 0.0;
-    for (int i = 0; i < integ; ++i) {
+    for (int i = 0; i < p->integ; ++i) {
       const float df = x[i] - x[i + tau];
       sum += (double)df * (double)df;
     }
-    d[tau - lo] = (float)sum;
-    if (tau == lo || d[tau - lo] < d[best]) best = tau - lo;
+    const int k = tau - p->lo;
+    p->d[k] = (float)sum;
+    if (tau == p->lo || p->d[k] < p->d[p->best]) p->best = k;
+    ++p->tau;
+    budget -= p->integ;
+    if (budget <= 0) break;
   }
-  if (best == 0 || best == hi - lo) return coarse; /* minimum on the edge */
+  return p->tau > p->hi;
+}
 
-  const float s0 = d[best - 1];
-  const float s1 = d[best];
-  const float s2 = d[best + 1];
+/* Interpolates the completed refinement's minimum, or hands back the coarse
+ * period when the minimum sits on an edge of the searched band. */
+static float tuner_refine_finish(const le_tuner_pass* p) {
+  if (p->best == 0 || p->best == p->hi - p->lo) return p->coarse;
+  const float s0 = p->d[p->best - 1];
+  const float s1 = p->d[p->best];
+  const float s2 = p->d[p->best + 1];
   const float denom = s0 + s2 - 2.0f * s1;
-  float refined = (float)(lo + best);
+  float refined = (float)(p->lo + p->best);
   if (fabsf(denom) > 1e-9f) refined += 0.5f * (s0 - s2) / denom;
   return refined;
 }
 
-/* Chromatic tuner: boxcar-decimate the armed input and run YIN over the
- * decimated window. Called once per block, and the first line is the whole
- * cost when nothing is armed.
+/* Starts a detection at a hop boundary: freezes both analysis windows (the
+ * live ones keep moving under a pass that outlives this block) and opens the
+ * coarse YIN pass. A window the detector declines — silence, or a band the
+ * window is too short for — is settled here and now: "no pitch this frame" is
+ * published as 0 Hz rather than held, because the UI decides how long to keep
+ * showing the last good note and it cannot make that call if the engine hides
+ * the gaps. */
+static void tuner_begin(le_engine* e, int sr, int sr_d) {
+  le_tuner_pass* p = &e->tuner_pass;
+  p->sr = sr;
+  memcpy(p->win, e->tuner_win, sizeof(p->win));
+  if (!le_yin_begin(&p->yin, p->win, LE_TUNER_WIN, sr_d, LE_TUNER_MIN_HZ,
+                    LE_TUNER_MAX_HZ, p->dp,
+                    (int)(sizeof(p->dp) / sizeof(p->dp[0])))) {
+    tuner_publish(e, 0.0f, 0.0f);
+    return; /* stays IDLE: the next hop starts a fresh pass */
+  }
+  /* After le_yin_begin, not before: an armed tuner pointed at a silent input
+   * takes the silence-floor early-out above, and freezing the device-rate ring
+   * for it would be 8 KB of memcpy per hop that nothing ever reads. The freeze
+   * instant is still this frame, so the refinement sees the same audio it
+   * would have. le_yin_begin reads p->win only. */
+  p->raw_valid = le_tuner_raw_window(e, p->raw);
+  p->phase = LE_TUNER_PHASE_COARSE;
+}
+
+/* Peak-picks the finished coarse pass and either hands over to the refinement
+ * or publishes the coarse estimate as it stands. */
+static void tuner_coarse_done(le_engine* e) {
+  le_tuner_pass* p = &e->tuner_pass;
+  float period = 0.0f;
+  le_yin_finish(&p->yin, &period, &p->conf);
+  if (period <= 0.0f) {
+    /* (0 Hz, 0 conf) is what "no pitch" looks like everywhere else in this
+     * pipeline — tuner_begin's rejection publishes exactly that. Carrying
+     * p->conf through here would emit a (0 Hz, conf > 0) pair nothing else
+     * produces and no reader expects. Very nearly unreachable, since
+     * tau >= minlag >= 2; le_yin_finish's parabolic step only guards
+     * fabsf(denom) > 1e-9f, so a near-flat dp triple could still take it. */
+    tuner_publish(e, 0.0f, 0.0f);
+    p->phase = LE_TUNER_PHASE_IDLE;
+    return;
+  }
+  /* The coarse period is in decimated samples; the refinement works at the
+   * device rate, so scale before handing it over and divide by the device rate
+   * on the way out. */
+  p->coarse = period * (float)LE_TUNER_DECIM;
+  if (!p->raw_valid || !tuner_refine_begin(p)) {
+    tuner_publish(e, (float)p->sr / p->coarse, p->conf);
+    p->phase = LE_TUNER_PHASE_IDLE;
+    return;
+  }
+  p->phase = LE_TUNER_PHASE_REFINE;
+}
+
+/* One block's worth of detection work: LE_TUNER_WORK_PER_FRAME inner
+ * iterations per device frame, spent on whichever phase the in-flight pass is
+ * in and carried across the coarse -> refine handover so a block is never left
+ * half idle. Returns with the pass suspended mid-lag-loop; the next block
+ * resumes it. */
+static void tuner_slice(le_engine* e, uint32_t frames) {
+  le_tuner_pass* p = &e->tuner_pass;
+  long budget = (long)frames * LE_TUNER_WORK_PER_FRAME;
+  while (budget > 0 && p->phase != LE_TUNER_PHASE_IDLE) {
+    if (p->phase == LE_TUNER_PHASE_COARSE) {
+      const int32_t was = p->yin.tau;
+      const int done = le_yin_step(&p->yin, budget);
+      budget -= (long)(p->yin.tau - was) * p->yin.integ;
+      if (!done) return;
+      tuner_coarse_done(e);
+    } else {
+      const int32_t was = p->tau;
+      const int done = tuner_refine_step(p, budget);
+      budget -= (long)(p->tau - was) * p->integ;
+      if (!done) return;
+      tuner_publish(e, (float)p->sr / tuner_refine_finish(p), p->conf);
+      p->phase = LE_TUNER_PHASE_IDLE;
+    }
+  }
+}
+
+/* Called once per block, and the first line is the whole cost when nothing is
+ * armed.
  *
  * A boxcar of exactly LE_TUNER_DECIM is both the decimator and its own
  * anti-alias filter: its frequency response nulls at multiples of the
- * decimated rate, which is precisely where aliasing would fold in from.
- *
- * Cost when armed: one YIN pass per LE_TUNER_HOP decimated samples (~43 ms at
- * a 48 kHz device), over a 200-lag band. That is a fraction of what the PSOLA
- * octaver already runs per grain on this same thread. */
+ * decimated rate, which is precisely where aliasing would fold in from. */
 static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
                             int ch_in, int sr) {
   const int32_t input = load_i32(&e->a_tuner_input);
-  if (input < 0 || input >= ch_in || in == NULL) return;
   const int sr_d = sr / LE_TUNER_DECIM;
-  if (sr_d <= LE_TUNER_MIN_HZ) return;
+  /* Any block this function declines to tap is a gap in the analysis window.
+   * A pass frozen across one would resume and publish a pitch derived entirely
+   * from audio captured before the gap — arithmetically valid, silently
+   * stale. Cheaper to abandon it and let the next hop start a fresh one: the
+   * point of the slicing is that a pass costs one hop, not that any particular
+   * pass has to survive. */
+  if (input < 0 || input >= ch_in || in == NULL || sr_d <= LE_TUNER_MIN_HZ) {
+    e->tuner_pass.phase = LE_TUNER_PHASE_IDLE;
+    return;
+  }
+  /* Belt-and-braces: a device-rate change invalidates a frozen pass, since its
+   * window was captured at the old rate and both the lag geometry and the
+   * published Hz derive from it. Unreachable today — le_engine_configure
+   * stores a_tuner_input = -1 and le_engine_start always calls it, so any
+   * device (re)open disarms the tuner, and re-arming resets phase to IDLE —
+   * but the check costs one comparison and what it prevents is a wrong
+   * published pitch. */
+  if (e->tuner_pass.phase != LE_TUNER_PHASE_IDLE && e->tuner_pass.sr != sr) {
+    e->tuner_pass.phase = LE_TUNER_PHASE_IDLE;
+  }
 
   for (uint32_t f = 0; f < frames; ++f) {
     const float raw = in[f * (uint32_t)ch_in + (uint32_t)input];
 
     /* Device-rate ring, kept in step with the decimated one so a detection
-     * always has the same audio available at both rates. */
-    if (e->tuner_raw_fill < LE_TUNER_RAW) {
-      e->tuner_raw[e->tuner_raw_fill++] = raw;
-    } else {
-      memmove(e->tuner_raw, e->tuner_raw + 1,
-              sizeof(float) * (size_t)(LE_TUNER_RAW - 1));
-      e->tuner_raw[LE_TUNER_RAW - 1] = raw;
-    }
+     * always has the same audio available at both rates. One store, no shift:
+     * le_tuner_raw_window untangles the wrap for the reader. */
+    e->tuner_raw[e->tuner_raw_pos] = raw;
+    if (++e->tuner_raw_pos >= LE_TUNER_RAW) e->tuner_raw_pos = 0;
+    if (e->tuner_raw_fill < LE_TUNER_RAW) ++e->tuner_raw_fill;
 
     e->tuner_acc += raw;
     if (++e->tuner_acc_n < LE_TUNER_DECIM) continue;
@@ -5366,27 +5542,32 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
     if (e->tuner_fill < LE_TUNER_WIN) e->tuner_win[e->tuner_fill++] = s;
     if (e->tuner_fill < LE_TUNER_WIN) continue;
 
-    float period = 0.0f;
-    float conf = 0.0f;
-    le_psola_detect_band(e->tuner_win, LE_TUNER_WIN, sr_d, LE_TUNER_MIN_HZ,
-                         LE_TUNER_MAX_HZ, &period, &conf);
-    /* A zero period is "no pitch this frame", published as 0 Hz rather than
-     * held: the UI decides how long to keep showing the last good note, and
-     * it cannot make that call if the engine hides the gaps. */
-    float hz = 0.0f;
-    if (period > 0.0f) {
-      /* The coarse period is in decimated samples; the refinement works at the
-       * device rate, so scale before handing it over and divide by the device
-       * rate on the way out. */
-      const float full = period * (float)LE_TUNER_DECIM;
-      const float refined =
-          e->tuner_raw_fill >= LE_TUNER_RAW
-              ? tuner_refine(e->tuner_raw, LE_TUNER_RAW, full)
-              : full;
-      hz = (float)sr / refined;
-    }
-    store_f32(&e->a_tuner_hz_bits, hz);
-    store_f32(&e->a_tuner_conf_bits, conf);
+    /* Hop boundary. A pass still in flight keeps the window it froze and this
+     * hop simply does not start one; it would cost nothing but one skipped
+     * refresh, and no supported period reaches it. Two independent things
+     * have to hold for that, and only the first is about the budget:
+     *
+     *   - a pass must finish within the hop it started in. tuner_slice gets
+     *     LE_TUNER_WORK_PER_FRAME per device frame and a hop is
+     *     LE_TUNER_HOP * LE_TUNER_DECIM = 2048 frames, so a hop is worth ~393k
+     *     iterations against a worst-case pass of ~184k — the ~2x headroom
+     *     LE_TUNER_WORK_PER_FRAME is chosen for. This holds at any block size,
+     *     since the budget is per frame.
+     *   - a block must not span two hop boundaries. tuner_slice runs ONCE per
+     *     block, after this loop, but hops are counted per frame inside it: a
+     *     block longer than 2048 frames would cross two boundaries with no
+     *     slice in between — so the second would find the first's pass still
+     *     in flight and skip it however large the budget is. Raising the
+     *     budget would NOT buy headroom here; only a hop longer than the
+     *     block does. No shipped path negotiates a period that large: the
+     *     generic chooser offers [64, 128, 256, 512] (bufferSizes in
+     *     audio_setup_state.dart) and an ASIO driver substitutes its own
+     *     list, but none of them lands above a hop. If one ever did, the
+     *     single consequence is that the needle refreshes every second hop
+     *     instead of every hop — ~86 ms rather than ~43 ms, still far finer
+     *     than a needle needs to look continuous. Nothing is wrong, only
+     *     coarser. */
+    if (e->tuner_pass.phase == LE_TUNER_PHASE_IDLE) tuner_begin(e, sr, sr_d);
 
     /* Slide by one hop, so the next detect costs one memmove rather than one
      * per decimated sample. */
@@ -5394,6 +5575,8 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
             sizeof(float) * (size_t)(LE_TUNER_WIN - LE_TUNER_HOP));
     e->tuner_fill = LE_TUNER_WIN - LE_TUNER_HOP;
   }
+
+  tuner_slice(e, frames);
 }
 
 static inline int process_input_frame(le_engine* e, const float* in,

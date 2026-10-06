@@ -227,7 +227,7 @@ typedef struct le_log_command {
     struct { int32_t channel, slot, len; uint32_t image_id; } length_log;
     struct { int32_t position, master_len, iteration; } perf_arm;
     struct { int32_t value; uint32_t sequence; } clock;
-    struct { int32_t base_frames, loop_bars; } session;
+    struct { int32_t base_frames, loop_beats; } session;
   };
 } le_log_command;
 

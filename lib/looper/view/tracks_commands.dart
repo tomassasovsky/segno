@@ -5,6 +5,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -15,6 +16,8 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/window/window_chrome.dart';
+import 'package:session_repository/session_repository.dart'
+    show SessionConversionChange;
 
 /// The commands for `TracksView`: the keyboard map plus the dispatch+announce
 /// helpers that the toolbar buttons and track tiles share, so the pointer and
@@ -121,6 +124,7 @@ class TracksCommands {
       InteractionMode.mixer => l10n.actionModeMixer,
       InteractionMode.fade => l10n.actionModeFade,
       InteractionMode.reverse => l10n.actionModeReverse,
+      InteractionMode.peel => l10n.actionModePeel,
     });
   }
 
@@ -225,7 +229,8 @@ class TracksCommands {
 
     if (mode == InteractionMode.mixer ||
         mode == InteractionMode.fade ||
-        mode == InteractionMode.reverse) {
+        mode == InteractionMode.reverse ||
+        mode == InteractionMode.peel) {
       if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
         overlay.setMode(InteractionMode.record);
         return KeyEventResult.handled;
@@ -317,6 +322,7 @@ class TracksCommands {
           case InteractionMode.mixer:
           case InteractionMode.fade:
           case InteractionMode.reverse:
+          case InteractionMode.peel:
             break;
           case InteractionMode.custom:
             // Selection only: what a control does in Custom controls is
@@ -368,8 +374,9 @@ class TracksCommands {
 }
 
 /// Shows a transient SnackBar surfacing the last session action's outcome —
-/// a localized success line, or a localized, human-readable error for the
-/// known refusals (sample-rate mismatch, newer manifest version), falling
+/// a localized success line (saying so when a load converted an older
+/// session), or a localized, human-readable error for the known refusals
+/// (sample-rate mismatch, newer or unconvertible manifest version), falling
 /// back to the raw message otherwise. The content is a live region so it is
 /// announced to assistive tech as it appears (WCAG 4.1.3). Wired as the
 /// `TracksView`'s session [BlocListener].
@@ -383,7 +390,10 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SessionOutcome.savedAs => l10n.sessionSavedAs(
         state.currentSessionName ?? '',
       ),
-      SessionOutcome.loaded => l10n.sessionLoaded,
+      SessionOutcome.loaded => switch (state.conversion) {
+        null => l10n.sessionLoaded,
+        final notice => sessionConversionMessage(l10n, notice),
+      },
       // The catalog outcomes happen in the Library, which shows its own
       // result; no SnackBar behind it.
       SessionOutcome.renamed ||
@@ -398,8 +408,12 @@ void showSessionOutcome(BuildContext context, SessionState state) {
     SessionStatus.failure => switch (state.error) {
       SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
       SessionError.unsupportedVersion => l10n.sessionErrorUnsupportedVersion,
+      SessionError.unconvertible => l10n.sessionErrorUnconvertible,
       // App recovery notices remain actionable above the Library.
       SessionError.bootPersistence => null,
+      SessionError.busy => l10n.operationBusy(
+        state.refusedBy?.name ?? 'other',
+      ),
       SessionError.saveFailed => l10n.librarySaveFailed,
       SessionError.currentSessionProtected => l10n.libraryDeleteCurrentRefused,
       SessionError.folderNotEmpty => l10n.libraryFolderNotEmpty,
@@ -443,6 +457,13 @@ void onPerformanceRecorderState(
     _showPerformanceLowDiskBlocked(context);
     return;
   }
+  // Refused at its commit by an operation in flight (#1198): a toast, since
+  // nothing needs doing beyond waiting for it (the popup-severity rule).
+  final refusedBy = state is PerformanceRecorderIdle ? state.refusedBy : null;
+  if (refusedBy != null) {
+    _showPerformanceArmRefused(context, refusedBy);
+    return;
+  }
   // Entering Rendering opens the dialog on its rendering face; entering
   // Completed opens it for a capture the operator hid (or one whose render
   // was instant). While it is already up it morphs in place — the show
@@ -458,6 +479,23 @@ void onPerformanceRecorderState(
       unawaited(showPerformanceCompletionSheet(context));
     }
   }
+}
+
+void _showPerformanceArmRefused(BuildContext context, GuardKind refusedBy) {
+  final l10n = context.l10n;
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        key: const Key('tracks_perfArmRefused_snackbar'),
+        content: Semantics(
+          liveRegion: true,
+          child: AppText(
+            l10n.perfArmRefused(l10n.operationBusy(refusedBy.name)),
+          ),
+        ),
+      ),
+    );
 }
 
 void _showPerformanceLowDiskBlocked(BuildContext context) {
@@ -487,3 +525,22 @@ void _showPerformanceDiscarded(BuildContext context) {
       ),
     );
 }
+
+/// The notice for a session converted from an older version: whether the
+/// original was kept beside the converted session, then one sentence for
+/// each audible change the conversion made.
+String sessionConversionMessage(
+  AppLocalizations l10n,
+  SessionConversionNotice notice,
+) => [
+  if (notice.written)
+    l10n.sessionLoadedConverted
+  else
+    l10n.sessionLoadedConvertedUnsaved,
+  if (notice.changes.contains(SessionConversionChange.masterEffectsMoved))
+    l10n.sessionConvertedMasterMoved,
+  if (notice.changes.contains(SessionConversionChange.monitorLevelLowered))
+    l10n.sessionConvertedMonitorLowered,
+  if (notice.changes.contains(SessionConversionChange.tempoFromLoop))
+    l10n.sessionConvertedTempoFromLoop,
+].join(' ');

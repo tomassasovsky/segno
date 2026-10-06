@@ -1,8 +1,5 @@
-/// The console pedal feature: the link cubit and its settings UI. segno owns
-/// all pedal state and pushes LED frames back over the `pedal_repository`
-/// link.
+/// The console pedal feature: the link cubit. segno owns all pedal state and
+/// pushes LED frames back over the `pedal_repository` link.
 library;
 
 export 'cubit/pedal_cubit.dart';
-export 'view/pedal_plate.dart';
-export 'view/pedal_settings_section.dart';

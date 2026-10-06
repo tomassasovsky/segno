@@ -58,7 +58,7 @@ GPIO and not `dtoverlay=gpio-shutdown`. The kernel exposes it as `gpio-keys`
 A missing `pwr_button` node (dev image without the DT overlay): the app runs
 and the listener stays idle; long-press still force-offs.
 
-## Control Center (WiFi / Bluetooth / brightness)
+## Control Center (WiFi / brightness)
 
 Swipe down the settings tray on the main touchscreen. On the Yocto appliance
 these tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
@@ -66,7 +66,6 @@ these tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
 | Helper | Role |
 |--------|------|
 | `/usr/bin/segno-wifi-ctl` | scan / join / disconnect / forget (`nmcli` / NetworkManager) |
-| `/usr/bin/segno-bt-ctl` | scan + discoverable / advertise (`bluetoothctl`) |
 | `/usr/bin/segno-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
 | `/usr/bin/segno-touch-ctl` | touchscreen calibration matrix (`status` / `get` / `set` / `reset`) |
 
@@ -86,12 +85,6 @@ segno-wifi-ctl connect 'YourSSID' 'your-psk'
 ip -4 addr show wlan0
 segno-wifi-ctl disconnect
 
-# Bluetooth (discoverable from a phone; pairing not implemented yet)
-segno-bt-ctl status
-segno-bt-ctl discoverable on
-segno-bt-ctl advertise on
-segno-bt-ctl scan
-
 # Brightness (needs a DDC/CI-capable HDMI panel)
 segno-brightness-ctl supported
 segno-brightness-ctl get
@@ -99,9 +92,9 @@ segno-brightness-ctl set 40
 segno-brightness-ctl set 80
 ```
 
-In the app: open the tray → WiFi (join a network) → Bluetooth (toggle
-discoverable / broadcast, run a scan) → drag brightness and confirm the panel
-dims. If `supported` is false for brightness, the slider still persists but
+In the app: Settings → Network (join a network) → Displays (drag brightness
+and confirm the panel dims). Bluetooth is retired (#1199): the image ships no
+BlueZ. If `supported` is false for brightness, the slider still persists but
 does not change the panel — note that for a gamma follow-up.
 
 ## Touchscreen calibration

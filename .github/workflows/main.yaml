@@ -106,6 +106,16 @@ jobs:
       working_directory: packages/performance_repository
       run_bloc_lint: false
       min_coverage: 99
+  # The app's one guard table (#1198): which operations may commit while
+  # others are in flight. Pure Dart, a const table and a registry; every
+  # rule pair is pinned by a literal transcription of the plan's table.
+  operation-guards:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    with:
+      flutter_version: "3.47.x"
+      working_directory: packages/operation_guards
+      run_bloc_lint: false
+      min_coverage: 100
   pedal-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
     with:
@@ -469,10 +479,6 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-core/bootfs/test/run_bootfs_tests.sh
       - name: Run console-board flash tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-console-board/test/run_console_flash_tests.sh
-      - name: Run bt-persist tests
-        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_persist_tests.sh
-      - name: Run bt-ctl device-verb tests
-        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_ctl_tests.sh
       # Twice: the appliance's /bin/sh is busybox ash, so the helper must hold
       # under a strict POSIX shell (dash) as well as bash.
       - name: Run usb-ctl tests (bash)

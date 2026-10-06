@@ -33,6 +33,7 @@ class _FakeTrack {
   /// length is `undoCount + redoDepth`.
   List<HistoryEntry> history = const [];
   bool solo = false;
+  bool reversed = false;
   final List<_FakeLane> lanes = [_FakeLane()];
 
   int get liveIndex => undoCount;
@@ -62,6 +63,10 @@ class FakeSessionEngine implements AudioEngine {
   final List<_FakeTrack> _tracks = List.generate(8, (_) => _FakeTrack());
   int masterLength = 0;
   int mixRevision = 0;
+
+  /// The published grid (#1168): whole bars, and the beats it holds.
+  int loopBars = 0;
+  int loopBeats = 0;
 
   /// The session-level looper mode reported by [snapshot] (B5c). Mutable so a
   /// test can seed a non-default mode before calling
@@ -113,9 +118,11 @@ class FakeSessionEngine implements AudioEngine {
     double volume = 1,
     double trackVolume = 1,
     bool muted = false,
+    bool reversed = false,
   }) {
     final frames = pcm.length ~/ channels;
     final track = _tracks[channel]
+      ..reversed = reversed
       ..volume = trackVolume
       ..state = TrackState.playing
       ..multiple = multiple
@@ -214,6 +221,8 @@ class FakeSessionEngine implements AudioEngine {
     latencyState: LatencyState.idle,
     measuredLatencyMs: -1,
     masterLengthFrames: masterLength,
+    loopBars: loopBars,
+    loopBeats: loopBeats,
     mixRevision: mixRevision,
     tempoBpm: tempoBpm,
     tempoSource: tempoSource,
@@ -245,6 +254,7 @@ class FakeSessionEngine implements AudioEngine {
           overdubFeedbackOverride: overdubFeedbackOverride[i],
           layerInFlight: i == 0 && _consumeInFlightPoll(),
           solo: t.solo,
+          reversed: t.reversed,
           lanes: [
             for (final lane in t.lanes)
               LaneSnapshot(
@@ -330,7 +340,7 @@ class FakeSessionEngine implements AudioEngine {
   }) => EngineResult.ok;
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     if (baseFrames <= 0) return EngineResult.invalid;
     masterLength = baseFrames;
     for (final track in _tracks) {

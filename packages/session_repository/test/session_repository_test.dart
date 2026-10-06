@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:wav_codec/wav_codec.dart';
@@ -18,13 +19,14 @@ void main() {
   tearDown(() => tempDir.deleteSync(recursive: true));
 
   SessionRepository repoFor(AudioEngine engine) => SessionRepository(
+    guards: GuardRegistry(),
     engine: engine,
     clearPollInterval: Duration.zero,
     clearPollAttempts: 4,
   );
 
   test(
-    'read rejects older and missing schema before inspecting stems',
+    'read rejects newer, too old and missing schema before inspecting stems',
     () async {
       final dir = '${tempDir.path}/obsolete';
       Directory(dir).createSync();
@@ -35,6 +37,7 @@ void main() {
         tracks: [
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -53,10 +56,19 @@ void main() {
         ],
       ).toJson();
       final file = File('$dir/${Session.manifestName}');
-      await file.writeAsString(jsonEncode(manifest..['version'] = 7));
+      await file.writeAsString(
+        jsonEncode(manifest..['version'] = Session.formatVersion + 1),
+      );
       await expectLater(
         repoFor(FakeSessionEngine()).read(dir),
         throwsA(isA<SessionUnsupportedVersion>()),
+      );
+      await file.writeAsString(
+        jsonEncode(manifest..['version'] = oldestConvertibleSessionVersion - 1),
+      );
+      await expectLater(
+        repoFor(FakeSessionEngine()).read(dir),
+        throwsA(isA<SessionUnconvertible>()),
       );
       manifest.remove('version');
       await file.writeAsString(jsonEncode(manifest));
@@ -689,6 +701,16 @@ void main() {
     ]);
   });
 
+  test("save captures each track's playback direction", () async {
+    final source = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]), reversed: true)
+      ..seedTrack(1, Float32List.fromList([2, 2, 2, 2]));
+    final dir = '${tempDir.path}/s';
+    await repoFor(source).save(dir, settings: const SessionSettings());
+    final bundle = await repoFor(FakeSessionEngine()).read(dir);
+    expect([for (final t in bundle.session.tracks) t.reversed], [true, false]);
+  });
+
   test('save then read round-trips a multi-lane track per lane', () async {
     final source = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
@@ -999,7 +1021,7 @@ void main() {
                 await File('$dir/${Session.manifestName}').readAsString(),
               )
               as Map;
-      expect(manifest['version'], 13);
+      expect(manifest['version'], 14);
       final lane =
           (((manifest['tracks'] as List).single as Map)['lanes'] as List).single
               as Map;
@@ -1055,6 +1077,78 @@ void main() {
             'image 0 is 4 frames, its lineage gives 8',
           ),
         ),
+      );
+    });
+
+    test('read refuses a live length that is neither a whole multiple of '
+        'the base nor half or a quarter of it (#1244 L1)', () async {
+      Float32List frames(int n) => Float32List.fromList(List.filled(n, .5));
+      for (final (live, refused) in [
+        (6, true),
+        (3, true),
+        (2, false),
+        (1, false),
+        (8, false),
+      ]) {
+        // The base is the last seeded track's length: 4 frames.
+        final source = FakeSessionEngine()
+          ..seedTrack(1, frames(live))
+          ..seedTrack(0, frames(4));
+        final dir = '${tempDir.path}/live_$live';
+        await repoFor(source).save(dir, settings: const SessionSettings());
+        final read = repoFor(FakeSessionEngine()).read(dir);
+        if (refused) {
+          await expectLater(
+            read,
+            throwsA(
+              isA<SessionCorruptLayers>()
+                  .having((e) => e.channel, 'channel', 1)
+                  .having((e) => e.reason, 'reason', contains('base 4')),
+            ),
+          );
+        } else {
+          expect((await read).laneStems[(1, 0)]!.single.length, live);
+        }
+      }
+      // Free mode keeps independent lengths.
+      final free = FakeSessionEngine()
+        ..seedTrack(1, frames(6))
+        ..seedTrack(0, frames(4))
+        ..looperMode = LooperMode.free;
+      final dir = '${tempDir.path}/live_free';
+      await repoFor(free).save(dir, settings: const SessionSettings());
+      expect(
+        (await repoFor(FakeSessionEngine()).read(dir)).session.tracks,
+        hasLength(2),
+      );
+    });
+
+    test('save then read keeps a sub-bar grid in beats; a bar count that '
+        'disagrees with the beats is refused (#1168)', () async {
+      final source = edited()..loopBeats = 2;
+      final dir = '${tempDir.path}/beats';
+      await repoFor(source).save(dir, settings: const SessionSettings());
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.loopBeats, 2);
+      expect(bundle.session.loopBars, 0);
+      final file = File('$dir/${Session.manifestName}');
+      final manifest = jsonDecode(await file.readAsString()) as Map;
+      for (final (bars, beats) in [(1, 2), (0, 8), (0, -1)]) {
+        await file.writeAsString(
+          jsonEncode({...manifest, 'loopBars': bars, 'loopBeats': beats}),
+        );
+        await expectLater(
+          repoFor(FakeSessionEngine()).read(dir),
+          throwsFormatException,
+          reason: '$bars bars, $beats beats',
+        );
+      }
+      await file.writeAsString(
+        jsonEncode({...manifest, 'loopBars': 2, 'loopBeats': 8}),
+      );
+      expect(
+        (await repoFor(FakeSessionEngine()).read(dir)).session.loopBars,
+        2,
       );
     });
 
@@ -1122,6 +1216,7 @@ void main() {
   /// A repository rooted at `<tempDir>/sessions`, the layout the catalog
   /// exports read from.
   SessionRepository rooted(AudioEngine engine) => SessionRepository(
+    guards: GuardRegistry(),
     engine: engine,
     sessionsRoot: () async => '${tempDir.path}/sessions',
     clearPollInterval: Duration.zero,
@@ -1513,6 +1608,92 @@ void main() {
     expect(bundle.laneStems[(0, 0)], [
       Float32List.fromList([0.1, -0.2, 0.3, -0.4]),
     ]);
+  });
+
+  group('save guard (#1198)', () {
+    SessionRepository guardedRepo(AudioEngine engine, GuardRegistry guards) =>
+        SessionRepository(
+          engine: engine,
+          clearPollInterval: Duration.zero,
+          clearPollAttempts: 4,
+          guards: guards,
+        );
+
+    test('a save is refused at its commit once a shutdown has begun, and '
+        'leaves the bundle untouched', () async {
+      final guards = GuardRegistry()
+        ..enter(
+          GuardKind.restart,
+          const GuardScope.internal(),
+          purpose: 'power off',
+        );
+      final engine = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/refused';
+      await expectLater(
+        guardedRepo(
+          engine,
+          guards,
+        ).save(dir, settings: const SessionSettings()),
+        throwsA(
+          isA<GuardRefused>().having(
+            (e) => e.blockers.single.kind,
+            'blocker',
+            GuardKind.restart,
+          ),
+        ),
+      );
+      expect(Directory(dir).existsSync(), isFalse);
+    });
+
+    test('a save holds the guard on its bundle while it writes and releases '
+        'it after', () async {
+      final guards = GuardRegistry();
+      final engine = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final repo = guardedRepo(engine, guards);
+      final dir = '${tempDir.path}/held';
+      final saving = repo.save(dir, settings: const SessionSettings());
+      while (guards.active.isEmpty) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final held = guards.active.single;
+      expect(held.kind, GuardKind.sessionWrite);
+      expect(held.scope, GuardScope.internal(item: dir));
+      expect(held.purpose, SessionRepository.writePurpose);
+      // The same bundle is refused; another bundle is not.
+      expect(
+        guards.blockers(GuardKind.sessionWrite, GuardScope.internal(item: dir)),
+        [held],
+      );
+      expect(
+        guards.blockers(
+          GuardKind.sessionWrite,
+          GuardScope.internal(item: '${tempDir.path}/other'),
+        ),
+        isEmpty,
+      );
+      await saving;
+      expect(guards.active, isEmpty);
+      expect(File('$dir/${Session.manifestName}').existsSync(), isTrue);
+    });
+
+    test('a failed write still releases the guard', () async {
+      final guards = GuardRegistry();
+      final engine = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      // A file where the bundle directory should be makes the write throw.
+      final dir = '${tempDir.path}/blocked';
+      File(dir).writeAsStringSync('x');
+      await expectLater(
+        guardedRepo(
+          engine,
+          guards,
+        ).save(dir, settings: const SessionSettings()),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(guards.active, isEmpty);
+    });
   });
 }
 

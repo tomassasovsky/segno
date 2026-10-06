@@ -49,7 +49,7 @@ void main() {
       engine.importTrack(0, Float32List.fromList(List.filled(128, .5))),
       EngineResult.ok,
     );
-    expect(engine.commitSession(128, loopBars: 0), EngineResult.ok);
+    expect(engine.commitSession(128, loopBeats: 0), EngineResult.ok);
     expect(engine.play(), EngineResult.ok);
     engine.pump(frames: 0);
     expect(engine.record(), EngineResult.ok); // punch in
@@ -138,7 +138,9 @@ void main() {
       final layers = [
         for (var o = 0; o < images; o++) engine.exportLayer(0, 0, o),
       ];
-      expect(engine.exportLayer(0, 0, images), isEmpty);
+      // Past the images the engine refuses, and the export says so rather
+      // than return an empty layer a save would write (#1168).
+      expect(() => engine.exportLayer(0, 0, images), throwsStateError);
       final original = layers[0];
       final layered = layers[1];
       expect(original.first, .5);
@@ -151,6 +153,7 @@ void main() {
         tracks: [
           SessionRigTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             lanes: [
               SessionRigLane(
@@ -220,6 +223,7 @@ void main() {
       tracks: [
         SessionRigTrack(
           fadeAmount: 1,
+          reversed: false,
           channel: 0,
           lanes: [
             SessionRigLane(
