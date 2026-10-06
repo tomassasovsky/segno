@@ -26,6 +26,14 @@ class LibraryPreviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final library = context.watch<LibraryCubit>().state;
+    final sessions = context.select<SessionCubit, List<SessionSummary>>(
+      (c) => c.state.sessions,
+    );
+    // A selection the search or a folder chip hides is not previewed: the
+    // card never describes a row the list does not show.
+    final hidden =
+        library.selectedId != null &&
+        !library.filter(sessions).any((s) => s.id == library.selectedId);
     return DecoratedBox(
       key: const Key('library_preview'),
       decoration: BoxDecoration(
@@ -36,6 +44,9 @@ class LibraryPreviewCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(33),
         child: switch (library) {
+          _ when hidden => const _PreviewNotice(
+            _PreviewNoticeKind.nothingSelected,
+          ),
           LibraryState(selectedId: null) => const _PreviewNotice(
             _PreviewNoticeKind.nothingSelected,
           ),
@@ -136,6 +147,7 @@ class LibraryPreviewBody extends StatelessWidget {
                   fact,
                   style: TextStyle(
                     color: surface.textSecondary,
+                    fontFamily: SurfaceTheme.monoFont,
                     fontSize: 21,
                     height: 1,
                   ),
@@ -171,17 +183,19 @@ class LibraryPreviewTracks extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final session = context.watch<SessionCubit>().state;
-    // An Open that was refused leaves the outgoing session current; its
-    // reason shows on the session that refused, which is still selected.
+    // An Open that was refused leaves the outgoing session current. Its
+    // reason shows on the session that refused, whatever the reason, and on
+    // no other session; a boot recovery has its own app-wide notice.
     final refusal =
         session.status != SessionStatus.failure ||
-            preview.summary.id == session.currentSessionId
+            session.failedSessionId != preview.summary.id
         ? null
         : switch (session.error) {
             SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
             SessionError.unsupportedVersion =>
               l10n.sessionErrorUnsupportedVersion,
-            _ => null,
+            SessionError.bootPersistence => null,
+            _ => l10n.sessionErrorGeneric(session.errorMessage ?? ''),
           };
     final tracks = preview.tracks;
     final longest = tracks.fold(0, (m, t) => math.max(m, t.lengthFrames));
@@ -323,6 +337,7 @@ class _TrackFact extends StatelessWidget {
           value,
           style: TextStyle(
             color: surface.textPrimary,
+            fontFamily: SurfaceTheme.monoFont,
             fontSize: 21,
             height: 1,
           ),
@@ -450,14 +465,19 @@ class LibraryPreviewFooter extends StatelessWidget {
                     (route) => route.isFirst,
                   ),
                 )
-              : LoopOutlinedButton(
-                  key: const Key('library_open_session'),
-                  width: 208,
-                  tone: LoopButtonTone.accent,
-                  label: l10n.libraryOpenSession,
-                  onTap: busy
-                      ? null
-                      : () => unawaited(context.read<SessionCubit>().open(id)),
+              : Opacity(
+                  // Inert while another session action runs, and drawn so.
+                  opacity: busy ? surface.disabledOpacity : 1,
+                  child: LoopOutlinedButton(
+                    key: const Key('library_open_session'),
+                    width: 208,
+                    tone: LoopButtonTone.accent,
+                    label: l10n.libraryOpenSession,
+                    onTap: busy
+                        ? null
+                        : () =>
+                              unawaited(context.read<SessionCubit>().open(id)),
+                  ),
                 ),
         ),
       ],

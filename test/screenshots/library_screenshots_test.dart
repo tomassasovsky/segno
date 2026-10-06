@@ -99,6 +99,11 @@ void main() {
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
+    await loadScreenshotFont('JetBrains Mono', [
+      'assets/fonts/JetBrainsMono-Regular.ttf',
+      'assets/fonts/JetBrainsMono-Medium.ttf',
+      'assets/fonts/JetBrainsMono-SemiBold.ttf',
+    ]);
     await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
       packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
     ]);
