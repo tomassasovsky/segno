@@ -315,7 +315,9 @@ void main() {
           expect(projected == unconfigured, factor == SpeedFactor.normal);
           expect(projected.copyWith().speed, factor);
         }
-        expect(SpeedFactor.fromRatio(3, 1), SpeedFactor.normal);
+        expect(SpeedFactor.fromRatio(0, 0), SpeedFactor.normal);
+        expect(() => SpeedFactor.fromRatio(3, 1), throwsArgumentError);
+        expect(() => SpeedFactor.fromRatio(1, 0), throwsArgumentError);
         track.ref
           ..quantize_override = -1
           ..quantize_div_override = -1

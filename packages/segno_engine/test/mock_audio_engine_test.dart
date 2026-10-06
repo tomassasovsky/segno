@@ -24,7 +24,7 @@ void main() {
     });
 
     test(
-      'speed is a global request with a receipt; capture refuses off 1x',
+      'speed needs material the mock never holds, so capture stays open',
       () {
         expect(
           engine.setSpeed(SpeedFactor.half).result,
@@ -32,22 +32,10 @@ void main() {
         );
         expect(engine.start(engine.defaultConfig), EngineResult.ok);
         final admitted = engine.setSpeed(SpeedFactor.half);
-        expect(admitted.result, EngineResult.ok);
-        expect(admitted.request, isNonZero);
-        expect(engine.readRequestResult(admitted.request), EngineResult.ok);
-        expect(
-          engine.readRequestResult(admitted.request),
-          EngineResult.invalid,
-        );
-        expect(engine.snapshot().speed, SpeedFactor.half);
-        expect(engine.record(), EngineResult.transformed);
-        final normal = engine.setSpeed(SpeedFactor.normal);
-        expect(engine.readRequestResult(normal.request), EngineResult.ok);
+        expect(admitted.result, EngineResult.invalid);
+        expect(admitted.request, 0);
+        expect(engine.snapshot().speed, SpeedFactor.normal);
         expect(engine.record(), EngineResult.ok);
-        engine.setSpeed(SpeedFactor.eightfold);
-        expect(engine.stop(), EngineResult.ok);
-        expect(engine.start(engine.defaultConfig), EngineResult.ok);
-        expect(engine.snapshot().speed, SpeedFactor.normal); // configure resets
       },
     );
 

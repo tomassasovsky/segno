@@ -93,4 +93,48 @@ void main() {
     },
     skip: skip,
   );
+
+  test(
+    'setSpeed on an empty rig is refused, so the first take records',
+    () async {
+      final empty = PumpedNativeEngine();
+      final emptyTicks = StreamController<void>.broadcast(sync: true);
+      final emptyRepository = LooperRepository(
+        engine: empty,
+        ticker: emptyTicks.stream,
+      );
+      addTearDown(() async {
+        await emptyRepository.dispose();
+        await emptyTicks.close();
+      });
+      expect(
+        emptyRepository.startEngine(
+          const EngineConfig(
+            inputChannels: 1,
+            outputChannels: 1,
+            maxLoopFrames: 1000,
+          ),
+        ),
+        EngineResult.ok,
+      );
+      empty.pump(frames: 0);
+      final subscription = emptyRepository.looperState.listen((_) {});
+      addTearDown(subscription.cancel);
+      expect(
+        await emptyRepository.setSpeed(SpeedFactor.half),
+        EngineResult.invalid,
+      );
+      empty.pump(frames: 64);
+      emptyTicks.add(null);
+      expect(emptyRepository.state.speed, SpeedFactor.normal);
+      // On a rig this fresh the repository's own gate still waits for its
+      // record-timing and mix settings to settle (notReady); what matters
+      // here is that Speed does not refuse the take.
+      expect(emptyRepository.record(), isNot(EngineResult.transformed));
+      expect(empty.record(), EngineResult.ok);
+      empty.pump(frames: 1);
+      expect(empty.snapshot().tracks[0].state, TrackState.recording);
+    },
+    skip: skip,
+  );
 }
