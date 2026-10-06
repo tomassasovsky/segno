@@ -287,10 +287,13 @@ The recipe neither reuses `perf_render.c` nor adds a third offline DSP path.
   `src/core/`"). Cache jobs, the recipe and `perf_render.c`'s
   `le_pr_fx_chain` (`:1218-1259`) use the one struct; the perf renderer keeps
   its own log-driven mutations.
-- **Slicing.** A recipe job renders in slices of `LE_RENDER_SLICE_FRAMES`
-  (48 000 frames). The worker returns to `le_cache_pick` between slices, so a
-  long render never holds back a Pre print or Transpose render for a playing
-  lane by more than one slice.
+- **Slicing.** A recipe job renders its window in slices of
+  `LE_RENDER_SLICE_FRAMES` (48 000 frames), and each Pre print (4.3) is one
+  setup unit of its own: two passes over that source's length. The worker
+  returns to `le_cache_pick` between units, so a long render holds back a Pre
+  print or Transpose render for a playing lane by at most one slice or one
+  source-length print (review D-L1). One print of that size is what the cache
+  itself spends on one lane, so the bound is the cache's own.
 
 ### 4.2 What is rendered
 
@@ -347,16 +350,25 @@ recipe treats each stage the way the live rig does:
 - **Lane Pre.** For a lane with `pre_count > 0`, the executor produces the
   lane's print with the cache's own lane-print function: dry × level through
   `[0, pre_count)`, two passes over the lane's own length, keep the second.
-  This is the same function, input and frozen chain the cache uses, so the
-  material is byte-identical to the published print whether or not the print
-  is engaged.
+  For a forward source this is the same function, input and frozen chain the
+  cache uses, so the material is byte-identical to the published print
+  whether or not the print is engaged.
+  - **A reversed source (review D-H1).** The live rig never plays a print on a
+    reversed track: a print engages only on a forward track, and a Reverse
+    toggle disengages it (`engine_process.c:5980`, `:6137`, `:3330-3337`). The
+    live Pre is a forward chain running over the backward read. Its steady
+    state is the print of the dry *in read order*: the recipe lays the staged
+    dry reversed, prints it with the same function (two passes, keep the
+    second, wrapped at `len`), and reads that print forward at the lap phase.
+    An echo then follows its note, as heard, instead of preceding it.
   - The recipe never feeds a print into a Pre entry, so Pre is applied exactly
     once.
   - A lane without Pre contributes `dry × level`.
 - **Track Pre.** When every part of the track is wholly Pre (no lane Post), the
   live rig plays the whole-track print (`engine_process.c:5935-5970`). The
   recipe then produces the track's print with the cache's track-print
-  function, wrapped at the track's length.
+  function, wrapped at the track's length. A reversed track's print is made
+  over its reversed lap, as for a lane.
   - Otherwise the track chain runs live, like a Post stage, and the recipe runs
     it over the window too.
 - **Window stages.** Lane Post, a live track chain, and Mix FX are governed by
@@ -439,13 +451,25 @@ plays through the processing it already contains.
   - The control tick then stages PCM from exactly the recorded slots
     (copy-at-enqueue). It aborts with `LE_ERR_TRACKS_CHANGED` (-17) if a
     source's `a_audio_rev` moves before the copy completes.
-- **Once.** A Once source (`a_one_shot`, `engine_private.h:1263`) plays one
-  pass: from the first render frame `d ≥ 0` at which its read index equals its
-  lap start (`le_direction_lap_start`), for `len` frames. A pass that runs
-  past the window end continues at the window start, because the window is
-  itself a loop. It is silent elsewhere, in each pass (the policy's
-  `play-once-then-silence`). With `playback_offset = 0` and the source at
-  segment 0, `d = 0`.
+- **Once (review D-M1).** A Once source (`a_one_shot`,
+  `engine_private.h:1263`) plays one pass, from the first render frame
+  `d ≥ 0` at which its read index equals its lap start
+  (`le_direction_lap_start`). With `playback_offset = 0` and the source at
+  segment 0, `d = 0`. Let `W` be the window length and `len` the span. Each
+  window frame `f` has the pass phase `p`:
+  - **On a common cycle the pass wraps.** `W` is a multiple of `len` and the
+    window is itself a loop, so `p = (f − d) mod W`. A pass that runs past the
+    window end continues at the window start, every sample of the pass sounds
+    exactly once, and it stays in phase with the other sources.
+  - **On a chosen length with `W ≥ len` the wrapped part continues the pass**
+    from the same phase, `p = (f − d) mod W`. It does not jump back to the
+    live law's index, which a `W` that is not a multiple of `len` would make
+    differ.
+  - **On a chosen length with `W < len`** the pass cannot fit. The render
+    plays one pass from `d`, `p = f − d`, cut at the window end.
+  - The source sounds when `0 ≤ p < len`, reading the lap index `p` steps from
+    the lap start in its direction. It is silent elsewhere (the policy's
+    `play-once-then-silence`).
 - **Sparse material** is copied as it lies (§2.7). Nothing is trimmed or
   re-anchored.
 
@@ -481,7 +505,7 @@ Wrap and Cut govern the window stages only (4.3).
 | Speed (global, `speed_global`, PR #1201) | Not printed: sources read at 1× | Unchanged; it keeps applying to every track, the destination included | Policy `globalSpeedPrinted: false`; bounce study "whole-loop Speed still applies once outside the bounce". Printing it would apply it twice |
 | Tempo follow (pitch/time Part 4) | Printed: each source at its tempo term, as heard at the song tempo, with its pitch mode | The destination's recorded tempo is the current song tempo | The render is what plays now. The tempo term is not Speed |
 | Transpose (per track, pitch/time Part 3) | Printed as heard. When the source plays its key-matched SOURCE entry (`transpose_effective_st == transpose_st`), the job stages that published entry's PCM in place of the dry pool. When it plays dry (render pending, bypass on), the job renders dry and `le_render_plan.pending_mask` reports it so the surfaces can say so | Reset to 0 | Policy keeps `pitch` on the source and resets it on the destination. Staging the published entry avoids repeating an unsliced stretch inside the recipe (review M7) |
-| Reverse (per track, trunk) | Printed: read through the frozen law of 4.4 (`le_direction_index`; `le_head_index` after P2a) | Reset to forward | Policy keeps `reverse` on the source; destination `reverse: false` |
+| Reverse (per track, trunk) | Printed: read through the frozen law of 4.4 (`le_direction_index`; `le_head_index` after P2a); Pre printed over the reversed lap (4.3) | Reset to forward | Policy keeps `reverse` on the source; destination `reverse: false` |
 | Fade (per track, trunk) | Printed as a constant gain: the source's Fade amount at the freeze frame (`le_track.fade`, `engine_private.h:847`), with the 4.2 warning | Reset (`le_transform_reset`, `engine_process.c:241`) | Policy keeps `fade` on the source and resets it on the destination. A fade in motion is frozen, not animated, because the render has no elapsed time |
 
 Until P2a and the later pitch/time parts land, the head is the identity apart
@@ -515,8 +539,11 @@ as heard, and the destination reset table in 5.3 gains "Mono off" (the policy's
     - `LE_ERR_CAPACITY`;
     - `LE_ERR_INVALID`: no sources, an EMPTY source, or a chosen length
       without a tempo;
-    - `LE_ERR_NOT_READY`: a source is RECORDING or OVERDUBBING, has a layer in
-      flight, or has an unacked state command.
+    - `LE_ERR_NOT_READY`: a source is RECORDING or OVERDUBBING, is counting a
+      posted command that will make it so (`le_effective_state` reads the
+      pending target), or has a layer in flight. A posted state command that
+      is not a capture does not refuse the measure; staging waits for it
+      (review L2).
   - It is the engine's verdict, which the surfaces show as "12 bars" or as
     the error. The Dart side never re-derives the cycle (rule 4).
 - **`le_engine_render_begin(engine, req, uint32_t* job)`** re-measures, posts
@@ -526,24 +553,44 @@ as heard, and the destination reset table in 5.3 gains "Mono off" (the policy's
     (`le_cache_init` leaves `engine->cache` NULL).
   - The job holds frozen chain snapshots for every lane, track and Mix FX
     chain.
-  - Its bytes count against the cache's own byte cap
-    (`LE_CACHE_DEFAULT_CAP_BYTES`, raised to 384 MiB by pitch/time 3a), through
-    the same `le_cache_ensure_budget` LRU eviction the cache uses. There is no
-    second fixed budget (review M7).
-  - What is charged: staged source frames, the Pre material, and the output.
+  - **Its own budget (review D-M2).** The job counts against
+    `LE_RENDER_BUDGET_BYTES` (256 MiB), apart from the wet cache's cap. It
+    never evicts a cache entry. Sharing the cache's cap, the first build's
+    choice, let a Save audio started mid-performance evict the engaged Pre
+    print of a playing track: that lane fell back to its live Pre through the
+    re-enable path, an audible restart of the wash (rule 3).
+  - The size: eight stereo 30 s tracks at 96 kHz stage about 176 MiB of dry
+    audio, and a Bounce's 30 s stereo result adds about 22 MiB. The cache's
+    64 MiB cap on this trunk (192 MiB after pitch/time 3a) would refuse such a
+    set (review L6). The worst case the engine holds is the cache cap plus
+    this budget, and the recipe's part is held only while a job runs.
+  - What is charged: staged source frames, the Pre material, every effect
+    state the job prepares (one per print, per lane Post, per live track chain
+    and per Mix FX chain, with its delay rings; review L5), and the output.
     For a memory target the output is the stereo window. For a file target it
     is one slice buffer (review M6), so a 256-bar file at a slow tempo is
     bounded by its sources, not by its length.
-  - Over the cap after eviction, the result is `LE_ERR_CAPACITY`.
+  - Over the budget, the result is `LE_ERR_CAPACITY`.
+  - **Release.** When a job finishes, the control tick frees everything the
+    worker no longer needs. A FAILED job and a DONE file job keep nothing; a
+    DONE memory job keeps only its stereo output until it is copied, consumed
+    by Bounce, cancelled or replaced.
 - **`le_engine_render_poll(engine, job, int32_t* state, int32_t* permille,
   int32_t* result)`** reports one of the states `FREEZING`, `STAGING`,
-  `RENDERING`, `DONE`, `FAILED` or `CANCELLED`. `result` carries the failure
-  code:
+  `RENDERING`, `DONE` or `FAILED`. There is no cancelled state: cancel retires
+  the id, and a poll of it returns `LE_ERR_INVALID`. `result` carries the
+  failure code:
   - `TRACKS_CHANGED`;
   - `CAPACITY`;
   - `INVALID` on prepare OOM;
   - `DEVICE` when a write fails or a configure or stop joined the worker
-    (`le_cache_shutdown` aborts the job, rule 2).
+    (`le_cache_shutdown` aborts the job, rule 2). The recipe's abort check
+    reads the cache's shutdown flag as well as its own cancel flag, so a
+    configure never waits for a whole print to finish (review M2).
+  - A file whose rename succeeded but whose directory sync failed is
+    published, and reads `DONE`: the file is in place and has replaced any
+    earlier file at that path, though its directory entry may not survive a
+    power cut (review L3).
 - **`le_engine_render_copy(engine, job, float* out, int32_t max_frames)`**
   copies a DONE memory result as interleaved stereo. Part 4a's
   `le_engine_bounce` consumes the job in place.
@@ -558,8 +605,8 @@ as heard, and the destination reset table in 5.3 gains "Mono off" (the policy's
     therefore cannot starve it, and a slice never holds a playing print back by
     more than one slice.
 - **File target and the one WAV writer (decision R6, review M6).**
-  - A new internal module, `wav_writer.c` with `wav_writer.h`, is included only
-    by engine TUs, never by `engine_private.h`.
+  - A new internal module, `engine_wav.c` with `engine_wav.h`, is included
+    only by engine TUs, never by `engine_private.h`.
   - It is the native streaming float WAV writer, in the layout of the
     recording/recovery plan's Part 2 (#1198, `docs/plan/2026-10-06-feat-recording-recovery-plan.md`
     on `origin/claude/recording-recovery-plan-1198`, "Layout" and
@@ -576,7 +623,9 @@ as heard, and the destination reset table in 5.3 gains "Mono off" (the policy's
     - `perf_render.c`'s stems and master (`le_pr_write_wav`/`_mono`
       `:254-310` become calls into it);
     - #1198 Part 2's part streams, which add their `sgno` chunk and their
-      incremental digest through the same open/append/seal calls.
+      incremental digest through the same open/append/seal calls, flush each
+      drain cycle with `le_wav_flush`, and repair parts on recovery with
+      `le_wav_patch_sizes`.
   - **Landing order.** Whichever of #1198 Part 2 and this Part 1 lands first
     creates the module, and the other adopts it.
     - Until #1220 is on the trunk, `publish` fsyncs the file and renames
@@ -1116,14 +1165,13 @@ Part 1 native recipe ──► Part 2 Dart render seam ──► Part 3 Save sel
     law, the frozen Fade, Mix FX;
   - the memory and file targets;
   - measure, begin, poll, copy and cancel.
-- New `wav_writer.c` and `wav_writer.h` (4.7, R6), with `perf_render.c`'s two
+- New `engine_wav.c` and `engine_wav.h` (4.7, R6), with `perf_render.c`'s two
   writers moved onto it.
 - `engine_cache.c`/`.h`:
   - `le_fx_frozen_chain` factoring;
   - the lane-print and track-print functions exposed to the recipe;
   - the recipe job in the pick loop with priority and aging;
-  - budget accounting;
-  - abort on shutdown.
+  - the shutdown flag readable by the recipe's abort check.
 - `engine_process.c`: the 112 case.
 - `engine_private.h`: the recipe slot pointer and the freeze record.
 - `segno_engine_api.h`: the API of 4.7, `LE_CMD_RENDER_FREEZE = 112`,
@@ -1149,6 +1197,11 @@ unless noted:
 - `test_render_once_then_silence`: A Once over a 48-frame window gives A for
   f < 16, then 0. A Once relaunched mid-loop (non-zero `playback_offset`)
   plays its single pass from the frame its law reaches index 0.
+- `test_render_once_chosen_length` (review D-M1): a span of 30 000 frames on a
+  base of 15 000 frames, started at segment 1, rendered for one bar of 38 400
+  frames: the pass starts at frame 15 000, runs to the end, and continues at
+  frame 0 with the next sample of the pass. A span of 60 000 frames in the
+  same bar plays one pass from its start, cut at the window end.
 - `test_render_reverse_mid_loop_offset` (review H1): A reversed at a toggle
   mid-loop, with `playback_offset ≠ 0`. Render frame f equals
   `A[le_direction_index(1, offset, f, 16)]` literally, and differs from the
@@ -1191,7 +1244,7 @@ unless noted:
   - EMPTY source `INVALID`;
   - second begin `ALREADY_RUNNING`;
   - memory target over `max_frames` `CAPACITY`;
-  - over the cache cap `CAPACITY`;
+  - over the recipe's own budget `CAPACITY`;
   - no cache worker `UNSUPPORTED`.
 - `test_render_staging_tracks_changed`: an overdub admitted while staging
   makes the job `FAILED/TRACKS_CHANGED`. An overdub after staging completes
@@ -1209,6 +1262,18 @@ unless noted:
   the aging limit.
 - `test_render_plugin_mask`: a plugin slot in a source chain renders dry and
   sets `plugin_mask` for that track.
+- `test_render_reversed_pre_live_parity` (review D-H1): a reversed source with
+  a Pre delay. The live output and the Cut render agree, and the echo follows
+  the impulse.
+- `test_render_whole_track_print`: a track Pre delay with lane pans. The
+  render equals the cache's track print of the panned lane sum.
+- `test_render_track_post_gain_live_parity`: a track Post delay and track gain
+  0.5. The live output and the render agree.
+- `test_render_freeze_and_completion_checks`: a source whose length changes
+  between begin and freeze, and a revision bumped after the last staged chunk,
+  each give `FAILED/TRACKS_CHANGED`.
+- `test_render_keeps_published_prints` (review D-M2): a playing lane's engaged
+  Pre print survives a recipe begin with the cache at its cap.
 - The perf renderer's existing stem tests pass byte-identically on the shared
   writer.
 - After PR #1201 merges, `test_render_ignores_speed`: Speed 2× renders
@@ -1568,8 +1633,9 @@ gate. Stop for review on any of these:
 
 - **R1 (rule 4).** The recipe is a new job kind on the wet-cache worker. It
   shares the frozen-chain snapshot, the lane and track print functions, heap
-  FX state, staging, the byte cap and the two-pass rule, and has an explicit
-  priority with aging. `perf_render.c` is not reused: it is a log replay of
+  FX state, staging and the two-pass rule, and has an explicit priority with
+  aging. It keeps its own byte budget so it never evicts a live print
+  (4.7). `perf_render.c` is not reused: it is a log replay of
   elapsed time, lane-0 and gated.
 - **R2 (§3.5).** Pre is the take: each lane's Pre material is its print,
   wrapped at its own length, made by the cache's function. A track's Pre is
@@ -1693,12 +1759,23 @@ Where the build departs from the text above, and why:
 - **Aging is tested as a pure function.** The worker's priority and aging
   rule is `le_render_worker_choice`, unit-tested directly instead of through a
   timing race.
-- **Two plan tests are not in the suite.** `test_render_ignores_speed` waits
-  for pitch/time P2a. The Once-relaunch case is covered only through the
-  shared read law, by the non-zero-offset Reverse test.
-- **Memory.** The job counts against the cache's byte cap, which is 64 MiB on
-  this trunk until pitch/time 3a raises it to 384 MiB. A render that does not
-  fit after eviction is refused with `LE_ERR_CAPACITY`.
+- **Plan tests not built as listed (review D-L2).** The first build record
+  named only the first two of these:
+  - `test_render_ignores_speed` waits for pitch/time P2a.
+  - The Once relaunch is covered through the shared read law, by the
+    non-zero-offset Reverse test, and the wrap by
+    `test_render_once_chosen_length`.
+  - `test_render_excludes_buses` adds one output FX entry and one input
+    block. Monitors, the click, master gain 0.5 and the limiter are not in
+    it.
+  - `test_render_pre_is_take_and_tails` checks the Wrap/Cut difference by
+    energy, not by equality with pass 2 of a two-window run.
+  - `test_render_fade_frozen_amount` does not move the fade during staging.
+  - `test_render_origin_phase_multiples` has no Free source.
+  - `test_render_staging_tracks_changed` uses a Clear while staging, not an
+    overdub admitted while staging.
+- **Memory.** The first build charged the job to the cache's byte cap. The
+  review round replaced that with the recipe's own budget (4.7).
 - **Size.** About 1,300 production lines (code, headers, API and build
   lists), against the plan's 700:
   - commit 1, about 300;
@@ -1727,6 +1804,47 @@ Verification:
   check.
 - **Not run.** The appliance criterion (no xrun, worker CPU and peak bytes) is
   hardware and still open.
+
+### Part 1 review round (PR #1238 review and plan delta review)
+
+A third commit (`fix(engine)`) answers both reviews:
+
+- **H1 / D-H1, reversed Pre.** A first setup unit lays each reversed source's
+  staged dry in read order. Lane and whole-track prints are made from it, and
+  the window reads them forward at the lap phase (4.3). New test:
+  `test_render_reversed_pre_live_parity`.
+- **M1 / D-M2, prints never evicted.** The recipe has its own budget,
+  `LE_RENDER_BUDGET_BYTES` (256 MiB); `le_cache_reserve` and
+  `le_cache_release` are gone. When a job finishes, the tick frees its staged
+  dry, prints, states and slice buffer; a DONE memory job keeps only `out`.
+  New test: `test_render_keeps_published_prints`.
+- **M2, shutdown.** The recipe's abort check also reads the cache's shutdown
+  flag (`le_cache_shutting_down`). New test:
+  `test_render_configure_mid_print`.
+- **M3 / D-M1, Once.** The pass phase rule of 4.4. New test:
+  `test_render_once_chosen_length` (a window not a multiple of the span, and
+  one shorter than it).
+- **M4, coverage.** New tests: `test_render_whole_track_print`,
+  `test_render_track_post_gain_live_parity` and
+  `test_render_freeze_and_completion_checks`.
+- **L2.** The measure comment now says what is refused (4.7).
+- **L3.** `le_wav_publish` returns 2 when the rename succeeded and only the
+  directory sync failed; the job reads DONE.
+- **L4.** The writer takes #1198 Part 2's (PR #1245) extensions as built
+  there: the close-on-exec open through a descriptor and `le_wav_note_frames`.
+  It adds the two calls the capture drain and its recovery need, so #1245
+  rebases onto this part without reaching into the writer:
+  - `le_wav_flush` hands every appended sample to the OS each drain cycle,
+    leaving the file open and unsealed;
+  - `le_wav_patch_sizes` repairs a part that was never sealed, or cuts it
+    back to a checkpoint's frames: it keeps the whole frames (a torn last
+    frame is dropped), truncates the rest, patches both sizes and fsyncs.
+
+  The existing calls keep their signatures. An odd caller chunk size is
+  refused. New test: `test_wav_flush_and_patch_sizes`.
+- **L5.** The job charges its effect states, and `le_fx_print` prepares only
+  the entries it runs.
+- **L6.** Answered by the own budget: an eight-track set of 30 s loops fits.
 
 ### Part 2 (`claude/render-1202-p2`, stacked on Part 1)
 
