@@ -1,7 +1,7 @@
 import 'package:console_facts_client/src/console_facts_models.dart';
 
-/// The four questions the System domain's Storage and About faces ask that
-/// nothing else in the app can answer.
+/// The questions the System domain's Storage and About faces, and the app's
+/// start-up notices, ask that nothing else in the app can answer.
 ///
 /// Narrow on purpose. It is not "the appliance": it is exactly what two faces
 /// need, so a desktop build can answer *"I do not know"* to all of it in one
@@ -35,4 +35,13 @@ abstract interface class ConsoleFactsClient {
 
   /// Copies sessions, takes and captures to [destination].
   Future<void> exportEverything(String destination);
+
+  /// How many devices an earlier build paired over Bluetooth, from the
+  /// pairings it kept on the data volume, or 0 when there are none or the
+  /// build cannot tell.
+  ///
+  /// Bluetooth is retired; the pairings are kept only so a fallback to the
+  /// previous system can use them again. This count is how an install that
+  /// had paired devices is told they will not reconnect.
+  Future<int> retiredBluetoothPairings();
 }

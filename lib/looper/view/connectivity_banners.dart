@@ -8,7 +8,6 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The stage's one standing loss condition: the pinned audio interface is
@@ -32,11 +31,11 @@ import 'package:segno/theme/theme.dart';
 /// standing bar (see `_showMidiConnectivityToast` in `app.dart`).
 ///
 /// The banner carries the one action that ends it: **Open setup** opens the
-/// tray's Audio domain on the Device tab — navigation through
-/// [SettingsTrayCubit], no new routing. The action hugs the message rather
-/// than floating to the far edge, so the sentence and the button read as one
-/// unit. Mounted by `TracksView` on console AND desktop builds: the condition
-/// is exactly as true in a window as on the panel.
+/// Device settings page, whose interface chooser is the way back. The action
+/// hugs the message rather than floating to the far edge, so the sentence and
+/// the button read as one unit. Mounted by `TracksView` on console AND
+/// desktop builds: the condition is exactly as true in a window as on the
+/// panel.
 ///
 /// The same strip carries the one other standing notice of the device's
 /// return (#1140): the interface came back at another sample rate and the
@@ -73,7 +72,7 @@ class ConnectivityBanners extends StatelessWidget {
           message: l10n.deviceLostBanner,
           actionLabel: l10n.deviceLostBannerAction,
           actionKey: const Key('connectivity_banner_device_action'),
-          onAction: context.read<SettingsTrayCubit>().openAudioDevice,
+          onAction: () => unawaited(openDeviceSettings()),
         );
       case DeviceConnectivity.restoredCleared:
         banner = _LostBanner(

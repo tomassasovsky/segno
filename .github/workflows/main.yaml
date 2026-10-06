@@ -469,10 +469,6 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-core/bootfs/test/run_bootfs_tests.sh
       - name: Run console-board flash tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-console-board/test/run_console_flash_tests.sh
-      - name: Run bt-persist tests
-        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_persist_tests.sh
-      - name: Run bt-ctl device-verb tests
-        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_ctl_tests.sh
       # Twice: the appliance's /bin/sh is busybox ash, so the helper must hold
       # under a strict POSIX shell (dash) as well as bash.
       - name: Run usb-ctl tests (bash)

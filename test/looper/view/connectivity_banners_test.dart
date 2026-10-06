@@ -13,7 +13,6 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -45,7 +44,6 @@ void main() {
 
   late AppLocalizations l10n;
   late _MockAudioSetupCubit audioSetup;
-  late SettingsTrayCubit tray;
 
   setUpAll(() async {
     l10n = await AppLocalizations.delegate.load(const Locale('en'));
@@ -58,15 +56,12 @@ void main() {
       const Stream<AudioSetupState>.empty(),
       initialState: const AudioSetupState(),
     );
-    tray = SettingsTrayCubit();
-    addTearDown(tray.close);
   });
 
   Future<void> pump(WidgetTester tester) => tester.pumpApp(
     MultiBlocProvider(
       providers: [
         BlocProvider<AudioSetupCubit>.value(value: audioSetup),
-        BlocProvider<SettingsTrayCubit>.value(value: tray),
       ],
       child: const Scaffold(body: ConnectivityBanners()),
     ),
@@ -193,7 +188,6 @@ void main() {
             child: MultiBlocProvider(
               providers: [
                 BlocProvider<AudioSetupCubit>.value(value: audioSetup),
-                BlocProvider<SettingsTrayCubit>.value(value: tray),
                 BlocProvider<SessionCubit>.value(value: session),
               ],
               child: MaterialApp(
@@ -324,23 +318,5 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(deviceKey), findsNothing);
-  });
-
-  testWidgets('Open setup opens the tray at Audio / Device', (tester) async {
-    whenListen(
-      audioSetup,
-      const Stream<AudioSetupState>.empty(),
-      initialState: deviceLostState,
-    );
-    await pump(tester);
-
-    await tester.tap(
-      find.byKey(const Key('connectivity_banner_device_action')),
-    );
-    await tester.pump();
-
-    expect(tray.state.dragProgress, 1);
-    expect(tray.state.destination, SettingsTrayDestination.audio);
-    expect(tray.state.audioTab, AudioTab.device);
   });
 }

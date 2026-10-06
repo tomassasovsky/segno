@@ -1,0 +1,81 @@
+{
+  "version": 3,
+  "sampleRate": 48000,
+  "channels": 1,
+  "baseLengthFrames": 2400,
+  "tracks": [
+    {
+      "channel": 0,
+      "multiple": 1,
+      "lengthFrames": 2400,
+      "lanes": [
+        {
+          "lane": 0,
+          "volume": 1.0,
+          "muted": false,
+          "outputMask": 3,
+          "inputChannel": 0,
+          "layers": [
+            {
+              "file": "track0_lane0_L0.wav"
+            }
+          ],
+          "undoCount": 0,
+          "redoCount": 0
+        }
+      ]
+    },
+    {
+      "channel": 1,
+      "multiple": 2,
+      "lengthFrames": 4800,
+      "lanes": [
+        {
+          "lane": 0,
+          "volume": 0.5,
+          "muted": true,
+          "outputMask": 3,
+          "inputChannel": 0,
+          "layers": [
+            {
+              "file": "track1_lane0_L0.wav"
+            }
+          ],
+          "undoCount": 0,
+          "redoCount": 0
+        },
+        {
+          "lane": 1,
+          "volume": 1.5,
+          "muted": false,
+          "outputMask": 1,
+          "inputChannel": 1,
+          "layers": [
+            {
+              "file": "track1_lane1_L0.wav"
+            }
+          ],
+          "undoCount": 0,
+          "redoCount": 0
+        }
+      ]
+    }
+  ],
+  "laneChains": [
+    {
+      "channel": 0,
+      "lane": 0,
+      "encoded": "[{\"type\":3,\"params\":[0.35,0.35,0.35,0.0]}]"
+    }
+  ],
+  "monitors": [
+    {
+      "input": 0,
+      "enabled": true,
+      "outputMask": 3,
+      "volume": 1.5,
+      "muted": false,
+      "encoded": "[{\"type\":7,\"params\":[0.5,0.5,0.35,0.0]}]"
+    }
+  ]
+}

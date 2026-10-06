@@ -3,9 +3,58 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:meta/meta.dart';
 import 'package:segno_engine/src/audio_engine.dart';
 import 'package:segno_engine/src/engine_library.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+
+/// The outcome of digesting a file range ([StorageIo.digestFile]).
+///
+/// Recovery tells a missing recording from a damaged one by this, not by a
+/// separate existence check the file could change under.
+sealed class FileDigest {
+  const FileDigest();
+}
+
+/// The range was read whole: [sha256] is its digest, 64 lower-case hex
+/// digits.
+@immutable
+final class FileDigested extends FileDigest {
+  /// Creates a [FileDigested].
+  const FileDigested(this.sha256);
+
+  /// The digest.
+  final String sha256;
+
+  @override
+  bool operator ==(Object other) =>
+      other is FileDigested && other.sha256 == sha256;
+
+  @override
+  int get hashCode => sha256.hashCode;
+
+  @override
+  String toString() => 'FileDigested($sha256)';
+}
+
+/// Nothing exists at the path (or a directory on it is missing).
+final class FileMissing extends FileDigest {
+  /// Creates a [FileMissing].
+  const FileMissing();
+}
+
+/// The file exists but is shorter than the range it must hold: damaged.
+final class FileTruncated extends FileDigest {
+  /// Creates a [FileTruncated].
+  const FileTruncated();
+}
+
+/// The file could not be read: not a regular file, no permission, or an I/O
+/// error (a failing drive).
+final class FileUnreadable extends FileDigest {
+  /// Creates a [FileUnreadable].
+  const FileUnreadable();
+}
 
 /// Recorded-audio identity and durable publication, without an engine.
 ///
@@ -21,16 +70,19 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 /// inside `Isolate.run` to digest a multi-gigabyte file off the UI isolate.
 abstract interface class StorageIo {
   /// The SHA-256 of [bytes], as 64 lower-case hex digits.
+  ///
+  /// Hashed through a fixed native window ([NativeStorageIo.windowBytes]),
+  /// so a layer of hundreds of megabytes is never copied whole.
   String digestBytes(Uint8List bytes);
 
   /// The SHA-256 of [length] bytes of the file at [path] starting at
-  /// [offset], as 64 lower-case hex digits; a null [length] reads to the end
-  /// of the file.
+  /// [offset]; a null [length] reads to the end of the file.
   ///
-  /// Null when the file cannot be read, is not a regular file, or is shorter
-  /// than the range: a damaged file never yields a digest of whatever is left
-  /// in it. The file is read in 64 KiB chunks.
-  String? digestFile(String path, {int offset = 0, int? length});
+  /// [FileMissing] when nothing is there, [FileTruncated] when the file is
+  /// shorter than the range (a damaged file never yields a digest of whatever
+  /// is left in it), [FileUnreadable] otherwise. The file is read in 64 KiB
+  /// chunks. Throws [ArgumentError] for an empty path or a negative range.
+  FileDigest digestFile(String path, {int offset = 0, int? length});
 
   /// Makes the entries of the directory at [path] durable, so a rename into
   /// it survives a power cut.
@@ -55,30 +107,51 @@ class NativeStorageIo implements StorageIo {
   /// `UINT64_MAX` as the native API spells "to the end of the file".
   static const int _toEnd = -1;
 
+  /// The native window [digestBytes] copies through, a piece at a time.
+  static const int windowBytes = 1 << 20;
+
   @override
   String digestBytes(Uint8List bytes) {
-    final data = bytes.isEmpty ? nullptr : malloc<Uint8>(bytes.length);
+    final state = calloc<Uint64>(LE_DIGEST_STATE_BYTES ~/ 8);
+    final window = malloc<Uint8>(
+      bytes.length < windowBytes
+          ? (bytes.isEmpty ? 1 : bytes.length)
+          : windowBytes,
+    );
     final out = calloc<Uint8>(_digestBytes);
     try {
-      if (data != nullptr) data.asTypedList(bytes.length).setAll(0, bytes);
-      final code = _bindings.le_digest_bytes(data.cast(), bytes.length, out);
-      if (!EngineResult.fromCode(code).isOk) {
-        throw EngineException(
-          EngineResult.fromCode(code),
-          'digest of ${bytes.length} bytes failed',
+      _check(_bindings.le_digest_begin(state.cast(), LE_DIGEST_STATE_BYTES));
+      for (var at = 0; at < bytes.length; at += windowBytes) {
+        final end = at + windowBytes < bytes.length
+            ? at + windowBytes
+            : bytes.length;
+        window.asTypedList(end - at).setRange(0, end - at, bytes, at);
+        _check(
+          _bindings.le_digest_update(state.cast(), window.cast(), end - at),
         );
       }
+      _check(_bindings.le_digest_end(state.cast(), out));
       return _hex(out);
     } finally {
-      calloc.free(out);
-      if (data != nullptr) malloc.free(data);
+      calloc
+        ..free(out)
+        ..free(state);
+      malloc.free(window);
+    }
+  }
+
+  static void _check(int code) {
+    if (!EngineResult.fromCode(code).isOk) {
+      throw EngineException(EngineResult.fromCode(code), 'digest failed');
     }
   }
 
   @override
-  String? digestFile(String path, {int offset = 0, int? length}) {
-    if (path.isEmpty || offset < 0 || (length != null && length < 0)) {
-      return null;
+  FileDigest digestFile(String path, {int offset = 0, int? length}) {
+    if (path.isEmpty) throw ArgumentError.value(path, 'path');
+    if (offset < 0) throw ArgumentError.value(offset, 'offset');
+    if (length != null && length < 0) {
+      throw ArgumentError.value(length, 'length');
     }
     final pathPtr = path.toNativeUtf8();
     final out = calloc<Uint8>(_digestBytes);
@@ -89,7 +162,13 @@ class NativeStorageIo implements StorageIo {
         length ?? _toEnd,
         out,
       );
-      return EngineResult.fromCode(code).isOk ? _hex(out) : null;
+      return switch (code) {
+        0 => FileDigested(_hex(out)),
+        _ when code == le_result.LE_ERR_NOT_FOUND.value => const FileMissing(),
+        _ when code == le_result.LE_ERR_TRUNCATED.value =>
+          const FileTruncated(),
+        _ => const FileUnreadable(),
+      };
     } finally {
       calloc.free(out);
       malloc.free(pathPtr);

@@ -938,6 +938,30 @@ void main() {
       expect((await repo().readPreview('s-a')).tracks.single.bars, 0);
     });
 
+    test('reads a schema-7 bundle from master through its conversion, and '
+        'lists its Master chain in the effect count', () async {
+      final dir = '${root.path}/s-old';
+      Directory(dir).createSync();
+      for (final file in Directory(
+        'test/fixtures/sessions/v7_master_full',
+      ).listSync()) {
+        (file as File).copySync('$dir/${file.uri.pathSegments.last}');
+      }
+      final manifest = File('$dir/${Session.manifestName}').readAsBytesSync();
+
+      final preview = await repo().readPreview('s-old');
+
+      expect(preview.tracks.map((t) => t.channel), [0, 1, 2]);
+      expect(preview.tracks.first.layers, 3);
+      // Lane 2, lane 1, track 1, Master and monitor 0: one entry each but
+      // lane 0's two.
+      expect(preview.fxCount, 6);
+      expect(
+        File('$dir/${Session.manifestName}').readAsBytesSync(),
+        manifest,
+      );
+    });
+
     test('throws the typed refusal for a newer schema and StateError for a '
         'missing id', () async {
       makeBundle('s-future', version: 999);

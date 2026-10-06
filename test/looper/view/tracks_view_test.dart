@@ -11,6 +11,7 @@ import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/app_toasts.dart';
@@ -38,6 +39,7 @@ import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -103,8 +105,10 @@ void main() {
   late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
   late PedalRepository pedalRepo;
+  late FakePedalLink pedalLink;
 
   setUp(() {
+    resetSegnoNavigatorForTest();
     // The toast registry is module-level and survives between tests; a stale
     // entry would make the next identical toast a silent duplicate. The
     // `toastification` singleton leaks too, across files, under
@@ -167,7 +171,8 @@ void main() {
     ).thenReturn(EngineResult.ok);
     // The real control cubit: it owns the system mode/cursor/bank the view
     // reads, and the M key / mode chip / number keys drive it.
-    pedalRepo = PedalRepository(NoopPedalLink());
+    pedalLink = FakePedalLink();
+    pedalRepo = PedalRepository(pedalLink);
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),
@@ -236,12 +241,12 @@ void main() {
     WidgetTester tester, {
     KeyEventResult Function(FocusNode, KeyEvent)? onAncestorKey,
     Locale? locale,
-    GlobalKey<NavigatorState>? navigatorKey,
     List<NavigatorObserver> navigatorObservers = const [],
   }) => tester.pumpWidget(
     ToastificationWrapper(
       child: MaterialApp(
-        navigatorKey: navigatorKey,
+        // The root key, so Settings and its destinations push over the stage.
+        navigatorKey: segnoNavigatorKey,
         navigatorObservers: navigatorObservers,
         theme: AppTheme.neon,
         locale: locale,
@@ -363,6 +368,40 @@ void main() {
     },
   );
 
+  group('Settings opens over the stage, never the tray', () {
+    // The stage is under the Settings route, so its tray is offstage.
+    double scrim(WidgetTester tester) => tester
+        .widget<AnimatedOpacity>(
+          find.byKey(const Key('settingsTray_scrim'), skipOffstage: false),
+        )
+        .opacity;
+
+    testWidgets('from the header icon', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('stage_settings')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsHomePage), findsOneWidget);
+      expect(scrim(tester), 0);
+    });
+
+    testWidgets('from the foot Mixer', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      control.setMode(InteractionMode.mixer);
+      await tester.pump();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(FootMixerView),
+          matching: find.text('Settings'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsHomePage), findsOneWidget);
+      expect(scrim(tester), 0);
+    });
+  });
+
   for (final activation in [
     LogicalKeyboardKey.enter,
     LogicalKeyboardKey.space,
@@ -393,13 +432,18 @@ void main() {
         await tester.pump();
         await tester.sendKeyEvent(activation);
         await tester.pumpAndSettle();
+        expect(find.byType(SettingsHomePage), findsOneWidget);
+        // Settings opens over the stage; the tray stays shut.
         expect(
           tester
               .widget<AnimatedOpacity>(
-                find.byKey(const Key('settingsTray_scrim')),
+                find.byKey(
+                  const Key('settingsTray_scrim'),
+                  skipOffstage: false,
+                ),
               )
               .opacity,
-          1,
+          0,
         );
         verifyNever(() => bloc.add(const LooperPlayAllPressed()));
       },
@@ -620,6 +664,162 @@ void main() {
       dismissAppToast(AppToastId.footReverseFailure);
       await tester.pump(const Duration(seconds: 10));
     });
+  });
+
+  testWidgets('Peel shows its surface and says why a press peeled nothing', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+      ),
+    );
+    await pump(tester);
+    control.setMode(InteractionMode.peel);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('foot_peel_view')), findsOneWidget);
+    control.peelFootPeelTrack(0);
+    await tester.pumpAndSettle();
+    expect(
+      find
+          .text('Only the original take remains: there is no overdub to peel.')
+          .hitTestable(),
+      findsOneWidget,
+    );
+    verifyNever(() => repository.peel(channel: any(named: 'channel')));
+    expect(tester.takeException(), isNull);
+    dismissAppToast(AppToastId.footPeelRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  testWidgets('an assigned Peel says why it removed nothing, outside the '
+      'Peel surface', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+      ),
+    );
+    pedalLink.hello();
+    await tester.runAsync(
+      () => control.setPedalSetup(
+        const PedalSetup().withCustom(
+          PedalButton.clear,
+          bank: 0,
+          pair: const ControlGesturePair(
+            press: TrackOperationAction(
+              operation: TrackOperation.peel,
+              scope: SelectedTrackScope(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await pump(tester);
+    control.setMode(InteractionMode.custom);
+    await tester.pumpAndSettle();
+    pedalLink.press(PedalButton.clear, down: true);
+    await tester.pump(const Duration(milliseconds: 50));
+    pedalLink.press(PedalButton.clear, down: false);
+    // The pedal events arrive on a real stream; let them land.
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    expect(control.state.mode, InteractionMode.custom);
+    expect(
+      find
+          .text('Only the original take remains: there is no overdub to peel.')
+          .hitTestable(),
+      findsOneWidget,
+    );
+    verifyNever(() => repository.peel(channel: any(named: 'channel')));
+    dismissAppToast(AppToastId.footPeelRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  for (final (operation, notice, toast) in [
+    (
+      TrackOperation.fade,
+      'The fade could not be started. Try again.',
+      AppToastId.footFadeFailure,
+    ),
+    (
+      TrackOperation.reverse,
+      'The track could not be turned around. Try again.',
+      AppToastId.footReverseFailure,
+    ),
+  ]) {
+    testWidgets('an assigned ${operation.name} that reaches no track says so '
+        'outside its surface', (tester) async {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      seed(const LooperState(tracks: [Track()]));
+      pedalLink.hello();
+      await tester.runAsync(
+        () => control.setPedalSetup(
+          const PedalSetup().withCustom(
+            PedalButton.clear,
+            bank: 0,
+            pair: ControlGesturePair(
+              press: TrackOperationAction(
+                operation: operation,
+                scope: const SelectedTrackScope(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await pump(tester);
+      control.setMode(InteractionMode.custom);
+      await tester.pumpAndSettle();
+      pedalLink.press(PedalButton.clear, down: true);
+      await tester.pump(const Duration(milliseconds: 50));
+      pedalLink.press(PedalButton.clear, down: false);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      expect(control.state.mode, InteractionMode.custom);
+      expect(find.text(notice).hitTestable(), findsOneWidget);
+      dismissAppToast(toast);
+      await tester.pump(const Duration(seconds: 10));
+    });
+  }
+
+  testWidgets('the layer badge drops by one when a Peel removes a layer', (
+    tester,
+  ) async {
+    final states = StreamController<LooperState>.broadcast();
+    addTearDown(states.close);
+    LooperState peeled(int depth) => LooperState(
+      tracks: [
+        Track(state: TrackState.playing, lengthFrames: 48000, peelDepth: depth),
+      ],
+    );
+    when(() => bloc.state).thenReturn(peeled(2));
+    when(() => repository.state).thenReturn(peeled(2));
+    whenListen(bloc, states.stream, initialState: peeled(2));
+    await pump(tester);
+    Finder layers(String figure) => find.descendant(
+      of: find.byKey(const Key('tracks_layers_0')),
+      matching: find.text(figure),
+    );
+    expect(layers('3'), findsOneWidget);
+    // A peel leaves the undo depth alone; the audible layer count drops.
+    when(() => bloc.state).thenReturn(peeled(1));
+    states.add(peeled(1));
+    await tester.pump();
+    await tester.pump();
+    expect(layers('2'), findsOneWidget);
   });
 
   testWidgets('renders a tile per track', (tester) async {
@@ -1997,7 +2197,6 @@ void main() {
       final pushed = <Route<dynamic>>[];
       await pump(
         tester,
-        navigatorKey: segnoNavigatorKey,
         navigatorObservers: [_PushObserver(pushed.add)],
       );
       await showMixer(tester);

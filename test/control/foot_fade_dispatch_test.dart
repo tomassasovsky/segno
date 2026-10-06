@@ -397,6 +397,60 @@ void main() {
     }
   });
 
+  test('an assigned Fade that reaches no track says so, outside the Fade '
+      'surface', () async {
+    final rig = _Rig();
+    try {
+      await rig.fade.load();
+      await rig.control.setPedalSetup(
+        const PedalSetup()
+            .withCustom(
+              PedalButton.clear,
+              bank: 0,
+              pair: const ControlGesturePair(
+                press: TrackOperationAction(
+                  operation: TrackOperation.fade,
+                  scope: FixedTrackScope(2),
+                ),
+              ),
+            )
+            .withCustom(
+              PedalButton.undo,
+              bank: 0,
+              pair: const ControlGesturePair(
+                press: TrackOperationAction(
+                  operation: TrackOperation.fade,
+                  scope: FixedTrackScope(4),
+                ),
+              ),
+            ),
+      );
+      rig.control.setMode(InteractionMode.custom);
+      Future<void> stomp(PedalButton button) async {
+        rig.link.press(button, down: true);
+        await _pump(const Duration(milliseconds: 50));
+        rig.link.press(button, down: false);
+        await _pump();
+      }
+
+      // Track 3 is empty: nothing fades, and the stomp says so.
+      await stomp(PedalButton.clear);
+      expect(rig.engine.toggles, isEmpty);
+      expect(rig.control.state.footFadeFailure, 1);
+      // An engine refusal says so too; an accepted fade does not.
+      rig.engine.refuse = true;
+      await stomp(PedalButton.undo);
+      expect(rig.control.state.footFadeFailure, 2);
+      rig.engine.refuse = false;
+      await stomp(PedalButton.undo);
+      expect(rig.engine.toggles.map((toggle) => toggle.$1), [4]);
+      expect(rig.control.state.footFadeFailure, 2);
+      expect(rig.control.state.mode, InteractionMode.custom);
+    } finally {
+      await rig.close();
+    }
+  });
+
   test('an assigned all-tracks Fade toggles every recorded track', () async {
     final rig = _Rig();
     try {

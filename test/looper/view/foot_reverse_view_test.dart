@@ -5,10 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
+import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/foot_reverse_view.dart';
+import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
@@ -102,6 +105,41 @@ void main() {
       .evaluate()
       .map((element) => element.widget as Semantics)
       .firstWhere((semantics) => semantics.properties.button ?? false);
+
+  testWidgets('Settings opens the Settings page over the stage', (
+    tester,
+  ) async {
+    resetSegnoNavigatorForTest();
+    given(const ControlState(mode: InteractionMode.reverse));
+    tester.view.physicalSize = const Size(1920, 1080);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MultiBlocProvider(
+        providers: [
+          BlocProvider<ControlCubit>.value(value: control),
+          BlocProvider<LooperBloc>.value(value: looper),
+          BlocProvider<TracksCubit>.value(value: tracks),
+        ],
+        child: MaterialApp(
+          navigatorKey: segnoNavigatorKey,
+          theme: AppTheme.neon,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const Scaffold(body: FootReverseView()),
+        ),
+      ),
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byType(FootReverseView),
+        matching: find.text('Settings'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsHomePage), findsOneWidget);
+  });
 
   testWidgets('the overview and pedals read every direction', (tester) async {
     given(const ControlState(mode: InteractionMode.reverse));

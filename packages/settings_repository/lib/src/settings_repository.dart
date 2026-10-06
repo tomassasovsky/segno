@@ -707,18 +707,32 @@ class SettingsRepository {
   Future<void> saveBrightness(double value) =>
       _store.setDouble(_brightnessKey, value.clamp(0.0, 1.0));
 
+  static const String _bluetoothRetiredNoticeKey = 'bluetooth.retired_notice';
+
+  /// Whether the app has told this install that its Bluetooth pairings will
+  /// not reconnect. Defaults to `false`.
+  Future<bool> loadBluetoothRetiredNoticeShown() async =>
+      await _store.getBool(_bluetoothRetiredNoticeKey) ?? false;
+
+  /// Records that the Bluetooth retirement notice was shown, so it is shown
+  /// once.
+  Future<void> saveBluetoothRetiredNoticeShown() =>
+      _store.setBool(_bluetoothRetiredNoticeKey, value: true);
+
   static const String _defaultInteractionModeKey = 'looper.default_mode';
 
-  /// Loads the persisted default interaction mode (an opaque token, e.g.
-  /// `'record'` / `'mute'` — or the legacy `'play'` that older builds wrote
-  /// for the mute mode), or `null` if unset. The presentation layer maps the
-  /// token to its mode enum, including the legacy-token shim.
-  Future<String?> loadDefaultInteractionMode() =>
-      _store.getString(_defaultInteractionModeKey);
-
-  /// Saves the default interaction [mode] token.
-  Future<void> saveDefaultInteractionMode(String mode) =>
-      _store.setString(_defaultInteractionModeKey, mode);
+  /// Returns the boot-default interaction mode an earlier build stored (an
+  /// opaque token, e.g. `'record'` or `'mute'`), or `null` when none was, and
+  /// removes it.
+  ///
+  /// The console no longer has a boot-default mode: it always starts in
+  /// Record. This read exists once, so an install that booted into another
+  /// mode can be told; after it the key is gone and the answer is `null`.
+  Future<String?> takeRetiredDefaultInteractionMode() async {
+    final token = await _store.getString(_defaultInteractionModeKey);
+    if (token != null) await _store.remove(_defaultInteractionModeKey);
+    return token;
+  }
 
   static const String _pedalBindingsKey = 'pedal.bindings';
 
@@ -951,10 +965,8 @@ class SettingsRepository {
   /// Loads the five-mode axis as the native `le_looper_mode` enum code (see
   /// `LooperMode.code` / `LooperMode.fromCode`). Defaults to `0`
   /// (`LooperMode.multi`) when unset — the int-code convention matches this
-  /// enum's siblings ([readRecordTimingCheckpoint] / [readClickModeCheckpoint]), unlike
-  /// `loadDefaultInteractionMode`'s opaque-string-token scheme: that key
-  /// predates this plan and preserves pre-rename legacy tokens (D10), a
-  /// concern this newly-introduced enum has no analog of.
+  /// enum's siblings ([readRecordTimingCheckpoint] /
+  /// [readClickModeCheckpoint]).
   Future<int> loadLooperMode() async => await readLooperModeCheckpoint() ?? 0;
 
   /// Saves the looper mode as its enum [code].

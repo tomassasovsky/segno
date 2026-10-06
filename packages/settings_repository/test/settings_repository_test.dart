@@ -1473,14 +1473,24 @@ void main() {
     });
   });
 
-  group('default interaction mode', () {
-    test('returns null when unset', () async {
-      expect(await repository.loadDefaultInteractionMode(), isNull);
+  group('retired default interaction mode', () {
+    test('is null when no build stored one', () async {
+      expect(await repository.takeRetiredDefaultInteractionMode(), isNull);
     });
 
-    test('round-trips a saved token', () async {
-      await repository.saveDefaultInteractionMode('play');
-      expect(await repository.loadDefaultInteractionMode(), 'play');
+    test('returns the stored token once, then forgets it', () async {
+      await store.setString('looper.default_mode', 'mute');
+      expect(await repository.takeRetiredDefaultInteractionMode(), 'mute');
+      expect(await store.getString('looper.default_mode'), isNull);
+      expect(await repository.takeRetiredDefaultInteractionMode(), isNull);
+    });
+  });
+
+  group('Bluetooth retirement notice', () {
+    test('is not shown until recorded, then stays shown', () async {
+      expect(await repository.loadBluetoothRetiredNoticeShown(), isFalse);
+      await repository.saveBluetoothRetiredNoticeShown();
+      expect(await repository.loadBluetoothRetiredNoticeShown(), isTrue);
     });
   });
 
