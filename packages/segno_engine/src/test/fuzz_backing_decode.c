@@ -48,6 +48,25 @@ static void fuzz_path(void) {
 
 static int g_violations;
 
+/* Counts a violation, says which, and keeps the input beside the scratch
+ * file so it can be replayed. */
+static void violation(const char* what) {
+  ++g_violations;
+  char kept[600];
+  snprintf(kept, sizeof(kept), "%s.violation%d", g_path, g_violations);
+  FILE* in = fopen(g_path, "rb");
+  FILE* out = fopen(kept, "wb");
+  if (in != NULL && out != NULL) {
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) fwrite(buf, 1, n, out);
+  }
+  if (in != NULL) fclose(in);
+  if (out != NULL) fclose(out);
+  fprintf(stderr, "fuzz_backing_decode: violation (%s), input kept at %s\n",
+          what, kept);
+}
+
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   fuzz_path();
   FILE* f = fopen(g_path, "wb");
@@ -59,18 +78,18 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   const int32_t probe = le_backing_probe_file(g_path, &info, peaks, 16);
   if (probe == LE_OK &&
       info.source_frames > (int64_t)LE_BACKING_MAX_SECONDS * info.source_rate) {
-    ++g_violations;
+    violation("probe over the cap");
   }
   le_backing_buffer* b = NULL;
   if (le_backing_decode_file(g_path, 48000, 0, 0, &b, &info) == LE_OK) {
     const int32_t frames = le_backing_buffer_frames(b);
     if (frames <= 0 || frames > LE_BACKING_MAX_SECONDS * 48000) {
-      ++g_violations;
+      violation("decoded length");
     }
     const float* pcm = le_backing_buffer_pcm(b);
     for (int64_t i = 0; frames > 0 && i < (int64_t)frames * 2; ++i) {
       if (!isfinite(pcm[i])) {
-        ++g_violations;
+        violation("non-finite output");
         break;
       }
     }
@@ -79,7 +98,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   b = NULL;
   if (le_backing_decode_file(g_path, 44100, 100, 4800, &b, &info) == LE_OK &&
       le_backing_buffer_frames(b) > 4800) {
-    ++g_violations;
+    violation("bounded length");
   }
   le_backing_buffer_free(b);
   return 0;

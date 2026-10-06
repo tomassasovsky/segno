@@ -1189,7 +1189,8 @@ static void bk_write_raw_wav(const char* path, const unsigned char* fmt,
   fwrite("data", 1, 4, f);
   bk_put32(h, data_len);
   fwrite(h, 1, 4, f);
-  for (uint32_t i = 0; i < data_len; ++i) fputc((int)(i * 7u) & 0xFF, f);
+  /* Small values in every encoding (float or PCM): byte 3 stays 0. */
+  for (uint32_t i = 0; i < data_len; ++i) fputc(i % 4 == 3 ? 0 : (int)(i * 7u) & 0x7F, f);
   fclose(f);
 }
 
@@ -1230,6 +1231,9 @@ static void test_backing_decode_whitelist(void) {
   bk_expect(BK_FIX "layer2.mp2", LE_ERR_UNSUPPORTED);
   bk_expect(BK_FIX "tiny.aiff", LE_ERR_UNSUPPORTED);
   bk_expect(BK_FIX "sine1k_44k1_mono.flac", LE_ERR_UNSUPPORTED);
+  /* Found by the fuzz driver: float samples near FLT_MAX, finite but
+   * overflowing the converter to Inf. */
+  bk_expect(BK_FIX "f32_huge_values.wav", LE_ERR_INVALID);
   /* L4: a 0.2 s MP3 with ID3v2.3 and ID3v1 tags decodes. */
   bk_expect(BK_FIX "short_tagged.mp3", LE_OK);
 
@@ -1300,19 +1304,32 @@ static void test_backing_decode_whitelist(void) {
 static void test_backing_decode_non_finite(void) {
   printf("test_backing_decode_non_finite\n");
   enum { N = 4800 };
+  le_backing_buffer* bb = NULL;
   float* x = malloc((size_t)N * sizeof(float));
-  const float bad[2] = {NAN, INFINITY};
-  for (int k = 0; k < 2; ++k) {
+  /* A finite value near FLT_MAX is damaged too: the converter's sum would
+   * overflow it to Inf (found by the fuzz driver). */
+  const float bad[3] = {NAN, INFINITY, 3.39e38f};
+  for (int k = 0; k < 3; ++k) {
     for (int i = 0; i < N; ++i) x[i] = 0.1f;
     x[100] = bad[k];
     bk_write_wav(bk_path("nonfinite.wav"), 3, 32, 1, 48000, x, N, 0);
     bk_expect(bk_path("nonfinite.wav"), LE_ERR_INVALID);
+    CHECK(le_backing_decode_file(bk_path("nonfinite.wav"), 44100, 0, 0, &bb,
+                                 NULL) == LE_ERR_INVALID);
     le_backing_buffer* b = NULL;
     CHECK(le_backing_decode_file(bk_path("nonfinite.wav"), 48000, 50, 100, &b,
                                  NULL) == LE_ERR_INVALID);
     CHECK(b == NULL);
   }
   free(x);
+  /* 60 dB over full scale is still a sound; beyond that it is damaged. */
+  float edge[64];
+  for (int i = 0; i < 64; ++i) edge[i] = i == 10 ? 1024.0f : 0.5f;
+  bk_write_wav(bk_path("hot.wav"), 3, 32, 1, 48000, edge, 64, 0);
+  bk_expect(bk_path("hot.wav"), LE_OK);
+  edge[10] = 1025.0f;
+  bk_write_wav(bk_path("hot.wav"), 3, 32, 1, 48000, edge, 64, 0);
+  bk_expect(bk_path("hot.wav"), LE_ERR_INVALID);
 }
 
 /* L2: a bounded read computes exactly the whole-file decode's samples at the

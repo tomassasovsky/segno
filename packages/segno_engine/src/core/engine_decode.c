@@ -595,10 +595,16 @@ static int32_t le_decode_open(const char* path, le_decode_src* s) {
   return LE_OK;
 }
 
+/* The largest sample magnitude a decode accepts: 60 dB over full scale. A
+ * float WAV can hold any finite value, and one near FLT_MAX overflows the
+ * converter's sum to Inf, so anything this far out is damaged, not loud. */
+#define LE_DECODE_MAX_ABS 1024.0f
+
 /* Reads up to [want] frames into [buf] (interleaved, the source's channels).
  * Returns the frames read, or a negative le_result on a decode error or a
- * non-finite sample (H3: one NaN would poison the output-bus FX for good).
- * A short read is the end of the stream. */
+ * sample that is non-finite or beyond LE_DECODE_MAX_ABS (H3: one NaN would
+ * poison the output-bus FX for good). A short read is the end of the
+ * stream. */
 static int64_t le_decode_read(le_decode_src* s, float* buf, int64_t want) {
   int64_t got = 0;
   while (got < want) {
@@ -608,7 +614,8 @@ static int64_t le_decode_read(le_decode_src* s, float* buf, int64_t want) {
         &s->dec, at, (ma_uint64)(want - got), &read);
     const size_t n = (size_t)read * (size_t)s->channels;
     for (size_t i = 0; i < n; ++i) {
-      if (!isfinite(at[i])) return LE_ERR_INVALID;
+      /* Written so a NaN fails it too. */
+      if (!(fabsf(at[i]) <= LE_DECODE_MAX_ABS)) return LE_ERR_INVALID;
     }
     got += (int64_t)read;
     if (r == MA_AT_END || (r == MA_SUCCESS && read == 0)) break;
