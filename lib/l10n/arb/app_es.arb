@@ -2611,6 +2611,8 @@
     "powerOffSettingsFailedTitle": "No se pudieron confirmar los ajustes",
     "powerOffSettingsFailedBody": "Segno sigue encendido. Reintenta guardar antes de apagar.",
     "powerOffRetry": "Reintentar",
+    "powerOffSettingsRetryFailedBody": "Segno no pudo confirmar que tu último cambio se haya guardado. Vuelve a intentarlo o apaga de todos modos.",
+    "powerOffAnyway": "Apagar de todos modos",
     "clickSettingsRecoveryTitle": "Hay que recuperar los ajustes del clic",
     "clickSettingsRefusedTitle": "No se aplicó el cambio del clic",
     "clickSettingsRecoveryBody": "Reintenta recuperar el ajuste del clic.",

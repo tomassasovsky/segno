@@ -162,7 +162,8 @@ void main() {
     );
 
     expect(find.text('−27.0 dB'), findsOneWidget);
-    expect(find.text('+6.0 dB'), findsOneWidget);
+    // A new level mapping tops out at unity, not the fader's +6 dB.
+    expect(find.text('0.0 dB'), findsOneWidget);
     expect(find.text('50%'), findsNothing);
 
     final slider = find.byKey(const Key('expression_endpoint_heel'));

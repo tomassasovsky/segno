@@ -616,7 +616,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                 ExpressionMapping(
                   target: target,
                   heel: kept?.heel ?? 0,
-                  toe: kept?.toe ?? 1,
+                  toe: kept?.toe,
                 ),
               );
     setState(() {
