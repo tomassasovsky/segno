@@ -117,19 +117,25 @@ static void test_instrument_rings_order_and_release_lane(void) {
   CHECK(!le_synth_has_origin(s, 7));
   CHECK(le_synth_active(s, 0) == 0);
 
-  /* 300 note-ons: 255 fit (one slot kept empty), 45 are refused and counted;
-   * the release of the first is still accepted and applied */
+  /* 300 note-ons: 247 fit (one slot kept empty, eight kept for patch
+   * changes), 53 are refused and counted; a patch change for every slot and
+   * the release of the first note are still accepted */
   int ok = 0, full = 0;
   for (uint32_t o = 1; o <= 300; ++o) {
     const int32_t rc = le_engine_instrument_note_on(e, 0, 1000 + o, 30 + (int32_t)(o % 60), 100);
     if (rc == LE_OK) ok++;
     if (rc == LE_ERR_CAPACITY) full++;
   }
-  CHECK(ok == 255 && full == 45);
+  CHECK(ok == 247 && full == 53);
+  for (int k = 1; k < LE_MAX_INSTRUMENTS; ++k) {
+    CHECK(le_engine_set_instrument(e, k, syn_patch("keys"), NULL) == LE_OK);
+  }
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("sub"), NULL) == LE_OK);
+  CHECK(le_engine_set_instrument(e, 1, syn_patch("pad"), NULL) == LE_ERR_CAPACITY);
   CHECK(le_engine_instrument_note_off(e, 1001) == LE_OK);
   le_snapshot snap;
   le_engine_get_snapshot(e, &snap);
-  CHECK(snap.instrument_events_refused == 45);
+  CHECK(snap.instrument_events_refused == 53);
   ins_run(e, 64, 64, 0, NULL);
   CHECK(le_synth_active(s, -1) == 32); /* the voice limit holds the rest */
   CHECK(!le_synth_has_origin(s, 1001)); /* stolen or released, never held */
@@ -243,8 +249,11 @@ static void test_instrument_refusals(void) {
   const float mine[3] = {11.0f, 22.0f, 33.0f};
   CHECK(le_engine_set_instrument(e, 3, syn_patch("keys"), mine) == LE_OK);
   ins_run(e, 64, 64, 0, NULL);
-  for (uint32_t o = 1; o <= 255; ++o) {
+  for (uint32_t o = 1; o <= 247; ++o) {
     CHECK(le_engine_instrument_note_on(e, 3, o, 40 + (int32_t)(o % 40), 100) == LE_OK);
+  }
+  for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) { /* the reserved room */
+    CHECK(le_engine_set_instrument(e, 4, syn_patch("keys"), NULL) == LE_OK);
   }
   const float other[3] = {90.0f, 90.0f, 90.0f};
   CHECK(le_engine_set_instrument(e, 3, syn_patch("lead"), other) == LE_ERR_CAPACITY);
@@ -296,6 +305,10 @@ static void test_instrument_configure_epoch_and_fallback(void) {
   ins_run(e, 9000, 9000, 0, NULL); /* above LE_COND_SCRATCH_FRAMES */
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.instrument_fallback_blocks == 1);
+  CHECK(snap.instrument_peaks[0] == 0.0f); /* the oversized block is silent */
+  int zero = 1;
+  for (int i = 0; i < LE_COND_SCRATCH_FRAMES; ++i) zero &= le_instrument_bus(e, 0)[i] == 0.0f;
+  CHECK(zero);
   CHECK(le_engine_configure(e, 44100, 2, 2, 44100 * 4) == LE_OK);
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.synth_epoch == epoch + 1);
@@ -308,6 +321,84 @@ static void test_instrument_configure_epoch_and_fallback(void) {
   le_engine_destroy(e);
 }
 
+/* A release posted before a note-on of the same origin applies first, so
+ * the note it does not belong to keeps sounding. */
+static void test_instrument_release_before_note_keeps_it(void) {
+  printf("test_instrument_release_before_note_keeps_it\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  CHECK(le_engine_instrument_note_off(e, 5) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 0, 5, 60, 100) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(le_synth_has_origin(s, 5));
+  CHECK(s->voices[0].state == 1 /* held */);
+  le_engine_destroy(e);
+}
+
+/* Values stamped for the next patch are never applied to the patch still
+ * playing: with more than one block of releases queued ahead of the patch
+ * change, the old patch keeps its own parameters until the change drains. */
+static void test_instrument_params_stay_with_their_patch(void) {
+  printf("test_instrument_params_stay_with_their_patch\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  const float first[3] = {11.0f, 22.0f, 33.0f};
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("lead"), first) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 0, 1, 60, 100) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  for (uint32_t o = 100; o < 700; ++o) CHECK(le_engine_instrument_note_off(e, o) == LE_OK);
+  const float next[3] = {90.0f, 80.0f, 70.0f};
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), next) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL); /* 512 releases: the change still waits */
+  CHECK(s->inst[0].patch == syn_patch("lead"));
+  CHECK(s->inst[0].params[0] == 11.0f && s->inst[0].params[1] == 22.0f &&
+        s->inst[0].params[2] == 33.0f);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(s->inst[0].patch == syn_patch("pad"));
+  CHECK(s->inst[0].params[0] == 90.0f && s->inst[0].params[1] == 80.0f &&
+        s->inst[0].params[2] == 70.0f);
+  le_engine_destroy(e);
+}
+
+/* Configure and reopen drop every queued event and bump the epoch: nothing
+ * posted before them plays after them. */
+static void test_instrument_reset_drops_queued_events(void) {
+  printf("test_instrument_reset_drops_queued_events\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_snapshot snap;
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 0, 1, 60, 100) == LE_OK);
+  le_engine_get_snapshot(e, &snap);
+  const uint32_t epoch = snap.synth_epoch;
+  CHECK(le_engine_configure(e, INS_SR, 2, 2, INS_SR * 4) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.synth_epoch == epoch + 1);
+  CHECK(snap.instrument_patch[0] == -1);
+  CHECK(le_synth_active((le_synth*)e->synth, -1) == 0);
+  /* new events after the reset never let the old ones through */
+  CHECK(le_engine_set_instrument(e, 2, syn_patch("keys"), NULL) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 2, 9, 62, 100) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.instrument_patch[0] == -1);
+  CHECK(snap.instrument_patch[2] == syn_patch("keys"));
+  CHECK(le_synth_active((le_synth*)e->synth, 0) == 0);
+  CHECK(le_synth_active((le_synth*)e->synth, 2) == 1);
+  /* the reopen path, material retained */
+  CHECK(le_engine_set_instrument(e, 1, syn_patch("keys"), NULL) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 1, 2, 64, 100) == LE_OK);
+  int32_t outcome = -99, mask = -99;
+  CHECK(le_engine_reopen_configured(e, INS_SR, 2, 2, INS_SR * 4, &outcome, &mask) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.synth_epoch == epoch + 2);
+  CHECK(snap.instrument_patch[1] == -1);
+  CHECK(le_synth_active((le_synth*)e->synth, -1) == 0);
+  le_engine_destroy(e);
+}
+
 static void run_instrument_tests(void) {
   test_instrument_bus_matches_offline_render();
   test_instrument_params_reach_first_note();
@@ -317,4 +408,7 @@ static void run_instrument_tests(void) {
   test_instrument_refusals();
   test_instrument_reset_slot();
   test_instrument_configure_epoch_and_fallback();
+  test_instrument_release_before_note_keeps_it();
+  test_instrument_params_stay_with_their_patch();
+  test_instrument_reset_drops_queued_events();
 }

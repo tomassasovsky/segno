@@ -3426,7 +3426,8 @@ LE_EXPORT int32_t le_engine_set_instrument(le_engine* engine, int32_t slot,
                                            int32_t patch, const float* params);
 
 /* Sets family parameter `param` (0..2) of `slot` to `value` (0..100, clamped),
- * applied from the next block. Returns LE_OK or LE_ERR_INVALID. */
+ * applied from the next block. Returns LE_OK, LE_ERR_INVALID,
+ * LE_ERR_NO_INSTRUMENT (the slot has no patch) or LE_ERR_NOT_RUNNING. */
 LE_EXPORT int32_t le_engine_set_instrument_param(le_engine* engine, int32_t slot,
                                                  int32_t param, float value);
 
@@ -3443,8 +3444,9 @@ LE_EXPORT int32_t le_engine_reset_instrument(le_engine* engine, int32_t slot);
 /* Starts `note` (0..127) at `velocity` (1..127) on `slot` for `origin` (the
  * caller's identity for the note; its release names the same origin).
  * Returns LE_OK, LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (the slot has no
- * patch), LE_ERR_CAPACITY (the note-on ring is full: the note is not played
- * and counted in instrument_events_refused) or LE_ERR_NOT_RUNNING. */
+ * patch), LE_ERR_CAPACITY (the note-on ring is full, keeping its last
+ * LE_MAX_INSTRUMENTS slots for patch changes: the note is not played and is
+ * counted in instrument_events_refused) or LE_ERR_NOT_RUNNING. */
 LE_EXPORT int32_t le_engine_instrument_note_on(le_engine* engine, int32_t slot,
                                                uint32_t origin, int32_t note,
                                                int32_t velocity);

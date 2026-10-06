@@ -1601,6 +1601,10 @@ struct le_engine {
    * posting sequence, and the event rings' storage */
   int32_t inst_patch_requested[LE_MAX_INSTRUMENTS];
   uint32_t inst_seq;
+  /* the highest posted sequence, published after each push (release): the
+   * callback applies only events at or below it, so both rings give it one
+   * consistent cut (a note-off never applies before its own note-on) */
+  _Atomic uint32_t a_inst_seq_pub;
   le_inst_ring inst_ring;
   le_inst_ring inst_release_ring;
   le_inst_event inst_ring_storage[LE_INST_EVENT_CAPACITY];

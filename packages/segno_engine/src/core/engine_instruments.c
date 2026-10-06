@@ -9,18 +9,25 @@
  * configure/reopen with the device closed).
  *
  * Ordering: the control thread stamps every event with one posting sequence
- * across the note-on ring and the release ring, and the callback merges the
- * two by that sequence, so a note-on and its note-off posted between two
- * blocks are applied in that order. Patch changes ride the note-on ring too,
+ * across the note-on ring and the release ring and publishes the highest
+ * sequence after each push. The callback reads that high-water mark first
+ * and merges the two rings by sequence up to it: every event at or below it
+ * is visible in both rings, so the merge sees a consistent cut and a note-on
+ * and its note-off are applied in posting order whenever they land. Patch changes ride the note-on ring too,
  * so a note posted after its instrument was set can never meet the previous
  * patch (the command ring is drained separately and gives no such order).
  * The release ring is a reserved lane: a full note-on ring refuses note-ons
- * (counted) but never a release.
+ * (counted) but never a release. The note-on ring itself keeps room for one
+ * patch change per slot: note-ons are refused while fewer than
+ * LE_MAX_INSTRUMENTS slots would stay free, so an Apply or Cancel always
+ * fits.
  *
  * Parameters are continuous controls: three float bits per slot stamped with
  * the patch they belong to and a revision. The callback applies a changed
  * revision once per block, only to the patch it was stamped for, and a patch
- * change applies the current stamped values at once.
+ * change applies the current stamped values at once. A read that overlaps
+ * two publishes may mix them for one block; the next revision settles it
+ * (eventually consistent, as every continuous control).
  */
 #include "engine_instruments.h"
 
@@ -52,6 +59,13 @@ static void ring_init(le_inst_ring* r, le_inst_event* storage, uint32_t cap) {
   atomic_store_explicit(&r->tail, 0u, memory_order_relaxed);
   r->mask = cap - 1u;
   r->slots = storage;
+}
+
+/* Free slots (producer side; one slot is always kept empty). */
+static uint32_t ring_free(le_inst_ring* r) {
+  const uint32_t tail = atomic_load_explicit(&r->tail, memory_order_relaxed);
+  const uint32_t head = atomic_load_explicit(&r->head, memory_order_acquire);
+  return r->mask - (tail - head);
 }
 
 static int ring_push(le_inst_ring* r, const le_inst_event* ev) {
@@ -114,6 +128,7 @@ void le_instruments_reset(le_engine* e, int32_t sample_rate) {
   ring_init(&e->inst_release_ring, e->inst_release_storage,
             LE_INST_RELEASE_CAPACITY);
   e->inst_seq = 0;
+  atomic_store_explicit(&e->a_inst_seq_pub, 0u, memory_order_relaxed);
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
     e->inst_patch_requested[k] = -1;
     e->inst_param_seen[k] = 0;
@@ -139,7 +154,7 @@ static int configured(le_engine* e) {
 }
 
 /* Stores a slot's three parameters stamped with `patch`, then bumps its
- * revision (release), so the callback reads all of a change or none. */
+ * revision (release); see the header comment for the consistency it gives. */
 static void publish_params(le_engine* e, int32_t slot, int32_t patch,
                            const float* v) {
   for (int p = 0; p < 3; ++p) store_f32(&e->a_inst_param_bits[slot][p], v[p]);
@@ -155,6 +170,7 @@ static int push_event(le_engine* e, le_inst_ring* r, uint32_t origin,
   const le_inst_event ev = {e->inst_seq + 1u, origin, kind, slot, note, velocity};
   if (!ring_push(r, &ev)) return 0;
   e->inst_seq++;
+  atomic_store_explicit(&e->a_inst_seq_pub, e->inst_seq, memory_order_release);
   return 1;
 }
 
@@ -228,7 +244,9 @@ LE_EXPORT int32_t le_engine_instrument_note_on(le_engine* engine, int32_t slot,
   }
   if (!configured(engine)) return LE_ERR_NOT_RUNNING;
   if (engine->inst_patch_requested[slot] < 0) return LE_ERR_NO_INSTRUMENT;
-  if (!push_event(engine, &engine->inst_ring, origin, LE_INST_NOTE_ON,
+  /* keep room for one patch change per slot */
+  if (ring_free(&engine->inst_ring) <= LE_MAX_INSTRUMENTS ||
+      !push_event(engine, &engine->inst_ring, origin, LE_INST_NOTE_ON,
                   (uint8_t)slot, (uint8_t)note, (uint8_t)velocity)) {
     atomic_fetch_add_explicit(&engine->a_inst_events_refused, 1u,
                               memory_order_relaxed);
@@ -315,11 +333,18 @@ static void apply_event(le_engine* e, le_synth* s, const le_inst_event* ev) {
   }
 }
 
-/* Both rings in posting order, at most LE_INST_EVENTS_PER_BLOCK events. */
+/* Both rings in posting order up to the published high-water mark, at most
+ * LE_INST_EVENTS_PER_BLOCK events. An event above the mark (pushed after
+ * the mark was read) waits for the next block, so the other ring's earlier
+ * events can never be overtaken by it. */
 static void drain_events(le_engine* e, le_synth* s) {
+  const uint32_t mark =
+      atomic_load_explicit(&e->a_inst_seq_pub, memory_order_acquire);
   for (int n = 0; n < LE_INST_EVENTS_PER_BLOCK; ++n) {
     const le_inst_event* on = ring_peek(&e->inst_ring);
     const le_inst_event* off = ring_peek(&e->inst_release_ring);
+    if (on != NULL && (int32_t)(on->seq - mark) > 0) on = NULL;
+    if (off != NULL && (int32_t)(off->seq - mark) > 0) off = NULL;
     if (on == NULL && off == NULL) return;
     if (off == NULL || (on != NULL && (int32_t)(on->seq - off->seq) < 0)) {
       apply_event(e, s, on);
@@ -356,9 +381,15 @@ void le_instruments_block(le_engine* e, uint32_t frames) {
   }
   if (frames > LE_COND_SCRATCH_FRAMES) {
     /* Larger than the bus scratch (only synthetic test blocks): counted, no
-     * instrument audio, never an allocation on this thread. */
+     * instrument audio and silent buses, never an allocation on this
+     * thread. */
     atomic_fetch_add_explicit(&e->a_inst_fallback_blocks, 1u,
                               memory_order_relaxed);
+    memset(e->inst_bus, 0,
+           sizeof(float) * (size_t)LE_MAX_INSTRUMENTS * LE_COND_SCRATCH_FRAMES);
+    for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+      store_f32(&e->a_inst_peak_bits[k], 0.0f);
+    }
     return;
   }
   float* bus[LE_MAX_INSTRUMENTS];
