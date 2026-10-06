@@ -613,6 +613,14 @@ same rule refuses an import into Internal while a take records there; that is
 the conservative reading, since NVMe has the bandwidth, and an import waits
 seconds at most.
 
+Who enters each row (review of PR #1221): capture, Open's `sessionApply` and
+save's `sessionWrite` are Part 11; New loop's `sessionApply` is entered by
+Library Part 5's `newLoop()` at its commit; rename, duplicate, delete, move
+and restore into Internal enter `sessionWrite` in Part 7, which already owns
+their publication through the swap, with the bundle id (not a raw path) as
+the item so `/a` and `/a/` are one item; transfer and eject are USB Part 6's
+follow-up; power, restart, audio apply and latency are Part 12.
+
 Wiring (Parts 11 and 12): `PerformanceRepository.arm` before `le_perf_arm`
 (the pedal reaches the repository directly, `performance_repository.dart:278-283`);
 `SessionCubit` at the step after preservation and before
@@ -978,6 +986,9 @@ VERIFICATION COMMAND: (cd packages/session_repository && /Users/Tomas/developmen
   `.deleting` (finish the delete), and `*.part` inside a bundle (delete).
   `_isTransient` (`:1056-1057`) recognises `.deleting`.
 - Delete (Library Part 3) renames to `<id>.deleting` and then removes it.
+- Rename, duplicate, delete, move and restore into Internal each enter
+  `sessionWrite` with the bundle id as the item at their commit (D8), next
+  to `save`'s existing guard.
 - `read` loads layers by `file`, unchanged in shape; digest checks are
   Part 14's.
 
@@ -1143,7 +1154,13 @@ VERIFICATION COMMAND: (cd packages/performance_repository && /Users/Tomas/develo
   both repositories and `AppRuntime`.
 - The review revision of D8 (capture and a writing transfer refuse each
   other on the same volume, review L6) is applied to the table and its
-  literal test on the same branch. Releasing the capture guard when a take
+  literal test on the same branch.
+- From the PR #1221 review: a refused arm shows a toast naming what to wait
+  for (`perfArmRefused` + `operationBusy`, one line per guard kind), for the
+  toggle and the pedal alike; a refused Open or save is `SessionError.busy`
+  with `refusedBy` and the same copy, never the developer string; the
+  capture guard is released as soon as the engine disarms; and every owner
+  requires the shared registry (no private fallback). Releasing the capture guard when a take
   becomes held is Part 8's (the held state does not exist before it).
 - **Follow-up for USB Part 6** (routed to the USB builder): `StorageRepository`
   implements `ActiveOperationSource` (each held lease reported as a
@@ -1256,7 +1273,10 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
 
 - `SessionRepository.inspect(id) → OpenCandidate` (D7 step 1): every layer
   reference (undo, live and redo positions) checked for presence, decode,
-  frames, format and digest (`le_digest_file` in `Isolate.run`), one
+  frames, format and digest (`le_digest_file` in `Isolate.run`, whose
+  result codes tell a missing file, `LE_ERR_NOT_FOUND`, from one shorter
+  than its range, `LE_ERR_TRUNCATED`, and from a read error,
+  `LE_ERR_DEVICE`: the P1 follow-up, so no separate stat races it), one
   `RepairItem` per missing or damaged `audioId` listing every
   (track, lane, position) that needs it; unverified-and-missing → refusal
   item (D6).
