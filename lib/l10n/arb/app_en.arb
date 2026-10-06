@@ -6189,5 +6189,23 @@
     "storageEjectStuck": "Still ejecting. If it does not finish, unplug the drive.",
     "@storageEjectStuck": {
         "description": "Under a drive whose eject the helper took and has not answered after two minutes; pulling the drive is the way out."
+    },
+    "saveToMeasuring": "{label} · checking the drive…",
+    "@saveToMeasuring": {
+        "description": "Under the destination picker, for a drive whose write probe has not landed yet; it cannot be chosen until it has.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
+    },
+    "saveToFellBack": "{label} was removed. Save to is Internal.",
+    "@saveToFellBack": {
+        "description": "Toast when the USB drive chosen in Save to goes away (pulled, ejected or read-only) and the next take goes to Internal.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
     }
 }

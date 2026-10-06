@@ -30,6 +30,10 @@ class RecordingDestinationCubit extends Cubit<RecordingDestinationState> {
   /// applied rate, as on the Storage page (accepted behaviour §6.7).
   static const int bytesPerFrame = 2 * 3;
 
+  /// How much faster than the recording a drive must write to be chosen:
+  /// headroom for the drain's bursts.
+  static const int headroom = 2;
+
   final StorageRepository _repository;
   final int Function() _sampleRate;
   late final StreamSubscription<List<RemovableVolume>> _volumes;
@@ -37,8 +41,14 @@ class RecordingDestinationCubit extends Cubit<RecordingDestinationState> {
   void _onVolumes(List<RemovableVolume> volumes) {
     var destination = state.destination;
     var awaiting = state.awaitingDrive;
+    String? fellBackFrom;
     if (destination is RemovableDestination &&
         !_canRecordTo(volumes, destination.generation)) {
+      final generation = destination.generation;
+      fellBackFrom = state.volumes
+          .where((v) => v.generation == generation)
+          .map((v) => v.label)
+          .firstOrNull;
       destination = const StorageDestination.internal();
     }
     if (awaiting) {
@@ -55,18 +65,32 @@ class RecordingDestinationCubit extends Cubit<RecordingDestinationState> {
         volumes: volumes,
         destination: destination,
         awaitingDrive: awaiting,
+        fellBackFrom: () => fellBackFrom,
       ),
     );
     unawaited(refresh());
   }
 
-  static bool _canRecordTo(List<RemovableVolume> volumes, int generation) =>
-      volumes.any(
-        (v) =>
-            v.generation == generation &&
-            v.status == RemovableVolumeStatus.mounted &&
-            v.mountPoint != null,
-      );
+  /// The write rate a drive must have measured to be chosen; 0 while the
+  /// engine has no rate (then any measured drive will do).
+  int get _requiredBytesPerSecond => _sampleRate() * bytesPerFrame * headroom;
+
+  /// Whether the drive [generation] can take a recording: mounted
+  /// read-write, and its write probe has landed at or above the
+  /// requirement. A drive still being measured is not chosen yet; one
+  /// measured too slow is never chosen.
+  bool _canRecordTo(List<RemovableVolume> volumes, int generation) {
+    final measured = volumes
+        .where(
+          (v) =>
+              v.generation == generation &&
+              v.status == RemovableVolumeStatus.mounted &&
+              v.mountPoint != null,
+        )
+        .map((v) => v.writeBytesPerSecond)
+        .firstOrNull;
+    return measured != null && measured >= _requiredBytesPerSecond;
+  }
 
   /// Chooses [destination]. A drive that cannot take a recording (gone,
   /// read-only, unsupported, being ejected) is not chosen.
@@ -75,7 +99,13 @@ class RecordingDestinationCubit extends Cubit<RecordingDestinationState> {
         !_canRecordTo(state.volumes, destination.generation)) {
       return;
     }
-    emit(state.copyWith(destination: destination, awaitingDrive: false));
+    emit(
+      state.copyWith(
+        destination: destination,
+        awaitingDrive: false,
+        fellBackFrom: () => null,
+      ),
+    );
     await refresh();
   }
 
@@ -89,7 +119,7 @@ class RecordingDestinationCubit extends Cubit<RecordingDestinationState> {
         return;
       }
     }
-    emit(state.copyWith(awaitingDrive: true));
+    emit(state.copyWith(awaitingDrive: true, fellBackFrom: () => null));
   }
 
   /// The Connect USB sheet was cancelled: the take stays on Internal.

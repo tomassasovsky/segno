@@ -1921,6 +1921,33 @@ void main() {
       expect(storage.leases, isEmpty);
     });
 
+    test('an arm that throws on the drive gives the drive back and says '
+        'why, and a later arm on Internal still works', () async {
+      // A file where the take's directory must go: the bundle cannot be
+      // created, as on a full or read-only-on-error stick.
+      File('$mount/Segno').writeAsStringSync('in the way');
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+
+      expect(performance.armedDirectory, isNull);
+      expect(storage.leases, isEmpty);
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderIdle>().having(
+          (s) => s.driveUnavailable,
+          'driveUnavailable',
+          isTrue,
+        ),
+      );
+
+      destination = const StorageDestination.internal();
+      await cubit.toggleArm();
+      expect(performance.armedDirectory, startsWith('${tempDir.path}/exports'));
+      await performance.disarmAndFinalize();
+    });
+
     test('an arm refused at its commit gives the drive back', () async {
       final guards = GuardRegistry();
       final guarded = PerformanceRepository(

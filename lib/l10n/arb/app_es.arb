@@ -2464,5 +2464,7 @@
     "saveToTooSlow": "{label} · demasiado lenta para grabar",
     "connectUsbTitle": "Conecta una unidad USB",
     "connectUsbBody": "Tu grabación se queda en Interno.",
-    "connectUsbTryAgain": "Reintentar"
+    "connectUsbTryAgain": "Reintentar",
+    "saveToMeasuring": "{label} · revisando la unidad…",
+    "saveToFellBack": "Se quitó {label}. Guardar en ahora es Interno."
 }

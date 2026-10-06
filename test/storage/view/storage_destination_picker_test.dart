@@ -113,13 +113,18 @@ void main() {
       expect(chosen, [const StorageDestination.removable(4)]);
     });
 
-    testWidgets('an unmeasured drive is not called too slow', (tester) async {
+    testWidgets('a drive still being measured is being checked, not fast '
+        'enough: it cannot be chosen yet', (tester) async {
       final l10n = await pump(
         tester,
         requiredBytesPerSecond: 576000,
         volumes: [_volume(1, writeBytesPerSecond: null)],
       );
       expect(find.text(l10n.saveToTooSlow('SEGNO USB')), findsNothing);
+      expect(find.text(l10n.saveToMeasuring('SEGNO USB')), findsOneWidget);
+
+      await tester.tap(find.text('SEGNO USB'), warnIfMissed: false);
+      expect(chosen, isEmpty);
     });
 
     testWidgets('with no drive, USB drive asks for one', (tester) async {

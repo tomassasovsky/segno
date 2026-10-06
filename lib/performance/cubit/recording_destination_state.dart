@@ -10,6 +10,7 @@ class RecordingDestinationState extends Equatable {
     this.remaining,
     this.awaitingDrive = false,
     this.bytesPerSecond = 0,
+    this.fellBackFrom,
   });
 
   /// Where the next take goes. Internal until a mounted drive is chosen, and
@@ -33,6 +34,11 @@ class RecordingDestinationState extends Equatable {
   /// 0 while the engine has no rate.
   final int bytesPerSecond;
 
+  /// The label of the chosen drive that just went (pulled, ejected,
+  /// remounted read-only), putting Save to back on Internal; set on that one
+  /// state only, so the change can be said once.
+  final String? fellBackFrom;
+
   /// Returns a copy with the given fields replaced; [remaining] takes a
   /// function so null can be set.
   RecordingDestinationState copyWith({
@@ -41,12 +47,14 @@ class RecordingDestinationState extends Equatable {
     Duration? Function()? remaining,
     bool? awaitingDrive,
     int? bytesPerSecond,
+    String? Function()? fellBackFrom,
   }) => RecordingDestinationState(
     destination: destination ?? this.destination,
     volumes: volumes ?? this.volumes,
     remaining: remaining != null ? remaining() : this.remaining,
     awaitingDrive: awaitingDrive ?? this.awaitingDrive,
     bytesPerSecond: bytesPerSecond ?? this.bytesPerSecond,
+    fellBackFrom: fellBackFrom != null ? fellBackFrom() : null,
   );
 
   @override
@@ -56,5 +64,6 @@ class RecordingDestinationState extends Equatable {
     remaining,
     awaitingDrive,
     bytesPerSecond,
+    fellBackFrom,
   ];
 }

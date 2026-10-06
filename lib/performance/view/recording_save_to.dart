@@ -19,15 +19,12 @@ class RecordingSaveTo extends StatelessWidget {
   /// Creates a [RecordingSaveTo].
   const RecordingSaveTo({super.key});
 
-  /// How much faster than the recording a drive must write to be offered.
-  static const int headroom = 2;
-
   @override
   Widget build(BuildContext context) {
     final destination = context.watch<RecordingDestinationCubit>();
     final recorder = context.watch<PerformanceRecorderCubit>().state;
     final state = destination.state;
-    final required = state.bytesPerSecond * headroom;
+    final required = state.bytesPerSecond * RecordingDestinationCubit.headroom;
     return StorageDestinationPicker(
       volumes: state.volumes,
       value: state.destination,

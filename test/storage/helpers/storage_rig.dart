@@ -66,6 +66,7 @@ RemovableVolumeRecord usbRecord(
   String fsType = 'exfat',
   RemovableVolumeRecordStatus status = RemovableVolumeRecordStatus.mounted,
   bool mounted = true,
+  int? writeBytesPerSecond = 16777216,
 }) => RemovableVolumeRecord(
   generation: g,
   kname: 'sda1',
@@ -76,5 +77,5 @@ RemovableVolumeRecord usbRecord(
   sizeBytes: usbTotal,
   status: status,
   readOnly: status == RemovableVolumeRecordStatus.readOnly,
-  writeBytesPerSecond: 16777216,
+  writeBytesPerSecond: writeBytesPerSecond,
 );
