@@ -312,6 +312,50 @@ void main() {
           expect(bundle.session.autoRecord, isFalse);
         },
       );
+
+      test(
+        'an owed pair is saved as requested, and recall re-applies it with '
+        'a receipt',
+        () async {
+          // Withhold the receipt: an unpumped engine consumes no command.
+          pump.cancel();
+          final edit = await tempo.recordStartControl.setCountInBars(4);
+          expect(edit.status, RecordStartStatus.recoveryRequired);
+          expect(looper.recordStartRecoveryRequired, isTrue);
+          expect(
+            tempo.recordStartOwner.durable,
+            RecordStartSettings(countInBars: 4, soundStart: false),
+          );
+          pump = Timer.periodic(
+            const Duration(milliseconds: 1),
+            (_) => engine.pump(frames: 0),
+          );
+          await session.saveAs('Owed pair');
+          expect(session.state.status, SessionStatus.success);
+          final bundle = await sessions.read(
+            await sessions.bundlePath('Owed pair'),
+          );
+          expect(bundle.session.countInBars, 4);
+          expect(bundle.session.autoRecord, isFalse);
+
+          // Settle the obligation, then move away from the saved pair.
+          expect((await tempo.recordStartOwner.recover()).isOk, isTrue);
+          expect(
+            (await tempo.recordStartControl.setCountInBars(1)).isOk,
+            isTrue,
+          );
+          expect(engine.snapshot().countInBars, 1);
+          await session.loadNamed('Owed pair');
+          expect(session.state.status, SessionStatus.success);
+          expect(looper.recordStartRecoveryRequired, isFalse);
+          expect(looper.recordStartSettingsSettled, isTrue);
+          expect(engine.snapshot().countInBars, 4);
+          expect(
+            tempo.recordStartControl.recordStartSnapshot?.settings.countInBars,
+            4,
+          );
+        },
+      );
     },
   );
 }
