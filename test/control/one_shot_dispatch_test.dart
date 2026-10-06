@@ -123,8 +123,8 @@ class _Rig {
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
       recordStartControl: FakeRecordStartControl(),
-      decayControl: owner,
-      oneShotControl: owner,
+      decayControl: owner.decayControl,
+      oneShotControl: owner.oneShotControl,
       recordLengthControl: FakeRecordLengthControl(),
       recordTimingControl: FakeRecordTimingControl(),
       takeLocked: () => powerUp,
@@ -150,9 +150,11 @@ class _Rig {
   late final ControllerRepository controller;
   late final PerformanceRepository performance;
   late final ControlCubit cubit;
-  bool get live =>
-      owner.oneShotSnapshot!.effectiveOneShot(const OneShotAddress.track(0));
-  bool? get durable => owner.durableOneShotSnapshot.trackOverrides[0];
+  bool get live => owner.oneShotControl.oneShotSnapshot!.effectiveOneShot(
+    const OneShotAddress.track(0),
+  );
+  bool? get durable =>
+      owner.oneShotControl.durableOneShotSnapshot.trackOverrides[0];
   void pump() {
     for (var i = 0; i < 20; i++) {
       clock
@@ -221,7 +223,7 @@ class _Rig {
   }
 
   void ordinary({required bool? value}) {
-    unawaited(owner.setTrackOneShot(channel: 0, oneShot: value));
+    unawaited(owner.oneShotControl.setTrackOneShot(channel: 0, oneShot: value));
     pump();
   }
 
@@ -286,7 +288,9 @@ void main() {
             r.note(0);
           }
           expect(r.live, external);
-          expect(r.owner.oneShotSnapshot!.trackOverrides, {0: external});
+          expect(r.owner.oneShotControl.oneShotSnapshot!.trackOverrides, {
+            0: external,
+          });
         },
       );
       check(
@@ -300,7 +304,12 @@ void main() {
             r.note(127);
           }
           r.ordinary(value: null);
-          unawaited(r.owner.setDefaultOneShot(value: true));
+          unawaited(
+            r.owner.oneShotControl.setOneShot(
+              const OneShotAddress.defaults(),
+              oneShot: true,
+            ),
+          );
           r.pump();
           if (external) {
             r.external(high: false);
@@ -309,7 +318,10 @@ void main() {
           }
           r.retire();
           expect(r.live, isTrue);
-          expect(r.owner.oneShotSnapshot!.trackOverrides, isEmpty);
+          expect(
+            r.owner.oneShotControl.oneShotSnapshot!.trackOverrides,
+            isEmpty,
+          );
           expect(r.store.values.containsKey('track_one_shot.0'), isFalse);
         },
       );

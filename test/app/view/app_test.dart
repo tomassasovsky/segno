@@ -27,6 +27,7 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
@@ -405,6 +406,7 @@ class _DecayStore extends FakeKeyValueStore {
   Completer<void>? pendingWrite;
   bool writeEntered = false;
   bool refuseWrite = false;
+  bool refuseCompensation = true;
 
   @override
   Future<void> setInt(String key, int value) async {
@@ -412,9 +414,22 @@ class _DecayStore extends FakeKeyValueStore {
         key.startsWith('track_overdub_decay.')) {
       writeEntered = true;
       await pendingWrite?.future;
-      if (refuseWrite) throw StateError('Decay preference unavailable');
+      await super.setInt(key, value);
+      if (refuseWrite) throw StateError('Decay write failed after mutation');
+      return;
     }
     await super.setInt(key, value);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if ((key == 'looper.overdub_decay' ||
+            key.startsWith('track_overdub_decay.')) &&
+        refuseWrite &&
+        refuseCompensation) {
+      throw StateError('Decay compensation unavailable');
+    }
+    await super.remove(key);
   }
 }
 
@@ -422,15 +437,31 @@ class _OneShotStore extends FakeKeyValueStore {
   Completer<void>? pendingWrite;
   bool writeEntered = false;
   bool refuseWrite = false;
+  bool refuseCompensation = true;
 
   @override
   Future<void> setBool(String key, {required bool value}) async {
     if (key == 'looper.default_one_shot' || key.startsWith('track_one_shot.')) {
       writeEntered = true;
       await pendingWrite?.future;
-      if (refuseWrite) throw StateError('Playback preference unavailable');
+      await super.setBool(key, value: value);
+      if (refuseWrite) {
+        throw StateError('Playback write failed after mutation');
+      }
+      return;
     }
     await super.setBool(key, value: value);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if ((key == 'looper.default_one_shot' ||
+            key.startsWith('track_one_shot.')) &&
+        refuseWrite &&
+        refuseCompensation) {
+      throw StateError('Playback compensation unavailable');
+    }
+    await super.remove(key);
   }
 }
 
@@ -449,15 +480,32 @@ class _LengthStore extends FakeKeyValueStore {
     return super.getInt(key);
   }
 
+  bool refuseCompensation = true;
+
+  static bool _isLength(String key) =>
+      key == 'looper.default_length_bars' ||
+      key.startsWith('tempo.length_preset.');
+
   @override
   Future<void> setInt(String key, int value) async {
-    if (key == 'looper.default_length_bars' ||
-        key.startsWith('tempo.length_preset.')) {
+    if (_isLength(key)) {
       writeEntered = true;
       await pendingWrite?.future;
-      if (refuseWrite) throw StateError('Record length preference unavailable');
+      await super.setInt(key, value);
+      if (refuseWrite) {
+        throw StateError('Record length write failed after mutation');
+      }
+      return;
     }
     await super.setInt(key, value);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if (_isLength(key) && refuseWrite && refuseCompensation) {
+      throw StateError('Record length compensation unavailable');
+    }
+    await super.remove(key);
   }
 }
 
@@ -1434,14 +1482,22 @@ void main() {
           expect(find.text('Retry'), findsOneWidget);
           await tester.tap(find.text('Retry'));
           await tester.pumpAndSettle();
-          expect(length.state.options.recordLengthReady, !malformed);
-          expect(store.values, before);
+          expect(length.state.options.recordLengthReady, isTrue);
+          expect(find.text('Record length needs recovery'), findsNothing);
           if (malformed) {
-            // Retry does not turn invalid saved data into a guessed default.
-            expect(find.text('Record length needs recovery'), findsOneWidget);
-            expect(find.text('Retry'), findsOneWidget);
+            // Retry removes only the unreadable key, then restores the rest.
+            expect(
+              store.values.containsKey('tempo.length_preset.7'),
+              isFalse,
+            );
+            before.remove('tempo.length_preset.7');
+            for (final entry in before.entries) {
+              expect(store.values[entry.key], entry.value);
+            }
+            expect(length.state.options.defaultLengthBars, 4);
             expect(repository.trackLengthPresetOverrides, isEmpty);
           } else {
+            expect(store.values, before);
             expect(find.text('Record length needs recovery'), findsNothing);
             expect(length.state.options.defaultLengthBars, 4);
             expect(length.state.options.trackLengthPresetOverrides, {7: 0});
@@ -1473,12 +1529,22 @@ void main() {
           expect(find.text('Record timing needs recovery'), findsOneWidget);
           await tester.tap(find.text('Retry'));
           await tester.pumpAndSettle();
-          expect(timing.state.recordTimingReady, !malformed);
-          expect(store.values, before);
+          expect(timing.state.recordTimingReady, isTrue);
+          expect(find.text('Record timing needs recovery'), findsNothing);
           if (malformed) {
-            expect(find.text('Record timing needs recovery'), findsOneWidget);
+            // Retry removes only the unreadable key; the rest survive.
+            expect(
+              store.values.containsKey('track_record_timing.7'),
+              isFalse,
+            );
+            before.remove('track_record_timing.7');
+            for (final entry in before.entries) {
+              expect(store.values[entry.key], entry.value);
+            }
+            expect(timing.state.defaultTiming, RecordTiming.quarter);
             expect(repository.trackRecordTimingOverrides, isEmpty);
           } else {
+            expect(store.values, before);
             expect(find.text('Record timing needs recovery'), findsNothing);
             expect(timing.state.defaultTiming, RecordTiming.quarter);
             expect(timing.state.trackOverrides, {7: RecordTiming.immediately});
@@ -1871,7 +1937,9 @@ void main() {
       });
     }
 
-    for (final key in OwnedSetting.values) {
+    for (final key in OwnedSetting.values.where(
+      (key) => key != OwnedSetting.decay,
+    )) {
       testWidgets(
         'a restart that lands the owed value clears its recovery notice; '
         '${key.name}',
@@ -1884,6 +1952,15 @@ void main() {
           final tempo = tester
               .element(find.byType(TracksView))
               .read<TempoSettings>();
+          final playback = tester
+              .element(find.byType(TracksView))
+              .read<PlaybackSettings>();
+          final record = tester
+              .element(find.byType(TracksView))
+              .read<RecordSettings>();
+          final timing = tester
+              .element(find.byType(TracksView))
+              .read<RecordTimingSettings>();
           final (toast, owner) = switch (key) {
             OwnedSetting.clickVolume => (
               AppToastId.clickSettings,
@@ -1897,6 +1974,19 @@ void main() {
               AppToastId.recordStartSettings,
               tempo.recordStartOwner,
             ),
+            OwnedSetting.oneShot => (
+              AppToastId.oneShotSettings,
+              playback.oneShotOwner,
+            ),
+            OwnedSetting.recordLength => (
+              AppToastId.recordLengthSettings,
+              record.owner,
+            ),
+            OwnedSetting.recordTiming => (
+              AppToastId.recordTimingSettings,
+              timing.owner,
+            ),
+            OwnedSetting.decay => throw StateError('Decay has no receipt'),
           };
           engine
             ..publishClickCommands = key != OwnedSetting.clickVolume
@@ -1911,6 +2001,13 @@ void main() {
             OwnedSetting.recordStart => tempo.recordStartControl.setCountInBars(
               2,
             ),
+            OwnedSetting.oneShot => playback.oneShotControl.setTrackOneShot(
+              channel: 2,
+              oneShot: true,
+            ),
+            OwnedSetting.recordLength => record.setDefaultLengthBars(4),
+            OwnedSetting.recordTiming => timing.setTiming(RecordTiming.quarter),
+            OwnedSetting.decay => throw StateError('Decay has no receipt'),
           });
           await tester.pump(const Duration(milliseconds: 600));
           await tester.pump();
@@ -2095,9 +2192,9 @@ void main() {
         if (channel == null) {
           unawaited(timing.setTiming(RecordTiming.half));
         } else {
-          context.read<LooperBloc>().add(
-            LooperTrackRecordTimingChanged(
-              channel,
+          unawaited(
+            timing.setTrackTiming(
+              channel: channel,
               timing: RecordTiming.eighth,
             ),
           );
@@ -2197,10 +2294,7 @@ void main() {
         if (channel == null) {
           unawaited(decay.setOverdubDecay(65));
         } else {
-          // Ordinary per-track editing uses the production Bloc -> owner path.
-          context.read<LooperBloc>().add(
-            LooperTrackOverdubDecayChanged(channel, percent: 65),
-          );
+          unawaited(decay.setTrackOverdubDecay(channel: channel, percent: 65));
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
@@ -2253,14 +2347,59 @@ void main() {
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 6));
         expect(halted, retry);
+        if (!retry) {
+          // The owed rollback keeps Decay unavailable until its own Retry.
+          expect(find.text('Decay settings need recovery'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(find.text('Decay settings need recovery'), findsNothing);
+        }
         expect(store.values.containsKey('looper.overdub_decay'), isFalse);
         if (!retry) {
-          expect(debugAppToastActive(AppToastId.decaySettings), isFalse);
           unawaited(decay.setOverdubDecay(25));
           await tester.pumpAndSettle();
           expect(decay.state.overdubDecay, 25);
           expect(store.values['looper.overdub_decay'], 25);
         }
+      });
+    }
+
+    for (final decay in [true, false]) {
+      testWidgets('compensated ${decay ? 'Decay' : 'Loop/Once'} refusal '
+          'permits normal shutdown', (tester) async {
+        final decayStore = _DecayStore()..refuseCompensation = false;
+        final onceStore = _OneShotStore()..refuseCompensation = false;
+        settings = SettingsRepository(store: decay ? decayStore : onceStore);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final options = context.read<PlaybackOptionsCubit>();
+        final power = context.read<PowerOffCubit>();
+        decayStore.refuseWrite = true;
+        onceStore.refuseWrite = true;
+        if (decay) {
+          unawaited(options.setOverdubDecay(80));
+        } else {
+          unawaited(options.setDefaultOneShot(value: true));
+        }
+        await tester.pumpAndSettle();
+        // The write was refused and its rollback landed: nothing is owed.
+        expect(options.state.overdubDecay, 0);
+        expect(options.state.defaultOneShot, isFalse);
+        expect(decayStore.values.containsKey('looper.overdub_decay'), isFalse);
+        expect(
+          onceStore.values.containsKey('looper.default_one_shot'),
+          isFalse,
+        );
+        power.press(const PowerOffSnapshot());
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.goodbye);
+        await tester.pump(const Duration(seconds: 6));
+        expect(halted, isTrue);
       });
     }
 
@@ -2359,10 +2498,7 @@ void main() {
         if (channel == null) {
           unawaited(once.setDefaultOneShot(value: true));
         } else {
-          // Ordinary per-track editing uses the production Bloc -> owner path.
-          context.read<LooperBloc>().add(
-            LooperOneShotToggled(channel, oneShot: true),
-          );
+          unawaited(once.setTrackOneShot(channel: channel, oneShot: true));
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
@@ -2413,6 +2549,13 @@ void main() {
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 6));
         expect(halted, retry);
+        if (!retry) {
+          // The owed rollback keeps Loop/Once unavailable until its Retry.
+          expect(find.text('Playback settings need recovery'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(find.text('Playback settings need recovery'), findsNothing);
+        }
         expect(store.values.containsKey('looper.default_one_shot'), isFalse);
         if (!retry) {
           unawaited(once.setDefaultOneShot(value: true));
@@ -2519,10 +2662,7 @@ void main() {
         if (channel == null) {
           unawaited(length.setDefaultLengthBars(4));
         } else {
-          // Ordinary per-track editing uses the production Bloc -> owner path.
-          context.read<LooperBloc>().add(
-            LooperTrackLengthPresetChanged(channel, 4),
-          );
+          unawaited(length.setTrackRecordLength(channel: channel, bars: 4));
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
@@ -2578,6 +2718,13 @@ void main() {
           await tester.pumpAndSettle();
           await tester.pump(const Duration(seconds: 6));
           expect(halted, retry);
+          if (!retry) {
+            // The owed rollback keeps Record length unavailable until Retry.
+            expect(find.text('Record length needs recovery'), findsOneWidget);
+            await tester.tap(find.text('Retry'));
+            await tester.pumpAndSettle();
+            expect(find.text('Record length needs recovery'), findsNothing);
+          }
           expect(
             store.values.containsKey('looper.default_length_bars'),
             isFalse,
@@ -2591,6 +2738,33 @@ void main() {
         },
       );
     }
+
+    testWidgets('compensated Record length refusal permits normal shutdown', (
+      tester,
+    ) async {
+      final store = _LengthStore()..refuseCompensation = false;
+      settings = SettingsRepository(store: store);
+      var halted = false;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => halted = true,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final length = context.read<RecordOptionsCubit>();
+      final power = context.read<PowerOffCubit>();
+      store.refuseWrite = true;
+      unawaited(length.setDefaultLengthBars(4));
+      await tester.pumpAndSettle();
+      // The write was refused and its rollback landed: nothing is owed.
+      expect(length.state.options.defaultLengthBars, 0);
+      expect(store.values.containsKey('looper.default_length_bars'), isFalse);
+      power.press(const PowerOffSnapshot());
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerOffPhase.goodbye);
+      await tester.pump(const Duration(seconds: 6));
+      expect(halted, isTrue);
+    });
 
     testWidgets('compensated timing refusal does not block power off', (
       tester,

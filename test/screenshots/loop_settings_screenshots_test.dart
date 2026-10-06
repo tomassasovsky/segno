@@ -147,10 +147,18 @@ void main() {
     when(() => repository.trackLengthPresetOverrides).thenAnswer(
       (_) => Map.unmodifiable(confirmedTrackLengths),
     );
+    when(() => repository.lengthRestartIntent).thenAnswer(
+      (_) => (
+        defaultBars: confirmedLength,
+        trackOverrides: Map<int, int>.unmodifiable(confirmedTrackLengths),
+        mode: confirmedMode,
+      ),
+    );
     when(
       () => repository.setLengthSettings(
         defaultBars: any(named: 'defaultBars'),
         overrides: any(named: 'overrides'),
+        released: any(named: 'released'),
         mode: any(named: 'mode'),
       ),
     ).thenAnswer((call) {
@@ -158,7 +166,8 @@ void main() {
       confirmedTrackLengths = Map.of(
         call.namedArguments[#overrides] as Map<int, int>,
       );
-      confirmedMode = call.namedArguments[#mode] as LooperMode;
+      confirmedMode =
+          call.namedArguments[#mode] as LooperMode? ?? confirmedMode;
       return EngineResult.ok;
     });
     when(() => repository.recordTimingSettingsSettled).thenReturn(true);
@@ -178,6 +187,8 @@ void main() {
         defaultTiming: any(named: 'defaultTiming'),
         rememberedDivision: any(named: 'rememberedDivision'),
         trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
+        editMask: any(named: 'editMask'),
       ),
     ).thenAnswer((call) {
       confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
@@ -306,7 +317,11 @@ void main() {
         () => repository.setOverdubDecay(any()),
       ).thenReturn(EngineResult.ok),
       () => when(
-        () => repository.setDefaultOneShot(oneShot: any(named: 'oneShot')),
+        () => repository.setOneShotSnapshot(
+          defaultOneShot: any(named: 'defaultOneShot'),
+          trackOverrides: any(named: 'trackOverrides'),
+          released: any(named: 'released'),
+        ),
       ).thenReturn(EngineResult.ok),
     ]) {
       stub();

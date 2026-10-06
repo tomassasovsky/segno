@@ -19,6 +19,69 @@ final class RecordTimingAddress extends Equatable {
   List<Object?> get props => [channel];
 }
 
+/// The timing default, its remembered division and every track override:
+/// the value the Record timing owner holds.
+final class RecordTimingVector extends Equatable {
+  /// Copies overrides so a caller cannot change an accepted vector.
+  RecordTimingVector({
+    required this.defaultTiming,
+    required this.rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+  }) : trackOverrides = Map.unmodifiable(trackOverrides);
+
+  /// The timing inherited by tracks without an override.
+  final RecordTiming defaultTiming;
+
+  /// The default's last musical division, kept while Immediately is chosen.
+  final GridDivision rememberedDivision;
+
+  /// Explicit choices, including Immediately; absent tracks inherit.
+  final Map<int, RecordTiming> trackOverrides;
+
+  /// The value [address] holds; null for a track that inherits.
+  RecordTiming? at(RecordTimingAddress address) => switch (address.channel) {
+    null => defaultTiming,
+    final channel => trackOverrides[channel],
+  };
+
+  /// This vector with [address] set to [timing]; null removes a track's
+  /// override. A default without a gate keeps the remembered division.
+  RecordTimingVector withValue(
+    RecordTimingAddress address,
+    RecordTiming? timing,
+  ) {
+    final channel = address.channel;
+    if (!address.isValid || (channel == null && timing == null)) {
+      throw ArgumentError('Invalid record timing at $address');
+    }
+    if (channel == null) {
+      return RecordTimingVector(
+        defaultTiming: timing!,
+        rememberedDivision: timing.quantize
+            ? timing.division
+            : rememberedDivision,
+        trackOverrides: trackOverrides,
+      );
+    }
+    return RecordTimingVector(
+      defaultTiming: defaultTiming,
+      rememberedDivision: rememberedDivision,
+      trackOverrides: {
+        for (final entry in trackOverrides.entries)
+          if (entry.key != channel) entry.key: entry.value,
+        channel: ?timing,
+      },
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+    defaultTiming,
+    rememberedDivision,
+    trackOverrides,
+  ];
+}
+
 /// Confirmed timing, explicit inheritance membership, and edit eligibility.
 final class RecordTimingSnapshot extends Equatable {
   /// Copies overrides so a caller cannot change accepted owner state.

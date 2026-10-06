@@ -43,10 +43,15 @@ class AppRuntime {
     fxPersistence = FxChainPersistence(looper: repository);
     mixPersistence = SettingsMixPersistence(settings);
     tempo = TempoSettings(repository: repository, settings: settings);
-    owners = SettingsOwners(tempo.owners);
     playback = PlaybackSettings(repository: repository, settings: settings);
     record = RecordSettings(repository: repository, settings: settings);
     timing = RecordTimingSettings(repository: repository, settings: settings);
+    owners = SettingsOwners([
+      ...tempo.owners,
+      ...playback.owners,
+      ...record.owners,
+      ...timing.owners,
+    ]);
     fade = FadeSettings(
       settings: settings,
       blocked: () => takeLocked,
@@ -62,10 +67,6 @@ class AppRuntime {
       settings: settings,
       mixSettings: mix,
       fxPersistence: fxPersistence,
-      decayControl: playback,
-      oneShotControl: playback,
-      recordLengthControl: record,
-      recordTimingControl: timing,
       takeLocked: () => takeLocked,
     );
     control = ControlCubit(
@@ -73,8 +74,8 @@ class AppRuntime {
       settings: settings,
       mixSettings: mix,
       fxPersistence: fxPersistence,
-      decayControl: playback,
-      oneShotControl: playback,
+      decayControl: playback.decayControl,
+      oneShotControl: playback.oneShotControl,
       recordLengthControl: record,
       recordTimingControl: timing,
       clickVolumeControl: tempo.clickVolumeControl,
@@ -189,51 +190,16 @@ class AppRuntime {
       if (await owners.recover() case final failure?) {
         throw StateError('${failure.key.name} still needs recovery');
       }
-      final decay = await playback.recoverDecay();
-      if (!decay.isOk) {
-        throw StateError('Decay settings still need recovery');
-      }
-      final once = await playback.recoverOneShot();
-      if (!once.isOk) {
-        throw StateError('Playback settings still need recovery');
-      }
-      final length = await record.recoverRecordLength();
-      if (!length.isOk) {
-        throw StateError('Record length still needs recovery');
-      }
-      final timingResult = await timing.recoverRecordTiming();
-      if (!timingResult.isOk) {
-        throw StateError('Record timing still needs recovery');
-      }
       await control.flushMidiConfiguration(
         retireControls: true,
       );
     }
     await fade.flush();
     await fxPersistence.flush();
-    final receipt = Completer<void>();
-    looper.add(LooperPersistFlush(receipt: receipt));
-    await receipt.future;
     final mixResult = await mix.flush();
     if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);
     if (await owners.flush() case final failure?) {
       throw StateError('${failure.key.name} was not confirmed');
-    }
-    final decay = await playback.flushDecay();
-    if (!decay.isOk) {
-      throw StateError('Decay settings were not confirmed');
-    }
-    final once = await playback.flushOneShot();
-    if (!once.isOk) {
-      throw StateError('Playback settings were not confirmed');
-    }
-    final length = await record.flushRecordLength();
-    if (!length.isOk) {
-      throw StateError('Record length was not confirmed');
-    }
-    final timingResult = await timing.flushRecordTiming();
-    if (!timingResult.isOk) {
-      throw StateError('Record timing was not confirmed');
     }
   }
 

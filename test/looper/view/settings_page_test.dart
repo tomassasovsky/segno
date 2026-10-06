@@ -195,6 +195,8 @@ void main() {
         defaultTiming: any(named: 'defaultTiming'),
         rememberedDivision: any(named: 'rememberedDivision'),
         trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
+        editMask: any(named: 'editMask'),
       ),
     ).thenAnswer((call) {
       confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
@@ -499,7 +501,15 @@ void main() {
 
     expect(quantize.state.defaultTiming.quantize, isTrue);
     expect((await settings.readRecordTimingCheckpoint()).quantize, isTrue);
-    verify(() => repository.setRecordTiming(RecordTiming.loopStart)).called(1);
+    verify(
+      () => repository.setRecordTimingSettings(
+        defaultTiming: RecordTiming.loopStart,
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
+        editMask: 1,
+      ),
+    ).called(1);
   });
 
   testWidgets('selecting a section tab shows only that section', (

@@ -369,6 +369,43 @@ void main() {
         expect(r.live, 0);
       },
     );
+    for (final source in ['MIDI latch', 'MIDI hold', 'External hold']) {
+      check('a $source on a track length released after entering Multi '
+          'completes power-off', (r) {
+        r.bind(
+          behavior: source == 'MIDI latch'
+              ? MidiBehavior.toggle
+              : MidiBehavior.momentary,
+        );
+        if (source == 'External hold') {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        unawaited(r.owner.setLooperMode(LooperMode.multi));
+        r.pump();
+        // Multi supersedes every track's claim: the hold owes no release.
+        switch (source) {
+          case 'MIDI latch':
+            r.note(127);
+          case 'MIDI hold':
+            r.note(0);
+          default:
+            r.external(high: false);
+        }
+        Object? failure;
+        var flushed = false;
+        unawaited(
+          r.cubit
+              .flushMidiConfiguration(retireControls: true)
+              .then((_) => flushed = true, onError: (Object e) => failure = e),
+        );
+        r.pump();
+        expect(failure, isNull);
+        expect(flushed, isTrue);
+        expect(r.engine.stopCalls, 0);
+      });
+    }
     check('refused press cannot erase older cleanup priority', (r) {
       r
         ..bind()

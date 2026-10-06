@@ -85,63 +85,6 @@ final class LooperVolumeChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, volume];
 }
 
-/// Track [channel]'s record timing override changed (accepted design, Length
-/// & quantize): `null` follows the default, else the timing this track's own
-/// record and overdub requests wait for.
-final class LooperTrackRecordTimingChanged extends LooperChannelEvent {
-  /// Creates a [LooperTrackRecordTimingChanged].
-  const LooperTrackRecordTimingChanged(super.channel, {required this.timing});
-
-  /// The override (`null` => follow the default).
-  final RecordTiming? timing;
-
-  @override
-  List<Object?> get props => [channel, timing];
-}
-
-/// Track [channel]'s overdub decay override changed (accepted design,
-/// Playback & overdub): `null` follows the default, else a percent in
-/// `0..100`.
-final class LooperTrackOverdubDecayChanged extends LooperChannelEvent {
-  /// Creates a [LooperTrackOverdubDecayChanged].
-  const LooperTrackOverdubDecayChanged(super.channel, {required this.percent});
-
-  /// The override (`null` => follow the default).
-  final int? percent;
-
-  @override
-  List<Object?> get props => [channel, percent];
-}
-
-/// Track [channel]'s length preset override changed (A6, D17): `null`
-/// follows the default, `0` is an explicit Auto, else a fixed bar count.
-/// Existing audio is unchanged; the preset applies to a future recording.
-final class LooperTrackLengthPresetChanged extends LooperChannelEvent {
-  /// Creates a [LooperTrackLengthPresetChanged].
-  const LooperTrackLengthPresetChanged(super.channel, this.bars);
-
-  /// The fixed bar count, `0` for an explicit Auto, or `null` to follow the
-  /// default.
-  final int? bars;
-
-  @override
-  List<Object?> get props => [channel, bars];
-}
-
-/// Track [channel]'s One Shot flag changed (song-mode-spec.md §2, B5c):
-/// `true` = the track plays once and then stops instead of looping.
-/// Applies in every looper mode.
-final class LooperOneShotToggled extends LooperChannelEvent {
-  /// Creates a [LooperOneShotToggled].
-  const LooperOneShotToggled(super.channel, {required this.oneShot});
-
-  /// The override, or null to follow the shared playback default.
-  final bool? oneShot;
-
-  @override
-  List<Object?> get props => [channel, oneShot];
-}
-
 /// Track [channel]'s Mixer pan changed (accepted design, Mixer): `-1` is
 /// hard left, `1` hard right. Every lane's recorded image moves by it.
 final class LooperTrackPanChanged extends LooperChannelEvent {
@@ -342,22 +285,6 @@ final class LooperCutSoundPressed extends LooperEvent {
 final class LooperCrownPrimaryPressed extends LooperChannelEvent {
   /// Creates a [LooperCrownPrimaryPressed].
   const LooperCrownPrimaryPressed(super.channel);
-}
-
-/// The five-mode axis (Multi/Sync/Song/Band/Free) changed (D4). The UI is
-/// responsible for the D4 clear-all confirmation BEFORE dispatching this —
-/// the engine silently ignores the change while any track has content (see
-/// `LooperModeControl.setLooperMode`'s doc), so this event assumes the
-/// caller has already confirmed/cleared.
-final class LooperModeChanged extends LooperEvent {
-  /// Creates a [LooperModeChanged].
-  const LooperModeChanged(this.mode);
-
-  /// The new looper mode.
-  final LooperMode mode;
-
-  @override
-  List<Object?> get props => [mode];
 }
 
 /// Base for events targeting one [lane] of a track [channel].
@@ -1290,17 +1217,4 @@ final class LooperOutputEnabledToggled extends LooperEvent {
 
   @override
   List<Object?> get props => [output, enabled];
-}
-
-/// Flushes coalesced FX persistence now — a clean halt must not wait for
-/// cubit teardown.
-final class LooperPersistFlush extends LooperEvent {
-  /// Creates a [LooperPersistFlush].
-  const LooperPersistFlush({this.receipt});
-
-  /// Completes after admitted recipes and queued settings writes settle.
-  final Completer<void>? receipt;
-
-  @override
-  List<Object?> get props => [receipt];
 }

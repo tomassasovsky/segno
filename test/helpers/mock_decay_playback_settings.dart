@@ -7,7 +7,8 @@ import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/playback_options.dart';
 
 /// A page fixture for the same accepted Decay snapshot shown by its owner.
-class MockDecayPlaybackSettings extends Mock implements PlaybackSettings {
+class MockDecayPlaybackSettings extends Mock
+    implements PlaybackSettings, DecayControl, OneShotControl {
   /// Creates an available accepted owner, or one still uninitialized.
   MockDecayPlaybackSettings({
     DecaySnapshot? snapshot,

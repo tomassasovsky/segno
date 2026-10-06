@@ -30,11 +30,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/looper/model/one_shot.dart';
-import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/owned_setting.dart';
-import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -189,11 +185,7 @@ class _AppState extends State<App> {
   StreamSubscription<int>? _recordRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
-  StreamSubscription<RecordLengthOutcome>? _recordLengthFailureSubscription;
-  StreamSubscription<RecordTimingOutcome>? _recordTimingFailureSubscription;
   StreamSubscription<Object?>? _fadeFailureSubscription;
-  StreamSubscription<DecayOutcome>? _decayFailureSubscription;
-  StreamSubscription<OneShotOutcome>? _oneShotFailureSubscription;
 
   @override
   void initState() {
@@ -233,22 +225,8 @@ class _AppState extends State<App> {
       _showRecordRefused,
     );
     _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
-    _decayFailureSubscription = _runtime.playback.decayFailures.listen(
-      _showDecayFailure,
-    );
-    _oneShotFailureSubscription = _runtime.playback.oneShotFailures.listen(
-      _showOneShotFailure,
-    );
     _recordView = RecordOptionsCubit(settings: _runtime.record);
-    _recordLengthFailureSubscription = _runtime.record.recordLengthFailures
-        .listen(
-          _showRecordLengthFailure,
-        );
     _timingView = RecordTimingCubit(settings: _runtime.timing);
-    _recordTimingFailureSubscription = _runtime.timing.recordTimingFailures
-        .listen(
-          _showRecordTimingFailure,
-        );
     _fadeFailureSubscription = _runtime.fade.results.listen(_showFadeFailure);
     unawaited(
       _runtime.start().catchError((Object error, StackTrace stack) {
@@ -270,10 +248,6 @@ class _AppState extends State<App> {
     }
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_recordRefusedSubscription?.cancel());
-    unawaited(_decayFailureSubscription?.cancel());
-    unawaited(_oneShotFailureSubscription?.cancel());
-    unawaited(_recordLengthFailureSubscription?.cancel());
-    unawaited(_recordTimingFailureSubscription?.cancel());
     unawaited(_fadeFailureSubscription?.cancel());
     _controlNotices.dispose();
     unawaited(
@@ -343,6 +317,30 @@ class _AppState extends State<App> {
       refused: (context) => context.l10n.recordStartSettingsRefusedTitle,
       body: (context) => context.l10n.recordStartSettingsRecoveryBody,
     ),
+    OwnedSetting.decay => (
+      id: AppToastId.decaySettings,
+      recovery: (context) => context.l10n.decaySettingsRecoveryTitle,
+      refused: (context) => context.l10n.decaySettingsRefusedTitle,
+      body: (context) => context.l10n.decaySettingsRecoveryBody,
+    ),
+    OwnedSetting.oneShot => (
+      id: AppToastId.oneShotSettings,
+      recovery: (context) => context.l10n.oneShotSettingsRecoveryTitle,
+      refused: (context) => context.l10n.oneShotSettingsRefusedTitle,
+      body: (context) => context.l10n.oneShotSettingsRecoveryBody,
+    ),
+    OwnedSetting.recordLength => (
+      id: AppToastId.recordLengthSettings,
+      recovery: (context) => context.l10n.recordLengthSettingsRecoveryTitle,
+      refused: (context) => context.l10n.recordLengthSettingsRefusedTitle,
+      body: (context) => context.l10n.recordLengthSettingsRecoveryBody,
+    ),
+    OwnedSetting.recordTiming => (
+      id: AppToastId.recordTimingSettings,
+      recovery: (context) => context.l10n.recordTimingSettingsRecoveryTitle,
+      refused: (context) => context.l10n.recordTimingSettingsRefusedTitle,
+      body: (context) => context.l10n.recordTimingSettingsRecoveryBody,
+    ),
   };
 
   void _showRecordingInputRequired(int channel) {
@@ -408,106 +406,6 @@ class _AppState extends State<App> {
             ? () async => (await _runtime.mix.recover()).isOk
             : null,
         needsRecovery: recovery ? () => _runtime.mix.recoveryRequired : null,
-      ),
-    );
-  }
-
-  void _showDecayFailure(DecayOutcome outcome) {
-    if (!mounted || outcome.status == DecayStatus.superseded) return;
-    final recovery = outcome.status == DecayStatus.recoveryRequired;
-    AppLog.error('Decay: ${outcome.status.name} ${outcome.error ?? ''}');
-    _controlNotices.show(
-      ControlSettingsNotice(
-        id: AppToastId.decaySettings,
-        title: (context) => Text(
-          recovery
-              ? context.l10n.decaySettingsRecoveryTitle
-              : context.l10n.decaySettingsRefusedTitle,
-        ),
-        description: recovery
-            ? (context) => Text(context.l10n.decaySettingsRecoveryBody)
-            : null,
-        retry: recovery
-            ? () async => (await _runtime.playback.recoverDecay()).isOk
-            : null,
-        needsRecovery: recovery
-            ? () => !_runtime.playback.state.decayReady
-            : null,
-      ),
-    );
-  }
-
-  void _showOneShotFailure(OneShotOutcome outcome) {
-    if (!mounted || outcome.status == OneShotStatus.superseded) return;
-    final recovery = outcome.status == OneShotStatus.recoveryRequired;
-    AppLog.error('OneShot: ${outcome.status.name} ${outcome.error ?? ''}');
-    _controlNotices.show(
-      ControlSettingsNotice(
-        id: AppToastId.oneShotSettings,
-        title: (context) => Text(
-          recovery
-              ? context.l10n.oneShotSettingsRecoveryTitle
-              : context.l10n.oneShotSettingsRefusedTitle,
-        ),
-        description: recovery
-            ? (context) => Text(context.l10n.oneShotSettingsRecoveryBody)
-            : null,
-        retry: recovery
-            ? () async => (await _runtime.playback.recoverOneShot()).isOk
-            : null,
-        needsRecovery: recovery
-            ? () => !_runtime.playback.state.oneShotReady
-            : null,
-      ),
-    );
-  }
-
-  void _showRecordLengthFailure(RecordLengthOutcome outcome) {
-    if (!mounted || outcome.status == RecordLengthStatus.superseded) return;
-    final recovery = outcome.status == RecordLengthStatus.recoveryRequired;
-    AppLog.error('RecordLength: ${outcome.status.name} ${outcome.error ?? ''}');
-    _controlNotices.show(
-      ControlSettingsNotice(
-        id: AppToastId.recordLengthSettings,
-        title: (context) => Text(
-          recovery
-              ? context.l10n.recordLengthSettingsRecoveryTitle
-              : context.l10n.recordLengthSettingsRefusedTitle,
-        ),
-        description: recovery
-            ? (context) => Text(context.l10n.recordLengthSettingsRecoveryBody)
-            : null,
-        retry: recovery
-            ? () async => (await _runtime.record.recoverRecordLength()).isOk
-            : null,
-        needsRecovery: recovery
-            ? () => !_runtime.record.state.recordLengthReady
-            : null,
-      ),
-    );
-  }
-
-  void _showRecordTimingFailure(RecordTimingOutcome outcome) {
-    if (!mounted || outcome.status == RecordTimingStatus.superseded) return;
-    final recovery = outcome.status == RecordTimingStatus.recoveryRequired;
-    AppLog.error('RecordTiming: ${outcome.status.name} ${outcome.error ?? ''}');
-    _controlNotices.show(
-      ControlSettingsNotice(
-        id: AppToastId.recordTimingSettings,
-        title: (context) => Text(
-          recovery
-              ? context.l10n.recordTimingSettingsRecoveryTitle
-              : context.l10n.recordTimingSettingsRefusedTitle,
-        ),
-        description: recovery
-            ? (context) => Text(context.l10n.recordTimingSettingsRecoveryBody)
-            : null,
-        retry: recovery
-            ? () async => (await _runtime.timing.recoverRecordTiming()).isOk
-            : null,
-        needsRecovery: recovery
-            ? () => !_runtime.timing.state.recordTimingReady
-            : null,
       ),
     );
   }

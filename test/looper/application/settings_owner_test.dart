@@ -3,11 +3,19 @@ import 'dart:async';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/settings_families.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
+import 'package:segno/looper/model/one_shot.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/owned_setting.dart';
+import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno_engine/segno_engine.dart' as le;
 import 'package:settings_repository/settings_repository.dart';
 
@@ -24,7 +32,28 @@ class _Engine extends FakeAudioEngine {
   bool refuseClick = false;
   bool refuseMode = false;
   bool refuseOnce = false;
+  bool refuseLength = false;
+  bool refuseTiming = false;
   final clickWrites = <double>[];
+
+  @override
+  EngineResult setTrackLengthPresets(List<int> bars) =>
+      refuseLength ? EngineResult.notReady : super.setTrackLengthPresets(bars);
+
+  @override
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
+  }) => refuseTiming
+      ? EngineResult.invalid
+      : super.setRecordTimingSettings(
+          defaultTiming: defaultTiming,
+          rememberedDivision: rememberedDivision,
+          trackOverrides: trackOverrides,
+          editMask: editMask,
+        );
 
   /// Runs once, from the first snapshot read after it is armed and returns
   /// true; the repository reads a snapshot while it publishes a receipt.
@@ -48,6 +77,26 @@ class _Engine extends FakeAudioEngine {
   EngineResult setClickMode(ClickMode mode) =>
       refuseMode ? EngineResult.notReady : super.setClickMode(mode);
 
+  /// The default Decay feedback the engine holds; null before any write.
+  double? decayFeedback;
+  bool refuseDecayDefault = false;
+  int? refuseDecayTrack;
+
+  @override
+  EngineResult setOverdubFeedback(double feedback) {
+    if (refuseDecayDefault) return EngineResult.invalid;
+    decayFeedback = feedback;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) => channel == refuseDecayTrack
+      ? EngineResult.invalid
+      : super.setTrackOverdubFeedback(channel: channel, feedback: feedback);
+
   /// Once replays after both Click families, so refusing it fails a start
   /// after their replays were admitted.
   @override
@@ -63,9 +112,23 @@ class _Store extends FakeKeyValueStore {
     'tempo.click_mode',
     'tempo.count_in_bars',
     'looper.auto_record',
+    'looper.overdub_decay',
+    'looper.default_one_shot',
   };
+  static bool _owned(String key) =>
+      keys.contains(key) ||
+      key == 'looper.default_length_bars' ||
+      key == 'looper.quantize' ||
+      key == 'tempo.quantize_div' ||
+      key.startsWith('track_overdub_decay.') ||
+      key.startsWith('track_one_shot.') ||
+      key.startsWith('tempo.length_preset.') ||
+      key.startsWith('track_record_timing.');
   final writes = <String, int>{};
   int failingWrites = 0;
+
+  /// The next write of this key lands, then throws.
+  String? failKey;
   Completer<void>? modeReadGate;
   bool failModeRead = false;
 
@@ -79,9 +142,13 @@ class _Store extends FakeKeyValueStore {
   }
 
   Future<void> _write(String key, Future<void> Function() write) async {
-    if (!keys.contains(key)) return write();
+    if (!_owned(key)) return write();
     writes[key] = (writes[key] ?? 0) + 1;
     await write();
+    if (failKey == key) {
+      failKey = null;
+      throw StateError('$key mutated then refused');
+    }
     if (failingWrites > 0) {
       failingWrites--;
       throw StateError('$key mutated then refused');
@@ -123,12 +190,17 @@ final class _Case<V extends Object> {
     required this.repairedValue,
     required this.recalled,
     required this.recalledValue,
+    this.write,
+    this.setup = const {},
   });
   final String name;
+
+  /// Stored values the case needs before load, such as a looper mode.
+  final Map<String, Object> setup;
   final List<String> keys;
 
   /// What the store holds before each case, in [read]'s shape.
-  final Object stored;
+  final Object? stored;
   final V next;
 
   /// Unreadable stored data, what Retry stores over it and then plays.
@@ -144,8 +216,13 @@ final class _Case<V extends Object> {
   Object? read(_Store store) => keys.length == 1
       ? store.values[keys.single]
       : [for (final key in keys) store.values[key]];
-  final SettingsOwner<V, Object?> Function(TempoSettings) owner;
-  final Object Function(V) encode;
+  final SettingsOwner<V, Object?> Function(_Rig) owner;
+
+  /// The family's ordinary write of [next]; unit families use `set`.
+  final Future<SettingOutcome> Function(SettingsOwner<V, Object?>, V)? write;
+  Future<SettingOutcome> put(SettingsOwner<V, Object?> owner, V value) =>
+      write?.call(owner, value) ?? owner.set(value);
+  final Object? Function(V) encode;
   final void Function(_Engine) withhold;
   final void Function(_Engine) deliver;
   final V Function(_Engine) audible;
@@ -157,7 +234,7 @@ final _clickVolume = _Case<double>(
   keys: ['tempo.click_volume'],
   stored: .5,
   next: 1.5,
-  owner: (tempo) => tempo.clickVolumeOwner,
+  owner: (r) => r.tempo.clickVolumeOwner,
   encode: (value) => value,
   withhold: (engine) => engine
     ..publishClickCommands = false
@@ -179,7 +256,7 @@ final _hearClick = _Case<ClickMode>(
   keys: ['tempo.click_mode'],
   stored: ClickMode.off.code,
   next: ClickMode.playRec,
-  owner: (tempo) => tempo.clickModeOwner,
+  owner: (r) => r.tempo.clickModeOwner,
   encode: (value) => value.code,
   withhold: (engine) => engine
     ..publishClickModeCommands = false
@@ -207,7 +284,7 @@ final _recordStart = _Case<RecordStartSettings>(
   keys: ['tempo.count_in_bars', 'looper.auto_record'],
   stored: [0, false],
   next: RecordStartSettings(countInBars: 2, soundStart: false),
-  owner: (tempo) => tempo.recordStartOwner,
+  owner: (r) => r.tempo.recordStartOwner,
   encode: (value) => [value.countInBars, value.soundStart],
   withhold: (engine) => engine
     ..publishRecordStartCommands = false
@@ -227,11 +304,244 @@ final _recordStart = _Case<RecordStartSettings>(
   recalledValue: RecordStartSettings(countInBars: 2, soundStart: false),
 );
 
+String _onceKey(OneShotAddress address) => switch (address.channel) {
+  null => 'looper.default_one_shot',
+  final channel => 'track_one_shot.$channel',
+};
+
+/// The engine's eight Once bits as a snapshot: the majority is the default.
+OneShotSnapshot _audibleOnce(_Engine engine) {
+  final bits = [for (var c = 0; c < 8; c++) engine.trackOneShot[c] ?? false];
+  final base = bits.where((bit) => bit).length > 4;
+  return OneShotSnapshot(
+    defaultOneShot: base,
+    trackOverrides: {
+      for (var c = 0; c < 8; c++)
+        if (bits[c] != base) c: bits[c],
+    },
+  );
+}
+
+/// Loop/Once at one [address]: the default, or one track's override.
+_Case<OneShotSnapshot> _once(OneShotAddress address) => _Case(
+  name: 'Loop/Once at ${address.channel ?? 'default'}',
+  keys: [_onceKey(address)],
+  stored: address.channel == null ? false : null,
+  next: OneShotSnapshot(
+    defaultOneShot: address.channel == null,
+    trackOverrides: {?address.channel: true},
+  ),
+  owner: (r) => r.playback.oneShotOwner,
+  write: (owner, value) => owner.update(
+    (live) => live.withValue(address, oneShot: value.at(address)),
+    address: address,
+  ),
+  encode: (value) => value.at(address),
+  withhold: (engine) => engine.commandsAreSettled = false,
+  deliver: (engine) => engine.commandsAreSettled = true,
+  audible: _audibleOnce,
+  restart: (repository) => OneShotSnapshot(
+    defaultOneShot: repository.oneShotRestartIntent.defaultOneShot,
+    trackOverrides: repository.oneShotRestartIntent.trackOverrides,
+  ),
+  invalid: {_onceKey(address): 'once'},
+  repaired: null,
+  repairedValue: OneShotSnapshot(
+    defaultOneShot: false,
+    trackOverrides: const {},
+  ),
+  recalled: const SessionRig(defaultOneShot: true),
+  recalledValue: OneShotSnapshot(
+    defaultOneShot: true,
+    trackOverrides: const {},
+  ),
+);
+
+int _percent(double feedback) => ((1 - feedback) * 100).round();
+
+/// The engine's Decay as a snapshot; an unwritten default is zero.
+DecaySnapshot _audibleDecay(_Engine engine) => DecaySnapshot(
+  defaultPercent: _percent(engine.decayFeedback ?? 1),
+  trackOverrides: {
+    for (final entry in engine.trackOverdubFeedback.entries)
+      if (entry.value case final feedback?) entry.key: _percent(feedback),
+  },
+);
+
+/// Decay has no receipt: only the unreadable-storage cases apply to it.
+final _decay = _Case<DecaySnapshot>(
+  name: 'Decay',
+  keys: ['looper.overdub_decay'],
+  stored: 0,
+  next: DecaySnapshot(defaultPercent: 40, trackOverrides: const {}),
+  owner: (r) => r.playback.decayOwner,
+  write: (owner, value) =>
+      owner.set(value, address: const DecayAddress.defaults()),
+  encode: (value) => value.defaultPercent,
+  withhold: (_) {},
+  deliver: (_) {},
+  audible: _audibleDecay,
+  restart: (repository) => DecaySnapshot(
+    defaultPercent: repository.decayRestartIntent.defaultPercent,
+    trackOverrides: repository.decayRestartIntent.trackOverrides,
+  ),
+  invalid: {'looper.overdub_decay': 101},
+  repaired: null,
+  repairedValue: DecaySnapshot(defaultPercent: 0, trackOverrides: const {}),
+  recalled: const SessionRig(overdubDecay: 35),
+  recalledValue: DecaySnapshot(defaultPercent: 35, trackOverrides: const {}),
+);
+
+/// The engine's eight published presets and mode as a vector: the most
+/// common preset is the default.
+RecordLengthVector _audibleLength(_Engine engine) {
+  final bars = [
+    for (var c = 0; c < 8; c++) engine.snapshot().tracks[c].lengthPresetBars,
+  ];
+  final counts = <int, int>{};
+  for (final value in bars) {
+    counts[value] = (counts[value] ?? 0) + 1;
+  }
+  final base = counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+  return RecordLengthVector(
+    defaultBars: base,
+    trackOverrides: {
+      for (var c = 0; c < 8; c++)
+        if (bars[c] != base) c: bars[c],
+    },
+    mode: engine.snapshot().looperMode,
+  );
+}
+
+String _lengthKey(RecordLengthAddress address) => switch (address.channel) {
+  null => 'looper.default_length_bars',
+  final channel => 'tempo.length_preset.$channel',
+};
+
+/// Record length at [address]; a track address runs in Free mode, where
+/// track presets are editable.
+_Case<RecordLengthVector> _length(RecordLengthAddress address) {
+  final mode = address.channel == null ? LooperMode.multi : LooperMode.free;
+  return _Case(
+    name: 'Record length at ${address.channel ?? 'default'}',
+    keys: [_lengthKey(address)],
+    stored: null,
+    setup: {if (mode != LooperMode.multi) 'looper.mode': mode.code},
+    next: RecordLengthVector(
+      defaultBars: 0,
+      trackOverrides: const {},
+      mode: mode,
+    ).withBars(address, 4),
+    owner: (r) => r.record.owner,
+    write: (owner, value) => owner.update(
+      (live) => live.withBars(address, value.at(address)),
+      address: address,
+      edit: address,
+    ),
+    encode: (value) => value.at(address),
+    withhold: (engine) => engine.commandsAreSettled = false,
+    deliver: (engine) => engine.commandsAreSettled = true,
+    audible: _audibleLength,
+    restart: (repository) => RecordLengthVector(
+      defaultBars: repository.lengthRestartIntent.defaultBars,
+      trackOverrides: repository.lengthRestartIntent.trackOverrides,
+      mode: repository.lengthRestartIntent.mode,
+    ),
+    invalid: {_lengthKey(address): 65},
+    repaired: null,
+    repairedValue: RecordLengthVector(
+      defaultBars: 0,
+      trackOverrides: const {},
+      mode: mode,
+    ),
+    recalled: const SessionRig(defaultLengthPresetBars: 4),
+    recalledValue: RecordLengthVector(
+      defaultBars: 4,
+      trackOverrides: const {},
+      mode: LooperMode.multi,
+    ),
+  );
+}
+
+/// The engine's Record timing as a vector.
+RecordTimingVector _audibleTiming(_Engine engine) {
+  final division = engine.lastQuantizeDiv ?? GridDivision.off;
+  return RecordTimingVector(
+    defaultTiming: RecordTiming.of(
+      quantize: engine.lastQuantize ?? false,
+      division: division,
+    ),
+    rememberedDivision: division,
+    trackOverrides: {
+      for (var c = 0; c < 8; c++)
+        if (engine.trackQuantize[c] case final quantize?)
+          c: RecordTiming.of(
+            quantize: quantize,
+            division: engine.trackQuantizeDiv[c] ?? GridDivision.off,
+          ),
+    },
+  );
+}
+
+final _noTiming = RecordTimingVector(
+  defaultTiming: RecordTiming.immediately,
+  rememberedDivision: GridDivision.off,
+  trackOverrides: const {},
+);
+
+/// Record timing at [address]: the default writes the gate and division.
+_Case<RecordTimingVector> _timing(RecordTimingAddress address) {
+  final defaults = address.channel == null;
+  final timing = defaults ? RecordTiming.quarter : RecordTiming.bar;
+  return _Case(
+    name: 'Record timing at ${address.channel ?? 'default'}',
+    keys: defaults
+        ? ['tempo.quantize_div', 'looper.quantize']
+        : ['track_record_timing.${address.channel}'],
+    stored: defaults ? [null, null] : null,
+    next: _noTiming.withValue(address, timing),
+    owner: (r) => r.timing.owner,
+    write: (owner, value) => owner.update(
+      (live) => live.withValue(address, value.at(address)),
+      address: address,
+      edit: address,
+    ),
+    encode: (value) => defaults
+        ? [value.defaultTiming.division.code, value.defaultTiming.quantize]
+        : value.at(address)?.code,
+    withhold: (engine) => engine.commandsAreSettled = false,
+    deliver: (engine) => engine.commandsAreSettled = true,
+    audible: _audibleTiming,
+    restart: (repository) => RecordTimingVector(
+      defaultTiming: repository.recordTimingRestartIntent.defaultTiming,
+      rememberedDivision:
+          repository.recordTimingRestartIntent.rememberedDivision,
+      trackOverrides: repository.recordTimingRestartIntent.trackOverrides,
+    ),
+    invalid: defaults
+        ? {'tempo.quantize_div': 9}
+        : {'track_record_timing.${address.channel}': 99},
+    repaired: defaults ? [null, null] : null,
+    repairedValue: _noTiming,
+    recalled: const SessionRig(
+      recordTiming: RecordTiming.bar,
+      quantizeDiv: GridDivision.bar,
+    ),
+    recalledValue: RecordTimingVector(
+      defaultTiming: RecordTiming.bar,
+      rememberedDivision: GridDivision.bar,
+      trackOverrides: const {},
+    ),
+  );
+}
+
 const _defaults = <String, Object>{
   'tempo.click_volume': .5,
   'tempo.click_mode': 0,
   'tempo.count_in_bars': 0,
   'looper.auto_record': false,
+  'looper.overdub_decay': 0,
+  'looper.default_one_shot': false,
 };
 
 class _Rig {
@@ -239,6 +549,7 @@ class _Rig {
     this.clock, {
     Map<String, Object?> stored = const {},
     void Function(_Store)? prepare,
+    void Function(_Engine)? arm,
   }) {
     prepare?.call(store);
     for (final entry in {..._defaults, ...stored}.entries) {
@@ -255,11 +566,16 @@ class _Rig {
       looper.startEngine(const EngineConfig(playbackDeviceId: 'out-1')),
       EngineResult.ok,
     );
-    tempo = TempoSettings(
-      repository: looper,
-      settings: SettingsRepository(store: store),
-    );
+    arm?.call(engine);
+    final settings = SettingsRepository(store: store);
+    tempo = TempoSettings(repository: looper, settings: settings);
+    playback = PlaybackSettings(repository: looper, settings: settings);
+    record = RecordSettings(repository: looper, settings: settings);
+    timing = RecordTimingSettings(repository: looper, settings: settings);
     unawaited(tempo.load());
+    unawaited(playback.load());
+    unawaited(record.load());
+    unawaited(timing.load());
     pump();
   }
 
@@ -271,6 +587,17 @@ class _Rig {
   late final LooperRepository looper;
   late final StreamSubscription<LooperState> subscription;
   late final TempoSettings tempo;
+  late final PlaybackSettings playback;
+  late final RecordSettings record;
+  late final RecordTimingSettings timing;
+
+  /// Every owner this rig carries, in registry order.
+  SettingsOwners get owners => SettingsOwners([
+    ...tempo.owners,
+    ...playback.owners,
+    ...record.owners,
+    ...timing.owners,
+  ]);
 
   void pump() {
     clock
@@ -299,6 +626,9 @@ class _Rig {
       ..publishRecordStartCommands = true
       ..commandsAreSettled = true;
     unawaited(tempo.close());
+    unawaited(playback.close());
+    unawaited(record.close());
+    unawaited(timing.close());
     clock.elapse(const Duration(seconds: 1));
     unawaited(subscription.cancel());
     unawaited(looper.dispose());
@@ -309,16 +639,17 @@ class _Rig {
 }
 
 void main() {
-  void check(
+  void rigCheck(
     String name,
     void Function(_Rig) body, {
     Map<String, Object?> stored = const {},
     void Function(_Store)? prepare,
+    void Function(_Engine)? arm,
   }) {
     test(
       name,
       () => fakeAsync((clock) {
-        final rig = _Rig(clock, stored: stored, prepare: prepare);
+        final rig = _Rig(clock, stored: stored, prepare: prepare, arm: arm);
         try {
           body(rig);
         } finally {
@@ -328,15 +659,25 @@ void main() {
     );
   }
 
+  void check(
+    String name,
+    void Function(_Rig) body, {
+    Map<String, Object?> stored = const {},
+    void Function(_Store)? prepare,
+    void Function(_Engine)? arm,
+  }) => rigCheck(name, body, stored: stored, prepare: prepare, arm: arm);
+
   void contract<V extends Object>(_Case<V> c) {
+    void check(String name, void Function(_Rig) body) =>
+        rigCheck(name, body, stored: c.setup);
     group('${c.name} owner', () {
       check('device absent: the write owes its value, audio keeps running, '
           'and reconnect lands it', (r) {
-        final owner = c.owner(r.tempo);
+        final owner = c.owner(r);
         expect(owner.ready, isTrue);
         c.withhold(r.engine);
         SettingOutcome? outcome;
-        unawaited(owner.set(c.next).then((value) => outcome = value));
+        unawaited(c.put(owner, c.next).then((value) => outcome = value));
         r.expire();
         expect(outcome?.status, SettingStatus.recoveryRequired);
         expect(r.engine.stopCalls, 0);
@@ -365,9 +706,9 @@ void main() {
       });
 
       check('a late receipt then Retry ends applied without a stop', (r) {
-        final owner = c.owner(r.tempo);
+        final owner = c.owner(r);
         c.withhold(r.engine);
-        unawaited(owner.set(c.next));
+        unawaited(c.put(owner, c.next));
         r.expire();
         expect(owner.ready, isFalse);
         c.deliver(r.engine);
@@ -379,9 +720,9 @@ void main() {
       });
 
       check('startEngine is not refused while the value is owed', (r) {
-        final owner = c.owner(r.tempo);
+        final owner = c.owner(r);
         c.withhold(r.engine);
-        unawaited(owner.set(c.next));
+        unawaited(c.put(owner, c.next));
         r.expire();
         r.looper.stopEngine();
         c.deliver(r.engine);
@@ -393,7 +734,7 @@ void main() {
 
       check('an accepted receipt commits even when the lifetime moves on '
           'before the owner resumes', (r) {
-        final owner = c.owner(r.tempo);
+        final owner = c.owner(r);
         // The engine publishes the value; only the command fence is held.
         r.engine.commandsAreSettled = false;
         r.engine.onSnapshot = () {
@@ -402,7 +743,7 @@ void main() {
           return true;
         };
         SettingOutcome? outcome;
-        unawaited(owner.set(c.next).then((value) => outcome = value));
+        unawaited(c.put(owner, c.next).then((value) => outcome = value));
         r.clock.flushMicrotasks();
         expect(c.audible(r.engine), c.next);
         r.engine.commandsAreSettled = true;
@@ -415,12 +756,15 @@ void main() {
       });
 
       check('a native refusal rolls storage back to the exact checkpoint', (r) {
-        final owner = c.owner(r.tempo);
+        final owner = c.owner(r);
         r.engine
           ..refuseClick = true
           ..refuseMode = true
+          ..refuseOnce = true
+          ..refuseLength = true
+          ..refuseTiming = true
           ..recordStartResult = EngineResult.invalid;
-        expect(r.run(owner.set(c.next))?.status, SettingStatus.rejected);
+        expect(r.run(c.put(owner, c.next))?.status, SettingStatus.rejected);
         expect(c.read(r.store), c.stored);
         expect(r.run(owner.flush())?.status, SettingStatus.applied);
       });
@@ -428,9 +772,9 @@ void main() {
       check('Retry stopped inside its receipt window still owes the value', (
         r,
       ) {
-        final owner = c.owner(r.tempo);
+        final owner = c.owner(r);
         c.withhold(r.engine);
-        unawaited(owner.set(c.next));
+        unawaited(c.put(owner, c.next));
         r.expire();
         SettingOutcome? retry;
         unawaited(owner.recover().then((value) => retry = value));
@@ -450,9 +794,9 @@ void main() {
       });
 
       check('a failed start after an owed replay still owes the value', (r) {
-        final owner = c.owner(r.tempo);
+        final owner = c.owner(r);
         c.withhold(r.engine);
-        unawaited(owner.set(c.next));
+        unawaited(c.put(owner, c.next));
         r.expire();
         r.looper.stopEngine();
         c.deliver(r.engine);
@@ -473,11 +817,11 @@ void main() {
       });
 
       check('a timeout during a write is reported once', (r) {
-        final owner = c.owner(r.tempo);
+        final owner = c.owner(r);
         final failures = <SettingOutcome>[];
         final subscription = owner.failures.listen(failures.add);
         c.withhold(r.engine);
-        unawaited(owner.set(c.next));
+        unawaited(c.put(owner, c.next));
         r
           ..expire()
           ..pump();
@@ -486,15 +830,15 @@ void main() {
       });
 
       check('a failed rollback owes the checkpoint until Retry', (r) {
-        final owner = c.owner(r.tempo);
+        final owner = c.owner(r);
         r.store.failingWrites = 2;
         expect(
-          r.run(owner.set(c.next))?.status,
+          r.run(c.put(owner, c.next))?.status,
           SettingStatus.recoveryRequired,
         );
         expect(owner.ready, isFalse);
         expect(
-          r.run(owner.set(c.next))?.status,
+          r.run(c.put(owner, c.next))?.status,
           SettingStatus.recoveryRequired,
         );
         expect(r.run(owner.recover())?.status, SettingStatus.applied);
@@ -507,13 +851,19 @@ void main() {
   contract(_clickVolume);
   contract(_hearClick);
   contract(_recordStart);
+  contract(_once(const OneShotAddress.defaults()));
+  contract(_once(const OneShotAddress.track(3)));
+  contract(_length(const RecordLengthAddress.defaults()));
+  contract(_length(const RecordLengthAddress.track(3)));
+  contract(_timing(const RecordTimingAddress.defaults()));
+  contract(_timing(const RecordTimingAddress.track(3)));
 
   void unreadable<V extends Object>(_Case<V> c) {
     check(
       '${c.name} ${c.invalid}: audio keeps running, Session capture '
       'proceeds, and Retry repairs the stored data',
       (r) {
-        final owner = c.owner(r.tempo);
+        final owner = c.owner(r);
         expect(r.looper.sessionTransport.isRunning, isTrue);
         expect(r.engine.stopCalls, 0);
         expect(owner.ready, isFalse);
@@ -521,7 +871,7 @@ void main() {
         Object? captured;
         Object? refusal;
         unawaited(
-          SettingsOwners(r.tempo.owners)
+          r.owners
               .runExclusive<void>(() async => captured = owner.durable)
               .catchError((Object error) => refusal = error),
         );
@@ -537,11 +887,11 @@ void main() {
         expect(owner.ready, isTrue);
         expect(owner.value, c.repairedValue);
       },
-      stored: c.invalid,
+      stored: {...c.setup, ...c.invalid},
     );
 
     check('${c.name}: unreadable data, Session load, then Retry', (r) {
-      final owner = c.owner(r.tempo);
+      final owner = c.owner(r);
       expect(owner.ready, isFalse);
       r.looper.stopEngine();
       unawaited(r.looper.applySession(c.recalled));
@@ -554,20 +904,187 @@ void main() {
       expect(owner.value, c.recalledValue);
       expect(c.audible(r.engine), c.recalledValue);
       Object? captured;
-      unawaited(
-        SettingsOwners(
-          r.tempo.owners,
-        ).runExclusive(() async => captured = owner.durable),
-      );
+      unawaited(r.owners.runExclusive(() async => captured = owner.durable));
       r.pump();
       expect(captured, c.recalledValue);
-    }, stored: c.invalid);
+    }, stored: {...c.setup, ...c.invalid});
   }
 
   group('unreadable storage', () {
     unreadable(_hearClick);
     unreadable(_clickVolume);
     unreadable(_recordStart);
+    unreadable(_decay);
+    unreadable(_once(const OneShotAddress.defaults()));
+    unreadable(_once(const OneShotAddress.track(3)));
+    unreadable(_length(const RecordLengthAddress.defaults()));
+    unreadable(_length(const RecordLengthAddress.track(3)));
+    unreadable(_timing(const RecordTimingAddress.defaults()));
+    unreadable(_timing(const RecordTimingAddress.track(3)));
+  });
+
+  group('Decay family', () {
+    check('a native refusal rolls storage back and never stops audio', (r) {
+      final owner = r.playback.decayOwner;
+      r.engine.refuseDecayDefault = true;
+      expect(
+        r.run(_decay.put(owner, _decay.next))?.status,
+        SettingStatus.rejected,
+      );
+      expect(r.store.values['looper.overdub_decay'], 0);
+      expect(_audibleDecay(r.engine), _decay.repairedValue);
+      expect(r.engine.stopCalls, 0);
+      expect(r.run(owner.flush())?.status, SettingStatus.applied);
+    });
+
+    check('a failed rollback owes the checkpoint until Retry', (r) {
+      final owner = r.playback.decayOwner;
+      r.store.failingWrites = 2;
+      expect(
+        r.run(_decay.put(owner, _decay.next))?.status,
+        SettingStatus.recoveryRequired,
+      );
+      expect(owner.ready, isFalse);
+      expect(r.run(owner.recover())?.status, SettingStatus.applied);
+      expect(r.store.values['looper.overdub_decay'], 0);
+      expect(r.engine.stopCalls, 0);
+    });
+
+    check(
+      'a refused restore reverts the scalars it sent, reports unavailable '
+      'without stopping audio, and Retry applies it',
+      (r) {
+        final owner = r.playback.decayOwner;
+        expect(owner.ready, isFalse);
+        expect(owner.value, isNull);
+        // The default was sent, then reverted when track 3 was refused.
+        expect(_audibleDecay(r.engine), _decay.repairedValue);
+        expect(r.looper.defaultOverdubDecay, 0);
+        expect(r.engine.stopCalls, 0);
+        expect(r.looper.sessionTransport.isRunning, isTrue);
+        r.engine.refuseDecayTrack = null;
+        expect(r.run(owner.recover())?.status, SettingStatus.applied);
+        expect(
+          _audibleDecay(r.engine),
+          DecaySnapshot(defaultPercent: 80, trackOverrides: const {3: 20}),
+        );
+        expect(r.store.values['looper.overdub_decay'], 80);
+        expect(r.store.values['track_overdub_decay.3'], 20);
+      },
+      stored: const {'looper.overdub_decay': 80, 'track_overdub_decay.3': 20},
+      arm: (engine) => engine.refuseDecayTrack = 3,
+    );
+  });
+
+  check('a refused multi-address Decay request never makes a held value '
+      'durable', (r) {
+    final family = DecayFamily(
+      repository: r.looper,
+      settings: SettingsRepository(store: r.store),
+    );
+    // Track 2 is held at 90 with Released 10.
+    expect(
+      family.request(
+        DecaySnapshot(defaultPercent: 0, trackOverrides: const {2: 90}),
+        DecaySnapshot(defaultPercent: 0, trackOverrides: const {2: 10}),
+        null,
+      ),
+      EngineResult.ok,
+    );
+    expect(r.looper.decayRestartIntent.trackOverrides, {2: 10});
+    // Default and track 2 are sent; track 5 is refused, so both go back.
+    r.engine.refuseDecayTrack = 5;
+    expect(
+      family.request(
+        DecaySnapshot(defaultPercent: 40, trackOverrides: const {2: 50, 5: 30}),
+        DecaySnapshot(defaultPercent: 40, trackOverrides: const {2: 10, 5: 30}),
+        null,
+      ),
+      EngineResult.invalid,
+    );
+    expect(
+      family.live,
+      DecaySnapshot(defaultPercent: 0, trackOverrides: const {2: 90}),
+    );
+    expect(r.looper.decayRestartIntent.defaultPercent, 0);
+    expect(r.looper.decayRestartIntent.trackOverrides, {2: 10});
+  });
+
+  group('per-address writes', () {
+    const two = OneShotAddress.track(2);
+    const three = OneShotAddress.track(3);
+    Future<SettingOutcome> put(
+      SettingsOwner<OneShotSnapshot, bool?> owner,
+      OneShotAddress address, {
+      required bool oneShot,
+    }) => owner.update(
+      (live) => live.withValue(address, oneShot: oneShot),
+      address: address,
+    );
+
+    check('a write to another address never replaces a waiting one', (r) {
+      final owner = r.playback.oneShotOwner;
+      r.engine.commandsAreSettled = false;
+      final outcomes = <String, SettingStatus>{};
+      void track(String name, Future<SettingOutcome> write) =>
+          unawaited(write.then((o) => outcomes[name] = o.status));
+      track('in flight', put(owner, two, oneShot: true));
+      r.clock.flushMicrotasks();
+      track('three', put(owner, three, oneShot: true));
+      track('two, replaced', put(owner, two, oneShot: false));
+      track('two', put(owner, two, oneShot: true));
+      r.clock.flushMicrotasks();
+      r.engine.commandsAreSettled = true;
+      for (var i = 0; i < 4; i++) {
+        r.pump();
+      }
+      expect(outcomes, {
+        'in flight': SettingStatus.applied,
+        'three': SettingStatus.applied,
+        'two, replaced': SettingStatus.superseded,
+        'two': SettingStatus.applied,
+      });
+      expect(owner.value?.trackOverrides, {2: true, 3: true});
+      expect(r.store.values['track_one_shot.2'], true);
+      expect(r.store.values['track_one_shot.3'], true);
+    });
+
+    check('an ordinary write fences only its own address', (r) {
+      final owner = r.playback.oneShotOwner;
+      final origin = owner.lifetime;
+      final revision = owner.revisionOf(two);
+      expect(r.run(put(owner, three, oneShot: true))?.isOk, isTrue);
+      expect(owner.revisionOf(three), 1);
+      expect(owner.revisionOf(two), revision);
+      expect(
+        r
+            .run(
+              owner.updateController(
+                (live) => live.withValue(two, oneShot: true),
+                address: two,
+                lifetime: origin,
+                revision: revision,
+              ),
+            )
+            ?.status,
+        SettingStatus.applied,
+      );
+      expect(r.run(put(owner, two, oneShot: false))?.isOk, isTrue);
+      expect(
+        r
+            .run(
+              owner.updateController(
+                (live) => live.withValue(two, oneShot: true),
+                address: two,
+                lifetime: origin,
+                revision: revision,
+              ),
+            )
+            ?.status,
+        SettingStatus.superseded,
+      );
+      expect(owner.value?.trackOverrides, {2: false, 3: true});
+    });
   });
 
   group('Click volume coalescing', () {
@@ -664,7 +1181,9 @@ void main() {
       r.pump();
       expect(owner.durable, .25);
       final ordinary = <double>[];
-      final subscription = owner.ordinaryChanges.listen(ordinary.add);
+      final subscription = owner.ordinaryChanges
+          .map((change) => change.value)
+          .listen(ordinary.add);
       expect(r.run(owner.set(1.5))?.isOk, isTrue);
       expect(owner.durable, 1.5);
       expect(r.store.values['tempo.click_volume'], 1.5);
@@ -836,6 +1355,102 @@ void main() {
       );
       expect(r.store.values['tempo.count_in_bars'], 4);
       expect(r.store.values['looper.auto_record'], false);
+    });
+
+    final sound = RecordStartSettings(countInBars: 0, soundStart: true);
+    final released = RecordStartSettings(countInBars: 2, soundStart: false);
+
+    check('a partial write of the second stored value rolls back both', (r) {
+      final owner = r.tempo.recordStartOwner;
+      r.store.failKey = 'looper.auto_record';
+      expect(
+        r.run(owner.set(released))?.status,
+        SettingStatus.rejected,
+      );
+      expect(r.store.values['tempo.count_in_bars'], 0);
+      expect(r.store.values['looper.auto_record'], true);
+      expect(_recordStart.audible(r.engine), sound);
+      expect(owner.value, sound);
+      expect(owner.ready, isTrue);
+    }, stored: const {'looper.auto_record': true});
+
+    // A held Count-in from the controller, Released to two bars.
+    final counting = RecordStartSettings(countInBars: 4, soundStart: false);
+    RecordStartStatus? control(_Rig r, Future<RecordStartOutcome> write) {
+      RecordStartOutcome? outcome;
+      unawaited(write.then((value) => outcome = value));
+      r.pump();
+      return outcome?.status;
+    }
+
+    check('a device restart applies the Released pair', (r) {
+      final owner = r.tempo.recordStartOwner;
+      expect(
+        control(
+          r,
+          r.tempo.recordStartControl.setControllerCountIn(
+            4,
+            lifetime: owner.lifetime,
+            revision: owner.revision,
+            releasedBars: 2,
+          ),
+        ),
+        RecordStartStatus.applied,
+      );
+      expect(owner.value, counting);
+      expect(_recordStart.audible(r.engine), counting);
+      expect(_recordStart.read(r.store), [2, false]);
+      r.looper.stopEngine();
+      expect(r.looper.startEngine(const EngineConfig()), EngineResult.ok);
+      r.pump();
+      expect(_recordStart.audible(r.engine), released);
+      expect(owner.value, released);
+      expect(_recordStart.read(r.store), [2, false]);
+    });
+
+    check('a capture refusal keeps the Released pair until a same-origin '
+        'release succeeds', (r) {
+      final owner = r.tempo.recordStartOwner;
+      final origin = owner.lifetime;
+      final revision = owner.revision;
+      Future<RecordStartOutcome> release() => r.tempo.recordStartControl
+          .setControllerCountIn(2, lifetime: origin, revision: revision);
+      expect(
+        control(
+          r,
+          r.tempo.recordStartControl.setControllerCountIn(
+            4,
+            lifetime: origin,
+            revision: revision,
+            releasedBars: 2,
+          ),
+        ),
+        RecordStartStatus.applied,
+      );
+      final idle = r.engine.nextSnapshot.tracks;
+      r.engine.nextSnapshot = r.engine.nextSnapshot.copyWith(
+        tracks: [
+          const le.TrackSnapshot(
+            state: TrackState.recording,
+            volume: 1,
+            muted: false,
+            lengthFrames: 0,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+          ),
+          ...idle.skip(1),
+        ],
+      );
+      expect(control(r, release()), RecordStartStatus.rejected);
+      expect(owner.value, counting);
+      expect(owner.durable, released);
+      expect(_recordStart.read(r.store), [2, false]);
+      r.engine.nextSnapshot = r.engine.nextSnapshot.copyWith(tracks: idle);
+      expect(control(r, release()), RecordStartStatus.applied);
+      expect(owner.value, released);
+      expect(_recordStart.audible(r.engine), released);
+      expect(_recordStart.read(r.store), [2, false]);
     });
   });
 

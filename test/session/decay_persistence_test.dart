@@ -124,7 +124,12 @@ void main() {
           looper: looper,
           mix: mix,
           fx: projection,
-          owners: SettingsOwners(tempo.owners),
+          owners: SettingsOwners([
+            ...tempo.owners,
+            ...playback.owners,
+            ...record.owners,
+            ...timing.owners,
+          ]),
           tempo: tempo,
           playback: playback,
           record: record,
@@ -132,7 +137,13 @@ void main() {
         ),
         exportDirectory: () async => directory.path,
       );
-      expect((await playback.setOverdubDecay(20)).isOk, isTrue);
+      expect(
+        (await playback.decayControl.setOverdubDecay(
+          const DecayAddress.defaults(),
+          20,
+        )).isOk,
+        isTrue,
+      );
       expect(looper.record(), EngineResult.ok);
       engine.pump(frames: 256, input: .5);
       expect(looper.record(), EngineResult.ok);
@@ -164,11 +175,11 @@ void main() {
           (const DecayAddress.track(0), 75, 0),
         ]) {
           expect(
-            (await playback.setControllerDecay(
+            (await playback.decayControl.setControllerDecay(
               target.$1,
               target.$2,
-              lifetime: playback.decayLifetime,
-              revision: playback.decayRevision(target.$1),
+              lifetime: playback.decayControl.decayLifetime,
+              revision: playback.decayControl.decayRevision(target.$1),
               releasedPercent: target.$3,
             )).isOk,
             isTrue,
@@ -196,7 +207,10 @@ void main() {
       'Save waits for an earlier ordinary fixed-track Decay write',
       () async {
         store.pendingWrite = Completer<void>();
-        final edit = playback.setTrackOverdubDecay(channel: 7, percent: 45);
+        final edit = playback.decayControl.setTrackOverdubDecay(
+          channel: 7,
+          percent: 45,
+        );
         for (var attempt = 0; attempt < 50 && !store.writeEntered; attempt++) {
           await Future<void>.delayed(const Duration(milliseconds: 1));
         }
@@ -220,16 +234,25 @@ void main() {
     test(
       'recall restores Custom zero without changing startup preference',
       () async {
-        await playback.setTrackOverdubDecay(channel: 0, percent: 0);
+        await playback.decayControl.setTrackOverdubDecay(
+          channel: 0,
+          percent: 0,
+        );
         await session.saveAs('Inherited and custom');
-        await playback.setOverdubDecay(50);
-        await playback.setTrackOverdubDecay(channel: 0, percent: null);
+        await playback.decayControl.setOverdubDecay(
+          const DecayAddress.defaults(),
+          50,
+        );
+        await playback.decayControl.setTrackOverdubDecay(
+          channel: 0,
+          percent: null,
+        );
         await session.loadNamed('Inherited and custom');
         expect(session.state.status, SessionStatus.success);
         expect(playback.state.overdubDecay, 20);
         expect(playback.state.trackOverdubDecayOverrides, {0: 0});
         expect(
-          playback.durableDecaySnapshot,
+          playback.decayControl.durableDecaySnapshot,
           DecaySnapshot(defaultPercent: 20, trackOverrides: const {0: 0}),
         );
         expect(await settings.readDecayCheckpoint(channel: null), 50);

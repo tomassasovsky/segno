@@ -360,7 +360,10 @@ void main() {
 
       // The engine settles empty for the load itself (applySession reads
       // snapshots directly) — but no poll tick ever projects it.
-      fakeEngine.nextSnapshot = const engine.EngineSnapshot.initial();
+      // The engine's eight fixed slots stay; only their content goes.
+      fakeEngine.nextSnapshot = const engine.EngineSnapshot.initial().copyWith(
+        tracks: List.generate(8, (_) => const engine.TrackSnapshot.empty()),
+      );
       await repo.applySession(
         const SessionRig(),
         clearPollInterval: Duration.zero,
