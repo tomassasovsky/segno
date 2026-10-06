@@ -1,8 +1,11 @@
 # Backing decode fixtures
 
+<!-- cspell:ignore lavfi libmp3lame -->
+
 Two one-second 1 kHz sines at 44.1 kHz, amplitude 1/8 (the ffmpeg `sine`
 source's default), read by `test_engine_backing.h`
-(`test_backing_decode_mp3_flac`). They are generated, not recorded, and can
+(`test_backing_decode_mp3_and_no_flac`; the FLAC one proves FLAC is refused
+while the decoder is compiled out, and seeds the decoder fuzz driver). They are generated, not recorded, and can
 be rebuilt with ffmpeg 8.0.1 (LAME 3.100):
 
 ```sh
