@@ -8,8 +8,8 @@ import 'package:segno/looper/model/owned_setting.dart';
 /// checkpoint, its native command and its receipt. Everything else is
 /// [SettingsOwner]'s, identical for every family.
 abstract interface class SettingsFamily<V extends Object, C> {
-  /// Names the family in logs.
-  String get name;
+  /// Keys the family's notice and names it in logs.
+  OwnedSetting get key;
 
   /// Whether [value] is a value this family can hold.
   bool validate(V value);
@@ -45,14 +45,29 @@ abstract interface class SettingsFamily<V extends Object, C> {
   /// Refusals and uncertainty reported by the receipt.
   Stream<EngineResult> get failures;
 
-  /// Stages or enqueues [live], with [durable] for restart.
-  EngineResult request(V live, V durable);
+  /// Stages or enqueues [live], with [durable] for restart. [edit] is the
+  /// family's own edit tag from the write; null for a restore.
+  EngineResult request(V live, V durable, Object? edit);
 
   /// Awaits the pending receipt.
   Future<EngineResult> settle();
 
   /// Re-requests the owed durable value.
   EngineResult recover();
+}
+
+/// Stages [family]'s stored value into the stopped engine before audio
+/// opens. Throws when the stored value is unreadable or refused; the owner's
+/// load and Retry then own the recovery.
+Future<void> stageStored<V extends Object, C>(
+  SettingsFamily<V, C> family,
+) async {
+  final value = family.restoreValue(await family.readCheckpoint());
+  final request = family.request(value, value, null);
+  final result = request.isOk ? await family.settle() : request;
+  if (!result.isOk) {
+    throw StateError('${family.key.name} replay refused: ${result.name}');
+  }
 }
 
 /// The one settings transaction: load, ordinary and controller writes,
@@ -87,7 +102,7 @@ class SettingsOwner<V extends Object, C> {
   Future<void> _tail = Future<void>.value();
   Future<void>? _loadFuture;
   Future<void>? _closeFuture;
-  _Write<V>? _waiting;
+  _Slot<V>? _waiting;
   late SettingLifetime _lifetime;
   int _revision = 0;
   bool _initialized = false;
@@ -97,6 +112,9 @@ class SettingsOwner<V extends Object, C> {
   int? _loadSession;
   ({C checkpoint})? _owedRollback;
   SettingOutcome _last = const SettingOutcome(SettingStatus.rejected);
+
+  /// The family this owner carries.
+  OwnedSetting get key => _family.key;
 
   /// Current session and device identity; capture it before queuing work.
   SettingLifetime get lifetime => (
@@ -146,9 +164,19 @@ class SettingsOwner<V extends Object, C> {
   /// family unavailable.
   Future<void> load() => _loadFuture ??= _restore();
 
-  /// Ordinary intent; a newer write replaces one still waiting.
-  Future<SettingOutcome> set(V value) =>
-      _admit(_Write(value, lifetime: lifetime, ordinary: true));
+  /// Ordinary intent; a newer write with the same [edit] replaces one still
+  /// waiting.
+  Future<SettingOutcome> set(V value, {Object? edit}) =>
+      update((_) => value, edit: edit);
+
+  /// Ordinary intent computed from the live value when the write runs, so a
+  /// queued edit composes with the one admitted before it.
+  Future<SettingOutcome> update(
+    V Function(V live) change, {
+    Object? edit,
+  }) => _admit(
+    _Write(change, lifetime: lifetime, edit: edit, ordinary: true),
+  );
 
   /// Controller intent fenced by its origin; [released] is the durable value
   /// while [value] is held.
@@ -157,8 +185,29 @@ class SettingsOwner<V extends Object, C> {
     required SettingLifetime lifetime,
     int? revision,
     V? released,
+  }) => updateController(
+    (_) => value,
+    lifetime: lifetime,
+    revision: revision,
+    released: released == null ? null : (_) => released,
+  );
+
+  /// Controller intent computed from the live value; [released] derives the
+  /// durable value from the held one.
+  Future<SettingOutcome> updateController(
+    V Function(V live) change, {
+    required SettingLifetime lifetime,
+    int? revision,
+    V Function(V held)? released,
+    Object? edit,
   }) => _admit(
-    _Write(value, lifetime: lifetime, revision: revision, released: released),
+    _Write(
+      change,
+      lifetime: lifetime,
+      revision: revision,
+      released: released,
+      edit: edit,
+    ),
   );
 
   /// Drains admitted writes and settles the receipt. The outcome reflects the
@@ -268,27 +317,31 @@ class SettingsOwner<V extends Object, C> {
   }
 
   Future<SettingOutcome> _admit(_Write<V> write) {
-    final replaced = _waiting;
-    if (replaced != null && replaced.ordinary && write.revision != null) {
+    final waiting = _waiting;
+    if (waiting != null && waiting.write.ordinary && write.revision != null) {
       // A newer ordinary choice already supersedes this origin's revision.
       write.done.complete(const SettingOutcome(SettingStatus.superseded));
       return write.done.future;
     }
-    _waiting = write;
-    if (replaced != null) {
-      // Latest wins: one storage write per in-flight receipt.
-      replaced.done.complete(const SettingOutcome(SettingStatus.superseded));
-    } else {
-      unawaited(
-        load().then(
-          (_) => _queue(() async {
-            final next = _waiting!;
-            _waiting = null;
-            next.done.complete(await _write(next));
-          }),
-        ),
+    if (waiting != null && waiting.write.edit == write.edit) {
+      // Latest wins per edit: one storage write per in-flight receipt.
+      waiting.write.done.complete(
+        const SettingOutcome(SettingStatus.superseded),
       );
+      waiting.write = write;
+      return write.done.future;
     }
+    // A different edit queues behind the waiting one and runs after it.
+    final slot = _waiting = _Slot(write);
+    unawaited(
+      load().then(
+        (_) => _queue(() async {
+          if (identical(_waiting, slot)) _waiting = null;
+          final next = slot.write;
+          next.done.complete(await _write(next));
+        }),
+      ),
+    );
     return write.done.future;
   }
 
@@ -310,15 +363,6 @@ class SettingsOwner<V extends Object, C> {
         ),
       );
     }
-    final durable = write.released ?? write.value;
-    if (!_family.validate(write.value) || !_family.validate(durable)) {
-      return _report(
-        const SettingOutcome(
-          SettingStatus.rejected,
-          engineResult: EngineResult.invalid,
-        ),
-      );
-    }
     _busy = true;
     try {
       // A restart replay or Session receipt lands before this admission.
@@ -326,6 +370,29 @@ class SettingsOwner<V extends Object, C> {
       if (!current()) return const SettingOutcome(SettingStatus.superseded);
       if (_family.recoveryRequired) {
         return _report(const SettingOutcome(SettingStatus.recoveryRequired));
+      }
+      // The value is computed from what the engine accepted last.
+      final V value;
+      final V durable;
+      try {
+        value = write.change(_family.live);
+        durable = write.released?.call(value) ?? value;
+      } on Object {
+        // A change that cannot build a valid value is refused, not thrown.
+        return _report(
+          const SettingOutcome(
+            SettingStatus.rejected,
+            engineResult: EngineResult.invalid,
+          ),
+        );
+      }
+      if (!_family.validate(value) || !_family.validate(durable)) {
+        return _report(
+          const SettingOutcome(
+            SettingStatus.rejected,
+            engineResult: EngineResult.invalid,
+          ),
+        );
       }
       if (_family.captureLocked) {
         return _report(
@@ -365,14 +432,14 @@ class SettingsOwner<V extends Object, C> {
         );
       }
       final deferred = !_running;
-      final admission = _family.request(write.value, durable);
+      final admission = _family.request(value, durable, write.edit);
       final result = admission.isOk ? await _family.settle() : admission;
       if (result.isOk) {
         // Committed: the engine holds this value now, so storage keeps it
         // even when the lifetime moved on before this resumed.
         if (write.ordinary) {
           _revision++;
-          if (!_ordinary.isClosed) _ordinary.add(write.value);
+          if (!_ordinary.isClosed) _ordinary.add(value);
         }
         return _report(
           SettingOutcome(SettingStatus.applied, deferred: deferred),
@@ -424,7 +491,10 @@ class SettingsOwner<V extends Object, C> {
       await _family.readCheckpoint();
     } on Object catch (error) {
       await _family.writeCheckpoint(_family.repair());
-      AppLog.warn('${_family.name}: replaced unreadable stored value: $error');
+      AppLog.warn(
+        '${_family.key.name}: replaced unreadable stored value: '
+        '$error',
+      );
     }
     _unreadable = null;
   }
@@ -462,7 +532,7 @@ class SettingsOwner<V extends Object, C> {
           }
           if (read && origin.sessionRevision == session) {
             final value = _family.restoreValue(checkpoint as C);
-            final admission = _family.request(value, value);
+            final admission = _family.request(value, value, null);
             final result = admission.isOk ? await _family.settle() : admission;
             if (_closing) return true;
             if (!result.isOk) {
@@ -538,16 +608,24 @@ class SettingsOwner<V extends Object, C> {
 
 final class _Write<V> {
   _Write(
-    this.value, {
+    this.change, {
     required this.lifetime,
     this.revision,
     this.released,
+    this.edit,
     this.ordinary = false,
   });
-  final V value;
+  final V Function(V live) change;
   final SettingLifetime lifetime;
   final int? revision;
-  final V? released;
+  final V Function(V held)? released;
+  final Object? edit;
   final bool ordinary;
   final done = Completer<SettingOutcome>();
+}
+
+/// A queued write not yet started; a same-edit write replaces its content.
+final class _Slot<V> {
+  _Slot(this.write);
+  _Write<V> write;
 }

@@ -78,26 +78,6 @@ class _TimingIntent {
   final Map<int, RecordTiming> overrides;
 }
 
-class _PendingRecordStart {
-  _PendingRecordStart({
-    required this.settings,
-    required this.restart,
-    required this.recovery,
-    required this.recoveryRestart,
-    required this.prior,
-    required this.expectedRevision,
-    required this.startup,
-  });
-  final ({int countInBars, bool soundStart}) settings;
-  final ({int countInBars, bool soundStart}) restart;
-  final ({int countInBars, bool soundStart}) recovery;
-  final ({int countInBars, bool soundStart}) recoveryRestart;
-  final ({int countInBars, bool soundStart}) prior;
-  final int expectedRevision;
-  final bool startup;
-  final observation = ReceiptObservation();
-}
-
 class _PendingTiming {
   _PendingTiming({
     required this.intent,
@@ -374,22 +354,15 @@ class LooperRepository {
   final Map<int, int> _trackMultiple = {};
   int _defaultMultiple = 0;
   bool _recDub = false;
-  ({int countInBars, bool soundStart}) _recordStart = (
-    countInBars: 0,
-    soundStart: false,
-  );
-  ({int countInBars, bool soundStart}) _recordStartRestart = (
-    countInBars: 0,
-    soundStart: false,
-  );
-  _PendingRecordStart? _pendingRecordStart;
-  ({
-    ({int countInBars, bool soundStart}) settings,
-    ({int countInBars, bool soundStart}) restart,
-  })?
-  _recordStartRecovery;
-  EngineResult _lastRecordStartResult = EngineResult.ok;
-  final _recordStartFailures = StreamController<EngineResult>.broadcast();
+  late final _recordStart =
+      SettingsReceipt<({int countInBars, bool soundStart})>(
+        (countInBars: 0, soundStart: false),
+        send: _sendRecordStart,
+        running: () => _intendRunning,
+        publish: () => _reproject(forcePublication: true),
+      );
+  // The native edit kind of the request being sent; replays restore.
+  RecordStartEditKind _recordStartEdit = RecordStartEditKind.restore;
   final _recordingInputRequired = StreamController<int>.broadcast();
 
   /// The desired global master output gain (`0..1`), re-applied to the engine
@@ -852,11 +825,14 @@ class LooperRepository {
       entry.value?.complete(EngineResult.notReady);
       _pendingFades[entry.key] = null;
     }
-    for (final receipt in [_clickMode, _clickVolume]) {
+    for (final receipt in <SettingsReceipt<Object>>[
+      _clickMode,
+      _clickVolume,
+      _recordStart,
+    ]) {
       receipt.cancel();
     }
     _cancelTiming();
-    _cancelRecordStart();
     _cancelLengthSettings();
     _cancelOneShot();
     _cancelMix();
@@ -1611,9 +1587,9 @@ class LooperRepository {
       clickMode: _clickMode.live,
       clickMask: _clickMask,
       clickVolume: _clickVolume.live,
-      countInBars: _recordStart.countInBars,
+      countInBars: _recordStart.live.countInBars,
       recDub: _recDub,
-      autoRecord: _recordStart.soundStart,
+      autoRecord: _recordStart.live.soundStart,
       quantize: _quantize,
       recordTiming: defaultRecordTiming,
       overdubDecay: _overdubDecay,
@@ -2177,7 +2153,7 @@ class LooperRepository {
       _pendingOneShot?.observation,
       _clickVolume.observation,
       _clickMode.observation,
-      _pendingRecordStart?.observation,
+      _recordStart.observation,
       _pendingTiming?.observation,
       _pendingLengthSettings?.observation,
       _pendingMix?.observation,
@@ -2359,7 +2335,7 @@ class LooperRepository {
       // below: the engine's mirror reads 0 while it is stopped (nothing is
       // pushed to a stopped engine) and lands a block late while it runs,
       // and the cubits that own the setting follow this value.
-      countInBars: _recordStart.countInBars,
+      countInBars: _recordStart.live.countInBars,
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
       looperMode: s.looperMode,
@@ -2376,7 +2352,7 @@ class LooperRepository {
       // ([setRecordStartSettings]), so they read right while the
       // engine is stopped and in the mock flavour, which reports neither.
       quantize: _quantize,
-      autoRecord: _recordStart.soundStart,
+      autoRecord: _recordStart.live.soundStart,
       overdubDecay: _overdubDecay,
       defaultOneShot: _defaultOneShot,
       defaultLengthPresetBars: _defaultLengthPreset,
@@ -2524,8 +2500,7 @@ class LooperRepository {
         _mixRecoveryStartBlocked ||
         oneShotRecoveryRequired ||
         lengthRecoveryRequired ||
-        recordTimingRecoveryRequired ||
-        recordStartRecoveryRequired) {
+        recordTimingRecoveryRequired) {
       return EngineResult.notReady;
     }
     _retireEngineLifetime();
@@ -2593,11 +2568,7 @@ class LooperRepository {
         ..setTimeSignature(_tsNum, _tsDen)
         ..setSyncTempo(on: _syncTempo)
         ..setClickOutput(_clickMask);
-      final startResult = _requestRecordStart(
-        _recordStartRestart,
-        RecordStartEditKind.restore,
-        startup: true,
-      );
+      final startResult = _recordStart.replay();
       if (!startResult.isOk) {
         stopEngine();
         return startResult;
@@ -3010,7 +2981,7 @@ class LooperRepository {
       return EngineResult.notReady;
     }
     if (_pendingMix != null) return _mixFailure(EngineResult.notReady);
-    if (_recordStart.soundStart && state == TrackState.empty) {
+    if (_recordStart.live.soundStart && state == TrackState.empty) {
       if (!_engine.commandsSettled) return EngineResult.notReady;
       final applied = _engine.snapshot();
       final usable = applied.tracks[channel].lanes.any(
@@ -3285,7 +3256,8 @@ class LooperRepository {
             tracks[channel].countInCancelGrace)) {
       return _engine.cancelArm(channel: channel);
     }
-    return !recordStartSettingsSettled || recordStartRecoveryRequired
+    // Play waits for an admitted pair; an owed pair never blocks playback.
+    return !recordStartSettingsSettled
         ? EngineResult.notReady
         : _engine.play(channel: channel);
   }
@@ -3886,8 +3858,7 @@ class LooperRepository {
     _lastTimingResult = EngineResult.ok;
     _clickMode.reset();
     _clickVolume.reset();
-    _recordStartRecovery = null;
-    _lastRecordStartResult = EngineResult.ok;
+    _recordStart.reset();
     _oneShotRecoveryIntent = null;
     _oneShotRecoveryRestart = null;
     _lastOneShotResult = EngineResult.ok;
@@ -7373,42 +7344,27 @@ class LooperRepository {
   }
 
   /// Last accepted live pair, including temporary controller intent.
-  ({int countInBars, bool soundStart}) get recordStartSettings => _recordStart;
+  ({int countInBars, bool soundStart}) get recordStartSettings =>
+      _recordStart.live;
 
   /// Accepted Released pair for session capture and device restart.
   ({int countInBars, bool soundStart}) get recordStartRestartIntent =>
-      _recordStartRestart;
+      _recordStart.restart;
 
   /// Whether a pair command is awaiting its callback receipt.
-  bool get recordStartSettingsSettled => _pendingRecordStart == null;
+  bool get recordStartSettingsSettled => _recordStart.settled;
 
-  /// Uncertain native completion requires an explicit retry.
-  bool get recordStartRecoveryRequired => _recordStartRecovery != null;
+  /// An uncertain receipt owes its Released pair until Retry or restart.
+  bool get recordStartRecoveryRequired => _recordStart.recoveryRequired;
 
   /// Actual capture locks future start settings; waiting arms remain editable.
   bool get recordStartCaptureLocked => clickModeCaptureLocked;
 
   /// Pair refusals and autonomous restart uncertainty.
-  Stream<EngineResult> get recordStartSettingsFailures =>
-      _recordStartFailures.stream;
+  Stream<EngineResult> get recordStartSettingsFailures => _recordStart.failures;
 
   /// Empty Sound-start target needing a real selected recording input.
   Stream<int> get recordingInputRequired => _recordingInputRequired.stream;
-
-  EngineResult _reportRecordStart(EngineResult result) {
-    if (!_recordStartFailures.isClosed) _recordStartFailures.add(result);
-    return result;
-  }
-
-  void _cancelRecordStart() {
-    final pending = _pendingRecordStart;
-    _pendingRecordStart = null;
-
-    if (pending != null) {
-      _lastRecordStartResult = EngineResult.notReady;
-      pending.observation.complete(EngineResult.notReady);
-    }
-  }
 
   /// Stages a stopped pair or requests one callback-confirmed atomic edit.
   EngineResult setRecordStartSettings({
@@ -7425,131 +7381,69 @@ class LooperRepository {
                     releasedSettings.soundStart)) {
       return EngineResult.invalid;
     }
-    return _requestRecordStart(
-      (
-        countInBars: countInBars,
-        soundStart: soundStart,
-      ),
-      editKind,
-      releasedSettings: releasedSettings,
+    _recordStartEdit = editKind;
+    final result = _recordStart.request(
+      (countInBars: countInBars, soundStart: soundStart),
+      restart: releasedSettings,
     );
+    _recordStartEdit = RecordStartEditKind.restore;
+    _reproject();
+    return result.isOk && _recordStart.settled
+        ? _recordStart.lastResult
+        : result;
   }
 
-  EngineResult _requestRecordStart(
+  ({EngineResult result, ReceiptCheck? check}) _sendRecordStart(
     ({int countInBars, bool soundStart}) settings,
-    RecordStartEditKind editKind, {
-    bool startup = false,
-    ({int countInBars, bool soundStart})? releasedSettings,
-  }) {
-    if (_pendingRecordStart != null || recordStartRecoveryRequired) {
-      return EngineResult.notReady;
+  ) {
+    if (recordStartCaptureLocked) {
+      return (result: EngineResult.invalid, check: null);
     }
-    final restart = releasedSettings ?? settings;
-    if (!_intendRunning) {
-      _recordStart = settings;
-      _recordStartRestart = restart;
-      _lastRecordStartResult = EngineResult.ok;
-      _reproject();
-      return EngineResult.ok;
-    }
-    if (recordStartCaptureLocked) return EngineResult.invalid;
     final prior = _engine.snapshot();
     final result = _engine.setRecordStartSettings(
       countInBars: settings.countInBars,
       soundStart: settings.soundStart,
-      editKind: editKind,
+      editKind: _recordStartEdit,
     );
-    if (!result.isOk) return result;
-    final pending = _PendingRecordStart(
-      settings: settings,
-      restart: restart,
-      recovery: startup ? restart : _recordStart,
-      recoveryRestart: startup ? restart : _recordStartRestart,
-      prior: (countInBars: prior.countInBars, soundStart: prior.autoRecord),
-      expectedRevision: (prior.recordStartRevision + 1) & 0xffffffff,
-      startup: startup,
+    final expected = (prior.recordStartRevision + 1) & 0xffffffff;
+    final before = (
+      countInBars: prior.countInBars,
+      soundStart: prior.autoRecord,
     );
-    _pendingRecordStart = pending;
-    _watchReceipt(
-      pending.observation,
-      settle: _settleRecordStart,
-      expire: () => _failRecordStart(pending, EngineResult.notReady),
+    return (
+      result: result,
+      // Acquire the callback boundary before reading the scalar receipt.
+      check: () {
+        if (!_engine.commandsSettled) return null;
+        final snapshot = _engine.snapshot();
+        if (snapshot.recordStartRevision != expected) return null;
+        final actual = (
+          countInBars: snapshot.countInBars,
+          soundStart: snapshot.autoRecord,
+        );
+        final result = EngineResult.fromCode(snapshot.recordStartResult);
+        if (result.isOk && actual == settings) {
+          return (verdict: ReceiptVerdict.accepted, result: result);
+        }
+        if (!result.isOk && actual == before) {
+          return (verdict: ReceiptVerdict.refused, result: result);
+        }
+        return (verdict: ReceiptVerdict.uncertain, result: result);
+      },
     );
-    if (!startup) _reproject();
-    return _pendingRecordStart == null
-        ? _lastRecordStartResult
-        : EngineResult.ok;
-  }
-
-  bool _settleRecordStart() {
-    final pending = _pendingRecordStart;
-    // Acquire the callback boundary before reading the scalar receipt.
-    if (pending == null || !_engine.commandsSettled) return false;
-    final snapshot = _engine.snapshot();
-    if (snapshot.recordStartRevision != pending.expectedRevision) return false;
-    final actual = (
-      countInBars: snapshot.countInBars,
-      soundStart: snapshot.autoRecord,
-    );
-    final result = EngineResult.fromCode(snapshot.recordStartResult);
-    if (result.isOk && actual == pending.settings) {
-      _pendingRecordStart = null;
-
-      _recordStart = pending.settings;
-      _recordStartRestart = pending.restart;
-      _lastRecordStartResult = EngineResult.ok;
-      pending.observation.complete(EngineResult.ok);
-    } else if (!result.isOk && actual == pending.prior && !pending.startup) {
-      _pendingRecordStart = null;
-
-      _lastRecordStartResult = result;
-      pending.observation.complete(result);
-      _reportRecordStart(result);
-    } else {
-      _failRecordStart(pending, EngineResult.invalid);
-    }
-    return true;
-  }
-
-  void _failRecordStart(_PendingRecordStart pending, EngineResult result) {
-    if (!identical(_pendingRecordStart, pending)) return;
-    _pendingRecordStart = null;
-
-    _recordStartRecovery = (
-      settings: pending.recovery,
-      restart: pending.recoveryRestart,
-    );
-    _lastRecordStartResult = result;
-    pending.observation.complete(result);
-    if (!recordStartCaptureLocked) stopEngine();
-    _reportRecordStart(result);
   }
 
   /// Bounded exact receipt/readback settlement, also observed autonomously.
   Future<EngineResult> settleRecordStartSettings({
     Duration pollInterval = const Duration(milliseconds: 10),
     int attempts = 50,
-  }) async {
-    final pending = _pendingRecordStart;
-    if (pending == null) return _lastRecordStartResult;
-    return pending.observation.wait(
-      pollInterval: pollInterval,
-      attempts: attempts,
-    );
-  }
+  }) => _recordStart.settle(pollInterval: pollInterval, attempts: attempts);
 
-  /// Explicit retry repairs only this lifetime's native obligation.
+  /// Retry re-requests the owed pair while running and stages it stopped.
   EngineResult recoverRecordStartSettings() {
-    final recovery = _recordStartRecovery;
-    if (recovery == null) return EngineResult.ok;
-    if (recordStartCaptureLocked) return EngineResult.notReady;
-    if (_intendRunning) stopEngine();
-    _recordStart = recovery.settings;
-    _recordStartRestart = recovery.restart;
-    _recordStartRecovery = null;
-    _lastRecordStartResult = EngineResult.ok;
+    final result = _recordStart.recover();
     _reproject();
-    return EngineResult.ok;
+    return result;
   }
 
   /// Accepted Released choice used on a device restart.
@@ -8078,7 +7972,7 @@ class LooperRepository {
     await _timingFailures.close();
     await _clickMode.dispose();
     await _clickVolume.dispose();
-    await _recordStartFailures.close();
+    await _recordStart.dispose();
     await _recordingInputRequired.close();
     await _mixSettingsFailures.close();
     await _controller.close();

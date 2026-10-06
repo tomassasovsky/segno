@@ -359,19 +359,118 @@ Decay's failed restore reports unavailable instead of stopping
 keys at decode (`session.dart:795, 804-813`; only `_readTrackLevels` checks) so a
 bad session is refused before `_awaitCleared` (:3993). Estimate: +750 / -2,900.
 
+Split (approved 2026-10-05): the part would add about 1,800-2,000 production
+lines, past the 1,000-line limit, so it lands as four stacked PRs. 2a lands
+the registry every later slice uses and 2b the address parameter 2c needs.
+Each slice keeps existing installs' behavior; Part 4's changes stay out.
+The blocks below replace the single success-criteria block this part had.
+
+#### Part 2a: registry and Count-in
+
+Status: built (branch `claude/settings-owner-1159-p2`).
+
 ```success-criteria
-GOAL: All seven families and Fade run on the shared owner; the duplicated transaction, bootstrap, shutdown and toast code is gone; behavior outside the four defects and the listed fixes is unchanged.
+GOAL: One registry carries the owned families for Session exclusion, shutdown flush and Retry; Count-in/Sound start runs on the shared receipt and owner; one keyed notice replaces the Click, Hear click and Count-in toasts.
 SUCCESS CRITERIA:
-- The four Part 1 defect cases pass for every family through one parameterized suite with literal store and engine oracles. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/application/settings_owner_test.dart && (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- A stored pair (count_in_bars 2, auto_record true) starts audio; Retry repairs it to (0, false) in the store. | verify: /Users/Tomas/development/flutter/bin/flutter test test/app/audio_bootstrap_test.dart test/looper/application/ test/app/application/app_runtime_test.dart
+- The four Part 1 defect cases and the Part 1 review cases pass for Count-in through the shared contract suites. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/application/settings_owner_test.dart && (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- A restart that lands an owed value dismisses that family's notice, for every registered family. | verify: /Users/Tomas/development/flutter/bin/flutter test test/app/view/app_test.dart
+- The Count-in dispatch suite passes with construction-only edits. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control/
+NON-GOALS:
+- Other families, dispatch shape, power-off UI, defaults, Mixer internals, native code.
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/dart analyze --fatal-infos lib test packages && /Users/Tomas/development/flutter/bin/flutter test && (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test)
+```
+
+#### Part 2b: address parameter and Playback
+
+```success-criteria
+GOAL: SettingsOwner carries an address; Decay (no receipt) and Loop/Once run on the shared owner; PlaybackSettings and _PendingOneShot are gone.
+SUCCESS CRITERIA:
+- The four defect cases and the Part 1 review cases pass for Decay and Once through the parameterized suite, per address. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/application/settings_owner_test.dart && (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- Decay's failed restore reports unavailable instead of stopping audio. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/application/ test/app/audio_bootstrap_test.dart
+- The Decay and Once dispatch suites pass with construction-only edits. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control/
+NON-GOALS:
+- Record length, timing, Fade, dispatch shape, power-off UI, defaults, native code.
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/dart analyze --fatal-infos lib test packages && /Users/Tomas/development/flutter/bin/flutter test && (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test)
+```
+
+#### Part 2c: Record length and mode, Record timing
+
+```success-criteria
+GOAL: Record length and mode and Record timing run on the shared owner; the deferred section 2.1 items land; the remaining startEngine gates, LooperBloc forwarding and LooperPersistFlush are gone.
+SUCCESS CRITERIA:
 - A record started after a length vector lands but before the poll is accepted with zero engine stops; a latched track-length hold released after entering Multi completes power-off. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control/record_length_dispatch_test.dart test/looper/application/
-- A stored pair (count_in_bars 2, auto_record true) starts audio; Retry repairs it to (0, false) in the store. | verify: /Users/Tomas/development/flutter/bin/flutter test test/app/audio_bootstrap_test.dart test/looper/application/
+- _requestMix no longer refuses on timing recovery, and one capture-lock getter guards both families. | verify: (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- The length and timing dispatch suites and the Session persistence suites pass with construction-only edits. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control/ test/session/
+NON-GOALS:
+- Fade, dispatch shape, power-off UI, defaults, native code.
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/dart analyze --fatal-infos lib test packages && /Users/Tomas/development/flutter/bin/flutter test && (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test)
+```
+
+#### Part 2d: Fade, Session and Mixer timeout
+
+```success-criteria
+GOAL: Fade runs on the shared owner; the Mixer's timeout path uses SettingsReceipt; Session JSON is validated at decode; no per-family transaction copy remains.
+SUCCESS CRITERIA:
 - Session JSON with countInBars 3 or override key "8" is refused before the rig is cleared. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/session/
-- All seven dispatch suites and the Session persistence suites pass with construction-only edits. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control/ test/session/
+- A Mixer receipt timeout never stops audio. | verify: (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test)
 - No `_restore(Decay|Once|Length|RecordStart|ClickMode)`, `flush(Decay|OneShot|RecordLength|RecordTiming|ClickMode|RecordStart)` or `_Pending(Timing|LengthSettings|RecordStart|ClickMode|ClickVolume|OneShot)` remains in lib or packages. | verify: manual grep on the branch head.
 NON-GOALS:
-- Dispatch collapse, power-off UI, defaults, Mixer internals, native code.
-VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/dart analyze --fatal-infos lib test packages && bloc lint lib test packages && /Users/Tomas/development/flutter/bin/flutter test && (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- Dispatch collapse, power-off UI, defaults, Mixer internals beyond the timeout, native code.
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/dart analyze --fatal-infos lib test packages && /Users/Tomas/development/flutter/bin/flutter test && (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test)
 ```
+
+#### Part 2a as built
+
+- `lib/looper/application/settings_owners.dart` holds `SettingsOwners`, the
+  registry in its fixed order: `runExclusive` acquires every owner in turn,
+  `flush` and `recover` return the first family that did not reach applied.
+  `AppRuntime` builds it from `TempoSettings.owners` (Click volume, Hear
+  click, Count-in) and `prepareShutdown` calls it where the three per-family
+  blocks were. `SessionSettingsCoordinator` takes it in place of
+  `TempoSettings.runTempoExclusive`, which is gone.
+- Count-in/Sound start: `LooperRepository` keeps a `SettingsReceipt` for the
+  pair (revision fence; refused when the prior pair is intact), replacing
+  `_PendingRecordStart` and its cancel, fail and recover members.
+  `RecordStartFamily` and the temporary `RecordStartOwnerControl` adapter live
+  in `settings_families.dart`. The Count-in half of `TempoSettings` is gone;
+  `TempoSettings` keeps the tempo grid and the `TempoState` projection.
+- The owner takes changes, not only values: `update` and `updateController`
+  compute the value from the live value when the write runs, and a write may
+  carry the family's edit tag, which reaches `request`. Count-in uses the
+  native edit kind as its tag. A waiting write is replaced only by a write
+  with the same tag; a different tag queues behind it, so a Count-in edit and
+  a Sound edit both apply, in order.
+- `app.dart` shows one notice for every registered owner, keyed by
+  `OwnedSetting`, replacing the Click, Hear click and Count-in toasts, and
+  dismisses it when the owner reports `recovered`.
+- Bootstrap stages Hear click and Count-in through one loop over their
+  families (`stageStored`); an unreadable or unconfirmed value logs and leaves
+  that family unavailable instead of stopping audio. An engine that refuses
+  to admit the startup replay still fails the start.
+
+Decisions taken under the owner rules (2026-10-05):
+
+11. The registry stays in `AppRuntime` (owner decision), so bootstrap cannot
+    call `owners.load()` before audio opens. Bootstrap stages through the
+    families' own read, decode and request code instead; the owners load
+    after, as before. Rule 4: one staging path, no per-family copy.
+12. A pending pair receipt no longer disables the Count-in choice; a write
+    waits for it (Part 1 finding 5). An owed pair still does. Rules 2 and 4.
+13. Play waits only for an unsettled pair. An owed pair still refuses a new
+    take, because that take could start with the wrong count-in; Retry
+    clears it. Rule 2.
+14. Count-in edits are computed from the accepted pair when they run, so a
+    queued Sound edit cannot revert a Count-in edit admitted before it.
+    Rule 3.
+15. Session exclusion no longer refuses while Count-in is unavailable;
+    capture uses the repository's durable pair, as for Click volume and Hear
+    click. Rule 4.
+
+Deviations: the Play fence (listed under 2d) landed here, because Count-in's
+owed state would otherwise block playback until Retry. Production change:
++546 / -868.
+
 
 ### Part 3: Control dispatch collapse
 

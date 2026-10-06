@@ -228,7 +228,7 @@ void main() {
       recordTimingControl: FakeRecordTimingControl(),
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
-      recordStartControl: tempoOwner,
+      recordStartControl: tempoOwner.recordStartControl,
       fxPersistence: fxPersistence,
       looper: repository,
       mixSettings: mixSettings,
@@ -278,8 +278,8 @@ void main() {
     final timing = RecordTimingCubit(settings: timingOwner);
     addTearDown(() => unawaited(timingOwner.close()));
     addTearDown(() => unawaited(timing.close()));
-    await tempoOwner.loadRecordStart();
-    expect(tempoOwner.recordStartSnapshot, isNotNull);
+    await tempoOwner.recordStartOwner.load();
+    expect(tempoOwner.recordStartControl.recordStartSnapshot, isNotNull);
     final tempo = TempoCubit(settings: tempoOwner);
     final closeTempoOwner = tempoOwner.close;
     addTearDown(() => unawaited(closeTempoOwner()));

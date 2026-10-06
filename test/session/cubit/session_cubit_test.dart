@@ -13,7 +13,9 @@ import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/settings_families.dart';
 import 'package:segno/looper/application/settings_owner.dart';
+import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
@@ -89,10 +91,14 @@ class _ClickModeOwner extends Fake implements SettingsOwner<ClickMode, int?> {
   ClickMode get durable => ClickMode.off;
 }
 
-class _TempoOwner extends Fake implements TempoSettings {
+class _RecordStartOwner extends Fake
+    implements SettingsOwner<RecordStartSettings, StoredRecordStart> {
   @override
-  Future<T> runTempoExclusive<T>(Future<T> Function() operation) => operation();
+  RecordStartSettings get durable =>
+      RecordStartSettings(countInBars: 0, soundStart: false);
+}
 
+class _TempoOwner extends Fake implements TempoSettings {
   @override
   final clickVolumeOwner = _ClickVolumeOwner();
 
@@ -100,8 +106,7 @@ class _TempoOwner extends Fake implements TempoSettings {
   final clickModeOwner = _ClickModeOwner();
 
   @override
-  RecordStartSettings get durableRecordStartSettings =>
-      RecordStartSettings(countInBars: 0, soundStart: false);
+  final recordStartOwner = _RecordStartOwner();
 }
 
 class _PlaybackOwner extends Fake implements PlaybackSettings {
@@ -182,6 +187,7 @@ void main() {
     looper: looper,
     mix: mixSettings,
     fx: fxPersistence,
+    owners: const SettingsOwners([]),
     tempo: _TempoOwner(),
     playback: _PlaybackOwner(looper),
     record: _RecordOwner(looper),

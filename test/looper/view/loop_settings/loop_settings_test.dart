@@ -590,7 +590,7 @@ void main() {
     addTearDown(() => unawaited(closeTempoOwner()));
     tempo = TempoCubit(settings: tempoOwner);
     await tempoOwner.clickModeOwner.load();
-    if (loadRecordStart) await tempoOwner.loadRecordStart();
+    if (loadRecordStart) await tempoOwner.recordStartOwner.load();
     options = RecordSettings(repository: repository, settings: settings);
     playbackOwner = PlaybackSettings(
       repository: repository,
@@ -1106,7 +1106,7 @@ void main() {
       );
     });
 
-    testWidgets('pending and recovery retain but disable Count-in 2', (
+    testWidgets('recovery retains but disables Count-in 2', (
       tester,
     ) async {
       await pump(
@@ -1115,7 +1115,9 @@ void main() {
         savedCountIn: 2,
       );
       expect(tempo.state.confirmedRecordStart?.countInBars, 2);
-      for (final recovering in const [false, true]) {
+      // A pending receipt alone no longer disables the choice: a write waits
+      // for it. Only an owed pair does.
+      for (final recovering in const [true]) {
         recordStartSettled = recovering;
         recordStartRecovery = recovering;
         states.add(currentRig);

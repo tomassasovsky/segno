@@ -17,6 +17,7 @@ import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/pedal.dart';
@@ -167,7 +168,7 @@ void main() {
                   recordTimingControl: timing,
                   clickVolumeControl: tempo.clickVolumeControl,
                   clickModeControl: tempo.clickModeControl,
-                  recordStartControl: tempo,
+                  recordStartControl: tempo.recordStartControl,
                   fxPersistence: fxPersistence,
                   looper: repository,
                   mixSettings: mixSettings,
@@ -190,6 +191,7 @@ void main() {
                     looper: repository,
                     mix: mixSettings,
                     fx: fxPersistence,
+                    owners: SettingsOwners(tempo.owners),
                     tempo: tempo,
                     playback: playback,
                     record: recordOptions,

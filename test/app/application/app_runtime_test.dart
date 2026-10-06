@@ -709,6 +709,25 @@ void main() {
       expect(engine.stopCalls, 1);
     });
 
+    test('an unreadable Count-in pair keeps audio running and the registry '
+        'Retry repairs it for shutdown', () async {
+      store.values
+        ..['tempo.count_in_bars'] = 2
+        ..['looper.auto_record'] = true;
+      await runtime.start();
+      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(runtime.tempo.recordStartOwner.ready, isFalse);
+      await expectLater(
+        runtime.prepareShutdown(retry: false),
+        throwsStateError,
+      );
+      await runtime.prepareShutdown(retry: true);
+      expect(store.values['tempo.count_in_bars'], 0);
+      expect(store.values['looper.auto_record'], isFalse);
+      expect(runtime.tempo.recordStartOwner.ready, isTrue);
+      expect(engine.stopCalls, 0);
+    });
+
     test('unreadable Hear click keeps audio running and Retry repairs it '
         'for shutdown', () async {
       store.values['tempo.click_mode'] = 9;

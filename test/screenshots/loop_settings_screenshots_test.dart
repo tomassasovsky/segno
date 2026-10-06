@@ -369,7 +369,7 @@ void main() {
       addTearDown(() => unawaited(cubit.close()));
     }
     await tempo.setTempo(84);
-    await tempoOwner.loadRecordStart();
+    await tempoOwner.recordStartOwner.load();
     await tempoOwner.clickModeOwner.load();
     expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
     await options.load();
@@ -469,14 +469,20 @@ void main() {
       tester,
       page: LoopSettingsPageId.recording,
       prepare: (tempo, _) async {
-        expect((await tempoOwner.setCountInBars(0)).isOk, isTrue);
+        expect(
+          (await tempoOwner.recordStartControl.setCountInBars(0)).isOk,
+          isTrue,
+        );
       },
     );
     await expectLater(
       find.byType(LoopSettingsPage),
       matchesGoldenFile('$authorCaptureDir/recording_pedal_off.png'),
     );
-    expect((await tempoOwner.setSoundStart(enabled: true)).isOk, isTrue);
+    expect(
+      (await tempoOwner.recordStartControl.setSoundStart(enabled: true)).isOk,
+      isTrue,
+    );
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),
@@ -484,7 +490,7 @@ void main() {
     );
     recordStartRecoveryRequired = true;
     expect(
-      (await tempoOwner.setCountInBars(0)).isOk,
+      (await tempoOwner.recordStartControl.setCountInBars(0)).isOk,
       isFalse,
     );
     await tester.pumpAndSettle();
@@ -512,13 +518,19 @@ void main() {
 
   testWidgets('Author Count-in Off and 2-bar captures', (tester) async {
     await pump(tester, page: LoopSettingsPageId.tempo);
-    expect((await tempoOwner.setCountInBars(0)).isOk, isTrue);
+    expect(
+      (await tempoOwner.recordStartControl.setCountInBars(0)).isOk,
+      isTrue,
+    );
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),
       matchesGoldenFile('$authorCaptureDir/tempo_count_in_off.png'),
     );
-    expect((await tempoOwner.setCountInBars(2)).isOk, isTrue);
+    expect(
+      (await tempoOwner.recordStartControl.setCountInBars(2)).isOk,
+      isTrue,
+    );
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),

@@ -136,7 +136,7 @@ class _Rig {
       fxPersistence: FxChainPersistence(looper: looper),
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: owner.clickModeControl,
-      recordStartControl: owner,
+      recordStartControl: owner.recordStartControl,
       decayControl: FakeDecayControl(),
       oneShotControl: FakeOneShotControl(),
       recordLengthControl: FakeRecordLengthControl(),
@@ -167,8 +167,8 @@ class _Rig {
   late final ControlCubit cubit;
   (int, bool) get live => (owner.state.countInBars, owner.state.soundStart);
   (int, bool) get durable => (
-    owner.durableRecordStartSettings.countInBars,
-    owner.durableRecordStartSettings.soundStart,
+    owner.recordStartOwner.durable.countInBars,
+    owner.recordStartOwner.durable.soundStart,
   );
   (Object?, Object?) get stored => (
     store.values['tempo.count_in_bars'],
@@ -244,12 +244,12 @@ class _Rig {
   }
 
   void ordinary(int bars) {
-    unawaited(owner.setCountInBars(bars));
+    unawaited(owner.recordStartControl.setCountInBars(bars));
     pump();
   }
 
   void sound({required bool enabled}) {
-    unawaited(owner.setSoundStart(enabled: enabled));
+    unawaited(owner.recordStartControl.setSoundStart(enabled: enabled));
     pump();
   }
 
@@ -484,7 +484,7 @@ void main() {
       press(r, high: true);
       r.store.fail = true;
       press(r, high: false);
-      expect(r.owner.recordStartSnapshot, isNull);
+      expect(r.owner.recordStartControl.recordStartSnapshot, isNull);
       expect(r.live, (2, false));
       Object? failure;
       unawaited(
@@ -497,7 +497,7 @@ void main() {
       r.pump();
       expect(failure, isA<ControlCleanupPending>());
       r.store.fail = false;
-      unawaited(r.owner.recoverRecordStart());
+      unawaited(r.owner.recordStartOwner.recover());
       r.pump();
       var done = false;
       unawaited(

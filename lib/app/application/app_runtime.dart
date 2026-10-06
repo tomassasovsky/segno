@@ -14,6 +14,7 @@ import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
@@ -42,6 +43,7 @@ class AppRuntime {
     fxPersistence = FxChainPersistence(looper: repository);
     mixPersistence = SettingsMixPersistence(settings);
     tempo = TempoSettings(repository: repository, settings: settings);
+    owners = SettingsOwners(tempo.owners);
     playback = PlaybackSettings(repository: repository, settings: settings);
     record = RecordSettings(repository: repository, settings: settings);
     timing = RecordTimingSettings(repository: repository, settings: settings);
@@ -77,7 +79,7 @@ class AppRuntime {
       recordTimingControl: timing,
       clickVolumeControl: tempo.clickVolumeControl,
       clickModeControl: tempo.clickModeControl,
-      recordStartControl: tempo,
+      recordStartControl: tempo.recordStartControl,
       fadeSettings: fade,
       pedal: pedal,
       performance: performance,
@@ -97,6 +99,7 @@ class AppRuntime {
         looper: repository,
         mix: mix,
         fx: fxPersistence,
+        owners: owners,
         tempo: tempo,
         playback: playback,
         record: record,
@@ -126,6 +129,9 @@ class AppRuntime {
   late final RecordSettings record;
   late final RecordTimingSettings timing;
   late final FadeSettings fade;
+
+  /// The owned settings that run on the shared owner, in their fixed order.
+  late final SettingsOwners owners;
 
   /// Single transport, controller, session and shutdown actors.
   late final LooperBloc looper;
@@ -180,17 +186,8 @@ class AppRuntime {
       }
       final mixResult = await mix.recover();
       if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);
-      final click = await tempo.clickVolumeOwner.recover();
-      if (!click.isOk) {
-        throw StateError('Click settings still need recovery');
-      }
-      final clickMode = await tempo.clickModeOwner.recover();
-      if (!clickMode.isOk) {
-        throw StateError('Hear click still needs recovery');
-      }
-      final recordStart = await tempo.recoverRecordStart();
-      if (!recordStart.isOk) {
-        throw StateError('Recording start still needs recovery');
+      if (await owners.recover() case final failure?) {
+        throw StateError('${failure.key.name} still needs recovery');
       }
       final decay = await playback.recoverDecay();
       if (!decay.isOk) {
@@ -219,17 +216,8 @@ class AppRuntime {
     await receipt.future;
     final mixResult = await mix.flush();
     if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);
-    final click = await tempo.clickVolumeOwner.flush();
-    if (!click.isOk) {
-      throw StateError('Click settings were not confirmed');
-    }
-    final clickMode = await tempo.clickModeOwner.flush();
-    if (!clickMode.isOk) {
-      throw StateError('Hear click was not confirmed');
-    }
-    final recordStart = await tempo.flushRecordStart();
-    if (!recordStart.isOk) {
-      throw StateError('Recording start was not confirmed');
+    if (await owners.flush() case final failure?) {
+      throw StateError('${failure.key.name} was not confirmed');
     }
     final decay = await playback.flushDecay();
     if (!decay.isOk) {

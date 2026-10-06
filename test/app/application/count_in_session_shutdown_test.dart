@@ -155,13 +155,21 @@ void main() {
         });
         link.hello();
         await runtime.start();
-        expect((await runtime.tempo.setCountInBars(0)).isOk, isTrue);
+        expect(
+          (await runtime.tempo.recordStartControl.setCountInBars(0)).isOk,
+          isTrue,
+        );
         expect(looper.record(), EngineResult.ok);
         engine.pump(frames: 256, input: .5);
         expect(looper.record(), EngineResult.ok);
         engine.pump();
         expect(engine.snapshot().tracks.first.state, TrackState.playing);
-        expect((await runtime.tempo.setSoundStart(enabled: true)).isOk, isTrue);
+        expect(
+          (await runtime.tempo.recordStartControl.setSoundStart(
+            enabled: true,
+          )).isOk,
+          isTrue,
+        );
       }
 
       void press() => link.emit(
@@ -180,9 +188,9 @@ void main() {
             press();
             await _until(
               () =>
-                  runtime.tempo.durableRecordStartSettings.countInBars ==
+                  runtime.tempo.recordStartOwner.durable.countInBars ==
                       (held ? 0 : 2) &&
-                  !runtime.tempo.durableRecordStartSettings.soundStart,
+                  !runtime.tempo.recordStartOwner.durable.soundStart,
             );
             expect(engine.snapshot().countInBars, held ? 2 : 0);
             expect(engine.snapshot().autoRecord, !held);
@@ -229,7 +237,10 @@ void main() {
             description: 'Held 2 accepted',
           );
           await runtime.control.flushMidiConfiguration();
-          expect(runtime.tempo.confirmedRecordStart?.countInBars, 2);
+          expect(
+            runtime.tempo.recordStartControl.confirmedRecordStart?.countInBars,
+            2,
+          );
           store.refuse = true;
           const snapshot = PowerOffSnapshot(anyHasContent: true);
           runtime.power

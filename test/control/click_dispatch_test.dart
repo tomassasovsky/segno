@@ -127,7 +127,7 @@ class _Rig {
       fxPersistence: FxChainPersistence(looper: looper),
       clickVolumeControl: tempo.clickVolumeControl,
       clickModeControl: tempo.clickModeControl,
-      recordStartControl: tempo,
+      recordStartControl: tempo.recordStartControl,
       takeLocked: () => powerUp,
       controller: controller,
       midiDevices: midi,

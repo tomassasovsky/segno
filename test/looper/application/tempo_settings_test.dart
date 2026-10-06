@@ -57,11 +57,11 @@ void main() {
       final done = <Future<void>>[
         owner.stream.drain<void>(),
         owner.clickModeOwner.failures.drain<void>(),
-        owner.recordStartFailures.drain<void>(),
+        owner.recordStartOwner.failures.drain<void>(),
         owner.clickVolumeOwner.failures.drain<void>(),
         owner.clickModeOwner.ordinaryChanges.drain<void>(),
         owner.clickVolumeOwner.ordinaryChanges.drain<void>(),
-        owner.ordinaryRecordStartChanges.drain<void>(),
+        owner.recordStartOwner.ordinaryChanges.drain<void>(),
       ];
       final loading = owner.load();
       await expectLater(loading, throwsA(isA<TypeError>()));
@@ -350,7 +350,7 @@ void main() {
           await cubit.clickModeOwner.set(ClickMode.rec);
           await cubit.setClickOutput(1);
           await cubit.clickVolumeOwner.set(0.5);
-          await cubit.setCountInBars(2);
+          await cubit.recordStartControl.setCountInBars(2);
         })(owner);
         await Future<void>.delayed(Duration.zero);
         await owner.close();
@@ -548,7 +548,8 @@ void main() {
         final owner = (() =>
             TempoSettings(repository: repository, settings: settings))();
         addTearDown(owner.close);
-        await ((TempoSettings cubit) => cubit.setCountInBars(2))(owner);
+        await ((TempoSettings cubit) =>
+            cubit.recordStartControl.setCountInBars(2))(owner);
         await Future<void>.delayed(Duration.zero);
         await owner.close();
         await ((TempoSettings _) async {
@@ -576,7 +577,8 @@ void main() {
         final owner = (() =>
             TempoSettings(repository: repository, settings: settings))();
         addTearDown(owner.close);
-        await ((TempoSettings cubit) => cubit.setCountInBars(-3))(owner);
+        await ((TempoSettings cubit) =>
+            cubit.recordStartControl.setCountInBars(-3))(owner);
         await Future<void>.delayed(Duration.zero);
         await owner.close();
         await ((TempoSettings _) async {
@@ -633,12 +635,16 @@ void main() {
       final owner = (() =>
           TempoSettings(repository: repository, settings: settings))();
       addTearDown(owner.close);
-      await ((TempoSettings cubit) => cubit.setCountInBars(2))(owner);
+      await ((TempoSettings cubit) =>
+          cubit.recordStartControl.setCountInBars(2))(owner);
       await Future<void>.delayed(Duration.zero);
       await owner.close();
       await ((TempoSettings cubit) async {
-        expect(cubit.confirmedRecordStart?.countInBars, 2);
-        expect(cubit.confirmedRecordStart?.soundStart, isFalse);
+        expect(cubit.recordStartControl.confirmedRecordStart?.countInBars, 2);
+        expect(
+          cubit.recordStartControl.confirmedRecordStart?.soundStart,
+          isFalse,
+        );
         expect(
           await settings.readRecordStartCheckpoint(),
           (countInBars: 2, soundStart: false),

@@ -5,6 +5,7 @@ import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
@@ -19,6 +20,7 @@ class SessionSettingsCoordinator {
     required LooperRepository looper,
     required MixSettingsCoordinator mix,
     required FxChainPersistence fx,
+    required SettingsOwners owners,
     required TempoSettings tempo,
     required PlaybackSettings playback,
     required RecordSettings record,
@@ -27,6 +29,7 @@ class SessionSettingsCoordinator {
   }) : _looper = looper,
        _mix = mix,
        _fx = fx,
+       _owners = owners,
        _tempo = tempo,
        _playback = playback,
        _record = record,
@@ -36,6 +39,7 @@ class SessionSettingsCoordinator {
   final LooperRepository _looper;
   final MixSettingsCoordinator _mix;
   final FxChainPersistence _fx;
+  final SettingsOwners _owners;
   final TempoSettings _tempo;
   final PlaybackSettings _playback;
   final RecordSettings _record;
@@ -47,7 +51,7 @@ class SessionSettingsCoordinator {
   Future<T> runExclusive<T>(Future<T> Function() operation) =>
       _fade.runExclusive(
         (admittedEdits) => _mix.runExclusive(
-          () => _tempo.runTempoExclusive(
+          () => _owners.runExclusive(
             () => _playback.runPlaybackExclusive(
               () => _record.runRecordExclusive(
                 () => _timing.runRecordTimingExclusive(() async {
@@ -96,7 +100,7 @@ class SessionSettingsCoordinator {
         mix: mix,
         clickVolume: _tempo.clickVolumeOwner.durable,
         clickMode: _tempo.clickModeOwner.durable,
-        recordStart: _tempo.durableRecordStartSettings,
+        recordStart: _tempo.recordStartOwner.durable,
         decay: _playback.durableDecaySnapshot,
         oneShot: _playback.durableOneShotSnapshot,
         recordLength: _record.durableRecordLengthSnapshot,

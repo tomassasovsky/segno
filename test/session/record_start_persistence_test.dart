@@ -11,6 +11,7 @@ import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
@@ -94,7 +95,7 @@ void main() {
         settings = SettingsRepository(store: store);
         tempo = TempoSettings(repository: looper, settings: settings);
         await tempo.load();
-        expect((await tempo.setCountInBars(0)).isOk, isTrue);
+        expect((await tempo.recordStartControl.setCountInBars(0)).isOk, isTrue);
         playback = PlaybackSettings(
           repository: looper,
           settings: settings,
@@ -138,6 +139,7 @@ void main() {
             looper: looper,
             mix: mix,
             fx: projection,
+            owners: SettingsOwners(tempo.owners),
             tempo: tempo,
             playback: playback,
             record: record,
@@ -172,7 +174,10 @@ void main() {
       test(
         'Save As and Save preserve both members of the confirmed pair',
         () async {
-          expect((await tempo.setSoundStart(enabled: true)).isOk, isTrue);
+          expect(
+            (await tempo.recordStartControl.setSoundStart(enabled: true)).isOk,
+            isTrue,
+          );
           await session.saveAs('Start pair');
           expect(session.state.status, SessionStatus.success);
           var bundle = await sessions.read(
@@ -182,7 +187,10 @@ void main() {
           expect(bundle.session.autoRecord, isTrue);
           expect(bundle.session.tracks, hasLength(1));
 
-          expect((await tempo.setCountInBars(4)).isOk, isTrue);
+          expect(
+            (await tempo.recordStartControl.setCountInBars(4)).isOk,
+            isTrue,
+          );
           await session.save();
           expect(session.state.status, SessionStatus.success);
           bundle = await sessions.read(await sessions.bundlePath('Start pair'));
@@ -199,7 +207,7 @@ void main() {
           store
             ..writeEntered = false
             ..pendingWrite = Completer<void>();
-          final edit = tempo.setSoundStart(enabled: true);
+          final edit = tempo.recordStartControl.setSoundStart(enabled: true);
           for (
             var attempt = 0;
             attempt < 50 && !store.writeEntered;
@@ -228,14 +236,26 @@ void main() {
       test(
         'recall restores the saved pair without rewriting startup preferences',
         () async {
-          expect((await tempo.setCountInBars(2)).isOk, isTrue);
+          expect(
+            (await tempo.recordStartControl.setCountInBars(2)).isOk,
+            isTrue,
+          );
           await session.saveAs('Two bars');
           expect(session.state.status, SessionStatus.success);
-          expect((await tempo.setSoundStart(enabled: true)).isOk, isTrue);
+          expect(
+            (await tempo.recordStartControl.setSoundStart(enabled: true)).isOk,
+            isTrue,
+          );
           await session.loadNamed('Two bars');
           expect(session.state.status, SessionStatus.success);
-          expect(tempo.recordStartSnapshot?.settings.countInBars, 2);
-          expect(tempo.recordStartSnapshot?.settings.soundStart, isFalse);
+          expect(
+            tempo.recordStartControl.recordStartSnapshot?.settings.countInBars,
+            2,
+          );
+          expect(
+            tempo.recordStartControl.recordStartSnapshot?.settings.soundStart,
+            isFalse,
+          );
           expect(engine.snapshot().countInBars, 2);
           expect(engine.snapshot().autoRecord, isFalse);
           expect(await settings.readRecordStartCheckpoint(), (
@@ -257,13 +277,15 @@ void main() {
           // Both keys were explicitly Off before the attempted Sound edit. The
           // first write now fails and its compensation is also unavailable.
           store.refuseWrite = true;
-          final edit = await tempo.setSoundStart(enabled: true);
+          final edit = await tempo.recordStartControl.setSoundStart(
+            enabled: true,
+          );
           expect(edit.status, RecordStartStatus.recoveryRequired);
           await session.save();
           expect(session.state.status, isNot(SessionStatus.success));
           expect(await manifest.readAsBytes(), before);
           store.refuseWrite = false;
-          expect((await tempo.recoverRecordStart()).isOk, isTrue);
+          expect((await tempo.recordStartOwner.recover()).isOk, isTrue);
           await session.save();
           expect(session.state.status, SessionStatus.success);
           final bundle = await sessions.read(

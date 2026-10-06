@@ -310,7 +310,7 @@ void main() {
     final closeTempoOwner = tempoOwner.close;
     addTearDown(() => unawaited(closeTempoOwner()));
     tempo = TempoCubit(settings: tempoOwner);
-    if (loadRecordStart) await tempoOwner.loadRecordStart();
+    if (loadRecordStart) await tempoOwner.recordStartOwner.load();
     tray = SettingsTrayCubit()
       ..showAudioTab(tab)
       ..showDestination(destination);
@@ -783,7 +783,7 @@ void main() {
       final closeTempoOwner = tempoOwner.close;
       addTearDown(() => unawaited(closeTempoOwner()));
       tempo = TempoCubit(settings: tempoOwner);
-      await tempoOwner.loadRecordStart();
+      await tempoOwner.recordStartOwner.load();
       tray = SettingsTrayCubit()
         ..showDestination(SettingsTrayDestination.audio);
       addTearDown(() => unawaited(audio.close()));
@@ -959,7 +959,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('audio_auto_record_switch')));
       await tester.pumpAndSettle();
-      await tester.runAsync(tempoOwner.flushRecordStart);
+      await tester.runAsync(tempoOwner.recordStartOwner.flush);
       await tester.pump();
       expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
       expect(tempo.state.confirmedRecordStart?.countInBars, 0);

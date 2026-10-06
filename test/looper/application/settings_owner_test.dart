@@ -4,8 +4,10 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/settings_owner.dart';
+import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/owned_setting.dart';
+import 'package:segno/looper/model/record_start.dart';
 import 'package:segno_engine/segno_engine.dart' as le;
 import 'package:settings_repository/settings_repository.dart';
 
@@ -56,7 +58,12 @@ class _Engine extends FakeAudioEngine {
 }
 
 class _Store extends FakeKeyValueStore {
-  static const keys = {'tempo.click_volume', 'tempo.click_mode'};
+  static const keys = {
+    'tempo.click_volume',
+    'tempo.click_mode',
+    'tempo.count_in_bars',
+    'looper.auto_record',
+  };
   final writes = <String, int>{};
   int failingWrites = 0;
   Completer<void>? modeReadGate;
@@ -90,15 +97,19 @@ class _Store extends FakeKeyValueStore {
       _write(key, () => super.setInt(key, value));
 
   @override
+  Future<void> setBool(String key, {required bool value}) =>
+      _write(key, () => super.setBool(key, value: value));
+
+  @override
   Future<void> remove(String key) => _write(key, () => super.remove(key));
 }
 
-/// One owned family seen through literal oracles: the store key, the fake
+/// One owned family seen through literal oracles: its store keys, the fake
 /// engine's own published value, and the repository's restart intent.
 final class _Case<V extends Object> {
-  const _Case({
+  _Case({
     required this.name,
-    required this.key,
+    required this.keys,
     required this.stored,
     required this.next,
     required this.owner,
@@ -107,13 +118,32 @@ final class _Case<V extends Object> {
     required this.deliver,
     required this.audible,
     required this.restart,
+    required this.invalid,
+    required this.repaired,
+    required this.repairedValue,
+    required this.recalled,
+    required this.recalledValue,
   });
   final String name;
-  final String key;
+  final List<String> keys;
 
-  /// What the store holds before each case.
+  /// What the store holds before each case, in [read]'s shape.
   final Object stored;
   final V next;
+
+  /// Unreadable stored data, what Retry stores over it and then plays.
+  final Map<String, Object> invalid;
+  final Object? repaired;
+  final V repairedValue;
+
+  /// A Session holding another value, and that value.
+  final SessionRig recalled;
+  final V recalledValue;
+
+  /// The stored data, one value per key.
+  Object? read(_Store store) => keys.length == 1
+      ? store.values[keys.single]
+      : [for (final key in keys) store.values[key]];
   final SettingsOwner<V, Object?> Function(TempoSettings) owner;
   final Object Function(V) encode;
   final void Function(_Engine) withhold;
@@ -124,7 +154,7 @@ final class _Case<V extends Object> {
 
 final _clickVolume = _Case<double>(
   name: 'Click volume',
-  key: 'tempo.click_volume',
+  keys: ['tempo.click_volume'],
   stored: .5,
   next: 1.5,
   owner: (tempo) => tempo.clickVolumeOwner,
@@ -137,11 +167,16 @@ final _clickVolume = _Case<double>(
     ..commandsAreSettled = true,
   audible: (engine) => engine.nextSnapshot.clickVolume,
   restart: (repository) => repository.clickVolumeRestartIntent,
+  invalid: {'tempo.click_volume': 5.0},
+  repaired: null,
+  repairedValue: 1,
+  recalled: const SessionRig(clickVolume: 1.25),
+  recalledValue: 1.25,
 );
 
 final _hearClick = _Case<ClickMode>(
   name: 'Hear click',
-  key: 'tempo.click_mode',
+  keys: ['tempo.click_mode'],
   stored: ClickMode.off.code,
   next: ClickMode.playRec,
   owner: (tempo) => tempo.clickModeOwner,
@@ -154,18 +189,61 @@ final _hearClick = _Case<ClickMode>(
     ..commandsAreSettled = true,
   audible: (engine) => engine.nextSnapshot.clickMode,
   restart: (repository) => repository.clickModeRestartIntent,
+  invalid: {'tempo.click_mode': 9},
+  repaired: ClickMode.off.code,
+  repairedValue: ClickMode.off,
+  recalled: const SessionRig(clickMode: ClickMode.playRec),
+  recalledValue: ClickMode.playRec,
 );
+
+RecordStartSettings _pair(({int countInBars, bool soundStart}) pair) =>
+    RecordStartSettings(
+      countInBars: pair.countInBars,
+      soundStart: pair.soundStart,
+    );
+
+final _recordStart = _Case<RecordStartSettings>(
+  name: 'Count-in',
+  keys: ['tempo.count_in_bars', 'looper.auto_record'],
+  stored: [0, false],
+  next: RecordStartSettings(countInBars: 2, soundStart: false),
+  owner: (tempo) => tempo.recordStartOwner,
+  encode: (value) => [value.countInBars, value.soundStart],
+  withhold: (engine) => engine
+    ..publishRecordStartCommands = false
+    ..commandsAreSettled = false,
+  deliver: (engine) => engine
+    ..publishRecordStartCommands = true
+    ..commandsAreSettled = true,
+  audible: (engine) => RecordStartSettings(
+    countInBars: engine.nextSnapshot.countInBars,
+    soundStart: engine.nextSnapshot.autoRecord,
+  ),
+  restart: (repository) => _pair(repository.recordStartRestartIntent),
+  invalid: {'tempo.count_in_bars': 2, 'looper.auto_record': true},
+  repaired: [0, false],
+  repairedValue: RecordStartSettings(countInBars: 0, soundStart: false),
+  recalled: const SessionRig(countInBars: 2),
+  recalledValue: RecordStartSettings(countInBars: 2, soundStart: false),
+);
+
+const _defaults = <String, Object>{
+  'tempo.click_volume': .5,
+  'tempo.click_mode': 0,
+  'tempo.count_in_bars': 0,
+  'looper.auto_record': false,
+};
 
 class _Rig {
   _Rig(
     this.clock, {
-    Object? clickVolume = .5,
-    Object? clickMode = 0,
+    Map<String, Object?> stored = const {},
     void Function(_Store)? prepare,
   }) {
     prepare?.call(store);
-    if (clickVolume != null) store.values['tempo.click_volume'] = clickVolume;
-    if (clickMode != null) store.values['tempo.click_mode'] = clickMode;
+    for (final entry in {..._defaults, ...stored}.entries) {
+      if (entry.value case final value?) store.values[entry.key] = value;
+    }
     engine.nextSnapshot = engine.nextSnapshot.copyWith(devicePresent: true);
     looper = LooperRepository(
       engine: engine,
@@ -218,6 +296,7 @@ class _Rig {
     engine
       ..publishClickCommands = true
       ..publishClickModeCommands = true
+      ..publishRecordStartCommands = true
       ..commandsAreSettled = true;
     unawaited(tempo.close());
     clock.elapse(const Duration(seconds: 1));
@@ -233,19 +312,13 @@ void main() {
   void check(
     String name,
     void Function(_Rig) body, {
-    Object? clickVolume = .5,
-    Object? clickMode = 0,
+    Map<String, Object?> stored = const {},
     void Function(_Store)? prepare,
   }) {
     test(
       name,
       () => fakeAsync((clock) {
-        final rig = _Rig(
-          clock,
-          clickVolume: clickVolume,
-          clickMode: clickMode,
-          prepare: prepare,
-        );
+        final rig = _Rig(clock, stored: stored, prepare: prepare);
         try {
           body(rig);
         } finally {
@@ -269,7 +342,7 @@ void main() {
         expect(r.engine.stopCalls, 0);
         expect(r.looper.sessionTransport.isRunning, isTrue);
         // Storage keeps the value Retry and a restart owe.
-        expect(r.store.values[c.key], c.encode(c.next));
+        expect(c.read(r.store), c.encode(c.next));
         expect(c.restart(r.looper), c.next);
         expect(owner.ready, isFalse);
 
@@ -286,7 +359,7 @@ void main() {
         expect(r.run(owner.flush())?.status, SettingStatus.applied);
         expect(owner.value, c.next);
         expect(c.audible(r.engine), c.next);
-        expect(r.store.values[c.key], c.encode(c.next));
+        expect(c.read(r.store), c.encode(c.next));
       });
 
       check('a late receipt then Retry ends applied without a stop', (r) {
@@ -299,7 +372,7 @@ void main() {
         expect(r.run(owner.recover())?.status, SettingStatus.applied);
         expect(owner.value, c.next);
         expect(c.audible(r.engine), c.next);
-        expect(r.store.values[c.key], c.encode(c.next));
+        expect(c.read(r.store), c.encode(c.next));
         expect(r.engine.stopCalls, 0);
       });
 
@@ -336,16 +409,17 @@ void main() {
         expect(r.looper.sessionTransport.isRunning, isFalse);
         expect(outcome?.status, SettingStatus.applied);
         expect(c.restart(r.looper), c.next);
-        expect(r.store.values[c.key], c.encode(c.next));
+        expect(c.read(r.store), c.encode(c.next));
       });
 
       check('a native refusal rolls storage back to the exact checkpoint', (r) {
         final owner = c.owner(r.tempo);
         r.engine
           ..refuseClick = true
-          ..refuseMode = true;
+          ..refuseMode = true
+          ..recordStartResult = EngineResult.invalid;
         expect(r.run(owner.set(c.next))?.status, SettingStatus.rejected);
-        expect(r.store.values[c.key], c.stored);
+        expect(c.read(r.store), c.stored);
         expect(r.run(owner.flush())?.status, SettingStatus.applied);
       });
 
@@ -370,7 +444,7 @@ void main() {
         expect(c.audible(r.engine), c.next);
         expect(r.run(owner.flush())?.status, SettingStatus.applied);
         expect(owner.value, c.next);
-        expect(r.store.values[c.key], c.encode(c.next));
+        expect(c.read(r.store), c.encode(c.next));
       });
 
       check('a failed start after an owed replay still owes the value', (r) {
@@ -392,7 +466,7 @@ void main() {
         expect(r.looper.startEngine(const EngineConfig()), EngineResult.ok);
         r.pump();
         expect(c.audible(r.engine), c.next);
-        expect(r.store.values[c.key], c.encode(c.next));
+        expect(c.read(r.store), c.encode(c.next));
         expect(r.run(owner.flush())?.status, SettingStatus.applied);
       });
 
@@ -422,7 +496,7 @@ void main() {
           SettingStatus.recoveryRequired,
         );
         expect(r.run(owner.recover())?.status, SettingStatus.applied);
-        expect(r.store.values[c.key], c.stored);
+        expect(c.read(r.store), c.stored);
         expect(r.engine.stopCalls, 0);
       });
     });
@@ -430,83 +504,68 @@ void main() {
 
   contract(_clickVolume);
   contract(_hearClick);
+  contract(_recordStart);
+
+  void unreadable<V extends Object>(_Case<V> c) {
+    check(
+      '${c.name} ${c.invalid}: audio keeps running, Session capture '
+      'proceeds, and Retry repairs the stored data',
+      (r) {
+        final owner = c.owner(r.tempo);
+        expect(r.looper.sessionTransport.isRunning, isTrue);
+        expect(r.engine.stopCalls, 0);
+        expect(owner.ready, isFalse);
+        expect(owner.value, isNull);
+        Object? captured;
+        Object? refusal;
+        unawaited(
+          SettingsOwners(r.tempo.owners)
+              .runExclusive<void>(() async => captured = owner.durable)
+              .catchError((Object error) => refusal = error),
+        );
+        r.pump();
+        expect(refusal, isNull);
+        expect(captured, isNotNull);
+        expect(
+          r.store.values,
+          containsPair(c.keys.first, c.invalid[c.keys.first]),
+        );
+        expect(r.run(owner.recover())?.status, SettingStatus.applied);
+        expect(c.read(r.store), c.repaired);
+        expect(owner.ready, isTrue);
+        expect(owner.value, c.repairedValue);
+      },
+      stored: c.invalid,
+    );
+
+    check('${c.name}: unreadable data, Session load, then Retry', (r) {
+      final owner = c.owner(r.tempo);
+      expect(owner.ready, isFalse);
+      r.looper.stopEngine();
+      unawaited(r.looper.applySession(c.recalled));
+      r.pump();
+      expect(r.looper.startEngine(const EngineConfig()), EngineResult.ok);
+      r.pump();
+      expect(c.audible(r.engine), c.recalledValue);
+      expect(r.run(owner.recover())?.status, SettingStatus.applied);
+      expect(c.read(r.store), c.repaired);
+      expect(owner.value, c.recalledValue);
+      expect(c.audible(r.engine), c.recalledValue);
+      Object? captured;
+      unawaited(
+        SettingsOwners(
+          r.tempo.owners,
+        ).runExclusive(() async => captured = owner.durable),
+      );
+      r.pump();
+      expect(captured, c.recalledValue);
+    }, stored: c.invalid);
+  }
 
   group('unreadable storage', () {
-    for (final (c, invalid, repaired, value)
-        in <(_Case<Object>, Object, Object?, Object)>[
-          (_hearClick, 9, ClickMode.off.code, ClickMode.off),
-          (_clickVolume, 5.0, null, 1.0),
-        ]) {
-      check(
-        '${c.name} ${c.key}=$invalid: audio keeps running, Session '
-        'capture proceeds, and Retry repairs the key',
-        (r) {
-          final owner = c.owner(r.tempo);
-          expect(r.looper.sessionTransport.isRunning, isTrue);
-          expect(r.engine.stopCalls, 0);
-          expect(owner.ready, isFalse);
-          expect(owner.value, isNull);
-          Object? captured;
-          Object? refusal;
-          unawaited(
-            r.tempo
-                .runTempoExclusive(() async => captured = owner.durable)
-                .catchError((Object error) => refusal = error),
-          );
-          r.pump();
-          expect(refusal, isNull);
-          expect(captured, isNotNull);
-          expect(r.store.values[c.key], invalid);
-          expect(r.run(owner.recover())?.status, SettingStatus.applied);
-          expect(r.store.values.containsKey(c.key), repaired != null);
-          expect(r.store.values[c.key], repaired);
-          expect(owner.ready, isTrue);
-          expect(owner.value, value);
-        },
-        clickVolume: c == _clickVolume ? invalid : .5,
-        clickMode: c == _hearClick ? invalid : 0,
-      );
-    }
-  });
-
-  group('a recalled Session survives Retry', () {
-    for (final (c, invalid, repaired, recalled)
-        in <(_Case<Object>, Object, Object?, SessionRig)>[
-          (
-            _hearClick,
-            9,
-            ClickMode.off.code,
-            const SessionRig(clickMode: ClickMode.playRec),
-          ),
-          (_clickVolume, 5.0, null, const SessionRig(clickVolume: 1.25)),
-        ]) {
-      check(
-        '${c.name}: unreadable key, Session load, then Retry',
-        (r) {
-          final owner = c.owner(r.tempo);
-          final value = c == _hearClick ? ClickMode.playRec : 1.25;
-          expect(owner.ready, isFalse);
-          r.looper.stopEngine();
-          unawaited(r.looper.applySession(recalled));
-          r.pump();
-          expect(r.looper.startEngine(const EngineConfig()), EngineResult.ok);
-          r.pump();
-          expect(c.audible(r.engine), value);
-          expect(r.run(owner.recover())?.status, SettingStatus.applied);
-          expect(r.store.values[c.key], repaired);
-          expect(owner.value, value);
-          expect(c.audible(r.engine), value);
-          Object? captured;
-          unawaited(
-            r.tempo.runTempoExclusive(() async => captured = owner.durable),
-          );
-          r.pump();
-          expect(captured, value);
-        },
-        clickVolume: c == _clickVolume ? invalid : .5,
-        clickMode: c == _hearClick ? invalid : 0,
-      );
-    }
+    unreadable(_hearClick);
+    unreadable(_clickVolume);
+    unreadable(_recordStart);
   });
 
   group('Click volume coalescing', () {
@@ -640,7 +699,142 @@ void main() {
     check('an absent preference loads unity without writing a key', (r) {
       expect(r.tempo.clickVolumeOwner.value, 1);
       expect(r.store.values.containsKey('tempo.click_volume'), isFalse);
-    }, clickVolume: null);
+    }, stored: const {'tempo.click_volume': null});
+  });
+
+  group('Count-in family', () {
+    for (final entry in [
+      (stored: <String, Object?>{}, bars: 1, sound: false),
+      (
+        stored: <String, Object?>{'tempo.count_in_bars': 0},
+        bars: 0,
+        sound: false,
+      ),
+      (
+        stored: <String, Object?>{'looper.auto_record': true},
+        bars: 0,
+        sound: true,
+      ),
+      (
+        stored: <String, Object?>{'tempo.count_in_bars': 4},
+        bars: 4,
+        sound: false,
+      ),
+    ]) {
+      check(
+        'load keeps exact stored membership ${entry.stored}',
+        (r) {
+          expect(
+            r.tempo.recordStartOwner.value,
+            RecordStartSettings(
+              countInBars: entry.bars,
+              soundStart: entry.sound,
+            ),
+          );
+          expect(
+            r.store.values['tempo.count_in_bars'],
+            entry.stored['tempo.count_in_bars'],
+          );
+          expect(
+            r.store.values['looper.auto_record'],
+            entry.stored['looper.auto_record'],
+          );
+        },
+        stored: {
+          'tempo.count_in_bars': null,
+          'looper.auto_record': null,
+          ...entry.stored,
+        },
+      );
+    }
+
+    check('sequential edits keep Count Off versus Sound off intent', (r) {
+      final control = r.tempo.recordStartControl;
+      RecordStartOutcome? run(Future<RecordStartOutcome> edit) {
+        RecordStartOutcome? outcome;
+        unawaited(edit.then((value) => outcome = value));
+        r.pump();
+        return outcome;
+      }
+
+      final before = r.engine.recordStartRequests.length;
+      expect(run(control.setSoundStart(enabled: true))?.isOk, isTrue);
+      expect(run(control.setCountInBars(0))?.isOk, isTrue);
+      expect(
+        r.tempo.recordStartOwner.value,
+        RecordStartSettings(countInBars: 0, soundStart: true),
+      );
+      expect(run(control.setCountInBars(2))?.isOk, isTrue);
+      expect(run(control.setSoundStart(enabled: false))?.isOk, isTrue);
+      expect(
+        r.tempo.recordStartOwner.value,
+        RecordStartSettings(countInBars: 2, soundStart: false),
+      );
+      expect(
+        r.engine.recordStartRequests.skip(before).map((v) => v.editKind),
+        [
+          RecordStartEditKind.sound,
+          RecordStartEditKind.countIn,
+          RecordStartEditKind.countIn,
+          RecordStartEditKind.sound,
+        ],
+      );
+      expect(
+        run(control.setCountInBars(-1))?.status,
+        RecordStartStatus.rejected,
+      );
+      expect(r.store.values['tempo.count_in_bars'], 2);
+      expect(r.store.values['looper.auto_record'], false);
+    });
+
+    check('queued edits of different kinds both apply, in order', (r) {
+      final control = r.tempo.recordStartControl;
+      r.engine.commandsAreSettled = false;
+      final outcomes = <RecordStartStatus>[];
+      unawaited(
+        control
+            .setSoundStart(enabled: true)
+            .then((o) => outcomes.add(o.status)),
+      );
+      r.clock.flushMicrotasks();
+      // In flight: Sound on. Waiting: two Count-in edits, then Sound off.
+      unawaited(control.setCountInBars(1).then((o) => outcomes.add(o.status)));
+      unawaited(control.setCountInBars(4).then((o) => outcomes.add(o.status)));
+      unawaited(
+        control
+            .setSoundStart(enabled: false)
+            .then((o) => outcomes.add(o.status)),
+      );
+      r.clock.flushMicrotasks();
+      r.engine.commandsAreSettled = true;
+      for (var i = 0; i < 4; i++) {
+        r.pump();
+      }
+      expect(outcomes, [
+        RecordStartStatus.superseded,
+        RecordStartStatus.applied,
+        RecordStartStatus.applied,
+        RecordStartStatus.applied,
+      ]);
+      expect(
+        r.tempo.recordStartOwner.value,
+        RecordStartSettings(countInBars: 4, soundStart: false),
+      );
+      expect(
+        r.engine.recordStartRequests.reversed
+            .take(3)
+            .toList()
+            .reversed
+            .map((v) => v.editKind),
+        [
+          RecordStartEditKind.sound,
+          RecordStartEditKind.countIn,
+          RecordStartEditKind.sound,
+        ],
+      );
+      expect(r.store.values['tempo.count_in_bars'], 4);
+      expect(r.store.values['looper.auto_record'], false);
+    });
   });
 
   group('Hear click family', () {
@@ -715,14 +909,14 @@ void main() {
         expect(owner.value, ClickMode.off);
         expect(owner.durable, ClickMode.off);
       },
-      clickMode: ClickMode.playRec.code,
+      stored: {'tempo.click_mode': ClickMode.playRec.code},
       prepare: (store) => store.modeReadGate = Completer<void>(),
     );
 
     check('an absent preference loads First recording without a key', (r) {
       expect(r.tempo.clickModeOwner.value, ClickMode.recFirst);
       expect(r.store.values.containsKey('tempo.click_mode'), isFalse);
-    }, clickMode: null);
+    }, stored: const {'tempo.click_mode': null});
 
     check('a callback refusal keeps audio and rolls storage back', (r) {
       final owner = r.tempo.clickModeOwner;

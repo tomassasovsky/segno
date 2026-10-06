@@ -11,6 +11,7 @@ import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
@@ -78,7 +79,7 @@ void main() {
         final settings = SettingsRepository(store: store);
         tempo = TempoSettings(repository: looper, settings: settings);
         await tempo.load();
-        expect((await tempo.setCountInBars(0)).isOk, isTrue);
+        expect((await tempo.recordStartControl.setCountInBars(0)).isOk, isTrue);
         playback = PlaybackSettings(repository: looper, settings: settings);
         await playback.load();
         record = RecordSettings(repository: looper, settings: settings);
@@ -119,6 +120,7 @@ void main() {
             looper: looper,
             mix: mix,
             fx: projection,
+            owners: SettingsOwners(tempo.owners),
             tempo: tempo,
             playback: playback,
             record: record,

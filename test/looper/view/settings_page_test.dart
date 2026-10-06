@@ -245,7 +245,7 @@ void main() {
       recordTimingControl: quantizeOwner,
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
-      recordStartControl: tempoOwner,
+      recordStartControl: tempoOwner.recordStartControl,
       fxPersistence: fxPersistence,
       looper: repository,
       mixSettings: mixSettings,
@@ -325,7 +325,7 @@ void main() {
     final closeTempoOwner = tempoOwner.close;
     addTearDown(() => unawaited(closeTempoOwner()));
     tempo = TempoCubit(settings: tempoOwner);
-    await tempoOwner.loadRecordStart();
+    await tempoOwner.recordStartOwner.load();
   }
 
   Future<void> pump(WidgetTester tester) async {

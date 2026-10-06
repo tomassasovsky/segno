@@ -3,7 +3,8 @@ import 'package:segno/app/console_audio_devices.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/logging/app_log.dart';
-import 'package:segno/looper/model/record_start.dart';
+import 'package:segno/looper/application/settings_families.dart';
+import 'package:segno/looper/application/settings_owner.dart';
 // Settings owns its own AudioBackend; the looper domain backend is the
 // unprefixed one here.
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
@@ -33,48 +34,21 @@ Future<AutoStartResult> tryAutoStartEngine({
   required SettingsRepository settings,
   required MixSettingsCoordinator mixSettings,
 }) => mixSettings.runExclusive(() async {
-  // Validate both start preferences before opening audio; absent defaults
-  // never override an explicit Sound choice or materialize new stored keys.
-  try {
-    final start = RecordStartSettings.fromCheckpoint(
-      await settings.readRecordStartCheckpoint(),
-    );
-    final request = repository.setRecordStartSettings(
-      countInBars: start.countInBars,
-      soundStart: start.soundStart,
-      editKind: RecordStartEditKind.restore,
-    );
-    final result = request.isOk
-        ? await repository.settleRecordStartSettings()
-        : request;
-    if (!result.isOk) {
-      throw StateError('Saved recording start replay refused: ${result.name}');
+  // Stage the stored owned settings before audio opens. Absent defaults never
+  // materialize stored keys. An unreadable value makes only its family
+  // unavailable: audio starts with the repository's default, and the owner's
+  // Retry repairs the stored key.
+  for (final family in <SettingsFamily<Object, Object?>>[
+    RecordStartFamily(repository: repository, settings: settings),
+    HearClickFamily(repository: repository, settings: settings),
+  ]) {
+    try {
+      await stageStored(family);
+    } on Object catch (error) {
+      AppLog.error(
+        'audio auto-start: saved ${family.key.name} unavailable: $error',
+      );
     }
-  } on Object catch (error) {
-    AppLog.error('audio auto-start: saved recording start failed: $error');
-    repository.stopEngine();
-    return (
-      started: false,
-      asioDrivers: const <AudioDevice>[],
-      recoveryConfig: null,
-    );
-  }
-
-  // Read exact intent before starting audio. An absent preference selects
-  // First recording without writing a preference or changing click routing.
-  // An unreadable preference makes only Hear click unavailable: audio starts
-  // with the repository's Off, and the owner's Retry repairs the stored key.
-  try {
-    final savedMode = await settings.readClickModeCheckpoint();
-    final request = repository.setClickMode(
-      ClickMode.fromCode(savedMode ?? ClickMode.recFirst.code),
-    );
-    final result = request.isOk ? await repository.settleClickMode() : request;
-    if (!result.isOk) {
-      throw StateError('Saved Hear click replay refused: ${result.name}');
-    }
-  } on Object catch (error) {
-    AppLog.error('audio auto-start: saved Hear click unavailable: $error');
   }
 
   // Validate every scalar before changing any decay. Fixed empty tracks and
@@ -339,17 +313,15 @@ Future<AutoStartResult> _tryAutoStartEngine({
   }
   // A successful enqueue is not a callback confirmation. Finish the engine's
   // initial mode/length replay before applying saved choices.
+  // An unconfirmed owned replay is that owner's recovery, not a reason to
+  // stop audio.
   final startupRecordStart = await repository.settleRecordStartSettings();
   if (!startupRecordStart.isOk) {
     AppLog.error(
-      'audio startup: recording start replay refused '
+      'audio startup: recording start replay unconfirmed '
       '${startupRecordStart.name}',
     );
-    repository.stopEngine();
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
-  // An unconfirmed Hear click replay is the owner's recovery, not a reason
-  // to stop audio.
   final startupClick = await repository.settleClickMode();
   if (!startupClick.isOk) {
     AppLog.error(
@@ -712,11 +684,9 @@ Future<bool> _firstRunAutoStart({
   final startupRecordStart = await repository.settleRecordStartSettings();
   if (!startupRecordStart.isOk) {
     AppLog.error(
-      'audio startup: recording start replay refused '
+      'audio first-run: recording start replay unconfirmed '
       '${startupRecordStart.name}',
     );
-    repository.stopEngine();
-    return false;
   }
   final startupClick = await repository.settleClickMode();
   if (!startupClick.isOk) {
