@@ -144,10 +144,14 @@ void main() {
   Future<(Future<void>, Completer<SessionBundle>)> holdSessionRead() async {
     final entered = Completer<void>();
     final read = Completer<SessionBundle>();
-    when(() => sessions.read(any())).thenAnswer((_) {
-      entered.complete();
-      return read.future;
-    });
+    when(
+      () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+    ).thenAnswer(
+      _opened((_) {
+        entered.complete();
+        return read.future;
+      }),
+    );
     final loading = runtime.session.loadNamed('Incoming');
     await entered.future;
     return (loading, read);
@@ -175,52 +179,56 @@ void main() {
           isRunning: true,
           devicePresent: true,
         );
-        when(() => sessions.read(any())).thenAnswer(
-          (_) async => (
-            session: const Session(
-              sampleRate: 48000,
-              channels: 1,
-              baseLengthFrames: 128,
-              tracks: [
-                SessionTrack(
-                  channel: 0,
-                  multiple: 1,
-                  lengthFrames: 128,
-                  fadeAmount: .25,
-                  lanes: [
-                    SessionLane(
-                      lane: 0,
-                      volume: 1,
-                      muted: false,
-                      outputMask: 1,
-                      inputChannel: 0,
-                      layers: [SessionLayer(file: 'track0.wav')],
-                    ),
-                  ],
-                ),
-                SessionTrack(
-                  channel: 1,
-                  multiple: 1,
-                  lengthFrames: 128,
-                  fadeAmount: 0,
-                  lanes: [
-                    SessionLane(
-                      lane: 0,
-                      volume: 1,
-                      muted: false,
-                      outputMask: 1,
-                      inputChannel: 0,
-                      layers: [SessionLayer(file: 'track1.wav')],
-                    ),
-                  ],
-                ),
-              ],
-              defaultFadeDurationMs: 12000,
+        when(
+          () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: const Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 128,
+                tracks: [
+                  SessionTrack(
+                    channel: 0,
+                    multiple: 1,
+                    lengthFrames: 128,
+                    fadeAmount: .25,
+                    lanes: [
+                      SessionLane(
+                        lane: 0,
+                        volume: 1,
+                        muted: false,
+                        outputMask: 1,
+                        inputChannel: 0,
+                        layers: [SessionLayer(file: 'track0.wav')],
+                      ),
+                    ],
+                  ),
+                  SessionTrack(
+                    channel: 1,
+                    multiple: 1,
+                    lengthFrames: 128,
+                    fadeAmount: 0,
+                    lanes: [
+                      SessionLane(
+                        lane: 0,
+                        volume: 1,
+                        muted: false,
+                        outputMask: 1,
+                        inputChannel: 0,
+                        layers: [SessionLayer(file: 'track1.wav')],
+                      ),
+                    ],
+                  ),
+                ],
+                defaultFadeDurationMs: 12000,
+              ),
+              laneStems: {
+                (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
+                (1, 0): [Float32List(128)..fillRange(0, 128, .5)],
+              },
             ),
-            laneStems: {
-              (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
-              (1, 0): [Float32List(128)..fillRange(0, 128, .5)],
-            },
           ),
         );
         store.refuseFade = true;
@@ -329,25 +337,30 @@ void main() {
           expect(capture, isNotNull);
           expect(engine.snapshot().isPerfArmed, isTrue);
           final disarms = engine.perfDisarmCalls;
-          when(() => sessions.read(any())).thenAnswer(
-            (_) async => (
-              session: Session(
-                sampleRate: 48000,
-                channels: 1,
-                baseLengthFrames: 0,
-                tracks: [
-                  if (amount != null)
-                    SessionTrack(
-                      channel: 0,
-                      multiple: 1,
-                      lengthFrames: 128,
-                      fadeAmount: amount,
-                      lanes: const [],
-                    ),
-                ],
-                defaultFadeDurationMs: amount == null ? 501 : 4000,
+          when(
+            () =>
+                sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+          ).thenAnswer(
+            _opened(
+              (_) async => (
+                session: Session(
+                  sampleRate: 48000,
+                  channels: 1,
+                  baseLengthFrames: 0,
+                  tracks: [
+                    if (amount != null)
+                      SessionTrack(
+                        channel: 0,
+                        multiple: 1,
+                        lengthFrames: 128,
+                        fadeAmount: amount,
+                        lanes: const [],
+                      ),
+                  ],
+                  defaultFadeDurationMs: amount == null ? 501 : 4000,
+                ),
+                laneStems: <(int, int), List<Float32List>>{},
               ),
-              laneStems: <(int, int), List<Float32List>>{},
             ),
           );
           await runtime.session.loadNamed('invalid');
@@ -375,34 +388,38 @@ void main() {
     addTearDown(() {
       if (!store.bootWrite!.isCompleted) store.bootWrite!.complete();
     });
-    when(() => sessions.read(any())).thenAnswer(
-      (_) async => (
-        session: const Session(
-          sampleRate: 48000,
-          channels: 1,
-          baseLengthFrames: 128,
-          tracks: [
-            SessionTrack(
-              fadeAmount: 1,
-              channel: 0,
-              multiple: 1,
-              lengthFrames: 128,
-              lanes: [
-                SessionLane(
-                  lane: 0,
-                  volume: .4,
-                  muted: false,
-                  outputMask: 1,
-                  inputChannel: 0,
-                  layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
-                ),
-              ],
-            ),
-          ],
+    when(
+      () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+    ).thenAnswer(
+      _opened(
+        (_) async => (
+          session: const Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 128,
+            tracks: [
+              SessionTrack(
+                fadeAmount: 1,
+                channel: 0,
+                multiple: 1,
+                lengthFrames: 128,
+                lanes: [
+                  SessionLane(
+                    lane: 0,
+                    volume: .4,
+                    muted: false,
+                    outputMask: 1,
+                    inputChannel: 0,
+                    layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          laneStems: {
+            (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
+          },
         ),
-        laneStems: {
-          (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
-        },
       ),
     );
     final loading = runtime.session.loadNamed('Incoming');
@@ -819,3 +836,9 @@ void main() {
     await expectLater(started, completes);
   });
 }
+
+/// Answers a stubbed `open` with a bundle that needed no conversion.
+Future<OpenedSession> Function(Invocation) _opened(
+  FutureOr<SessionBundle> Function(Invocation) answer,
+) =>
+    (invocation) async => (bundle: await answer(invocation), conversion: null);

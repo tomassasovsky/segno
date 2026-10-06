@@ -340,6 +340,20 @@ void main() {
       );
     });
 
+    testWidgets('an unconvertible older session shows its own banner', (
+      tester,
+    ) async {
+      final strings = await l10n();
+      await openManager(
+        tester,
+        state: const SessionState(
+          sessions: two,
+          error: SessionError.unconvertible,
+        ),
+      );
+      expect(find.text(strings.sessionErrorUnconvertible), findsOneWidget);
+    });
+
     testWidgets('an unsanitizable name shows the inline error', (
       tester,
     ) async {

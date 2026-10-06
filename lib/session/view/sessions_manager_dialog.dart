@@ -161,13 +161,16 @@ class SessionsManagerView extends StatelessWidget {
             a.currentSessionName != b.currentSessionName ||
             a.error != b.error,
         builder: (context, state) {
-          // The two load refusals the pen draws as banners under the title
-          // (`session-rate-error` / `session-version-error`). The other error
-          // kinds surface where their actions run (name prompts, snackbars).
+          // The load refusals the pen draws as banners under the title
+          // (`session-rate-error` / `session-version-error`; an older session
+          // that cannot be converted uses the version banner). The other
+          // error kinds surface where their actions run (name prompts,
+          // snackbars).
           final loadError = switch (state.error) {
             SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
             SessionError.unsupportedVersion =>
               l10n.sessionErrorUnsupportedVersion,
+            SessionError.unconvertible => l10n.sessionErrorUnconvertible,
             _ => null,
           };
           // Centered: the dialog route offers the full screen, and a shell

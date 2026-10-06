@@ -24,7 +24,7 @@ void main() {
   );
 
   test(
-    'read rejects older and missing schema before inspecting stems',
+    'read rejects newer, too old and missing schema before inspecting stems',
     () async {
       final dir = '${tempDir.path}/obsolete';
       Directory(dir).createSync();
@@ -52,10 +52,19 @@ void main() {
         ],
       ).toJson();
       final file = File('$dir/${Session.manifestName}');
-      await file.writeAsString(jsonEncode(manifest..['version'] = 7));
+      await file.writeAsString(
+        jsonEncode(manifest..['version'] = Session.formatVersion + 1),
+      );
       await expectLater(
         repoFor(FakeSessionEngine()).read(dir),
         throwsA(isA<SessionUnsupportedVersion>()),
+      );
+      await file.writeAsString(
+        jsonEncode(manifest..['version'] = oldestConvertibleSessionVersion - 1),
+      );
+      await expectLater(
+        repoFor(FakeSessionEngine()).read(dir),
+        throwsA(isA<SessionUnconvertible>()),
       );
       manifest.remove('version');
       await file.writeAsString(jsonEncode(manifest));

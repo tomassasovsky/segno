@@ -332,30 +332,35 @@ class _NoticeSessionRepository extends SessionRepository {
   ];
 
   @override
-  Future<SessionBundle> read(String directory) async {
+  Future<OpenedSession> open(
+    String directory, {
+    FutureOr<SessionSettings> Function()? liveSettings,
+  }) async {
     if (!readEntered.isCompleted) readEntered.complete();
     await readRelease.future;
     if (refuseRead) throw StateError('session read unavailable');
-    return (
-      session: const Session(
-        sampleRate: 48000,
-        channels: 2,
-        baseLengthFrames: 0,
-        tracks: [],
-        monitors: [
-          SessionMonitor(
-            input: 0,
-            mode: 'on',
-            outputMask: 16,
-            volume: .65,
-            muted: true,
-            encoded: '',
-          ),
-        ],
-      ),
-      laneStems: <(int, int), List<Float32List>>{},
-    );
+    return (bundle: _bundle, conversion: null);
   }
+
+  static final SessionBundle _bundle = (
+    session: const Session(
+      sampleRate: 48000,
+      channels: 2,
+      baseLengthFrames: 0,
+      tracks: [],
+      monitors: [
+        SessionMonitor(
+          input: 0,
+          mode: 'on',
+          outputMask: 16,
+          volume: .65,
+          muted: true,
+          encoded: '',
+        ),
+      ],
+    ),
+    laneStems: <(int, int), List<Float32List>>{},
+  );
 }
 
 class _ClickModeStore extends FakeKeyValueStore {
