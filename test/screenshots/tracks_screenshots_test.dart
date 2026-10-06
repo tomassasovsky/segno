@@ -446,6 +446,56 @@ void main() {
     }, skip: !hasScreenshotFonts);
   }
 
+  // The accepted Reverse Pen frames (segno-ui.pen 13 Performance · Reverse):
+  // playback direction, Bank B, an empty loop, and the Spanish strings.
+  for (final scene in ['default', 'bank', 'empty', 'spanish']) {
+    testWidgets('Foot Reverse $scene accepted scene', (tester) async {
+      Track track(int channel, {bool reversed = false}) => Track(
+        channel: channel,
+        state: TrackState.playing,
+        lengthFrames: 48000,
+        reversed: reversed,
+      );
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: scene == 'empty'
+              ? [
+                  for (var channel = 0; channel < 8; channel++)
+                    Track(channel: channel),
+                ]
+              : [
+                  track(0),
+                  track(1, reversed: true),
+                  track(2),
+                  const Track(channel: 3),
+                  track(4, reversed: true),
+                  track(5),
+                  track(6),
+                  const Track(channel: 7),
+                ],
+        ),
+      );
+      control.setMode(InteractionMode.reverse);
+      if (scene == 'bank') control.browseBank(1);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_reverse_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
   testWidgets(
     'console main window (16" panel decal)',
     (tester) async {
@@ -492,6 +542,52 @@ void main() {
       await expectLater(
         find.byType(TracksView),
         matchesGoldenFile('goldens/tracks_main_window.png'),
+      );
+    },
+    skip: !hasScreenshotFonts,
+  );
+
+  testWidgets(
+    'console main window with a reversed track: REV in the meta row gap',
+    (tester) async {
+      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
+      for (var i = 0; i < names.length; i++) {
+        await tracks.rename(i, names[i]);
+      }
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, peak: 0.9, lengthFrames: 96000),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              peak: 0.68,
+              lengthFrames: 96000,
+              reversed: true,
+            ),
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              muted: true,
+              peak: 0.55,
+              lengthFrames: 96000,
+            ),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      await pump(tester);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_reverse_marker.png'),
       );
     },
     skip: !hasScreenshotFonts,

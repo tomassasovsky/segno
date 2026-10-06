@@ -43,7 +43,11 @@ enum InteractionMode {
   mixer,
 
   /// Foot-controlled independent track fades and their durations.
-  fade;
+  fade,
+
+  /// Foot-controlled per-track playback direction: each track pedal turns
+  /// its track around at the current position.
+  reverse;
 
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes the current stored identity.

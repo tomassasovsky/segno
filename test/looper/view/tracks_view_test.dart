@@ -483,6 +483,126 @@ void main() {
     await tester.pump(const Duration(seconds: 10));
   });
 
+  group('Reverse', () {
+    void pin(WidgetTester tester) {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+    }
+
+    double opacityOf(WidgetTester tester, int channel) => tester
+        .widget<Opacity>(
+          find
+              .ancestor(
+                of: find.byKey(Key('tracks_reverse_$channel')),
+                matching: find.byType(Opacity),
+              )
+              .first,
+        )
+        .opacity;
+
+    testWidgets('the REV marker shows on a reversed recorded track and '
+        'remains after leaving Reverse', (tester) async {
+      pin(tester);
+      seed(
+        const LooperState(
+          tracks: [
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              reversed: true,
+            ),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          ],
+        ),
+      );
+      await pump(tester);
+      control.setMode(InteractionMode.reverse);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('foot_reverse_view')), findsOneWidget);
+      control.setMode(InteractionMode.record);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('REV'), findsNWidgets(2));
+      expect(opacityOf(tester, 0), 1);
+      expect(opacityOf(tester, 1), 0);
+      expect(
+        find.bySemanticsLabel(RegExp('Track plays reversed')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a forward track holds the marker width: the meta row lays '
+        'out the same either way', (tester) async {
+      pin(tester);
+      seed(
+        const LooperState(
+          tracks: [
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              reversed: true,
+            ),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          ],
+        ),
+      );
+      await pump(tester);
+      double offset(int channel, String part) =>
+          tester.getTopLeft(find.byKey(Key('tracks_${part}_$channel'))).dx -
+          tester.getTopLeft(find.byKey(Key('tracks_meta_$channel'))).dx;
+      for (final part in ['bars', 'layers', 'fx', 'reverse']) {
+        expect(offset(0, part), offset(1, part), reason: part);
+      }
+      // The pen's row: number, bars, layers and FX spread evenly. REV takes
+      // no slot of its own, so the gap before FX matches the others.
+      for (final channel in [0, 1]) {
+        Rect box(String part) => tester.getRect(
+          find.byKey(Key('tracks_${part}_$channel')),
+        );
+        final gapBarsLayers = box('layers').left - box('bars').right;
+        final gapLayersFx = box('fx').left - box('layers').right;
+        expect(
+          gapLayersFx,
+          closeTo(gapBarsLayers, 1),
+          reason: 'track $channel',
+        );
+        // REV paints inside that gap, clear of both neighbours.
+        expect(box('reverse').left, greaterThan(box('layers').right));
+        expect(box('reverse').right, lessThanOrEqualTo(box('fx').left));
+      }
+    });
+
+    testWidgets('a refused toggle shows its notice once', (tester) async {
+      pin(tester);
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ],
+        ),
+      );
+      when(
+        () => repository.toggleReverse(channel: any(named: 'channel')),
+      ).thenAnswer((_) async => EngineResult.invalid);
+      await pump(tester);
+      control.setMode(InteractionMode.reverse);
+      await tester.pump();
+      await control.toggleFootReverseTrack(0);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('The track could not be turned around. Try again.'),
+        findsOneWidget,
+      );
+      expect(control.state.footReverseFailure, 1);
+      dismissAppToast(AppToastId.footReverseFailure);
+      await tester.pump(const Duration(seconds: 10));
+    });
+  });
+
   testWidgets('renders a tile per track', (tester) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);

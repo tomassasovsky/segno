@@ -491,6 +491,53 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
+#### Part 3 as built
+
+Status: built (branch `claude/reverse-1162-p3`, rebased on the trunk
+`31aab2fdc`, which carries #1189's owned-value dispatch; the Reverse arm is
+one case in its `TrackOperation` switch).
+
+- Mode and vocabulary: `InteractionMode.reverse` (not a boot default; the
+  mode chip and `toggleMode` return to Tracks), `ModeAction` token
+  `reverse`, `TrackOperation.reverse` (`allowsAllTracks` true; an all-tracks
+  stomp toggles every recorded track in parallel, like Fade), labels in
+  English and Spanish.
+- Model and actions: `lib/control/model/foot_reverse.dart` (role table:
+  every role fires on contact, Undo and Clear are `none`; a track is
+  available when it has content and is neither capturing nor pending) and
+  the stateless `FootReverseActions.toggle`, shared by the surface and every
+  assigned action.
+- Cubit part `control_foot_reverse.dart`: contact dispatch, Exit, Bank,
+  Stop, Rec/Play on the normal cursor, and one toggle-refusal report per
+  visit (`ControlState.footReverseFailure`).
+- Overdub refusal, every mode: `LooperRepository.record` reports an
+  `EngineResult.reversed` refusal on `overdubRefusals`, and the app shows it
+  with the existing record-refusal toast, titled "Overdub is unavailable
+  while the track is reversed". Pedal, MIDI, External and on-screen presses
+  all pass through `record`, so Tracks and Reverse report the same way.
+- LED: blue for a recorded reversed track, off otherwise. The physical mask
+  treats slot-less pedals on Fade and Reverse alike (lit only for an
+  accepted contact). The wire mode is `PedalMode.custom`.
+- `FootReverseView` mirrors the Fade view (same canvas, positions and
+  `PerformancePedal`), which gained an optional detail glyph and a
+  highlighted detail for the direction line.
+- Tracks marker: `_ReverseMarker` ("REV") paints in the meta row's gap
+  just before the FX slot, anchored to that slot and translated back by its
+  own width, so it takes no layout space: the forward row is the pen's row
+  exactly (the Tracks goldens are byte-identical to the trunk's), and a
+  reversal reflows nothing. Opacity 0 while forward, read from
+  `Track.reversed`; the meta row's screen-reader label adds "Track plays
+  reversed".
+- Pen departures (segno-ui.pen, 13 Performance · Reverse):
+  - the Tracks indicator is the meta-row "REV" marker, as this plan states,
+    not the pen's "‹ Reverse" caption under a Tracks pedal (the app's Tracks
+    view is the column view, which has no pedal captions);
+  - track names render in the app's display case ("TRACK 2"), and the top
+    bar has no STAGE breadcrumb, as on the Fade surface;
+  - the direction detail is 24 px (the shared pedal detail size), not 26.
+- Size: production +893 / -51 Dart (plus 51 strings), past the 700-line
+  review ceiling: the view alone is 342 lines, mirroring the Fade view.
+
 ## 5. Decisions taken under the standing rules
 
 1. Toggle while the track writes (RECORDING, OVERDUBBING, punch tail, pending arm or
