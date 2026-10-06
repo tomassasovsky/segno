@@ -2664,7 +2664,7 @@ int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
    * cohort", never "finish a capture": post the cancel itself, so one that
    * lands after the commit and grace is a no-op instead of finalizing the
    * just-started defining take into a tiny master. */
-  if (cohort) return le_push(engine, LE_CMD_CANCEL_COUNT_IN, 0, 0.0f);
+  if (cohort) return le_engine_cancel_count_in(engine);
   if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) {
     const int quantized = le_effective_quantize(engine, channel) &&
         le_rig_effective_master_len(engine) > 0 && le_transport_active(engine);

@@ -203,7 +203,10 @@ void main() {
           family.deliver(engine, family.prior);
           reconnect.add(null);
           clock.flushMicrotasks();
-          expect(count(engine, 'start'), 2);
+          // A reconnect reopens the device (#1140); the owed value replays
+          // inside the shared rig replay.
+          expect(count(engine, 'start'), 1);
+          expect(count(engine, 'reopen'), 1);
           // Only the supervisor's raw release of the dead device.
           expect(count(engine, 'stop'), 1);
           clock.elapse(const Duration(milliseconds: 20));

@@ -355,7 +355,9 @@ void main() {
         c.deliver(r.engine);
         r.reconnect.add(null);
         r.pump();
-        expect(r.engine.startCalls, 2);
+        // A reconnect reopens the device (#1140) and replays the owed value.
+        expect(r.engine.startCalls, 1);
+        expect(r.engine.reopenCalls, 1);
         expect(r.run(owner.flush())?.status, SettingStatus.applied);
         expect(owner.value, c.next);
         expect(c.audible(r.engine), c.next);
