@@ -2350,9 +2350,10 @@ LE_EXPORT int32_t le_backing_buffer_peaks(const le_backing_buffer* buffer,
  * Ogg, MPEG Layer I/II, more channels or another rate. A file that claims an
  * accepted format but is inconsistent (a chunk past the end of the file, a
  * short `fact` chunk, a block align that does not match, a length other than
- * the one stated, a non-finite float sample) is LE_ERR_INVALID. No input can
- * make these loop: reads and seeks stay inside the file and stop after a
- * bounded amount of work. Any thread but the audio thread; no engine handle;
+ * the one stated, a float sample that is non-finite or more than 60 dB over
+ * full scale) is LE_ERR_INVALID. No input can make these loop: reads and
+ * seeks stay inside the file and stop after a bounded amount of work. Any
+ * thread but the audio thread; no engine handle;
  * nothing here touches engine state. */
 
 /* The longest whole file accepted, in seconds of source audio. */

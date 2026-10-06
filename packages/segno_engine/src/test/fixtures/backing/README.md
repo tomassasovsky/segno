@@ -34,8 +34,8 @@ at the ID3v1 tag.
 
 ## The #1223 review's reproducers
 
-Crafted files from the Part 2 review, each now refused before a decoder sees
-it:
+Crafted files from the Part 2 review (and one the fuzz driver found
+afterwards), each now refused:
 
 | File | What it did | Now |
 |---|---|---|
@@ -44,5 +44,6 @@ it:
 | `w64_huge_chunk.bin` | Wave64 with a huge chunk size: the same endless seek | unsupported |
 | `msadpcm_oob.wav` | MS-ADPCM predictors of 250: an out-of-bounds table read | unsupported |
 | `r44101.wav` | 44101 Hz: probed fine, then the converter refused it | unsupported |
+| `f32_huge_values.wav` | found by the widened fuzz driver: float samples near `FLT_MAX`, finite, which the converter summed to Inf | damaged |
 
 The WAV cases of the unit tests are written by the tests themselves.
