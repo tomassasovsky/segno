@@ -26,6 +26,7 @@ import 'package:segno/appliance/power_off/power_off_goodbye.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
+import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -527,6 +528,7 @@ class _AppState extends State<App> {
           BlocProvider<LooperBloc>.value(value: _runtime.looper),
           BlocProvider<SessionCubit>.value(value: _runtime.session),
           BlocProvider<BackingCubit>.value(value: _runtime.backingView),
+          BlocProvider<BackingMixCubit>.value(value: _runtime.backingMixView),
           BlocProvider(
             create: (context) {
               final cubit = TracksCubit(

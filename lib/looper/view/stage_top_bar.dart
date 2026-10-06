@@ -11,6 +11,8 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/view/backing_click_dialog.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -61,6 +63,7 @@ class StageTopBar extends StatelessWidget {
           const SizedBox(width: _gap),
           const _RecordLight(),
           const Expanded(child: _SessionName()),
+          const _BackingClickButton(),
           const _ResetMixerButton(),
           const _BankButton(),
           const SizedBox(width: _gap),
@@ -159,6 +162,35 @@ class _SessionName extends StatelessWidget {
 ///
 /// Only in the Mixer view, because that is where the pen puts it and because
 /// an action that changes eight values at once wants to be beside them.
+/// The pen's `stage-aux` button (25 `bZDIR`): opens the Backing & click
+/// volume and pan dialog. Mixer view only, beside Reset mixer.
+class _BackingClickButton extends StatelessWidget {
+  const _BackingClickButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final showing = context.select<TracksCubit, bool>(
+      (cubit) => cubit.state.stageView == StageView.mixer,
+    );
+    if (!showing) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: StageTopBar._gap),
+      child: LoopOutlinedButton(
+        key: const Key('stage_backing_click'),
+        width: 173,
+        height: 54,
+        fontSize: 20,
+        radius: 8,
+        tone: LoopButtonTone.raised,
+        label: l10n.mixerBackingClick,
+        semanticLabel: l10n.a11yMixerBackingClick,
+        onTap: () => unawaited(showBackingClickDialog(context)),
+      ),
+    );
+  }
+}
+
 class _ResetMixerButton extends StatelessWidget {
   const _ResetMixerButton();
 
