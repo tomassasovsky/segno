@@ -31,6 +31,7 @@ extension _FootFadeControl on ControlCubit {
     _armGesture(
       _systemGesture(button) ??
           _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
+      cue: button,
       onTap: () => dispatch(role.press),
       onHold: () => dispatch(role.hold!),
     );
