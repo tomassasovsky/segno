@@ -1,16 +1,23 @@
 # Instruments: native synthesis voices as routable inputs, MIDI note input and the Instruments page
 
-<!-- cspell:ignore polyBLEP xorshift Neoverse SCHED denormal Clavinet tonewheel Vibraphone CHANPRESS PITCHBEND rawmidi uinput ADSR SVF Launchkey GTXF RKQL oegcz kole NOTEON NOTEOFF PGMCHANGE halfband clav -->
+<!-- cspell:ignore polyBLEP xorshift Neoverse SCHED denormal Clavinet tonewheel Vibraphone CHANPRESS PITCHBEND rawmidi uinput ADSR SVF Launchkey GTXF RKQL oegcz kole NOTEON NOTEOFF PGMCHANGE halfband clav PITCHBEND CHANPRESS UNSUBSCRIBED Mori TYRr tombstoned TSAN tsan tanf powf expf -->
 
-Status: plan, awaiting the human plan review (`autonomy:merge-gate` on the
-build parts). Part 1 is a measured CPU spike whose numbers fix the voice pool
-and gate the first user-visible part.
+Status: plan, revised after the plan review of PR #1204
+(`claude-published-review/1197-plan-review/review.md`, request changes) and
+the owner's answers of 2026-10-06; §7 maps every finding to where it is met.
+`autonomy:merge-gate` on the build parts. Part 1, the measured CPU spike, is
+built (PR #1224); the owner's appliance run of it gates Part 2a.
 Tracking: #1197 (gap inventory E8-7 to E8-14, and the instrument share of
 E7-6 recall ownership and E6-12 shared targets), `autonomy:merge-gate`.
 Related: #1040 (one captured MIDI input; Part 4 builds the per-device capture
 registry #1040 needs, without deciding its control-path question), #1196
 (saved-session migration chain; Part 5 adds a step to it).
-Source baseline: `origin/claude/segno-integration` at `5c163d11f`. Every
+Owner answers (2026-10-06), which override earlier defaults and the review's
+suggestions: sound packs may come later, so "Install sound pack" stays hidden
+until a pack mechanism exists, patch ids stay strings and Retry is offered
+only for an audio-start failure; playing instruments from a computer keyboard
+is a desktop-build feature, hidden on the appliance.
+Source baseline: `origin/claude/segno-integration` at `56033baf0`. Every
 `file:line` below is on that head unless another file is named.
 Precedents: the pitch/time core plan (`2026-10-06-feat-pitch-time-core-plan.md`,
 its measured spike and `2026-10-06-pitch-time-spike-findings.md`), the engine
@@ -97,7 +104,8 @@ expression, release and audition rules `:166-384`),
 | Instruments · Shared pedal and control assignments | `J2uTq` | 8 |
 
 Section `21  Audio routing` (`O51ZiH`): `01 / Recording inputs` (`s0zlm`) and
-`02 / Live output routing` (`oegcz`) gain instrument sources (Part 6). The
+`02 / Live output routing` (`oegcz`), and their variants `MoriR`, `sTYRr`,
+`r47I8` and `mf0fR`, gain instrument sources (Part 6). The
 section has no Instruments screen of its own; the prototype reaches the page
 from a quiet "Instruments" header button beside "Input names"
 (`audio-routing-study.js:19`, `:23`), and the page's breadcrumb in `gGTXF` is
@@ -140,7 +148,17 @@ from a quiet "Instruments" header button beside "Input names"
   `>= ch_in` or `>= 32` are skipped (`:5326-5327`).
 - Lane routing validation: `LE_CMD_SET_LANE_INPUT` maps any channel
   `>= in_channels` or excluded to `-1` (`:3628-3643`); batch routing
-  `le_apply_routing` (`:2650-2689`).
+  `le_apply_routing` (`:2647`) refuses the whole batch through `le_mix_valid`
+  (`engine_commands.c:1400-1446`), which bounds lane inputs and monitors at
+  `LE_MAX_CHANNELS` with `uint32_t` masks.
+- The mix transaction is the routing and level path:
+  `LooperRepository._sendMix` → `setMix` → `le_engine_set_mix`, carrying
+  `le_mix_settings` (`segno_engine_api.h:713-735`: `uint32_t monitor_mask`,
+  `monitor_gain`, `monitor_pan` and `input_trim` `[LE_MAX_CHANNELS]`,
+  `lane_input[LE_MAX_TRACKS * LE_MAX_LANES]`).
+- The performance arm captures the device's inputs only (`le_perf_arm`,
+  `engine_commands.c:4588-4650`, clamped to `in_channels`), with a `uint32_t`
+  mask also in `le_perf_free_unpublished` (`:4579-4584`).
 - Snapshot per-input arrays are `LE_MAX_CHANNELS` long: `input_peaks`,
   `monitor_peaks`, `output_peaks`, `input_trim` (`segno_engine_api.h:1329-1332`),
   filled at `engine_snapshot.c:488-496`.
@@ -178,9 +196,11 @@ from a quiet "Instruments" header button beside "Input names"
   the ring (`:100-119`) and `le_midi_drain` calls one Dart callback
   (`:121-134`). Linux uses the ALSA sequencer and converts only
   NOTEON/NOTEOFF/CONTROLLER/PGMCHANGE back to bytes
-  (`midi_backend_linux.c:136-171`); macOS passes raw packets
-  (`midi_backend_apple.c:183-192`). Parser tests live in
-  `src/test/test_midi_core.c`.
+  (`midi_backend_linux.c:136-171`); macOS parses raw packets
+  (`midi_backend_apple.c:110-150`). Parser tests live in
+  `src/test/test_midi_core.c`. `le_midi_close` nulls the callback and then
+  joins the backend thread (`midi.c:174-188`, `midi_backend_linux.c:189`):
+  that join is today's only producer-quiescence guarantee.
 - Dart: `MidiClient` owns one handle (`packages/midi_client/lib/src/midi_client_base.dart:30-117`);
   `MidiControllerSource.open` closes before opening (`midi_controller_source.dart:43-56`)
   and `_parse` maps only 0x90/0x80/0xB0/0xC0 (`:85-101`).
@@ -204,7 +224,11 @@ from a quiet "Instruments" header button beside "Input names"
   `ControlCubit._runAction` (`control_cubit.dart:2496-2537`).
 - Value targets are normalized 0..1 with canonical JSON identity
   (`lib/control/binding/control_value_target.dart:22-33`, `tryParse`
-  `:85-165`), resolved through `control_availability.dart:19-64`.
+  `:85-165`), resolved through `control_availability.dart:19-64`. Monitor
+  targets are keyed by the source number,
+  `{"ctl":"monitorVolume","index":N}` (`:277-289`), and monitor preferences
+  persist per number (`monitor_input_mode.N`,
+  `settings_repository.dart:1057`).
 - Pickers: `showControlActionPicker` (`pedal_choice_picker.dart:256-288`),
   External pedals (`external_pedal_page.dart:1411`), MIDI controls
   (`midi_controls_page.dart:885-930`), value pickers
@@ -216,10 +240,12 @@ from a quiet "Instruments" header button beside "Input names"
   (`external_controls.dart:13-37`); pedal Press/Hold pairs
   (`pedal_setup.dart:59-120`).
 - The computer keyboard has one handler, `TracksCommands.handleKey`
-  (`lib/looper/view/tracks_commands.dart:175-360`) on `HardwareKeyboard`,
-  wired at `tracks_view.dart:195`; A, S, W, D, E, F, T, G, Y, H, U, J, K are
-  partly taken there (A arms performance recording, `:288`; U undo; S
-  settings; G signal; F fullscreen).
+  (`lib/looper/view/tracks_commands.dart:175-360`), a `Focus.onKeyEvent`
+  handler wired at `tracks_view.dart:195` that reads modifier state from
+  `HardwareKeyboard`; A, S, W, D, E, F, T, G, Y, H, U, J, K are partly taken
+  there (A arms performance recording, `:288`; U undo; S settings; G signal;
+  F fullscreen). Appliance builds are detected by `isAppliance()`
+  (`lib/update/appliance/appliance_env.dart:10`).
 
 ### Sessions, settings and the app
 
@@ -236,7 +262,21 @@ from a quiet "Instruments" header button beside "Input names"
   (`looper_repository.dart:3735-3760`).
 - The recalled families are captured by `SessionSettingsCoordinator.capture`
   (`lib/session/application/session_settings_coordinator.dart:61-96`); the
-  #1159 family table is `2026-10-05-refactor-settings-transaction-owner-plan.md:175-199`.
+  #1159 family table is `2026-10-05-refactor-settings-transaction-owner-plan.md:175-199`,
+  and each family is written through `SettingsOwner`
+  (`lib/looper/application/settings_owner.dart:112`).
+- Dart bounds every source at 32: `EngineMixSettings.isValid`
+  (`packages/segno_engine/lib/src/mix_settings.dart:97`, `:124`, `:129`),
+  `MixSettingsSnapshot` (`mix_settings_snapshot.dart:113`, `:139`),
+  `_mixPayload` (`looper_repository.dart:733`), `_sourceAvailable`
+  (`:4640`), the assign and pair guards (`:4705`, `:4726`, `:4768`), the
+  trim and pan setters (`:5106`, `:5116`), the monitor-chain guard
+  (`:5228`), the sound-start check (`:2983-2988`), monitor restore
+  (`:3817`) and `InputSetup` (`input_setup.dart:38`, `:46`); monitor pan
+  comes only from `InputSetup.pan` (`monitorMix`, `:8046`). The physical
+  loops over `kMaxMonitoredInputs` are `monitor_cubit.dart:177-181`,
+  `input_conditioning_cubit.dart:164`, `monitor_migration.dart:56-136` and
+  `fx_chain_persistence.dart:168`.
 - Appliance preferences are flat keys in `SettingsRepository`
   (`packages/settings_repository/lib/src/settings_repository.dart:195-210`);
   input aliases `input_name.<device>.<n>` (`:1804-1828`).
@@ -254,8 +294,9 @@ from a quiet "Instruments" header button beside "Input names"
 - Audio routing has four tasks (`audio_routing_page.dart:17-29`) and a header
   action for names (`:105-109`); `openAudioRouting`
   (`lib/app/segno_navigator.dart:89`).
-- No per-take source label is shown anywhere: every `inputName` call site
-  above names a route or a live source, not recorded material.
+- No per-take source label is stored: every `inputName` call site above
+  names a route or a live source, and an unknown source falls back to its
+  ordinal ("Input 33", `localized.dart:111`).
 - Ids: `SlotIds.mint()` (`packages/looper_repository/lib/src/models/fx_slot_ids.dart:23-33`)
   is the established persistent id minter (random prefix plus counter).
 - The FX catalogue precedent for shipped art is the data-only package
@@ -284,22 +325,24 @@ order: the lowest possible latency for a played instrument; one real-time
 thread and one set of RT rules (rule 2); deterministic literal-PCM tests; no
 dependency that cannot deliver the accepted sound. B would only pay off if A
 does not fit the period, and Part 1 measures that before any engine change.
-If Part 1's Pi numbers fail even at 16 voices, the plan returns to the owner
+If the Pi numbers fail even at 16 voices, the plan returns to the owner
 (escalation to `plan-gate`) with the measured fallbacks: cheaper oscillators,
 or an internal 48 kHz synthesis rate with the engine's existing 2:1 half-band
 (`restore_halfband.c`).
 
 Real-time rules for the synth TU, enforced by review and tests: no
-allocation, lock, syscall or libm call inside render (coefficients and the
-2048-point sine table are computed at `le_synth_init` on the control thread;
-the per-block filter coefficient uses a rational `tan` approximation); every
-loop bounded by the voice pool, the block and a per-block event cap; denormals
-are already flushed per callback (`engine_process.c:6340`).
+allocation, lock or syscall inside render; libm math (`tanf`, `powf`,
+`exp2f`, `expf`) only once per voice per 32-frame control block or once per
+note event, never per sample (as built in Part 1; the existing `fx_filter`
+calls `powf` and `tanf` per sample, `engine_fx.c:57-60`); every loop bounded
+by the voice pool, the block and a per-block event cap; denormals are already
+flushed per callback (`engine_process.c:6340`).
 
-### D2. Polyphony and the CPU budget
+### D2. Polyphony, the joint CPU budget and the overload policy
 
-- One global voice pool, `LE_SYNTH_VOICES`, compiled in. Default 32; Part 1's
-  Pi measurement raises it to 64 if the 64-voice threshold passes.
+- One global voice pool, compiled in at `LE_SYNTH_MAX_VOICES = 64` slots;
+  the default limit is 32 and the Pi run raises it to 64 when the 64-voice
+  threshold passes.
 - Up to `LE_MAX_INSTRUMENTS = 8` instruments. The accepted text rules out a
   three-instrument limit (`:390`), not every limit; eight matches the eight
   tracks and keeps every per-instrument array fixed. Add instrument shows the
@@ -307,28 +350,58 @@ are already flushed per callback (`engine_process.c:6340`).
 - Stealing, in order: the oldest released (or sustained) voice of the same
   instrument, the oldest released voice of any instrument, the oldest held
   voice of the same instrument, the oldest held voice anywhere. A stolen voice
-  moves to one of `LE_SYNTH_FADE_SLOTS = 8` fade slots and ramps to zero over
-  3 ms, so a steal never clicks and the new note starts in the same block.
-  Same-instrument first keeps a layer from silencing an unrelated instrument
-  where it can.
-- Budget, measured in Part 1 at 96 kHz / 64-frame periods (667 µs), on the
-  appliance with SCHED_FIFO and the app running:
-  - the costliest patch at 32 voices: added p99 at most 15 % of the period
-    (100 µs);
-  - 64 voices: at most 30 %;
-  - a burst of 32 note-ons inside one block: that block at most 20 %;
-  - Part 2a re-measures through `le_engine_process`: the pitch/time baseline
-    (8 tracks × 8 lanes) plus 32 voices and eight instrument monitors, p99 at
-    most 50 % of the period.
-  The arm64 CI proxy asserts p50 at half of each threshold, as the pitch/time
-  harness does for the Neoverse runner.
+  moves to one of `LE_SYNTH_FADE_SLOTS` fade slots, one per pool voice
+  (review M2), and ramps to zero over 3 ms, so a steal never clicks and the
+  new note starts in the same block; a full pool stolen in one burst still
+  fades every victim. Only more steals than slots within 3 ms overwrite the
+  most finished fade, counted as `stolen_hard`. Cut and a patch change fade
+  voices in place and need no slot; a note struck while every slot is fading
+  in place takes the most finished one, also counted.
+- **The joint budget (review M3).** Pitch/time already claims `baseline +
+  read head ≤ 50 %` of the period and this plan claims voices and monitors on
+  top of the same baseline, so the two are measured together. Part 1's bench
+  has a `joint` scenario: the 8 × 8 lane baseline, eight live inputs
+  monitored through one reverb each, the pitch/time read head at 8x over the
+  64 lanes, and 32 voices of the costliest patch, in one period. On the
+  appliance (96 kHz, 64-frame periods, 667 µs, SCHED_FIFO, the app running)
+  the thresholds are judged on the tail, p99.9, because at 1500 periods a
+  second p99 over a minute tolerates about 900 late periods and one late
+  64-frame period is an audible click:
+  - the costliest patch and a mixed set at 32 voices: p99.9 ≤ 15 % of the
+    period; at 64 voices ≤ 30 %;
+  - a 32-note burst, on an idle pool and on a full one (32 steals): the
+    block's p99.9 ≤ 20 %;
+  - the joint worst case: p99.9 ≤ 75 % and no period over the budget in the
+    run.
+  The arm64 CI proxy asserts p50 at half of each percentage. Part 2a re-runs
+  the joint scenario with the voices inside `le_engine_process`; Part 2c adds
+  the event-routing cost (8 ports × 256 events plus 256 control events,
+  scanned against 8 instruments × 32 remaps) to it.
+- **The Pi gate moves to Part 2a (review M4).** The owner runs this plan's
+  bench and the pitch/time bench in one appliance session (the steps are in
+  `2026-10-06-instruments-spike-findings.md`, "Pi 5"); the instrument
+  verdicts gate Part 2a's merge, so a fallback can still rework Parts 1 and
+  2a before anything builds on them.
+- **The overload policy.** A runtime voice limit (`le_synth_set_voice_limit`,
+  built in Part 1; `LE_CMD_SET_VOICE_LIMIT` in Part 2a) lowers polyphony
+  without reallocating: lowering it fades the excess in stealing order and
+  later notes steal at the limit. `InstrumentRepository` watches the callback
+  telemetry's `late_periods` (`segno_engine_api.h:1076-1093`) while any
+  instrument voice sounds: on a new late period it lowers the limit to three
+  quarters of its value (never below 8) and shows a toast, "Polyphony reduced
+  to N to keep audio running" (the popup severity principle: no immediate
+  action is needed). The Instruments page shows the reduced limit with
+  Restore; a new session or an engine reopen restores the default. In a
+  `LE_CALLBACK_TELEMETRY=0` build there is no late-period signal and the
+  limit stays at its default (stated, not silent: the page shows no
+  reduction because none can be measured).
 
 ### D3. Instruments are fixed extra sources in the engine's input index space
 
 Every input-keyed structure in the engine and in Dart is indexed by an int
-(`a_input_channel`, `monitors[]`, `InputMonitor.input`, `trimDb`,
-`SessionLane.inputChannel`, `SessionMonitor.input`). Instruments join that
-space at fixed indices instead of getting a parallel set of routes:
+(`a_input_channel`, `monitors[]`, `le_mix_settings`, `InputMonitor.input`,
+`trimDb`, `SessionLane.inputChannel`, `SessionMonitor.input`). Instruments
+join that space at fixed indices instead of getting a parallel set of routes:
 
 - source `s < LE_MAX_CHANNELS` (32) is a device channel, as today;
 - source `LE_INSTRUMENT_SOURCE_BASE + k` (32 + k, k < 8) is instrument slot
@@ -336,19 +409,51 @@ space at fixed indices instead of getting a parallel set of routes:
 
 The index does not depend on the interface's channel count, so a session
 records the same number on a 2-in and an 18-in device, and recovery never
-looks for a jack (`:402-403`). Recording inputs, Hear live and its Auto
-resolution, live level, mute, pan, outputs, input FX with Pre/Post, the
-performance capture tap and sound-armed recording all work on instrument
-sources through the code that already exists (rule 4: one routing model). The
-loopback-excluded mask and the clip detector stay physical-only, behind one
-`le_source_is_physical(s)` guard (the shifts `1u << c` are undefined at 32 and
-above).
+looks for a jack (`:402-403`). The loopback-excluded mask, the clip detector,
+input conditioning, trim and stereo pairing stay physical-only, behind one
+`le_source_is_physical(s)` guard (the shifts `1u << c` are undefined at 32
+and above).
+
+**The widening is explicit work, not free (review H1).** The routing and
+level path is the mix transaction (`LooperRepository._sendMix` → `setMix` →
+`le_engine_set_mix`), and it is bounded at 32 on both sides:
+- native: `le_mix_settings.monitor_mask` is `uint32_t`, `monitor_gain`,
+  `monitor_pan` and `input_trim` are `[LE_MAX_CHANNELS]`
+  (`segno_engine_api.h:713-735`), and `le_mix_valid` refuses
+  `lane_input >= LE_MAX_CHANNELS` and walks monitors with `1u << i`
+  (`engine_commands.c:1400-1446`). Part 2b widens the monitor mask to
+  `uint64_t` and the monitor arrays to `LE_MAX_SOURCES` (trim stays
+  `LE_MAX_CHANNELS`, physical) and moves the bound to `LE_MAX_SOURCES`.
+- Dart: `EngineMixSettings.isValid` (`packages/segno_engine/lib/src/mix_settings.dart:97`,
+  `:124`, `:129`), `MixSettingsSnapshot` (`mix_settings_snapshot.dart:113`,
+  `:139`), `_mixPayload` (`looper_repository.dart:733`), `_sourceAvailable`
+  (`:4640`), the assign guard (`:4705`), the pair guards (`:4726`, `:4768`),
+  the trim and pan setters (`:5106`, `:5116`), the monitor-chain guard
+  (`:5228`), the sound-start check (`:2983-2988`), session restore
+  (`:3817`), and `InputSetup` (`input_setup.dart:38`, `:46`). Part 3c routes
+  every one of them through one `LooperRepository.isSource(int)` predicate
+  (a device channel below `inputChannels`, a stray physical route the rig
+  already holds, or an instrument slot), with a test per site.
+- **Instrument pan** lives where every live input's pan lives, in
+  `InputSetup.pan` keyed by source (`monitorMix`, `looper_repository.dart:8046`);
+  Part 3c widens that one map to `LE_MAX_SOURCES` while trim and pairs stay
+  physical. It is edited from the Mixer's live-input strip, as for jacks; the
+  Instruments page (pen `gGTXF`) shows Level but no Pan, so it gains none.
+
+**The mix path accepts every source and refuses nothing per slot (review
+H4).** `le_apply_routing` validates the whole `le_mix_settings` and refuses
+the batch on one bad entry (`engine_process.c:2647`, through `le_mix_valid`).
+So the mix path accepts any source in `[0, LE_MAX_SOURCES)` and an
+instrument slot without a patch renders exact silence. It adds no
+`in_channels` check either: today a stray physical route (a session moved to
+a smaller interface) is accepted and shown (`recording_inputs_tab.dart:106`),
+and that stays (rule 1). Refusals for new routes live in the repository and
+the UI (`isSource`), and `LE_ERR_NO_INSTRUMENT` (-14) is confined to the
+single-command event API (`le_engine_instrument_event` on an empty slot).
 
 Instrument buses are **mono**. The accepted synthesis renders mono voices into
 one gain node per instrument (`instrument-runtime.js:35-48`, `busFor`), so a
-take uses one lane of eight, Pan places it, and no stereo-pair rules apply
-(the accepted text says instruments cannot be paired as hardware ports,
-`2026-09-09-virtual-instruments-ux.md`).
+take uses one lane of eight, Pan places it, and no stereo-pair rules apply.
 
 ### D4. Notes are routed natively; Dart sends only what Dart owns
 
@@ -360,74 +465,152 @@ take uses one lane of eight, Pan places it, and no stereo-pair rules apply
   played keyboard cannot take that.
 - **Routing tables are published from Dart** (one immutable table per
   instrument set: MIDI enable, port, channel, range, remaps) through a
-  two-slot publish with an audio-thread acknowledgement, so the audio thread
-  never reads a table the control thread is writing and never allocates.
+  two-slot publish with an audio-thread acknowledgement. Publishes coalesce
+  latest-wins in the repository: a newer table replaces an unsent one. While
+  the engine is not running (no callback after `le_engine_stop` joined it,
+  `engine_commands.c:4821-4824`) the control thread flips directly (review
+  L8).
 - **Computer keys, the touch keyboard and shared actions** (pedal, external,
   MIDI-mapped note/chord/sustain actions) are resolved in Dart, which owns
-  those mappings, and sent as note events with an origin token through one
+  those mappings, and sent as note events with an origin token through the
   control-to-audio event ring.
-- **Release reaches the original voice** because every voice records its
-  origin: `(port, channel, kind, number)` for MIDI, the token for Dart
-  sources. A note-off releases voices by origin across every instrument, so
-  layers and remapped chords release together and a changed route or
-  selection cannot strand a note.
+- **Origins.** A voice records its origin. MIDI origins carry the tag bit 31
+  clear: `port (3 bits) << 24 | channel (4) << 16 | kind (1) << 8 | number
+  (7)`. Dart tokens carry bit 31 set and a 31-bit counter from the
+  repository. Sustain contributors use the same values; per instrument the
+  engine keeps a fixed table of up to 16 active contributor origins (review
+  L3), and a seventeenth is refused and counted, never silently merged.
+- **Note-off first, by origin, across every instrument (review M1).** The
+  audio thread handles every Note Off (and CC64 below 64) before any table
+  lookup: it releases every voice and removes every sustain contribution
+  with that origin, whatever the instrument's current enable, port, channel,
+  range or remaps say. So turning MIDI off, changing the channel, removing a
+  remap or moving the range while a note is held can never strand it
+  (the prototype's `noteOff(token)` walks every voice,
+  `instrument-runtime.js:200-207`). Only Note On and CC64 on consult the
+  tables.
+- **Never drop a release (review H3).**
+  - Port rings: when a push finds the ring full, the producer sets the
+    port's `a_overflow` flag instead of silently dropping. At the next block
+    the audio thread releases (normal release, not a cut) every voice whose
+    origin names that port, removes that port's sustain contributors, counts
+    the event and clears the flag. A note-on lost to the overflow is simply
+    not played; nothing it would have sounded can stick.
+  - The control event ring has a reserved release lane: a second SPSC ring of
+    1024 entries carrying only note-off, sustain-off and retire events, so
+    note-ons can never crowd releases out. `InstrumentRepository` keeps every
+    release it could not push in a pending queue and retries it on the next
+    snapshot until accepted, never dropping one; a refused note-on is
+    dropped and its later note-off is a harmless no-op.
+- **Producer quiescence (review H2).** Today `le_midi_close` nulls the
+  callback and then joins the backend thread (`midi.c:174-188`,
+  `midi_backend_linux.c:189`). The engine sink gets the same guarantee
+  without closing the capture: `le_midi` gains an `_Atomic` in-flight counter
+  that the backend thread increments around the sink call (wait-free for the
+  producer). Detach stores NULL to the sink and spins until the counter reads
+  zero; only then may the engine's port slot be reused or the engine be
+  destroyed. `le_midi_close` performs the same quiescent detach, bumps the
+  port generation and marks the port lost, so a capture closed or destroyed
+  first can never write into an engine port again. `le_engine_destroy`
+  detaches every attached port first. A TSAN test in `native-tests-tsan`
+  races a producer thread against detach, reattach and destroy.
+- **Device loss (review L7).** The ALSA backend already receives the
+  sequencer's port-exit announcements; Part 2c makes a `PORT_EXIT` or
+  `PORT_UNSUBSCRIBED` for the open source mark the capture lost natively
+  (generation bump, the port's voices released at the next block), and the
+  CoreMIDI backend does the same from its notify callback for a removed
+  source. Held notes from an unplugged keyboard therefore stop within a
+  block, not after the 2 s Dart poll; the poll still drives reconnect.
 - MIDI note input ignores Remote control enable (`:330`); the native path does
   not read it.
 
 ### D5. The 19 patches are a C table; Dart owns only presentation
 
-- `synth_patch.c` holds the 19 patches in catalogue order
-  (`instrument-catalogue.js:17-37`): string id, family, oscillator shape,
-  partial ratio, sustain level, filter resonance and the three family
-  defaults. The seven families' parameter keys and display mappings
-  (`:8-16`) are a second C table: key, kind (percent, seconds, hertz) and the
-  numeric mapping the voice actually uses.
+- `synth_patch.c` (built in Part 1) holds the 19 patches in catalogue order
+  (`instrument-catalogue.js:17-37`) and the seven families' parameters
+  (`:8-16`) with the numeric mapping the voice actually uses.
 - The engine exports `le_synth_patch_count`, `le_synth_patch_info` and
   `le_synth_param_info`. Dart reads the catalogue from the engine once and
-  formats values from the returned kind and range, so the readout cannot drift
-  from the sound (the duplication between `engine_fx.c` and
-  `track_effect.dart` that D5 avoids). A Dart test compares the patch ids with
-  the l10n keys and art manifest.
+  formats values from the returned unit and range, so the readout cannot
+  drift from the sound. A Dart test compares the patch ids with the l10n keys
+  and the art manifest.
 - Names, descriptions and family labels are l10n strings keyed by the patch
   id; art is 19 PNGs in a new data-only package `packages/instrument_art`
   laid out like `fx_catalogue` (manifest with sha256, empty-on-missing
-  loader). The PNGs are rasterized once from the accepted `art()` drawings
-  (`instrument-catalogue.js:59-87`) and committed with the source file's hash
-  in the manifest; the app gains no SVG dependency.
-- Sessions store the patch **id string**, never an index, and parameters as
-  `0..100` numbers by family key, as the catalogue does.
+  loader), rasterized once from the accepted `art()` drawings
+  (`instrument-catalogue.js:59-87`); the app gains no SVG dependency.
+- Sessions and the working copy store the patch **id string**, never an
+  index (owner, 2026-10-06), and parameters as `0..100` numbers by family
+  key, as the catalogue does. A later sound-pack mechanism can add ids
+  without a schema change.
 - Where the prototype's display formula and its synthesis disagree (attack is
   shown as `0.08 + v/100 × 2.4 s` but synthesized as `0.008 + v/100 × 0.9 s`,
   `instrument-runtime.js:112`), the native mapping is the one both use.
+  Decay and release keep the prototype's display mapping, so `gGTXF`'s
+  "Decay 1.52 s" (Electric keys at 60) is unchanged; only attack readouts
+  differ from the prototype.
 
-### D6. "Unavailable sound" without sound packs
+### D6. Unavailable sounds (owner, 2026-10-06; review M7)
 
-All 19 patches are compiled into the engine, so nothing can be partly
-installed. A sound is unavailable only when a recalled session names a patch
-id this build does not define (a session from a newer version). Then the
-instrument keeps its definition, plays nothing, shows "Sound not in this
-version", and offers Choose another sound and Retry (Retry re-reads the
-catalogue). The pen's `hRKQL` shows "Install sound pack"; that control cannot
-be built honestly (`accepted-behavior.md:31-34`: no "placeholder sound packs", unknown capability stays unavailable). This is
-listed as question 1; the default stands until the owner answers, and the pen
-note must then be updated by the owner, since this plan never edits the pen.
+All 19 patches are compiled into the engine. A sound is unavailable when a
+definition names a patch id this build does not define. The cases that can
+actually happen (newer sessions are refused by the strict version check,
+`session.dart:756`, and by #1196):
+- the persisted `instruments` working copy after an appliance A/B (RAUC)
+  rollback to a build with fewer patches;
+- a same-schema session written by a build with a different patch table.
 
-### D7. Recall ownership (E7-6, instrument share)
+Then the instrument keeps its definition, routes and mappings (H4), its slot
+renders silence, and the page shows "Sound not available in this version"
+with **Choose another sound** only. Retry is not offered for it: the
+catalogue is compiled in, so a Retry could never succeed. **"Install sound
+pack" stays hidden** until a pack mechanism exists (owner). Retry is offered
+only for an audio-start failure (accepted 5.8: "A successful retry clears
+the failure"). Part 3b tests the rollback case.
+
+### D7. Recall ownership (E7-6, instrument share) and source identity
 
 | Field | Owner | Recall | New Loop (when built) |
 |---|---|---|---|
-| Instrument list: id, slot, name, patch id, 3 parameters | `InstrumentRepository` | restored | kept |
+| Instrument list: id, slot, name, patch id, 3 parameters | `InstrumentRepository`, through a `SettingsOwner` family `instruments` from Part 3b on | restored | kept |
 | MIDI enable, device id, channel, range, remaps | `InstrumentRepository` | restored | kept |
-| Computer keys enable and mappings | `InstrumentRepository` | restored | kept |
-| Instrument source routes: lane inputs, Hear live mode, live level, mute, outputs, input FX | existing `LooperRepository` source families (keyed by source int) | restored, as for physical inputs | kept |
-| Shared assignments that name an instrument (pedal, external, MIDI) | their existing owners | restored with them ("musical MIDI assignments", `:461-466`) | kept |
+| Computer keys enable and mappings (desktop builds) | `InstrumentRepository` | restored | kept |
+| Instrument source routes: lane inputs, Hear live mode, live level, pan, mute, outputs, input FX | existing `LooperRepository` source families (keyed by source int) | restored, as for physical inputs | kept |
+| Shared assignments that name an instrument (pedal, external, MIDI) | their existing owners, keyed by instrument id | restored with them ("musical MIDI assignments", `:461-466`) | kept |
+| Removed-instrument labels (tombstones) | `InstrumentRepository` | restored | kept |
 | MIDI device inventory, control device, Remote control enable, device names | appliance (`SettingsRepository`) | preserved | preserved |
-| Held notes, latches, sustain, expression, audition drafts | runtime only | never restored | released |
+| Held notes, latches, sustain, expression, audition drafts, the reduced voice limit | runtime only | never restored | released |
 
-The working copy persists through a new settings family `instruments` (one
-JSON key) registered with `SessionSettingsCoordinator`, so save, recall and
-rollback go through the #1159 transaction owner (rule 4). A recalled device
-that is not connected shows as disconnected; nothing asks for a port.
+- The working copy is written through the #1159 `SettingsOwner`
+  (`lib/looper/application/settings_owner.dart:112`) from Part 3b, so Part 5
+  only registers the family with `SessionSettingsCoordinator` rather than
+  re-homing a direct writer (rule 4).
+- **Per-slot outcomes, never a rolled-back recall (review H4).** Recall
+  applies each instrument slot on its own: an unknown patch id leaves that
+  slot silent with its definition and routes, and the recall continues and
+  reports which instrument needs a sound (rule 3). Only a failed write of
+  the working copy rolls back, as every #1159 family does.
+- **Targets name the instrument, not the slot (review M5).** Value targets
+  and actions that address an instrument source store its instrument id
+  (`{"ctl":"monitorVolume","instrument":"<id>"}` beside today's
+  `{"ctl":"monitorVolume","index":N}`, `control_value_target.dart:277-289`),
+  and the resolver maps the id to its current slot. A removed instrument's
+  bindings resolve to unavailable with Change control and Remove
+  (accepted 4.11, "never silently bind").
+- **Removed instruments keep their recorded labels (review M6).** Remove
+  clears the instrument's monitor preferences and its routes on tracks with
+  no material, keeps the routes on tracks whose lanes hold material from it,
+  and leaves a tombstone `{slot, name}`. `inputName` resolves a tombstoned
+  source to "Removed instrument (Electric keys)", the slot renders silence,
+  and the slot is not reused while any lane still routes to it, so no later
+  instrument can be recorded through an old route by accident. When all
+  eight slots are in use or tombstoned, Add instrument names the tracks that
+  still route a removed instrument and offers to clear those routes.
+- **The synth epoch (review M9).** The engine bumps `synth_epoch` in the
+  snapshot whenever the synth is re-initialised (configure, sample-rate
+  change, reopen). `InstrumentRepository` clears every latch, sustain
+  contributor token and pending release when the epoch changes, and the
+  pedal LEDs that show a latch go dark with it.
 
 ### D8. Device captures: one per device, shared by both consumers
 
@@ -440,104 +623,106 @@ reading only the selected device's session (`control_midi.dart:372`), so
 pedal and Learn behaviour does not change (rule 1); deciding whether other
 devices may also feed controls stays with #1040.
 
-### D9. New instruments
+### D9. New instruments and computer keys (owner, 2026-10-06; review M8)
 
-Controller enables start Off (`:366-367`). Hear live starts **On** at 75 %
-(the pen's ready state, `gGTXF` "Hear live … On", "Level 75%"), to outputs
-1-2 (the `InputMonitor` default mask `0x3`, `input_monitor.dart:55`): with Off
-a newly enabled keyboard is silent until the player finds a second control.
-The default computer mapping is the 13 rows A W S E D F T G Y H U J K →
-C3..C4 (`Uv25f`). Those keys are only routed to instruments while the
-Instruments page is showing, or while Computer keys is On and no text field
-has focus; when an instrument has Computer keys On, the Tracks shortcuts that
-collide (`tracks_commands.dart:175-360`) are not dispatched for those keys,
-and the page says so (rule 3).
+- Controller enables start Off (`:366-367`). Hear live starts **On** at 75 %
+  (the pen's ready state, `gGTXF`), to outputs 1-2 (the `InputMonitor`
+  default mask `0x3`, `input_monitor.dart:55`).
+- **Computer keys are a desktop-build feature.** On the appliance
+  (`isAppliance()`, `lib/update/appliance/appliance_env.dart:10`) the
+  "Computer keys" row, its editor and the key handler are hidden and the
+  working copy's computer mappings are kept untouched (a session moved to a
+  desktop build still has them). This departs from the pen's `gGTXF` and
+  `Uv25f` on the appliance only and is in the write-back list.
+- On desktop builds the default mapping is the 13 rows A W S E D F T G Y H U
+  J K → C3..C4 (`Uv25f`). The key handler is a `Focus.onKeyEvent` handler
+  like `TracksCommands.handleKey` (`tracks_view.dart:195`), not a
+  `HardwareKeyboard` one, so it sits above `TracksCommands` in the focus
+  chain and the claim is checked there: a key an instrument claims is not
+  also a Tracks shortcut, and the first time a claimed key is pressed on
+  Tracks a toast says which instrument has it.
+- Stuck-key rules (review M8): only key-down is gated (Computer keys On and
+  no text field focused); a key-up is always routed for a token that is
+  sounding; `KeyRepeatEvent` is ignored; focus loss, window deactivation and
+  app pause release every computer-key token. Each has a test.
 
 ### D10. Drums and the controllers they ignore
 
-Drum patches play the defined GM notes only (36 kick, 38 snare, 42 closed
-hat, 39 clap, plus 35, 40, 44 as aliases); other notes are shown as received
-and produce nothing. Drums ignore note-off and sustain, as the reference does
-(`instrument-runtime.js:146`, `:204`, `:213`).
+Drum patches play the defined GM notes only (35/36 kick, 38/40 snare, 39
+clap, 42/44 closed hat); other notes are shown as received and produce
+nothing. Drums ignore note-off and sustain, as the reference does
+(`instrument-runtime.js:146`, `:204`, `:213`). (Built in Part 1.)
+
+### D11. Note names
+
+Segno names MIDI note 60 C3 (the pen's convention: `t00H3H` labels 60 as C3,
+and `gGTXF`'s touch keyboard spans C3 to C5). The prototype's `noteName`
+called 60 C4; the pen wins. Numeric entry stays in MIDI numbers 0-127.
 
 ## 2. Native model
 
-### 2.1 Synth state (`synth_voice.h`, pure, no engine types)
+### 2.1 Synth (built in Part 1: `synth_voice.h`, pure, no engine types)
 
-- `le_synth`: `sr`, the sine table, `voices[LE_SYNTH_VOICES + LE_SYNTH_FADE_SLOTS]`,
-  a monotonically increasing start serial, per instrument `{patch, params[3],
-  sustain contributors, expression}`, counters `stolen`, `dropped`.
-- `le_synth_voice`: `instrument`, `origin` (u32), `note`, `velocity`, `state`
-  (free, held, released, sustained, fading), `serial`, oscillator phases,
-  filter state, envelope stage and level, LFO phase, noise seed.
-- `le_synth_note_on(s, inst, origin, note, vel)`: a held voice with the same
-  origin and instrument that is not sustained is cut first (the reference's
-  repeated-strike rule, `instrument-runtime.js:170`); sustained voices
-  keep ringing.
-- `le_synth_note_off(s, origin)`: every voice with that origin; sustained
-  instead of released while its instrument has a contributor.
-- `le_synth_render(s, float* const bus[], frames)`: zero, then each active
-  voice adds into its instrument's bus; per-voice coefficients once per block.
-- Family voice models follow `instrument-runtime.js:60-163`: Keys (two
-  partials, transient decay, brightness → cutoff, character → second partial),
-  Organs (three partials, rotary LFO at 5.8 Hz, release), Synths (attack,
-  release, cutoff with resonance 2.8 for lead), Bass (cutoff, punch → filter
-  resonance, release), Strings (bow attack, brightness, vibrato), Drums (kick
-  sine sweep 135→47 Hz or 180→38 Hz electronic; snare/hat/clap noise plus
-  tone, body → level), Percussion (hardness, decay, tremolo, the 5.4× partial
-  for bells). Oscillators: polyBLEP saw and square, triangle, table sine;
-  xorshift32 noise seeded from the start serial (deterministic).
+`le_synth` holds the pool (`voices[64]` plus `fades[64]`), per instrument
+`{patch, params[3]}`, the voice limit and the counters. API:
+`le_synth_init`, `le_synth_set_instrument` (a change fades that instrument in
+place), `le_synth_set_param`, `le_synth_note_on`, `le_synth_note_off`,
+`le_synth_cut` (in place, one instrument or all), `le_synth_set_voice_limit`,
+`le_synth_render`, and the counts. Part 2c adds per-instrument sustain
+contributor tables and expression (bend, modulation, pressure) to the same
+TU, with their own tests.
 
-### 2.2 Engine state (Part 2a and 2b)
+### 2.2 Engine state (Parts 2a and 2b)
 
-- `le_engine.inst[LE_MAX_INSTRUMENTS]`: `_Atomic int32_t a_patch` (-1 = no
-  instrument), `_Atomic uint32_t a_param_bits[3]`; the audio thread applies a
-  changed patch at block start and cuts that instrument's voices (an audition
-  or Apply never mixes two patches' voices).
+- `le_engine.inst[LE_MAX_INSTRUMENTS]`: the patch is applied by a command,
+  `LE_CMD_SET_INSTRUMENT` (96), at block start, and the snapshot reports the
+  applied patch (review L4: one mechanism); the three parameters are
+  `_Atomic uint32_t a_param_bits[3]`, read once per block (not commands, as
+  every continuous control is).
+- `LE_CMD_SET_VOICE_LIMIT` (97) and `LE_CMD_INSTRUMENT_RESET` (98, cut one
+  slot's voices and contributors when its definition is removed); 99 spare.
 - `inst_bus`: `LE_MAX_INSTRUMENTS × LE_COND_SCRATCH_FRAMES` floats allocated
   with `cond_buf` at configure; a larger block renders silence and counts
   `a_inst_fallback_blocks` (the conditioning precedent, `:6460-6467`).
-- `inst_ring`: SPSC `le_inst_event {u8 kind, slot, note, velocity; u32
-  origin; f32 value}`, 256 entries; kinds note-on, note-off, sustain-on,
-  sustain-off (origin = contributor token), retire (release voices and
-  sustain of one origin), expression.
-- `ports[LE_MAX_MIDI_PORTS = 8]`: `_Atomic uint32_t a_gen` and an SPSC ring of
-  `{u32 gen; u8 status, d1, d2}` (256). Producer: that port's OS MIDI thread;
-  consumer: the audio thread. Events whose `gen` is not the current one are
-  dropped.
-- `routes[2]` plus `_Atomic int32_t a_routes_live`, `a_routes_seen`: per
-  instrument `{midi_enabled, port, channel (0 = All), low, high, remap_count,
-  remaps[32] {port, channel, kind (note | cc), number, count, notes[8]}}`
-  (about 3 KB per slot).
-- Per block, after the command drain: apply patch changes, drain `inst_ring`
-  and each port ring (at most 256 events per ring per block; the rest wait one
-  block and are counted), render the buses, publish per-instrument peaks.
-- `le_source_sample(in_c, ch_in, inst_bus, f, s)` is the one accessor used by
-  capture (`:5986-5992`), the monitors (`:5395-5430`, loop bound widened to
-  `LE_MAX_SOURCES`), the sound trigger (`:5316-5337`) and the performance tap.
-  The tuner keeps device channels only (E8-14).
+- `inst_ring` (256, note-on and expression) and `inst_release_ring` (1024,
+  note-off, sustain-off, retire): SPSC `le_inst_event {u8 kind, slot, note,
+  velocity; u32 origin; f32 value}`, drained at block start, releases first.
+- `ports[LE_MAX_MIDI_PORTS = 8]` (Part 2c): `_Atomic uint32_t a_gen`,
+  `_Atomic int32_t a_overflow`, `_Atomic int32_t a_lost`, and an SPSC ring of
+  `{u32 gen; u8 status, d1, d2}` (256). Producer: that port's OS MIDI thread
+  through the quiescent sink; consumer: the audio thread.
+- `routes[2]` plus `_Atomic int32_t a_routes_live`, `a_routes_seen`
+  (Part 2c): per instrument `{midi_enabled, port, channel (0 = All), low,
+  high, remap_count, remaps[32] {port, channel, kind (note | cc), number,
+  count, notes[8]}}` (about 3 KB per slot).
+- Per block, after the command drain: apply patch changes and the voice
+  limit, handle port overflow and lost flags, drain the release lane, then
+  the port rings and the event ring (at most 256 events per ring per block),
+  render the buses, publish per-instrument peaks and `synth_epoch`.
+- `le_source_sample(in_c, ch_in, inst_bus, f, s)` (Part 2b) is the one
+  accessor used by capture (`:5986-5992`), the monitors (`:5395-5430`, loop
+  bound widened to `LE_MAX_SOURCES`), the sound trigger (`:5316-5337`) and
+  the performance tap. The tuner keeps device channels only (E8-14).
 
-### 2.3 MIDI routing on the audio thread
+### 2.3 MIDI routing on the audio thread (Part 2c)
 
 For each port event (status, d1, d2):
-1. A remap matches when its port, channel (or All), kind and number match;
-   matched remaps play their notes with origin `(port, ch, kind, number)` and
-   suppress the ordinary handling of that message for that instrument (an
-   explicit CC64 remap does not also sustain, `:384`).
-2. Otherwise, for each instrument with MIDI enabled whose port and channel
+1. Note Off, and CC64 below 64: by origin, across every instrument, before
+   any lookup (D4, M1).
+2. A remap matches when its port, channel (or All), kind and number match;
+   matched remaps play their notes with the event's origin and suppress the
+   ordinary handling of that message for that instrument (an explicit CC64
+   remap does not also sustain, `:384`).
+3. Otherwise, for each instrument with MIDI enabled whose port and channel
    match: Note On within `[low, high]` plays the incoming note and velocity;
-   Note Off releases by origin (always, even out of range, so a range edit
-   cannot strand a note); CC64 ≥ 64 adds the contributor `(port, ch)` and < 64
-   removes it; CC1 sets modulation; pitch bend sets bend (±2 semitones); channel
-   pressure sets pressure.
-3. Several instruments may match one message: that is a layer; channels and
+   CC64 ≥ 64 adds the contributor; CC1 sets modulation; pitch bend sets bend
+   (±2 semitones); channel pressure sets pressure.
+4. Several instruments may match one message: that is a layer; channels and
    ranges make splits.
 
-Port detach (device lost, capture closed, engine reconfigure) bumps the
-port's generation and posts a reset: voices whose origin names that port are
-cut, its sustain and expression contributions are removed, and queued events
-from the old generation are dropped. Reconnect gets a new generation, so
-nothing old replays (`:386-387`).
+A port detach, loss or overflow releases that port's voices and contributors
+as D4 describes; reconnect gets a new generation, so nothing old replays
+(`:386-387`).
 
 ## 3. Dart model
 
@@ -545,26 +730,28 @@ nothing old replays (`:386-387`).
   depends on `segno_engine`, `controller_repository`, `settings_repository`):
   - `Instrument {id (SlotIds.mint), slot, name, soundId, params (key → 0..100),
     midi: MidiNoteInput {enabled, deviceId, channel (null = All), low, high,
-    remaps}, keys: ComputerKeys {enabled, mappings}}`.
-  - `InstrumentSound` and `InstrumentParameter` read from the engine catalogue
-    (`le_synth_patch_info` / `le_synth_param_info`).
-  - `InstrumentRepository`: add (first free slot, default name from the
-    sound), rename, choose sound (audition draft → Apply/Cancel), set
-    parameter (draft or committed), set MIDI input, set computer mappings,
-    remove; compiles and publishes the routing table; resolves computer keys,
-    touch keys and action tokens to note events; keeps latch state per token;
-    attaches captures to ports; projects `InstrumentsState` (definitions,
-    per-instrument activity from the snapshot, port online state); persists
-    the `instruments` family; re-publishes everything after an engine
-    lifetime change (the reopen plan's replay path).
+    remaps}, keys: ComputerKeys {enabled, mappings}}`, plus tombstones
+    `{slot, name}` (D7).
+  - `InstrumentRepository`: add (first free, non-tombstoned slot; default name
+    from the sound), rename, choose sound (Listen auditions a candidate;
+    Apply or Add commits, Cancel restores), set parameter (draft or
+    committed), set MIDI input, set computer mappings, remove; compiles and
+    publishes the routing table (coalesced); resolves computer keys, touch
+    keys and action tokens to note events and keeps latch state per token;
+    keeps the pending-release queue (D4, H3); attaches captures to ports;
+    observes `synth_epoch` (M9) and the callback telemetry (D2 overload);
+    projects `InstrumentsState` (definitions, activity, port online state,
+    the voice limit); writes the `instruments` family through a
+    `SettingsOwner`; re-publishes everything after an engine lifetime
+    change.
 - `LooperRepository` stays the owner of everything keyed by source: it gains
-  `liveSources` on `LooperState` (device channels then instrument sources with
-  their names) and `retireSource(int)`, which clears that source's lane routes
-  on non-capturing tracks and resets its monitor, and refuses while a track
-  fed by it is pending or capturing.
+  `isSource(int)` (D3), `liveSources` on `LooperState` (device channels, then
+  instrument sources with their names, then tombstones as unavailable), and
+  `retireSource(int, {keepMaterialRoutes})`, which refuses while a track fed
+  by the source is pending or capturing.
 - Removal is an app-layer sequence (`lib/instruments/application/`): guard
-  through `LooperRepository`, then `retireSource`, then
-  `InstrumentRepository.remove`; a failed step leaves the instrument in place
+  through `LooperRepository`, `retireSource`, then `InstrumentRepository.remove`
+  (which leaves the tombstone); a failed step leaves the instrument in place
   and reports why (rule 2).
 
 ## 4. Parts
@@ -574,215 +761,223 @@ unfinished destination: nothing reaches the UI before Part 6. Production-line
 estimates exclude tests, bench tooling, generated bindings, assets and docs.
 Engine numbers come from the central ledger (main session, 2026-10-06):
 instruments own commands 96-111, perf-log facts 336-339 and result codes -14
-and -15. Part 2a takes commands 96-99 (`LE_CMD_SET_INSTRUMENT`,
-`LE_CMD_INSTRUMENT_CUT_SLOT` if a separate cut proves necessary, two spare),
-Part 2b takes 100-103 (port reset and route-flip acknowledgement); 104-111
-stay reserved. `LE_ERR_NO_INSTRUMENT = -14` refuses a route or monitor on an
-empty instrument slot; `LE_ERR_UNKNOWN_PATCH = -15` refuses a patch index the
-build does not define. Facts 336-339 are reserved for instrument note
-provenance in performance stems, which no part here logs yet. The Session
-schema number is assigned at landing (Part 5).
+and -15. Part 2a takes commands 96-99, Part 2c takes 100-103
+(`LE_CMD_ATTACH_MIDI_PORT`, `LE_CMD_DETACH_MIDI_PORT`, two spare); 104-111
+stay reserved. `LE_ERR_NO_INSTRUMENT = -14` is returned only by the
+single-command event API on an empty slot (H4); `LE_ERR_UNKNOWN_PATCH = -15`
+refuses a patch index the build does not define. Facts 336-339 are reserved
+for instrument note provenance in performance stems, which no part here
+logs. The Session schema number is assigned at landing (Part 5).
 
-### Part 1. Measured synthesis spike: voice TU, patch table, bench (about 550 production lines)
+### Part 1. Measured synthesis spike (built: PR #1224, branch `claude/instruments-1197-p1`)
 
-Goal: the 19 patches render correctly and deterministically in a pure TU, and
-the appliance cost of the voice pool is measured before any engine change.
-
-1. `src/core/synth_voice.{h,c}` (§2.1) and `src/core/synth_patch.c` (§D5),
-   pure C, no `_Atomic`, no engine types. Wire them where every explicitly
-   listed TU is wired: `src/CMakeLists.txt` (beside `restore_halfband.c`,
-   `:84-88`), `run_native_tests.sh:70-76`, `tool/build_test_lib.sh:40-45`, the
-   bench script, and the macOS forwarders in
-   `macos/segno_engine/Sources/segno_engine/` and `macos/Classes/`. Export
-   `le_synth_patch_count`, `le_synth_patch_info`, `le_synth_param_info` in
-   `segno_engine_api.h` (pure reads; they are the only API this part adds).
-   Run the PROGRESS C++17 shim repro with `synth_voice.h`.
-2. `src/test/test_engine_synth.h`, included from `test_engine_core.c` beside
-   `test_engine_read_head.h` (`:33545`). Literal oracles, each failing without
-   the code:
-   - the table: count 19; ids in order `piano, keys, clav, organ, reed, lead,
-     pad, pluck, bass, synth-bass, sub, strings, violin, cello, drums,
-     electronic-drums, marimba, vibes, bells`; families; defaults exactly the
-     catalogue's (`piano` 68/72/22 … `bells` 80/90/0);
-   - `sub`, note 69, velocity 127, 48 kHz, one second held: 880 ± 2 zero
-     crossings (440 Hz); note 81: 1760 ± 2;
-   - after note-off, the voice's release time from `le_synth_param_info`
-     (`sub` release 30 → 0.08 + 0.30 × 2.4 = 0.80 s) plus one block later every
-     sample of the bus is exactly `0.0f` and the active count is 0;
-   - velocity 64 peak within 1 % of 64/127 of the velocity-127 peak (`sub`);
-   - `drums` note 36: the first period measures 135 ± 4 Hz and the
-     zero crossings over 0.40-0.70 s measure 47 ± 2 Hz (default decay 40 gives
-     a 0.722 s hit whose 135 to 47 Hz sweep ends at half of it); a note-off changes nothing;
-     note 60 renders exact silence;
-   - pool: 33 note-ons on one instrument with a 32 pool leave 32 active and 1
-     fading; the oldest origin is the one stolen; after 3 ms that voice adds
-     exactly 0; with instrument A at 31 voices and B at 1, A's next note
-     steals A's oldest, and B's voice is untouched (its samples equal a solo
-     render of B);
-   - determinism: two `le_synth_init(…, seed)` instances render byte-identical
-     10 s of all 19 patches; every sample finite and |x| ≤ 1;
-   - parameters: `lead` at cutoff 0 rendering note 96 has under 10 % of the
-     RMS it has at cutoff 100;
-   - render at 1, 64, 127 and 512 frames per block produces the same samples
-     for the same events (block-size independence).
-3. `src/test/bench/bench_instruments.{c,sh}` on the `bench_pitch_time`
-   pattern (same flags, CPU-part detection, SCHED_FIFO 70 timing loops,
-   `--smoke`, `--assert`, `--proxy`, the Cortex-A76 refusal). Scenarios at 96
-   kHz / 64 frames over 60 s: every patch at 8 voices (to find the costliest);
-   the costliest patch and a mixed set at 8, 16, 32 and 64 voices; a 32-note
-   burst in one block; `baseline` (`le_engine_process`, 8 × 8 lanes, the
-   pitch/time scenario) for the sum. Reports p50 / p99 / max / mean in µs and
-   as % of the period, plus `sizeof(le_synth)`.
-4. CI: `native-tests` runs `bench_instruments.sh --smoke`; `native-bench-arm64`
-   also runs `bench_instruments.sh --budget-us 667 --assert --proxy` with
-   `shell: bash` (the pitch/time pipefail lesson) and uploads the binary.
-5. `docs/plan/2026-10-06-instruments-spike-findings.md`: tables, CPU model,
-   scheduling obtained, verdicts, and the chosen `LE_SYNTH_VOICES`.
+The pure voice pool and patch table, the three catalogue exports, the
+`bench_instruments` harness with the `joint` scenario, the CI smoke and arm64
+proxy steps, and `docs/plan/2026-10-06-instruments-spike-findings.md`. Revised
+for review M2 (one fade slot per pool voice, Cut in place, defined
+exhaustion), M3 (joint scenario, p99.9, late periods, the voice limit) and M4
+(the Pi run gates Part 2a). About 800 production lines, above the 700
+ceiling; the overrun is the review's additions to the pure TU and is
+recorded in the findings document.
 
 ```success-criteria
-GOAL: The 19 Segno patches render as specified in a pure, allocation-free C voice TU, and the cost of 8 to 64 voices is measured at 96 kHz / 64-frame periods on the arm64 proxy and, when the owner runs the artifact, on the appliance Pi 5.
+GOAL: The 19 Segno patches render as specified in a pure, allocation-free C voice TU, and the cost of 8 to 64 voices, a full-pool burst and the joint worst case with pitch/time is measured at 96 kHz / 64-frame periods on the arm64 proxy and, when the owner runs the artifact, on the appliance Pi 5.
 SUCCESS CRITERIA:
-- The patch table, frequencies, release-to-exact-silence, velocity, drum sweep, stealing order, fade-to-zero, cross-instrument isolation, determinism and block-size independence oracles pass in the plain, ASAN and telemetry-off builds. | verify: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
-- The bench builds and its smoke run passes; the FFI symbol check passes with the three catalogue exports; the C++17 shim repro compiles with synth_voice.h. | verify: bash packages/segno_engine/src/test/bench/bench_instruments.sh --smoke && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)" && manual: the docs/PROGRESS.md shim repro with synth_voice.h included
-- The arm64 proxy run passes the p50 thresholds (half of the Pi set) and publishes the artifact; the findings document records the tables. | verify: CI job native-bench-arm64 green on the PR head (bash packages/segno_engine/src/test/bench/bench_instruments.sh --budget-us 667 --assert --proxy on ubuntu-24.04-arm)
-- Dart gates unchanged. | verify: dart analyze --fatal-infos lib test packages && bloc lint lib test packages && /Users/Tomas/development/flutter/bin/flutter test
-- HARDWARE (does not gate this part; gates Part 6's merge): on the appliance Pi 5, app running, SCHED_FIFO, the 32-voice costliest-patch p99 is at most 15 % of the period, 64 voices at most 30 %, the 32-note burst block at most 20 %; LE_SYNTH_VOICES is set from the result. | verify: manual: copy the native-bench-arm64 artifact to the appliance and run bench_instruments.sh --budget-us 667 --assert; record the output in the findings document
+- The patch table, frequencies, release-to-exact-silence, velocity, drum sweep, stealing order, full-pool burst fades, Cut in place, voice limit, cross-instrument isolation, determinism, Nyquist and block-size oracles pass in the plain, ASAN and telemetry-off builds, and each behaviour's test fails with that behaviour mutated out. | verify: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
+- The bench builds and its smoke run passes; the pitch/time bench still does; the wiring script and the C++17 shim repro pass. | verify: bash packages/segno_engine/src/test/bench/bench_instruments.sh --smoke && bash packages/segno_engine/src/test/bench/bench_pitch_time.sh --smoke && bash packages/segno_engine/tool/test/run_macos_rnnoise_wiring_tests.sh && manual: the docs/PROGRESS.md shim repro with synth_voice.h included
+- The arm64 proxy run passes every p50 threshold (half of the Pi set) and publishes the artifact. | verify: CI job native-bench-arm64 green on the PR head (bench_instruments.sh --budget-us 667 --assert --proxy --seconds 20 on ubuntu-24.04-arm)
+- HARDWARE (gates Part 2a's merge): on the appliance Pi 5, app running, SCHED_FIFO, p99.9 at 32 voices ≤ 15 %, at 64 voices ≤ 30 %, both bursts ≤ 20 %, the joint worst case ≤ 75 % with no late period; run in the same session as the pitch/time bench. | verify: manual: the "Pi 5" steps of docs/plan/2026-10-06-instruments-spike-findings.md
 NON-GOALS:
 - Any engine-state, command, snapshot, Dart or UI change beyond the three pure catalogue exports.
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && bash packages/segno_engine/src/test/bench/bench_instruments.sh --smoke
 ```
 
-### Part 2a. Native instrument sources: slots, buses, the source space (about 650 production lines)
+### Part 2a. Native instrument slots, buses and the synth in the callback (about 550 production lines)
 
-§D3 and §2.2 without MIDI ports: `inst[]`, `inst_bus`, the synth inside
-`le_engine_process`, `le_source_sample` at capture, monitors, trigger and the
-performance tap; `LE_MAX_MONITORED_INPUTS = LE_MAX_SOURCES` (`segno_engine_api.h:670`);
-the snapshot arrays `input_peaks`, `monitor_peaks`, `input_trim` widened to
-`LE_MAX_SOURCES` (`:1329-1332`, instrument entries are the bus peak and trim
-1); `perf.input_mask` to `uint64_t` (`engine_private.h:1338`) with the arm
-config and the drain; validation at `LE_CMD_SET_LANE_INPUT` (`:3628-3643`),
-`le_apply_routing` (`:2650-2689`) and `LE_CMD_SET_MONITOR_INPUT`
-(`:3699-3711`) accepting a source when it is a device channel below
-`in_channels` or an instrument slot with a patch; the physical-only guard for
-the excluded and clip masks. API: `le_engine_set_instrument(e, slot,
-patch_index or -1, params[3])` (a command; the snapshot reports the applied
-patch), `le_engine_set_instrument_param(e, slot, index, value)` (atomic
-store, read once per block), `le_engine_instrument_event(e, const
-le_inst_event*)` (pushes `inst_ring`, returns the existing `LE_ERR_CAPACITY` when
-full and counts it). `handle_cut_sound` (`:2201`) moves every voice to a 3 ms fade and
-clears sustain and expression. Configure re-initializes the synth for the new
-rate. Snapshot: per instrument `{patch, active_voices, sustained, active_notes
-[4 × u32], bend, mod, pressure, peak, events_dropped}` and pool counters.
+`inst[]`, `inst_bus`, the synth inside `le_engine_process` after the command
+drain, `LE_CMD_SET_INSTRUMENT` (96), `LE_CMD_SET_VOICE_LIMIT` (97),
+`LE_CMD_INSTRUMENT_RESET` (98), the parameter atomics, `inst_ring` and the
+reserved `inst_release_ring` (D4, H3), `handle_cut_sound` (`:2201`) calling
+`le_synth_cut(-1)` and clearing contributors, the synth re-initialised on
+configure with `synth_epoch` bumped (M9), and the snapshot's per-instrument
+`{patch, active_voices, peak, events_dropped}`, `voice_limit`, `stolen`,
+`stolen_hard`, `synth_epoch`. API: `le_engine_set_instrument(e, slot,
+patch_index or -1)` (`LE_ERR_UNKNOWN_PATCH` for an index the build lacks),
+`le_engine_set_instrument_param`, `le_engine_set_voice_limit`,
+`le_engine_instrument_event` (note-on and expression: `LE_ERR_CAPACITY` when
+full, `LE_ERR_NO_INSTRUMENT` on an empty slot) and
+`le_engine_instrument_release` (the release lane; `LE_ERR_CAPACITY` only when
+1024 releases are queued, which the repository retries). No source routing
+yet: the buses are observable to native tests through the engine internals
+(`test_engine_core.c` already reads `engine_private.h`).
 
 Tests (`src/test/test_engine_instruments.h`, literal PCM through
 `le_engine_process`):
-- a `sub` instrument in slot 0, lane input 32, a 48 kHz one-second note
-  recorded on track 1: the lane PCM equals an offline `le_synth_render` of the
-  same events sample for sample;
-- monitor 32 off: output exactly zero while the capture above still matches
-  (sound-armed with Hear live Off, `:361-362`); monitor on at volume 0.5 and
-  pan 0: each output equals bus × 0.5 × the pan-law gain;
-- an armed track with trigger 1 and lane input 32 starts recording at the
-  first frame whose bus sample exceeds `LE_AUTO_RECORD_THRESHOLD`, frame-exact,
-  with a note-on in the middle of a block;
-- a slot with no patch: lane input 32 is refused (`-1`), monitor 32 refused;
-- Cut all sound: the bus is exactly zero from 3 ms after the cut block;
-- a patch change cuts that slot's voices and leaves slot 1's samples equal to
-  its solo render;
-- the existing suite stays byte-identical (sources below 32 unchanged);
-- the tuner never reads source 32;
+- slot 0 `sub`, a note through the event API at frame 0 of a block: the bus
+  equals an offline `le_synth_render` of the same events sample for sample,
+  at 48 kHz and blocks 1, 64, 127, 512;
+- a release pushed with the event ring full is applied at the next block
+  (release lane), and 300 note-ons into a 256-entry ring return
+  `LE_ERR_CAPACITY` for the excess while every queued release still lands;
+- Cut all sound: every bus exactly zero from 144 frames after the cut block,
+  and sustain contributors cleared;
+- voice limit 8 with 16 held: 8 sounding after one block, the oldest faded;
+- a patch change fades only that slot; slot 1's bus equals its solo render;
+- `LE_ERR_UNKNOWN_PATCH` for patch 19, `LE_ERR_NO_INSTRUMENT` for an event
+  to an empty slot;
+- configure at a new rate: voices gone, `synth_epoch` incremented;
 - a block above `LE_COND_SCRATCH_FRAMES` renders silence and counts one
   fallback;
-- the performance tap writes `input-32.pcm` with the monitored signal.
-The bench gains `engine_instruments`: baseline 8 × 8 plus 32 voices and eight
-instrument monitors.
+- the existing suite stays byte-identical.
+The bench's `joint` scenario switches to the integrated path.
 
 ```success-criteria
-GOAL: Up to eight native instruments render inside the callback into mono buses that are ordinary sources 32 to 39 for capture, sound-armed recording, Hear live, FX, outputs and the performance tap, with Cut all sound releasing them and sources below 32 unchanged.
+GOAL: Up to eight native instruments render inside the callback into mono buses, driven by checked commands and a release lane that never loses a release, with Cut, a voice limit and a synth epoch, before any routing exists.
 SUCCESS CRITERIA:
-- Literal PCM proves capture equals the offline render, monitor gating and gains, the frame-exact sound trigger, refusal of empty slots, Cut, patch-change isolation, tuner exclusion, the fallback counter and the performance stem, and every pre-existing test is byte-identical. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Literal PCM proves the bus equals the offline render at four block sizes, releases survive a full event ring, Cut silences in 144 frames, the voice limit, patch-change isolation, the refusals, the configure epoch and the fallback counter; every pre-existing test is byte-identical. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Sanitizer and telemetry-off builds pass; the C++17 shim repro compiles with every changed core header. | verify: EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh && manual: the docs/PROGRESS.md shim repro
-- Bindings regenerate and format cleanly, the symbol check passes, the Dart suites still pass with the widened snapshot arrays, and the proxy bench meets its engine_instruments threshold. | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart) && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)" && /Users/Tomas/development/flutter/bin/flutter test && CI job native-bench-arm64 green
-- HARDWARE (gates Part 6's merge): on the Pi 5 the engine_instruments p99 is at most 50 % of the period. | verify: manual: bench_instruments.sh --budget-us 667 --assert on the appliance; record it in the findings document
+- Bindings regenerate and format cleanly, the symbol check passes, the Dart suites pass, and the proxy bench's joint scenario passes through the integrated path. | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart) && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)" && /Users/Tomas/development/flutter/bin/flutter test && CI job native-bench-arm64 green
+- HARDWARE (merge gate, review M4): the Part 1 Pi verdicts all pass, recorded in the findings document. | verify: manual: the findings document's Pi 5 table shows every verdict passing
 NON-GOALS:
-- MIDI ports, routing tables, sustain contributors, Dart seam, UI.
+- Source routing, the mix transaction, MIDI ports, Dart seam, UI.
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
-### Part 2b. Native MIDI note routing, sustain and expression (about 550 production lines)
+### Part 2b. Native source space: routing, monitors, the mix transaction, perf and snapshot (about 600 production lines)
 
-§2.2 ports and routes, §2.3. `midi.c`: an engine sink on `le_midi`
-(`_Atomic` function pointer, context, port, generation) called from
-`le_midi_ring_push` before the Dart filter, wait-free; the parser gains
-`LE_MIDI_PITCH_BEND` (0xE0, 14-bit value) and `LE_MIDI_CHANNEL_PRESSURE`
-(0xD0), still filtered out of the Dart ring so `_parse` is unchanged; the
-Linux backend converts `SND_SEQ_EVENT_PITCHBEND` and `SND_SEQ_EVENT_CHANPRESS`
-(`midi_backend_linux.c:136-171`). API: `le_engine_attach_midi_input(e, m,
-port)`, `le_engine_detach_midi_input(e, port)`,
-`le_engine_set_instrument_routes(e, const le_inst_routes*)` (copies into the
-inactive slot once the audio thread acknowledged the previous flip; returns
-the existing `LE_ERR_NOT_READY` otherwise and the caller retries on the next snapshot).
-Sustain contributors in the synth: per instrument a 16-bit channel mask per
-port and a 32-bit token mask for Dart contributors; latch versus held is a
-Dart concern (Part 3b), the engine only sees contributor on and off.
+D3's native half (review H1, H4, L2). `LE_MAX_SOURCES = 40` and
+`le_source_is_physical`; `le_source_sample` at capture, monitors, the sound
+trigger and the performance tap; `LE_MAX_MONITORED_INPUTS = LE_MAX_SOURCES`
+(`segno_engine_api.h:670`) with the conditioning (`cond[]`) and clip arrays
+kept at `LE_MAX_CHANNELS`; `LE_CMD_SET_LANE_INPUT` (`:3628-3643`) and
+`LE_CMD_SET_MONITOR_INPUT` (`:3699-3709`) accepting `[32, 40)` whatever the
+slot holds (an empty slot is silence); the mix transaction: `monitor_mask` to
+`uint64_t`, `monitor_gain` and `monitor_pan` to `[LE_MAX_SOURCES]`,
+`input_trim` and `trim_mask` unchanged (physical), `le_mix_valid`'s lane and
+monitor bounds to `LE_MAX_SOURCES` (`engine_commands.c:1400-1446`), no
+per-slot or `in_channels` refusal (H4); the performance tap: `perf.input_mask`
+to `uint64_t` (`engine_private.h:1338`), `le_perf_arm` capturing every
+monitored instrument source with a patch as well as the device's inputs
+(`engine_commands.c:4588-4650`), `le_perf_free_unpublished`'s
+`monitors_done` mask to `uint64_t` (`:4579-4584`), and the drain's
+`input-%d.pcm` naming (`perf_drain.c:1545`) unchanged; the snapshot's
+`input_peaks`, `monitor_peaks` and `input_trim` to `LE_MAX_SOURCES`
+(`segno_engine_api.h:1329-1332`; instrument entries are the bus peak and
+trim 1), `output_peaks` unchanged. The Dart consumers of
+`kMaxMonitoredInputs` that mean physical inputs move to `kMaxChannels` so
+behaviour is unchanged: `monitor_cubit.dart:177-181`,
+`input_conditioning_cubit.dart:164`, `monitor_migration.dart:56-136`,
+`fx_chain_persistence.dart:168` (review L2).
 
-Tests (`test_engine_instruments.h` and `test_midi_core.c`), each failing
-without the change:
-- split: instrument A on channel 1, B on channel 10; note 60 on channel 1
-  sounds only A (B's bus exactly zero), note 36 on channel 10 only B;
-- layer: A and B both on All: one note-on gives one voice in each; one
-  note-off releases both;
-- range: A with low 48, high 72: notes 47 and 73 produce nothing, 48 and 72
-  sound; a note-off for 60 after the range moves to 61..72 still releases it;
-- remap: port 0, channel 10, note 36 → chord 48, 52, 55 on A: three voices
-  with that origin, one note-off releases all three; the ordinary note 36 is
-  not also played on A;
-- CC64 remapped to a chord does not sustain; unmapped CC64 does;
-- sustain from two contributors (CC64 on port 0 and a token): a released
-  voice keeps rendering until both are off, then releases; a repeated strike
-  under sustain gives two distinct voices;
-- pitch bend 16383 on a `sub` note 69: 880 × 2^(2/12) ± 2 zero crossings per
-  second; pressure 127 raises the peak by 25 % ± 1 %;
-- drums ignore CC64 and note-off;
-- detach port 0 with A held from port 0 and B held from a token: A's voice is
-  cut (exact zero 3 ms later), B rings; an event queued under the old
-  generation is dropped; a fresh note after re-attach plays;
-- the parser: 0xE0 and 0xD0 classify, and still do not reach the Dart ring;
-- ring overflow: 300 events in one block play the first 256 now, the rest in
-  the next block, and the counter reports 44 deferred;
-- routes publish: a second publish before the acknowledgement returns
-  `LE_ERR_NOT_READY`; under ASAN a publish racing the callback for 10⁵ blocks
-  never reads a half-written table (`test_engine_races.c` pattern).
+Tests (`test_engine_instruments.h`), each failing without the change:
+- lane input 32 on track 1 records the bus sample for sample (sound-armed
+  with Hear live Off: monitor 32 off, output exactly zero, capture still
+  equal);
+- monitor 32 at volume 0.5, pan 0: each output is bus × 0.5 × the pan-law
+  gain;
+- an armed track (trigger 1) on source 32 starts at the first frame whose
+  bus sample exceeds `LE_AUTO_RECORD_THRESHOLD`, with the note-on mid-block;
+- a mix transaction with lane input 33 (empty slot) and a monitor on 39 is
+  accepted whole and renders silence for 33 (H4); one with 40 is refused;
+  a stray physical route beyond `in_channels` is still accepted (rule 1);
+- `le_perf_arm` with source 32 monitored writes `input-32.pcm` with the
+  monitored signal; a source-32 entry in the free path under ASAN;
+- the tuner never reads source 32; the clip and conditioning masks never
+  carry bits at or above 32;
+- the snapshot's `input_peaks[32]` is the bus peak and `input_trim[32]` 1;
+- the existing suite stays byte-identical.
 
 ```success-criteria
-GOAL: MIDI from any attached capture reaches instrument voices on the audio thread without Dart, with channel splits, layers, ranges, chord remaps, sustain from independent contributors, bend, modulation and pressure, and a detach that silences only that device and never replays old events.
+GOAL: Instrument slots are ordinary sources 32 to 39 for capture, sound-armed recording, Hear live, the mix transaction, the performance stems and the snapshot, accepted whole in batches (an empty slot is silence), with physical-only stages unchanged.
 SUCCESS CRITERIA:
-- The split, layer, range, remap, CC64, contributor, bend, pressure, drum, detach and generation, overflow and publish oracles pass, including the race test under ASAN. | verify: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
+- Literal PCM proves capture, monitor gains, the frame-exact sound trigger, whole-batch acceptance with silence for empty slots, the stray-route rule, the instrument stem, tuner and mask exclusion and the snapshot entries; every pre-existing test is byte-identical. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Sanitizer and telemetry-off builds pass; shim repro. | verify: EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh && manual: the docs/PROGRESS.md shim repro
+- Bindings, symbols, and the Dart suites unchanged in behaviour (the physical loops now use kMaxChannels). | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart) && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)" && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages
+NON-GOALS:
+- MIDI ports, the Dart source predicate, UI.
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh
+```
+
+### Part 2c. Native MIDI note routing, sustain and expression (about 600 production lines)
+
+§2.3 and D4's MIDI rules. `midi.c`: the quiescent engine sink on `le_midi`
+(`_Atomic` sink and context, in-flight counter, detach-and-spin,
+`le_midi_close` performing it with a generation bump and the lost mark, H2);
+the parser gains `LE_MIDI_PITCH_BEND` (0xE0, 14-bit) and
+`LE_MIDI_CHANNEL_PRESSURE` (0xD0), still filtered out of the Dart ring so
+`_parse` is unchanged; the Linux backend converts `SND_SEQ_EVENT_PITCHBEND`
+and `SND_SEQ_EVENT_CHANPRESS` (`midi_backend_linux.c:136-171`) and handles
+`PORT_EXIT` / `PORT_UNSUBSCRIBED` for its source; the CoreMIDI backend
+(`midi_backend_apple.c:110-150` parses the raw packets) marks a removed source
+lost from its notify callback (L7). Engine: port rings with the overflow flag
+(H3), routes with the coalesced two-slot publish (L8), note-off and CC64-off
+first by origin (M1), origin encoding with the tag bit and the contributor
+table (L3), expression and sustain in the synth TU. API:
+`le_engine_attach_midi_input(e, m, port)` (command 100),
+`le_engine_detach_midi_input(e, port)` (101),
+`le_engine_set_instrument_routes(e, const le_inst_routes*)` (returns
+`LE_ERR_NOT_READY` until the audio thread acknowledged the previous flip;
+flips directly while the engine is stopped). The bench's joint scenario gains
+the routing cost: 8 ports × 256 events and 256 control events per block
+against 8 instruments × 32 remaps.
+
+Tests (`test_engine_instruments.h`, `test_midi_core.c`, and a new
+`src/test/test_midi_sink_races.c` built in the TSAN job), each failing
+without the change:
+- split, layer, range, remap (a chord with one origin, released together,
+  the ordinary note not also played), an explicit CC64 remap not sustaining;
+- note-off by origin after each of: MIDI disabled, channel changed, remap
+  removed, range moved, all while the note is held (M1);
+- sustain from two contributors: a released voice rings until both are off;
+  repeated strikes under sustain stay two voices; a seventeenth contributor
+  is refused and counted;
+- pitch bend 16383 on `sub` 69: 880 × 2^(2/12) ± 2 crossings per second;
+  pressure 127 raises the peak by 25 % ± 1 %; drums ignore CC64 and note-off;
+- overflow: 300 messages pushed into a 256-slot port ring between two blocks
+  set the flag; the next block releases every voice from that port (each
+  reaches exact zero by its release time) and counts one overflow; voices
+  from other ports and tokens are untouched (H3);
+- detach and loss: the port's voices released, a token's voice ringing, an
+  old-generation event dropped, a fresh note after re-attach played;
+- the races test, under `-fsanitize=thread`: a producer thread pushing
+  through the sink while the main thread detaches, re-attaches to another
+  port slot and destroys the engine, 10⁵ iterations, no report and no event
+  in the wrong ring (H2);
+- the routes publish: a second publish before the acknowledgement returns
+  `LE_ERR_NOT_READY`; a publish while stopped flips at once; under ASAN a
+  publish racing the callback for 10⁵ blocks never reads a half-written
+  table.
+
+```success-criteria
+GOAL: MIDI from any attached capture reaches instrument voices on the audio thread without Dart, with splits, layers, ranges, chord remaps, sustain from independent contributors, bend, modulation and pressure; releases are never lost to overflow, edits or detach, and a capture can never write into a detached or destroyed engine.
+SUCCESS CRITERIA:
+- The routing, release-by-origin, contributor, expression, overflow, detach and publish oracles pass in the plain, ASAN and telemetry-off builds. | verify: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
+- The sink race test passes under ThreadSanitizer. | verify: NATIVE_TESTS_ONLY=races EXTRA_CFLAGS='-fsanitize=thread -g' bash packages/segno_engine/src/test/run_native_tests.sh && CI job native-tests-tsan green
 - The Dart MIDI path is unchanged: midi_client and controller tests pass without edits. | verify: (cd packages/midi_client && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test
-- Bindings and symbols. | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart) && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)"
+- Bindings and symbols; the proxy bench's joint scenario with routing passes. | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart) && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)" && CI job native-bench-arm64 green
 NON-GOALS:
 - Dart seam, device registry, UI.
-VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && NATIVE_TESTS_ONLY=races EXTRA_CFLAGS='-fsanitize=thread -g' bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
 ### Part 3a. Dart engine seam (about 300 production lines)
 
 A new role `InstrumentHost` in `packages/segno_engine/lib/src/audio_engine.dart`
 beside `MonitorControl` (`:1125`) and composed into `AudioEngine` (`:1513`):
-`synthCatalogue()`, `setInstrument`, `setInstrumentParam`,
-`instrumentEvent`, `setInstrumentRoutes` (with the busy retry), and
+`synthCatalogue()`, `setInstrument`, `setInstrumentParam`, `setVoiceLimit`,
+`instrumentEvent`, `instrumentRelease`, `setInstrumentRoutes`, and
 `attachMidiInput(MidiCaptureHandle, port)` / `detachMidiInput(port)`, where
 `MidiCaptureHandle` wraps `Pointer<le_midi>` and is exposed by `MidiClient`
 (`midi_client` already depends on `segno_engine`). `EngineSnapshot` gains the
-instrument and pool fields and the widened per-source arrays.
-`NativeAudioEngine`, `MockAudioEngine` (a deterministic fake voice model: it
-records events and reports voices, no audio) and the four fakes
+instrument, pool, epoch and widened per-source fields. `NativeAudioEngine`,
+`MockAudioEngine` (a deterministic fake voice model: it records events and
+reports voices, no audio) and the four fakes
 (`test/helpers/fake_audio_engine.dart` and the package fakes).
 
 ```success-criteria
-GOAL: Repositories can read the synthesis catalogue, configure instrument slots, send note events, publish routes, attach captures and observe instrument activity through one role interface, with the native and mock engines and every fake implementing it.
+GOAL: Repositories can read the synthesis catalogue, configure instrument slots and the voice limit, send note events and releases, publish routes, attach captures and observe instrument activity and the synth epoch through one role interface, with the native and mock engines and every fake implementing it.
 SUCCESS CRITERIA:
-- A native-library test reads 19 patches and their parameter info, sets a slot, sends a note and sees one active voice in the snapshot, then attaches and detaches a capture handle. | verify: (cd packages/segno_engine && SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test)
+- A native-library test reads 19 patches and their parameter info, sets a slot, sends a note, sees one active voice, releases it, and attaches and detaches a capture handle. | verify: (cd packages/segno_engine && SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test)
 - Mock and fakes compile and pass; the app suite is unchanged. | verify: /Users/Tomas/development/flutter/bin/flutter test
 - Static gates. | verify: dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 NON-GOALS:
@@ -792,43 +987,78 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
 
 ### Part 3b. Instrument domain and repository (about 650 production lines)
 
-`packages/instrument_repository` (§3): models with JSON, the default A–K
-mapping, slot allocation, the routing-table compiler (definitions plus port
-assignments → `le_inst_routes`), the computer-key, touch-key and action-token
-note dispatch with latch state, audition drafts, the activity projection, the
-`instruments` settings key (JSON, through `SettingsRepository`), replay after
-an engine lifetime change, unknown sound ids kept as unavailable (D6), and
-`LooperRepository.liveSources` / `retireSource` with the removal guard. No
-UI, no shared assignments, no session schema yet. The working copy is written
-only after the engine acknowledged the change; a failed write restores the
-previous definition and reports it.
+`packages/instrument_repository` (§3): models with JSON, the desktop default
+A–K mapping, slot allocation with tombstones, the routing-table compiler
+(definitions plus port assignments → `le_inst_routes`, coalesced), the
+computer-key, touch-key and action-token note dispatch with latch state, the
+pending-release queue (H3), audition drafts, the activity projection, the
+`instruments` family written through a `SettingsOwner` from the start, the
+synth-epoch observer (M9), the overload policy (D2), replay after an engine
+lifetime change, unknown sound ids kept as unavailable (D6), and the removal
+sequence. The working copy is written only after the engine acknowledged the
+change; a failed write restores the previous definition and reports it.
 
-Tests: repository tests against `MockAudioEngine` and a fake
-`SettingsRepository` (add fills the first free slot and starts with both
-controller enables off and Hear live On; the ninth add is refused; Cancel
-after an audition sends the saved patch; a parameter draft is not written to
-the store; removal is refused while a track fed by source 32 is pending or
-capturing and clears its routes otherwise; an unknown sound id loads as
-unavailable and sends no patch; a latch token press-press releases; an engine
-reopen replays slots and routes), the compiler (splits, layers, remaps
-truncated to the native caps with a reported problem rather than silently),
-and one actual-native case (`packages/instrument_repository/test/instrument_native_test.dart`)
-that plays a note through the repository and sees it on the snapshot.
+Tests against `MockAudioEngine` and a fake `SettingsRepository`: add fills
+the first free non-tombstoned slot with both controller enables off and Hear
+live On; the ninth add is refused with the reason; Cancel after Listen sends
+the saved patch; a parameter draft is not written to the store; a release
+refused by a full lane is retried until accepted and never dropped; an epoch
+change clears latches and contributor tokens; a late period lowers the voice
+limit to three quarters (not below 8) and raises the toast; the persisted
+working copy naming a patch id the build lacks (the A/B rollback case, M7)
+loads as unavailable, sends no patch and keeps routes and mappings; an engine
+reopen replays slots and routes; the compiler builds splits, layers and
+remaps and reports truncation to the native caps as a problem rather than
+silently. One actual-native case
+(`packages/instrument_repository/test/instrument_native_test.dart`) plays a
+note through the repository and sees it on the snapshot.
 
 ```success-criteria
-GOAL: Instruments exist as persistent definitions with stable identities and slots, drive the engine through one repository, persist across restart, survive engine reopen, and can be removed only when no capture depends on them, still with no UI.
+GOAL: Instruments exist as persistent definitions with stable identities and slots, drive the engine through one repository that never loses a release, survive restart, engine reopen and an A/B rollback, and react to overload and resets, still with no UI.
 SUCCESS CRITERIA:
-- Repository, compiler and native cases pass. | verify: (cd packages/instrument_repository && SEGNO_ENGINE_LIB="$(bash ../segno_engine/tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test)
-- LooperRepository's liveSources and retireSource cases pass with the package suite. | verify: (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- Repository, compiler, overload, epoch, rollback and native cases pass. | verify: (cd packages/instrument_repository && SEGNO_ENGINE_LIB="$(bash ../segno_engine/tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test)
 - App suite and static gates. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 NON-GOALS:
-- Device captures, session schema, UI, shared actions.
+- The source predicate (Part 3c), device captures, session schema, UI, shared actions.
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
+```
+
+### Part 3c. Dart source space, instrument-keyed targets and removal labels (about 550 production lines)
+
+D3's Dart half (H1) and D7's identity rules (M5, M6):
+`LooperRepository.isSource(int)` replacing the 32-bounded checks at every
+site listed in D3 (`mix_settings.dart`, `mix_settings_snapshot.dart`,
+`_mixPayload`, `_sourceAvailable`, the assign, pair, trim, pan and
+monitor-chain guards, the sound-start check, session restore of monitors),
+with trim and pairs still physical; `InputSetup.pan` widened to
+`LE_MAX_SOURCES`; `liveSources`; `retireSource` keeping routes on tracks with
+material; tombstone labels through `inputName`; instrument-keyed value
+targets and actions in `control_value_target.dart` and their resolver, with
+a removed instrument's bindings unavailable (Change control, Remove).
+
+Tests: one per guard site (source 32 with an instrument accepted, 32 empty
+refused for a new route, 31 still bounded by the device, a stray physical
+route still accepted); the instrument's 75 % level reaches the mix payload; a
+sound-armed take on source 32 is admitted; pan on 32 round-trips; removing an
+instrument whose take is on track 2 keeps that route and names it "Removed
+instrument (Electric keys)", clears the route on empty track 3, and a new
+instrument does not get slot 0 while track 2 routes it; a binding on the
+removed instrument's level is unavailable, and one on a re-added instrument
+of the same sound is not silently rebound.
+
+```success-criteria
+GOAL: Every Dart bound on sources admits instrument slots through one predicate, instrument pan has an owner, targets follow the instrument rather than the slot, and removing an instrument keeps the labels of what was recorded from it without ever retargeting a route or binding.
+SUCCESS CRITERIA:
+- The per-site, payload, sound-armed, pan, removal-label, tombstone and binding cases pass. | verify: (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/control
+- Full suites and static gates. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
+NON-GOALS:
+- Screens (Part 6), session schema (Part 5).
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
 ### Part 4. One capture per device (about 350 production lines)
 
-§D8. `MidiDeviceRepository` keeps a map of device id → `MidiControllerSource`
+D8. `MidiDeviceRepository` keeps a map of device id → `MidiControllerSource`
 (one `MidiClient` each) for the selected control device plus every device an
 enabled instrument names (`InstrumentRepository` supplies that set). The
 hotplug poll (`midi_device_repository.dart:296-346`) opens and closes each;
@@ -836,7 +1066,7 @@ connection state becomes per device; `messages` carries the device id it
 already has in `MidiInputSession`. `InstrumentRepository` attaches each open
 capture to a port slot and detaches on loss, close and engine lifetime
 change. `ControlCubit` still filters to the selected device's session
-(`control_midi.dart:372`); its behaviour is unchanged. Refs #1040.
+(`control_midi.dart:372`). Refs #1040.
 
 Tests: two fake devices, A selected for control, B named by an instrument:
 both captured; B's messages never reach the decoders or Learn; A's do; B
@@ -844,6 +1074,8 @@ unplugged closes only B, detaches its port and marks the instrument
 disconnected; B back reopens and re-attaches with a new generation; selecting
 B for control does not open a second capture of B. The existing
 `midi_device_repository` suite passes unchanged in its single-device cases.
+(The physical two-device check moves to Part 7b, review M10: no UI can bind
+an instrument to a device before then.)
 
 ```success-criteria
 GOAL: Every device an instrument uses is captured at the same time as the control device, with one capture per device, independent loss and reconnect, and no change to what reaches pedal control and Learn.
@@ -851,69 +1083,69 @@ SUCCESS CRITERIA:
 - The two-device registry, isolation, loss and reconnect cases pass, and the existing single-device cases pass unchanged. | verify: (cd packages/midi_device_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/instrument_repository && /Users/Tomas/development/flutter/bin/flutter test)
 - ControlCubit's MIDI suite is unchanged and green. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
 - Static gates. | verify: dart analyze --fatal-infos lib test packages && bloc lint lib test packages
-- HARDWARE: on the appliance, a USB keyboard and the console board connected together: the board's footswitches still drive the pedal path while the keyboard plays an instrument; unplugging the keyboard silences only that instrument; plugging it back in needs a fresh key press. | verify: manual: appliance session with two USB MIDI devices, recorded in the PR
 NON-GOALS:
-- Letting non-selected devices feed controls (#1040's question), UI.
+- Letting non-selected devices feed controls (#1040's question), UI, hardware checks (Part 7b).
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages
 ```
 
-### Part 5. Session recall and the settings family (about 450 production lines)
+### Part 5. Session recall (about 500 production lines; before Parts 6 and 7a, review H5)
 
-§D7. `Session.instruments` (definitions as in §3); lane routes and monitors
-accept sources up to 39 (`session.dart:825` and the monitor parse); the
-schema version is the next free number at rebase, and its step is added to
-the #1196 chain (an absent list becomes empty and is recorded as defaulted).
-`session_mapping.dart` maps the list both ways; `SessionCubit.loadNamed`
-applies instruments before `applySession` routes lanes to their sources
-(`session_cubit.dart:231-385`), so a lane routed to 32 never meets an empty
-slot; `SessionSettingsCoordinator.capture` gains the family; recall replaces
-the working copy through the owner, with rollback on failure. A recalled
-device id that is not present shows disconnected; a recalled unknown sound is
-unavailable (D6). This part waits for #1196's chain to land (the owner's
-2026-10-06 rule that every schema bump adds its step).
+D7. `Session.instruments` (definitions and tombstones as in §3); lane routes
+and monitors accept sources up to 39 (`session.dart:825` and the monitor
+parse; `looper_repository.dart:3817` through `isSource`); the schema version
+is assigned at landing, and its step is added to the #1196 chain (an absent
+list becomes empty and is recorded as defaulted). `session_mapping.dart` maps
+the list both ways; `SessionCubit.loadNamed` applies instruments before
+`applySession` routes lanes (`session_cubit.dart:231-385`), each slot on its
+own (H4); `SessionSettingsCoordinator.capture` registers the `instruments`
+family. A recalled device id that is not present shows disconnected; a
+recalled unknown sound is unavailable (D6). This part waits for #1196's
+chain, and Parts 6 and 7a wait for this part, so no build can save a route to
+an instrument that the schema cannot read back.
 
-Tests: round trip of every instrument field; a session without instruments
-from the previous version migrates through the chain with the field listed as
-defaulted; a lane on source 33 and a monitor on 33 round-trip; recall of a
-session with two instruments into a rig with three leaves two and their
-routes; a failed write during recall leaves the previous instruments and
-reports it; held notes are never restored (the mock engine sees no note
-event after recall); the existing fixture round trips stay byte-identical
-apart from the version and the new field.
+Tests: round trip of every instrument and tombstone field; a session without
+instruments from the previous version migrates through the chain with the
+field listed as defaulted; a lane and a monitor on source 33 round-trip;
+recall of a session with two instruments into a rig with three leaves two;
+recall of a session naming an unknown patch completes, leaves that slot
+silent with its routes and reports it (H4); a failed working-copy write
+during recall restores the previous instruments; no note event follows a
+recall (the mock engine sees none); the existing fixture round trips stay
+byte-identical apart from the version and the new field.
 
 ```success-criteria
-GOAL: Saved sessions restore instrument definitions, mappings and routes, appliance-level MIDI state is untouched by recall, older sessions migrate through the chain, and a failed recall leaves the previous setup.
+GOAL: Saved sessions restore instrument definitions, tombstones, mappings and routes slot by slot, accept sources 32-39 everywhere a route is stored, migrate older sessions through the chain, and never roll back a whole recall for one unavailable sound.
 SUCCESS CRITERIA:
-- Session round trips, the migration step, recall with fewer instruments, rollback and no-replay cases pass. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/session
+- Session round trips, the migration step, per-slot recall, rollback and no-replay cases pass. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/session
 - Full suites and static gates. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 NON-GOALS:
-- New Loop (not built; §D7 states its rule), UI.
+- New Loop (not built; D7 states its rule), UI.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
 ### Part 6. Instrument sources in routing, FX and Mixer; Tuner exclusion (about 400 production lines)
 
-E8-14 and the routing half of E8-7, matching `s0zlm` and `oegcz`: every site
-in "Input lists" above reads `LooperState.liveSources` instead of
-`0..inputChannels`; instrument cards show "Instrument" where a port number
-shows (`audio-routing-study.js:16-17`); `inputName` resolves sources 32-39 to
-the instrument's name; Input setup lists device channels only (trim and
-pairing do not apply); the Tuner keeps device channels only. Recording a
-source is locked while armed or capturing exactly as for jacks. Instruments
-are not reachable from here until Part 7a adds the page, so in this part
-sources appear only for instruments created by a recalled session or the
-working copy (both from Parts 3b and 5); with none, every screen is as today.
+E8-14 and the screen half of E8-7, matching `s0zlm` and `oegcz`, and the
+variants `MoriR` (18 recording inputs), `sTYRr` (18 live inputs), `r47I8`
+(Recording locked) and `mf0fR` (Auto monitoring), whose goldens gain
+instrument cards: every input list reads `LooperState.liveSources`; instrument
+cards show "Instrument" where a port number shows
+(`audio-routing-study.js:16-17`); tombstones show as unavailable and
+removable; `inputName` resolves sources 32-39; Input setup lists device
+channels only; the Tuner keeps device channels only; recording a source is
+locked while armed or capturing exactly as for jacks. With no instrument,
+every screen is as today.
 
-Tests: widget and cubit tests for each of the eight sites with one instrument
-present and absent; golden updates for the routing tabs with an instrument;
-the Tuner list unchanged with an instrument present.
+Tests: widget and cubit tests for each site with one instrument present and
+absent and with a tombstone; goldens for the six routing screens, including
+the 18-input layouts with eight instruments at console size; the Tuner list
+unchanged with an instrument present.
 
 ```success-criteria
 GOAL: Instruments appear beside physical inputs wherever a live source is chosen, routed, monitored, mixed or given FX, never in Input setup or the Tuner, and every screen is unchanged when no instrument exists.
 SUCCESS CRITERIA:
-- The site tests, goldens and the unchanged-without-instruments cases pass. | verify: /Users/Tomas/development/flutter/bin/flutter test
+- The site tests, goldens (including 18 inputs plus 8 instruments) and the unchanged-without-instruments cases pass. | verify: /Users/Tomas/development/flutter/bin/flutter test
 - Static gates. | verify: dart analyze --fatal-infos lib test packages && bloc lint lib test packages
-- HARDWARE (merge gate for this part, the first that can expose instruments): the Part 1 and Part 2a Pi thresholds have been met and recorded in the findings document. | verify: manual: the findings document's Pi 5 table shows both verdicts passing
 NON-GOALS:
 - The Instruments page, controller editors, shared actions.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
@@ -927,36 +1159,39 @@ beside the names action (`audio_routing_page.dart:105-109`); the page has the
 instrument strip, Add instrument, the selected instrument's sound card with
 its three parameter sliders (double tap resets to the patch default,
 `accepted-behavior.md:87`), rename, remove (confirmation, the capture guard's
-reason on refusal, last removal leaves the empty Add instrument state), the
-touch keyboard or pads (octave paging changes the view only), "Played by"
-summary rows (toggles; the MIDI and Computer rows open Part 7b's editors, so
-in this part they show the summary only), the Live sound panel (Hear live,
-Level, Outputs, Effects, Recording inputs links into the existing routing and
-FX pages for source `32 + slot`), and the feedback line: active notes,
-Sustain, and the silent reasons in the reference's order
-(`virtual-instruments.js`, `feedback`): audio start failure, sound
-unavailable, Live monitoring off, Muted in Mixer, No audible output, Live
-monitoring waiting (Auto), No controller assigned, device disconnected. The
-sound dialog (`hSy26`) lists the seven families and their patches with art,
-auditions on selection, and commits on Apply or Add instrument; Cancel
-restores. The unavailable state (`hRKQL`) offers Retry and Choose another
-sound (D6). Art comes from `packages/instrument_art` (assets only, not
-counted). l10n strings for names, descriptions, families and parameter labels
-in every ARB.
+reason on refusal, the tombstone notice when recorded material keeps its
+label, the empty Add instrument state after the last), the touch keyboard or
+pads (octave paging changes the view only; C3 = 60, D11), the "Played by"
+summary rows (MIDI, and Computer keys on desktop builds only, D9), the Live
+sound panel (Hear live, Level, Outputs, Effects, Recording inputs), the
+reduced-polyphony line with Restore (D2), and the feedback line: active
+notes, Sustain, and the silent reasons in the reference's order
+(`virtual-instruments.js`, `feedback`): audio start failure (with **Retry**,
+the only Retry on the page, D6), sound not available in this version, Live
+monitoring off, Muted in Mixer, No audible output, Live monitoring waiting
+(Auto), No controller assigned, device disconnected. The sound dialog
+(`hSy26`) lists the seven families and their patches with art; selecting a
+sound only selects it, the **Listen** button auditions it (the pen's control,
+review L6), and Apply or Add instrument commits, Cancel restores. The
+unavailable state (`hRKQL`) offers Choose another sound only; "Install sound
+pack" stays hidden (owner). Art comes from `packages/instrument_art`. l10n in
+every ARB.
 
-Tests: cubit sequences (add, audition, Cancel restores, Apply commits, draft
-parameter not saved, remove refused while capturing, last removal) and
-widget/golden tests for the four screens at the console size, plus the
-silent-reason ordering for each cause.
+Tests: cubit sequences (add, Listen, Cancel restores, Apply commits, a draft
+parameter not saved, remove refused while capturing, removal with a
+tombstone, last removal, Retry after an audio-start failure clears it, no
+Retry on an unavailable sound, Restore of a reduced limit); widget and golden
+tests for the four screens at console size; the Computer keys row absent when
+`isAppliance()` is true; the silent-reason ordering for each cause.
 
 ```success-criteria
-GOAL: A player can add, audition, choose, adjust, rename and remove instruments, play them by touch, see why one is silent, and reach its live routing and effects, matching pen screens gGTXF, hSy26, hRKQL and B5PEqI.
+GOAL: A player can add, audition with Listen, choose, adjust, rename and remove instruments, play them by touch, see why one is silent, and reach its live routing and effects, matching pen screens gGTXF, hSy26, hRKQL and B5PEqI with the recorded departures.
 SUCCESS CRITERIA:
-- Cubit, widget and golden tests for the four screens and the reason order pass. | verify: /Users/Tomas/development/flutter/bin/flutter test test/instruments
+- Cubit, widget and golden tests for the four screens, the appliance variant and the reason order pass. | verify: /Users/Tomas/development/flutter/bin/flutter test test/instruments
 - Full suites, static gates and the ARB coverage. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
-- HARDWARE: on the appliance, an instrument recorded through normal Tracks Record/Play with Hear live Off captures audio; touch-keyboard latency and the 19 patches are checked by ear at 96 kHz / 64 frames with no late periods in the callback telemetry during a 32-note chord. | verify: manual: appliance session per docs/PROGRESS.md, callback telemetry read through le_engine_get_callback_telemetry, recorded in the PR
+- HARDWARE: on the appliance, an instrument recorded through normal Tracks Record/Play with Hear live Off captures audio, and the 19 patches are checked by ear at 96 kHz / 64 frames from the touch keyboard. | verify: manual: appliance session per docs/PROGRESS.md, recorded in the PR
 NON-GOALS:
-- MIDI and computer-key editors, Learn, shared assignments.
+- MIDI and computer-key editors, Learn, shared assignments, MIDI hardware checks (Part 7b).
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
@@ -966,25 +1201,26 @@ Matching `kole9`, `Uv25f` and `t00H3H`: the MIDI input sheet (device from the
 shared inventory with online state, channel All or 1-16, lowest and highest
 note, encoder entry on each field, "Incoming pitch and velocity pass through
 the full selected range", Note & pad remapping list with Learn source and
-target notes), the Computer key mappings sheet (editable and removable rows,
-Add mapping), the mapping editor (Learn the key, choose notes by playing MIDI,
-numeric entry or the touch keyboard, View C3–C5 paging). Outer Done/Cancel is
+target notes), the Computer key mappings sheet and the mapping editor
+(desktop builds only, D9), with Learn of the key and notes by playing MIDI,
+numeric entry or the touch keyboard, View C3–C5 paging. Outer Done/Cancel is
 atomic and Cancel discards nested edits (`:373-376`). Learn reads the
-device's messages from the registry (Part 4). Computer keys reach
-`InstrumentRepository` from one app-level `HardwareKeyboard` handler under
-the D9 rule; while it claims a key, `TracksCommands` does not dispatch it.
+device's messages from the registry (Part 4). The computer-key handler and
+its stuck-key rules (D9, M8).
 
 Tests: sheet cubits (Cancel discards a remap added inside, Done publishes one
-compiled table, out-of-range fields clamp with the encoder), Learn of a pad
-note and of a three-note chord, the default 13 rows, the key-claim rule
-against `TracksCommands`, goldens for the three screens.
+compiled table, out-of-range fields clamp with the encoder); Learn of a pad
+note and of a three-note chord; the default 13 rows; the key-claim rule
+against `TracksCommands` and its toast; key-down gating, key-up always
+routed, repeat ignored, release on focus loss and app pause; the editors
+absent on the appliance; goldens for the three screens.
 
 ```success-criteria
-GOAL: Each instrument's MIDI device, channel, range and pad remaps and its computer key mappings can be edited, learned and cancelled as one draft, matching pen screens kole9, Uv25f and t00H3H.
+GOAL: Each instrument's MIDI device, channel, range and pad remaps, and on desktop builds its computer key mappings, can be edited, learned and cancelled as one draft, matching pen screens kole9, Uv25f and t00H3H, with no stuck computer-key notes.
 SUCCESS CRITERIA:
-- Sheet, Learn, default-mapping, key-claim and golden tests pass. | verify: /Users/Tomas/development/flutter/bin/flutter test test/instruments
-- Full suites and static gates. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
-- HARDWARE: a 61-key controller plays all its keys at full pitch range on one instrument while its pads play a remapped drum instrument on another channel; sustain pedal Held; bend, modulation and pressure audible; unplug and replug never resumes a held note. | verify: manual: appliance session with a USB keyboard controller with pads, recorded in the PR
+- Sheet, Learn, default-mapping, key-claim, stuck-key and golden tests pass. | verify: /Users/Tomas/development/flutter/bin/flutter test test/instruments
+- Full suites and static gates. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages
+- HARDWARE (review M10, moved here from Parts 4 and 7a): on the appliance, a 61-key controller with pads plays all its keys on one instrument while its pads play a remapped drum instrument on another channel, a 32-note chord plays with no late period in the callback telemetry, sustain is Held, bend, modulation and pressure are audible; with the console board connected too, its footswitches still drive the pedal path; unplugging the keyboard stops its notes within a block and silences only its instruments; plugging it back needs a fresh key press. | verify: manual: appliance session with a USB keyboard controller with pads plus the console board, callback telemetry read through le_engine_get_callback_telemetry, recorded in the PR
 NON-GOALS:
 - Shared pedal, external and MIDI assignments.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages
@@ -992,13 +1228,13 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
 
 ### Part 8. Shared note, chord, sustain and parameter assignments (about 600 production lines)
 
-E8-13 and the instrument share of E6-12, matching `J2uTq`: `InstrumentNoteAction`
-(`instrument:<id>:notes:<n,n,…>:<held|latch>`) and `InstrumentSustainAction`
-(`instrument:<id>:sustain:<held|latch>`) in the action catalogue
-(`control_action.dart:452-484`, parsed without throwing, unknown instrument →
-`UnavailableAction` with Change control and Remove); `InstrumentParamTarget`
-(`{"ctl":"instrument","id":…,"param":…}`) in `control_value_target.dart`
-mapping 0..1 to the patch range, one default for every surface; dispatch from
+E8-13 and the instrument share of E6-12, matching `J2uTq`:
+`InstrumentNoteAction` (`instrument:<id>:notes:<n,n,…>:<held|latch>`) and
+`InstrumentSustainAction` (`instrument:<id>:sustain:<held|latch>`) in the
+action catalogue (`control_action.dart:452-484`, parsed without throwing,
+unknown instrument → `UnavailableAction` with Change control and Remove);
+`InstrumentParamTarget` (`{"ctl":"instrument","id":…,"param":…}`) mapping
+0..1 to the patch range with one default for every surface; dispatch from
 `ControlCubit._runAction` to `InstrumentRepository` with the binding's id as
 the origin token, so retiring or changing a binding retires its latch and its
 voices; validation that a held instrument Press requires Hold=None and a held
@@ -1006,18 +1242,20 @@ MIDI action requires a momentary Note or CC on Press, with the conflict
 explained and Save disabled (`:335-337`); the picker groups gain
 "Instruments"; the page's Pedals & controls panel lists the actual bindings
 that name this instrument and links to Built-in pedals, External pedals and
-MIDI controls; Cut all sound also clears latches.
+MIDI controls; Cut all sound and a synth epoch change clear latches and
+their LEDs.
 
 Tests: parse and round trip of the keys and target; the two validation rules
 on each editor; a latched note from a pedal held across a selection change; a
-binding removed while latched releases its voices; an expression pedal on
-`cutoff` and the slider share range and default; the panel lists exactly the
-bindings naming the instrument; Cut clears latches.
+binding removed while latched releases its voices; an epoch change turns a
+latch LED off; an expression pedal on `cutoff` and the slider share range and
+default; the panel lists exactly the bindings naming the instrument; Cut
+clears latches.
 
 ```success-criteria
 GOAL: Notes, chords, sustain and family parameters of a chosen instrument are assignable from built-in pedals, external pedals and MIDI controls through the shared catalogue, with Held/Latch semantics, the two validation rules, missing-target repair and one parameter range everywhere, matching pen screen J2uTq.
 SUCCESS CRITERIA:
-- Catalogue, validation, latch, retirement, shared-range and panel tests pass. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/instruments
+- Catalogue, validation, latch, retirement, epoch, shared-range and panel tests pass. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control test/instruments
 - Full suites, Bloc lint and analysis. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 - Pedal link contract unchanged. | verify: bash firmware/test/run_tests.sh
 - HARDWARE: a built-in pedal latches a chord and an external dual switch holds sustain on the appliance; the LEDs follow the latch. | verify: manual: appliance session, recorded in the PR
@@ -1029,79 +1267,129 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
 ### Dependencies and sequencing
 
 ```
-Part 1 (spike; proxy gate in CI, Pi artifact for the owner)
- └─ Part 2a sources and buses ── Part 2b MIDI routing
-                                    └─ Part 3a Dart seam
-                                          └─ Part 3b domain + repository
-                                                ├─ Part 4 per-device captures
-                                                ├─ Part 5 session recall (after #1196's chain)
-                                                ├─ Part 6 routing/FX/Mixer/Tuner (merge gated by the Pi numbers)
-                                                │     └─ Part 7a Instruments page
-                                                │           ├─ Part 7b controller editors (after Part 4)
-                                                │           └─ Part 8 shared assignments
+Part 1 (built; proxy gate in CI; the owner's Pi run gates Part 2a)
+ └─ Part 2a slots, buses, synth in the callback
+      └─ Part 2b source space, mix transaction, perf, snapshot
+           └─ Part 2c MIDI routing
+                └─ Part 3a Dart seam
+                     └─ Part 3b domain + repository
+                          ├─ Part 3c Dart source space + targets + labels
+                          │    └─ Part 5 session recall (after #1196's chain)
+                          │         └─ Part 6 routing/FX/Mixer/Tuner screens
+                          │              └─ Part 7a Instruments page
+                          │                   ├─ Part 7b editors (after Part 4)
+                          │                   └─ Part 8 shared assignments
+                          └─ Part 4 per-device captures
 ```
 
-Part 2a widens arrays that the pitch/time, Peel, Reverse and Multiply/Divide
-parts do not touch, but it edits `mix_tracks_frame`'s capture read and
-`process_input_frame`, so it rebases after whichever of those has landed.
-Part 5's schema number is the next free one at rebase (after Peel 12 and
-Reverse 13 if they land first). Each part runs the normal, ASAN and
-telemetry-off native suites where native code changes, `dart analyze
---fatal-infos`, Bloc lint, and independent architecture, test-quality and
-adversarial reviews before the human merge gate. Stop for review on: a second
-real-time thread, any allocation or lock in render, MIDI through Dart on the
-note path, a second routing model for instrument sources, a second capture of
-one device, or a Dart-side copy of the patch table.
+Part 2b edits `mix_tracks_frame`'s capture read, `process_input_frame`,
+`le_mix_settings` and the perf arm, so it rebases after whichever of the
+pitch/time, Peel, Reverse and Multiply/Divide parts that touch those have
+landed. Each part runs the normal, ASAN and telemetry-off native suites where
+native code changes, `dart analyze --fatal-infos`, Bloc lint, and independent
+architecture, test-quality and adversarial reviews before the human merge
+gate. Stop for review on: a second real-time thread, any allocation or lock
+in render, MIDI through Dart on the note path, a second routing model for
+instrument sources, a second capture of one device, a Dart-side copy of the
+patch table, a dropped release, or a per-slot refusal in a batch.
 
 ## 5. Decisions taken under the standing rules
 
 1. C voices inside the callback (D1); measured before integration. Rule 2:
    one RT thread, no added latency.
-2. A global voice pool of 32 (64 if the Pi allows), eight instruments,
-   same-instrument-first stealing with a 3 ms fade (D2). Rule 2.
-3. Instruments are fixed sources 32-39 in the existing input space, mono (D3).
-   Rule 4: one routing, monitoring, FX and capture model.
-4. MIDI notes are routed on the audio thread from per-port rings; Dart sends
-   only computer keys, touch keys and actions; releases follow the voice's
-   origin (D4). Rules 2 and 3.
-5. The patch table is C; Dart reads it and owns names and art; sessions store
+2. A pool of 64 slots with a default limit of 32 (64 if the Pi allows),
+   eight instruments, same-instrument-first stealing with one fade slot per
+   pool voice; Cut and patch changes fade in place (D2). Rule 2.
+3. A joint budget with pitch/time on p99.9 and no late period, a runtime
+   voice limit lowered on measured late periods with a toast, and the Pi
+   gate on Part 2a (D2). Rules 2 and 3.
+4. Instruments are fixed sources 32-39 in the existing input space, mono,
+   with the mix transaction, the Dart bounds and the perf tap widened
+   explicitly; pan lives in `InputSetup.pan` (D3). Rule 4.
+5. Batches accept any source and render silence for an empty slot; refusals
+   live in the repository and the UI (D3, H4). Rules 1 and 2.
+6. MIDI notes are routed on the audio thread; note-offs are handled first by
+   origin; releases are never dropped (an overflow releases its port, a
+   reserved release lane carries Dart's); a quiescent sink protects detach
+   and destroy; native loss detection (D4). Rule 2.
+7. The patch table is C; Dart reads it and owns names and art; sessions store
    ids (D5). Rule 4.
-6. No sound packs: unavailable means "not in this version", with Retry and
-   Choose another (D6, question 1). Rules 2 and 3.
-7. Recall ownership as tabled in D7; the working copy is a #1159 family.
-   Rule 4.
-8. One capture per device, control path unchanged (D8). Rules 1 and 4.
-9. New instruments: controllers Off, Hear live On at 75 %, default A–K rows;
-   claimed keys are not also Tracks shortcuts (D9). Rule 3.
-10. Drums play GM 35-44 and ignore note-off and sustain (D10).
-11. Engine reopen and reconfigure drop held notes, latches and sustain and
+8. Unavailable sounds: Choose another sound only; Install hidden; Retry only
+   for audio-start failure (D6, owner). Rule 3.
+9. Recall ownership as tabled in D7, through a `SettingsOwner` from Part 3b;
+   per-slot outcomes; instrument-keyed targets; tombstones keep recorded
+   labels and block slot reuse; a synth epoch resets latches (D7). Rules 1,
+   3 and 5.
+10. One capture per device, control path unchanged (D8). Rules 1 and 4.
+11. New instruments: controllers Off, Hear live On at 75 %; computer keys on
+    desktop builds only, with the stuck-key rules (D9, owner). Rule 3.
+12. Drums play GM 35-44 and ignore note-off and sustain (D10); C3 = 60 (D11).
+13. Engine reopen and reconfigure drop held notes, latches and sustain and
     replay definitions and routes; nothing held is restored. Rule 5.
-12. Removal keeps recorded audio and clears future routes; there is no
-    per-take source label to keep because none is shown today. Rule 3.
 
-## 6. Genuine product-direction questions (defaults above stand until the owner says otherwise)
+## 6. Pen write-back list (for the owner; this plan never edits the pen)
 
-1. **Sound packs.** The pen's unavailable-sound screen (`hRKQL`) offers
-   "Install sound pack", and the prototype splits the catalogue into
-   `segno-core` and `segno-mallets` packs. With synthesis compiled into the
-   engine nothing can be installed. Default taken: Retry and Choose another
-   sound, with the reason "not in this version". Should there be installable
-   sound content later (for example sampled sounds), or should the pen drop
-   the Install action?
-2. **Computer keys on the appliance.** The console has no computer keyboard
-   unless one is plugged into USB, and several default keys collide with
-   Tracks shortcuts on the desktop build. Default taken: claimed keys go to
-   instruments when Computer keys is On (D9). Keep Computer keys as a
-   desktop and USB-keyboard feature, or hide it on the appliance?
+- `gGTXF`, `Uv25f`, `t00H3H`: the Computer keys row and its editors are
+  hidden on the appliance (owner, 2026-10-06); desktop builds match the pen.
+- `hRKQL`: "Install sound pack" hidden until a pack mechanism exists (owner);
+  the unavailable state offers Choose another sound only, with the reason
+  "Sound not available in this version".
+- `gGTXF`, `B5PEqI`: the reduced-polyphony line with Restore (D2) and the
+  audio-start Retry (D6) are additions the pen does not draw.
+- Section 21 (`s0zlm`, `oegcz`, `MoriR`, `sTYRr`, `r47I8`, `mf0fR`): the
+  screens show no instrument sources; the built screens add instrument cards
+  and removed-instrument tombstones (Part 6).
+- Attack readouts (Synths, Strings) show the synthesized 0.008-0.908 s, not
+  the prototype's display formula (D5); `gGTXF`'s "Decay 1.52 s" is
+  unchanged.
+- D11's C3 = 60 matches the pen; it departs only from the prototype.
 
-## 7. Hardware-only evidence
+## 7. Plan review disposition (PR #1204)
 
-- Part 1 and Part 2a Pi 5 thresholds (gate Part 6's merge).
+| Finding | Where it is met |
+|---|---|
+| H1 mix transaction and Dart bounds | D3; Part 2b (native), Part 3c (Dart, one predicate, a test per site); pan in `InputSetup.pan` |
+| H2 sink quiescence | D4; Part 2c, with the TSAN race test |
+| H3 dropped releases | D4; port overflow flag (Part 2c), release lane (Part 2a), pending-release retry (Part 3b) |
+| H4 per-slot refusal | D3, D7; Parts 2b and 5 |
+| H5 sequencing | Part 5 now precedes Parts 6 and 7a |
+| M1 note-off routing | D4, §2.3; Part 2c tests for four edits |
+| M2 fade exhaustion | D2; Part 1 revised (one fade slot per voice, Cut in place, tested) |
+| M3 joint budget and overload | D2; Part 1 joint scenario, p99.9, late periods, voice limit; Part 2c adds routing cost |
+| M4 Pi gate | D2; the Part 1 Pi run gates Part 2a |
+| M5 slot-keyed targets | D7; Part 3c |
+| M6 source labels | D7 tombstones; Part 3c, Part 6 |
+| M7 D6 trigger and Retry | D6 (owner): triggers named, Retry only for audio start, rollback test in Part 3b |
+| M8 stuck computer keys | D9; Part 7b (desktop only, owner) |
+| M9 latch sync | D7 synth epoch; Parts 2a, 3b, 8 |
+| M10 hardware gates | moved to Part 7b |
+| L1 line references | re-checked on `56033baf0` |
+| L2 monitored-input consumers | Part 2b lists them |
+| L3 origin space | D4 tag bit and contributor table |
+| L4 patch application | §2.2: a command, the snapshot reports it |
+| L5 note names | D11 |
+| L6 Listen button | Part 7a matches the pen |
+| L7 device loss | D4: native port-exit and CoreMIDI notify |
+| L8 publish coalescing | D4: latest-wins, direct flip while stopped |
+| L9 pen departures | §6 |
+| Planner question 1 | owner: Install hidden, ids as strings, Retry only for audio start |
+| Planner question 2 | owner: computer keys hidden on the appliance; M8 applies on desktop |
+
+## 8. Genuine product-direction questions
+
+None open. Both earlier questions were answered by the owner on 2026-10-06
+(D6, D9).
+
+## 9. Hardware-only evidence
+
+- The Part 1 Pi verdicts, including the joint worst case, run in one session
+  with the pitch/time bench (gates Part 2a).
 - Note-to-sound latency with a USB MIDI keyboard on the appliance, compared
-  with a physical input's round trip (Parts 7a and 7b).
-- Two simultaneous USB MIDI devices with the console board (Part 4).
-- A 61-key controller with pads, sustain, bend, modulation and pressure
-  (Part 7b).
+  with a physical input's round trip (Part 7b).
+- Two simultaneous USB MIDI devices with the console board, unplug and
+  replug (Part 7b).
+- A 61-key controller with pads, sustain, bend, modulation, pressure and a
+  32-note chord without late periods (Part 7b).
 - Built-in and external pedal latches and LEDs (Part 8).
 - The 19 patches by ear at 96 kHz (Part 7a); different sound from the
   prototype is permitted (`implementation-map.md`, "Exact rack/effect/parameter
