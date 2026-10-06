@@ -82,6 +82,19 @@ void main() {
     expect(a, b);
     expect(a.hashCode, b.hashCode);
     expect(
+      a,
+      isNot(
+        const RenderPlan(
+          frames: 48,
+          method: RenderMethod.commonCycle,
+          beatsMilli: 0,
+          tempoSet: false,
+          pluginTracks: {1},
+          onceCutTracks: {1},
+        ),
+      ),
+    );
+    expect(
       const RenderJobStatus(state: RenderJobState.failed, permille: 10),
       isNot(
         const RenderJobStatus(
