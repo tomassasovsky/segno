@@ -663,6 +663,342 @@ static void test_click_pan(void) {
   le_engine_destroy(e);
 }
 
+
+/* ---- Part 2: the offline converter and the file decoder ---- */
+
+/* Amplitude and residual of the [hz] component of x (stride [stride]) over
+ * [n] samples at [sr]; n must hold whole cycles. *residual_db is the RMS of
+ * what is left after removing that sinusoid, relative to its amplitude. */
+static double bk_tone(const float* x, int stride, int n, double hz, double sr,
+                      double* residual_db) {
+  double a = 0.0, b = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double w = 2.0 * M_PI * hz * i / sr;
+    a += x[(size_t)i * stride] * cos(w);
+    b += x[(size_t)i * stride] * sin(w);
+  }
+  a *= 2.0 / n;
+  b *= 2.0 / n;
+  const double amp = sqrt(a * a + b * b);
+  if (residual_db != NULL) {
+    double sq = 0.0;
+    for (int i = 0; i < n; ++i) {
+      const double w = 2.0 * M_PI * hz * i / sr;
+      const double r = x[(size_t)i * stride] - (a * cos(w) + b * sin(w));
+      sq += r * r;
+    }
+    *residual_db = 20.0 * log10(sqrt(sq / n) / (amp / sqrt(2.0)) + 1e-30);
+  }
+  return amp;
+}
+
+/* Converts one mono plane; returns the output (caller frees) and its length. */
+static float* bk_convert(const float* in, int n, int from, int to, int* out_n) {
+  *out_n = (int)le_resample_frames(n, from, to);
+  float* out = malloc((size_t)*out_n * sizeof(float));
+  const float* ip[1] = {in};
+  float* op[1] = {out};
+  CHECK(le_resample_offline(ip, n, 1, from, op, *out_n, to) == LE_OK);
+  return out;
+}
+
+static float* bk_sine(int n, double hz, double sr, float amp) {
+  float* x = malloc((size_t)n * sizeof(float));
+  for (int i = 0; i < n; ++i) x[i] = amp * (float)sin(2.0 * M_PI * hz * i / sr);
+  return x;
+}
+
+static void test_resample_identity_and_guards(void) {
+  printf("test_resample_identity_and_guards\n");
+  float in[100], out[100];
+  for (int i = 0; i < 100; ++i) in[i] = bk_l(i) - 0.003f * (float)(i % 7);
+  const float* ip[1] = {in};
+  float* op[1] = {out};
+  CHECK(le_resample_offline(ip, 100, 1, 48000, op, 100, 48000) == LE_OK);
+  for (int i = 0; i < 100; ++i) CHECK(out[i] == in[i]);
+  CHECK(le_resample_frames(44100, 44100, 48000) == 48000);
+  CHECK(le_resample_frames(1000, 48000, 44100) == 918);
+  /* A wrong length, a reduction below one half, bad arguments. */
+  CHECK(le_resample_offline(ip, 100, 1, 48000, op, 99, 48000) == LE_ERR_INVALID);
+  CHECK(le_resample_offline(ip, 100, 1, 96001, op, 49, 48000) == LE_ERR_INVALID);
+  CHECK(le_resample_offline(NULL, 100, 1, 48000, op, 100, 48000) == LE_ERR_INVALID);
+  CHECK(le_resample_offline(ip, 100, 0, 48000, op, 100, 48000) == LE_ERR_INVALID);
+}
+
+static void test_resample_dc_tone_and_alignment(void) {
+  printf("test_resample_dc_tone_and_alignment\n");
+  const int rates[][2] = {{44100, 48000}, {48000, 44100}, {96000, 48000},
+                          {44100, 96000}, {48000, 96000}, {88200, 48000}};
+  for (size_t k = 0; k < sizeof(rates) / sizeof(rates[0]); ++k) {
+    const int from = rates[k][0], to = rates[k][1];
+    const int n = from; /* one second */
+    float* dc = malloc((size_t)n * sizeof(float));
+    for (int i = 0; i < n; ++i) dc[i] = 0.5f;
+    int m = 0;
+    float* y = bk_convert(dc, n, from, to, &m);
+    CHECK(m == (int)((int64_t)n * to / from));
+    double worst = 0.0;
+    for (int i = 200; i < m - 200; ++i) {
+      if (fabs(y[i] - 0.5) > worst) worst = fabs(y[i] - 0.5);
+    }
+    if (worst >= 1e-6) printf("  dc %d->%d worst %g\n", from, to, worst);
+    CHECK(worst < 1e-6);
+    free(y);
+    free(dc);
+    /* 1 kHz at amplitude 0.5: level within 0.01 dB, residual below -90 dB,
+     * measured over 100 whole cycles in the middle. */
+    float* tone = bk_sine(n, 1000.0, from, 0.5f);
+    y = bk_convert(tone, n, from, to, &m);
+    const int win = to / 10; /* 100 cycles of 1 kHz */
+    double residual = 0.0;
+    const double amp = bk_tone(y + to / 4, 1, win, 1000.0, to, &residual);
+    if (fabs(amp - 0.5) >= 0.0006 || residual >= -90.0)
+      printf("  tone %d->%d amp %.7f residual %.1f dB\n", from, to, amp, residual);
+    CHECK(fabs(amp - 0.5) < 0.0006);
+    CHECK(residual < -90.0);
+    free(y);
+    free(tone);
+  }
+  /* Alignment: an impulse at input 1000 peaks at output 2000 when doubling. */
+  float* imp = calloc(4000, sizeof(float));
+  imp[1000] = 1.0f;
+  int m = 0;
+  float* y = bk_convert(imp, 4000, 48000, 96000, &m);
+  int at = 0;
+  for (int i = 0; i < m; ++i) {
+    if (fabsf(y[i]) > fabsf(y[at])) at = i;
+  }
+  CHECK(at == 2000);
+  free(y);
+  free(imp);
+}
+
+/* Content the destination cannot hold is removed, not folded back: a 30 kHz
+ * tone halved from 96 kHz leaves no 18 kHz alias; a 10 kHz tone raised from
+ * 44.1 kHz leaves no 34.1 kHz image. */
+static void test_resample_alias_and_image(void) {
+  printf("test_resample_alias_and_image\n");
+  int m = 0;
+  float* tone = bk_sine(96000, 30000.0, 96000, 0.5f);
+  float* y = bk_convert(tone, 96000, 96000, 48000, &m);
+  const double alias = bk_tone(y + 12000, 1, 4800, 18000.0, 48000, NULL);
+  if (alias >= 0.5e-4) printf("  alias at 18 kHz %g\n", alias);
+  CHECK(alias < 0.5e-4); /* -80 dB re 0.5 */
+  free(y);
+  free(tone);
+  tone = bk_sine(44100, 10000.0, 44100, 0.5f);
+  y = bk_convert(tone, 44100, 44100, 96000, &m);
+  const double kept = bk_tone(y + 24000, 1, 9600, 10000.0, 96000, NULL);
+  const double image = bk_tone(y + 24000, 1, 9600, 34100.0, 96000, NULL);
+  if (image >= 0.5e-4) printf("  image at 34.1 kHz %g\n", image);
+  CHECK(fabs(kept - 0.5) < 0.0006);
+  CHECK(image < 0.5e-4);
+  free(y);
+  free(tone);
+}
+
+/* ---- WAV writer for the decode tests ---- */
+
+static void bk_put16(unsigned char* p, uint16_t v) { p[0] = v & 0xFF; p[1] = v >> 8; }
+static void bk_put32(unsigned char* p, uint32_t v) {
+  for (int i = 0; i < 4; ++i) p[i] = (unsigned char)(v >> (8 * i));
+}
+
+/* Writes a WAV with format code [fmt] (1 PCM, 3 float) and [bits] per
+ * sample. [data] holds [frames] * [ch] samples already in that encoding.
+ * [claim_bytes] overrides the data chunk size in the header (0 = actual). */
+static void bk_write_wav(const char* path, int fmt, int bits, int ch, int sr,
+                         const void* data, int frames, uint32_t claim_bytes) {
+  const uint32_t bytes = (uint32_t)frames * (uint32_t)ch * (uint32_t)(bits / 8);
+  const uint32_t stated = claim_bytes ? claim_bytes : bytes;
+  unsigned char h[44] = {0};
+  memcpy(h, "RIFF", 4);
+  bk_put32(h + 4, 36 + stated);
+  memcpy(h + 8, "WAVEfmt ", 8);
+  bk_put32(h + 16, 16);
+  bk_put16(h + 20, (uint16_t)fmt);
+  bk_put16(h + 22, (uint16_t)ch);
+  bk_put32(h + 24, (uint32_t)sr);
+  bk_put32(h + 28, (uint32_t)(sr * ch * bits / 8));
+  bk_put16(h + 32, (uint16_t)(ch * bits / 8));
+  bk_put16(h + 34, (uint16_t)bits);
+  memcpy(h + 36, "data", 4);
+  bk_put32(h + 40, stated);
+  FILE* f = fopen(path, "wb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  fwrite(h, 1, sizeof(h), f);
+  fwrite(data, 1, bytes, f);
+  fclose(f);
+}
+
+static const char* bk_path(const char* name) {
+  static char path[700];
+  test_render_mkdir(perf_test_dir());
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), name);
+  return path;
+}
+
+static void test_backing_decode_wav_formats(void) {
+  printf("test_backing_decode_wav_formats\n");
+  enum { N = 1000 };
+  le_backing_buffer* b = NULL;
+  int32_t rate = 0, ch = 0;
+  /* 16-bit stereo: L = k - 500, R = 3 (k - 500), exactly k / 32768 on read. */
+  int16_t s16[N * 2];
+  for (int k = 0; k < N; ++k) {
+    s16[2 * k] = (int16_t)(k - 500);
+    s16[2 * k + 1] = (int16_t)(3 * (k - 500));
+  }
+  bk_write_wav(bk_path("s16.wav"), 1, 16, 2, 48000, s16, N, 0);
+  CHECK(le_backing_decode_file(bk_path("s16.wav"), 48000, &b, &rate, &ch) == LE_OK);
+  CHECK(rate == 48000 && ch == 2 && le_backing_buffer_frames(b) == N);
+  for (int k = 0; k < N && b; ++k) {
+    CHECK(b->pcm[2 * k] == (float)(k - 500) / 32768.0f);
+    CHECK(b->pcm[2 * k + 1] == (float)(3 * (k - 500)) / 32768.0f);
+  }
+  le_backing_buffer_free(b);
+  /* 24-bit mono plays dual mono. */
+  unsigned char s24[N * 3];
+  for (int k = 0; k < N; ++k) {
+    const int32_t v = (k - 500) * 4099;
+    s24[3 * k] = (unsigned char)(v & 0xFF);
+    s24[3 * k + 1] = (unsigned char)((v >> 8) & 0xFF);
+    s24[3 * k + 2] = (unsigned char)((v >> 16) & 0xFF);
+  }
+  bk_write_wav(bk_path("s24.wav"), 1, 24, 1, 48000, s24, N, 0);
+  CHECK(le_backing_decode_file(bk_path("s24.wav"), 48000, &b, &rate, &ch) == LE_OK);
+  CHECK(ch == 1 && le_backing_buffer_frames(b) == N);
+  for (int k = 0; k < N && b; ++k) {
+    const float want = (float)((k - 500) * 4099) / 8388608.0f;
+    CHECK(b->pcm[2 * k] == want && b->pcm[2 * k + 1] == want);
+  }
+  le_backing_buffer_free(b);
+  /* 32-bit float stereo is exact. */
+  float f32[N * 2];
+  for (int k = 0; k < N; ++k) {
+    f32[2 * k] = bk_l(k);
+    f32[2 * k + 1] = -bk_r(k);
+  }
+  bk_write_wav(bk_path("f32.wav"), 3, 32, 2, 48000, f32, N, 0);
+  CHECK(le_backing_decode_file(bk_path("f32.wav"), 48000, &b, NULL, NULL) == LE_OK);
+  for (int k = 0; k < N && b; ++k) {
+    CHECK(b->pcm[2 * k] == bk_l(k) && b->pcm[2 * k + 1] == -bk_r(k));
+  }
+  le_backing_buffer_free(b);
+  /* A 44.1 kHz file read for a 48 kHz engine is converted on the way. */
+  CHECK(le_backing_decode_file(bk_path("f32.wav"), 44100, &b, &rate, NULL) == LE_OK);
+  CHECK(rate == 48000 && le_backing_buffer_frames(b) == 918);
+  CHECK(le_backing_buffer_rate(b) == 44100);
+  le_backing_buffer_free(b);
+}
+
+/* A 192 kHz file on a 48 kHz engine halves exactly to 96 kHz, then
+ * converts: the 1 kHz tone keeps its level, and a 40 kHz tone the engine
+ * rate cannot hold leaves no 8 kHz alias. */
+static void test_backing_decode_192k(void) {
+  printf("test_backing_decode_192k\n");
+  enum { N = 192000 };
+  float* x = malloc((size_t)N * sizeof(float));
+  for (int i = 0; i < N; ++i) {
+    x[i] = 0.25f * (float)sin(2.0 * M_PI * 1000.0 * i / 192000.0) +
+           0.25f * (float)sin(2.0 * M_PI * 40000.0 * i / 192000.0);
+  }
+  bk_write_wav(bk_path("hi.wav"), 3, 32, 1, 192000, x, N, 0);
+  free(x);
+  le_backing_buffer* b = NULL;
+  int32_t rate = 0;
+  CHECK(le_backing_decode_file(bk_path("hi.wav"), 48000, &b, &rate, NULL) == LE_OK);
+  CHECK(rate == 192000 && le_backing_buffer_frames(b) == 48000);
+  if (b != NULL) {
+    const double kept = bk_tone(b->pcm + 2 * 12000, 2, 4800, 1000.0, 48000, NULL);
+    const double alias = bk_tone(b->pcm + 2 * 12000, 2, 4800, 8000.0, 48000, NULL);
+    if (fabs(kept - 0.25) >= 0.0003 || alias >= 0.25e-4)
+      printf("  192k kept %.7f alias %g\n", kept, alias);
+    CHECK(fabs(kept - 0.25) < 0.0003);
+    CHECK(alias < 0.25e-4); /* -80 dB re 0.25 */
+  }
+  le_backing_buffer_free(b);
+}
+
+static void test_backing_decode_mp3_flac(void) {
+  printf("test_backing_decode_mp3_flac\n");
+  le_backing_buffer* b = NULL;
+  int32_t rate = 0, ch = 0;
+  /* Lossless: exactly one second, converted to 48 kHz, amplitude 1/8. */
+  CHECK(le_backing_decode_file("src/test/fixtures/backing/sine1k_44k1_mono.flac",
+                               48000, &b, &rate, &ch) == LE_OK);
+  CHECK(rate == 44100 && ch == 1);
+  CHECK(le_backing_buffer_frames(b) == 48000);
+  if (b != NULL) {
+    double residual = 0.0;
+    const double amp = bk_tone(b->pcm + 2 * 12000, 2, 4800, 1000.0, 48000, &residual);
+    CHECK(fabs(amp - 0.125) < 0.001);
+    CHECK(residual < -60.0); /* 16-bit source */
+    CHECK(b->pcm[2 * 12000] == b->pcm[2 * 12000 + 1]);
+  }
+  le_backing_buffer_free(b);
+  /* Lossy: 41 MPEG frames (47232 at 44.1 kHz: miniaudio keeps the encoder
+   * delay and end padding, see the fixture README) converted to 48 kHz, the
+   * 1 kHz tone dominant on both sides. */
+  CHECK(le_backing_decode_file("src/test/fixtures/backing/sine1k_44k1_stereo.mp3",
+                               48000, &b, &rate, &ch) == LE_OK);
+  CHECK(rate == 44100 && ch == 2);
+  const int frames = le_backing_buffer_frames(b);
+  CHECK(frames == (int)le_resample_frames(47232, 44100, 48000)); /* 51408 */
+  if (b != NULL) {
+    for (int side = 0; side < 2; ++side) {
+      double residual = 0.0;
+      const double amp =
+          bk_tone(b->pcm + 2 * 12000 + side, 2, 4800, 1000.0, 48000, &residual);
+      CHECK(fabs(amp - 0.125) < 0.01);
+      CHECK(residual < -40.0);
+    }
+  }
+  le_backing_buffer_free(b);
+}
+
+static void test_backing_decode_refusals(void) {
+  printf("test_backing_decode_refusals\n");
+  le_backing_buffer* b = (le_backing_buffer*)1;
+  CHECK(le_backing_decode_file(NULL, 48000, &b, NULL, NULL) == LE_ERR_INVALID);
+  CHECK(b == NULL);
+  CHECK(le_backing_decode_file("", 48000, &b, NULL, NULL) == LE_ERR_INVALID);
+  CHECK(le_backing_decode_file(bk_path("absent.wav"), 48000, &b, NULL, NULL) ==
+        LE_ERR_INVALID);
+  FILE* f = fopen(bk_path("truncated.wav"), "wb");
+  CHECK(f != NULL);
+  if (f) { fwrite("RIFF\0\0\0\0WAVE", 1, 12, f); fclose(f); }
+  CHECK(le_backing_decode_file(bk_path("truncated.wav"), 48000, &b, NULL, NULL) ==
+        LE_ERR_INVALID);
+  f = fopen(bk_path("text.wav"), "wb");
+  CHECK(f != NULL);
+  if (f) { fputs("not audio, just words in a file named like one\n", f); fclose(f); }
+  CHECK(le_backing_decode_file(bk_path("text.wav"), 48000, &b, NULL, NULL) ==
+        LE_ERR_INVALID);
+  int16_t quad[4 * 64] = {0};
+  bk_write_wav(bk_path("quad.wav"), 1, 16, 4, 48000, quad, 64, 0);
+  CHECK(le_backing_decode_file(bk_path("quad.wav"), 48000, &b, NULL, NULL) ==
+        LE_ERR_INVALID);
+  /* A header stating 901 s is refused before anything is read. */
+  int16_t few[64] = {0};
+  bk_write_wav(bk_path("long.wav"), 1, 16, 1, 48000, few, 64,
+               (uint32_t)(LE_BACKING_MAX_SECONDS + 1) * 48000u * 2u);
+  CHECK(le_backing_decode_file(bk_path("long.wav"), 48000, &b, NULL, NULL) ==
+        LE_ERR_TOO_LONG);
+  CHECK(b == NULL);
+}
+
+static void run_backing_decode_tests(void) {
+  test_resample_identity_and_guards();
+  test_resample_dc_tone_and_alignment();
+  test_resample_alias_and_image();
+  test_backing_decode_wav_formats();
+  test_backing_decode_192k();
+  test_backing_decode_mp3_flac();
+  test_backing_decode_refusals();
+}
+
 static void run_backing_tests(void) {
   test_backing_buffer_and_refusals();
   test_backing_play_literal();
@@ -680,4 +1016,5 @@ static void run_backing_tests(void) {
   test_backing_advance_refused_when_returns_full();
   test_backing_marks_capture();
   test_click_pan();
+  run_backing_decode_tests();
 }
