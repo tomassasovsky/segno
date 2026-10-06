@@ -5,6 +5,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -140,6 +141,7 @@ class _Rig {
     midi = _Midi(settings);
     controller = ControllerRepository(sources: [ConsoleCtrlSource(pedal)]);
     performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: engine,
       exportsRoot: () async => Directory.systemTemp.path,
     );
@@ -542,6 +544,55 @@ void main() {
       operation: TrackOperation.reverse,
       scope: AllTracksScope(),
     );
+
+    test('an assigned Reverse that reaches no track says so, outside the '
+        'Reverse surface', () async {
+      final rig = _Rig();
+      try {
+        await rig.poll();
+        await rig.control.setPedalSetup(
+          const PedalSetup()
+              .withCustom(
+                PedalButton.clear,
+                bank: 0,
+                pair: const ControlGesturePair(
+                  press: TrackOperationAction(
+                    operation: TrackOperation.reverse,
+                    scope: FixedTrackScope(2),
+                  ),
+                ),
+              )
+              .withCustom(
+                PedalButton.undo,
+                bank: 0,
+                pair: const ControlGesturePair(press: fixed),
+              ),
+        );
+        rig.control.setMode(InteractionMode.custom);
+        Future<void> stomp(PedalButton button) async {
+          rig.link.press(button, down: true);
+          await _pump(const Duration(milliseconds: 50));
+          rig.link.press(button, down: false);
+          await _pump(const Duration(milliseconds: 30));
+        }
+
+        // Track 3 is empty: nothing turns, and the stomp says so.
+        await stomp(PedalButton.clear);
+        expect(rig.engine.toggles, isEmpty);
+        expect(rig.control.state.footReverseFailure, 1);
+        // An engine refusal says so too; an accepted toggle does not.
+        rig.engine.refuse = true;
+        await stomp(PedalButton.undo);
+        expect(rig.control.state.footReverseFailure, 2);
+        rig.engine.refuse = false;
+        await stomp(PedalButton.undo);
+        expect(rig.engine.toggles, [4]);
+        expect(rig.control.state.footReverseFailure, 2);
+        expect(rig.control.state.mode, InteractionMode.custom);
+      } finally {
+        await rig.close();
+      }
+    });
 
     test('a Custom pedal: selected, fixed and all tracks', () async {
       final rig = _Rig();

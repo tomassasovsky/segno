@@ -205,6 +205,7 @@ void main() {
         tracks: [
           SessionRigTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             lanes: [
               SessionRigLane(
