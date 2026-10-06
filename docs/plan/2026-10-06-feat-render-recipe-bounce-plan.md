@@ -4,7 +4,8 @@
 
 Status: plan for owner review (merging this plan approves its direction),
 revised for the PR #1225 review (H1-H6, M1-M8, L1-L9) and the owner's answers
-of 2026-10-06; Part 1 is being built on `claude/render-1202-p1`.
+of 2026-10-06. Part 1 is built on `claude/render-1202-p1` (build record at the
+end).
 Tracking: #1202 (inventory E5-1, E6-6, E7-10; parent #1026 part 4m, #926),
 `autonomy:merge-gate`.
 Base: `origin/claude/segno-integration` at `56033baf0`. Unless a branch is named,
@@ -440,8 +441,9 @@ plays through the processing it already contains.
     source's `a_audio_rev` moves before the copy completes.
 - **Once.** A Once source (`a_one_shot`, `engine_private.h:1263`) plays one
   pass: from the first render frame `d ≥ 0` at which its read index equals its
-  lap start (`le_direction_lap_start`), for `len` frames, clipped to the
-  window. It is silent elsewhere, in each pass (the policy's
+  lap start (`le_direction_lap_start`), for `len` frames. A pass that runs
+  past the window end continues at the window start, because the window is
+  itself a loop. It is silent elsewhere, in each pass (the policy's
   `play-once-then-silence`). With `playback_offset = 0` and the source at
   segment 0, `d = 0`.
 - **Sparse material** is copied as it lies (§2.7). Nothing is trimmed or
@@ -899,7 +901,7 @@ Exit or cancel before commit cancels the job and changes nothing.
     missing from its stem. This is the existing limit for every stereo pair,
     not a new one.
 - **events.log version (review L4).** The format doc says the version "covers
-  the code vocabulary" (`docs/design/performance-event-log-format.md:38`), so
+  the code vocabulary" (`docs/design/performance-event-log-format.md:36-39`), so
   Part 4b bumps `perf_drain.c`'s version to the next free number at landing
   and adds its row to the format doc. Pitch/time P2a holds 8.
 - **Reopen (#1158).**
@@ -1661,3 +1663,71 @@ Until the owner answers, Part 6 builds (a).
 
 Fade, plugins and the mono destination were answered by the owner on
 2026-10-06 (4.2, 5.5 and 10 B5).
+
+## Build record
+
+### Part 1 (`claude/render-1202-p1`, on trunk `097e1ef68`)
+
+The part is two commits, to keep review manageable:
+
+1. `refactor(engine)`: the shared WAV writer and the cache's offline chain
+   factoring, with no behaviour change. It was verified on its own: the plain
+   native suite passes at that commit.
+2. `feat(engine)`: the recipe.
+
+Where the build departs from the text above, and why:
+
+- **File names.** The writer is `engine_wav.c`/`engine_wav.h` and the recipe
+  is `engine_render.c`/`engine_render.h`. Both match the `engine*.c` globs in
+  `run_native_tests.sh` and `build_test_lib.sh`, so no test list changed. The
+  macOS forwarders (CocoaPods and SPM) and `src/CMakeLists.txt` list them.
+- **Directory sync.** #1198 Part 1 (#1220) merged before the build, so
+  `le_wav_publish` already syncs the directory with `le_fs_sync_dir`.
+- **The freeze record is engine-owned**, not a per-job record:
+  `le_engine.render_freeze`, keyed by job id. A stale command for a cancelled
+  job can then never write into freed memory, and a newer job's record is
+  never touched.
+- **Staging checks the content first.** It checks the revision, slot and
+  state before the readable gate, so a cleared or recording source fails with
+  `TRACKS_CHANGED` at once instead of waiting on a gate that never opens.
+- **One chain struct, not three.** `perf_render.c`'s `le_pr_fx_chain` is not
+  converted to `le_fx_frozen_chain`: it is mutated by the log replay entry by
+  entry. The cache and the recipe share the frozen chain, the state seeding
+  and the print. The perf renderer shares the writer.
+- **Aging is tested as a pure function.** The worker's priority and aging
+  rule is `le_render_worker_choice`, unit-tested directly instead of through a
+  timing race.
+- **Two plan tests are not in the suite.** `test_render_ignores_speed` waits
+  for pitch/time P2a. The Once-relaunch case is covered only through the
+  shared read law, by the non-zero-offset Reverse test.
+- **Memory.** The job counts against the cache's byte cap, which is 64 MiB on
+  this trunk until pitch/time 3a raises it to 384 MiB. A render that does not
+  fit after eviction is refused with `LE_ERR_CAPACITY`.
+- **Size.** About 1,300 production lines (code, headers, API and build
+  lists), against the plan's 700:
+  - commit 1, about 300;
+  - `engine_render.c`, about 800 code lines.
+
+  The recipe does not split further without leaving a half-wired API.
+
+Verification:
+
+- **Native suite.** Plain, ASAN and telemetry-off runs pass, each in its own
+  `TMPDIR`. 19 new `test_render_*` cases are included.
+- **Mutations.** Each failed its test:
+  - freeze offset forced to 0;
+  - print reduced to one pass;
+  - aging removed;
+  - Wrap forced to one pass.
+- **Dart and lint.**
+  - `segno_engine` package suite passes (376) with `SEGNO_ENGINE_LIB`.
+  - The full app suite passes (3,469).
+  - `dart analyze --fatal-infos lib test packages` is clean.
+  - `bloc lint` is clean.
+- **Bindings.** Regenerated and formatted.
+- **C++ shim.** The `-U__clang__` repro compiles.
+- **Symbol parity.** `check_ffi_symbols.sh` is ELF-only. A manual `nm`
+  comparison on macOS shows every new binding exported. Linux CI runs the real
+  check.
+- **Not run.** The appliance criterion (no xrun, worker CPU and peak bytes) is
+  hardware and still open.
