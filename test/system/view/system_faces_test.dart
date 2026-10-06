@@ -712,7 +712,8 @@ void main() {
     });
 
     testWidgets('every readout of the breakdown is drawn, not just the two '
-        'the golden happens to frame', (tester) async {
+        "the golden happens to frame; free space is the Internal card's "
+        'alone', (tester) async {
       await pump(tester, tab: SystemTab.storage);
       final l10n = l10nOf(tester);
 
@@ -721,7 +722,6 @@ void main() {
         (Key('system_storage_captures'), 6.2),
         (Key('system_storage_plugins'), 1.1),
         (Key('system_storage_system'), 4.7),
-        (Key('system_storage_free'), 12.4),
       ]) {
         expect(find.byKey(key), findsOneWidget, reason: '$key');
         expect(
@@ -731,6 +731,10 @@ void main() {
         );
       }
       expect(find.text(l10n.storagePluginsSubtitle(103)), findsOneWidget);
+      // The breakdown's own free figure, read once on open, would disagree
+      // with the card's, read every few seconds (#1217 review).
+      expect(find.byKey(const Key('system_storage_free')), findsNothing);
+      expect(find.text(l10n.storageGigabytes(12.4)), findsNothing);
     });
 
     testWidgets('a build that cannot read the disk says so and draws no '

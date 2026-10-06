@@ -17,8 +17,14 @@ void main() {
     // need that zone's microtasks.
     var closedInZone = false;
 
-    StorageCubit build({List<RemovableVolumeRecord> volumes = const []}) {
-      rig = StorageRig(volumes: volumes);
+    StorageCubit build({
+      List<RemovableVolumeRecord> volumes = const [],
+      Duration ejectServedTimeout = const Duration(minutes: 2),
+    }) {
+      rig = StorageRig(
+        volumes: volumes,
+        ejectServedTimeout: ejectServedTimeout,
+      );
       sampleRate = 48000;
       return cubit = StorageCubit(
         repository: rig.repository,
@@ -84,14 +90,17 @@ void main() {
     });
 
     test('each mounted volume is measured, and its lease holders are '
-        'named', () async {
+        'named, each purpose once', () async {
       build(volumes: [usbRecord(1), usbRecord(2)]);
       rig.spaces[mountPoint(1)] = const VolumeSpace(
         totalBytes: usbTotal,
         freeBytes: usbFree,
       );
       await pumpEventQueue();
-      rig.repository.acquire(const StorageDestination.removable(2), 'export');
+      rig.repository
+        ..acquire(const StorageDestination.removable(2), WritePurpose.copy)
+        ..acquire(const StorageDestination.removable(2), WritePurpose.copy)
+        ..acquire(const StorageDestination.removable(2), WritePurpose.export);
       await cubit.refresh();
 
       expect(cubit.state.volumes.map((v) => v.generation), [1, 2]);
@@ -99,7 +108,7 @@ void main() {
         1: const VolumeSpace(totalBytes: usbTotal, freeBytes: usbFree),
       });
       expect(cubit.state.holders, {
-        2: ['export'],
+        2: {WritePurpose.copy, WritePurpose.export},
       });
     });
 
@@ -218,17 +227,22 @@ void main() {
       expect(cubit.state.ejectFailed, isNull);
     });
 
-    test('eject does nothing while a lease holds the drive', () async {
+    test('eject does nothing while a lease holds the drive: the '
+        "repository's refusal is caught and the holders are read", () async {
       build(volumes: [usbRecord(1)]);
       await pumpEventQueue();
-      rig.repository.acquire(const StorageDestination.removable(1), 'export');
+      rig.repository.acquire(
+        const StorageDestination.removable(1),
+        WritePurpose.recording,
+      );
 
       await cubit.eject(1);
 
       expect(rig.client.pendingRequests, isEmpty);
       expect(cubit.state.holders, {
-        1: ['export'],
+        1: {WritePurpose.recording},
       });
+      expect(cubit.state.ejectFailed, isNull);
       expect(rig.repository.transferInFlight, isTrue);
     });
 
@@ -245,6 +259,67 @@ void main() {
       expect(rig.client.pendingRequests, isEmpty);
       expect(cubit.state.volumes.single.status, RemovableVolumeStatus.mounted);
       expect(cubit.state.ejectFailed, isNull);
+      expect(cubit.state.ejectTaken, isFalse);
+    });
+
+    test('a cancel after the helper took the eject says it cannot be '
+        'stopped, until the drive answers', () async {
+      build(volumes: [usbRecord(1)]);
+      await pumpEventQueue();
+
+      final ejecting = cubit.eject(1);
+      await pumpEventQueue();
+      rig.client.take('req-1');
+      await cubit.cancelEject();
+
+      expect(cubit.state.ejectTaken, isTrue);
+      expect(cubit.state.volumes.single.status, RemovableVolumeStatus.ejecting);
+
+      rig.client.settleEject('req-1', ok: true);
+      await ejecting;
+      await pumpEventQueue();
+      expect(cubit.state.volumes.single.status, RemovableVolumeStatus.ejected);
+      expect(cubit.state.ejectTaken, isFalse);
+    });
+
+    test('a drive that turns ejected after a failed eject is no longer '
+        'reported as failed', () async {
+      build(volumes: [usbRecord(1)]);
+      await pumpEventQueue();
+
+      final ejecting = cubit.eject(1);
+      await pumpEventQueue();
+      rig.client.settleEject('req-1', ok: false, reason: 'busy');
+      await ejecting;
+      await pumpEventQueue();
+      expect(cubit.state.ejectFailed, 1);
+
+      // The drive reads ejected after all (a late answer, or another eject).
+      rig.client.update(
+        usbRecord(1, status: RemovableVolumeRecordStatus.ejected),
+      );
+      await pumpEventQueue();
+
+      expect(cubit.state.volumes.single.status, RemovableVolumeStatus.ejected);
+      expect(cubit.state.ejectFailed, isNull);
+    });
+
+    test('an eject the helper took and has not answered is not reported as '
+        'failed: the drive stays Ejecting', () async {
+      build(
+        volumes: [usbRecord(1)],
+        ejectServedTimeout: const Duration(milliseconds: 10),
+      );
+      await pumpEventQueue();
+
+      final ejecting = cubit.eject(1);
+      await pumpEventQueue();
+      rig.client.take('req-1');
+      await ejecting;
+      await pumpEventQueue();
+
+      expect(cubit.state.ejectFailed, isNull);
+      expect(cubit.state.volumes.single.status, RemovableVolumeStatus.ejecting);
     });
   });
 }

@@ -1438,7 +1438,6 @@
     },
     "storageSystemTitle": "Sistema y actualizaciones",
     "storageSystemSubtitle": "incluye el sistema de reserva",
-    "storageFreeTitle": "Libre",
     "storageGigabytes": "{value} GB",
     "@storageGigabytes": {
         "placeholders": {

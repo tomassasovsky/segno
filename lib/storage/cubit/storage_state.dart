@@ -15,6 +15,7 @@ class StorageState extends Equatable {
     this.lowInternalSpace = false,
     this.holders = const {},
     this.ejectFailed,
+    this.ejectTaken = false,
   });
 
   /// Whether this build can see removable volumes at all.
@@ -41,12 +42,18 @@ class StorageState extends Equatable {
   /// Whether Internal has less free space than its reserve.
   final bool lowInternalSpace;
 
-  /// The purposes of the leases holding each removable volume, by generation.
-  /// A volume listed here cannot be ejected.
-  final Map<int, List<String>> holders;
+  /// What the leases holding each removable volume are for, by generation,
+  /// each purpose once. A volume listed here cannot be ejected.
+  final Map<int, Set<WritePurpose>> holders;
 
-  /// The generation whose last eject failed, while it is still connected.
+  /// The generation whose last eject failed, while it is still connected and
+  /// not ejected after all.
   final int? ejectFailed;
+
+  /// Whether a Cancel arrived after the helper had taken the eject: it is
+  /// syncing and unmounting and cannot be stopped, so the page says so in
+  /// place of offering Cancel again. Cleared when no drive is ejecting.
+  final bool ejectTaken;
 
   /// Returns a copy with the given fields replaced. The nullable fields take
   /// a function, so null can be set rather than meaning "keep".
@@ -58,8 +65,9 @@ class StorageState extends Equatable {
     int? sampleRate,
     Duration? Function()? recordingTime,
     bool? lowInternalSpace,
-    Map<int, List<String>>? holders,
+    Map<int, Set<WritePurpose>>? holders,
     int? Function()? ejectFailed,
+    bool? ejectTaken,
   }) => StorageState(
     removableSupported: removableSupported ?? this.removableSupported,
     volumes: volumes ?? this.volumes,
@@ -70,6 +78,7 @@ class StorageState extends Equatable {
     lowInternalSpace: lowInternalSpace ?? this.lowInternalSpace,
     holders: holders ?? this.holders,
     ejectFailed: ejectFailed != null ? ejectFailed() : this.ejectFailed,
+    ejectTaken: ejectTaken ?? this.ejectTaken,
   );
 
   @override
@@ -83,5 +92,6 @@ class StorageState extends Equatable {
     lowInternalSpace,
     holders,
     ejectFailed,
+    ejectTaken,
   ];
 }

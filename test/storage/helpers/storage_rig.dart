@@ -14,10 +14,15 @@ const exportsRoot = '/segno-storage-rig-absent/exports';
 /// A [StorageRepository] over a [FakeUsbStorageClient], whose statvfs
 /// answers from [spaces] and counts every read in [reads].
 class StorageRig {
-  StorageRig({List<RemovableVolumeRecord> volumes = const []})
-    : client = FakeUsbStorageClient(initial: volumes) {
+  StorageRig({
+    List<RemovableVolumeRecord> volumes = const [],
+    Duration ejectTimeout = const Duration(seconds: 20),
+    Duration ejectServedTimeout = const Duration(minutes: 2),
+  }) : client = FakeUsbStorageClient(initial: volumes) {
     repository = StorageRepository(
       client: client,
+      ejectTimeout: ejectTimeout,
+      ejectServedTimeout: ejectServedTimeout,
       exportsRoot: () async => exportsRoot,
       volumeSpace: (path) {
         reads++;

@@ -3451,12 +3451,12 @@ class ConsoleDialogButton extends StatelessWidget {
               // The solid tones carry their weight; the outlined ones stay
               // regular — the pen draws `Switch off` at 600 like `Delete`,
               // and Storage's `Eject` at 700.
-              fontWeight:
-                  tone == ConsoleDialogTone.destructive ||
-                      tone == ConsoleDialogTone.warning ||
-                      tone == ConsoleDialogTone.primary
-                  ? FontWeight.w600
-                  : FontWeight.normal,
+              fontWeight: switch (tone) {
+                ConsoleDialogTone.primary => FontWeight.w700,
+                ConsoleDialogTone.destructive ||
+                ConsoleDialogTone.warning => FontWeight.w600,
+                _ => FontWeight.normal,
+              },
             ),
           ),
         ),

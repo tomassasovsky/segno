@@ -184,7 +184,7 @@ void main() {
       // ask at the press, not trust a page's last state.
       final lease = repository.acquire(
         const StorageDestination.internal(),
-        'backup',
+        WritePurpose.backup,
       );
 
       await pumpHost(tester, storage: repository);

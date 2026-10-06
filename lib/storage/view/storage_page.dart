@@ -16,20 +16,16 @@ import 'package:storage_repository/storage_repository.dart';
 /// Capacity is read while this is on screen only: on open, on every change
 /// to the volume list, and every few seconds until it leaves
 /// ([StorageCubit.startWatching] / [StorageCubit.stopWatching]).
+///
+/// A USB card has no `Browse` yet: the Library cannot open at a drive until
+/// #1178 gives it a USB view, and a Browse that opened Internal would show
+/// the wrong files as the drive's.
 class StoragePage extends StatefulWidget {
-  /// Creates a [StoragePage]. [onOpenLibrary] opens the Library at Internal,
-  /// [onBrowse] at a mounted volume.
-  const StoragePage({
-    required this.onOpenLibrary,
-    required this.onBrowse,
-    super.key,
-  });
+  /// Creates a [StoragePage]. [onOpenLibrary] opens the Library at Internal.
+  const StoragePage({required this.onOpenLibrary, super.key});
 
   /// Open library on the Internal card.
   final VoidCallback onOpenLibrary;
-
-  /// Browse on a USB card, with the volume's generation.
-  final ValueChanged<int> onBrowse;
 
   @override
   State<StoragePage> createState() => _StoragePageState();
@@ -69,13 +65,19 @@ class _StoragePageState extends State<StoragePage> {
             key: Key('storage_usb_card_${volume.generation}'),
             volume: volume,
             space: state.volumeSpace[volume.generation],
-            holders: state.holders[volume.generation] ?? const [],
-            onBrowse: () => widget.onBrowse(volume.generation),
+            holders: state.holders[volume.generation] ?? const {},
+            ejectTaken: state.ejectTaken,
           ),
           if (state.ejectFailed == volume.generation)
             StorageNotice(
               context.l10n.storageEjectFailed,
               key: const Key('storage_eject_failed'),
+            ),
+          if (state.ejectTaken &&
+              volume.status == RemovableVolumeStatus.ejecting)
+            StorageNotice(
+              context.l10n.storageEjectUnderway,
+              key: const Key('storage_eject_underway'),
             ),
         ],
     ];
@@ -91,9 +93,6 @@ class _StoragePageState extends State<StoragePage> {
     );
   }
 }
-
-/// Bytes as the decimal gigabytes printed on the drive's own label.
-double _gigabytes(int bytes) => bytes / 1000000000;
 
 /// A measured volume's capacity, or the sentence that says it was not.
 class _Capacity extends StatelessWidget {
@@ -113,8 +112,10 @@ class _Capacity extends StatelessWidget {
       );
     }
     return StorageCapacity(
-      free: l10n.storageFreeGigabytes(_gigabytes(space.freeBytes)),
-      total: l10n.storageOfGigabytes(_gigabytes(space.totalBytes).round()),
+      free: l10n.storageFreeGigabytes(decimalGigabytes(space.freeBytes)),
+      total: l10n.storageOfGigabytes(
+        decimalGigabytes(space.totalBytes).round(),
+      ),
       usedFraction: 1 - space.freeBytes / space.totalBytes,
       low: low,
     );
@@ -172,7 +173,7 @@ class _RecordingTime extends StatelessWidget {
           ? l10n.storageRecordingFormat(state.sampleRate / 1000)
           : null,
       note: l10n.storageReserveNote(
-        _gigabytes(StorageRepository.internalReserveBytes),
+        decimalGigabytes(StorageRepository.internalReserveBytes),
       ),
     );
   }
@@ -201,14 +202,16 @@ class _UsbCard extends StatelessWidget {
     required this.volume,
     required this.space,
     required this.holders,
-    required this.onBrowse,
+    required this.ejectTaken,
     super.key,
   });
 
   final RemovableVolume volume;
   final VolumeSpace? space;
-  final List<String> holders;
-  final VoidCallback onBrowse;
+  final Set<WritePurpose> holders;
+
+  /// The helper has the eject; Cancel can no longer stop it.
+  final bool ejectTaken;
 
   /// The names the pen's copy uses for the filesystems the image cannot
   /// drive; anything else is shown as udev names it, upper-cased.
@@ -224,11 +227,6 @@ class _UsbCard extends StatelessWidget {
     final l10n = context.l10n;
     final cubit = context.read<StorageCubit>();
     final label = volume.label.isEmpty ? l10n.storageUsbUnnamed : volume.label;
-    final browse = StorageCardButton(
-      key: const Key('storage_browse'),
-      label: l10n.storageBrowse,
-      onPressed: onBrowse,
-    );
     final eject = StorageCardButton(
       key: const Key('storage_eject'),
       label: l10n.storageEject,
@@ -243,24 +241,28 @@ class _UsbCard extends StatelessWidget {
       RemovableVolumeStatus.mounted => (
         holders.isEmpty
             ? label
-            : l10n.storageUsbInUse(label, holders.join(', ')),
+            : l10n.storageUsbInUse(
+                label,
+                [for (final p in holders) _purposeWords(l10n, p)].join(', '),
+              ),
         _Capacity(space: space),
-        [browse, eject],
+        [eject],
       ),
       RemovableVolumeStatus.readOnly => (
         l10n.storageUsbReadOnly(label),
         _Capacity(space: space),
-        [browse, eject],
+        [eject],
       ),
       RemovableVolumeStatus.ejecting => (
         l10n.storageUsbEjecting,
         _Capacity(space: space),
         [
-          StorageCardButton(
-            key: const Key('storage_eject_cancel'),
-            label: l10n.cancel,
-            onPressed: () => unawaited(cubit.cancelEject()),
-          ),
+          if (!ejectTaken)
+            StorageCardButton(
+              key: const Key('storage_eject_cancel'),
+              label: l10n.cancel,
+              onPressed: () => unawaited(cubit.cancelEject()),
+            ),
         ],
       ),
       RemovableVolumeStatus.ejected => (
@@ -299,4 +301,12 @@ class _UsbCard extends StatelessWidget {
       actions: actions,
     );
   }
+
+  static String _purposeWords(AppLocalizations l10n, WritePurpose purpose) =>
+      switch (purpose) {
+        WritePurpose.recording => l10n.storagePurposeRecording,
+        WritePurpose.copy => l10n.storagePurposeCopy,
+        WritePurpose.export => l10n.storagePurposeExport,
+        WritePurpose.backup => l10n.storagePurposeBackup,
+      };
 }

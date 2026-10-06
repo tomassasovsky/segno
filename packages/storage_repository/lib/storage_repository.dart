@@ -32,4 +32,4 @@ export 'src/models/storage_failure.dart'
         StorageVolumeLost;
 export 'src/storage_repository.dart'
     show CopyBytes, SourceReadFailure, StorageRepository;
-export 'src/write_lease.dart' show HeldLease, WriteLease;
+export 'src/write_lease.dart' show HeldLease, WriteLease, WritePurpose;

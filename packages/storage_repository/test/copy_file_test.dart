@@ -45,7 +45,7 @@ void main() {
             ..add('part ${part.path.substring(h.exports.length + 1)}')
             ..add('target exists: ${target.existsSync()}')
             ..add('synced: ${h.synced.length}')
-            ..add('lease: ${repo.leases.map((l) => l.purpose).join()}');
+            ..add('lease: ${repo.leases.map((l) => l.purpose.name).join()}');
           await part.writeAsBytes(await from.readAsBytes(), flush: true);
         },
       );

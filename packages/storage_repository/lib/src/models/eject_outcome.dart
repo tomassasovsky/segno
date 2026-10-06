@@ -69,5 +69,5 @@ class EjectRefused implements Exception {
 
   @override
   String toString() =>
-      'EjectRefused(${holders.map((lease) => lease.purpose).join(', ')})';
+      'EjectRefused(${holders.map((lease) => lease.purpose.name).join(', ')})';
 }

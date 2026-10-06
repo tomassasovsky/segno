@@ -48,16 +48,28 @@ class StorageCubit extends Cubit<StorageState> {
 
   void _onVolumes(List<RemovableVolume> volumes) {
     final failed = state.ejectFailed;
-    final stillThere =
-        failed != null && volumes.any((v) => v.generation == failed);
+    // A failure stands while the drive is there and not ejected: a drive the
+    // helper ejected after all (an answer that came late) is Safe to remove,
+    // and "Could not eject" under it would contradict the card.
+    final failureStands =
+        failed != null &&
+        volumes.any(
+          (v) =>
+              v.generation == failed &&
+              v.status != RemovableVolumeStatus.ejected,
+        );
     emit(
       state.copyWith(
         volumes: volumes,
-        ejectFailed: stillThere ? null : () => null,
+        ejectFailed: failureStands ? null : () => null,
+        ejectTaken: state.ejectTaken && volumes.any(_isEjecting),
       ),
     );
     unawaited(refresh());
   }
+
+  static bool _isEjecting(RemovableVolume volume) =>
+      volume.status == RemovableVolumeStatus.ejecting;
 
   /// Reads every capacity the page draws once.
   Future<void> refresh() async {
@@ -72,7 +84,7 @@ class StorageCubit extends Cubit<StorageState> {
           )
         : null;
     final spaces = <int, VolumeSpace>{};
-    final holders = <int, List<String>>{};
+    final holders = <int, Set<WritePurpose>>{};
     for (final volume in state.volumes) {
       final destination = StorageDestination.removable(volume.generation);
       if (await _repository.space(destination) case final space?) {
@@ -80,7 +92,7 @@ class StorageCubit extends Cubit<StorageState> {
       }
       final leases = _repository.leasesOn(destination);
       if (leases.isNotEmpty) {
-        holders[volume.generation] = [for (final l in leases) l.purpose];
+        holders[volume.generation] = {for (final l in leases) l.purpose};
       }
     }
     if (isClosed) return;
@@ -90,9 +102,7 @@ class StorageCubit extends Cubit<StorageState> {
         volumeSpace: spaces,
         sampleRate: rate,
         recordingTime: () => time,
-        lowInternalSpace:
-            internal != null &&
-            internal.freeBytes < StorageRepository.internalReserveBytes,
+        lowInternalSpace: StorageRepository.isLowInternalSpace(internal),
         holders: holders,
       ),
     );
@@ -112,38 +122,38 @@ class StorageCubit extends Cubit<StorageState> {
     _watch = null;
   }
 
-  /// Ejects [generation]. Does nothing while a lease holds it (the page
-  /// draws Eject disabled with the holder's purpose) or while another eject
-  /// is in flight. A failed eject is kept in [StorageState.ejectFailed] until
-  /// the next attempt or until the drive goes.
+  /// Ejects [generation]. Does nothing while another eject is in flight. A
+  /// lease holding the drive refuses it (the repository's guard); the page
+  /// then re-reads the holders and draws Eject disabled with their purpose.
+  /// A failed eject is kept in [StorageState.ejectFailed] until the next
+  /// attempt, until the drive goes, or until it reads ejected after all. One
+  /// the helper took and has not answered is not a failure: the drive keeps
+  /// reading `Ejecting…` until it does.
   Future<void> eject(int generation) async {
-    if (_repository
-        .leasesOn(StorageDestination.removable(generation))
-        .isNotEmpty) {
-      await refresh();
-      return;
-    }
-    if (state.volumes.any((v) => v.status == RemovableVolumeStatus.ejecting)) {
-      return;
-    }
-    emit(state.copyWith(ejectFailed: () => null));
+    if (state.volumes.any(_isEjecting)) return;
+    emit(state.copyWith(ejectFailed: () => null, ejectTaken: false));
     final EjectOutcome outcome;
     try {
       outcome = await _repository.eject(generation);
     } on EjectRefused {
-      // A lease was taken between the check above and the request.
       await refresh();
       return;
     }
     if (isClosed) return;
     if (outcome is EjectFailed &&
+        outcome.reason != StorageRepository.stillEjecting &&
         state.volumes.any((v) => v.generation == generation)) {
       emit(state.copyWith(ejectFailed: () => generation));
     }
   }
 
-  /// Withdraws the eject in flight, if the helper has not served it yet.
-  Future<void> cancelEject() => _repository.cancelEject();
+  /// Withdraws the eject in flight if the helper has not taken it yet. If it
+  /// has, nothing can stop it, and [StorageState.ejectTaken] says so.
+  Future<void> cancelEject() async {
+    final withdrawn = await _repository.cancelEject();
+    if (isClosed || withdrawn) return;
+    if (state.volumes.any(_isEjecting)) emit(state.copyWith(ejectTaken: true));
+  }
 
   @override
   Future<void> close() async {

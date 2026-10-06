@@ -280,10 +280,11 @@ backup) can stop at a complete frame and keep what it has.
   audio stays available.", `Not connected` with "Connect a drive to import or
   export audio.", `Eject failed` with "Could not eject. The drive is still
   connected. Try again.", and `Low internal space` ("Internal storage is
-  nearly full.", `No recording space`) when free < reserve. `Browse` and
-  `Open library` dispatch the existing library command (`stage_library` in
-  `lib/looper/view/stage_top_bar.dart:52`, `showSessionsManager`); #1178
-  replaces its target.
+  nearly full.", `No recording space`) when free < reserve. `Open library`
+  opens the full-screen Library (#1178). A USB card has no `Browse` until the
+  Library has a USB view to open at: a Browse that opened Internal would
+  show the wrong files as the drive's (#1217 review). It comes back with
+  that view.
 - **Destination picker** (pen 48 `cH9UX` "Save to · Internal | USB drive",
   pen 20 `m5XyVv` "Connect a USB drive / Your recording stays in Internal. /
   Cancel · Try again"): one shared widget, `StorageDestinationPicker`, that
@@ -613,9 +614,32 @@ VERIFICATION COMMAND: (cd packages/storage_repository && /Users/Tomas/developmen
   host and `system_faces_test.dart:616` keep working until E3-4/E3-5): the
   cards and six variants of §2.4, with keys `storage_internal_card`,
   `storage_usb_card_<generation>`, `storage_eject`, `storage_eject_cancel`,
-  `storage_browse`, `storage_open_library`, `storage_low_space_banner`. The
-  internal breakdown rows and the delete-captures action stay (they are
-  accepted appliance housekeeping and unchanged).
+  `storage_open_library`, `storage_low_space_banner`. The internal breakdown
+  rows and the delete-captures action stay (accepted appliance
+  housekeeping), except the breakdown's `Free` row: the Internal card
+  carries free space, read every few seconds, and a second figure read once
+  on open would disagree with it (#1217 review).
+- Pen write-backs pending (section 31 draws six tiles; the page draws these
+  further states, which the pen should gain as tiles or `c/` notes, and
+  which this branch does not write itself):
+  - read-only drive: `<label> · read-only`, Eject only;
+  - drive in use: `<label> · in use for <purpose>`, Eject disabled; the
+    purposes are `recording`, `copying files`, `export`, `backup`, each
+    once, joined with a comma;
+  - unsupported filesystem (`<fs> isn't supported. Format the drive as
+    exFAT.`), unformatted (`This drive isn't formatted. Format it as
+    exFAT.`), could not be opened (`This drive could not be opened.`), each
+    with no actions;
+  - unnamed drive (`Unnamed drive`) and capacity unavailable (`Capacity
+    unavailable`, `Remaining time unavailable`);
+  - Cancel after the helper has taken the eject: `Ejecting…` without
+    Cancel, and `Already ejecting. Wait for it to finish.` under the card;
+  - a taken eject unanswered after 2 minutes: the card stays `Ejecting…`
+    (not `Could not eject`) until the helper answers or the drive is pulled;
+  - no `Browse` on a USB card (above);
+  - host and scale: the cards head the System tray's Storage tab at the
+    tray's type scale with the pen's proportions, and Eject is the app's
+    solid accent at weight 700.
 - `powerOffSnapshotOf` gains `transferInFlight`, read from
   `StorageRepository.transferInFlight` at the press (a lease can be taken
   between two of the cubit's capacity reads; `power_off_gate.dart:47-69`, host
@@ -635,12 +659,12 @@ VERIFICATION COMMAND: (cd packages/storage_repository && /Users/Tomas/developmen
 ```success-criteria
 GOAL: The Storage page shows real Internal and USB capacity and the accepted eject states, and shutdown and eject refuse while a transfer is in flight.
 SUCCESS CRITERIA:
-- With the fake client: no volume → "Not connected" and "Connect a drive to import or export audio."; a mounted 32 GB volume labelled SEGNO USB with 24.2 GB free → "24.2 GB free", "of 32 GB", Browse and Eject enabled; tapping Eject → "Ejecting…" with Cancel; settling ejected → "Safe to remove" and "Your internal audio stays available."; settling ok:false → "Could not eject. The drive is still connected. Try again." with Eject enabled again. | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage test/system/view/system_faces_test.dart
+- With the fake client: no volume → "Not connected" and "Connect a drive to import or export audio."; a mounted 32 GB volume labelled SEGNO USB with 24.2 GB free → "24.2 GB free", "of 32 GB", Eject enabled and no Browse; tapping Eject → "Ejecting…" with Cancel; settling ejected → "Safe to remove" and "Your internal audio stays available."; settling ok:false → "Could not eject. The drive is still connected. Try again." with Eject enabled again. | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage test/system/view/system_faces_test.dart
 - Internal 128 GB total, 64 GB free, 48 kHz 24-bit stereo → "60 hr 45 min recording remaining · estimated" and the reserve note; free 0.2 GB → the Low internal space banner, "No recording space"; unknown space → "Remaining time unavailable" and no banner. | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage
-- While a lease is held the Eject button is disabled with the purpose as subtitle and the cubit's eject() does nothing; powerOffGate(snapshot with transferInFlight: true) == refuse. | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage test/appliance
+- While a lease is held the Eject button is disabled with the purpose, in words and once each, as subtitle and the cubit's eject() files nothing (the repository refuses); powerOffGate(snapshot with transferInFlight: true) == refuse. | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage test/appliance
 - With the Storage page mounted the cubit reads space on open, on each volume event and every 5 s; unmounting the page stops the timer (no further reads in a fake-async window). | verify: /Users/Tomas/development/flutter/bin/flutter test test/storage
 - `exportDestination`, `exportEverything`, `storageExportTitle`, `storageNoUsb` and `exportVolumeMounted` no longer exist anywhere. | verify: ! grep -rn -E 'exportDestination|exportEverything|storageExportTitle|storageNoUsb|exportVolumeMounted' lib test packages
-- Root coverage floor holds; analyzer, Bloc lint and formatting clean; the Spanish file only loses the two removed keys or gains new ones. | verify: /Users/Tomas/development/flutter/bin/flutter test --coverage && dart analyze --fatal-infos && bloc lint lib test packages && git diff origin/claude/segno-integration -- lib/l10n/arb/app_es.arb | grep '^-' | grep -v -E '^---|storageExportTitle|storageNoUsb' | wc -l | grep -qx 0
+- Root coverage floor holds; analyzer, Bloc lint and formatting clean; the Spanish file only loses the removed keys (the two export keys and the breakdown's `Free`) or gains new ones. | verify: /Users/Tomas/development/flutter/bin/flutter test --coverage && dart analyze --fatal-infos && bloc lint lib test packages && git diff origin/claude/segno-integration -- lib/l10n/arb/app_es.arb | grep '^-' | grep -v -E '^---|storageExportTitle|storageNoUsb|storageFreeTitle' | wc -l | grep -qx 0
 - HARDWARE: on the appliance with loops playing, plug, browse to Storage, eject, see Safe to remove, pull the stick; repeat with a stick that is being written to by an export from the desktop build of Part 6 or a copy started over ssh (`cp` into the mount point) and confirm Eject is refused, then succeeds after the copy ends; no audible dropout on any eject (compare `perfOverruns` in the journal before and after). | verify: manual on device
 NON-GOALS:
 - Library browsing of a volume, export, backup, the destination picker and the recorder's destination (Part 6), the ten-tile Settings home (E3-4).
