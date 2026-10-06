@@ -27,13 +27,27 @@ typedef struct le_wav_writer {
 
 /* Creates `path` (truncating) and writes the zero-size header. `chunk_id` is
  * NULL for no extra chunk, else a 4-byte id written with `chunk_bytes` of
- * `chunk` (an even size keeps RIFF word alignment). Returns 1 on success. */
+ * `chunk`; an odd size is refused (RIFF chunks are word aligned). Returns 1
+ * on success. */
 int le_wav_open(le_wav_writer* w, const char* path, int32_t sample_rate,
                 int32_t channels, const char* chunk_id, const void* chunk,
                 uint32_t chunk_bytes);
 
 /* Appends `frames` interleaved frames. Returns 1 while every write landed. */
 int le_wav_append(le_wav_writer* w, const float* samples, uint64_t frames);
+
+/* Credits `frames` more whole frames written to w->file by the caller's own
+ * write path. For the capture drain (perf_drain.c), which writes through its
+ * write-budget test seam and floors a short write to whole frames itself;
+ * le_wav_seal then patches the sizes from the credited count. */
+void le_wav_note_frames(le_wav_writer* w, uint64_t frames);
+
+/* Hands every appended sample to the OS (fflush), leaving the file open and
+ * its sizes unpatched. For a stream written in cycles, such as the capture
+ * drain, whose checkpoint thread then syncs the file by its own descriptor.
+ * Returns 1 while every write landed; a failed flush marks the writer
+ * failed, so le_wav_seal reports it too. */
+int le_wav_flush(le_wav_writer* w);
 
 /* Patches the RIFF and data sizes, flushes, optionally fsyncs, and closes.
  * Returns 1 when the whole file (header, samples, sizes) is on disk. A data
@@ -45,8 +59,19 @@ void le_wav_abandon(le_wav_writer* w);
 
 /* Replaces `final_path` with `part_path` in one rename, then syncs the
  * containing directory (le_fs_sync_dir, #1198 Part 1) so the new entry is
- * durable. Returns 1 on success. */
+ * durable. Returns 1 when both succeeded, 2 when the file is published but
+ * the directory sync failed (the file is in place; its entry may not survive
+ * a power cut), 0 when the rename failed (nothing was published). */
 int le_wav_publish(const char* part_path, const char* final_path);
+
+/* Repairs a file this writer opened but never sealed (a power cut or a
+ * crash), or cuts one back to a trusted length: keeps the first
+ * min(whole frames present, `max_frames`) frames, truncates anything after
+ * them (a torn last frame included), patches the RIFF and data sizes and
+ * fsyncs. Pass UINT64_MAX to keep every whole frame. `*kept` (may be NULL)
+ * receives the frames kept. Returns 1 on success, 0 when the file is not a
+ * 32-bit float WAV in this layout or a read or write fails. */
+int le_wav_patch_sizes(const char* path, uint64_t max_frames, uint64_t* kept);
 
 /* One-shot helper: writes a whole interleaved buffer as a sealed file. */
 int le_wav_write_file(const char* path, const float* samples, uint64_t frames,

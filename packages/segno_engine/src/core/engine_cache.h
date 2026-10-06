@@ -110,10 +110,10 @@ void le_fx_frozen_bits(const le_fx_frozen_chain* c, int32_t from, int32_t to,
                        int32_t out[LE_FX_MAX]);
 
 /* Seeds a calloc'd heap state for entries [0, count): effective entries in
- * [from, to) settled wet, everything else settled bypass, every entry reset
- * and prepared (a hosted plugin slot stays NULL and renders dry). Returns
- * LE_OK or LE_ERR_INVALID on an allocation failure (never a silent dry
- * slot). The caller frees with le_fx_state_free_buffers. */
+ * [from, to) settled wet, everything else settled bypass, every entry reset,
+ * and the entries in [from, to) prepared (a hosted plugin slot stays NULL and
+ * renders dry). Returns LE_OK or LE_ERR_INVALID on an allocation failure
+ * (never a silent dry slot). The caller frees with le_fx_state_free_buffers. */
 int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
                                 int32_t from, int32_t to, int32_t cap);
 
@@ -129,10 +129,9 @@ int32_t le_fx_print(const le_fx_frozen_chain* c, int32_t count,
 
 /* ---- The render recipe's seams into the cache (engine_render.c) ---- */
 
-/* Reserves `bytes` against the cache's byte cap, evicting retained prints
- * (LRU) to make room. Returns 1 when reserved. Control thread. */
-int le_cache_reserve(le_engine* engine, int64_t bytes);
-void le_cache_release(le_engine* engine, int64_t bytes);
+/* 1 while le_cache_shutdown is joining the worker: a render recipe's print
+ * running on the worker stops at its next abort check. */
+int le_cache_shutting_down(le_engine* engine);
 
 /* 1 when the callback publishes the track's PCM as readable and every
  * command is settled — the cache's own copy-at-enqueue gate. */

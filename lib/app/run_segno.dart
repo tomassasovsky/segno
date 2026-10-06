@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
@@ -8,6 +7,7 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/audio_bootstrap.dart';
@@ -43,12 +43,15 @@ Future<void> runSegno(
   LooperRepository? repository,
   SessionRepository? sessionRepository,
   PerformanceRepository? performanceRepository,
+  GuardRegistry? guards,
   EngineConfig? startConfig,
 }) async {
   assert(
     (repository == null) == (sessionRepository == null) &&
-        (repository == null) == (performanceRepository == null),
-    'inject all three repositories together or none',
+        (repository == null) == (performanceRepository == null) &&
+        (repository == null) == (guards == null),
+    'inject all three repositories and the guard table they share together, '
+    'or none',
   );
   WidgetsFlutterBinding.ensureInitialized();
   // The engine's vendored native code (Signalsmith Stretch, RNNoise,
@@ -88,6 +91,9 @@ Future<void> runSegno(
   final LooperRepository looper;
   final SessionRepository session;
   final PerformanceRepository performance;
+  // One guard table for the whole app (accepted behaviour 6.12): the
+  // repositories and the runtime's owners all check it at their commits.
+  final registry = guards ?? GuardRegistry();
   if (repository == null ||
       sessionRepository == null ||
       performanceRepository == null) {
@@ -96,10 +102,12 @@ Future<void> runSegno(
     session = SessionRepository(
       engine: engine,
       sessionsRoot: defaultSessionsRoot,
+      guards: registry,
     );
     performance = PerformanceRepository(
       engine: engine,
       exportsRoot: defaultExportDirectory,
+      guards: registry,
     );
   } else {
     looper = repository;
@@ -150,7 +158,6 @@ Future<void> runSegno(
   // are wired, so the update UI stays hidden on unsupported builds.
   final updates = UpdateRepository(backend: createPlatformUpdateBackend());
   final wifi = WifiRepository(client: createWifiClient());
-  final bluetooth = BluetoothRepository(client: createBluetoothClient());
   final brightness = createBrightnessClient();
   // The same directory resolvers the session and performance repositories are
   // wired with, so the real client's disk accounting measures the app's own
@@ -229,9 +236,9 @@ Future<void> runSegno(
       initialAsioDrivers: asioDrivers,
       updates: updates,
       wifi: wifi,
-      bluetooth: bluetooth,
       brightness: brightness,
       consoleFacts: consoleFacts,
+      guards: registry,
     ),
   );
 }

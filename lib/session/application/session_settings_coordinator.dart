@@ -80,18 +80,23 @@ class SessionSettingsCoordinator {
     final mix = _mix.durableSnapshot;
     return (
       chains: chainsFromLooper(_looper, projection: _fx, mix: mix),
-      settings: settingsFromLooper(
-        _looper,
-        mix: mix,
-        clickVolume: _tempo.clickVolumeOwner.durable,
-        clickMode: _tempo.clickModeOwner.durable,
-        recordStart: _tempo.recordStartOwner.durable,
-        decay: _playback.decayOwner.durable,
-        oneShot: _playback.oneShotOwner.durable,
-        recordLength: _record.durableRecordLengthSnapshot,
-        recordTiming: _timing.durableRecordTimingSnapshot,
-        fade: _fade.owner.durable,
-      ),
+      settings: current(),
     );
   }
+
+  /// The player's accepted settings as they stand, without settling pending
+  /// edits. Opening a session from an older schema keeps the ones it never
+  /// carried at these values (see `SessionMigrationContext`).
+  SessionSettings current() => settingsFromLooper(
+    _looper,
+    mix: _mix.durableSnapshot,
+    clickVolume: _tempo.clickVolumeOwner.durable,
+    clickMode: _tempo.clickModeOwner.durable,
+    recordStart: _tempo.recordStartOwner.durable,
+    decay: _playback.decayOwner.durable,
+    oneShot: _playback.oneShotOwner.durable,
+    recordLength: _record.durableRecordLengthSnapshot,
+    recordTiming: _timing.durableRecordTimingSnapshot,
+    fade: _fade.owner.durable,
+  );
 }
