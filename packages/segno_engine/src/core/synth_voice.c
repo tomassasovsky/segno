@@ -257,7 +257,8 @@ static int voice_run(const le_synth* s, le_synth_voice* v, float* out,
     if (v->state == LE_SYNTH_VOICE_FADING) {
       o *= v->fade;
       v->fade -= v->fade_step;
-      if (v->fade <= 0.0f) ended = 1;
+      /* half a step of slack: rounding must not leave a 1e-7 tail sample */
+      if (v->fade <= 0.5f * v->fade_step) ended = 1;
     }
     if (out != NULL) out[f] += o;
     if (ended) {
@@ -266,6 +267,22 @@ static int voice_run(const le_synth* s, le_synth_voice* v, float* out,
     }
   }
   return 1;
+}
+
+static float fade_step(const le_synth* s) {
+  return 1000.0f / ((float)LE_SYNTH_FADE_MS * (float)s->sample_rate);
+}
+
+static int sounding(const le_synth_voice* v) {
+  return v->state == LE_SYNTH_VOICE_HELD || v->state == LE_SYNTH_VOICE_RELEASED;
+}
+
+/* Fades main voice `v` out where it is (Cut, patch change, voice limit). */
+static void fade_in_place(const le_synth* s, le_synth_voice* v) {
+  v->state = LE_SYNTH_VOICE_FADING;
+  v->fade = 1.0f;
+  v->fade_step = fade_step(s);
+  v->amp_step = 0.0f;
 }
 
 /* Moves main voice `v` into a fade slot (or overwrites the most finished
@@ -288,8 +305,7 @@ static void fade_out(le_synth* s, le_synth_voice* v) {
   *slot = *v;
   slot->state = LE_SYNTH_VOICE_FADING;
   slot->fade = 1.0f;
-  slot->fade_step =
-      1000.0f / ((float)LE_SYNTH_FADE_MS * (float)s->sample_rate);
+  slot->fade_step = fade_step(s);
   slot->amp_step = 0.0f;
   v->state = LE_SYNTH_VOICE_FREE;
 }
@@ -304,17 +320,37 @@ static le_synth_voice* oldest(le_synth* s, int32_t state, int32_t inst) {
   return best;
 }
 
-/* A free main slot, stealing when the pool is full: the oldest released
- * voice of this instrument, then of any instrument, then the oldest held
- * voice of this instrument, then of any. */
-static le_synth_voice* take_slot(le_synth* s, int32_t inst) {
-  for (int32_t i = 0; i < s->voice_count; ++i) {
-    if (s->voices[i].state == LE_SYNTH_VOICE_FREE) return &s->voices[i];
-  }
+/* The stealing order: the oldest released voice of `inst`, then of any
+ * instrument, then the oldest held voice of `inst`, then of any. */
+static le_synth_voice* victim(le_synth* s, int32_t inst) {
   le_synth_voice* v = oldest(s, LE_SYNTH_VOICE_RELEASED, inst);
   if (v == NULL) v = oldest(s, LE_SYNTH_VOICE_RELEASED, -1);
   if (v == NULL) v = oldest(s, LE_SYNTH_VOICE_HELD, inst);
   if (v == NULL) v = oldest(s, LE_SYNTH_VOICE_HELD, -1);
+  return v;
+}
+
+/* A main slot for a new note on `inst`. Under the voice limit: a free slot,
+ * else the most finished in-place fade (cut short, counted). At the limit:
+ * the stealing victim, moved to a fade slot. */
+static le_synth_voice* take_slot(le_synth* s, int32_t inst) {
+  if (le_synth_active(s, -1) < s->voice_limit) {
+    le_synth_voice* fading = NULL;
+    for (int32_t i = 0; i < s->voice_count; ++i) {
+      le_synth_voice* v = &s->voices[i];
+      if (v->state == LE_SYNTH_VOICE_FREE) return v;
+      if (v->state == LE_SYNTH_VOICE_FADING &&
+          (fading == NULL || v->fade < fading->fade)) {
+        fading = v;
+      }
+    }
+    if (fading != NULL) {
+      fading->state = LE_SYNTH_VOICE_FREE;
+      s->stolen_hard++;
+      return fading;
+    }
+  }
+  le_synth_voice* v = victim(s, inst);
   fade_out(s, v);
   s->stolen++;
   return v;
@@ -347,6 +383,7 @@ int32_t le_synth_init(le_synth* s, int32_t sample_rate, int32_t voices,
   memset(s, 0, sizeof(*s));
   s->sample_rate = sample_rate;
   s->voice_count = voices;
+  s->voice_limit = voices;
   s->seed = seed;
   for (int32_t i = 0; i <= LE_SYNTH_SINE_SIZE; ++i) {
     s->sine[i] = (float)sin(2.0 * 3.14159265358979323846 * (double)i /
@@ -371,7 +408,7 @@ int32_t le_synth_set_instrument(le_synth* s, int32_t inst, int32_t patch) {
   if (s->inst[inst].patch != patch) {
     for (int32_t i = 0; i < s->voice_count; ++i) {
       le_synth_voice* v = &s->voices[i];
-      if (v->state != LE_SYNTH_VOICE_FREE && v->inst == inst) fade_out(s, v);
+      if (sounding(v) && v->inst == inst) fade_in_place(s, v);
     }
   }
   s->inst[inst].patch = patch;
@@ -521,6 +558,21 @@ void le_synth_note_off(le_synth* s, uint32_t origin) {
   }
 }
 
+void le_synth_cut(le_synth* s, int32_t inst) {
+  if (s == NULL) return;
+  for (int32_t i = 0; i < s->voice_count; ++i) {
+    le_synth_voice* v = &s->voices[i];
+    if (sounding(v) && (inst < 0 || v->inst == inst)) fade_in_place(s, v);
+  }
+}
+
+int32_t le_synth_set_voice_limit(le_synth* s, int32_t limit) {
+  if (s == NULL || limit < 1 || limit > s->voice_count) return -1;
+  s->voice_limit = limit;
+  while (le_synth_active(s, -1) > limit) fade_in_place(s, victim(s, -1));
+  return 0;
+}
+
 void le_synth_render(le_synth* s, float* const* bus, int32_t n_bus,
                      int32_t frames) {
   if (s == NULL || frames <= 0) return;
@@ -569,7 +621,7 @@ int32_t le_synth_active(const le_synth* s, int32_t inst) {
   int32_t n = 0;
   for (int32_t i = 0; i < s->voice_count; ++i) {
     const le_synth_voice* v = &s->voices[i];
-    if (v->state != LE_SYNTH_VOICE_FREE && (inst < 0 || v->inst == inst)) n++;
+    if (sounding(v) && (inst < 0 || v->inst == inst)) n++;
   }
   return n;
 }
@@ -580,6 +632,9 @@ int32_t le_synth_fading(const le_synth* s) {
   for (int32_t i = 0; i < LE_SYNTH_FADE_SLOTS; ++i) {
     if (s->fades[i].state != LE_SYNTH_VOICE_FREE) n++;
   }
+  for (int32_t i = 0; i < s->voice_count; ++i) {
+    if (s->voices[i].state == LE_SYNTH_VOICE_FADING) n++;
+  }
   return n;
 }
 
@@ -587,7 +642,7 @@ int32_t le_synth_has_origin(const le_synth* s, uint32_t origin) {
   if (s == NULL) return 0;
   for (int32_t i = 0; i < s->voice_count; ++i) {
     const le_synth_voice* v = &s->voices[i];
-    if (v->state != LE_SYNTH_VOICE_FREE && v->origin == origin) return 1;
+    if (sounding(v) && v->origin == origin) return 1;
   }
   return 0;
 }

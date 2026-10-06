@@ -53,8 +53,9 @@ static void sleep_until_us(double target) {
 }
 
 typedef struct {
-  double p50, p99, max, mean;
+  double p50, p99, p999, max, mean;
   size_t n;
+  size_t over; /* samples above g_budget_us: periods that would be late */
 } stats;
 
 static int cmp_double(const void* a, const void* b) {
@@ -62,17 +63,25 @@ static int cmp_double(const void* a, const void* b) {
   return x < y ? -1 : x > y;
 }
 
+static double g_budget_us;
+
 static stats stats_of(double* v, size_t n) {
-  stats s = {0, 0, 0, 0, n};
+  stats s = {0, 0, 0, 0, 0, n, 0};
   if (n == 0) return s;
   qsort(v, n, sizeof(double), cmp_double);
   double sum = 0;
-  for (size_t i = 0; i < n; ++i) sum += v[i];
+  for (size_t i = 0; i < n; ++i) {
+    sum += v[i];
+    if (g_budget_us > 0 && v[i] > g_budget_us) s.over++;
+  }
   size_t i50 = (size_t)ceil(0.50 * (double)n), i99 = (size_t)ceil(0.99 * (double)n);
+  size_t i999 = (size_t)ceil(0.999 * (double)n);
   if (i50) i50--;
   if (i99) i99--;
+  if (i999) i999--;
   s.p50 = v[i50];
   s.p99 = v[i99];
+  s.p999 = v[i999];
   s.max = v[n - 1];
   s.mean = sum / (double)n;
   return s;
@@ -240,13 +249,15 @@ typedef struct {
   int32_t period;
 } rig;
 
-static int rig_create(rig* r, const bench_opts* o, int lanes_per_track,
-                      const float* src, int32_t frames) {
+/* A playing rig with `in_ch` device inputs (the input buffer carries the
+ * source signal on every channel, so monitors have something to process). */
+static int rig_create_io(rig* r, const bench_opts* o, int lanes_per_track,
+                         const float* src, int32_t frames, int32_t in_ch) {
   memset(r, 0, sizeof(*r));
   r->period = o->period;
   r->e = le_engine_create();
   if (r->e == NULL) return 0;
-  if (le_engine_configure(r->e, o->rate, 2, 2, frames) != LE_OK) return 0;
+  if (le_engine_configure(r->e, o->rate, in_ch, 2, frames) != LE_OK) return 0;
   for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int32_t l = 0; l < lanes_per_track; ++l) {
       const int32_t rc = le_engine_import_track_lane(r->e, t, l, src, frames);
@@ -257,8 +268,13 @@ static int rig_create(rig* r, const bench_opts* o, int lanes_per_track,
     }
   }
   if (le_engine_commit_session(r->e, frames, 0) != LE_OK) return 0;
-  r->in = (float*)calloc((size_t)o->period * 2, sizeof(float));
+  r->in = (float*)calloc((size_t)o->period * (size_t)in_ch, sizeof(float));
   r->out = (float*)calloc((size_t)o->period * 2, sizeof(float));
+  if (in_ch > 2) {
+    for (int32_t f = 0; f < o->period; ++f) {
+      for (int32_t c = 0; c < in_ch; ++c) r->in[f * in_ch + c] = src[f];
+    }
+  }
   le_engine_process(r->e, r->out, r->in, 0); /* apply the commit */
   for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
     if (le_engine_play(r->e, t) != LE_OK) return 0;
@@ -266,6 +282,11 @@ static int rig_create(rig* r, const bench_opts* o, int lanes_per_track,
   le_engine_process(r->e, r->out, r->in, 0);
   for (int k = 0; k < 200; ++k) le_engine_process(r->e, r->out, r->in, (uint32_t)o->period);
   return 1;
+}
+
+static int rig_create(rig* r, const bench_opts* o, int lanes_per_track,
+                      const float* src, int32_t frames) {
+  return rig_create_io(r, o, lanes_per_track, src, frames, 2);
 }
 
 static void rig_destroy(rig* r) {
@@ -276,13 +297,49 @@ static void rig_destroy(rig* r) {
 
 /* ---------------- scenarios ---------------- */
 
-static double g_budget_us;
-
 static void print_row(const char* label, stats s) {
   printf("| %-34s | %8.1f | %8.1f | %8.1f | %8.1f | %6.1f%% | %6.1f%% |\n", label,
          s.p50, s.p99, s.max, s.mean, 100.0 * s.p50 / g_budget_us,
          100.0 * s.p99 / g_budget_us);
 }
+
+/* A row with the tail figures the joint budget is judged on. */
+static void print_tail_row(const char* label, stats s) {
+  printf("| %-34s | %8.1f | %8.1f | %8.1f | %8.1f | %6.1f%% | %6.1f%% | %6.1f%% | %5zu |\n",
+         label, s.p50, s.p99, s.p999, s.max, 100.0 * s.p50 / g_budget_us,
+         100.0 * s.p99 / g_budget_us, 100.0 * s.p999 / g_budget_us, s.over);
+}
+
+static void print_tail_header(void) {
+  printf("| scenario                           |  p50 us |  p99 us | p99.9 us |  max us | p50/bud | p99/bud | p99.9/bud | late |\n");
+  printf("|------------------------------------|---------|---------|----------|---------|---------|---------|-----------|------|\n");
+}
+
+/* One period of the pitch/time read head (engine_read_head.h) over
+ * `lanes_per_track` lanes of 8 tracks at `rate`: the mixer work Speed adds.
+ * The includer includes engine_read_head.h. */
+#ifdef LE_ENGINE_READ_HEAD_H
+static volatile float g_sink;
+
+static void head_period(const le_read_head* heads, float** lane_bufs,
+                        int lanes_per_track, int32_t len, int64_t base,
+                        int32_t period, double rate, float* acc) {
+  const int decimate = rate >= 2.0;
+  for (int32_t f = 0; f < period; ++f) {
+    const int64_t pos = base + f;
+    float sum = 0.0f;
+    for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+      const double idx = le_head_index(&heads[t], pos, len);
+      for (int l = 0; l < lanes_per_track; ++l) {
+        const float* buf = lane_bufs[t * lanes_per_track + l];
+        sum += decimate ? le_head_sample_decimated(buf, len, idx, rate)
+                        : le_head_sample(buf, len, idx);
+      }
+    }
+    acc[f] = sum;
+  }
+}
+#endif
 
 static void print_header(void) {
   printf("| scenario                           |  p50 us |  p99 us |  max us | mean us | p50/bud | p99/bud |\n");

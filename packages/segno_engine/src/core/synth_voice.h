@@ -34,9 +34,12 @@ extern "C" {
 #define LE_SYNTH_MAX_INSTRUMENTS 8
 #define LE_SYNTH_DEFAULT_VOICES 32
 #define LE_SYNTH_MAX_VOICES 64
-/* Stolen and cut voices fade over LE_SYNTH_FADE_MS in one of these slots, so
- * a steal never clicks and the new note starts in the same block. */
-#define LE_SYNTH_FADE_SLOTS 8
+/* A stolen voice (or one struck again) fades over LE_SYNTH_FADE_MS in one of
+ * these slots, so a steal never clicks and the new note starts in the same
+ * block. One per pool voice, so even a full pool stolen in one burst fades;
+ * only more than that many steals within 3 ms overwrite a fade (counted in
+ * stolen_hard). Cut and patch changes fade voices in place instead. */
+#define LE_SYNTH_FADE_SLOTS LE_SYNTH_MAX_VOICES
 #define LE_SYNTH_FADE_MS 3
 #define LE_SYNTH_CTRL_FRAMES 32
 #define LE_SYNTH_SINE_SIZE 2048
@@ -137,6 +140,7 @@ typedef struct le_synth_instrument {
 typedef struct le_synth {
   int32_t sample_rate;
   int32_t voice_count; /* the pool size, <= LE_SYNTH_MAX_VOICES */
+  int32_t voice_limit; /* sounding voices allowed, <= voice_count (overload) */
   uint32_t seed;
   uint64_t serial;
   int32_t ctrl_left; /* frames until the next control update */
@@ -146,7 +150,7 @@ typedef struct le_synth {
   le_synth_voice voices[LE_SYNTH_MAX_VOICES];
   le_synth_voice fades[LE_SYNTH_FADE_SLOTS];
   uint32_t stolen;      /* voices taken for a new note (faded) */
-  uint32_t stolen_hard; /* fades overwritten because every fade slot was busy */
+  uint32_t stolen_hard; /* voices or fades cut without a fade (no room) */
 } le_synth;
 
 /* Prepares `s` for `sample_rate` with a pool of `voices` (1..64). No
@@ -173,12 +177,22 @@ int32_t le_synth_note_on(le_synth* s, int32_t inst, uint32_t origin,
 /* Releases every held voice started for `origin` (drums ignore it). */
 void le_synth_note_off(le_synth* s, uint32_t origin);
 
+/* Cut all sound: every sounding voice of `inst` (-1: every instrument) fades
+ * to silence over LE_SYNTH_FADE_MS in place. */
+void le_synth_cut(le_synth* s, int32_t inst);
+
+/* Allows at most `limit` (1..pool) sounding voices: the overload policy's
+ * control. Lowering it fades the excess in stealing order; later notes steal
+ * at the limit. Returns 0, or -1 for a limit out of range. */
+int32_t le_synth_set_voice_limit(le_synth* s, int32_t limit);
+
 /* Renders `frames` into bus[0..n_bus-1] (each zeroed first; a NULL bus is
  * skipped, its voices still advance). Instrument i writes bus[i]. */
 void le_synth_render(le_synth* s, float* const* bus, int32_t n_bus,
                      int32_t frames);
 
-/* Sounding (not fading) voices of `inst`, or of every instrument for -1. */
+/* Sounding (held or releasing, not fading) voices of `inst`, or of every
+ * instrument for -1. */
 int32_t le_synth_active(const le_synth* s, int32_t inst);
 /* Voices fading out (stolen, struck again, or cut by a patch change). */
 int32_t le_synth_fading(const le_synth* s);

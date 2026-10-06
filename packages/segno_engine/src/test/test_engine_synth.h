@@ -321,7 +321,7 @@ static void test_synth_steal_fades_to_exact_zero(void) {
   float* b = (float*)calloc((size_t)n, sizeof(float));
   float* oa[1] = {a};
   float* ob[1] = {b};
-  /* a pool of one: B steals A, which fades over 3 ms (144 frames) */
+  /* a pool of one: B steals A, which fades over 3 ms (frames 0..143) */
   le_synth_init(&g_syn_a, SYN_SR, 1, 1);
   le_synth_set_instrument(&g_syn_a, 0, syn_patch("keys"));
   le_synth_note_on(&g_syn_a, 0, 1, 60, 120);
@@ -337,7 +337,7 @@ static void test_synth_steal_fades_to_exact_zero(void) {
   le_synth_note_on(&g_syn_b, 0, 2, 64, 120);
   syn_render(&g_syn_b, ob, 1, n, 64);
   CHECK(memcmp(a, b, sizeof(float) * 100) != 0); /* the fade is heard */
-  CHECK(memcmp(a + 145, b + 145, sizeof(float) * (size_t)(n - 145)) == 0);
+  CHECK(memcmp(a + 144, b + 144, sizeof(float) * (size_t)(n - 144)) == 0);
   /* a repeated strike from one origin replaces its voice the same way */
   le_synth_init(&g_syn_a, SYN_SR, 32, 1);
   le_synth_set_instrument(&g_syn_a, 0, syn_patch("keys"));
@@ -471,6 +471,100 @@ static void test_synth_deterministic_and_bounded(void) {
   }
 }
 
+/* A full pool stolen in one burst still fades every victim (one fade slot per
+ * pool voice), and the burst's notes all sound. */
+static void test_synth_full_pool_burst_fades_all(void) {
+  printf("test_synth_full_pool_burst_fades_all\n");
+  le_synth_init(&g_syn_a, SYN_SR, 32, 1);
+  le_synth_set_instrument(&g_syn_a, 0, syn_patch("keys"));
+  for (uint32_t o = 1; o <= 32; ++o) le_synth_note_on(&g_syn_a, 0, o, 40 + (int32_t)o, 100);
+  for (uint32_t o = 33; o <= 64; ++o) {
+    CHECK(le_synth_note_on(&g_syn_a, 0, o, 40 + (int32_t)(o - 32), 100) == 0);
+  }
+  CHECK(le_synth_active(&g_syn_a, 0) == 32);
+  CHECK(le_synth_fading(&g_syn_a) == 32);
+  CHECK(g_syn_a.stolen == 32);
+  CHECK(g_syn_a.stolen_hard == 0);
+  for (uint32_t o = 1; o <= 32; ++o) CHECK(!le_synth_has_origin(&g_syn_a, o));
+  float* none[1] = {NULL};
+  syn_render(&g_syn_a, none, 1, 145, 64);
+  CHECK(le_synth_fading(&g_syn_a) == 0);
+  CHECK(le_synth_active(&g_syn_a, 0) == 32);
+}
+
+/* Cut all sound fades voices where they are: the instrument's bus is exactly
+ * silent 3 ms later, the other instrument keeps playing, and a note struck
+ * while every slot is still fading takes the most finished one. */
+static void test_synth_cut_fades_in_place(void) {
+  printf("test_synth_cut_fades_in_place\n");
+  const int32_t n = 4800;
+  float* a = (float*)calloc((size_t)n, sizeof(float));
+  float* b = (float*)calloc((size_t)n, sizeof(float));
+  float* c = (float*)calloc((size_t)n, sizeof(float));
+  le_synth_init(&g_syn_a, SYN_SR, 32, 1);
+  le_synth_set_instrument(&g_syn_a, 0, syn_patch("organ"));
+  le_synth_set_instrument(&g_syn_a, 1, syn_patch("sub"));
+  for (uint32_t o = 1; o <= 16; ++o) le_synth_note_on(&g_syn_a, 0, o, 48 + (int32_t)o, 100);
+  le_synth_note_on(&g_syn_a, 1, 100, 40, 100);
+  float* warm[2] = {NULL, NULL};
+  syn_render(&g_syn_a, warm, 2, 960, 64);
+  le_synth_cut(&g_syn_a, 0);
+  CHECK(le_synth_active(&g_syn_a, 0) == 0);
+  CHECK(le_synth_active(&g_syn_a, 1) == 1);
+  CHECK(le_synth_fading(&g_syn_a) == 16);
+  float* o2[2] = {a, b};
+  syn_render(&g_syn_a, o2, 2, n, 64);
+  CHECK(syn_peak(a, 144) > 0.0f); /* the fade is heard */
+  for (int32_t i = 144; i < n; ++i) CHECK(a[i] == 0.0f);
+  CHECK(le_synth_fading(&g_syn_a) == 0);
+  CHECK(syn_peak(b, n) > 0.01f); /* the other instrument plays on */
+  /* sub alone, same frames: its bus is unaffected by the cut */
+  le_synth_init(&g_syn_b, SYN_SR, 32, 1);
+  le_synth_set_instrument(&g_syn_b, 1, syn_patch("sub"));
+  for (uint32_t o = 1; o <= 16; ++o) g_syn_b.serial++; /* same start order */
+  le_synth_note_on(&g_syn_b, 1, 100, 40, 100);
+  float* w2[2] = {NULL, NULL};
+  syn_render(&g_syn_b, w2, 2, 960, 64);
+  float* o3[2] = {NULL, c};
+  syn_render(&g_syn_b, o3, 2, n, 64);
+  CHECK(memcmp(b, c, sizeof(float) * (size_t)n) == 0);
+  /* cut everything, then strike while every slot fades */
+  le_synth_init(&g_syn_a, SYN_SR, 2, 1);
+  le_synth_set_instrument(&g_syn_a, 0, syn_patch("organ"));
+  le_synth_note_on(&g_syn_a, 0, 1, 60, 100);
+  le_synth_note_on(&g_syn_a, 0, 2, 64, 100);
+  le_synth_cut(&g_syn_a, -1);
+  CHECK(le_synth_active(&g_syn_a, -1) == 0);
+  CHECK(le_synth_note_on(&g_syn_a, 0, 3, 67, 100) == 0);
+  CHECK(le_synth_active(&g_syn_a, -1) == 1);
+  CHECK(g_syn_a.stolen_hard == 1);
+  free(a);
+  free(b);
+  free(c);
+}
+
+/* The overload control: lowering the voice limit fades the excess in
+ * stealing order and later notes steal at the limit. */
+static void test_synth_voice_limit(void) {
+  printf("test_synth_voice_limit\n");
+  le_synth_init(&g_syn_a, SYN_SR, 32, 1);
+  le_synth_set_instrument(&g_syn_a, 0, syn_patch("pad"));
+  CHECK(le_synth_set_voice_limit(&g_syn_a, 0) == -1);
+  CHECK(le_synth_set_voice_limit(&g_syn_a, 33) == -1);
+  for (uint32_t o = 1; o <= 16; ++o) le_synth_note_on(&g_syn_a, 0, o, 40 + (int32_t)o, 100);
+  CHECK(le_synth_set_voice_limit(&g_syn_a, 8) == 0);
+  CHECK(le_synth_active(&g_syn_a, -1) == 8);
+  CHECK(le_synth_fading(&g_syn_a) == 8);
+  for (uint32_t o = 1; o <= 8; ++o) CHECK(!le_synth_has_origin(&g_syn_a, o));
+  for (uint32_t o = 9; o <= 16; ++o) CHECK(le_synth_has_origin(&g_syn_a, o));
+  le_synth_note_on(&g_syn_a, 0, 17, 70, 100);
+  CHECK(le_synth_active(&g_syn_a, -1) == 8);
+  CHECK(!le_synth_has_origin(&g_syn_a, 9));
+  CHECK(le_synth_set_voice_limit(&g_syn_a, 32) == 0);
+  le_synth_note_on(&g_syn_a, 0, 18, 71, 100);
+  CHECK(le_synth_active(&g_syn_a, -1) == 9);
+}
+
 /* Note 127 puts upper partials past Nyquist (bells' 5.4x is 67.7 kHz): they
  * fall silent instead of aliasing or running their phase away. */
 static void test_synth_top_note_bounded(void) {
@@ -578,6 +672,9 @@ static void run_synth_tests(void) {
   test_synth_steal_fades_to_exact_zero();
   test_synth_cutoff_parameter();
   test_synth_deterministic_and_bounded();
+  test_synth_full_pool_burst_fades_all();
+  test_synth_cut_fades_in_place();
+  test_synth_voice_limit();
   test_synth_top_note_bounded();
   test_synth_block_size_independent();
 }
