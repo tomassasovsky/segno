@@ -147,7 +147,32 @@ void main() {
       expect(summary.tsNum, 3);
       expect(summary.tsDen, 4);
       expect(summary.trackCount, 2);
+      expect(summary.populatedChannels, [0, 2]);
       expect(summary.fxCount, 3 + 2 + 1 + 4 + 5);
+    });
+
+    test('reads populated channels leniently', () async {
+      makeBundle(
+        's-odd',
+        extra: {
+          'tracks': [
+            'junk',
+            {'channel': 'one'},
+            {'channel': 5},
+          ],
+        },
+      );
+      makeBundle('s-none', extra: {'tracks': 'not a list'});
+
+      final sessions = await repo().listSessions();
+
+      expect(sessions.singleWhere((s) => s.id == 's-odd').populatedChannels, [
+        5,
+      ]);
+      expect(
+        sessions.singleWhere((s) => s.id == 's-none').populatedChannels,
+        isEmpty,
+      );
     });
 
     test(
@@ -837,6 +862,7 @@ void main() {
       final preview = await repo().readPreview('s-a');
 
       expect(preview.summary.name, 'Evening loop');
+      expect(preview.sampleRate, 48000);
       expect(preview.fxCount, 6);
       expect(preview.backingCount, 0);
       expect(preview.tracks.map((t) => t.channel), [0, 2]);

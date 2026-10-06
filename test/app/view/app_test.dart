@@ -332,6 +332,17 @@ class _NoticeSessionRepository extends SessionRepository {
   ];
 
   @override
+  Future<List<String>> listFolders() async => const [];
+
+  @override
+  Future<SessionPreview> readPreview(String id) async => SessionPreview(
+    summary: SessionSummary(id: id, name: id),
+    tracks: const [],
+    fxCount: 0,
+    sampleRate: 48000,
+  );
+
+  @override
   Future<SessionBundle> read(String directory) async {
     if (!readEntered.isCompleted) readEntered.complete();
     await readRelease.future;
@@ -1308,10 +1319,12 @@ void main() {
         ..refuseBootWrite = true;
       await tester.tap(find.byKey(const Key('stage_library')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
       // Catalog refresh is unrelated work; it must not suppress Monitor Retry.
       expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
-      await tester.tap(find.text('Replacement'));
+      await tester.tap(find.byKey(const Key('library_row_Replacement')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('library_open_session')));
       await tester.pumpAndSettle();
       expect(session.state.bootRecoveryRequired, isTrue);
       expect(session.state.error, SessionError.bootPersistence);
@@ -1341,7 +1354,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(session.state.bootRecoveryRequired, isTrue);
       expect(monitor.state.inputs, isEmpty);
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
       expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
       expect(find.text('Retry').hitTestable(), findsOneWidget);
       store.refuseBootWrite = false;
@@ -3454,50 +3467,53 @@ void main() {
       expect(identical(first, second), isTrue);
     });
 
-    testWidgets('provides pedal events to the Sessions manager', (
-      tester,
-    ) async {
-      final sessionsRoot = Directory.systemTemp.createTempSync(
-        'segno-app-sessions-',
-      );
-      addTearDown(() => sessionsRoot.delete(recursive: true));
-      sessionRepository = SessionRepository(
-        engine: FakeAudioEngine(),
-        sessionsRoot: () async => sessionsRoot.path,
-      );
-      final link = FakePedalLink();
-      final pedal = PedalRepository(link);
-      link.hello();
-      await tester.pumpWidget(
-        App(
-          mixSettings: testMixSettings(repository, settings: settings),
-          repository: repository,
-          controllerRepository: controllerRepository,
-          midiDeviceRepository: midiDeviceRepository,
-          settings: settings,
-          waveformWindow: NoopWaveformWindowService(),
-          sessionRepository: sessionRepository,
-          performanceRepository: performanceRepository,
-          pedalRepository: pedal,
-        ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+    testWidgets(
+      'the stage Library mark opens the Library, and a footswitch returns',
+      (
+        tester,
+      ) async {
+        final sessionsRoot = Directory.systemTemp.createTempSync(
+          'segno-app-sessions-',
+        );
+        addTearDown(() => sessionsRoot.delete(recursive: true));
+        sessionRepository = SessionRepository(
+          engine: FakeAudioEngine(),
+          sessionsRoot: () async => sessionsRoot.path,
+        );
+        final link = FakePedalLink();
+        final pedal = PedalRepository(link);
+        link.hello();
+        await tester.pumpWidget(
+          App(
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: NoopWaveformWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            pedalRepository: pedal,
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
 
-      await tester.tap(find.byKey(const Key('stage_library')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('stage_library')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.byKey(const Key('library_page')), findsOneWidget);
 
-      link.press(PedalButton.clear, down: true);
-      await tester.pump();
-      link.press(PedalButton.clear, down: false);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sessions_manager')), findsNothing);
-      expect(find.byType(LooperPage), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(pedal.helloTimeout);
-    });
+        link.press(PedalButton.clear, down: true);
+        await tester.pump();
+        link.press(PedalButton.clear, down: false);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('library_page')), findsNothing);
+        expect(find.byType(LooperPage), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      },
+    );
 
     testWidgets('always lands on the looper — no first-run gate', (
       tester,

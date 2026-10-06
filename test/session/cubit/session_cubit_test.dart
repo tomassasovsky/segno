@@ -475,6 +475,19 @@ void main() {
     }
 
     blocTest<SessionCubit, SessionState>(
+      'an Open that fails names the session it tried',
+      setUp: () => stubRead(StateError('audio device must be running')),
+      build: build,
+      act: (cubit) => cubit.open('X'),
+      skip: 1,
+      expect: () => [
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.failure)
+            .having((s) => s.failedSessionId, 'failed', 'X'),
+      ],
+    );
+
+    blocTest<SessionCubit, SessionState>(
       'open classifies a sample-rate mismatch',
       setUp: () => stubRead(
         const SessionSampleRateMismatch(sessionRate: 44100, deviceRate: 48000),

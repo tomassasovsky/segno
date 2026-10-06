@@ -37,6 +37,7 @@ export 'package:segno_engine/segno_engine.dart'
         kMaxLanes,
         kMaxMonitoredInputs,
         kMaxOutputBuses,
+        kMaxTracks,
         kMinInputTrimDb,
         kTrackEffectMax,
         kTrackEffectParams,

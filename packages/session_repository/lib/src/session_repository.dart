@@ -508,6 +508,7 @@ class SessionRepository {
       folder: folder,
       modifiedAt: modifiedAt,
       trackCount: _lengthOf(json['tracks']),
+      populatedChannels: _channelsOf(json['tracks']),
       tempoBpm: _doubleOf(json['tempoBpm'], 0),
       tsNum: _intOf(json['tsNum'], 4),
       tsDen: _intOf(json['tsDen'], 4),
@@ -522,6 +523,14 @@ class SessionRepository {
   }
 
   static int _lengthOf(Object? raw) => raw is List ? raw.length : 0;
+
+  static List<int> _channelsOf(Object? raw) => raw is! List
+      ? const []
+      : [
+          for (final track in raw)
+            if (track is Map<String, dynamic> && track['channel'] is num)
+              (track['channel'] as num).toInt(),
+        ];
 
   static double _doubleOf(Object? raw, double fallback) =>
       raw is num && raw.isFinite ? raw.toDouble() : fallback;
@@ -636,6 +645,7 @@ class SessionRepository {
       summary: summary,
       tracks: tracks,
       fxCount: summary.fxCount,
+      sampleRate: session.sampleRate,
     );
   }
 

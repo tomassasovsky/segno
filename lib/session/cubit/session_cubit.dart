@@ -224,6 +224,7 @@ class SessionCubit extends Cubit<SessionState> {
   /// status stream, so it reflects this disarm too even though it was never
   /// the one to call it.
   Future<void> open(SessionId id) => _run(
+    subject: id,
     () async {
       var applied = false;
       try {
@@ -473,14 +474,20 @@ class SessionCubit extends Cubit<SessionState> {
   /// Runs [action] with the standard working → success/failure envelope,
   /// folding its durable-catalog changes into the next state and preserving the
   /// open session + list across the transition.
+  ///
+  /// [subject] is the session the action addresses; a failure carries it as
+  /// [SessionState.failedSessionId], so the Library can show an Open's
+  /// refusal on the session that refused and nowhere else.
   Future<void> _run(
     Future<_ActionResult> Function() action, {
     bool allowBootRecovery = false,
     bool reserveSessionLoad = false,
+    SessionId? subject,
   }) {
     if (_closing || isClosed) return Future<void>.value();
     final operation = _performRun(
       action,
+      subject: subject,
       allowBootRecovery: allowBootRecovery,
       reserveSessionLoad: reserveSessionLoad,
     );
@@ -500,6 +507,7 @@ class SessionCubit extends Cubit<SessionState> {
 
   Future<void> _performRun(
     Future<_ActionResult> Function() action, {
+    required SessionId? subject,
     required bool allowBootRecovery,
     required bool reserveSessionLoad,
   }) async {
@@ -507,6 +515,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failedSessionId: subject,
           error: SessionError.bootPersistence,
           errorMessage: 'session boot settings still need recovery',
           bootRecoveryRequired: true,
@@ -520,6 +529,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failedSessionId: subject,
           error: SessionError.unknown,
           errorMessage: 'session load is still in progress',
         ),
@@ -531,6 +541,7 @@ class SessionCubit extends Cubit<SessionState> {
         emit(
           state.copyWith(
             status: SessionStatus.failure,
+            failedSessionId: subject,
             error: SessionError.unknown,
             errorMessage: 'a session load is already active',
           ),
@@ -559,6 +570,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failedSessionId: subject,
           error: SessionError.bootPersistence,
           errorMessage: '${error.cause}',
           bootRecoveryRequired: true,
@@ -570,6 +582,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failedSessionId: subject,
           error: _classify(error),
           errorMessage: '$error',
         ),
@@ -579,6 +592,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failedSessionId: subject,
           error: SessionError.unknown,
           errorMessage: '$error',
         ),
