@@ -387,19 +387,59 @@ static void print_header(void) {
 static stats scenario_baseline_chains(const bench_opts* o,
                                       int lanes_per_track, const float* src,
                                       int32_t frames, int numer, int denom,
-                                      int chains);
+                                      int chains, int semitones);
 
 static stats scenario_baseline(const bench_opts* o, int lanes_per_track,
                                const float* src, int32_t frames, int numer,
                                int denom) {
   return scenario_baseline_chains(o, lanes_per_track, src, frames, numer,
-                                  denom, 0);
+                                  denom, 0, 0);
+}
+
+/* Tracks the transposed scenario saw sounding their pitch when timing began,
+ * the seconds the renders took, and the peak RSS after them. */
+static int g_transposed_engaged;
+static double g_transposed_render_s, g_transposed_rss;
+
+/* Transposes every track to `semitones` and drives the rig (periods plus the
+ * UI's cache poll) until every track sounds it, so the timed loop reads the
+ * renders. The cap is raised to hold all of them: this measures the audio
+ * thread with every print off and every chain live, not the cap policy. */
+static void rig_transpose_all(rig* r, const bench_opts* o, int semitones) {
+  (void)le_engine_set_fx_cache_cap(r->e, 4ll * 1024 * 1024 * 1024);
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    uint64_t request = 0;
+    if (le_engine_install_transpose(r->e, t, semitones, &request) != LE_OK) {
+      fprintf(stderr, "transpose track %d refused\n", t);
+      exit(3);
+    }
+  }
+  const double start = now_us();
+  le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
+  int engaged = 0;
+  while (now_us() - start < 600e6) {
+    for (int k = 0; k < 64; ++k) {
+      le_engine_process(r->e, r->out, r->in, (uint32_t)o->period);
+    }
+    le_engine_get_snapshot(r->e, snap); /* drives the cache, as the UI does */
+    engaged = 0;
+    for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+      engaged += snap->tracks[t].transpose_effective_st == semitones;
+    }
+    if (engaged == LE_MAX_TRACKS) break;
+    struct timespec ts = {0, 2000000};
+    nanosleep(&ts, NULL);
+  }
+  free(snap);
+  g_transposed_engaged = engaged;
+  g_transposed_render_s = (now_us() - start) / 1e6;
+  g_transposed_rss = peak_rss_bytes();
 }
 
 static stats scenario_baseline_chains(const bench_opts* o,
                                       int lanes_per_track, const float* src,
                                       int32_t frames, int numer, int denom,
-                                      int chains) {
+                                      int chains, int semitones) {
   rig r;
   if (!rig_create_chains(&r, o, lanes_per_track, src, frames, chains)) {
     fprintf(stderr, "baseline rig failed\n");
@@ -420,6 +460,7 @@ static stats scenario_baseline_chains(const bench_opts* o,
       exit(3);
     }
   }
+  if (semitones != 0) rig_transpose_all(&r, o, semitones);
   const size_t periods = (size_t)(o->seconds * o->rate / o->period);
   double* t = (double*)malloc(sizeof(double) * periods);
   le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
@@ -780,8 +821,17 @@ int main(int argc, char** argv) {
   /* The appliance rig: 8 x 8 with a Pre chain on every lane at 8x, so no
    * print engages and every chain runs live. */
   const stats chained =
-      scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1);
+      scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1, 0);
   print_row("8 x 8 with Pre chains at 8/1", chained);
+  /* ...and every track transposed (#1179 Part 3a review, M3): the reads
+   * come from the renders, prints stay off, every chain runs live. */
+  const stats transposed =
+      scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1, 7);
+  print_row("8 x 8, Pre chains, 8/1, all +7 st", transposed);
+  printf("\n- transposed rig: %d of 8 tracks sounding +7 st when timed; "
+         "renders took %.1f s; peak RSS after them %.0f MiB\n",
+         g_transposed_engaged, g_transposed_render_s,
+         g_transposed_rss / 1048576.0);
   printf("\n");
 
   /* head */
@@ -927,6 +977,10 @@ int main(int argc, char** argv) {
             100.0 * speed_worst8.p99 / g_budget_us, 50.0, 1);
       judge("8 x 8 with live Pre chains at 8x p99 <= 50% of period",
             100.0 * chained.p99 / g_budget_us, 50.0, 1);
+      judge("8 x 8, chains, 8x, all transposed p99 <= 50% of period",
+            100.0 * transposed.p99 / g_budget_us, 50.0, 1);
+      judge("transposed rig: every track sounding its pitch",
+            (double)g_transposed_engaged, (double)LE_MAX_TRACKS, 0);
     }
     judge("render worker scratch under 1 MiB", scratch_max / 1048576.0, 1.0, 1);
     judge("stretcher heap per instance (cheaper) <= 4 MiB", per_cheaper / 1048576.0, 4.0, 1);

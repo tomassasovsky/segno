@@ -469,6 +469,7 @@ static inline int le_wet_entry_key_matches(const le_wet_entry* ent,
 static inline int le_src_entry_key_matches(const le_wet_entry* ent,
                                            uint32_t audio_rev, int32_t len,
                                            int32_t semitones) {
+  /* `audio_rev` is the track's content key here (le_track.a_src_key). */
   return le_wet_entry_key_matches_kind(ent, audio_rev, 0, 0, len, 1,
                                        semitones, len);
 }
@@ -485,6 +486,11 @@ static inline int le_src_entry_key_matches(const le_wet_entry* ent,
  *
  * The effects fields are the per-lane record-route chain: a single
  * non-destructive chain run on playback. The recording stays dry. */
+/* The source renders a lane keeps published at once (Transpose, #1179): the
+ * cache's retained pair, so the callback finds the render for the content a
+ * swap brings back (Undo, Redo, Peel) in the same block (review M1). */
+#define LE_SRC_CANDIDATES 2
+
 typedef struct le_lane {
   _Atomic int32_t a_input_channel; /* hardware input recorded (-1 = none) */
   _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
@@ -591,9 +597,11 @@ typedef struct le_lane {
    * keeps the cross-thread read defined and TSan-clean. */
   le_wet_entry* _Atomic a_wet;
   _Atomic int32_t a_cache_active;
-  /* Transpose's source render for this lane (kind 1, #1179), published the
-   * same way as a_wet and key-checked by the audio thread every buffer. */
-  le_wet_entry* _Atomic a_src;
+  /* Transpose's source renders for this lane (kind 1, #1179): the cache's
+   * retained entries, each published the same way as a_wet; the audio
+   * thread selects the one whose key is the track's current content key
+   * (a_src_key), every buffer. */
+  le_wet_entry* _Atomic a_src[LE_SRC_CANDIDATES];
   /* Chain-edit generation: bumped (relaxed fetch_add) by EVERY path that can
    * change this lane's chain fingerprint, so the audio thread's per-buffer
    * cache check can skip the full fingerprint refold while nothing changed
@@ -1147,6 +1155,23 @@ typedef struct le_track {
    * (seqlock shape) and the publish step re-checks it again, so a torn copy
    * can never publish. */
   _Atomic uint32_t a_audio_rev;
+  /* The content key Transpose's source renders key on (#1179 Part 3a review,
+   * M1). It follows a_audio_rev (le_audio_rev_bump stores the new revision)
+   * except at an Undo, Redo or Peel swap, which re-points a_live at a slot
+   * whose PCM has not changed since it last sounded: the swap restores that
+   * slot's own key (a_slot_key), so a render made for it is current again
+   * and Undo is cache-hot. Keys come from the monotonic revision, so a key
+   * names one content: a slot's key is recorded only where its PCM is known
+   * (swapped out of live; a first pass's pre-image at retire) and cleared
+   * whenever the slot is handed out for new PCM (track_select_slot, session
+   * import), so a stale key can never name other audio. */
+  _Atomic uint32_t a_src_key;
+  _Atomic uint32_t a_slot_key[LE_POOL_SLOTS];
+  /* Audio-side: the key of the content a fresh overdub session's first pass
+   * backs up (its pre-pass image), filed on that pass's shadow at retire;
+   * 0 once a later pass of the session runs (its pre-image never sounded
+   * settled, so no render can name it). */
+  uint32_t pass_key;
 
   _Atomic int32_t a_state;
   _Atomic int32_t a_undo_depth; /* published PEELABLE layer count — see
@@ -2208,6 +2233,21 @@ static inline void store_i32(_Atomic int32_t* slot, int32_t v) {
  * cheap first line of defence. */
 static inline void le_audio_rev_bump(le_track* t) {
   atomic_fetch_add_explicit(&t->a_audio_rev, 1u, memory_order_release);
+  /* Read back rather than use fetch_add's value: the non-Clang C++ atomics
+   * shim's fetch_add returns nothing (docs/PROGRESS.md, the C++ blast
+   * radius). The bump sites never race each other on one track. */
+  atomic_store_explicit(
+      &t->a_src_key,
+      atomic_load_explicit(&t->a_audio_rev, memory_order_acquire),
+      memory_order_release);
+}
+
+/* Forgets every slot's content key (session import: the slots are refilled
+ * with PCM no key names). */
+static inline void le_track_forget_slot_keys(le_track* t) {
+  for (int s = 0; s < LE_POOL_SLOTS; ++s) {
+    atomic_store_explicit(&t->a_slot_key[s], 0u, memory_order_relaxed);
+  }
 }
 
 /* Track [ch]'s effective forced loop multiple: its per-track override, or the

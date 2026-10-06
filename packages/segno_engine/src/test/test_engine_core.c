@@ -34730,6 +34730,7 @@ int main(void) {
   test_stretch_offline_deterministic_and_guards();
   test_stretch_offline_click_alignment();
   test_stretch_offline_cyclic_seam();
+  test_stretch_loop_fold_holds_level();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

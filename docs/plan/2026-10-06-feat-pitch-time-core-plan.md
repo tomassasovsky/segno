@@ -493,9 +493,11 @@ would play dry, a silent pitch change, rule 3); Pre prints are evicted first
 (optional: the live chain computes the same function); a kind-1 job that
 still does not fit is refused with the reason in `le_lane_cache_info` (the Pre
 print's existing rule) and the track stays dry, reported. Default cap: Part 3a
-raises `LE_CACHE_DEFAULT_CAP_BYTES` from 64 MiB to 384 MiB (a 30 s mono lane
-at 96 kHz is 11.5 MiB; eight transposed single-lane tracks are 92 MiB; the Pi
-5 has 8 GiB and the bench records peak RSS). A fully populated 8-track ×
+raises `LE_CACHE_DEFAULT_CAP_BYTES` from 64 MiB to 192 MiB (a 30 s mono lane
+at 96 kHz is 11.5 MiB; eight transposed single-lane tracks are 92 MiB, plus
+one job in flight; the prints keep their 64 MiB; as built, after the Part 3a
+review weighed it against the joint memory table of #1200's D11, recorded
+in the findings document). A fully populated 8-track ×
 8-lane 30 s rig at 96 kHz would need 737 MiB of kind-1 entries and is refused
 per track, so the Transpose face must expect "pending / refused" on dense
 rigs. Worker priority (E9): the cache worker runs `SCHED_OTHER` at nice +10 on
@@ -949,19 +951,36 @@ As built in Part 3a (numbers from the central ledger: commands 86-87, fact
   sine whose lap is a whole number of cycles). The shim's
   `le_stretch_render_loop` renders `len + fold` frames cyclically, the last
   `fold` continuing past the lap into its head, and folds them over the head
-  with an equal-power crossfade (20 ms), so the loop point continues the
-  stretcher's own output. The cache worker and the offline renderer call the
-  one function with one preset, seed and fold (`engine_cache.h`).
-- **Undo is not cache-hot.** Every a_live swap bumps `a_audio_rev`
-  (le_track_publish_live), so an Undo to a previously rendered take is a
-  new key: it plays dry, reported (`effective` 0), until its render lands.
-  Keying renders on slot identity instead would be a change to the content
-  revision rule all three entry kinds share; left for its own issue.
+  with a 20 ms crossfade, so the loop point continues the stretcher's own
+  output. The two signals are renders of the same input, so a fixed law
+  swells or dips with their correlation (the review measured -5.2 to
+  +4.6 dB with equal-power); the fold is linear and scaled so its power is
+  the blend of the two signals' local powers, from 2.5 ms sliding sums,
+  capped at +12 dB where they cancel (review L1; within 1.5 dB of that blend
+  on chords and noise across pitches and lap lengths). The cache worker and
+  the offline renderer call the one function with one preset, seed and fold
+  (`engine_cache.h`).
+- **Undo, Redo and Peel are cache-hot (review M1).** Source renders key on
+  a content key, `a_src_key`, instead of the shared revision: it follows
+  `a_audio_rev` except at an Undo, Redo or Peel swap, which brings back the
+  key the slot's PCM had when it last sounded (`a_slot_key`, recorded when
+  a slot is swapped out of live and, for a first overdub pass's pre-image,
+  at its retire; cleared whenever a slot is handed out for new PCM or a
+  session is imported). Keys come from the monotonic revision, so a key
+  names one content. Every retained render of a lane is published to the
+  callback (`a_src[]`, the cache's pair), so the verdict finds the render
+  for the swapped-in content in the same block, with no dry block and no
+  re-render; prints keep keying on the revision. Clear Undo and Redo from
+  empty take a fresh key (their pitch resets with the material anyway).
 - **Pins.** The collector defers the free of a render a turn window's old
   head reads (`a_turn_src`) AND of the render a lane still selects
   (`a_src_pin`) until the callback's next verdict lets go, with or without a
   device (a device-free host drives the same callback); a shrinking cap
-  sheds everything it may evict, never a render a PLAYING track sounds.
+  sheds everything it may evict, never the current render of a transposed
+  track that holds material, PLAYING or STOPPED (review L2: a stopped
+  track's next Play would otherwise sound dry); a job that needs its room
+  is refused instead. The graveyard holds the pinned stragglers on top of
+  every entry (review L3).
 - **A source swap starts its own window.** A Speed step or a Reverse turn
   inside a window carries it (decision 24); a swap between sources changes
   what the head reads, so it restarts the window over the source in force.
@@ -1195,9 +1214,11 @@ song clock's advance.
 10. Not undoable, no history entry, not an owned setting family for Speed and
     Transpose; Follow tempo and Pitch ARE Loop settings on the shared owner
     with inherit. Rule 4.
-11. The cache cap default rises to 384 MiB on the strength of the Part 1 memory
-    figures, and a render that does not fit leaves the track dry with the
-    reason. Rule 2.
+11. The cache cap default rises to 192 MiB (64 MiB of prints plus eight
+    transposed single-lane 30 s tracks at 96 kHz and a job in flight), sized
+    against the joint appliance memory table with backing and instruments
+    (Part 3a review, M3), and a render that does not fit leaves the track
+    dry with the reason. Rule 2.
 12. One recorded tempo per master; later takes' ratios derive from lengths.
     Rule 4 (no per-layer tempo table) without losing recording at a new tempo.
 13. The library is vendored once, into the real build, from the bench snapshot

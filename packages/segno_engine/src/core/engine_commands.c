@@ -159,11 +159,17 @@ static int track_select_slot(le_track* t, int undo_count, int redo_count,
     for (int k = 0; k < outstanding_count && !used; ++k) {
       if (t->outstanding_slots[k] == i) used = 1;
     }
-    if (!used) return i;
+    if (!used) {
+      /* Handed out for new PCM: no key names it any more (a_src_key). */
+      atomic_store_explicit(&t->a_slot_key[i], 0u, memory_order_relaxed);
+      return i;
+    }
   }
   for (int e = 0; e < undo_count; ++e) {
     if (t->undo_stack[e].kind == LE_HIST_CLEAR) continue;
     *evict = e;
+    atomic_store_explicit(&t->a_slot_key[t->undo_stack[e].slot], 0u,
+                          memory_order_relaxed);
     return t->undo_stack[e].slot;
   }
   return -1;
@@ -349,7 +355,7 @@ static void le_undo_swap(le_engine* engine, le_track* t) {
      * a restoration swap as PROCESSED rather than as a peelable layer. */
     (void)le_redo_push(t, le_hist_kind_entry(top.kind, live, 0));
   }
-  le_publish_live_image(engine, t, top.slot, id); /* [R1] undo swap */
+  le_publish_live_image(engine, t, top.slot, id, 1); /* [R1] undo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
 }
@@ -375,7 +381,7 @@ static void le_peel_apply(le_engine* engine, le_track* t, int idx,
   }
   t->undo_stack[t->undo_count - 1] =
       le_hist_kind_entry(LE_HIST_PEEL, live, skipped);
-  le_publish_live_image(engine, t, target, id); /* [R1] peel swap */
+  le_publish_live_image(engine, t, target, id, 1); /* [R1] peel swap */
 }
 
 /* #595: drops every lane's recoverable flag once NOTHING on this track can
@@ -510,7 +516,7 @@ int32_t le_restore_commit_layer(le_engine* engine, int32_t channel,
    * motion (invalidating and re-rendering the wet cache). Image 0 (#1143):
    * processed material has no staged copy, so a running capture's stem fails
    * truthfully at this swap (323/0) instead of replaying the raw take. */
-  le_publish_live_image(engine, t, slot, 0);
+  le_publish_live_image(engine, t, slot, 0, 0);
   return LE_OK;
 }
 
@@ -2403,7 +2409,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   t->undo_count--;
   /* Cannot fail: one entry off the undo stack for the one added here. */
   (void)le_redo_push(t, e);
-  le_publish_live_image(engine, t, e.slot, image_id); /* [R1] clear-restore */
+  le_publish_live_image(engine, t, e.slot, image_id, 0); /* [R1] clear-restore */
   /* Leftover armed shadows may be sized for a different loop; the audio thread
    * drops them when the command applies (same reclaim rule as redo-from-empty:
    * an EMPTY track has no layer in flight, so no retire event can be
@@ -2625,7 +2631,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
       return LE_ERR_INVALID;
     }
     t->redo_count--;
-    le_publish_live_image(engine, t, next, image_id); /* [R1] redo-from-empty */
+    le_publish_live_image(engine, t, next, image_id, 0); /* [R1] redo-from-empty */
     t->empty_len = 0;
     /* Leftover armed shadows may be sized for a different loop; the audio
      * thread drops them when the command applies. Same no-in-flight argument
@@ -2660,7 +2666,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
   /* The kind rides along: a PROCESSED entry undone and redone stays PROCESSED. */
   t->undo_stack[t->undo_count++] =
       le_hist_kind_entry(top.kind, load_i32(&t->lanes[0].a_live), 0);
-  le_publish_live_image(engine, t, top.slot, image_id); /* [R1] redo swap */
+  le_publish_live_image(engine, t, top.slot, image_id, 1); /* [R1] redo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
   le_plog_push_ctrl(engine,

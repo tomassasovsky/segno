@@ -2788,8 +2788,10 @@ LE_EXPORT int32_t le_perf_set_follow_output(le_engine* engine, int32_t follow);
 /* Default wet-cache memory budget in bytes (appliance-tuned: ~5 stereo 30 s
  * entries at 48 kHz). Seeded once in le_engine_create; persists across
  * configure like the tempo/click settings. */
-#define LE_CACHE_DEFAULT_CAP_BYTES (384ll * 1024 * 1024) /* Transpose's
-     * source renders share it (#1179): a 30 s mono lane at 96 kHz is 11.5 MiB */
+#define LE_CACHE_DEFAULT_CAP_BYTES (192ll * 1024 * 1024) /* the prints'
+     * 64 MiB plus Transpose's source renders (#1179): eight single-lane 30 s
+     * tracks at 96 kHz (11.5 MiB each) and one job in flight; sized against
+     * the appliance's joint memory table (pitch-time findings document) */
 
 /* Per-lane cache telemetry states (le_lane_cache_info.state). */
 typedef enum le_cache_state {

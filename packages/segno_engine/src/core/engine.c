@@ -452,6 +452,8 @@ static int le_engine_reset_material(le_engine* engine,
     store_i32(&tr->a_head_rate_milli, 1000);
     tr->transpose_st = 0; /* pitch is material too (#1179) */
     store_i32(&tr->a_transpose_st, 0);
+    le_track_forget_slot_keys(tr); /* no slot holds a keyed take any more */
+    tr->pass_key = 0;
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_clear_restore, 0);
     store_i32(&tr->a_redo_depth, 0);

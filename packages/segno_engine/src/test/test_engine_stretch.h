@@ -353,3 +353,64 @@ static void test_stretch_offline_cyclic_seam(void) {
   free(marks[1]);
   free(sine);
 }
+
+static double stretch_rms(const float* x, int a, int b) {
+  double sum = 0;
+  for (int i = a; i < b; ++i) sum += (double)x[i] * x[i];
+  return sqrt(sum / (b - a));
+}
+
+/* The loop fold holds the level (#1179 Part 3a review, L1). The fold mixes
+ * the head (v) with the run-out past the lap (u), two renders of the same
+ * input; over the middle of the 20 ms fold the folded RMS stays within 1.5 dB
+ * of the two signals' own blended level, sqrt((Pu + Pv) / 2), for a
+ * sustained three-tone chord (the review measured -5.2 dB to +4.6 dB
+ * against v alone with the fixed equal-power law) and for noise, across lap
+ * lengths and pitches in both directions. u and v come from the same
+ * cyclic render the fold is built from. */
+static void test_stretch_loop_fold_holds_level(void) {
+  printf("test_stretch_loop_fold_holds_level\n");
+  const int sr = 48000, fold = sr * 20 / 1000;
+  const int lens[] = {24000, 96000, 100003};
+  uint32_t seed = 1;
+  double worst = 0;
+  for (int l = 0; l < 3; ++l) for (int kind = 0; kind < 2; ++kind) {
+    for (int st = -12; st <= 12; st += 5) {
+      const int n = lens[l];
+      float* in = (float*)malloc(sizeof(float) * (size_t)n);
+      float* out = (float*)malloc(sizeof(float) * (size_t)n);
+      float* plain = (float*)malloc(sizeof(float) * (size_t)(n + fold));
+      for (int i = 0; i < n; ++i) {
+        if (kind == 0) {
+          in[i] = 0.2f * (float)(sin(2 * M_PI * 196 * i / sr) +
+                                 sin(2 * M_PI * 247 * i / sr) +
+                                 sin(2 * M_PI * 294 * i / sr));
+        } else {
+          seed = seed * 1103515245u + 12345u;
+          in[i] = 0.3f * ((float)((seed >> 8) & 0xffff) / 32768.0f - 1.0f);
+        }
+      }
+      CHECK(le_stretch_render_loop(in, n, sr, (float)st, 8000.0f / sr, 1,
+                                   1179u, fold, out) == LE_STRETCH_OK);
+      const float* ins[1] = {in};
+      float* outs[1] = {plain};
+      CHECK(le_stretch_render_offline(ins, n, 1, sr, 1.0, (float)st,
+                                      8000.0f / sr, 1, 1179u, 1, outs,
+                                      n + fold) == LE_STRETCH_OK);
+      const double pv = stretch_rms(plain, fold / 4, 3 * fold / 4);
+      const double pu = stretch_rms(plain, n + fold / 4, n + 3 * fold / 4);
+      const double db = 20 * log10(stretch_rms(out, fold / 4, 3 * fold / 4) /
+                                   sqrt((pu * pu + pv * pv) / 2));
+      if (fabs(db) > fabs(worst)) worst = db;
+      if (fabs(db) > 1.5) {
+        printf("  len %d %s %+d st: %.2f dB\n", n, kind ? "noise" : "chord",
+               st, db);
+      }
+      CHECK(fabs(db) <= 1.5);
+      free(in);
+      free(out);
+      free(plain);
+    }
+  }
+  printf("  worst fold level change %.2f dB\n", worst);
+}
