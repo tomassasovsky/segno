@@ -590,6 +590,42 @@ void main() {
     }
   });
 
+  blocTest<ControlCubit, ControlState>(
+    'monitor mute during restore reports refusal without delayed replay',
+    build: () {
+      rig = _Rig();
+      return rig.control;
+    },
+    act: (control) async {
+      control
+        ..setMode(InteractionMode.mixer)
+        ..selectFootMixerDomain(FootMixerDomain.inputs);
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      final restoring = rig.mix.runExclusive(() async {
+        entered.complete();
+        await release.future;
+      });
+      await entered.future;
+      try {
+        await control.toggleFootMixerMute();
+        expect(control.state.footMixerFailure, 1);
+        expect(rig.looper.monitorMuted(0), isFalse);
+        expect(await rig.settings.loadMonitorMute(0), isNull);
+      } finally {
+        release.complete();
+        await restoring;
+      }
+      expect(rig.looper.monitorMuted(0), isFalse);
+      await control.toggleFootMixerMute();
+      expect(rig.looper.monitorMuted(0), isTrue);
+      expect(await rig.settings.loadMonitorMute(0), isTrue);
+      expect(control.state.footMixerFailure, 1);
+    },
+    errors: () => [isA<StateError>()],
+    tearDown: () => rig.close(),
+  );
+
   check(
     'monitor native refusal reports failure; successful retry persists',
     (tester) async {
