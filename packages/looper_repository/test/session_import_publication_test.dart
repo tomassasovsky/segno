@@ -8,7 +8,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show EngineSnapshot, FadeAdmission, PumpedNativeEngine, TrackSnapshot;
+    show EngineSnapshot, PumpedNativeEngine, RequestAdmission, TrackSnapshot;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -37,7 +37,10 @@ class _ImportEngine extends PumpedNativeEngine {
   }
 
   @override
-  FadeAdmission installFade({required int channel, required FadeImage image}) {
+  RequestAdmission installFade({
+    required int channel,
+    required FadeImage image,
+  }) {
     if (channel == refusedFadeChannel) {
       return (result: EngineResult.notReady, request: 0);
     }

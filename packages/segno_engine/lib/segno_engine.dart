@@ -17,7 +17,6 @@ export 'src/audio_engine.dart'
         EnginePluginHosting,
         EngineResult,
         EngineRouting,
-        FadeAdmission,
         InputConditioningControl,
         LooperModeControl,
         LooperTransport,
@@ -25,6 +24,7 @@ export 'src/audio_engine.dart'
         MonitorControl,
         ReopenOutcome,
         ReopenResult,
+        RequestAdmission,
         SessionIo,
         TempoControl;
 export 'src/engine_config.dart' show AudioBackend, EngineConfig;
@@ -101,3 +101,4 @@ export 'src/track_effect.dart'
         kPluginFxCode,
         kTrackEffectMax,
         kTrackEffectParams;
+export 'src/vendored_licenses.dart' show registerVendoredLicenses;

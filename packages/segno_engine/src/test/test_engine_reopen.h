@@ -441,7 +441,7 @@ static void test_reopen_fade_frozen_then_resumes(void) {
   CHECK(le_engine_reopen_configured(e, sr, 1, 1, 1000, &outcome, NULL) == LE_OK);
   CHECK(outcome == LE_REOPEN_RETAINED);
   int32_t result = 0;
-  CHECK(le_engine_read_fade_result(e, pending, &result) == LE_ERR_INVALID);
+  CHECK(le_engine_read_request_result(e, pending, &result) == LE_ERR_INVALID);
   uint64_t again = 0;
   CHECK(le_engine_install_fade(e, 0, &stale, &again) == LE_ERR_INVALID);
   le_engine_get_track(e, 0, &snap);

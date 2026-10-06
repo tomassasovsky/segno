@@ -55,7 +55,7 @@ extension MidiControlEditing on ControlCubit {
             !json.containsKey('mappings')) {
           throw const FormatException('Invalid MIDI configuration');
         }
-        mappings = MidiMappingSet.fromJson(json['mappings']);
+        mappings = _decodeEndpoints(MidiMappingSet.fromJson(json['mappings']));
         enabled = json['enabled'] as bool;
       }
       if (_closing || isClosed) return;
@@ -81,6 +81,28 @@ extension MidiControlEditing on ControlCubit {
     }
   }
 
+  /// Reads each stored parameter endpoint through its target, so a level
+  /// fader's literal 1.0 top is unity.
+  static MidiMappingSet _decodeEndpoints(MidiMappingSet stored) =>
+      MidiMappingSet(
+        mappings: [
+          for (final mapping in stored.mappings)
+            mapping.copyWith(
+              controls: [
+                for (final control in mapping.controls)
+                  switch ((control, ControlValueTarget.tryParse(control.key))) {
+                    (final MidiParameterControl parameter, final target?) =>
+                      parameter.copyWith(
+                        low: target.decodeEndpoint(parameter.low),
+                        high: target.decodeEndpoint(parameter.high),
+                      ),
+                    _ => control,
+                  },
+              ],
+            ),
+        ],
+      );
+
   Future<MidiSaveResult> _serializeMidi(
     Future<MidiSaveResult> Function() operation,
   ) {
@@ -94,11 +116,13 @@ extension MidiControlEditing on ControlCubit {
   }
 
   Future<MidiSaveResult> _saveMidiConfiguration(
-    MidiMappingSet mappings,
+    MidiMappingSet authored,
     bool enabled, {
     String? mappingId,
     bool resume = false,
   }) async {
+    // What is saved, played and shown is what a reload reads.
+    final mappings = _decodeEndpoints(authored);
     try {
       await _settings.saveMidiConfiguration(
         jsonEncode({
@@ -303,18 +327,27 @@ extension MidiControlEditing on ControlCubit {
     _publishMidi(state.copyWith(midiEdit: edit.withLearn(null)));
   }
 
-  void _resetMidiDecoders() {
-    final devices = {
-      if (_midiCapture != null) _midiCapture!.device,
-      for (final row in state.midiMappings.mappings) row.source.device,
-      if (state.midiEdit != null) state.midiEdit!.device,
-    };
+  /// Resets every device's decoders, or [only] those devices'.
+  void _resetMidiDecoders({Set<String>? only}) {
+    if (only != null && only.isEmpty) return;
+    final devices =
+        only ??
+        {
+          if (_midiCapture != null) _midiCapture!.device,
+          for (final row in state.midiMappings.mappings) row.source.device,
+          if (state.midiEdit != null) state.midiEdit!.device,
+        };
     for (final device in devices) {
       _midiDecoder.reset(device);
       _midiLearnDecoder.reset(device);
       _midiSignalDecoder.reset(device);
     }
-    _midiLevels = {};
+    _midiLevels = only == null
+        ? {}
+        : {
+            for (final entry in _midiLevels.entries)
+              if (!only.contains(entry.key.device)) entry.key: entry.value,
+          };
     _midiLevelTimer?.cancel();
     _midiLevelTimer = null;
     _publishMidi(state.copyWith(midiLevels: const {}));
@@ -397,7 +430,7 @@ extension MidiControlEditing on ControlCubit {
     final session = _looper.sessionRevision;
     final origins = {
       for (final event in readings)
-        event: _mixOrigins([
+        event: _controlOrigins([
           for (final mapping in state.midiMappings.mappings)
             if (mapping.source.sameAs(event.source))
               for (final control in mapping.controls)
@@ -413,16 +446,10 @@ extension MidiControlEditing on ControlCubit {
           return;
         }
         for (final event in readings) {
-          if (!_mixOriginsCurrent(origins[event]!)) continue;
+          // A stale origin drops only its own target, never the event.
           await _applyMidiProposals(
             _midiEngine.prepare(event),
-            decayOrigins: origins[event]!.decay,
-            oneShotOrigins: origins[event]!.oneShot,
-            recordLengthOrigins: origins[event]!.recordLength,
-            recordTimingOrigins: origins[event]!.recordTiming,
-            clickModeOrigins: origins[event]!.clickMode,
-            recordStartOrigins: origins[event]!.recordStart,
-            fadeOrigins: origins[event]!.fade,
+            dispatched: origins[event],
           );
         }
       }),
@@ -513,14 +540,7 @@ extension MidiControlEditing on ControlCubit {
     // Master uses the hardware encoder's established 1/64 normalized step.
     if (target is MasterGainTarget) return ControlCubit._encoderStep;
     if (target is MixValueTarget) return target.relativeStep;
-    if (target is ClickVolumeTarget) return target.relativeStep;
-    if (target is DecayValueTarget) return target.relativeStep;
-    if (target is OneShotValueTarget) return target.relativeStep;
-    if (target is RecordLengthValueTarget) return target.relativeStep;
-    if (target is RecordTimingValueTarget) return target.relativeStep;
-    if (target is ClickModeValueTarget) return target.relativeStep;
-    if (target is CountInValueTarget) return target.relativeStep;
-    if (target is FadeValueTarget) return target.relativeStep;
+    if (target is OwnedValueTarget) return target.relativeStep;
     if (target is FxParamTarget) {
       final divisions = _midiParamDivisions(target);
       if (divisions != null && divisions > 0) return 1 / divisions;
@@ -528,32 +548,21 @@ extension MidiControlEditing on ControlCubit {
     return 0.01;
   }
 
+  /// [dispatched] carries the origins captured when the input arrived; work
+  /// with no input behind it (cleanup, retirement) captures them here.
   Future<void> _applyMidiProposals(
     List<MidiProposal> proposals, {
-    Map<DecayValueTarget, _DecayOrigin>? decayOrigins,
-    Map<OneShotValueTarget, _OneShotOrigin>? oneShotOrigins,
-    Map<RecordLengthValueTarget, _RecordLengthOrigin>? recordLengthOrigins,
-    Map<RecordTimingValueTarget, _RecordTimingOrigin>? recordTimingOrigins,
-    Map<ClickModeValueTarget, _ClickModeOrigin>? clickModeOrigins,
-    Map<CountInValueTarget, _RecordStartOrigin>? recordStartOrigins,
-    Map<FadeValueTarget, _FadeOrigin>? fadeOrigins,
+    _ControlOrigins? dispatched,
   }) async {
     final session = _looper.sessionRevision;
     for (final proposal in proposals) {
-      final captured = _mixOrigins([
+      final captured = _controlOrigins([
         for (final operation in proposal.operations)
           ?ControlValueTarget.tryParse(operation.key),
       ]);
       final origins = (
-        mix: captured.mix,
-        click: captured.click,
-        decay: decayOrigins ?? captured.decay,
-        oneShot: oneShotOrigins ?? captured.oneShot,
-        recordLength: recordLengthOrigins ?? captured.recordLength,
-        recordTiming: recordTimingOrigins ?? captured.recordTiming,
-        clickMode: clickModeOrigins ?? captured.clickMode,
-        recordStart: recordStartOrigins ?? captured.recordStart,
-        fade: fadeOrigins ?? captured.fade,
+        mix: {...captured.mix, ...?dispatched?.mix},
+        owned: {...captured.owned, ...?dispatched?.owned},
       );
       if (session != _looper.sessionRevision || isClosed) return;
       Object? pending;
@@ -599,13 +608,13 @@ extension MidiControlEditing on ControlCubit {
               final ending =
                   op is MidiParameterEnd ||
                   (op is MidiParameterWrite && op.cleanup);
-              if (!ending && _takeLocked()) continue;
+              if (!ending && _inputLocked()) continue;
               final target = ending
                   ? _midiTargets[row]
                   : ControlValueTarget.tryParse(op.key) ??
                         FxBindingTarget.tryParse(op.key);
               final holder = _midiHolderKeys[row];
-              if (!_ownerOriginCurrent(target, origins)) continue;
+              if (!_originCurrent(target, origins)) continue;
               if (target == null) {
                 if (ending) accepted.add(op.controlIndex);
                 continue;
@@ -695,7 +704,7 @@ extension MidiControlEditing on ControlCubit {
             recorded.add(index);
             final record = rows[index];
             if (record == null) continue;
-            if (!_ownerOriginCurrent(record.target, origins)) {
+            if (!_originCurrent(record.target, origins)) {
               accepted.remove(index);
               continue;
             }
@@ -723,15 +732,7 @@ extension MidiControlEditing on ControlCubit {
                     order: ++_activationOrder,
                   );
                 case final ControlValueTarget target:
-                  if (target is MixValueTarget ||
-                      target is ClickVolumeTarget ||
-                      target is DecayValueTarget ||
-                      target is OneShotValueTarget ||
-                      target is RecordLengthValueTarget ||
-                      target is RecordTimingValueTarget ||
-                      target is ClickModeValueTarget ||
-                      target is CountInValueTarget ||
-                      target is FadeValueTarget) {
+                  if (target is MixValueTarget || target is OwnedValueTarget) {
                     _retireMixBaseline(target);
                   }
                   (_parameterHolders[target] ??= {})[holder] = (
@@ -744,10 +745,8 @@ extension MidiControlEditing on ControlCubit {
           _syncMidiDurableFx();
         }
 
-        bool cancelled() =>
-            session != _looper.sessionRevision ||
-            !_mixOriginsCurrent(origins) ||
-            isClosed;
+        // Session and close only: a stale target drops through its origin.
+        bool cancelled() => session != _looper.sessionRevision || isClosed;
         if (cancelled()) return;
         final fx = <FxParamTarget, double>{
           for (final e in values.entries)
@@ -793,7 +792,9 @@ extension MidiControlEditing on ControlCubit {
         final mixIndices = <int>{};
         for (final entry in rows.entries) {
           final target = entry.value.target;
-          if (accepted.contains(entry.key) || target is! MixValueTarget) {
+          if (accepted.contains(entry.key) ||
+              target is! MixValueTarget ||
+              !_originCurrent(target, origins)) {
             continue;
           }
           final value = values[target];
@@ -834,7 +835,9 @@ extension MidiControlEditing on ControlCubit {
           switch (target) {
             case MixValueTarget():
               break;
-            case ClickVolumeTarget():
+            case OwnedValueTarget():
+              final origin = origins.owned[target];
+              if (origin == null) continue;
               final op = proposal.operations.firstWhere(
                 (op) => op.controlIndex == entry.key,
               );
@@ -846,230 +849,14 @@ extension MidiControlEditing on ControlCubit {
                       excluding: entry.value.holder,
                     )
                   : null;
-              final outcome = await _clickVolume.setControllerClickVolume(
-                target.toDomain(value),
-                lifetime: origins.click ?? _clickVolume.clickVolumeLifetime,
-                releasedVolume: released == null
-                    ? null
-                    : target.toDomain(released),
+              final written = await _owned.writeController(
+                target,
+                value,
+                origin: origin,
+                released: released,
               );
               if (cancelled()) return;
-              if (outcome.isOk) accepted.add(entry.key);
-            case DecayValueTarget():
-              final origin = origins.decay[target];
-              if (origin == null ||
-                  !value.isFinite ||
-                  !_decayOriginCurrent(target, origin)) {
-                continue;
-              }
-              final op = proposal.operations.firstWhere(
-                (op) => op.controlIndex == entry.key,
-              );
-              final released = op is MidiParameterWrite && op.held == true
-                  ? _midiReleasedFor(proposal, entry.key)
-                  : entry.value.ending
-                  ? _survivingMidiReleased(
-                      target,
-                      excluding: entry.value.holder,
-                    )
-                  : null;
-              final outcome = await _decay.setControllerDecay(
-                target.address,
-                target.toDomain(value),
-                lifetime: origin.lifetime,
-                revision: origin.revision,
-                releasedPercent: released == null
-                    ? null
-                    : target.toDomain(released),
-              );
-              if (cancelled()) return;
-              if (outcome.isOk && _decayOriginCurrent(target, origin)) {
-                accepted.add(entry.key);
-              }
-            case OneShotValueTarget():
-              final origin = origins.oneShot[target];
-              if (origin == null ||
-                  !value.isFinite ||
-                  !_oneShotOriginCurrent(target, origin)) {
-                continue;
-              }
-              final op = proposal.operations.firstWhere(
-                (op) => op.controlIndex == entry.key,
-              );
-              final released = op is MidiParameterWrite && op.held == true
-                  ? _midiReleasedFor(proposal, entry.key)
-                  : entry.value.ending
-                  ? _survivingMidiReleased(
-                      target,
-                      excluding: entry.value.holder,
-                    )
-                  : null;
-              final outcome = await _oneShot.setControllerOneShot(
-                target.address,
-                oneShot: target.toDomain(value),
-                lifetime: origin.lifetime,
-                revision: origin.revision,
-                releasedOneShot: released == null
-                    ? null
-                    : target.toDomain(released),
-              );
-              if (cancelled()) return;
-              if (outcome.isOk && _oneShotOriginCurrent(target, origin)) {
-                accepted.add(entry.key);
-              }
-            case RecordLengthValueTarget():
-              final origin = origins.recordLength[target];
-              if (origin == null ||
-                  !value.isFinite ||
-                  !_recordLengthOriginCurrent(target, origin)) {
-                continue;
-              }
-              final op = proposal.operations.firstWhere(
-                (op) => op.controlIndex == entry.key,
-              );
-              final released = op is MidiParameterWrite && op.held == true
-                  ? _midiReleasedFor(proposal, entry.key)
-                  : entry.value.ending
-                  ? _survivingMidiReleased(
-                      target,
-                      excluding: entry.value.holder,
-                    )
-                  : null;
-              final outcome = await _recordLength.setControllerRecordLength(
-                target.address,
-                target.toDomain(value),
-                lifetime: origin.lifetime,
-                revision: origin.revision,
-                releasedBars: released == null
-                    ? null
-                    : target.toDomain(released),
-              );
-              if (cancelled()) return;
-              if (outcome.isOk && _recordLengthOriginCurrent(target, origin)) {
-                accepted.add(entry.key);
-              }
-            case RecordTimingValueTarget():
-              final origin = origins.recordTiming[target];
-              if (origin == null ||
-                  !value.isFinite ||
-                  !_recordTimingOriginCurrent(target, origin)) {
-                continue;
-              }
-              final op = proposal.operations.firstWhere(
-                (op) => op.controlIndex == entry.key,
-              );
-              final released = op is MidiParameterWrite && op.held == true
-                  ? _midiReleasedFor(proposal, entry.key)
-                  : entry.value.ending
-                  ? _survivingMidiReleased(
-                      target,
-                      excluding: entry.value.holder,
-                    )
-                  : null;
-              final outcome = await _recordTiming.setControllerTiming(
-                target.address,
-                target.toDomain(value),
-                lifetime: origin.lifetime,
-                revision: origin.revision,
-                releasedTiming: released == null
-                    ? null
-                    : target.toDomain(released),
-              );
-              if (cancelled()) return;
-              if (outcome.isOk && _recordTimingOriginCurrent(target, origin)) {
-                accepted.add(entry.key);
-              }
-            case ClickModeValueTarget():
-              final origin = origins.clickMode[target];
-              if (origin == null ||
-                  !value.isFinite ||
-                  !_clickModeOriginCurrent(target, origin)) {
-                continue;
-              }
-              final op = proposal.operations.firstWhere(
-                (op) => op.controlIndex == entry.key,
-              );
-              final released = op is MidiParameterWrite && op.held == true
-                  ? _midiReleasedFor(proposal, entry.key)
-                  : entry.value.ending
-                  ? _survivingMidiReleased(
-                      target,
-                      excluding: entry.value.holder,
-                    )
-                  : null;
-              final outcome = await _clickMode.setControllerClickMode(
-                target.toDomain(value),
-                lifetime: origin.lifetime,
-                revision: origin.revision,
-                releasedMode: released == null
-                    ? null
-                    : target.toDomain(released),
-              );
-              if (cancelled()) return;
-              if (outcome.isOk && _clickModeOriginCurrent(target, origin)) {
-                accepted.add(entry.key);
-              }
-            case CountInValueTarget():
-              final origin = origins.recordStart[target];
-              if (origin == null ||
-                  !value.isFinite ||
-                  !_recordStartOriginCurrent(target, origin)) {
-                continue;
-              }
-              final op = proposal.operations.firstWhere(
-                (op) => op.controlIndex == entry.key,
-              );
-              final released = op is MidiParameterWrite && op.held == true
-                  ? _midiReleasedFor(proposal, entry.key)
-                  : entry.value.ending
-                  ? _survivingMidiReleased(
-                      target,
-                      excluding: entry.value.holder,
-                    )
-                  : null;
-              final outcome = await _recordStart.setControllerCountIn(
-                target.toDomain(value),
-                lifetime: origin.lifetime,
-                revision: origin.revision,
-                releasedBars: released == null
-                    ? null
-                    : target.toDomain(released),
-              );
-              if (cancelled()) return;
-              if (outcome.isOk && _recordStartOriginCurrent(target, origin)) {
-                accepted.add(entry.key);
-              }
-            case FadeValueTarget():
-              final origin = origins.fade[target];
-              if (origin == null ||
-                  !value.isFinite ||
-                  !_fadeOriginCurrent(target, origin)) {
-                continue;
-              }
-              final op = proposal.operations.firstWhere(
-                (op) => op.controlIndex == entry.key,
-              );
-              final released = op is MidiParameterWrite && op.held == true
-                  ? _midiReleasedFor(proposal, entry.key)
-                  : entry.value.ending
-                  ? _survivingMidiReleased(
-                      target,
-                      excluding: entry.value.holder,
-                    )
-                  : null;
-              final applied = await _fade.setControllerDuration(
-                target.channel,
-                target.toDomain(value),
-                lifetime: origin.lifetime,
-                revision: origin.revision,
-                releasedMilliseconds: released == null
-                    ? null
-                    : target.toDomain(released),
-              );
-              if (cancelled()) return;
-              if (applied && _fadeOriginCurrent(target, origin)) {
-                accepted.add(entry.key);
-              }
+              if (written) accepted.add(entry.key);
             case MasterGainTarget():
               if (_looper.setMasterGain(value).isOk) {
                 _masterGain = value;
@@ -1114,29 +901,7 @@ extension MidiControlEditing on ControlCubit {
   }
 
   double _coerceMidiValue(ControlValueTarget target, double value) {
-    if (target is DecayValueTarget) {
-      return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
-    }
-    if (target is OneShotValueTarget) {
-      return value.isFinite
-          ? target.fromDomain(oneShot: target.toDomain(value))
-          : value;
-    }
-    if (target is RecordLengthValueTarget) {
-      return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
-    }
-    if (target is RecordTimingValueTarget) {
-      return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
-    }
-    if (target is ClickModeValueTarget) {
-      return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
-    }
-    if (target is CountInValueTarget) {
-      return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
-    }
-    if (target is FadeValueTarget) {
-      return value.isFinite ? target.fromDomain(target.toDomain(value)) : value;
-    }
+    if (target is OwnedValueTarget) return target.coerce(value);
     final clamped = value.clamp(0.0, 1.0);
     if (target is FxParamTarget) {
       final divisions = _midiParamDivisions(target);
@@ -1226,183 +991,39 @@ extension MidiControlEditing on ControlCubit {
   }
 
   double? _readControlValue(ControlValueTarget target) =>
-      _looper.readValueTarget(
-        target,
-        clickVolume: _clickVolume.clickVolume,
-        decaySnapshot: _decay.decaySnapshot,
-        fadeDurations: _footFadeActions.durations,
-        oneShotSnapshot: _oneShot.oneShotSnapshot,
-        recordLengthSnapshot: _recordLength.recordLengthSnapshot,
-        recordTimingSnapshot: _recordTiming.recordTimingSnapshot,
-        clickModeSnapshot: _clickMode.clickModeSnapshot,
-        recordStartSnapshot: _recordStart.recordStartSnapshot,
-      );
+      _looper.readValueTarget(target, owned: _owned);
 
   bool _controlValueResolves(
     ControlValueTarget target, {
     bool cleanup = false,
-  }) =>
-      // Fixed scopes remain structurally present during owner recovery. Their
-      // rejected release stays owed; new acquisitions still need readiness.
-      (cleanup &&
-          (target is ClickModeValueTarget ||
-              target is CountInValueTarget ||
-              target is FadeValueTarget ||
-              target is RecordTimingValueTarget && target.address.isValid)) ||
-      _looper.valueTargetResolves(
-        target,
-        clickVolume: _clickVolume.clickVolume,
-        decaySnapshot: _decay.decaySnapshot,
-        fadeDurations: _footFadeActions.durations,
-        oneShotSnapshot: _oneShot.oneShotSnapshot,
-        recordLengthSnapshot: _recordLength.recordLengthSnapshot,
-        recordTimingSnapshot: _recordTiming.recordTimingSnapshot,
-        clickModeSnapshot: _clickMode.clickModeSnapshot,
-        recordStartSnapshot: _recordStart.recordStartSnapshot,
-      );
+  }) => target is OwnedValueTarget
+      ? _owned.resolves(target, cleanup: cleanup)
+      : _looper.valueTargetResolves(target);
 
-  _ControlOrigins _mixOrigins(
-    Iterable<ControlValueTarget> targets,
-  ) => (
+  _ControlOrigins _controlOrigins(Iterable<ControlValueTarget> targets) => (
     mix: _mixSettings.controllerOrigins(targets.whereType<MixValueTarget>()),
-    click: targets.any((target) => target is ClickVolumeTarget)
-        ? _clickVolume.clickVolumeLifetime
-        : null,
-    decay: {
-      for (final target in targets.whereType<DecayValueTarget>())
-        target: (
-          lifetime: _decay.decayLifetime,
-          revision: _decay.decayRevision(target.address),
-        ),
-    },
-    oneShot: {
-      for (final target in targets.whereType<OneShotValueTarget>())
-        target: (
-          lifetime: _oneShot.oneShotLifetime,
-          revision: _oneShot.oneShotRevision(target.address),
-        ),
-    },
-    recordLength: {
-      for (final target in targets.whereType<RecordLengthValueTarget>())
-        target: (
-          lifetime: _recordLength.recordLengthLifetime,
-          revision: _recordLength.recordLengthRevision(target.address),
-        ),
-    },
-    recordTiming: {
-      for (final target in targets.whereType<RecordTimingValueTarget>())
-        target: (
-          lifetime: _recordTiming.recordTimingLifetime,
-          revision: _recordTiming.recordTimingRevision(target.address),
-        ),
-    },
-    clickMode: {
-      for (final target in targets.whereType<ClickModeValueTarget>())
-        target: (
-          lifetime: _clickMode.clickModeLifetime,
-          revision: _clickMode.clickModeRevision,
-        ),
-    },
-    recordStart: {
-      for (final target in targets.whereType<CountInValueTarget>())
-        target: (
-          lifetime: _recordStart.recordStartLifetime,
-          revision: _recordStart.recordStartRevision,
-        ),
-    },
-    fade: {
-      for (final target in targets.whereType<FadeValueTarget>())
-        target: (
-          lifetime: _fade.lifetime,
-          revision: _fade.revision(target.channel),
-        ),
+    owned: {
+      for (final target in targets.whereType<OwnedValueTarget>())
+        target: _owned.origin(target),
     },
   );
 
-  bool _mixOriginsCurrent(_ControlOrigins origins) =>
-      _mixSettings.controllerOriginsCurrent(origins.mix) &&
-      (origins.click == null ||
-          origins.click == _clickVolume.clickVolumeLifetime);
-
-  bool _decayOriginCurrent(DecayValueTarget target, _DecayOrigin? origin) =>
-      origin != null &&
-      origin.lifetime == _decay.decayLifetime &&
-      origin.revision == _decay.decayRevision(target.address);
-
-  bool _oneShotOriginCurrent(
-    OneShotValueTarget target,
-    _OneShotOrigin? origin,
-  ) =>
-      origin != null &&
-      origin.lifetime == _oneShot.oneShotLifetime &&
-      origin.revision == _oneShot.oneShotRevision(target.address);
-
-  bool _recordLengthOriginCurrent(
-    RecordLengthValueTarget target,
-    _RecordLengthOrigin? origin,
-  ) =>
-      origin != null &&
-      origin.lifetime == _recordLength.recordLengthLifetime &&
-      origin.revision == _recordLength.recordLengthRevision(target.address);
-
-  bool _recordTimingOriginCurrent(
-    RecordTimingValueTarget target,
-    _RecordTimingOrigin? origin,
-  ) =>
-      origin != null &&
-      origin.lifetime == _recordTiming.recordTimingLifetime &&
-      origin.revision == _recordTiming.recordTimingRevision(target.address);
-
-  bool _clickModeOriginCurrent(
-    ClickModeValueTarget target,
-    _ClickModeOrigin? origin,
-  ) =>
-      origin != null &&
-      origin.lifetime == _clickMode.clickModeLifetime &&
-      origin.revision == _clickMode.clickModeRevision;
-
-  bool _recordStartOriginCurrent(
-    CountInValueTarget target,
-    _RecordStartOrigin? origin,
-  ) =>
-      origin != null &&
-      origin.lifetime == _recordStart.recordStartLifetime &&
-      origin.revision == _recordStart.recordStartRevision;
-
-  bool _fadeOriginCurrent(FadeValueTarget target, _FadeOrigin? origin) =>
-      origin != null &&
-      origin.lifetime == _fade.lifetime &&
-      origin.revision == _fade.revision(target.channel);
-
-  /// Whether the owner lifetime and ordinary revision captured for [target]
-  /// still hold; a target without an owner-scoped origin always passes.
-  bool _ownerOriginCurrent(Object? target, _ControlOrigins origins) =>
+  /// Whether the origin captured for [target] still holds. An owned value
+  /// needs one; a Mixer value is checked against its own topology revision
+  /// only, so an unrelated topology change never drops it; any other target
+  /// passes.
+  bool _originCurrent(Object? target, _ControlOrigins origins) =>
       switch (target) {
-        DecayValueTarget() => _decayOriginCurrent(
-          target,
-          origins.decay[target],
-        ),
-        OneShotValueTarget() => _oneShotOriginCurrent(
-          target,
-          origins.oneShot[target],
-        ),
-        RecordLengthValueTarget() => _recordLengthOriginCurrent(
-          target,
-          origins.recordLength[target],
-        ),
-        RecordTimingValueTarget() => _recordTimingOriginCurrent(
-          target,
-          origins.recordTiming[target],
-        ),
-        ClickModeValueTarget() => _clickModeOriginCurrent(
-          target,
-          origins.clickMode[target],
-        ),
-        CountInValueTarget() => _recordStartOriginCurrent(
-          target,
-          origins.recordStart[target],
-        ),
-        FadeValueTarget() => _fadeOriginCurrent(target, origins.fade[target]),
+        OwnedValueTarget() => switch (origins.owned[target]) {
+          final origin? => _owned.originCurrent(target, origin),
+          null => false,
+        },
+        MixValueTarget() => switch (origins.mix[target]) {
+          final origin? => _mixSettings.controllerOriginsCurrent({
+            target: origin,
+          }),
+          null => true,
+        },
         _ => true,
       };
 
@@ -1451,8 +1072,21 @@ extension MidiControlEditing on ControlCubit {
         (target, _) => targets.contains(target),
       );
     }
-    _expressionRaw.clear();
-    _resetMidiDecoders();
+    // Only the sources mapping an invalidated target lose their baseline.
+    for (final jack in PedalCtrlJack.values) {
+      final mappings = state.pedalSetup.external.forJack(jack).expression;
+      if (mappings.mappings.any((m) => targets.contains(m.target))) {
+        _expressionRaw.remove(jack);
+      }
+    }
+    final keys = {for (final target in targets) target.canonicalString()};
+    _resetMidiDecoders(
+      only: {
+        for (final row in state.midiMappings.mappings)
+          if (row.controls.any((control) => keys.contains(control.key)))
+            row.source.device,
+      },
+    );
   }
 
   void _onOrdinaryMixValues(Map<MixValueTarget, double> values) {

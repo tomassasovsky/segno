@@ -65,6 +65,11 @@ class PowerOffDialog extends StatelessWidget {
                       onRetry: () => context
                           .read<PowerOffCubit>()
                           .retryPowerOff(snapshot()),
+                      onPowerOffAnyway: state.retryFailed
+                          ? () => context.read<PowerOffCubit>().powerOffAnyway(
+                              snapshot(),
+                            )
+                          : null,
                     )
                   : refuse
                   ? _RefuseBody(onKeepPlaying: () => _keepPlaying(context))
@@ -91,10 +96,17 @@ class PowerOffDialog extends StatelessWidget {
 }
 
 class _FlushFailedBody extends StatelessWidget {
-  const _FlushFailedBody({required this.onKeepPlaying, required this.onRetry});
+  const _FlushFailedBody({
+    required this.onKeepPlaying,
+    required this.onRetry,
+    this.onPowerOffAnyway,
+  });
 
   final VoidCallback onKeepPlaying;
   final VoidCallback onRetry;
+
+  /// Offered only after a Retry failed too.
+  final VoidCallback? onPowerOffAnyway;
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +125,9 @@ class _FlushFailedBody extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         AppText(
-          l10n.powerOffSettingsFailedBody,
+          onPowerOffAnyway == null
+              ? l10n.powerOffSettingsFailedBody
+              : l10n.powerOffSettingsRetryFailedBody,
           style: TextStyle(
             color: context.surface.textSecondary,
             fontSize: 16,
@@ -131,6 +145,13 @@ class _FlushFailedBody extends StatelessWidget {
               label: l10n.powerOffKeepPlaying,
               onPressed: onKeepPlaying,
             ),
+            if (onPowerOffAnyway case final powerOff?)
+              ConsoleDialogButton(
+                key: const Key('power_off_anyway'),
+                label: l10n.powerOffAnyway,
+                tone: ConsoleDialogTone.destructive,
+                onPressed: powerOff,
+              ),
             ConsoleDialogButton(
               key: const Key('power_off_retry'),
               label: l10n.powerOffRetry,

@@ -39,15 +39,19 @@ final class SettingsReceipt<T extends Object> {
     required ReceiptSend<T> send,
     required bool Function() running,
     required void Function() publish,
+    void Function(T value)? accepted,
   }) : _live = initial,
        _restart = initial,
        _send = send,
        _running = running,
-       _publish = publish;
+       _publish = publish,
+       _accepted = accepted;
 
   final ReceiptSend<T> _send;
   final bool Function() _running;
   final void Function() _publish;
+  // A family whose accepted state lives outside the receipt adopts it here.
+  final void Function(T value)? _accepted;
   T _live;
   T _restart;
   T? _owed;
@@ -62,6 +66,9 @@ final class SettingsReceipt<T extends Object> {
 
   /// The accepted durable value a device restart replays.
   T get restart => _owed ?? _restart;
+
+  /// The value awaiting its callback receipt, if any.
+  T? get pending => _pending?.value;
 
   /// No command is awaiting its callback receipt.
   bool get settled => _pending == null;
@@ -148,6 +155,7 @@ final class SettingsReceipt<T extends Object> {
       _restart = restart;
       _owed = null;
       _lastResult = EngineResult.ok;
+      _accepted?.call(value);
       return EngineResult.ok;
     }
     final admission = _send(value);
@@ -174,6 +182,7 @@ final class SettingsReceipt<T extends Object> {
         _restart = pending.restart;
         _owed = null;
         _lastResult = EngineResult.ok;
+        _accepted?.call(pending.value);
         pending.observation.complete(EngineResult.ok);
       case ReceiptVerdict.refused when !pending.startup:
         _pending = null;

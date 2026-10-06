@@ -7,6 +7,7 @@ import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/owned_value_control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/one_shot.dart';
@@ -256,7 +257,9 @@ void main() {
         l10n,
         names,
         looper,
-        clickVolume: 0,
+        owned: const OwnedValueSnapshots(
+          clickVolume: 0,
+        ),
       );
       final click = present.singleWhere(
         (destination) => destination.id == 'click',
@@ -287,7 +290,9 @@ void main() {
         l10n,
         names,
         looper,
-        clickModeSnapshot: ready,
+        owned: const OwnedValueSnapshots(
+          clickModeSnapshot: ready,
+        ),
       );
       final loop = places.singleWhere((place) => place.id == 'loop:defaults');
       expect(loop.kind, ExpressionDestinationKind.loopControls);
@@ -301,7 +306,9 @@ void main() {
         l10n,
         names,
         looper,
-        clickModeSnapshot: locked,
+        owned: const OwnedValueSnapshots(
+          clickModeSnapshot: locked,
+        ),
       ).singleWhere((place) => place.id == 'loop:defaults');
       expect(lockedLoop.controls.single.target, const ClickModeValueTarget());
       expect(
@@ -329,7 +336,9 @@ void main() {
         l10n,
         names,
         looper,
-        recordStartSnapshot: off,
+        owned: OwnedValueSnapshots(
+          recordStartSnapshot: off,
+        ),
       ).singleWhere((place) => place.id == 'loop:defaults');
       expect(ready.kind, ExpressionDestinationKind.loopControls);
       expect(ready.controls.single.target, const CountInValueTarget());
@@ -342,7 +351,9 @@ void main() {
         l10n,
         names,
         looper,
-        recordStartSnapshot: locked,
+        owned: OwnedValueSnapshots(
+          recordStartSnapshot: locked,
+        ),
       ).singleWhere((place) => place.id == 'loop:defaults');
       expect(lockedRow.controls.single.target, const CountInValueTarget());
       expect(
@@ -362,7 +373,9 @@ void main() {
           l10n,
           names,
           looper,
-          decaySnapshot: snapshot,
+          owned: OwnedValueSnapshots(
+            decaySnapshot: snapshot,
+          ),
         );
         final loop = destinations.singleWhere((d) => d.id == 'loop:defaults');
         expect(loop.kind, ExpressionDestinationKind.loopControls);
@@ -398,7 +411,9 @@ void main() {
         l10n,
         names,
         looper,
-        fadeDurations: FadeDurations.defaults,
+        owned: const OwnedValueSnapshots(
+          fadeDurations: FadeDurations.defaults,
+        ),
       );
       final loop = destinations.singleWhere((d) => d.id == 'loop:defaults');
       expect(loop.controls.single.target, const DefaultFadeTarget());
@@ -429,13 +444,15 @@ void main() {
         l10n,
         names,
         looper,
-        decaySnapshot: DecaySnapshot(
-          defaultPercent: 75,
-          trackOverrides: const {},
-        ),
-        oneShotSnapshot: OneShotSnapshot(
-          defaultOneShot: false,
-          trackOverrides: const {0: true},
+        owned: OwnedValueSnapshots(
+          decaySnapshot: DecaySnapshot(
+            defaultPercent: 75,
+            trackOverrides: const {},
+          ),
+          oneShotSnapshot: OneShotSnapshot(
+            defaultOneShot: false,
+            trackOverrides: const {0: true},
+          ),
         ),
       );
       final defaults = destinations.singleWhere(
@@ -469,7 +486,9 @@ void main() {
         l10n,
         names,
         looper,
-        recordTimingSnapshot: ready,
+        owned: OwnedValueSnapshots(
+          recordTimingSnapshot: ready,
+        ),
       );
       final timing = choices
           .expand((place) => place.controls)
@@ -507,11 +526,13 @@ void main() {
         l10n,
         names,
         looper,
-        recordTimingSnapshot: RecordTimingSnapshot(
-          defaultTiming: RecordTiming.bar,
-          rememberedDivision: GridDivision.bar,
-          trackOverrides: const {},
-          captureLocked: true,
+        owned: OwnedValueSnapshots(
+          recordTimingSnapshot: RecordTimingSnapshot(
+            defaultTiming: RecordTiming.bar,
+            rememberedDivision: GridDivision.bar,
+            trackOverrides: const {},
+            captureLocked: true,
+          ),
         ),
       );
       final lockedTiming = locked

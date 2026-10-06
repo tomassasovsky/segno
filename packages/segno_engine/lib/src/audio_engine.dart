@@ -48,7 +48,11 @@ enum EngineResult {
   modeMismatch,
 
   /// History recovery must wait for a pending engine operation to settle.
-  notReady;
+  notReady,
+
+  /// A punch-in on a reversed track: overdub is unavailable while Reverse is
+  /// on (`LE_ERR_REVERSED`). Play, Stop, Mute, Fade and history stay available.
+  reversed;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -63,6 +67,7 @@ enum EngineResult {
     -6 => EngineResult.capacity,
     -7 => EngineResult.modeMismatch,
     -8 => EngineResult.notReady,
+    -9 => EngineResult.reversed,
     _ => EngineResult.invalid,
   };
 
@@ -70,8 +75,10 @@ enum EngineResult {
   bool get isOk => this == EngineResult.ok;
 }
 
-/// Queue admission, distinct from the callback result of this exact request.
-typedef FadeAdmission = ({EngineResult result, int request});
+/// Queue admission of a checked per-track request (Fade, Reverse), distinct
+/// from the callback result of this exact request, read back with
+/// [LooperTransport.readRequestResult].
+typedef RequestAdmission = ({EngineResult result, int request});
 
 /// What [EngineLifecycle.reopen] did with the recorded material.
 ///
@@ -278,13 +285,30 @@ abstract interface class LooperTransport {
   EngineResult setMix(EngineMixSettings settings);
 
   /// Queues a callback-owned toggle, with a full-travel duration in seconds.
-  FadeAdmission toggleFade({required int channel, required double seconds});
+  RequestAdmission toggleFade({required int channel, required double seconds});
 
   /// Installs a complete image bound to observed native material/lifetime.
-  FadeAdmission installFade({required int channel, required FadeImage image});
+  RequestAdmission installFade({
+    required int channel,
+    required FadeImage image,
+  });
 
-  /// Consumes a completed callback result; null means still pending.
-  EngineResult? readFadeResult(int request);
+  /// Queues a callback-owned direction flip of track [channel]'s recorded
+  /// material at its current position (Reverse, #1162). Refused for an empty
+  /// or writing track, and [EngineResult.notReady] while an arm or Count-in
+  /// launch is pending on it.
+  RequestAdmission toggleReverse({required int channel});
+
+  /// Installs an explicit direction (Session recall). Accepts an empty track
+  /// that already holds imported material, before the commit.
+  RequestAdmission installReverse({
+    required int channel,
+    required bool reversed,
+  });
+
+  /// Consumes a completed Fade or Reverse callback result; null means still
+  /// pending.
+  EngineResult? readRequestResult(int request);
 
   /// Halts track [channel]'s playback, retaining the loop buffer.
   EngineResult stopTrack({int channel = 0});

@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
@@ -91,6 +92,7 @@ void main() {
         );
         await timing.load();
         final fade = FadeSettings(
+          repository: looper,
           settings: settings,
           blocked: () => false,
           sessionBlocked: () => false,
@@ -109,6 +111,7 @@ void main() {
               ...playback.owners,
               ...record.owners,
               ...timing.owners,
+              ...fade.owners,
             ]),
             tempo: tempo,
             playback: playback,
@@ -200,15 +203,8 @@ void main() {
           controller = ControllerRepository(
             sources: [ConsoleCtrlSource(pedal)],
           );
+          final ownedFade = testFadeSettings();
           control = ControlCubit(
-            fadeSettings: testFadeSettings(),
-            decayControl: playback.decayControl,
-            oneShotControl: playback.oneShotControl,
-            recordLengthControl: record,
-            recordTimingControl: timing,
-            clickVolumeControl: tempo.clickVolumeControl,
-            clickModeControl: tempo.clickModeControl,
-            recordStartControl: tempo.recordStartControl,
             looper: looper,
             pedal: pedal,
             settings: settings,
@@ -216,6 +212,18 @@ void main() {
             mixSettings: mix,
             fxPersistence: projection,
             controller: controller,
+            fadeSettings: ownedFade,
+            ownedValues: OwnedValuePort(
+              looper: looper,
+              clickVolume: tempo.clickVolumeControl,
+              clickMode: tempo.clickModeControl,
+              recordStart: tempo.recordStartControl,
+              decay: playback.decayControl,
+              oneShot: playback.oneShotControl,
+              recordLength: record,
+              recordTiming: timing,
+              fade: ownedFade,
+            ),
           );
           link.hello();
           await control.load();

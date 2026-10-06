@@ -73,6 +73,11 @@ abstract interface class SettingsFamily<V extends Object, C> {
 
   /// Re-requests the owed durable value.
   EngineResult recover();
+
+  /// The session or device lifetime moved on, which retires every held
+  /// controller value: live returns to durable. A family whose restart
+  /// replays the durable value through its receipt has nothing to do.
+  void retireLive();
 }
 
 /// Stages [family]'s stored value into the stopped engine before audio
@@ -136,6 +141,7 @@ class SettingsOwner<V extends Object, C> {
   final _revisions = <Object?, int>{};
   bool _initialized = false;
   bool _reading = false;
+  int _exclusive = 0;
   bool _busy = false;
   bool _closing = false;
   Object? _unreadable;
@@ -260,10 +266,14 @@ class SettingsOwner<V extends Object, C> {
 
   /// Drains admitted writes and settles the receipt. The outcome reflects the
   /// current flags only, never an earlier write's result.
+  ///
+  /// A value the receipt still owes does not fail the flush: storage holds
+  /// it and the next start replays it. Only storage that does not hold the
+  /// value to replay does (unreadable, or a rollback that failed).
   Future<SettingOutcome> flush() async {
     await load();
     await _queue(_family.settle);
-    if (!_initialized || _recoveryPending) {
+    if (!_initialized || _unreadable != null || _owedRollback != null) {
       return _report(
         const SettingOutcome(
           SettingStatus.recoveryRequired,
@@ -271,7 +281,10 @@ class SettingsOwner<V extends Object, C> {
         ),
       );
     }
-    return SettingOutcome(SettingStatus.applied, deferred: !_running);
+    return SettingOutcome(
+      SettingStatus.applied,
+      deferred: !_running || _family.recoveryRequired,
+    );
   }
 
   /// Retry: repairs unreadable storage, restores an owed rollback, re-requests
@@ -332,8 +345,45 @@ class SettingsOwner<V extends Object, C> {
     await load();
     return _queue(() async {
       await _family.settle();
-      return operation();
+      _exclusive++;
+      try {
+        return await operation();
+      } finally {
+        _exclusive--;
+      }
     });
+  }
+
+  /// Installs a recalled Session's [value] inside [runExclusive], for a
+  /// family whose Session value no repository receipt applies: stores it at
+  /// every storage address and makes it live and durable. The Session load
+  /// already moved the lifetime, so older controller work is superseded.
+  /// A failed write restores what was stored, or owes it, and rethrows.
+  Future<void> installSession(V value) async {
+    if (_exclusive == 0) throw StateError('Session exclusion is required');
+    for (final address in _family.addresses) {
+      C stored;
+      try {
+        stored = await _family.readCheckpoint(address);
+      } on Object {
+        stored = _family.repair(address);
+      }
+      try {
+        await _family.writeCheckpoint(
+          address,
+          _family.checkpointOf(value, address, stored),
+        );
+      } on Object {
+        await _rollback(address, stored, SettingStatus.rejected);
+        rethrow;
+      }
+    }
+    _family.request(value, value, null);
+    _unreadable = null;
+    _owedRollback = null;
+    _initialized = true;
+    _report(const SettingOutcome(SettingStatus.applied));
+    _sync();
   }
 
   /// Lets admitted work finish, then closes the streams.
@@ -673,6 +723,7 @@ class SettingsOwner<V extends Object, C> {
     if (_lifetime != lifetime) {
       _lifetime = lifetime;
       _revisions.clear();
+      _family.retireLive();
       _changed();
     }
     if (_recoveryReported && ready) {

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/model/click_mode.dart';
@@ -90,6 +92,10 @@ final class ClickVolumeFamily implements SettingsFamily<double, double?> {
 
   @override
   EngineResult recover() => _repository.recoverClickVolume();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 /// Hear click: one native mode, stored as its enum code.
@@ -175,6 +181,10 @@ final class HearClickFamily implements SettingsFamily<ClickMode, int?> {
 
   @override
   EngineResult recover() => _repository.recoverClickMode();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 /// Presents the Click volume owner through ControlCubit's existing port.
@@ -379,6 +389,10 @@ final class RecordStartFamily
 
   @override
   EngineResult recover() => _repository.recoverRecordStartSettings();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 
   static RecordStartSettings _pair(({int countInBars, bool soundStart}) pair) =>
       RecordStartSettings(
@@ -626,6 +640,10 @@ final class DecayFamily implements SettingsFamily<DecaySnapshot, int?> {
 
   @override
   EngineResult recover() => EngineResult.ok;
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 const _oneShotAddresses = <Object?>[
@@ -756,6 +774,10 @@ final class OneShotFamily implements SettingsFamily<OneShotSnapshot, bool?> {
 
   @override
   EngineResult recover() => _repository.recoverOneShotSettings();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 /// Presents the Decay owner through ControlCubit's existing port.
@@ -1078,6 +1100,10 @@ final class RecordLengthFamily
 
   @override
   EngineResult recover() => _repository.recoverLengthSettings();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
 }
 
 /// The stored Record timing gate, one storage address of the timing family.
@@ -1296,4 +1322,148 @@ final class RecordTimingFamily
 
   @override
   EngineResult recover() => _repository.recoverRecordTimingSettings();
+
+  /// The restart replay already lands the durable value.
+  @override
+  void retireLive() {}
+}
+
+/// Fade durations: one stored JSON record and no native command. The family
+/// holds the accepted live and durable durations itself; a held controller
+/// value is live only, and the record keeps its Released value.
+final class FadeFamily implements SettingsFamily<FadeDurations, String?> {
+  /// Binds the family to its stored record.
+  FadeFamily({required SettingsRepository settings}) : _settings = settings;
+
+  final SettingsRepository _settings;
+  FadeDurations _live = FadeDurations.defaults;
+  FadeDurations _durable = FadeDurations.defaults;
+
+  @override
+  OwnedSetting get key => OwnedSetting.fade;
+
+  /// The one record holds every address.
+  @override
+  List<Object?> get addresses => const [null];
+
+  @override
+  bool validate(FadeDurations value) => true;
+
+  /// The exact stored bytes, after checking they decode.
+  @override
+  Future<String?> readCheckpoint(Object? address) async {
+    final record = await _settings.readFadeDurationsCheckpoint();
+    if (record != null) _decode(record);
+    return record;
+  }
+
+  @override
+  Future<void> writeCheckpoint(Object? address, String? checkpoint) =>
+      _settings.restoreFadeDurationsCheckpoint(checkpoint);
+
+  /// The whole record for [durable]; [stored] when it already holds it, so
+  /// an absent record is not written for the defaults.
+  @override
+  String? checkpointOf(
+    FadeDurations durable,
+    Object? address,
+    String? stored,
+  ) {
+    final current = stored == null ? FadeDurations.defaults : _decode(stored);
+    return current == durable ? stored : jsonEncode(durable.toJson());
+  }
+
+  @override
+  List<Object?> supersededBy(
+    Object? address,
+    FadeDurations before,
+    FadeDurations after,
+  ) => const [];
+
+  /// [durable] with Default ([address] null) or one track taken from
+  /// [written].
+  @override
+  FadeDurations durableAfter(
+    FadeDurations durable,
+    FadeDurations written,
+    Object? address,
+  ) => fadeWith(
+    durable,
+    address as int?,
+    address == null ? written.defaultMs : written.overrides[address],
+  );
+
+  /// An absent record is the declared defaults.
+  @override
+  FadeDurations restoreValue(Map<Object?, String?> checkpoints) {
+    final record = checkpoints[null];
+    return record == null ? FadeDurations.defaults : _decode(record);
+  }
+
+  /// An unreadable record is replaced by the declared defaults, stored.
+  @override
+  String? repair(Object? address) =>
+      jsonEncode(FadeDurations.defaults.toJson());
+
+  @override
+  FadeDurations get live => _live;
+
+  @override
+  FadeDurations get durable => _durable;
+
+  @override
+  bool get captureLocked => false;
+
+  @override
+  bool get recoveryRequired => false;
+
+  @override
+  Stream<EngineResult> get failures => const Stream.empty();
+
+  /// No native command: the next gesture reads [live].
+  @override
+  EngineResult request(
+    FadeDurations live,
+    FadeDurations durable,
+    Object? edit,
+  ) {
+    _live = live;
+    _durable = durable;
+    return EngineResult.ok;
+  }
+
+  @override
+  Future<EngineResult> settle() => Future.value(EngineResult.ok);
+
+  @override
+  EngineResult recover() => EngineResult.ok;
+
+  /// No restart replay retires a held value, so a new session or device
+  /// lifetime returns the next gesture to the durable durations.
+  @override
+  void retireLive() => _live = _durable;
+
+  static FadeDurations _decode(String record) =>
+      FadeDurations.fromJson(jsonDecode(record) as Map<String, dynamic>);
+}
+
+/// [base] with Default ([channel] null) or one track's explicit value set; a
+/// null track value removes its override. Throws [FormatException] for an
+/// invalid value or track.
+FadeDurations fadeWith(FadeDurations base, int? channel, int? milliseconds) {
+  if (channel == null) {
+    if (milliseconds == null) {
+      throw const FormatException('Fade Default needs a duration');
+    }
+    return FadeDurations(defaultMs: milliseconds, overrides: base.overrides);
+  }
+  base.effectiveMs(channel); // Validates even a removal of an absent slot.
+  return FadeDurations(
+    defaultMs: base.defaultMs,
+    overrides: {
+      for (final entry in base.overrides.entries)
+        if (entry.key != channel) entry.key: entry.value,
+      channel: ?milliseconds,
+    },
+  );
 }
