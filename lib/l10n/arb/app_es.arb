@@ -2635,6 +2635,7 @@
     "recordStartSettingsRefusedTitle": "No se pudo cambiar el inicio de la grabación",
     "recordStartSettingsRecoveryBody": "No se pudo confirmar el inicio de la grabación. Reintenta antes de guardar o apagar.",
     "recordingInputRequiredTitle": "Elige las entradas de grabación",
+    "recordRefusedTitle": "La grabación no comenzó. Pulsa Grabar otra vez.",
     "monitorRestoreFailedTitle": "La monitorización necesita recuperarse",
     "monitorRestoreFailedBody": "No se pudo restaurar por completo la monitorización guardada. Reintenta para aplicar los ajustes guardados.",
     "actionModeMixer": "Mezclador de pie",

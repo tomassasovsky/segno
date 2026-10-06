@@ -186,6 +186,7 @@ class _AppState extends State<App> {
   late final TempoCubit _tempoView;
   final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
+  StreamSubscription<int>? _recordRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
   StreamSubscription<RecordLengthOutcome>? _recordLengthFailureSubscription;
@@ -228,6 +229,9 @@ class _AppState extends State<App> {
         .repository
         .recordingInputRequired
         .listen(_showRecordingInputRequired);
+    _recordRefusedSubscription = widget.repository.recordRefusals.listen(
+      _showRecordRefused,
+    );
     _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
     _decayFailureSubscription = _runtime.playback.decayFailures.listen(
       _showDecayFailure,
@@ -265,6 +269,7 @@ class _AppState extends State<App> {
       unawaited(subscription.cancel());
     }
     unawaited(_recordingInputRequiredSubscription?.cancel());
+    unawaited(_recordRefusedSubscription?.cancel());
     unawaited(_decayFailureSubscription?.cancel());
     unawaited(_oneShotFailureSubscription?.cancel());
     unawaited(_recordLengthFailureSubscription?.cancel());
@@ -348,6 +353,28 @@ class _AppState extends State<App> {
       autoCloseDuration: const Duration(seconds: 5),
       title: Builder(
         builder: (context) => Text(context.l10n.recordingInputRequiredTitle),
+      ),
+      description: Builder(
+        builder: (context) => Text(
+          context.l10n.trackName(
+            context.read<TracksCubit>().state.names,
+            channel,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A fresh-capture Record press the engine refused twice (#1146): the press
+  /// is lost, so say so. Low stakes — a toast, like the input notice above.
+  void _showRecordRefused(int channel) {
+    if (!mounted || _runtime.power.state.isUiUp) return;
+    showAppToast(
+      id: AppToastId.recordRefused,
+      type: ToastificationType.warning,
+      autoCloseDuration: const Duration(seconds: 5),
+      title: Builder(
+        builder: (context) => Text(context.l10n.recordRefusedTitle),
       ),
       description: Builder(
         builder: (context) => Text(

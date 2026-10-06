@@ -380,6 +380,16 @@ class LooperRepository {
   RecordStartEditKind _recordStartEdit = RecordStartEditKind.restore;
   final _recordingInputRequired = StreamController<int>.broadcast();
 
+  /// A fresh capture the engine refused with [EngineResult.notReady]: the
+  /// one-block window after an Undo-to-empty, Clear or cancelled take in which
+  /// the callback may still hold the track's buffers (#1146). Retried exactly
+  /// once from the poll, after a further callback block has published; a
+  /// second refusal is reported on [recordRefusals].
+  _RecordRetry? _recordRetry;
+  bool _retryingRecord = false;
+  bool _retrySuperseded = false;
+  final _recordRefusals = StreamController<int>.broadcast();
+
   /// The desired global master output gain (`0..1`), re-applied to the engine
   /// on every successful (re)start so it survives device changes and
   /// reconnects. Unity (`1.0`) until set.
@@ -854,6 +864,9 @@ class LooperRepository {
     _mixGeneration++;
     if (_pendingImages.isNotEmpty) _snapshotAndSettleImages();
     _pendingImages.clear();
+    // A refused Record press belongs to the lifetime that refused it: never
+    // start a take on a restarted engine or a loaded session for it.
+    _recordRetry = null;
   }
 
   void _cancelMix() {
@@ -2217,6 +2230,7 @@ class LooperRepository {
     final receiptsSettled = _observeSettingsReceipts();
     _drainHistoryFx();
     final snapshot = _snapshotAndSettleImages();
+    _retryRefusedRecord(snapshot);
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
     // A measurement auto-sets the engine's offset (it never flows through
@@ -3114,6 +3128,17 @@ class LooperRepository {
     if (channel < 0 || channel >= snapshot.tracks.length) {
       return EngineResult.invalid;
     }
+    // The owed retry of a refused fresh capture must never become anything
+    // else: a take that started since (the player's own second press) would
+    // be finished by the plain record below, and a Count-in it started would
+    // be cancelled by the branch after. Superseded, quietly.
+    if (_retryingRecord &&
+        (state != TrackState.empty ||
+            snapshot.tracks[channel].pendingLaunch != null ||
+            snapshot.tracks[channel].countInCancelGrace)) {
+      _retrySuperseded = true;
+      return EngineResult.invalid;
+    }
     // The callback rechecks this cancellation-only intent, so an expired
     // grace window cannot turn the press into a new capture.
     if (snapshot.tracks[channel].pendingLaunch != null ||
@@ -3289,6 +3314,13 @@ class LooperRepository {
       _reproject();
     } else {
       detached.forEach(_engine.discardPreparedPlugin);
+      // The engine's own fresh-capture refusal (#1146): the callback may
+      // still hold this track's buffers for one block. Owed one retry.
+      if (result == EngineResult.notReady &&
+          state == TrackState.empty &&
+          !_retryingRecord) {
+        _recordRetry = _RecordRetry(channel);
+      }
     }
     return result;
   }
@@ -7520,6 +7552,54 @@ class LooperRepository {
   /// Empty Sound-start target needing a real selected recording input.
   Stream<int> get recordingInputRequired => _recordingInputRequired.stream;
 
+  /// Fresh-capture Record presses the engine refused twice (the channel): the
+  /// press is lost and the player should press again. Low stakes, so a toast.
+  Stream<int> get recordRefusals => _recordRefusals.stream;
+
+  /// Whether a Record press on [channel] the engine refused is still waiting
+  /// for its one retry — the press counts as accepted until it resolves.
+  bool recordRetryPending(int channel) => _recordRetry?.channel == channel;
+
+  /// Runs the one retry a refused fresh-capture press is owed, once every
+  /// command posted before it has published (`commandsSettled`: the emptying
+  /// that caused the refusal was posted earlier, so settled implies its block
+  /// completed — a frame advance alone can be one block short when the buffer
+  /// period exceeds the poll), or after [_recordRetryPollLimit] polls without
+  /// settlement. A track that is no longer a fresh target (a later press
+  /// landed, a redo) supersedes the press silently; a second refusal is
+  /// reported.
+  void _retryRefusedRecord(EngineSnapshot snapshot) {
+    final retry = _recordRetry;
+    if (retry == null) return;
+    if (!_engine.commandsSettled && ++retry.polls < _recordRetryPollLimit) {
+      return;
+    }
+    _recordRetry = null;
+    final track = retry.channel < snapshot.tracks.length
+        ? snapshot.tracks[retry.channel]
+        : null;
+    if (track == null ||
+        track.state != TrackState.empty ||
+        track.pending ||
+        track.pendingLaunch != null ||
+        track.countInCancelGrace) {
+      return;
+    }
+    _retryingRecord = true;
+    _retrySuperseded = false;
+    EngineResult result;
+    try {
+      result = record(channel: retry.channel);
+    } finally {
+      _retryingRecord = false;
+    }
+    if (!result.isOk && !_retrySuperseded && !_recordRefusals.isClosed) {
+      _recordRefusals.add(retry.channel);
+    }
+  }
+
+  static const _recordRetryPollLimit = 4;
+
   /// Stages a stopped pair or requests one callback-confirmed atomic edit.
   EngineResult setRecordStartSettings({
     required int countInBars,
@@ -8128,6 +8208,7 @@ class LooperRepository {
     await _clickVolume.dispose();
     await _recordStart.dispose();
     await _recordingInputRequired.close();
+    await _recordRefusals.close();
     await _mixSettingsFailures.close();
     await _controller.close();
   }
@@ -8288,6 +8369,16 @@ class _PendingImage {
   final Map<int, int> inheritedInputs;
   final Map<int, Map<String, PluginSlotHandle>> inheritedHandles;
   final bool clearOnCommit;
+}
+
+/// One refused fresh-capture press waiting for its retry (#1146).
+class _RecordRetry {
+  _RecordRetry(this.channel);
+
+  final int channel;
+
+  /// Polls waited without the ring settling.
+  int polls = 0;
 }
 
 class _FxPreparationRefused implements Exception {

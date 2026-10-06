@@ -5791,6 +5791,8 @@
     "recordStartSettingsRefusedTitle": "Recording start could not change",
     "recordStartSettingsRecoveryBody": "Recording start could not be confirmed. Retry before saving or switching off.",
     "recordingInputRequiredTitle": "Choose recording inputs",
+    "recordRefusedTitle": "Recording did not start. Press Record again.",
+    "@recordRefusedTitle": {"description": "A fresh-capture Record press was refused by the engine twice in a row (the track was still being emptied); the press was dropped."},
     "monitorRestoreFailedTitle": "Input monitoring needs recovery",
     "monitorRestoreFailedBody": "Saved input monitoring could not be fully restored. Retry to apply the saved settings.",
     "actionModeMixer": "Foot Mixer",

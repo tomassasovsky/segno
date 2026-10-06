@@ -90,53 +90,71 @@ static void le_publish_undo_depth(le_track* t) {
   store_i32(&t->a_clear_restore, cleared ? 1 : 0);
 }
 
-/* Returns a pool slot INDEX that is neither the (shared) live index, nor
- * referenced by either undo/redo stack, nor posted to the audio thread as a
- * shadow (outstanding). The same index names the snapshot in every lane — the
- * undo span is lockstep across lanes — so this works on the track-level stacks
- * plus lane 0's live index (all lanes share it). If the pool is full, evicts
- * the oldest undo entry and reuses its slot (never an audio-held one). Returns
- * -1 only if nothing can be freed. Allocation of the slot's buffers happens per
- * lane in le_post_dub_shadows. */
-static int track_acquire_slot(le_track* t) {
+/* The pool slot INDEX the next shadow acquisition on [t] selects, given the
+ * history it will see: the first index that is neither the (shared) live index
+ * nor named by the first `undo_count` / `redo_count` / `outstanding_count`
+ * entries of the respective stacks. The same index names the snapshot in every
+ * lane — the undo span is lockstep across lanes — so this works on the
+ * track-level stacks plus lane 0's live index (all lanes share it). When every
+ * index is in use, it names the slot of the oldest evictable undo entry and
+ * stores that entry's stack position in *evict (else -1); -1 when nothing can
+ * be freed. PURE: it evicts nothing and allocates nothing, so the capture
+ * admission check in le_record_impl can preview exactly the slot the real
+ * acquisition below will take, from the retained-history view that action
+ * leaves behind, without a second selection policy.
+ *
+ * The LE_HIST_CLEAR skip is belt-and-braces, NOT a live path: a restore point
+ * only sits on the undo stack while its track is EMPTY, and an EMPTY track
+ * posts no dub shadows, so nothing acquires against a stack holding one. (Once
+ * undone it moves to the redo stack, where the `used` scan pins its slot — and
+ * a punch-in discards it via le_clear_redo before acquiring anyway.) The
+ * invariant is subtle and lives in three places, so this stays: if it ever
+ * breaks, degrading peel depth is survivable and recycling the erased take's
+ * buffer into a live recording is not. Deliberately untested — the mutation
+ * that removes it cannot be caught, because the path cannot be reached. */
+static int track_select_slot(le_track* t, int undo_count, int redo_count,
+                             int outstanding_count, int* evict) {
+  *evict = -1;
   const int live = load_i32(&t->lanes[0].a_live);
   for (int i = 0; i < LE_POOL_SLOTS; ++i) {
     if (i == live) continue;
     int used = 0;
-    for (int k = 0; k < t->undo_count && !used; ++k) {
+    for (int k = 0; k < undo_count && !used; ++k) {
       if (t->undo_stack[k].slot == i) used = 1;
     }
-    for (int k = 0; k < t->redo_count && !used; ++k) {
+    for (int k = 0; k < redo_count && !used; ++k) {
       if (t->redo_stack[k].slot == i) used = 1;
     }
-    for (int k = 0; k < t->outstanding_count && !used; ++k) {
+    for (int k = 0; k < outstanding_count && !used; ++k) {
       if (t->outstanding_slots[k] == i) used = 1;
     }
     if (!used) return i;
   }
-  /* Pool full: evict the oldest evictable undo entry. Layers are fair game —
-   * losing the deepest one costs peel depth and nothing else.
-   *
-   * The LE_HIST_CLEAR skip is belt-and-braces, NOT a live path: a restore point
-   * only sits on the undo stack while its track is EMPTY, and an EMPTY track
-   * posts no dub shadows, so nothing acquires against a stack holding one. (Once
-   * undone it moves to the redo stack, where the `used` scan above pins its slot
-   * — and a punch-in discards it via le_clear_redo before acquiring anyway.)
-   * The invariant is subtle and lives in three places, so this stays: if it ever
-   * breaks, degrading peel depth is survivable and recycling the erased take's
-   * buffer into a live recording is not. Deliberately untested — the mutation
-   * that removes it cannot be caught, because the path cannot be reached. */
-  for (int e = 0; e < t->undo_count; ++e) {
+  for (int e = 0; e < undo_count; ++e) {
     if (t->undo_stack[e].kind == LE_HIST_CLEAR) continue;
-    const int slot = t->undo_stack[e].slot;
-    for (int k = e + 1; k < t->undo_count; ++k) {
+    *evict = e;
+    return t->undo_stack[e].slot;
+  }
+  return -1;
+}
+
+/* Acquires the slot track_select_slot names for the track's current stacks.
+ * If the pool is full, evicts the oldest undo entry and reuses its slot (never
+ * an audio-held one) — layers are fair game: losing the deepest one costs peel
+ * depth and nothing else. Returns -1 only if nothing can be freed. Allocation
+ * of the slot's buffers happens per lane in le_post_dub_shadows. */
+static int track_acquire_slot(le_track* t) {
+  int evict;
+  const int slot = track_select_slot(t, t->undo_count, t->redo_count,
+                                     t->outstanding_count, &evict);
+  if (evict >= 0) {
+    for (int k = evict + 1; k < t->undo_count; ++k) {
       t->undo_stack[k - 1] = t->undo_stack[k];
     }
     t->undo_count--;
     le_publish_undo_depth(t);
-    return slot;
   }
-  return -1;
+  return slot;
 }
 
 /* How many shadow slots control keeps posted to the audio thread per capturing
@@ -411,6 +429,53 @@ static void le_mark_state_cmd(le_track* t, int32_t target) {
   t->pending_master_len = 0;
 }
 
+/* Marks a successfully posted command that EMPTIES the track: the state flip
+ * plus the publication ticket a later fresh capture needs before it may free,
+ * regrow or zero this track's PCM (#1146, le_track.empty_command). Called
+ * after the push, so commands_posted already counts that command. */
+static void le_mark_empty_cmd(le_engine* engine, le_track* t) {
+  le_mark_state_cmd(t, LE_TRACK_EMPTY);
+  t->empty_command = engine->commands_posted;
+}
+
+/* Tickets a successfully posted command that can empty [channel] on the audio
+ * thread WITHOUT a state command of its own: a cancellation that reaches a
+ * take inside its launch grace (DISARM, STOP_RECORD_CONTROL, CANCEL_COUNT_IN
+ * -> handle_record -> apply_undo_to_empty), or a stop/finish that finalizes a
+ * RECORDING take which captured nothing (finalize_new_track's void take ->
+ * EMPTY). Unconditional on purpose: the control view cannot tell a void take
+ * from a kept one (a RECORD posted in the same block still reads EMPTY here),
+ * and a ticket on a track that keeps its content is never consulted — the
+ * guard reads it only while the track is EMPTY, and the next emptying
+ * re-tickets. Called after the push, so commands_posted counts the command. */
+static void le_ticket_emptying(le_engine* engine, int32_t channel) {
+  if (channel < 0 || channel >= engine->track_count) return;
+  engine->tracks[channel].empty_command = engine->commands_posted;
+}
+
+/* DISARM empties a track only through its launch: a take inside its grace
+ * (handle_record -> apply_undo_to_empty), or a pending launch the count-in may
+ * commit before the DISARM applies. An ordinary arm cancellation empties
+ * nothing, and must stay re-armable within the same block. */
+/* Whether [t] has a launch a press may only cancel: a Count-in deferral
+ * pending, or a committed take inside its cancellation grace. Pending first,
+ * then grace, both acquire: le_count_in_commit stores the grace (release)
+ * before it clears the pending flag (release), so a clear read here implies
+ * the grace store is visible — no instant exists where a cancellable launch
+ * reads as neither. Every control-side reader of the pair goes through this
+ * one helper so none of them re-introduces the relaxed, unordered read. */
+static int le_launch_cancellable(le_track* t) {
+  return atomic_load_explicit(&t->a_pending_launch, memory_order_acquire) ||
+         atomic_load_explicit(&t->a_launch_grace, memory_order_acquire);
+}
+
+static void le_ticket_launch_cancel(le_engine* engine, int32_t channel) {
+  if (channel < 0 || channel >= engine->track_count) return;
+  if (le_launch_cancellable(&engine->tracks[channel])) {
+    le_ticket_emptying(engine, channel);
+  }
+}
+
 /* The master grid a clear on [t] must record for its restore point: what an
  * in-flight restore on this track is about to re-establish, else the wire's
  * — the grid twin of le_effective_len. */
@@ -492,7 +557,7 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
     le_cancel_arm(engine, channel);
     (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
     t->empty_len = len;
-    le_mark_state_cmd(t, LE_TRACK_EMPTY);
+    le_mark_empty_cmd(engine, t);
     le_track_set_len(t, 0); /* coherent snapshot before the audio thread
                              * applies — a poll must never see EMPTY with a
                              * stale nonzero length (mirrors the live-tap and
@@ -931,7 +996,9 @@ static int32_t le_cancel_arm(le_engine* engine, int32_t channel) {
    * audio thread even though control now reads unarmed. The internal callers
    * are void and have always discarded this; returning it is what lets the
    * public le_engine_cancel_arm tell its caller the arm may still fire. */
-  return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+  if (rc == LE_OK) le_ticket_launch_cancel(engine, channel);
+  return rc;
 }
 
 /* Whether any track is driving the loop clock (playing or capturing). A
@@ -1063,13 +1130,10 @@ static int le_record_capacity(le_engine* e, size_t required) {
 static int le_prepare_image_capture(le_engine* e, int32_t channel) {
   le_track* t = &e->tracks[channel];
   const int live = load_i32(&t->lanes[0].a_live);
-  unsigned char used[LE_POOL_SLOTS] = {0};
-  used[live] = 1;
-  for (int i = 0; i < t->outstanding_count; ++i)
-    used[t->outstanding_slots[i]] = 1;
-  int shadow = -1;
-  for (int i = 0; i < LE_POOL_SLOTS; ++i)
-    if (!used[i]) { shadow = i; break; }
+  /* Live and outstanding slots are excluded; history is not — the same
+   * selection le_record_impl previewed before admitting this preparation. */
+  int evict;
+  const int shadow = track_select_slot(t, 0, 0, t->outstanding_count, &evict);
   if (shadow < 0) return -1;
   const int slots[2] = {live, shadow};
   const int lanes = le_lanes_active(t);
@@ -1325,7 +1389,7 @@ static void le_finish_clear(le_engine* engine, int32_t channel, int freeze,
    * makes any still-in-ring retire event from before the clear stale. */
   t->outstanding_count = 0;
   t->dub_generation++;
-  le_mark_state_cmd(t, LE_TRACK_EMPTY);
+  le_mark_empty_cmd(engine, t);
   t->clear_cmd_ack = t->state_cmds_posted;
   /* Coherent snapshot before the audio thread applies — except for a frozen
    * capture, whose published length is what handle_clear reports back for
@@ -1381,6 +1445,8 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
       t->outstanding_slots[t->outstanding_count++] = fresh_shadow;
     }
     e->commands_posted += (uint32_t)count;
+    /* The batched CLEAR was marked before it was counted: ticket the batch. */
+    if (clear_first) e->tracks[channel].empty_command = e->commands_posted;
     atomic_store_explicit(&e->ring.tail, tail + count, memory_order_release);
     result = LE_OK;
   } else {
@@ -1398,8 +1464,7 @@ typedef enum le_record_admission {
 static le_record_admission le_classify_record(le_engine* e, int channel) {
   le_track* t = &e->tracks[channel];
   const int state = le_effective_state(t);
-  if (load_i32(&t->a_pending_launch) || load_i32(&t->a_launch_grace))
-    return LE_RECORD_CANCEL;
+  if (le_launch_cancellable(t)) return LE_RECORD_CANCEL;
   if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) return LE_RECORD_FINISH;
   if (e->armed[channel] && load_i32(&t->a_pending) &&
       e->record_timing_command > atomic_load_explicit(&e->a_commands_published, memory_order_acquire)) {
@@ -1452,19 +1517,44 @@ static int32_t le_record_preflight(le_engine* e, int channel,
   return LE_OK;
 }
 
+/* Whether preparing a fresh capture on effectively-EMPTY [t] would free, regrow
+ * or zero PCM that already exists in its pool: an allocated live buffer below
+ * the recording cap on any active lane (le_begin_empty_capture and
+ * le_prepare_image_capture replace it), any allocated live buffer when the
+ * capture `zero`es it (le_prepare_new_capture), or an allocated `shadow`
+ * candidate below the `shadow_frames` this action will supply it at. A NULL
+ * buffer is left lazy and a sufficient one is kept, so neither counts. */
+static int le_capture_prep_touches_pcm(const le_engine* e, le_track* t, int zero,
+                                       int shadow, int32_t shadow_frames) {
+  const int32_t lanes = le_lanes_active(t);
+  for (int32_t l = 0; l < lanes; ++l) {
+    const le_lane* ln = &t->lanes[l];
+    const int live = load_i32(&t->lanes[l].a_live);
+    if (ln->pool[live] != NULL &&
+        (zero || ln->pool_cap[live] < e->max_loop_frames)) return 1;
+    if (shadow >= 0 && ln->pool[shadow] != NULL &&
+        ln->pool_cap[shadow] < shadow_frames) return 1;
+  }
+  return 0;
+}
+
 static int32_t le_record_impl(le_engine* engine, int32_t channel,
                                 const le_record_image* image) {
   const int32_t admission = le_record_preflight(engine, channel, image);
   if (admission != LE_OK) return admission;
-  if (load_i32(&engine->tracks[channel].a_pending_launch) ||
-      load_i32(&engine->tracks[channel].a_launch_grace)) {
+  if (le_launch_cancellable(&engine->tracks[channel])) {
     /* Keep cancellation intent even if an earlier pair command removes the
      * countdown before this command drains. Never reinterpret it as acquire. */
     uint32_t sequence = engine->clock_commands_posted + 1u;
     if (sequence == 0) sequence = 1;
     const int result = le_push_cmd(engine, (le_command){.code = LE_CMD_RECORD,
         .clock = {channel, sequence, 1}});
-    if (result == LE_OK) engine->clock_commands_posted = sequence;
+    if (result == LE_OK) {
+      engine->clock_commands_posted = sequence;
+      /* Within its grace a launched take is emptied by this press
+       * (handle_record), with no state command to ticket it: ticket it here. */
+      engine->tracks[channel].empty_command = engine->commands_posted;
+    }
     return result;
   }
   if (engine->armed[channel] && load_i32(&engine->tracks[channel].a_pending) &&
@@ -1517,6 +1607,80 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     for (int lane = 0; lane < le_lanes_active(t); ++lane)
       if (le_fx_edit_pending(engine, LE_FX_OWNER_LANE, channel, lane))
         return LE_ERR_INVALID;
+  }
+  /* #1146: a fresh capture on a track that only READS as EMPTY here. An
+   * Undo-to-empty, Clear or cancelled take makes the control view EMPTY the
+   * moment it is posted, but the callback block that applies it may still be
+   * mid-frame on the previous content: mix_tracks_frame caches pool[live]
+   * before it dereferences it, and a_state only changes when the command is
+   * applied. The preparation below then frees (regrow), zeroes or replaces
+   * exactly such buffers on this thread. Decide from what THIS action will
+   * concretely do to existing PCM — the live buffers, and the one shadow slot
+   * it will supply — and only when it touches some, require the track to be
+   * actually EMPTY with the command that emptied it published
+   * (a_commands_published, stored after the last frame of the block, at or
+   * past empty_command): the block that applied it has completed, so no
+   * pointer it or an earlier block captured is in use, and every later block
+   * reads the track as EMPTY and captures none until this sole producer posts
+   * a new start. A state ack alone is not that proof (it lands before the
+   * block's frames finish); commands posted since — other tracks, settings —
+   * need not have published. Refusal is LE_ERR_NOT_READY before any mutation,
+   * so history, arm flags, mutes and the ring are untouched and a retry after
+   * publication takes the ordinary path. Preparation that leaves existing PCM
+   * alone (a cap-sized live buffer, a lazy or sufficient candidate) is admitted
+   * exactly as before, so an accepted CANCEL/Undo-to-empty followed by a
+   * defining capture still rides one batch
+   * (test_record_image_grid_clear_is_in_capture_batch). Cancellations (a
+   * second press on a pending arm) prepare nothing and are exempt; the
+   * trigger-2 immediate case is refused below without touching PCM (the grid
+   * redefinition it passes through drops history and posts no buffer edit).
+   *
+   * Residual: emptyings the audio thread decides on its own — a quantized
+   * finish arm firing on a take that captured nothing, a launch commit
+   * closing another channel's grace take (close_active_capture) — have no
+   * command of their own to ticket; the ticket then dates from the command
+   * that scheduled them, so the firing block itself is not fenced.
+   *
+   * Behaviour note: starts are ticketed too (see the RECORD post), so with a
+   * master present a second Record press inside the block that starts the
+   * take is refused as switch bounce — the take keeps recording and the host
+   * drops its retry silently — where it used to become a void finish. Within
+   * one block only bounce produces two presses (the pedal debounce is longer).
+   * Without a master nothing is touched, so it is still admitted. */
+  if (st == LE_TRACK_EMPTY &&
+      !(engine->armed[channel] && load_i32(&t->a_pending) &&
+        (sound_arm || quantized_arm || engine->armed_trigger[channel] == 2))) {
+    /* Zeroing: every deferred arm, and an immediate start over a grid this
+     * capture does not redefine (has_master survives the internal clear). */
+    const int zero = sound_arm || quantized_arm || capture_has_master;
+    int shadow = -1;
+    int32_t shadow_frames = engine->max_loop_frames;
+    if (le_capture_may_overdub(engine, channel, capture_has_master)) {
+      int evict;
+      if (image) {
+        /* le_prepare_image_capture: live + outstanding excluded, history not. */
+        shadow = track_select_slot(t, 0, 0, t->outstanding_count, &evict);
+      } else if (!sound_arm && !quantized_arm) {
+        /* le_post_dub_shadows after RECORD: redo and outstanding are gone by
+         * then (le_begin_empty_capture); the undo stack survives unless the
+         * grid-redefining clear resets it or it is erased-take history that
+         * le_drop_clear_history drops. Deferred primitive arms allocate their
+         * shadow later, through the drain, so they prepare none now. */
+        const int history =
+            (redefine_grid && (has_master || t->cancel_pending)) ||
+                    t->clear_restore_pending || le_history_is_cleared(t)
+                ? 0
+                : t->undo_count;
+        shadow = track_select_slot(t, history, 0, 0, &evict);
+        shadow_frames = le_layer_slot_frames(engine, le_track_settled_len(t));
+      }
+    }
+    if (le_capture_prep_touches_pcm(engine, t, zero, shadow, shadow_frames) &&
+        !(load_i32(&t->a_state) == LE_TRACK_EMPTY &&
+          t->empty_command <= atomic_load_explicit(&engine->a_commands_published,
+                                                   memory_order_acquire))) {
+      return LE_ERR_NOT_READY;
+    }
   }
   int fresh_shadow = -1;
   int clear_first = 0;
@@ -1616,8 +1780,10 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     engine->armed_trigger[channel] = 1; /* input-level trigger */
     le_begin_empty_capture(engine, channel, image != NULL);
     le_prepare_new_capture(engine, t);
-    return le_post_record_image(engine, channel, LE_CMD_ARM, 1.0f, 0, image,
-                                fresh_shadow, clear_first);
+    const int32_t rc = le_post_record_image(engine, channel, LE_CMD_ARM, 1.0f,
+                                           0, image, fresh_shadow, clear_first);
+    if (rc == LE_OK) le_ticket_emptying(engine, channel); /* see the RECORD post */
+    return rc;
   }
 
   /* Quantized: defer the action to the next base-loop top instead of acting on
@@ -1669,6 +1835,13 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     }
     const int32_t rc = le_post_record_image(engine, channel, LE_CMD_ARM, 0.0f,
                                            0, image, fresh_shadow, clear_first);
+    /* A quantized finish of a take that has captured nothing empties it when
+     * the arm fires; the ticket covers the ARM's own block (the firing block
+     * is autonomous — see the guard's residual note). A start is ticketed for
+     * the same reason as the immediate RECORD post below. */
+    if (rc == LE_OK && (st == LE_TRACK_EMPTY || st == LE_TRACK_RECORDING)) {
+      le_ticket_emptying(engine, channel);
+    }
     return rc;
   }
 
@@ -1708,6 +1881,16 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   t->dub_punch_out_posted = 0;
   const int32_t rc = le_post_record_image(engine, channel, LE_CMD_RECORD, 0.0f,
       st == LE_TRACK_EMPTY && !has_master, image, fresh_shadow, clear_first);
+  /* Finishing a take that has captured nothing empties the track (#1146).
+   * The second press of such a pair lands inside the block that starts the
+   * take, so this thread still reads it as EMPTY and classifies it as another
+   * start — the audio thread applies it as the void finish. Ticket starts as
+   * well as finishes, then: the ticket is consulted only while the track
+   * reads EMPTY with that block unpublished, which is exactly this window.
+   * Punch-ins on PLAYING/STOPPED content never empty and are left alone. */
+  if (rc == LE_OK && (st == LE_TRACK_EMPTY || st == LE_TRACK_RECORDING)) {
+    le_ticket_emptying(engine, channel);
+  }
   /* Pre-arm ONE shadow slot for a fresh capture that is bound to run straight
    * into overdub (rec/dub, or a non-defining fixed multiple). Posted AFTER the
    * RECORD command so it orders behind handle_record's EMPTY-case drop of any
@@ -1751,16 +1934,21 @@ int32_t le_engine_record_with_image(le_engine* engine, int32_t channel,
 }
 
 int32_t le_engine_stop_track(le_engine* engine, int32_t channel) {
-  return le_push(engine, LE_CMD_STOP, channel, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_STOP, channel, 0.0f);
+  if (rc == LE_OK) le_ticket_emptying(engine, channel); /* void take -> EMPTY */
+  return rc;
 }
 int32_t le_engine_play(le_engine* engine, int32_t channel) {
   if (!engine || channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  if (load_i32(&engine->tracks[channel].a_pending_launch) ||
-      load_i32(&engine->tracks[channel].a_launch_grace))
+  if (le_launch_cancellable(&engine->tracks[channel]))
     return le_engine_cancel_arm(engine, channel);
   if (engine && engine->record_start_command > atomic_load_explicit(
       &engine->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
-  return le_push(engine, LE_CMD_PLAY, channel, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_PLAY, channel, 0.0f);
+  /* handle_play routes a track still in its launch grace to handle_record,
+   * which empties the take: ticket a PLAY that drains against one (#1146). */
+  if (rc == LE_OK) le_ticket_launch_cancel(engine, channel);
+  return rc;
 }
 /* Builds the restore point for a clear about to be posted on `t` (control
  * thread), or returns 0 when there is nothing worth restoring — an already-empty
@@ -2146,7 +2334,7 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
     if (rc != LE_OK) return rc;
     t->queued_undo = 0;
     t->cancel_pending = 1;
-    le_mark_state_cmd(t, LE_TRACK_EMPTY);
+    le_mark_empty_cmd(engine, t);
     /* The published length is NOT zeroed here, unlike the undo-to-empty
      * path: the audio thread may decline the cancel (the take finalized in
      * the same block), and a take that keeps playing needs its length. The
@@ -2194,7 +2382,7 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   le_cancel_arm(engine, channel);
   (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
   t->empty_len = len;
-  le_mark_state_cmd(t, LE_TRACK_EMPTY);
+  le_mark_empty_cmd(engine, t);
   le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
   store_i32(&t->a_multiple, 1);
   store_i32(&t->a_sync_divisor, 0); /* B3: coherent-snapshot mirror */
@@ -2439,12 +2627,23 @@ int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel) {
    * in the polled snapshot. DISARM is cancellation-only, so it cannot stop old
    * playback/capture or erase audio, and cannot consume a later FIFO request. */
   const int result = le_push(engine, LE_CMD_DISARM, channel, 0.0f);
-  if (result == LE_OK) engine->armed[channel] = 0;
+  if (result == LE_OK) {
+    engine->armed[channel] = 0;
+    le_ticket_launch_cancel(engine, channel);
+  }
   return result;
 }
 
+/* Every track a count-in cancellation can reach: each one in its launch grace
+ * is emptied by handle_record when the cancellation applies. */
+static void le_ticket_grace_cohort(le_engine* engine) {
+  for (int32_t c = 0; c < engine->track_count; ++c) le_ticket_launch_cancel(engine, c);
+}
+
 int32_t le_engine_cancel_count_in(le_engine* engine) {
-  return le_push(engine, LE_CMD_CANCEL_COUNT_IN, 0, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_CANCEL_COUNT_IN, 0, 0.0f);
+  if (rc == LE_OK) le_ticket_grace_cohort(engine);
+  return rc;
 }
 
 int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
@@ -2479,6 +2678,12 @@ int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
   if (result == LE_OK && action) {
     engine->armed[channel] = action == 1;
     engine->armed_trigger[channel] = 0;
+  }
+  if (result == LE_OK) {
+    /* Either half can empty a track: the count-in cancellation sweeps every
+     * grace take, the finish may close a void take on this channel. */
+    le_ticket_grace_cohort(engine);
+    le_ticket_emptying(engine, channel);
   }
   return result;
 }
@@ -2515,7 +2720,9 @@ int32_t le_engine_finalize_take(le_engine* engine, int32_t channel) {
   if (engine->armed[channel] && load_i32(&t->a_pending) != 0) {
     return LE_ERR_INVALID;
   }
-  return le_push(engine, LE_CMD_FINALIZE_TAKE, channel, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_FINALIZE_TAKE, channel, 0.0f);
+  if (rc == LE_OK) le_ticket_emptying(engine, channel); /* void take -> EMPTY */
+  return rc;
 }
 
 
@@ -2794,8 +3001,12 @@ int32_t le_engine_toggle_section(le_engine* engine, int32_t channel) {
      * same deadlock le_engine_record's quantize branch avoids for record
      * arms (see its comment above). The held position IS the primary's
      * loop top by definition, so act immediately instead of arming. */
-    return le_push(engine, st == LE_TRACK_STOPPED ? LE_CMD_PLAY : LE_CMD_STOP,
-                   channel, 0.0f);
+    const int32_t rc = le_push(
+        engine, st == LE_TRACK_STOPPED ? LE_CMD_PLAY : LE_CMD_STOP, channel, 0.0f);
+    if (rc == LE_OK && st == LE_TRACK_RECORDING) {
+      le_ticket_emptying(engine, channel); /* void take -> EMPTY */
+    }
+    return rc;
   }
   if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
     engine->armed[channel] = 0; /* spent: the boundary already fired it */
@@ -2812,7 +3023,11 @@ int32_t le_engine_toggle_section(le_engine* engine, int32_t channel) {
   }
   engine->armed[channel] = 1;
   engine->armed_trigger[channel] = 2; /* Band section-transport trigger */
-  return le_push(engine, LE_CMD_ARM, channel, 2.0f);
+  const int32_t rc = le_push(engine, LE_CMD_ARM, channel, 2.0f);
+  /* The fired toggle stops a RECORDING take (le_fire_section_arm): a void one
+   * empties. Covers the ARM's block; the firing block is autonomous. */
+  if (rc == LE_OK && st == LE_TRACK_RECORDING) le_ticket_emptying(engine, channel);
+  return rc;
 }
 
 /* ---- MIDI clock (Phase C/E, D15; see segno_engine_api.h's MIDI-clock

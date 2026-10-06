@@ -1019,6 +1019,13 @@ typedef struct le_track {
                             * (0 for a command that empties the track) */
   int32_t pending_master_len; /* control: the master grid that command
                                * re-establishes (0: leaves it as published) */
+  /* Control-only ticket (commands_posted) of the last command whose
+   * application empties this track. a_commands_published at or past it proves
+   * the callback block that applied it has completed — so no pointer that
+   * block, or an earlier one, cached to this track's PCM is still in use
+   * (#1146, le_record_impl). The ack alone lands before the block's frames
+   * finish. Configure resets it with the command counters. */
+  uint64_t empty_command;
   _Atomic int32_t a_state_acks; /* audio: state-flip commands applied */
   uint32_t dub_generation; /* bumped on clear; audio mirrors it in handle_clear
                             * and tags retire events, so a stale event from
