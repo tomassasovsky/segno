@@ -87,7 +87,14 @@ abstract final class WavCodec {
 
   /// Decodes a 32-bit float WAV byte stream. Throws [FormatException] for a
   /// malformed file or an unsupported (non 32-bit-float) format.
-  static WavData decodeFloat32(Uint8List bytes) {
+  ///
+  /// [maxFrames] bounds the decode to the first that many frames, so a
+  /// preview of a long file costs only what it plays (the Library's audition
+  /// reads at most two minutes). Null decodes every frame.
+  static WavData decodeFloat32(Uint8List bytes, {int? maxFrames}) {
+    if (maxFrames != null && maxFrames < 0) {
+      throw ArgumentError.value(maxFrames, 'maxFrames');
+    }
     final bd = ByteData.view(
       bytes.buffer,
       bytes.offsetInBytes,
@@ -131,7 +138,10 @@ abstract final class WavCodec {
       throw const FormatException('unsupported WAV (expected 32-bit float)');
     }
 
-    final count = dataSize ~/ 4;
+    var count = dataSize ~/ 4;
+    if (maxFrames != null && maxFrames * channels < count) {
+      count = maxFrames * channels;
+    }
     final samples = Float32List(count);
     for (var i = 0; i < count; i++) {
       samples[i] = bd.getFloat32(dataOffset + i * 4, Endian.little);
