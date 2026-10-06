@@ -115,6 +115,49 @@ void main() {
       expect(cubit.state.awaitingDrive, isFalse);
     });
 
+    test(
+      'a drive is chosen only once its write probe lands fast enough: '
+      'never while it is being measured, never when it is too slow',
+      () async {
+        await build();
+        cubit.awaitDrive();
+
+        rig.client.attach(usbRecord(1, writeBytesPerSecond: null));
+        await pumpEventQueue();
+        expect(cubit.state.destination, internal, reason: 'still measuring');
+        expect(cubit.state.awaitingDrive, isTrue);
+        await cubit.choose(usb1);
+        expect(cubit.state.destination, internal);
+
+        // 2 x 288000 B/s at 48 kHz 24-bit stereo is the bar.
+        rig.client.update(usbRecord(1, writeBytesPerSecond: 576000 - 1));
+        await pumpEventQueue();
+        expect(cubit.state.destination, internal, reason: 'too slow');
+
+        rig.client.update(usbRecord(1, writeBytesPerSecond: 576000));
+        await pumpEventQueue();
+        expect(cubit.state.destination, usb1);
+        expect(cubit.state.awaitingDrive, isFalse);
+      },
+    );
+
+    test('the chosen drive going is said once, with its label', () async {
+      await build(volumes: [usbRecord(1)]);
+      await cubit.choose(usb1);
+      final states = <RecordingDestinationState>[];
+      final sub = cubit.stream.listen(states.add);
+      addTearDown(sub.cancel);
+
+      rig.client.detach(1);
+      await pumpEventQueue();
+
+      expect(
+        states.where((s) => s.fellBackFrom != null).map((s) => s.fellBackFrom),
+        ['SEGNO USB'],
+      );
+      expect(cubit.state.fellBackFrom, isNull, reason: 'one state only');
+    });
+
     test('Try again chooses a drive that is already there; a cancel stops '
         'the wait and a later plug is not chosen', () async {
       await build(volumes: [usbRecord(1)]);

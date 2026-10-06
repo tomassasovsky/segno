@@ -615,15 +615,23 @@ class PerformanceRepository {
       return result;
     }
     // Nothing is capturing from here on: the finalize below is file work
-    // that _finalizesInFlight fences. Released now, so a finalize that throws
-    // cannot leave a device change or a calibration refused behind it.
-    _releaseCaptureGuard();
-
-    await _finalize(
-      dir,
-      armSnapshot: _armSnapshot,
-      disarmSnapshot: disarmSnapshot,
-    );
+    // that _finalizesInFlight fences. On Internal the guard goes now. A take
+    // on a USB drive keeps it through the finalize, which writes its WAVs to
+    // that drive for as long as the take ran: a restart or an eject let in
+    // meanwhile would cut them (#1177). Either way it is released in a
+    // finally, so a finalize that throws leaves nothing refused behind it.
+    if (_captureGuard?.operation.scope.generation == null) {
+      _releaseCaptureGuard();
+    }
+    try {
+      await _finalize(
+        dir,
+        armSnapshot: _armSnapshot,
+        disarmSnapshot: disarmSnapshot,
+      );
+    } finally {
+      _releaseCaptureGuard();
+    }
 
     _armedDir = null;
     _armSnapshot = null;

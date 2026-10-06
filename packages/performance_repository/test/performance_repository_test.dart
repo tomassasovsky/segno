@@ -2884,6 +2884,35 @@ void main() {
       await guarded.disarmAndFinalize();
     });
 
+    /// What the table holds while the finalize is under way: read as soon
+    /// as the engine has been disarmed, when the finalize is waiting on its
+    /// first file read.
+    Future<List<GuardKind>> activeWhileFinalizing() async {
+      final disarms = engine.perfDisarmCalls;
+      final done = guarded.disarmAndFinalize();
+      while (engine.perfDisarmCalls == disarms) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final kinds = [for (final op in guards.active) op.kind];
+      await done;
+      expect(guards.active, isEmpty);
+      return kinds;
+    }
+
+    test('a take on a drive holds its guard through the finalize, which '
+        'writes to that drive (#1177)', () async {
+      await guarded.arm(
+        root: '${tempDir.path}/usb',
+        scope: const GuardScope.removable(3),
+      );
+      expect(await activeWhileFinalizing(), [GuardKind.capture]);
+    });
+
+    test('a take on Internal lets its guard go before the finalize', () async {
+      await guarded.arm();
+      expect(await activeWhileFinalizing(), isEmpty);
+    });
+
     test('arm is refused at its commit while a device change is in '
         'flight, and says so', () async {
       final change = guards.enter(

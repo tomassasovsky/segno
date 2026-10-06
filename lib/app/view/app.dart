@@ -1131,6 +1131,19 @@ class _AppViewState extends State<_AppView> {
 
   /// The console now always starts in Record; said once to an install whose
   /// retired boot default was Mute. Low stakes, nothing to act on: a toast.
+  void _showSaveToFellBack(String label) {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.saveToFellBack,
+      type: ToastificationType.warning,
+      title: AppText(
+        l10n.saveToFellBack(label.isEmpty ? l10n.storageUsbUnnamed : label),
+      ),
+      icon: const Icon(Icons.usb_off),
+      autoCloseDuration: const Duration(seconds: 6),
+    );
+  }
+
   void _showBootModeRetiredNotice() {
     final l10n = _l10n;
     showAppToast(
@@ -1303,6 +1316,14 @@ class _AppViewState extends State<_AppView> {
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
           listenWhen: (previous, current) => previous.status != current.status,
           listener: (_, state) => _showAudioRecoveryBanner(state),
+        ),
+        // The drive chosen in Save to went: the next take goes to Internal,
+        // and the player is told rather than finding out afterwards.
+        BlocListener<RecordingDestinationCubit, RecordingDestinationState>(
+          listenWhen: (previous, current) =>
+              current.fellBackFrom != null &&
+              previous.fellBackFrom != current.fellBackFrom,
+          listener: (_, state) => _showSaveToFellBack(state.fellBackFrom!),
         ),
         BlocListener<UpdateCubit, UpdateState>(
           listenWhen: (previous, current) =>

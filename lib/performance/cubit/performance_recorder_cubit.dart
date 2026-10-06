@@ -352,11 +352,26 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
           );
           return;
         }
-        await _performance.arm(
-          chains: _currentChains(),
-          root: target.root,
-          scope: target.scope,
-        );
+        try {
+          await _performance.arm(
+            chains: _currentChains(),
+            root: target.root,
+            scope: target.scope,
+          );
+        } on Object {
+          // The bundle could not be created on the drive (full, read-only
+          // on error, gone): give the drive back and say so, rather than
+          // leave a lease that blocks eject and shutdown.
+          _releaseLease();
+          if (target.root == null) rethrow;
+          _emit(
+            PerformanceRecorderIdle(
+              driveUnavailable: true,
+              refusal: ++_refusals,
+            ),
+          );
+          return;
+        }
         if (_performance.armedDirectory == null) {
           // Refused (a guard, a render in flight) or failed: no take holds
           // the drive.
@@ -377,6 +392,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// mounted USB drive under a `recording` lease. Null when the chosen drive
   /// cannot take a recording now (the lease is refused).
   ({String? root, GuardScope scope})? _armTarget() {
+    // A lease no take holds any more never outlives the next arm.
+    _releaseLease();
     final destination = _destination();
     final storage = _storage;
     if (storage == null || destination is! RemovableDestination) {

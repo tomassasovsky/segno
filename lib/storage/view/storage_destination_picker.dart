@@ -40,7 +40,8 @@ class StorageDestinationPicker extends StatelessWidget {
   final VoidCallback onConnectUsb;
 
   /// The write rate the job needs; a drive whose measured rate is below it is
-  /// disabled as too slow. Null: no requirement.
+  /// disabled as too slow, and one still being measured is disabled until
+  /// its probe lands. Null: no requirement.
   final int? requiredBytesPerSecond;
 
   /// Whether the choice can change now.
@@ -59,8 +60,10 @@ class StorageDestinationPicker extends StatelessWidget {
       RemovableVolumeStatus.readOnly => l10n.storageUsbReadOnly(label),
       RemovableVolumeStatus.unsupported ||
       RemovableVolumeStatus.mountFailed => l10n.saveToUnsupported(label),
+      RemovableVolumeStatus.mounted when required != null && measured == null =>
+        l10n.saveToMeasuring(label),
       RemovableVolumeStatus.mounted
-          when required != null && measured != null && measured < required =>
+          when required != null && measured! < required =>
         l10n.saveToTooSlow(label),
       _ => null,
     };
