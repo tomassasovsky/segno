@@ -106,6 +106,20 @@ static inline int32_t le_effective_state(le_track* t) {
   return atomic_load_explicit(&t->a_state, memory_order_acquire);
 }
 
+/* The control thread's view of a track's read direction (#1162): the
+ * direction the posted-but-unapplied REVERSE commands predict, or the
+ * published a_reversed once the callback has processed every one of them.
+ * Used by the Record guard (a punch-in on a reversed track is refused) and
+ * by toggle admission; the callback remains the authority and a refused
+ * toggle corrects the view the moment it is processed (posted == applied). */
+static inline int le_effective_reversed(le_track* t) {
+  if (t->reverse_posted >
+      atomic_load_explicit(&t->a_reverse_applied, memory_order_acquire)) {
+    return t->reverse_pending;
+  }
+  return atomic_load_explicit(&t->a_reversed, memory_order_acquire) != 0;
+}
+
 /* Publishes pool slot [slot] as every active lane's live buffer AND bumps the
  * track's content revision in the same motion — the STRUCTURAL half of the
  * a_audio_rev bump-site table (engine_private.h): every control-side history
@@ -214,6 +228,9 @@ extern void (*le_test_record_timing_hook)(le_engine*, int);
 /* 1: Click mode/result applied, before command publication. */
 extern void (*le_test_click_mode_hook)(le_engine*, int);
 extern void (*le_test_record_start_hook)(le_engine*, int);
+/* 1: le_engine_peel drained events, before it reads a_layer_in_flight (the
+ * window a late retire can land in). */
+extern void (*le_test_peel_hook)(le_engine*, int);
 #endif
 
 

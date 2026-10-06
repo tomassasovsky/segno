@@ -630,18 +630,37 @@ class MockAudioEngine implements AudioEngine {
   // This silent device mock has no recorded tracks. Fade refuses empty
   // material, matching its TrackSnapshot.empty projection.
   @override
-  FadeAdmission toggleFade({required int channel, required double seconds}) => (
+  RequestAdmission toggleFade({
+    required int channel,
+    required double seconds,
+  }) => (
     result: _running ? EngineResult.invalid : EngineResult.notRunning,
     request: 0,
   );
   @override
-  FadeAdmission installFade({required int channel, required FadeImage image}) =>
-      (
-        result: _running ? EngineResult.invalid : EngineResult.notRunning,
-        request: 0,
-      );
+  RequestAdmission installFade({
+    required int channel,
+    required FadeImage image,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  // Reverse refuses empty material the same way.
   @override
-  EngineResult? readFadeResult(int request) => EngineResult.invalid;
+  RequestAdmission toggleReverse({required int channel}) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  @override
+  RequestAdmission installReverse({
+    required int channel,
+    required bool reversed,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  @override
+  EngineResult? readRequestResult(int request) => EngineResult.invalid;
 
   @override
   EngineResult setMix(EngineMixSettings settings) {
@@ -747,6 +766,13 @@ class MockAudioEngine implements AudioEngine {
 
   @override
   EngineResult redo({int channel = 0}) => _requireRunning();
+
+  /// The mock keeps no overdub layers, so there is never one to peel.
+  @override
+  EngineResult peel({int channel = 0}) {
+    final running = _requireRunning();
+    return running.isOk ? EngineResult.invalid : running;
+  }
 
   @override
   EngineResult setLaneCount({required int channel, required int count}) {

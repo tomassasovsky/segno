@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -106,6 +107,7 @@ void main() {
         timing = RecordTimingSettings(repository: looper, settings: settings);
         await timing.load();
         final fade = FadeSettings(
+          repository: looper,
           settings: settings,
           blocked: () => false,
           sessionBlocked: () => false,
@@ -144,6 +146,7 @@ void main() {
               ...playback.owners,
               ...record.owners,
               ...timing.owners,
+              ...fade.owners,
             ]),
             tempo: tempo,
             playback: playback,
@@ -356,6 +359,36 @@ void main() {
           );
         },
       );
+
+      for (final bad in [
+        (field: 'countInBars', value: 3 as Object),
+        (field: 'trackLengthPresetOverrides', value: {'8': 4} as Object),
+      ]) {
+        test(
+          'a Session with ${bad.field} ${bad.value} is refused before the rig '
+          'is cleared',
+          () async {
+            await session.saveAs('Bad');
+            expect(session.state.status, SessionStatus.success);
+            final manifest = File(
+              '${await sessions.bundlePath('Bad')}/${Session.manifestName}',
+            );
+            final json =
+                jsonDecode(await manifest.readAsString())
+                    as Map<String, dynamic>;
+            json[bad.field] = bad.value;
+            await manifest.writeAsString(jsonEncode(json));
+            final before = engine.snapshot().tracks.first;
+            expect(before.state, TrackState.playing);
+            await session.loadNamed('Bad');
+            expect(session.state.status, isNot(SessionStatus.success));
+            // The live take is untouched: the decode refused the file.
+            final after = engine.snapshot().tracks.first;
+            expect(after.state, TrackState.playing);
+            expect(after.lengthFrames, before.lengthFrames);
+          },
+        );
+      }
     },
   );
 }

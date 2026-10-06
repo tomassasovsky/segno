@@ -142,6 +142,9 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     for (final stub in [
       () => repository.record(channel: any(named: 'channel')),
       () => repository.play(channel: any(named: 'channel')),

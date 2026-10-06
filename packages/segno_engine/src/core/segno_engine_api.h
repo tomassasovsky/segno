@@ -49,6 +49,8 @@ typedef enum le_result {
                               * BPM) would not fit in max_loop_frames */
   LE_ERR_MODE_MISMATCH = -7, /* history would not fit the current mode/clock */
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
+  LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
+                              * is unavailable while Reverse is on */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -513,7 +515,9 @@ typedef enum le_command_code {
   LE_CMD_STOP_RECORD_CONTROL = 79, /* cohort cancel or non-acquiring capture finish */
   LE_CMD_CANCEL_COUNT_IN = 80, /* only the shared launch cohort/grace */
   LE_CMD_FADE = 81, /* checked internal Fade request; never raw-posted */
-  LE_CMD_RESET_FADE = 82, /* internal material-import invalidation */
+  LE_CMD_RESET_TRANSFORMS = 82, /* internal material-import transform reset
+                                 * (Fade and direction); never raw-posted */
+  LE_CMD_REVERSE = 83, /* checked internal Reverse request; never raw-posted */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -929,6 +933,18 @@ typedef struct le_track_snapshot {
   /* A just-committed member can still be canceled in the next command drain.
    * This is cancellation authority, not pending membership or fresh admission. */
   int32_t count_in_cancel_grace;
+  /* Trailing (#1162, Reverse): 0 forward, 1 reversed — the callback-owned
+   * read direction of the track's recorded material, published with every
+   * accepted le_engine_toggle_reverse / le_engine_install_reverse and reset to
+   * forward with the material (Clear, Undo to empty, a new capture, import).
+   * A performance transform, not an audio edit: never in the undo history. */
+  int32_t reversed;
+  /* Trailing (#1164): how many overdub layers le_engine_peel can still remove
+   * — the LAYER entries above the newest history entry that is neither an
+   * overdub nor a peel. Published under undo_depth's gates, so an EMPTY track
+   * reads 0 here too. The host derives its layer count from this: PEEL
+   * entries keep undo_depth constant while a layer disappears. */
+  int32_t peel_depth;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1831,6 +1847,19 @@ LE_EXPORT int32_t le_engine_clear_restore_pending(le_engine* engine,
  * le_engine_undo_restores_clear, for the same host bookkeeping. */
 LE_EXPORT int32_t le_engine_redo_reclears(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_redo(le_engine* engine, int32_t channel);
+/* Removes the newest overdub layer as one history entry (#1164): the pre-pass
+ * image becomes live, the removed image is kept for le_engine_undo, and the
+ * Redo branch is dropped. Never touches the original take: Peel consumes the
+ * topmost overdub layer reachable through earlier peels only, so the deepest
+ * layer (the pre-first-overdub image) is swapped in but never consumed, and
+ * any non-overdub history above the layers (a clear, a loop-close restoration)
+ * blocks it. Undo of a Peel restores the layer; Redo re-peels. A synchronous
+ * control-thread swap like the in-track undo: no command, no receipt.
+ * LE_ERR_INVALID when no overdub layer can be peeled (none remain, the track
+ * is empty or cleared, or the newest edit is not an overdub); LE_ERR_NOT_READY
+ * while the track captures, drains a layer, or has a pending state command,
+ * cancel, Clear report or Count-in launch — never queued, nothing mutated. */
+LE_EXPORT int32_t le_engine_peel(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
                                              float volume);
 LE_EXPORT int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
@@ -3142,6 +3171,20 @@ LE_EXPORT int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
                                             int32_t undo_count,
                                             int32_t redo_count);
 
+/* Lists track `channel`'s history entries in image-ordinal order (#1164):
+ * the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the
+ * entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 3 loop-close
+ * restoration) and `skipped[i]` its peel payload (0 for every other kind). A
+ * redo-side peel entry is a marker without an image: le_engine_export_layer's
+ * ordinals count image-bearing entries only, so a track's image count is
+ * `undo_count + 1 + (redo entries that are not peel markers)`. Writes at most
+ * `max` entries and returns the track's TOTAL entry count (which may exceed
+ * `max`), or LE_ERR_INVALID for a bad handle, channel, NULL array or negative
+ * `max`. Control thread. */
+LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
+                                           int32_t* kinds, int32_t* skipped,
+                                           int32_t max);
+
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple
  * (length / base_frames). Restores exactly `loop_bars` musical bars over that
@@ -3164,10 +3207,30 @@ LE_EXPORT int32_t le_engine_toggle_fade(le_engine* engine, int32_t channel,
 LE_EXPORT int32_t le_engine_install_fade(le_engine* engine, int32_t channel,
                                         const le_fade_image* image,
                                         uint64_t* request);
-/* Consumes one completed result. Returns NOT_READY before callback publication,
- * INVALID for an absent/consumed/retired id; otherwise OK and fills result. */
-LE_EXPORT int32_t le_engine_read_fade_result(le_engine* engine, uint64_t request,
-                                            int32_t* result);
+/* Reverse (#1162): flips, or installs, the read direction of track
+ * [channel]'s recorded material at its current position, click-free. Speed
+ * and pitch are unchanged; a STOPPED track stays stopped and plays reversed
+ * from its re-entry coordinate. Admission returns a nonzero request id only on
+ * LE_OK; the callback decides and the receipt below carries its verdict.
+ * Toggle refusals: LE_ERR_INVALID for a bad channel or a track that reads
+ * EMPTY, RECORDING or OVERDUBBING; LE_ERR_NOT_READY while an arm or Count-in
+ * launch is pending on the track (it may fire into OVERDUBBING before the
+ * toggle lands) or when no receipt slot is free; LE_ERR_NOT_RUNNING when not
+ * configured. Install accepts an EMPTY track that already holds imported
+ * material (Session recall, before the commit) and otherwise refuses like
+ * toggle. The callback refuses either (receipt LE_ERR_INVALID) while a punch
+ * tail is still writing or the loop has no length. Overdubbing into a
+ * reversed track is refused by le_engine_record with LE_ERR_REVERSED. */
+LE_EXPORT int32_t le_engine_toggle_reverse(le_engine* engine, int32_t channel,
+                                          uint64_t* request);
+LE_EXPORT int32_t le_engine_install_reverse(le_engine* engine, int32_t channel,
+                                           int32_t reversed, uint64_t* request);
+/* Consumes one completed Fade or Reverse result. Returns NOT_READY before
+ * callback publication, INVALID for an absent/consumed/retired id; otherwise
+ * OK and fills result. */
+LE_EXPORT int32_t le_engine_read_request_result(le_engine* engine,
+                                               uint64_t request,
+                                               int32_t* result);
 
 /* Read-only control-thread query: 1 when every successfully queued command
  * has been consumed (including rejected/no-op outcomes) and the callback has

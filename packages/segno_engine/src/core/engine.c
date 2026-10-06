@@ -440,9 +440,12 @@ static int le_engine_reset_material(le_engine* engine,
      * bumped the lifetime; the next snapshot read refreshes the rest. */
     tr->fade_cache = (le_fade_image){1, 1, 0, engine->fade_lifetime, 1};
     tr->fade_cache_revision = 0;
+    tr->reversed = 0; /* direction is material (#1162): a reopen keeps it */
+    store_i32(&tr->a_reversed, 0);
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_clear_restore, 0);
     store_i32(&tr->a_redo_depth, 0);
+    store_i32(&tr->a_peel_depth, 0);
     store_i32(&tr->a_multiple, 1);
     store_i32(&tr->a_sync_divisor, 0); /* B3: per-track, resets like a_multiple */
     tr->take_seq = 0; /* #819: fresh session, take ids restart at 1 */
@@ -511,7 +514,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   /* Every Fade admission is bound to the lifetime it read; a new session
    * invalidates them all, so nothing posted against the old device replays. */
   ++engine->fade_lifetime;
-  for (int i = 0; i < LE_RING_CAPACITY; ++i) engine->fade_receipts[i].request = 0;
+  for (int i = 0; i < LE_RING_CAPACITY; ++i) engine->receipts[i].request = 0;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     engine->tracks[t].fade_cache.lifetime = engine->fade_lifetime;
   }
@@ -547,6 +550,15 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     tr->fb_cur = 1.0f;
     tr->sounding_frames = 0;
     tr->playback_offset = 0;
+    /* Reverse runtime (#1162): the turn window and control's in-flight view
+     * die with the ring; the direction itself is material (above). */
+    tr->turn_left = 0;
+    tr->turn_frames = 0;
+    tr->turn_reversed = 0;
+    tr->turn_offset = 0;
+    tr->reverse_posted = 0;
+    tr->reverse_pending = 0;
+    atomic_store_explicit(&tr->a_reverse_applied, 0, memory_order_relaxed);
     tr->once_ended = 0;
     tr->once_current_pass = 0;
     tr->length_preset_target_frames = 0;
@@ -1508,8 +1520,9 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   }
   /* Click mode requires the typed single-flight receipt. Raw posts cannot
    * bypass that reservation or publish revisionless competing settings. */
-  if (code == LE_CMD_RESET_FADE) return LE_ERR_INVALID;
+  if (code == LE_CMD_RESET_TRANSFORMS) return LE_ERR_INVALID;
   if (code == LE_CMD_FADE) return LE_ERR_INVALID;
+  if (code == LE_CMD_REVERSE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_CLICK_MODE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_RECORD_START) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_LOOPER_MODE) {
@@ -1532,6 +1545,7 @@ void (*le_test_stop_record_hook)(le_engine*, int) = NULL;
 void (*le_test_record_timing_hook)(le_engine*, int) = NULL;
 void (*le_test_click_mode_hook)(le_engine*, int) = NULL;
 void (*le_test_record_start_hook)(le_engine*, int) = NULL;
+void (*le_test_peel_hook)(le_engine*, int) = NULL;
 #endif
 
 int32_t le_push_cmd(le_engine* engine, le_command cmd) {

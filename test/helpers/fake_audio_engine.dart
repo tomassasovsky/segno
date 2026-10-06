@@ -85,6 +85,7 @@ class FakeAudioEngine implements AudioEngine {
   int clearCalls = 0;
   int undoCalls = 0;
   int redoCalls = 0;
+  int peelCalls = 0;
 
   /// Last looper parameter values seen.
   double? lastVolume;
@@ -245,15 +246,20 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  FadeAdmission toggleFade({required int channel, required double seconds}) =>
-      (result: EngineResult.invalid, request: 0);
+  RequestAdmission toggleFade({
+    required int channel,
+    required double seconds,
+  }) => (result: EngineResult.invalid, request: 0);
 
   final Map<int, FadeImage> installedFades = {};
   final Map<int, EngineResult> _fadeResults = {};
   int _fadeRequest = 0;
 
   @override
-  FadeAdmission installFade({required int channel, required FadeImage image}) {
+  RequestAdmission installFade({
+    required int channel,
+    required FadeImage image,
+  }) {
     installedFades[channel] = image;
     final request = ++_fadeRequest;
     _fadeResults[request] = EngineResult.ok;
@@ -261,7 +267,17 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult? readFadeResult(int request) => _fadeResults.remove(request);
+  RequestAdmission toggleReverse({required int channel}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission installReverse({
+    required int channel,
+    required bool reversed,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
+  EngineResult? readRequestResult(int request) => _fadeResults.remove(request);
 
   @override
   EngineResult setMix(EngineMixSettings settings) {
@@ -374,6 +390,9 @@ class FakeAudioEngine implements AudioEngine {
   /// Result returned by [redo] until a test changes it.
   EngineResult nextRedoResult = EngineResult.ok;
 
+  /// What the next [peel] returns.
+  EngineResult nextPeelResult = EngineResult.ok;
+
   @override
   EngineResult historyModeGate({required int channels, required bool redo}) {
     historyModeGateCalls.add((channels: channels, redo: redo));
@@ -390,6 +409,12 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult redo({int channel = 0}) {
     redoCalls++;
     return nextRedoResult;
+  }
+
+  @override
+  EngineResult peel({int channel = 0}) {
+    peelCalls++;
+    return nextPeelResult;
   }
 
   /// Per-channel active lane count passed to [setLaneCount].
@@ -1828,6 +1853,7 @@ class _LengthTrack extends TrackSnapshot {
          peakR: source.peakR,
          state: source.state,
          fade: source.fade,
+         reversed: source.reversed,
          volume: source.volume,
          muted: source.muted,
          lengthFrames: source.lengthFrames,

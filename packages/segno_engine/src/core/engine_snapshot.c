@@ -99,6 +99,7 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->undo_depth = load_i32(&tr->a_undo_depth);
   out->clear_restore = load_i32(&tr->a_clear_restore);
   out->redo_depth = load_i32(&tr->a_redo_depth);
+  out->peel_depth = load_i32(&tr->a_peel_depth);
   /* The TRACK's level, summed across its lanes -- NOT lane 0's, which is what
    * this reported until #655 and which under-read any track playing more than
    * one layer. Per-lane figures are still published on the lane snapshots
@@ -119,6 +120,7 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->length_preset_bars = load_i32(&tr->a_length_preset_bars);
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
   out->one_shot = load_i32(&tr->a_one_shot);
+  out->reversed = load_i32(&tr->a_reversed); /* #1162 */
   /* Timing fields are filled below from one coherent callback tuple. */
   /* The caller fills timing from one coherent family tuple. */
   out->overdub_feedback_override = load_f32(&tr->a_overdub_fb_bits);
@@ -522,6 +524,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->undo_depth = 0;
     out->clear_restore = 0;
     out->redo_depth = 0;
+    out->peel_depth = 0;
     out->rms = 0.0f;
     out->peak = 0.0f;
     out->input_mask = 0x1u;
