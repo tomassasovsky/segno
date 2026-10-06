@@ -87,6 +87,38 @@ void main() {
       expect(copier.calls, hasLength(1));
     });
 
+    test('importing the original again repairs a damaged copy (review of '
+        'P4, M1)', () async {
+      final source = writeAudio(temp, 'usb/Song.wav', frames: 4800);
+      final asset = await store.import(source);
+      final calls = copier.calls.length;
+      File(asset.path).writeAsStringSync('rate=48000;frames=4800;rot');
+      await expectLater(
+        store.resolve(asset.digest),
+        throwsA(failure(BackingFailureReason.damaged)),
+      );
+      final again = await store.import(source);
+      expect(copier.calls.length, calls + 1);
+      expect(again.digest, asset.digest);
+      expect((await store.resolve(asset.digest)).path, again.path);
+      // An intact copy is still reused without a copy.
+      await store.import(source);
+      expect(copier.calls.length, calls + 1);
+    });
+
+    test('concurrent imports of the same bytes copy once and share no '
+        'directory (review of P4, L4)', () async {
+      final source = writeAudio(temp, 'usb/Twice.wav', frames: 300);
+      final results = await Future.wait([
+        store.import(source),
+        store.import(source),
+        store.import(source, name: 'Again.wav'),
+      ]);
+      expect(copier.calls, hasLength(1));
+      expect(results.map((a) => a.digest).toSet(), hasLength(1));
+      expect((await store.resolve(results.first.digest)).name, 'Twice.wav');
+    });
+
     test('one name, other bytes: two assets', () async {
       final a = await store.import(writeAudio(temp, 'x/song.wav', tag: '1'));
       final b = await store.import(writeAudio(temp, 'y/song.wav', tag: '2'));

@@ -24,14 +24,17 @@ class BackingRepository {
     required AudioDecoder decoder,
     required BackingAssetStore store,
     Duration pollInterval = const Duration(milliseconds: 50),
-    Duration retryDelay = const Duration(milliseconds: 25),
+    Duration retryDelay = const Duration(milliseconds: 10),
+    int retries = 8,
   }) : _engine = engine,
        _metering = metering,
        _decoder = decoder,
        _store = store,
        _pollInterval = pollInterval,
-       _retryDelay = retryDelay {
+       _retryDelay = retryDelay,
+       _retries = retries {
     _epoch = _engine.backingState().epoch;
+    _cachedRate = _metering.snapshot().sampleRate;
   }
 
   final BackingControl _engine;
@@ -40,6 +43,12 @@ class BackingRepository {
   final BackingAssetStore _store;
   final Duration _pollInterval;
   final Duration _retryDelay;
+  final int _retries;
+
+  /// The engine rate, read from a snapshot only when the engine restarts
+  /// (an epoch change) or while it reads 0 (not running yet), not on every
+  /// refresh (review of P4, L3).
+  int _cachedRate = 0;
 
   final _states = StreamController<BackingPlayerState>.broadcast(sync: true);
   final _failures = StreamController<BackingFailure>.broadcast(sync: true);
@@ -73,7 +82,9 @@ class BackingRepository {
   /// Changes the performer must be told about.
   Stream<BackingNotice> get notices => _notices.stream;
 
-  int get _rate => _metering.snapshot().sampleRate;
+  int get _rate => _cachedRate > 0
+      ? _cachedRate
+      : (_cachedRate = _metering.snapshot().sampleRate);
 
   /// Loads the asset [digest] (verified against its bytes), replacing the
   /// loaded file once it has decoded; the old one keeps playing until then.
@@ -119,7 +130,8 @@ class BackingRepository {
   }
 
   /// Resolves, decodes and hands one asset to the engine through [hand],
-  /// retrying once on NOT_READY and re-decoding once when the engine rate
+  /// retrying a bounded number of times on NOT_READY and re-decoding once
+  /// when the engine rate
   /// changed under the decode.
   Future<bool> _install(
     String digest,
@@ -147,7 +159,15 @@ class BackingRepository {
         }
         final token = _nextToken++;
         var result = hand(audio, token);
-        if (result == EngineResult.notReady) {
+        // NOT_READY lasts until the callback has applied the previous post
+        // and a replaced buffer has finished its fade and come back: up to
+        // two device blocks. Retry a bounded number of times rather than
+        // once after a guess (review of P4, L1).
+        for (
+          var retry = 0;
+          retry < _retries && result == EngineResult.notReady;
+          retry++
+        ) {
           await Future<void>.delayed(_retryDelay);
           if (!current() || _disposed) {
             audio.dispose();
@@ -161,11 +181,16 @@ class BackingRepository {
         }
         audio.dispose();
         // The interface changed rate while this decoded: decode again.
-        if (result == EngineResult.invalid && audio.sampleRate != _rate) {
-          continue;
+        if (result == EngineResult.invalid) {
+          // The interface may have changed rate under the decode: read it
+          // afresh, and decode again when it did.
+          _cachedRate = _metering.snapshot().sampleRate;
+          if (audio.sampleRate != _rate) continue;
         }
+        // The file decoded cleanly: a hand-over refusal is about the engine,
+        // never the file (review of P4, L2).
         throw BackingFailure(
-          BackingFailureReason.fromEngine(result),
+          BackingFailureReason.ofHandover(result),
           name: label,
           digest: digest,
         );
@@ -265,6 +290,7 @@ class BackingRepository {
     final s = _engine.backingState();
     if (s.epoch != _epoch) {
       _epoch = s.epoch;
+      _cachedRate = _metering.snapshot().sampleRate;
       _restarted(s);
       return;
     }

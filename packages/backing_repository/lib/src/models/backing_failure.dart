@@ -32,6 +32,17 @@ enum BackingFailureReason {
   /// still in transit after a retry).
   busy;
 
+  /// The reason the engine refused to take a decoded buffer: never
+  /// [damaged], since the file already decoded cleanly; a refusal that is
+  /// not about memory or the device is [busy] (a full command ring, a
+  /// buffer still in transit).
+  static BackingFailureReason ofHandover(EngineResult result) =>
+      switch (result) {
+        EngineResult.capacity => noMemory,
+        EngineResult.notRunning => notRunning,
+        _ => busy,
+      };
+
   /// The reason for a decoder or engine [result].
   static BackingFailureReason fromEngine(EngineResult result) =>
       switch (result) {

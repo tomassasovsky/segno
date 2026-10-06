@@ -57,8 +57,12 @@ class BackingAssetStore {
   final BackingDigester _digester;
   final BackingDirSync _sync;
 
-  static Future<String?> _nativeDigest(String path) =>
-      Isolate.run(() => NativeStorageIo().digestFile(path));
+  static Future<String?> _nativeDigest(String path) => Isolate.run(
+    () => switch (NativeStorageIo().digestFile(path)) {
+      FileDigested(:final sha256) => sha256,
+      _ => null,
+    },
+  );
 
   Future<Directory> _store() async => Directory('${await _root()}/$folder');
 
@@ -85,17 +89,50 @@ class BackingAssetStore {
   /// keeping nothing) and checks the copy's digest, then publishes
   /// `info.json` durably. Throws a [BackingFailure]; on any failure nothing
   /// new is left in the store.
+  ///
+  /// The existing copy is reused only while its own bytes still match; a
+  /// damaged one is replaced from the source, so importing the original again
+  /// repairs it (review of P4, M1). Imports of the same bytes run one after
+  /// the other, never into one directory at once (L4).
   Future<BackingAsset> import(String sourcePath, {String? name}) async {
     final fileName = name ?? _basename(sourcePath);
     final hex = await _digester(sourcePath);
     if (hex == null) {
       throw BackingFailure(BackingFailureReason.missing, name: fileName);
     }
+    final previous = _importing[hex] ?? Future<void>.value();
+    final run = previous
+        .then<void>((_) {}, onError: (Object _, StackTrace _) {})
+        .then((_) => _importOne(sourcePath, fileName, hex));
+    final settled = run.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    _importing[hex] = settled;
+    try {
+      return await run;
+    } finally {
+      _importing.removeWhere((k, v) => k == hex && identical(v, settled));
+    }
+  }
+
+  /// In-flight imports by digest, so the same bytes are never copied into
+  /// one directory twice at once.
+  final Map<String, Future<void>> _importing = {};
+
+  Future<BackingAsset> _importOne(
+    String sourcePath,
+    String fileName,
+    String hex,
+  ) async {
     final digest = 'sha256:$hex';
     final store = await _store();
     final dir = Directory('${store.path}/${BackingAsset.idOf(digest)}');
     final existing = dir.existsSync() ? _read(dir) : null;
-    if (existing != null && existing.digest == digest && existing.available) {
+    if (existing != null &&
+        existing.digest == digest &&
+        existing.available &&
+        await _digester(existing.path) == hex) {
       return existing;
     }
     if (dir.existsSync()) dir.deleteSync(recursive: true);
