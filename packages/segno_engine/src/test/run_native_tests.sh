@@ -138,6 +138,15 @@ $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_fx_recipe_plugins.c \
   $RECIPE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_recipe_tests.exe"
 "$OUT/segno_fx_recipe_tests.exe"
 
+echo "== building instrument ring race tests =="
+# A control thread posting note pairs against a hot-looping drain (#1197):
+# a note-off must never apply before its own note-on. Before the races-only
+# exit so the ThreadSanitizer job covers it too.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_instrument_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_instrument_race_tests.exe"
+"$OUT/segno_instrument_race_tests.exe"
+
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
   exit 0
 fi

@@ -352,6 +352,23 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   const le_record_timing_readback timing = le_record_timing_read(engine, 1);
   out->record_timing_revision = timing.revision;
   out->record_timing_result = timing.result;
+  /* Instruments (#1197). */
+  for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+    out->instrument_patch[k] = load_i32(&engine->a_inst_patch[k]);
+    out->instrument_voices[k] = load_i32(&engine->a_inst_voices[k]);
+    out->instrument_peaks[k] = load_f32(&engine->a_inst_peak_bits[k]);
+  }
+  out->voice_limit = load_i32(&engine->a_voice_limit);
+  out->voices_stolen =
+      atomic_load_explicit(&engine->a_voices_stolen, memory_order_relaxed);
+  out->voices_stolen_hard =
+      atomic_load_explicit(&engine->a_voices_stolen_hard, memory_order_relaxed);
+  out->synth_epoch =
+      atomic_load_explicit(&engine->a_synth_epoch, memory_order_acquire);
+  out->instrument_events_refused =
+      atomic_load_explicit(&engine->a_inst_events_refused, memory_order_relaxed);
+  out->instrument_fallback_blocks =
+      atomic_load_explicit(&engine->a_inst_fallback_blocks, memory_order_relaxed);
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
   out->device_present =
       atomic_load_explicit(&engine->a_device_present, memory_order_acquire);

@@ -19,14 +19,16 @@
  *             together, repeated: on an idle pool, and on a full 32-voice
  *             pool (32 steals, 32 fades).
  *   engine    le_engine_process with 8 tracks x 8 lanes PLAYING (the
- *             pitch/time baseline), alone and with 32 voices of the costliest
- *             patch rendered in the same period (informational).
+ *             pitch/time baseline), alone and with 32 held voices of the
+ *             costliest melodic patch in instrument slot 0, rendered inside
+ *             the callback (informational).
  *   joint     the whole worst case in one period, judged on its tail: the
  *             8 x 8 baseline with eight live inputs monitored through one
  *             reverb each, the pitch/time read head at 8x over the 64 lanes
- *             (the Speed work its plan adds to the mixer), and 32 voices of
- *             the costliest patch. Reported with p99.9 and the count of
- *             periods over the budget ("late").
+ *             (the Speed work its plan adds to the mixer), and 32 held
+ *             voices of the costliest melodic patch inside the callback.
+ *             Reported with p99.9 and the count of periods over the budget
+ *             ("late").
  *
  * Scheduling: SCHED_FIFO (BENCH_RT_PRIO, below the app's audio thread) around
  * the timed loops only. Thresholds (--assert): the Pi 5 set, refused on
@@ -148,7 +150,29 @@ static stats run_burst(const bench_opts* o, int32_t patch, int32_t notes,
   return s;
 }
 
-/* The baseline rig with `voices` of `patch` rendered in the same period. */
+/* `voices` held notes of melodic `patch` in instrument slot 0 of the rig's
+ * engine: the voices render inside le_engine_process (#1197 Part 2a). */
+static void hold_engine_voices(le_engine* e, const bench_opts* o, rig* r,
+                               int32_t patch, int32_t voices) {
+  if (le_engine_set_instrument(e, 0, patch, NULL) != LE_OK) {
+    fprintf(stderr, "instrument slot failed\n");
+    exit(3);
+  }
+  for (int32_t v = 0; v < voices; ++v) {
+    le_engine_instrument_note_on(e, 0, (uint32_t)v + 1, 36 + v * 2, 100);
+  }
+  for (int k = 0; k < 50; ++k) le_engine_process(e, r->out, r->in, (uint32_t)o->period);
+  le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
+  le_engine_get_snapshot(e, snap);
+  if (snap->instrument_voices[0] != voices) {
+    fprintf(stderr, "expected %d voices, the engine holds %d\n", voices,
+            snap->instrument_voices[0]);
+    exit(3);
+  }
+  free(snap);
+}
+
+/* The baseline rig with `voices` of `patch` sounding inside the callback. */
 static stats run_engine(const bench_opts* o, int32_t patch, int32_t voices,
                         const float* src, int32_t frames) {
   rig r;
@@ -156,9 +180,7 @@ static stats run_engine(const bench_opts* o, int32_t patch, int32_t voices,
     fprintf(stderr, "engine rig failed\n");
     exit(3);
   }
-  le_synth_init(&g_synth, o->rate, LE_SYNTH_DEFAULT_VOICES, 1);
-  le_synth_set_instrument(&g_synth, 0, patch);
-  uint32_t origin = 0;
+  if (voices > 0) hold_engine_voices(r.e, o, &r, patch, voices);
   const size_t periods = (size_t)(o->seconds * o->rate / o->period);
   double* t = (double*)malloc(sizeof(double) * (periods ? periods : 1));
   le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
@@ -166,8 +188,6 @@ static stats run_engine(const bench_opts* o, int32_t patch, int32_t voices,
   for (size_t k = 0; k < periods; ++k) {
     const double a = now_us();
     le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
-    keep_voices(&g_synth, 0, voices, &origin);
-    le_synth_render(&g_synth, g_bus, LE_SYNTH_MAX_INSTRUMENTS, o->period);
     t[k] = now_us() - a;
     if ((k & 63) == 0) le_engine_get_snapshot(r.e, snap);
   }
@@ -212,9 +232,7 @@ static stats run_joint(const bench_opts* o, int32_t patch, int32_t voices,
     heads[t].rate = 8.0;
   }
   float* acc = (float*)calloc((size_t)o->period, sizeof(float));
-  le_synth_init(&g_synth, o->rate, LE_SYNTH_DEFAULT_VOICES, 1);
-  le_synth_set_instrument(&g_synth, 0, patch);
-  uint32_t origin = 0;
+  hold_engine_voices(r.e, o, &r, patch, voices);
   const size_t periods = (size_t)(o->seconds * o->rate / o->period);
   double* t = (double*)malloc(sizeof(double) * (periods ? periods : 1));
   le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
@@ -224,8 +242,6 @@ static stats run_joint(const bench_opts* o, int32_t patch, int32_t voices,
     const double a = now_us();
     le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
     head_period(heads, lanes, kLanesPerTrack, frames, base, o->period, 8.0, acc);
-    keep_voices(&g_synth, 0, voices, &origin);
-    le_synth_render(&g_synth, g_bus, LE_SYNTH_MAX_INSTRUMENTS, o->period);
     t[k] = now_us() - a;
     base += o->period;
     g_sink = acc[(k * 7) % (size_t)o->period];
@@ -293,8 +309,8 @@ int main(int argc, char** argv) {
   /* patches */
   printf("## patches (8 voices each, one le_synth_render per period)\n\n");
   print_header();
-  int32_t costliest = 0;
-  double costliest_mean = -1.0;
+  int32_t costliest = 0, costliest_melodic = 0;
+  double costliest_mean = -1.0, melodic_mean = -1.0;
   for (int32_t p = 0; p < LE_SYNTH_PATCHES; ++p) {
     const voice_set one = {{p}, 1};
     const stats s = run_voices(&o, &one, 8, LE_SYNTH_MAX_VOICES, patch_seconds);
@@ -303,8 +319,14 @@ int main(int argc, char** argv) {
       costliest_mean = s.mean;
       costliest = p;
     }
+    if (le_synth_patch_at(p)->family != LE_SYNTH_DRUMS && s.mean > melodic_mean) {
+      melodic_mean = s.mean;
+      costliest_melodic = p;
+    }
   }
-  printf("\ncostliest patch: %s\n\n", le_synth_patch_at(costliest)->id);
+  printf("\ncostliest patch: %s; costliest melodic patch (held in the engine "
+         "scenarios): %s\n\n",
+         le_synth_patch_at(costliest)->id, le_synth_patch_at(costliest_melodic)->id);
 
   /* voices */
   printf("## voices (64-voice pool)\n\n");
@@ -351,11 +373,11 @@ int main(int argc, char** argv) {
   float* src = make_source(frames, o.rate);
   const stats base = scenario_baseline(&o, 8, src, frames);
   print_row("8 x 8 lanes", base);
-  const stats with = run_engine(&o, costliest, 32, src, frames);
+  const stats with = run_engine(&o, costliest_melodic, 32, src, frames);
   print_row("8 x 8 lanes + 32 voices", with);
   printf("\n## joint (8 x 8 lanes + 8 monitored inputs with reverb + read head 8x + 32 voices)\n\n");
   print_tail_header();
-  const stats joint = run_joint(&o, costliest, 32, src, frames);
+  const stats joint = run_joint(&o, costliest_melodic, 32, src, frames);
   print_tail_row("joint worst case", joint);
   free(src);
   printf("\n- peak RSS: %.0f MiB\n\n", peak_rss_bytes() / 1048576.0);
