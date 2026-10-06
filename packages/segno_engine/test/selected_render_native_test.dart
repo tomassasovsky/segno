@@ -155,10 +155,11 @@ void main() {
       EngineResult.invalid, // no bars without a tempo
     );
     final begun = engine.beginRender(const RenderRequest(sources: {0, 1}));
+    // The freeze and the Clear apply in the same callback, freeze first, so
+    // the material changes after it is frozen and before it is staged.
     engine
-      ..pump(frames: 0) // frozen
       ..clear()
-      ..pump(frames: 0); // track 0 changes before staging
+      ..pump(frames: 0);
     RenderJobStatus? status;
     for (var i = 0; i < 2000; i++) {
       status = engine.pollRender(begun.job);
