@@ -3724,7 +3724,6 @@ void main() {
       expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
     });
 
-
     testWidgets('an install with paired Bluetooth devices is told once', (
       tester,
     ) async {
