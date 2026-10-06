@@ -77,6 +77,7 @@ String _modeLabel(AppLocalizations l10n, InteractionMode mode) =>
       InteractionMode.mixer => l10n.actionModeMixer,
       InteractionMode.fade => l10n.actionModeFade,
       InteractionMode.reverse => l10n.actionModeReverse,
+      InteractionMode.length => l10n.actionModeLength,
     };
 
 String _commandLabel(AppLocalizations l10n, ControlCommand command) =>
@@ -101,6 +102,9 @@ String _operationLabel(AppLocalizations l10n, TrackOperation operation) =>
       TrackOperation.fade => l10n.actionOperationFade,
       TrackOperation.redo => l10n.actionOperationRedo,
       TrackOperation.reverse => l10n.actionOperationReverse,
+      TrackOperation.multiply => l10n.actionOperationMultiply,
+      TrackOperation.divideFirstHalf => l10n.actionOperationDivideFirstHalf,
+      TrackOperation.divideLastHalf => l10n.actionOperationDivideLastHalf,
     };
 
 String _scopeLabel(

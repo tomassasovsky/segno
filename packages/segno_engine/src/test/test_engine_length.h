@@ -615,10 +615,14 @@ static void test_length_refusals_while_busy(void) {
   CHECK(le_engine_undo(e, 0) == LE_OK); /* queued behind the drain */
   CHECK(le_engine_undo(e, 0) == LE_OK); /* would reach the LENGTH entry */
   CHECK(t->queued_undo == 2);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 0);
   settle_layers(e);
   le_engine_get_snapshot(e, &s);
   CHECK(t->queued_undo == 0);
   CHECK(t->undo_count == 2 && t->undo_stack[1].kind == LE_HIST_LENGTH);
+  /* The tap that stopped at the edit is reported once (#1168 Part 3). */
+  CHECK(s.tracks[0].length_history_refusals == 1);
   CHECK(t->length_pending == 0);
   CHECK(s.tracks[0].length_frames == 2 * LOOP_N);
   le_engine_destroy(e);
@@ -707,12 +711,15 @@ static void test_length_history_gate(void) {
   CHECK(le_engine_history_mode_gate(e, 1u, 0) == LE_ERR_MODE_MISMATCH);
   CHECK(le_engine_undo(e, 0) == LE_ERR_MODE_MISMATCH);
   peel_expect_unchanged(t, &h);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 1); /* reported (Part 3) */
   CHECK(le_engine_clear(e, 1) == LE_OK);
   drain(e);
   CHECK(le_engine_history_mode_gate(e, 1u, 0) == LE_OK);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   len_settle(e);
   le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 1); /* accepted: no count */
   CHECK(s.master_length_frames == 8);
   len_expect(e, 0, 8, 1, 0, 0, 1);
   len_expect_image(e, 0, pcm, 8);
@@ -1090,7 +1097,14 @@ static void test_length_refused_history_motion(void) {
   CHECK(t->length_pending == 0);
   peel_expect_unchanged(t, &h);
   len_expect(e, 0, 16, 1, 0, 1, 0);
+  /* Posted as OK, refused after: the host is told (#1168 Part 3). */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 1);
+  CHECK(s.tracks[1].length_history_refusals == 0);
   CHECK(le_engine_undo(e, 0) == LE_ERR_MODE_MISMATCH);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 2);
   le_engine_destroy(e);
 }
 

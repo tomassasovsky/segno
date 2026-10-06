@@ -1062,6 +1062,9 @@ typedef struct le_track {
   int length_ack;
   le_hist_entry length_file;
   _Atomic int32_t a_length_result; /* audio: the verdict, before the ack */
+  /* Control: Undo/Redo taps on LENGTH entries that did nothing (published as
+   * le_track_snapshot.length_history_refusals; never reset). */
+  _Atomic uint32_t a_length_history_refusals;
   _Atomic int32_t a_state_acks; /* audio: state-flip commands applied */
   uint32_t dub_generation; /* bumped on clear; audio mirrors it in handle_clear
                             * and tags retire events, so a stale event from

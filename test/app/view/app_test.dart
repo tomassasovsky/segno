@@ -1741,6 +1741,47 @@ void main() {
       await tester.pump();
     });
 
+    testWidgets('an Undo or Redo of a length edit that did nothing says so, '
+        'in any mode (#1168)', (tester) async {
+      final ticks = StreamController<void>.broadcast(sync: true);
+      addTearDown(ticks.close);
+      le.EngineSnapshot rig(int refusals) => engine.nextSnapshot.copyWith(
+        tracks: [
+          le.TrackSnapshot(
+            state: le.TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 48000,
+            undoDepth: 1,
+            rms: 0,
+            peak: 0,
+            lengthHistoryRefusals: refusals,
+          ),
+          for (var channel = 1; channel < 8; channel++)
+            const le.TrackSnapshot.empty(),
+        ],
+      );
+      engine.nextSnapshot = rig(0);
+      repository = LooperRepository(engine: engine, ticker: ticks.stream);
+      addTearDown(repository.dispose);
+      await pumpApp(tester, NoopWaveformWindowService());
+      ticks.add(null);
+      await tester.pump();
+      expect(debugAppToastActive(AppToastId.lengthHistoryRefused), isFalse);
+      engine.nextSnapshot = rig(1);
+      ticks.add(null);
+      await tester.pumpAndSettle();
+      expect(debugAppToastActive(AppToastId.lengthHistoryRefused), isTrue);
+      final notice = find.text(
+        'The length change was not undone or redone. Try again.',
+      );
+      expect(notice, findsOneWidget);
+      expect(find.text('TRACK 1'), findsWidgets);
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
     for (final blockedKey in ['tempo.count_in_bars', 'looper.auto_record']) {
       testWidgets('power off waits for complete start pair: $blockedKey', (
         tester,

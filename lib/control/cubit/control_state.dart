@@ -23,6 +23,8 @@ class ControlState extends Equatable {
     this.footFade = const FootFadeSelection(),
     this.footFadeFailure = 0,
     this.footReverseFailure = 0,
+    this.footLengthFailure = 0,
+    this.footLengthRefusal = FootLengthRefusal.failed,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -118,6 +120,14 @@ class ControlState extends Equatable {
 
   /// Each refused Reverse gesture notifies the current flow once.
   final int footReverseFailure;
+
+  /// Each Multiply / Divide that changed nothing on a recorded track, from
+  /// the surface or an assigned action in any mode, notifies the current
+  /// flow once (#1168); the notice reads [footLengthRefusal].
+  final int footLengthFailure;
+
+  /// Why the latest refused Multiply / Divide changed nothing.
+  final FootLengthRefusal footLengthRefusal;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -233,6 +243,8 @@ class ControlState extends Equatable {
     FootFadeSelection? footFade,
     int? footFadeFailure,
     int? footReverseFailure,
+    int? footLengthFailure,
+    FootLengthRefusal? footLengthRefusal,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -266,6 +278,8 @@ class ControlState extends Equatable {
     footFade: footFade ?? this.footFade,
     footFadeFailure: footFadeFailure ?? this.footFadeFailure,
     footReverseFailure: footReverseFailure ?? this.footReverseFailure,
+    footLengthFailure: footLengthFailure ?? this.footLengthFailure,
+    footLengthRefusal: footLengthRefusal ?? this.footLengthRefusal,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -301,6 +315,8 @@ class ControlState extends Equatable {
     footFade,
     footFadeFailure,
     footReverseFailure,
+    footLengthFailure,
+    footLengthRefusal,
     cursor,
     activeBank,
     excluded,

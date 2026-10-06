@@ -216,6 +216,49 @@ void main() {
     skip: skip,
   );
 
+  test(
+    'Undo taps queued behind an overdub stop at the length edit, and that '
+    'is reported (#1168 Part 3)',
+    () async {
+      final subscription = repository.looperState.listen((_) {});
+      addTearDown(subscription.cancel);
+      final reported = <int>[];
+      final refusals = repository.lengthHistoryRefusals.listen(reported.add);
+      addTearDown(refusals.cancel);
+      expect(
+        await repository.editLength(channel: 1, edit: LengthEdit.doubled),
+        EngineResult.ok,
+      );
+      ticks.add(null);
+      // One overdub pass on the doubled track, its layer still landing.
+      expect(engine.record(channel: 1), EngineResult.ok); // punch in
+      engine.pump(frames: 3, input: .25);
+      expect(engine.record(channel: 1), EngineResult.ok); // punch out
+      engine.pump(frames: 0);
+      // The first tap removes the pass; the second reaches the Double, which
+      // only an explicit tap undoes.
+      expect(repository.undo(channel: 1), EngineResult.ok);
+      expect(repository.undo(channel: 1), EngineResult.ok);
+      for (var i = 0; i < 50 && reported.isEmpty; i++) {
+        engine.pump(frames: 128);
+        ticks.add(null);
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      expect(reported, [1]);
+      expect(repository.state.tracks[1].lengthFrames, 256);
+      // The explicit tap then undoes the Double, and nothing more is said.
+      expect(repository.undo(channel: 1), EngineResult.ok);
+      for (var i = 0; i < 50; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+        ticks.add(null);
+        if (repository.state.tracks[1].lengthFrames == 128) break;
+      }
+      expect(repository.state.tracks[1].lengthFrames, 128);
+      expect(reported, [1]);
+    },
+    skip: skip,
+  );
+
   test('a length edit is refused while a Session is being applied', () async {
     final rig = SessionRig(
       baseLengthFrames: 128,

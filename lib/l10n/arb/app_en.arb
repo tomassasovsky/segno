@@ -6340,5 +6340,83 @@
     "a11yStageReversed": "Track plays reversed",
     "@a11yStageReversed": {
         "description": "Screen-reader label for the Tracks reverse marker."
+    },
+    "actionModeLength": "Multiply / Divide",
+    "@actionModeLength": {
+        "description": "Foot Multiply / Divide surface (#1168)."
+    },
+    "actionOperationMultiply": "Multiply",
+    "@actionOperationMultiply": {
+        "description": "Assignable action: double the track (#1168)."
+    },
+    "actionOperationDivideFirstHalf": "Divide: first half",
+    "@actionOperationDivideFirstHalf": {
+        "description": "Assignable action: keep the first half of the track (#1168)."
+    },
+    "actionOperationDivideLastHalf": "Divide: last half",
+    "@actionOperationDivideLastHalf": {
+        "description": "Assignable action: keep the last half of the track (#1168)."
+    },
+    "footLengthDouble": "Double",
+    "@footLengthDouble": {
+        "description": "Foot Multiply / Divide: the Rec/Play pedal doubles the selected track."
+    },
+    "footLengthFirstHalf": "First half",
+    "@footLengthFirstHalf": {
+        "description": "Foot Multiply / Divide: the Undo pedal keeps the first half."
+    },
+    "footLengthLastHalf": "Last half",
+    "@footLengthLastHalf": {
+        "description": "Foot Multiply / Divide: the Clear pedal keeps the last half."
+    },
+    "footLengthOverview": "Loop length",
+    "@footLengthOverview": {
+        "description": "Foot Multiply / Divide overview heading."
+    },
+    "footLengthDivision": "1/{divisor}",
+    "@footLengthDivision": {
+        "description": "Foot Multiply / Divide: the track plays a Sync division of the base loop.",
+        "placeholders": {
+            "divisor": {
+                "type": "int"
+            }
+        }
+    },
+    "footLengthSeconds": "{seconds} s",
+    "@footLengthSeconds": {
+        "description": "Foot Multiply / Divide: a track length without whole bars, in seconds.",
+        "placeholders": {
+            "seconds": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "footLengthIncompatible": "That length does not fit the other loops or the bars.",
+    "@footLengthIncompatible": {
+        "description": "Foot Multiply / Divide: the engine refused the length as incompatible with the rig."
+    },
+    "footLengthCapacity": "The doubled loop would be longer than the loop memory.",
+    "@footLengthCapacity": {
+        "description": "Foot Multiply / Divide: Double refused for capacity."
+    },
+    "footLengthBusy": "The track is busy. Try again when it finishes.",
+    "@footLengthBusy": {
+        "description": "Foot Multiply / Divide: the track is capturing or waiting."
+    },
+    "footLengthEmpty": "The track has no recording to double or halve.",
+    "@footLengthEmpty": {
+        "description": "Foot Multiply / Divide: an assigned edit reached an empty track."
+    },
+    "footLengthFailure": "The length could not be changed. Try again.",
+    "@footLengthFailure": {
+        "description": "Foot Multiply / Divide: another refusal."
+    },
+    "lengthHistoryRefused": "The length change was not undone or redone. Try again.",
+    "@lengthHistoryRefused": {
+        "description": "Undo or Redo of a length edit did nothing (#1168)."
     }
 }

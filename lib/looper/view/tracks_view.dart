@@ -8,6 +8,7 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_length.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -15,6 +16,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
+import 'package:segno/looper/view/foot_length_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/foot_reverse_view.dart';
 import 'package:segno/looper/view/mixer_column.dart';
@@ -56,6 +58,7 @@ class _TracksViewState extends State<TracksView> {
     dismissAppToast(AppToastId.footMixerFailure);
     dismissAppToast(AppToastId.footFadeFailure);
     dismissAppToast(AppToastId.footReverseFailure);
+    dismissAppToast(AppToastId.footLengthRefused);
     super.dispose();
   }
 
@@ -159,6 +162,22 @@ class _TracksViewState extends State<TracksView> {
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),
+          BlocListener<ControlCubit, ControlState>(
+            // Every Multiply / Divide that changed nothing says why, from the
+            // surface or from an assigned action in any mode (#1168).
+            listenWhen: (before, after) =>
+                before.footLengthFailure != after.footLengthFailure,
+            listener: (context, state) => showAppToast(
+              id: AppToastId.footLengthRefused,
+              type: state.footLengthRefusal == FootLengthRefusal.failed
+                  ? ToastificationType.error
+                  : ToastificationType.warning,
+              title: Text(
+                footLengthRefusalText(context.l10n, state.footLengthRefusal),
+              ),
+              autoCloseDuration: const Duration(seconds: 5),
+            ),
+          ),
           BlocListener<SessionCubit, SessionState>(
             // React to a settled action — a save or load that finished or
             // failed — never the transient `working` tick.
@@ -222,6 +241,8 @@ class _TracksViewState extends State<TracksView> {
                             ? const FootFadeView()
                             : mode == InteractionMode.reverse
                             ? const FootReverseView()
+                            : mode == InteractionMode.length
+                            ? const FootLengthView()
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
