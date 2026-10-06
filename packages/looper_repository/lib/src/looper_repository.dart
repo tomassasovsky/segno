@@ -4408,6 +4408,20 @@ class LooperRepository {
           throw StateError('failed to install Session Fade: ${result.name}');
         }
       }
+      // Direction is installed on the imported material before the stopped
+      // commit, which parks the origin: Play starts at the lap start.
+      for (final track in rig.tracks) {
+        if (!track.reversed) continue;
+        requireCurrent();
+        final result = await installReverse(
+          channel: track.channel,
+          reversed: true,
+        );
+        requireCurrent();
+        if (!result.isOk) {
+          throw StateError('failed to install Session Reverse: ${result.name}');
+        }
+      }
       // An empty session establishes no master: the engine stays free to define
       // a fresh loop length.
       if (rig.tracks.isNotEmpty && rig.baseLengthFrames > 0) {
@@ -4431,6 +4445,7 @@ class LooperRepository {
                 final actual = snapshot.tracks[track.channel];
                 final primary = track.lanes.first;
                 return actual.state == TrackState.stopped &&
+                    actual.reversed == track.reversed &&
                     actual.lengthFrames == primary.livePcm.length &&
                     actual.undoDepth == primary.undoCount &&
                     actual.redoDepth == primary.redoCount;
