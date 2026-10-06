@@ -2342,7 +2342,13 @@ int32_t le_engine_history_mode_gate(le_engine* engine, uint32_t channels,
      * recorded master, not the retimed one. */
     const int32_t master = load_i32(&engine->a_master_len);
     const int32_t rec = load_i32(&engine->a_rec_master_len);
-    const int retimed = master > 0 && base == master && rec > 0 && rec != master;
+    /* With no master left (the last take cleared after a retime, 4a H1)
+     * the saved base is the retimed clock when it is the length the last
+     * retime produced; the reference survives the all-empty reset for
+     * exactly this restore. */
+    const int32_t retime = load_i32(&engine->a_retime_len);
+    const int retimed = rec > 0 && rec != base &&
+                        (master > 0 ? base == master : base == retime);
     for (int32_t other = 0; other < engine->track_count; ++other) {
       if (!le_mode_span_fits(mode, base, lengths[other]) &&
           !(retimed && le_mode_span_fits(mode, rec, lengths[other]))) {

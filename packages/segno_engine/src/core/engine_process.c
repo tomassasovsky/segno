@@ -352,6 +352,8 @@ static void le_tempo_latch(le_engine* e) {
   e->rec_bpm = bpm;
   e->rec_master_len = bpm > 0.0f ? e->clock.length : 0;
   store_i32(&e->a_rec_master_len, e->rec_master_len);
+  e->retime_len = 0; /* a new reference: no retime of it yet */
+  store_i32(&e->a_retime_len, 0);
   store_f32(&e->a_recorded_tempo_bits, bpm);
 }
 
@@ -1482,7 +1484,17 @@ static void le_restore_track_clock(le_engine* e, le_track* t, int32_t len,
   const int32_t ref = !fits && was ? rec : clock;
   le_span_set(t, ref == clock ? 0 : ref);
   le_restore_multiple_or_divisor(t, ref, len);
-  if (established) le_tempo_latch(e);
+  if (established) {
+    if (ref == rec && rec != clock) {
+      /* The retimed clock is back with a take from before the retime (4a
+       * H1): the recorded tempo is still the one it was laid down at, not
+       * the tempo in force, so publish the kept reference again. */
+      store_i32(&e->a_rec_master_len, rec);
+      store_f32(&e->a_recorded_tempo_bits, e->rec_bpm);
+    } else {
+      le_tempo_latch(e);
+    }
+  }
 }
 
 /* Adversarial-review BUG 4 fix: whether channel [ch] IS the crowned primary
@@ -3065,9 +3077,24 @@ static int le_tempo_retime(le_engine* e, float bpm, int32_t source,
     ref_bpm = load_f32(&e->a_tempo_bpm_bits);
     ref_len = from;
   }
-  int64_t to = bpm == ref_bpm
-                   ? ref_len
-                   : llround((double)ref_len * (double)ref_bpm / (double)bpm);
+  /* Plan 4.2 (4a M2): the new length is the bar count at the new tempo,
+   * round(bars x frames_per_bar), so an external clock (#1228) finds the
+   * loop on its bars. Within LE_TEMPO_SNAP_BPM of the recorded tempo (a
+   * rounded display value, a tap pair, a MIDI tempo; 4a M1) the song
+   * returns to the recorded tempo and length exactly, every take on its
+   * span again. */
+  const float off = bpm > ref_bpm ? bpm - ref_bpm : ref_bpm - bpm;
+  int64_t to;
+  if (off < LE_TEMPO_SNAP_BPM) {
+    bpm = ref_bpm;
+    to = ref_len;
+  } else {
+    int32_t num = load_i32(&e->a_ts_num);
+    if (num <= 0) num = 4;
+    const le_tempo_grid g = {bpm, num, load_i32(&e->a_ts_den),
+                             e->sample_rate > 0 ? e->sample_rate : 48000};
+    to = llround((double)load_i32(&e->a_loop_bars) * le_grid_frames_per_bar(&g));
+  }
   int32_t whole = 1;
   for (int c = 0; c < e->track_count; ++c) {
     const int32_t n = load_i32(&e->tracks[c].a_sync_divisor);
@@ -3089,7 +3116,15 @@ static int le_tempo_retime(le_engine* e, float bpm, int32_t source,
     prev[c] = le_head_index(&t->prev_head, pos, len);
     if (len > 0 && t->span_clock == 0) le_span_set(t, from);
   }
-  e->clock.position = (int32_t)((int64_t)e->clock.position * to / from);
+  /* The phase carries its fraction from one retime to the next (4a L1). */
+  const double frac = e->retime_len == from ? e->retime_frac : 0.0;
+  const double scaled = ((double)e->clock.position + frac) * (double)to /
+                        (double)from;
+  e->clock.position = (int32_t)scaled;
+  if (e->clock.position >= (int32_t)to) e->clock.position = (int32_t)to - 1;
+  e->retime_frac = scaled - (double)e->clock.position;
+  e->retime_len = (int32_t)to;
+  store_i32(&e->a_retime_len, (int32_t)to);
   e->clock.length = (int32_t)to;
   store_i32(&e->a_master_len, (int32_t)to);
   store_i32(&e->a_master_pos, e->clock.position);
@@ -3098,10 +3133,19 @@ static int le_tempo_retime(le_engine* e, float bpm, int32_t source,
     int32_t len;
     const int64_t pos = le_track_song_position(e, t, &len);
     if (len <= 0 || load_i32(&t->a_state) == LE_TRACK_EMPTY) continue;
+    int32_t turn = 0;
     if (t->turn_left > 0) {
       t->prev_head.origin = le_head_origin(&t->prev_head, prev[c], pos, len);
+      turn = t->turn_frames;
+    } else if (le_track_follows(e, t) && le_track_rate(e, t) != t->head.rate) {
+      /* The new rate's locked index sits up to a sample from where the old
+       * head was reading (the position is whole frames): the old head
+       * reads on from its own index through the turn window (4a L1). */
+      turn = le_turn_begin(e, t, len);
+      if (turn > 0) {
+        t->prev_head.origin = le_head_origin(&t->prev_head, idx[c], pos, len);
+      }
     }
-    const int32_t turn = t->turn_left > 0 ? t->turn_frames : 0;
     if (le_track_follows(e, t)) {
       le_head_follow(e, t, frame, turn);
     } else {

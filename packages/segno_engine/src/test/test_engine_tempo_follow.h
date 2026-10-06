@@ -7,6 +7,7 @@
 #define TF_SR 4000
 #define TF_LEN 8000
 #define TF_LEN90 10667
+#define TF_TURN (TF_SR / 100) /* the turn window a retime opens (4a L1) */
 
 static float tf_ramp[TF_LEN];
 
@@ -56,8 +57,9 @@ static le_snapshot tf_snap(le_engine* e) {
 
 /* Retiming to 90 scales the clock and the phase, keeps the bar, moves the
  * beats and reads the take at 8000 / 10667 with the origin kept; the wrap
- * lands exactly on the clock's. Back to 120 is the identity head again,
- * bit-exact. */
+ * lands exactly on the clock's. The old head reads on through a turn window
+ * (4a L1), after which the read is the ramp oracle exactly. Back to 120 is
+ * the identity head again, bit-exact, the phase carrying its fraction. */
 static void test_follow_retime_ratio_and_identity(void) {
   printf("test_follow_retime_ratio_and_identity\n");
   le_engine* e = tf_fixture(1, 1, 4 * TF_LEN);
@@ -73,11 +75,19 @@ static void test_follow_retime_ratio_and_identity(void) {
   tf_process(e, out, n, 0.0f);
   const double r = 8000.0 / 10667.0;
   int bad = 0;
-  for (int k = 0; k < n; ++k) {
+  for (int k = TF_TURN; k < n; ++k) {
     bad += fabs(out[k] - speed_ramp_at(le_head_wrap(r * (2666 + k), TF_LEN),
                                        TF_LEN)) >= 2e-3;
   }
   CHECK(bad == 0);
+  /* Inside the window the blend stays between the two heads' reads: the
+   * old one on at 1 from 2000, the new one at 0.75 from 1999.5 (the
+   * clock's whole 2666 x 0.75; the old head alone was a half-sample step
+   * back). No step: each frame moves less than 1.1. */
+  for (int k = 0; k < TF_TURN; ++k) {
+    CHECK(out[k] >= 1999.49f + 0.75f * k && out[k] <= 2000.01f + k);
+    if (k > 0) CHECK(out[k] - out[k - 1] > 0.5f && out[k] - out[k - 1] < 1.1f);
+  }
   CHECK(out[TF_LEN90 - 2666] == 0.0f); /* the clock's top is the take's */
   s = tf_snap(e);
   CHECK(s.tempo_bpm == 90.0f && s.master_length_frames == TF_LEN90);
@@ -97,12 +107,14 @@ static void test_follow_retime_ratio_and_identity(void) {
   s = tf_snap(e);
   CHECK(s.master_length_frames == TF_LEN && s.tracks[0].head_rate_milli == 1000);
   bad = 0;
-  for (int k = 1; k < 9000; ++k) {
+  for (int k = TF_TURN + 1; k < 9000; ++k) {
     const float want = out[k - 1] == TF_LEN - 1 ? 0.0f : out[k - 1] + 1.0f;
     bad += out[k] != want || out[k] != (float)(int)out[k];
   }
   CHECK(bad == 0);
-  CHECK(out[0] == (float)((int64_t)at90 * TF_LEN / TF_LEN90)); /* floored */
+  /* 2000 scaled to 2666.75: the 0.75 rides into the way back. */
+  const int64_t home = (int64_t)floor((at90 + 0.75) * TF_LEN / TF_LEN90);
+  CHECK(out[TF_TURN] == (float)((home + TF_TURN) % TF_LEN));
   le_engine_destroy(e);
 }
 
@@ -278,7 +290,7 @@ static void test_follow_division_and_mode_switch(void) {
   CHECK(s.tracks[1].head_rate_milli == 749 && s.tracks[0].head_rate_milli == 749);
   const double r = 4000.0 / 5334.0;
   int bad = 0;
-  for (int k = 0; k < 2 * 5334 + 10; ++k) {
+  for (int k = TF_TURN; k < 2 * 5334 + 10; ++k) {
     bad += fabs(out[k] - speed_ramp_at(le_head_wrap(r * k, 4000), 4000)) >= 2e-3;
   }
   CHECK(bad == 0);
@@ -448,7 +460,136 @@ static void test_follow_arm_while_retimed(void) {
   le_engine_destroy(e);
 }
 
+/* 4a H1: after a retime, clearing the LAST take and undoing it brings the
+ * take back on the retimed clock at the retimed ratio, the recorded tempo
+ * still the one it was laid down at; the way home is exact. */
+static void test_follow_clear_last_take_undo(void) {
+  printf("test_follow_clear_last_take_undo\n");
+  le_engine* e = tf_fixture(1, 1, 4 * TF_LEN);
+  tf_process(e, NULL, 128, 0.0f);
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, NULL, 64, 0.0f);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  tf_process(e, NULL, 64, 0.0f);
+  le_snapshot s = tf_snap(e);
+  CHECK(s.master_length_frames == 0 && s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  tf_process(e, NULL, 64, 0.0f);
+  s = tf_snap(e);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.master_length_frames == TF_LEN90 && s.tempo_bpm == 90.0f);
+  CHECK(s.tracks[0].head_rate_milli == 749);
+  CHECK(s.recorded_tempo_bpm == 120.0f);
+  CHECK(le_engine_record(e, 0) == LE_ERR_TRANSFORMED);
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  tf_process(e, NULL, 64, 0.0f);
+  s = tf_snap(e);
+  CHECK(s.master_length_frames == TF_LEN && s.tracks[0].head_rate_milli == 1000);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  le_engine_destroy(e);
+}
+
+/* 4a M1: within LE_TEMPO_SNAP_BPM of the recorded tempo the song returns
+ * to it exactly (tempo, length, every take on its span); beyond it the
+ * bar count sets the length and the take stays off its span. */
+static void test_follow_snap_to_recorded(void) {
+  printf("test_follow_snap_to_recorded\n");
+  le_engine* e = tf_fixture(1, 1, 4 * TF_LEN);
+  tf_process(e, NULL, 128, 0.0f);
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, NULL, 64, 0.0f);
+  CHECK(le_engine_set_tempo(e, 120.04f) == LE_OK); /* a rounded display */
+  tf_process(e, NULL, 64, 0.0f);
+  le_snapshot s = tf_snap(e);
+  CHECK(s.tempo_bpm == 120.0f && s.master_length_frames == TF_LEN);
+  CHECK(s.tracks[0].head_rate_milli == 1000);
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, NULL, 64, 0.0f);
+  CHECK(le_engine_set_tempo(e, 120.06f) == LE_OK); /* a real change */
+  tf_process(e, NULL, 64, 0.0f);
+  s = tf_snap(e);
+  CHECK(s.tempo_bpm == 120.06f && s.master_length_frames == 7996);
+  CHECK(le_engine_record(e, 0) == LE_ERR_TRANSFORMED);
+  le_engine_destroy(e);
+}
+
+/* 4a M2 (plan 4.2): the new length is round(bars x frames_per_bar), not the
+ * recorded length scaled. A master played a little long (8010 frames, one
+ * bar at 120) retimes to the bar at 90, 10667, not 10680; the recorded
+ * tempo brings back its own 8010. */
+static void test_follow_length_on_the_bar(void) {
+  printf("test_follow_length_on_the_bar\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, TF_SR, 1, 1, 4 * TF_LEN) == LE_OK);
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tf_process(e, NULL, 8010, 0.25f);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tf_process(e, NULL, 1024, 0.0f);
+  le_snapshot s = tf_snap(e);
+  CHECK(s.master_length_frames == 8010 && s.loop_bars == 1);
+  CHECK(s.recorded_tempo_bpm == 120.0f);
+  const uint64_t id = tf_follow(e, -1, 1);
+  tf_process(e, NULL, 64, 0.0f);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, NULL, 64, 0.0f);
+  CHECK(tf_snap(e).master_length_frames == TF_LEN90);
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  tf_process(e, NULL, 64, 0.0f);
+  s = tf_snap(e);
+  CHECK(s.master_length_frames == 8010 && s.tracks[0].head_rate_milli == 1000);
+  le_engine_destroy(e);
+}
+
+/* 4a L1: a retime neither clicks nor drifts. Across twenty retimes at
+ * assorted positions the ramp's output bends without a corner: the step
+ * from one frame to the next changes by under 0.4 (a linear window at two
+ * rates bends it by up to their difference, 0.25; a bare switch adds up to a
+ * sample of index), because the old head reads on through the turn window.
+ * Fifty immediate 90/120 pairs leave the song where it would have been
+ * without them (the phase keeps its fraction). */
+static void test_follow_retime_no_click_no_drift(void) {
+  printf("test_follow_retime_no_click_no_drift\n");
+  le_engine* e = tf_fixture(1, 1, 4 * TF_LEN);
+  static float out[40 * 211];
+  int at = 0;
+  for (int i = 0; i < 20; ++i) {
+    CHECK(le_engine_set_tempo(e, i % 2 ? 120.0f : 90.0f) == LE_OK);
+    tf_process(e, out + at, 211 + 13 * i, 0.0f);
+    at += 211 + 13 * i;
+  }
+  int corners = 0;
+  for (int k = 2; k < at; ++k) {
+    if (out[k] > 7900.0f || out[k - 2] > 7900.0f || out[k] < 100.0f) continue;
+    const float bend = (out[k] - out[k - 1]) - (out[k - 1] - out[k - 2]);
+    if ((bend > 0.4f || bend < -0.4f) && corners++ == 0) {
+      printf("  first corner at %d: %f %f %f\n", k, out[k - 2], out[k - 1],
+             out[k]);
+    }
+  }
+  CHECK(corners == 0);
+  le_engine_destroy(e);
+  e = tf_fixture(1, 1, 4 * TF_LEN);
+  tf_process(e, NULL, 1201, 0.0f);
+  const int32_t start = tf_snap(e).master_position_frames;
+  for (int i = 0; i < 50; ++i) {
+    CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+    CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+    tf_process(e, NULL, 64, 0.0f);
+  }
+  const int32_t end = tf_snap(e).master_position_frames;
+  const int32_t want = (start + 50 * 64) % TF_LEN;
+  CHECK(end - want <= 1 && want - end <= 1);
+  le_engine_destroy(e);
+}
+
 static void run_tempo_follow_tests(void) {
+  test_follow_clear_last_take_undo();
+  test_follow_snap_to_recorded();
+  test_follow_length_on_the_bar();
+  test_follow_retime_no_click_no_drift();
   test_follow_live_master_latches();
   test_follow_arm_while_retimed();
   test_follow_retime_ratio_and_identity();

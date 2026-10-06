@@ -1,6 +1,6 @@
 # Pitch and time core: Speed, Transpose, Audio & tempo follow, import Adapt
 
-<!-- cspell:ignore varispeed lerp lbuf wdub Signalsmith signalsmith numer SCHED untransposed sidelobe retiming Retiming retimes retimed retime regrid halfband Neoverse milli fmod crossfades hujm YMPRG Bmpo -->
+<!-- cspell:ignore varispeed lerp lbuf wdub Signalsmith signalsmith numer SCHED untransposed sidelobe retiming Retiming retimes retimed retime reclock regrid halfband Neoverse milli fmod crossfades hujm YMPRG Bmpo -->
 
 Status: approved with required review edits E1-E15, which are applied in this
 text (the review is kept at the owner's evidence store,
@@ -1094,6 +1094,50 @@ command 120, facts 329 and 330, events.log version 10):
   the settings receipts. Until then a following track's pitch follows the
   tempo ratio, the "Follows speed" behaviour; Follow tempo stays off by
   default, so no rig changes behaviour.
+- **The new length (review M2).** It is the plan's
+  `round(bars x frames_per_bar(new))`, so an external clock (#1228) finds
+  the loop on its bars; a master played off its bars (8010 frames for one
+  bar at 120) retimes to the bar (10667 at 90), not to its own length
+  scaled (10680). Rounded up to the largest active Sync division as above.
+- **Back to the recorded tempo (review M1).** A tempo within
+  `LE_TEMPO_SNAP_BPM` (0.05 BPM, the MIDI clock plan's real-change
+  threshold) of the recorded one returns the song to the recorded tempo
+  and length exactly: a display-rounded value, a tap pair or a MIDI tempo
+  brings every take back on its span, and overdub with it. The snapshot's
+  `recorded_tempo_bpm` is what Part 4b's page offers as the way back.
+- **Clear Undo of the last take (review H1).** With no master left after a
+  retime, the history gate fits the restored take against the kept
+  recorded master as well as the saved retimed base; the restore
+  re-establishes the retimed clock, the take at its ratio, and publishes
+  the kept recorded tempo again rather than latching the tempo in force.
+- **No click, no drift (review L1).** A following track that sounds opens
+  the turn window at a retime: the old head reads on from its own index
+  while the new rate's index (locked to the whole-frame clock, up to a
+  sample away) fades in. The clock's position carries its fractional part
+  from one retime to the next, so fifty 90/120 pairs leave the song where
+  it would have been.
+- **Departures from 4.2, labelled (review L2).** A track that keeps its
+  recorded speed re-origins on the shared position at the retime (its
+  index continuous, its lap its own) rather than running a private
+  counter; it re-anchors at its next Stop/Play like any head. A retime
+  whose length leaves `1..max_loop_frames` changes nothing and is not yet
+  reported (review L3): the tempo stays and `tempo_follow` reads RETIMES;
+  Part 4b's page shows the tempo the snapshot holds, so the refusal is
+  visible as the tempo not moving. A fact or reason for it is a follow-up.
+- **Multiply/Divide (#1212) lands second and owns the interaction (review
+  M3).** Its master re-clock (`le_length_apply` with `reclock > 0`) sets
+  the clock to the new take length in take frames; on a retimed rig that
+  drops the retime for the master while every other follower keeps a
+  `span_clock` measured against the old clock, so their ratios go wrong.
+  Whichever of #1212 and this part lands second must either refuse a
+  length edit on a rig or track off its span (`LE_ERR_TRANSFORMED`, the
+  punch-in rule) or scale `len` and `span_clock` together through the
+  edit, and add the test (a 4-bar rig retimed to 90, then a x2 on one
+  track: every follower's `head_rate_milli` unchanged). #1212 also stores
+  `a_live` directly rather than through `le_track_publish_live`, which is
+  safe for the content key (a fresh revision) but not cache-hot.
+- **Mode switch.** A mode switch returns a retimed song to its recorded
+  tempo, resetting a tempo the player chose; Part 4b's page says so.
 
 ### Part 4b. Audio & tempo page and Session fields (about 300 production lines)
 
