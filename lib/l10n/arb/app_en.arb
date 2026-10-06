@@ -6419,5 +6419,13 @@
     "settingsAboutSubtitle": "Name, version, controller and licences",
     "@settingsAboutSubtitle": {
         "description": "Subtitle of the About row on the Updates page."
+    },
+    "settingsMidiTitle": "MIDI",
+    "@settingsMidiTitle": {
+        "description": "The MIDI tile on the Settings page."
+    },
+    "settingsPower": "Power",
+    "@settingsPower": {
+        "description": "Accessible name of the Settings page's power button."
     }
 }

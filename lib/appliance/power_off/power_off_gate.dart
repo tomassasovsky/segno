@@ -5,7 +5,7 @@ import 'package:segno/session/cubit/session_cubit.dart';
 
 /// What a short press of the rear power button should do.
 enum PowerOffDisposition {
-  /// A take is in flight — only Keep playing.
+  /// A take or a transfer is in flight — only Keep playing.
   refuse,
 
   /// Loops in RAM would vanish — Save / discard / Keep playing.
@@ -23,6 +23,7 @@ class PowerOffSnapshot extends Equatable {
   /// Creates a [PowerOffSnapshot].
   const PowerOffSnapshot({
     this.takeInFlight = false,
+    this.transferInFlight = false,
     this.anyHasContent = false,
     this.currentSessionName,
   });
@@ -31,6 +32,11 @@ class PowerOffSnapshot extends Equatable {
   /// an in-flight / recovering performance write.
   final bool takeInFlight;
 
+  /// A write to a storage destination (export, backup, copy) or a USB eject
+  /// is in progress: halting mid-write or mid-unmount is what the guard is
+  /// for (accepted behaviour §7.8, "Transfers/eject guard it").
+  final bool transferInFlight;
+
   /// Any track holds recorded audio.
   final bool anyHasContent;
 
@@ -38,7 +44,12 @@ class PowerOffSnapshot extends Equatable {
   final String? currentSessionName;
 
   @override
-  List<Object?> get props => [takeInFlight, anyHasContent, currentSessionName];
+  List<Object?> get props => [
+    takeInFlight,
+    transferInFlight,
+    anyHasContent,
+    currentSessionName,
+  ];
 }
 
 /// Projects live feature state onto a [PowerOffSnapshot].
@@ -49,6 +60,7 @@ PowerOffSnapshot powerOffSnapshotOf({
   required LooperState looper,
   required PerformanceRecorderState recorder,
   required SessionState session,
+  bool transferInFlight = false,
 }) {
   return PowerOffSnapshot(
     takeInFlight:
@@ -60,14 +72,18 @@ PowerOffSnapshot powerOffSnapshotOf({
         recorder is PerformanceRecorderFinalizing ||
         recorder is PerformanceRecorderRendering ||
         (recorder is PerformanceRecorderIdle && recorder.recovering),
+    transferInFlight: transferInFlight,
     anyHasContent: looper.tracks.any((track) => track.hasContent),
     currentSessionName: session.currentSessionName,
   );
 }
 
-/// Pure gate: in-flight take → refuse; idle with content → confirm; else skip.
+/// Pure gate: in-flight take or transfer → refuse; idle with content →
+/// confirm; else skip.
 PowerOffDisposition powerOffGate(PowerOffSnapshot snapshot) {
-  if (snapshot.takeInFlight) return PowerOffDisposition.refuse;
+  if (snapshot.takeInFlight || snapshot.transferInFlight) {
+    return PowerOffDisposition.refuse;
+  }
   if (snapshot.anyHasContent) return PowerOffDisposition.confirm;
   return PowerOffDisposition.skip;
 }
